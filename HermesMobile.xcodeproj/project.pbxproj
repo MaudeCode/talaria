@@ -313,6 +313,7 @@
 		C5A0D8F5502048B6B9258B01 /* InsightsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A0D8F5502048B6B9258B00 /* InsightsViewModelTests.swift */; };
 		105050000000000000000001 /* ComposerModelPickerSectionExpansionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105050000000000000000002 /* ComposerModelPickerSectionExpansionState.swift */; };
 		105050000000000000000003 /* ComposerModelPickerSectionExpansionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105050000000000000000004 /* ComposerModelPickerSectionExpansionStateTests.swift */; };
+		A19000000000000000000001 /* ComposerNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* ComposerNavigationUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -336,6 +337,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = A04500000000000000000040;
 			remoteInfo = HermesLiveActivityWidget;
+		};
+		A19000000000000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A2B3C4D5E6F700000000070 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1A2B3C4D5E6F700000000040;
+			remoteInfo = HermesMobile;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -373,6 +381,8 @@
 		10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		10CA110C0DE000000000C002 /* LocalizationCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationCatalogTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000015 /* HermesMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HermesMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A19000000000000000000002 /* ComposerNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerNavigationUITests.swift; sourceTree = "<group>"; };
+		A19000000000000000000003 /* HermesMobileUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HermesMobileUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B2 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
@@ -695,6 +705,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A19000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -704,6 +721,7 @@
 				351C0F1600000000000000A1 /* Shared.xcconfig */,
 				1A2B3C4D5E6F700000000031 /* HermesMobile */,
 				1A2B3C4D5E6F700000000034 /* HermesMobileTests */,
+				A19000000000000000000004 /* HermesMobileUITests */,
 				B5A100000000000000000051 /* HermesShareExtension */,
 				A04500000000000000000021 /* HermesLiveActivityWidget */,
 				1A2B3C4D5E6F700000000032 /* Products */,
@@ -733,10 +751,19 @@
 			children = (
 				1A2B3C4D5E6F700000000010 /* HermesMobile.app */,
 				1A2B3C4D5E6F700000000015 /* HermesMobileTests.xctest */,
+				A19000000000000000000003 /* HermesMobileUITests.xctest */,
 				B5A100000000000000000017 /* HermesShareExtension.appex */,
 				A04500000000000000000017 /* HermesLiveActivityWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A19000000000000000000004 /* HermesMobileUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A19000000000000000000002 /* ComposerNavigationUITests.swift */,
+			);
+			path = HermesMobileUITests;
 			sourceTree = "<group>";
 		};
 		1A2B3C4D5E6F700000000033 /* Resources */ = {
@@ -1281,6 +1308,25 @@
 			productReference = 1A2B3C4D5E6F700000000015 /* HermesMobileTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		A19000000000000000000005 /* HermesMobileUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1900000000000000000000C /* Build configuration list for PBXNativeTarget "HermesMobileUITests" */;
+			buildPhases = (
+				A19000000000000000000006 /* Sources */,
+				A19000000000000000000007 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A19000000000000000000009 /* PBXTargetDependency */,
+			);
+			name = HermesMobileUITests;
+			packageProductDependencies = (
+			);
+			productName = HermesMobileUITests;
+			productReference = A19000000000000000000003 /* HermesMobileUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		B5A100000000000000000040 /* HermesShareExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B5A100000000000000000041 /* Build configuration list for PBXNativeTarget "HermesShareExtension" */;
@@ -1332,6 +1378,10 @@
 						CreatedOnToolsVersion = 26.4.1;
 						TestTargetID = 1A2B3C4D5E6F700000000040;
 					};
+					A19000000000000000000005 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 1A2B3C4D5E6F700000000040;
+					};
 					B5A100000000000000000040 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -1380,6 +1430,7 @@
 			targets = (
 				1A2B3C4D5E6F700000000040 /* HermesMobile */,
 				1A2B3C4D5E6F700000000044 /* HermesMobileTests */,
+				A19000000000000000000005 /* HermesMobileUITests */,
 				B5A100000000000000000040 /* HermesShareExtension */,
 				A04500000000000000000040 /* HermesLiveActivityWidget */,
 			);
@@ -1716,6 +1767,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A19000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A19000000000000000000001 /* ComposerNavigationUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B5A100000000000000000021 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1743,6 +1802,11 @@
 			isa = PBXTargetDependency;
 			target = 1A2B3C4D5E6F700000000040 /* HermesMobile */;
 			targetProxy = 1A2B3C4D5E6F700000000036 /* PBXContainerItemProxy */;
+		};
+		A19000000000000000000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1A2B3C4D5E6F700000000040 /* HermesMobile */;
+			targetProxy = A19000000000000000000008 /* PBXContainerItemProxy */;
 		};
 		B5A100000000000000000031 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1990,6 +2054,42 @@
 			};
 			name = Release;
 		};
+		A1900000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HermesMobile;
+			};
+			name = Debug;
+		};
+		A1900000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HermesMobile;
+			};
+			name = Release;
+		};
 		B5A100000000000000000042 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2117,6 +2217,15 @@
 			buildConfigurations = (
 				1A2B3C4D5E6F700000000084 /* Debug */,
 				1A2B3C4D5E6F700000000085 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1900000000000000000000C /* Build configuration list for PBXNativeTarget "HermesMobileUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1900000000000000000000A /* Debug */,
+				A1900000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

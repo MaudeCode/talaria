@@ -57,9 +57,12 @@ enum ChatScrollPolicy {
         isFocused: Bool,
         hasDraft: Bool,
         hasPendingAttachments: Bool,
+        isLoadingComposerConfiguration: Bool,
         isBusyOrUnavailable: Bool,
         requiresExpandedPresentation: Bool
     ) -> Bool {
+        // Configuration metadata loads independently; available controls can stay
+        // disabled without holding the whole composer open.
         isReadingOlderTranscript
             && hasMessages
             && !isFocused

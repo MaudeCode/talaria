@@ -15,43 +15,81 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     func testComposerMovesIntoBottomAccessoryAndExpandsAgain() throws {
-        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
-        guard session.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
-        session.tap()
-
-        let idleComposer = app.buttons["Message"]
-        XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
+        var idleComposer = try openFixtureSession()
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
         XCTAssertTrue(app.buttons["Choose profile"].exists)
+        let initialBottomAccessory = app.descendants(matching: .any)["chat-bottom-accessory"]
+        XCTAssertTrue(initialBottomAccessory.waitForExistence(timeout: 3))
+        XCTAssertTrue(initialBottomAccessory.buttons["Choose workspace path"].exists)
 
         idleComposer.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(app.textViews.firstMatch.exists)
 
-        app.keyboards.buttons["dictation"].firstMatch.tapIfExists()
         app.textViews.firstMatch.typeText("Composer transition check")
-        XCTAssertFalse(app.buttons["Follow up"].exists)
+        XCTAssertFalse(app.buttons["Reply"].exists)
 
-        app.textViews.firstMatch.press(forDuration: 0.8)
-        app.menuItems["Select All"].tapIfExists()
-        app.keys["delete"].tapIfExists()
-        app.swipeDown()
+        app.terminate()
+        app.launch()
+        idleComposer = try openFixtureSession()
 
         let transcript = app.scrollViews.firstMatch
         XCTAssertTrue(transcript.waitForExistence(timeout: 3))
         transcript.swipeDown(velocity: .fast)
         transcript.swipeDown(velocity: .fast)
+        transcript.swipeUp(velocity: .slow)
 
-        let followUp = app.buttons["Follow up"]
-        XCTAssertTrue(followUp.waitForExistence(timeout: 5))
+        let reply = app.buttons["Reply"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
         XCTAssertFalse(idleComposer.exists)
-        add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
 
-        followUp.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        let composerOptions = app.buttons["Composer options"]
+        XCTAssertTrue(composerOptions.exists)
+        composerOptions.tap()
+        XCTAssertTrue(app.buttons["Attach File"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Photos"].exists)
+        XCTAssertTrue(app.buttons["Camera"].exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+
+        let collapsedComposerScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        collapsedComposerScreenshot.name = "Collapsed reply composer"
+        collapsedComposerScreenshot.lifetime = .keepAlways
+        add(collapsedComposerScreenshot)
+
+        reply.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
         XCTAssertTrue(app.textViews.firstMatch.exists)
+        app.textViews.firstMatch.typeText("Draft")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(
+                forDuration: 0.1,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            )
+        XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3))
+
+        let sessionOptions = app.buttons["Session options"]
+        XCTAssertTrue(sessionOptions.waitForExistence(timeout: 3))
+        let bottomAccessory = app.descendants(matching: .any)["chat-bottom-accessory"]
+        XCTAssertTrue(bottomAccessory.waitForExistence(timeout: 3))
+        XCTAssertTrue(bottomAccessory.buttons["Session options"].exists)
+
+        let chatsTab = app.tabBars.buttons["Chats"]
+        XCTAssertTrue(chatsTab.exists)
+        XCTAssertLessThan(abs(sessionOptions.frame.midY - chatsTab.frame.midY), 30)
+
+        sessionOptions.tap()
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Workspace:'")).firstMatch
+                .waitForExistence(timeout: 3)
+        )
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+
+        let integratedExtrasScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        integratedExtrasScreenshot.name = "Optional composer controls inside compact-tab composer"
+        integratedExtrasScreenshot.lifetime = .keepAlways
+        add(integratedExtrasScreenshot)
     }
 
     func testComposerSettingsAreGroupedAndConfigurable() throws {
@@ -66,25 +104,69 @@ final class ComposerNavigationUITests: XCTestCase {
         settings.tap()
 
         let composerHeading = app.staticTexts["Composer"]
-        while !composerHeading.exists {
+        for _ in 0..<8 where !composerHeading.exists {
             app.swipeUp()
         }
 
         XCTAssertTrue(composerHeading.exists)
-        XCTAssertTrue(app.staticTexts["Send While Responding"].exists)
-        XCTAssertTrue(app.staticTexts["Dictation Provider"].exists)
-        XCTAssertTrue(app.staticTexts["Workspace"].exists)
-        XCTAssertTrue(app.staticTexts["Profile"].exists)
-        XCTAssertTrue(app.staticTexts["Git Branch"].exists)
-        XCTAssertTrue(app.staticTexts["Context Usage"].exists)
+        for label in [
+            "Send While Responding",
+            "Dictation Provider",
+            "Workspace",
+            "Profile",
+            "Git Branch",
+            "Context Usage",
+        ] {
+            let setting = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", label))
+                .firstMatch
+            for _ in 0..<8 where !setting.exists {
+                app.swipeUp()
+            }
+            XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
+        }
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
     }
-}
 
-private extension XCUIElement {
-    func tapIfExists() {
-        if waitForExistence(timeout: 1) {
-            tap()
+    func testBottomAccessoryIsAbsentFromRootPages() throws {
+        let chatsTab = app.tabBars.buttons["Chats"]
+        guard chatsTab.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
+
+        for tabName in ["Chats", "Tasks", "Kanban", "More"] {
+            let tab = app.tabBars.buttons[tabName]
+            tab.tap()
+            XCTAssertTrue(tab.isSelected)
+            assertNoBottomAccessory(on: tabName)
+        }
+    }
+
+    private func openFixtureSession() throws -> XCUIElement {
+        let idleComposer = app.buttons["Message"]
+        if idleComposer.waitForExistence(timeout: 3) {
+            return idleComposer
+        }
+
+        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
+        guard session.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+        session.tap()
+        XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
+        return idleComposer
+    }
+
+    private func assertNoBottomAccessory(
+        on page: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertFalse(
+            app.descendants(matching: .any)["chat-bottom-accessory"].exists,
+            "Unexpected chat bottom accessory on \(page)",
+            file: file,
+            line: line
+        )
     }
 }

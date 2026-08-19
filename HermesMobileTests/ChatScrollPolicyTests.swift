@@ -72,6 +72,7 @@ final class ChatScrollPolicyTests: XCTestCase {
                 isFocused: false,
                 hasDraft: false,
                 hasPendingAttachments: false,
+                isLoadingComposerConfiguration: false,
                 isBusyOrUnavailable: false,
                 requiresExpandedPresentation: false
             )
@@ -85,12 +86,28 @@ final class ChatScrollPolicyTests: XCTestCase {
                     isFocused: blocker == 2,
                     hasDraft: blocker == 3,
                     hasPendingAttachments: blocker == 4,
+                    isLoadingComposerConfiguration: false,
                     isBusyOrUnavailable: blocker == 5,
                     requiresExpandedPresentation: blocker == 6
                 ),
                 "Blocker \(blocker) should keep the full composer visible"
             )
         }
+    }
+
+    func testComposerConfigurationLoadingDoesNotBlockCompaction() {
+        XCTAssertTrue(
+            ChatScrollPolicy.shouldUseCompactComposer(
+                isReadingOlderTranscript: true,
+                hasMessages: true,
+                isFocused: false,
+                hasDraft: false,
+                hasPendingAttachments: false,
+                isLoadingComposerConfiguration: true,
+                isBusyOrUnavailable: false,
+                requiresExpandedPresentation: false
+            )
+        )
     }
 
     func testAutoScrollPausedWhileUserInteracting() {

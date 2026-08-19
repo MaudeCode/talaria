@@ -8,11 +8,22 @@ final class ChatBottomAccessoryModel {
     private(set) var showsStop = false
     private(set) var isStopDisabled = false
     private(set) var isVoiceDisabled = false
+    private(set) var isAttachmentDisabled = false
+    private(set) var isCameraAvailable = false
+    private(set) var secondaryControls: ComposerSecondaryControlsState?
 
     @ObservationIgnored private var owner: UUID?
     @ObservationIgnored private var activateAction: () -> Void = {}
     @ObservationIgnored private var voiceAction: () -> Void = {}
     @ObservationIgnored private var stopAction: () -> Void = {}
+    @ObservationIgnored private var attachFileAction: () -> Void = {}
+    @ObservationIgnored private var attachPhotoAction: () -> Void = {}
+    @ObservationIgnored private var takePhotoAction: () -> Void = {}
+    @ObservationIgnored private var chooseWorkspaceAction: () -> Void = {}
+    @ObservationIgnored private var selectProfileAction: (ProfileSummary) -> Void = { _ in }
+    @ObservationIgnored private var selectGitBranchAction: (GitCheckoutTarget) -> Void = { _ in }
+    @ObservationIgnored private var createGitBranchAction: (GitCheckoutTarget) -> Void = { _ in }
+    @ObservationIgnored private var refreshGitBranchesAction: () -> Void = {}
 
     func claim(_ owner: UUID) {
         self.owner = owner
@@ -24,32 +35,71 @@ final class ChatBottomAccessoryModel {
         showsStop: Bool,
         isStopDisabled: Bool,
         isVoiceDisabled: Bool,
+        isAttachmentDisabled: Bool,
+        isCameraAvailable: Bool,
+        secondaryControls: ComposerSecondaryControlsState?,
         onActivate: @escaping () -> Void,
         onVoice: @escaping () -> Void,
-        onStop: @escaping () -> Void
+        onStop: @escaping () -> Void,
+        onAttachFile: @escaping () -> Void,
+        onAttachPhoto: @escaping () -> Void,
+        onTakePhoto: @escaping () -> Void,
+        onChooseWorkspace: @escaping () -> Void,
+        onSelectProfile: @escaping (ProfileSummary) -> Void,
+        onSelectGitBranch: @escaping (GitCheckoutTarget) -> Void,
+        onCreateGitBranch: @escaping (GitCheckoutTarget) -> Void,
+        onRefreshGitBranches: @escaping () -> Void
     ) {
         guard self.owner == owner else { return }
         self.isVisible = isVisible
         self.showsStop = showsStop
         self.isStopDisabled = isStopDisabled
         self.isVoiceDisabled = isVoiceDisabled
+        self.isAttachmentDisabled = isAttachmentDisabled
+        self.isCameraAvailable = isCameraAvailable
+        self.secondaryControls = secondaryControls
         activateAction = onActivate
         voiceAction = onVoice
         stopAction = onStop
+        attachFileAction = onAttachFile
+        attachPhotoAction = onAttachPhoto
+        takePhotoAction = onTakePhoto
+        chooseWorkspaceAction = onChooseWorkspace
+        selectProfileAction = onSelectProfile
+        selectGitBranchAction = onSelectGitBranch
+        createGitBranchAction = onCreateGitBranch
+        refreshGitBranchesAction = onRefreshGitBranches
     }
 
     func clear(owner: UUID) {
         guard self.owner == owner else { return }
         self.owner = nil
         isVisible = false
+        secondaryControls = nil
         activateAction = {}
         voiceAction = {}
         stopAction = {}
+        attachFileAction = {}
+        attachPhotoAction = {}
+        takePhotoAction = {}
+        chooseWorkspaceAction = {}
+        selectProfileAction = { _ in }
+        selectGitBranchAction = { _ in }
+        createGitBranchAction = { _ in }
+        refreshGitBranchesAction = {}
     }
 
     func activate() { activateAction() }
     func startVoiceInput() { voiceAction() }
     func stop() { stopAction() }
+    func attachFile() { attachFileAction() }
+    func attachPhoto() { attachPhotoAction() }
+    func takePhoto() { takePhotoAction() }
+    func chooseWorkspace() { chooseWorkspaceAction() }
+    func selectProfile(_ profile: ProfileSummary) { selectProfileAction(profile) }
+    func selectGitBranch(_ target: GitCheckoutTarget) { selectGitBranchAction(target) }
+    func createGitBranch(_ target: GitCheckoutTarget) { createGitBranchAction(target) }
+    func refreshGitBranches() { refreshGitBranchesAction() }
 }
 
 private struct ChatBottomAccessoryModelKey: EnvironmentKey {
@@ -241,11 +291,11 @@ private extension View {
 
     @ViewBuilder
     func chatBottomAccessory(selectedTab: RootTab, model: ChatBottomAccessoryModel) -> some View {
-        if #available(iOS 26, *) {
-            tabViewBottomAccessory {
-                if selectedTab == .chats, model.isVisible {
-                    ChatBottomAccessoryView(model: model)
-                }
+        if #available(iOS 26.1, *) {
+            tabViewBottomAccessory(
+                isEnabled: selectedTab == .chats && model.isVisible
+            ) {
+                ChatBottomAccessoryView(model: model)
             }
         } else {
             self
@@ -266,19 +316,65 @@ private struct ChatBottomAccessoryView: View {
     let model: ChatBottomAccessoryModel
 
     var body: some View {
-        HStack(spacing: placement == .inline ? 6 : 10) {
-            Button(action: model.activate) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                    Text("Follow up")
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
+        Group {
+            if let secondaryControls = model.secondaryControls {
+                if placement == .inline {
+                    ComposerSecondaryControlsMenu(
+                        state: secondaryControls,
+                        onChooseWorkspace: model.chooseWorkspace,
+                        onSelectProfile: model.selectProfile,
+                        onSelectGitBranch: model.selectGitBranch,
+                        onCreateGitBranch: model.createGitBranch,
+                        onRefreshGitBranches: model.refreshGitBranches
+                    )
+                    .padding(.horizontal, 4)
+                } else {
+                    ComposerSecondaryControlsView(
+                        state: secondaryControls,
+                        onChooseWorkspace: model.chooseWorkspace,
+                        onSelectProfile: model.selectProfile,
+                        onSelectGitBranch: model.selectGitBranch,
+                        onCreateGitBranch: model.createGitBranch,
+                        onRefreshGitBranches: model.refreshGitBranches
+                    )
+                    .padding(.horizontal, 8)
                 }
-                .contentShape(Rectangle())
+            } else {
+                replyComposer
+            }
+        }
+        .font(AppFont.body())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("chat-bottom-accessory")
+    }
+
+    private var replyComposer: some View {
+        HStack(spacing: placement == .inline ? 6 : 10) {
+            Menu {
+                Button("Attach File", systemImage: "paperclip", action: model.attachFile)
+                Button("Photos", systemImage: "photo.on.rectangle", action: model.attachPhoto)
+                Button("Camera", systemImage: "camera", action: model.takePhoto)
+                    .disabled(!model.isCameraAvailable)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .regular))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isAttachmentDisabled)
+            .accessibilityLabel("Composer options")
+
+            Button(action: model.activate) {
+                Text("Reply…")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
-            .accessibilityLabel("Follow up")
+            .accessibilityLabel("Reply")
 
             Button(action: model.showsStop ? model.stop : model.startVoiceInput) {
                 Image(systemName: model.showsStop ? "stop.fill" : "mic")
@@ -290,7 +386,6 @@ private struct ChatBottomAccessoryView: View {
             .disabled(model.showsStop ? model.isStopDisabled : model.isVoiceDisabled)
             .accessibilityLabel(model.showsStop ? "Stop response" : "Start dictation")
         }
-        .font(AppFont.body())
         .padding(.horizontal, placement == .inline ? 4 : 8)
     }
 }

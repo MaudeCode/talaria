@@ -43,6 +43,17 @@
                ReferencedContainer = "container:HermesMobile.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A19000000000000000000005"
+               BuildableName = "HermesMobileUITests.xctest"
+               BlueprintName = "HermesMobileUITests"
+               ReferencedContainer = "container:HermesMobile.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

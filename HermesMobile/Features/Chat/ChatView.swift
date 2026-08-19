@@ -255,9 +255,11 @@ private struct ListenPlaybackBar: View {
 
 private struct ChatBottomAccessoryState: Equatable {
     let isVisible: Bool
+    let secondaryControls: ComposerSecondaryControlsState?
     let showsStop: Bool
     let isStopDisabled: Bool
     let isVoiceDisabled: Bool
+    let isAttachmentDisabled: Bool
 }
 
 struct ChatView: View {
@@ -281,6 +283,10 @@ struct ChatView: View {
     @AppStorage(ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey) private var rtlChatLayoutEnabled = ChatTranscriptDisplaySettings.rtlChatLayoutDefaultEnabled
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
+    @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsWorkspaceControl = true
+    @AppStorage(ComposerVisibilitySettings.profileKey) private var showsProfileControl = true
+    @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsGitBranchControl = true
+    @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsContextUsageControl = true
 
     let session: SessionSummary
     let server: URL
@@ -324,6 +330,11 @@ struct ChatView: View {
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
     @State private var isAccessoryVoiceRequestPending = false
+    @State private var accessorySelectedPhotoItems: [PhotosPickerItem] = []
+    @State private var showsAccessoryPhotoPicker = false
+    @State private var showsAccessoryCameraPicker = false
+    @State private var showsAccessoryFileImporter = false
+    @State private var showsAccessoryWorkspaceSheet = false
     @State private var composerVoiceInputRequestID = 0
     @State private var bottomAccessoryOwner = UUID()
     @State private var didCompleteInitialAppearance = false
@@ -378,6 +389,7 @@ struct ChatView: View {
             isCancellingStream: viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isChromeCompact: isComposerChromeCompact,
+            hidesSecondaryChrome: usesNativeSecondaryControls,
             errorMessage: viewModel.sendErrorMessage,
             configurationErrorMessage: viewModel.composerConfigurationErrorMessage,
             contextWindowSnapshot: viewModel.contextWindowSnapshot,
@@ -692,6 +704,60 @@ struct ChatView: View {
             }
             .navigationDestination(item: $forkedSession) { session in
                 ChatView(session: session, server: server, onAPIError: onAPIError)
+            }
+            .photosPicker(
+                isPresented: $showsAccessoryPhotoPicker,
+                selection: $accessorySelectedPhotoItems,
+                matching: .images
+            )
+            .onChange(of: accessorySelectedPhotoItems) {
+                let items = accessorySelectedPhotoItems
+                accessorySelectedPhotoItems.removeAll()
+                for item in items {
+                    Task { await handlePhotoSelection(item) }
+                }
+            }
+            .fileImporter(
+                isPresented: $showsAccessoryFileImporter,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case let .success(urls):
+                    Task { await handleSelectedFileURLs(urls) }
+                case let .failure(error):
+                    if !isFileImporterCancellation(error) {
+                        viewModel.setUploadAttachmentError(error.localizedDescription)
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showsAccessoryCameraPicker) {
+                CameraPickerView { image in
+                    Task { await handlePastedImages([image]) }
+                }
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showsAccessoryWorkspaceSheet) {
+                ComposerWorkspacePickerSheet(
+                    workspaceRoots: viewModel.workspaceRoots,
+                    selectedWorkspacePath: viewModel.selectedWorkspacePath,
+                    suggestions: viewModel.workspaceSuggestions,
+                    managementServer: viewModel.isViewingCachedData ? nil : server,
+                    onLoadSuggestions: { prefix in
+                        await viewModel.loadWorkspaceSuggestions(prefix: prefix)
+                    },
+                    onSelect: { path in
+                        let didSelect = await viewModel.selectWorkspacePath(path)
+                        if didSelect {
+                            ChatHaptics.configurationSelected(isEnabled: isHapticsEnabled)
+                        }
+                    },
+                    onRegistryChanged: {
+                        await viewModel.refreshWorkspaceRoots()
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
@@ -1105,11 +1171,7 @@ struct ChatView: View {
             completedToolCallGroupsForAnchor: { anchorMessageID in
                 viewModel.completedToolCallGroupsForAnchor(anchorMessageID)
             },
-            archivedActivityRowsForAnchor: { anchorMessageID in
-                viewModel.archivedActivityRowsForAnchor(anchorMessageID)
-            },
             liveReasoningText: viewModel.liveReasoningText,
-            liveActivityRows: viewModel.liveActivityRows,
             reasoningAnchorMessageID: viewModel.reasoningAnchorMessageID,
             liveToolCalls: viewModel.liveToolCalls,
             toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
@@ -1252,16 +1314,25 @@ struct ChatView: View {
             isFocused: composerIsFocused,
             hasDraft: !draftMessage.isEmpty,
             hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,
+            isLoadingComposerConfiguration: viewModel.isLoadingComposerConfiguration,
             isBusyOrUnavailable: isComposerBusyOrUnavailable || isAccessoryVoiceRequestPending,
             requiresExpandedPresentation: composerRequiresExpandedPresentation
         )
     }
 
     private var usesNativeBottomAccessoryComposer: Bool {
-        guard #available(iOS 26, *) else { return false }
+        guard #available(iOS 26.1, *) else { return false }
         return UIDevice.current.userInterfaceIdiom == .phone
             && chatBottomAccessoryModel != nil
             && usesCompactComposer
+    }
+
+    private var usesNativeSecondaryControls: Bool {
+        guard #available(iOS 26.1, *) else { return false }
+        return UIDevice.current.userInterfaceIdiom == .phone
+            && chatBottomAccessoryModel != nil
+            && !usesCompactComposer
+            && composerSecondaryControlsState.hasControls
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
@@ -1285,7 +1356,6 @@ struct ChatView: View {
             || viewModel.isCompressingSession
             || viewModel.isUploadingAttachment
             || viewModel.isUpdatingComposerConfiguration
-            || viewModel.isLoadingComposerConfiguration
             || viewModel.isCancellingStream
             || viewModel.sendErrorMessage != nil
             || viewModel.composerConfigurationErrorMessage != nil
@@ -1294,15 +1364,62 @@ struct ChatView: View {
 
     private var bottomAccessoryState: ChatBottomAccessoryState {
         ChatBottomAccessoryState(
-            isVisible: usesNativeBottomAccessoryComposer,
+            isVisible: usesNativeBottomAccessoryComposer || usesNativeSecondaryControls,
+            secondaryControls: usesNativeSecondaryControls ? composerSecondaryControlsState : nil,
             showsStop: viewModel.activeStreamID != nil && draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             isStopDisabled: viewModel.isCancellingStream,
             isVoiceDisabled: viewModel.isViewingCachedData
                 || viewModel.isStartingChat
                 || viewModel.isCompressingSession
                 || viewModel.isUploadingAttachment
+                || viewModel.isUpdatingComposerConfiguration,
+            isAttachmentDisabled: viewModel.isViewingCachedData
+                || viewModel.isStartingChat
+                || viewModel.isCompressingSession
+                || viewModel.activeStreamID != nil
+                || viewModel.isUploadingAttachment
                 || viewModel.isUpdatingComposerConfiguration
         )
+    }
+
+    private var composerSecondaryControlsState: ComposerSecondaryControlsState {
+        ComposerSecondaryControlsState(
+            workspaceTitle: showsWorkspaceControl ? composerWorkspaceTitle : nil,
+            profileOptions: viewModel.profileOptions,
+            selectedProfileName: viewModel.selectedProfileName,
+            selectedProfileTitle: showsProfileControl && !viewModel.isSingleProfileMode
+                ? viewModel.selectedProfileTitle
+                : nil,
+            gitBranch: showsGitBranchControl && showsGitControls && gitAvailabilityViewModel.hasRepository
+                ? ComposerSecondaryControlsState.GitBranch(
+                    currentName: gitAvailabilityViewModel.currentBranchName,
+                    branches: gitAvailabilityViewModel.branches,
+                    isLoading: gitAvailabilityViewModel.isLoadingBranches,
+                    isSwitching: gitAvailabilityViewModel.isSwitchingBranch
+                )
+                : nil,
+            contextWindowSnapshot: viewModel.contextWindowSnapshot,
+            showsContextUsage: showsContextUsageControl,
+            isDisabled: viewModel.isViewingCachedData
+                || viewModel.isStartingChat
+                || viewModel.isSendingVoiceNote
+                || viewModel.isCompressingSession
+                || viewModel.activeStreamID != nil
+                || viewModel.isUpdatingComposerConfiguration
+        )
+    }
+
+    private var composerWorkspaceTitle: String {
+        guard let path = viewModel.selectedWorkspacePath, !path.isEmpty else {
+            return String(localized: "Workspace")
+        }
+
+        if let name = viewModel.workspaceRoots.first(where: { $0.path == path })?.name,
+           !name.isEmpty {
+            return name
+        }
+
+        return path.lastPathComponentFallback
     }
 
     private func updateBottomAccessory() {
@@ -1313,9 +1430,20 @@ struct ChatView: View {
             showsStop: state.showsStop,
             isStopDisabled: state.isStopDisabled,
             isVoiceDisabled: state.isVoiceDisabled,
+            isAttachmentDisabled: state.isAttachmentDisabled,
+            isCameraAvailable: UIImagePickerController.isSourceTypeAvailable(.camera),
+            secondaryControls: state.secondaryControls,
             onActivate: requestComposerFocusIfPossible,
             onVoice: requestVoiceInputFromAccessory,
-            onStop: { Task { await cancelStream() } }
+            onStop: { Task { await cancelStream() } },
+            onAttachFile: { showsAccessoryFileImporter = true },
+            onAttachPhoto: { showsAccessoryPhotoPicker = true },
+            onTakePhoto: { showsAccessoryCameraPicker = true },
+            onChooseWorkspace: { showsAccessoryWorkspaceSheet = true },
+            onSelectProfile: handleProfileSelection,
+            onSelectGitBranch: { target in Task { await performGitCheckout(target) } },
+            onCreateGitBranch: { target in Task { await performGitCheckout(target) } },
+            onRefreshGitBranches: { Task { await gitAvailabilityViewModel.loadBranches() } }
         )
     }
 
@@ -1765,6 +1893,12 @@ struct ChatView: View {
                 viewModel.setUploadAttachmentError(error.localizedDescription)
             }
         }
+    }
+
+    private func isFileImporterCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain
+            && nsError.code == CocoaError.Code.userCancelled.rawValue
     }
 
     private func handlePastedFileProviders(_ providers: [NSItemProvider]) async {

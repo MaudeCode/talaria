@@ -73,6 +73,7 @@ struct MessageComposerView: View {
     let isCancellingStream: Bool
     let isOfflineReadOnly: Bool
     let isChromeCompact: Bool
+    let hidesSecondaryChrome: Bool
     let errorMessage: String?
     let configurationErrorMessage: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
@@ -318,10 +319,12 @@ struct MessageComposerView: View {
                 .padding(.horizontal)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
 
-                secondaryBar
-                    .padding(.horizontal)
-                    .padding(.bottom, 7)
-                    .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsSecondaryChrome)
+                if !hidesSecondaryChrome {
+                    secondaryBar
+                        .padding(.horizontal)
+                        .padding(.bottom, 7)
+                        .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsSecondaryChrome)
+                }
             }
         }
         .background(
@@ -720,68 +723,18 @@ struct MessageComposerView: View {
     @ViewBuilder
     private var secondaryBar: some View {
         if showsSecondaryChrome {
-            if usesAccessibilityLayout {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        if showsWorkspaceControl {
-                            workspaceSelector
-                        }
-
-                        // Single-profile mode: the server rejects profile switches,
-                        // so the selector could only no-op or error (#24).
-                        if showsProfileControl, !isSingleProfileMode {
-                            profileSelector
-                        }
-
-                        gitBranchPicker
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if showsContextUsageControl {
-                        ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-            } else {
-                HStack(spacing: 8) {
-                    if showsWorkspaceControl {
-                        workspaceSelector
-                    }
-
-                    if showsProfileControl, !isSingleProfileMode {
-                        profileSelector
-                    }
-
-                    gitBranchPicker
-
-                    Spacer(minLength: 0)
-
-                    if showsContextUsageControl {
-                        ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var gitBranchPicker: some View {
-        // One "Git Actions" toggle covers every git control in chat (#189), so the
-        // branch chip goes with the toolbar menu rather than lingering alone.
-        if showsGitBranchControl, showsGitControls, gitViewModel.hasRepository {
-            GitBranchPickerButton(
-                currentBranch: gitViewModel.currentBranchName,
-                branches: gitViewModel.branches,
-                isLoading: gitViewModel.isLoadingBranches,
-                isSwitching: gitViewModel.isSwitchingBranch,
-                isDisabled: isOfflineReadOnly || isWaitingForStream,
-                onSelect: onSelectGitBranch,
-                onCreate: onCreateGitBranch,
-                onRefresh: onRefreshGitBranches
+            ComposerSecondaryControlsView(
+                state: secondaryControlsState,
+                onChooseWorkspace: {
+                    prepareForComposerPresentation()
+                    showsWorkspaceSheet = true
+                },
+                onSelectProfile: onSelectProfile,
+                onSelectGitBranch: onSelectGitBranch,
+                onCreateGitBranch: onCreateGitBranch,
+                onRefreshGitBranches: onRefreshGitBranches
             )
+            .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
     }
 
@@ -790,14 +743,7 @@ struct MessageComposerView: View {
     }
 
     private var hasSecondaryControls: Bool {
-        showsWorkspaceControl
-            || (showsProfileControl && !isSingleProfileMode)
-            || (showsGitBranchControl && showsGitControls && gitViewModel.hasRepository)
-            || showsContextUsageControl
-    }
-
-    private var usesAccessibilityLayout: Bool {
-        dynamicTypeSize.isAccessibilitySize
+        secondaryControlsState.hasControls
     }
 
     private var metaControlFont: Font {
@@ -808,6 +754,10 @@ struct MessageComposerView: View {
         AppFont.caption2()
     }
 
+    private var usesAccessibilityLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize
+    }
+
     private var modelControlMaxWidth: CGFloat {
         usesAccessibilityLayout ? 156 : 132
     }
@@ -816,47 +766,23 @@ struct MessageComposerView: View {
         usesAccessibilityLayout ? 126 : 104
     }
 
-    private var secondaryBarLineLimit: Int {
-        usesAccessibilityLayout ? 2 : 1
-    }
-
-    private var secondaryBarVerticalPadding: CGFloat {
-        usesAccessibilityLayout ? 10 : 8
-    }
-
-    private var secondaryBarHorizontalPadding: CGFloat {
-        usesAccessibilityLayout ? 16 : 14
-    }
-
-    private var workspaceSelector: some View {
-        ComposerWorkspaceSelectorButton(
-            title: workspaceTitle,
-            isDisabled: isConfigurationControlDisabled,
-            lineLimit: secondaryBarLineLimit,
-            verticalPadding: secondaryBarVerticalPadding,
-            horizontalPadding: secondaryBarHorizontalPadding,
-            color: metaControlColor,
-            controlFont: metaControlFont,
-            chevronFont: metaChevronFont
-        ) {
-            prepareForComposerPresentation()
-            showsWorkspaceSheet = true
-        }
-    }
-
-    private var profileSelector: some View {
-        ComposerProfileSelectorMenu(
+    private var secondaryControlsState: ComposerSecondaryControlsState {
+        ComposerSecondaryControlsState(
+            workspaceTitle: showsWorkspaceControl ? workspaceTitle : nil,
             profileOptions: profileOptions,
             selectedProfileName: selectedProfileName,
-            selectedProfileTitle: selectedProfileTitle,
-            isDisabled: isConfigurationControlDisabled,
-            lineLimit: secondaryBarLineLimit,
-            verticalPadding: secondaryBarVerticalPadding,
-            horizontalPadding: secondaryBarHorizontalPadding,
-            color: metaControlColor,
-            controlFont: metaControlFont,
-            chevronFont: metaChevronFont,
-            onSelectProfile: onSelectProfile
+            selectedProfileTitle: showsProfileControl && !isSingleProfileMode ? selectedProfileTitle : nil,
+            gitBranch: showsGitBranchControl && showsGitControls && gitViewModel.hasRepository
+                ? ComposerSecondaryControlsState.GitBranch(
+                    currentName: gitViewModel.currentBranchName,
+                    branches: gitViewModel.branches,
+                    isLoading: gitViewModel.isLoadingBranches,
+                    isSwitching: gitViewModel.isSwitchingBranch
+                )
+                : nil,
+            contextWindowSnapshot: contextWindowSnapshot,
+            showsContextUsage: showsContextUsageControl,
+            isDisabled: isConfigurationControlDisabled
         )
     }
 
