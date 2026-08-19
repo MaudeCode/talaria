@@ -15,7 +15,9 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     let toolCalls: [JSONValue]?
     let contentParts: [JSONValue]?
     let reasoning: String?
+    let activityScene: AssistantActivityScene?
     let attachments: [MessageAttachment]?
+    let turnDuration: Double?
     let turnTps: Double?
 
     init(
@@ -29,7 +31,9 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         toolCalls: [JSONValue]? = nil,
         contentParts: [JSONValue]? = nil,
         reasoning: String? = nil,
+        activityScene: AssistantActivityScene? = nil,
         attachments: [MessageAttachment]? = nil,
+        turnDuration: Double? = nil,
         turnTps: Double? = nil
     ) {
         self.role = role
@@ -42,7 +46,9 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         self.toolCalls = toolCalls
         self.contentParts = contentParts
         self.reasoning = reasoning
+        self.activityScene = activityScene
         self.attachments = attachments
+        self.turnDuration = turnDuration
         self.turnTps = turnTps
     }
 
@@ -56,7 +62,10 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         case toolUseId
         case toolCalls
         case reasoning
+        case reasoningContent
+        case activityScene = "_anchorActivityScene"
         case attachments
+        case turnDuration = "_turnDuration"
         case turnTps = "_turnTps"
         case underscoredTimestamp = "_ts"
     }
@@ -74,9 +83,13 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         toolUseId = container.decodeLossyStringIfPresent(forKey: .toolUseId)
         toolCalls = try? container.decodeIfPresent([JSONValue].self, forKey: .toolCalls)
         contentParts = decodedContent.parts
-        reasoning = container.decodeLossyStringIfPresent(forKey: .reasoning)
+        reasoning = container.decodeLossyStringIfPresent(forKey: .reasoningContent)
+            ?? container.decodeLossyStringIfPresent(forKey: .reasoning)
+        activityScene = try? container.decodeIfPresent(AssistantActivityScene.self, forKey: .activityScene)
         let decodedAttachments = Self.decodeAttachmentsTolerantly(from: container)
         attachments = Self.attachments(decodedAttachments, enrichedByMarkerIn: content)
+        turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
+            ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
     }
 
@@ -163,12 +176,16 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
             }
 
             guard case .object(let object) = part,
-                  object["type"]?.stringValue == "text"
+                  let type = object["type"]?.stringValue,
+                  ["text", "input_text", "output_text"].contains(type)
             else {
                 return nil
             }
 
             return object["text"]?.stringValue
+                ?? object["content"]?.stringValue
+                ?? object["input_text"]?.stringValue
+                ?? object["output_text"]?.stringValue
         }
         .joined()
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,6 +214,37 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
             guard let data = try? JSONEncoder().encode(value) else { return nil }
             return try? itemDecoder.decode(MessageAttachment.self, from: data)
         }
+    }
+}
+
+struct AssistantActivityScene: Codable, Equatable {
+    let version: String?
+    let finalAnswer: String?
+    let activityRows: [AssistantActivitySceneRow]?
+    let turnDuration: Double?
+}
+
+struct AssistantActivitySceneRow: Codable, Equatable {
+    let rowID: String?
+    let orderIndex: Int?
+    let role: String?
+    let text: String?
+    let status: String?
+    let toolCallID: String?
+    let thinking: [String: JSONValue]?
+    let tool: [String: JSONValue]?
+    let payload: [String: JSONValue]?
+
+    enum CodingKeys: String, CodingKey {
+        case rowID = "rowId"
+        case orderIndex
+        case role
+        case text
+        case status
+        case toolCallID = "toolCallId"
+        case thinking
+        case tool
+        case payload
     }
 }
 

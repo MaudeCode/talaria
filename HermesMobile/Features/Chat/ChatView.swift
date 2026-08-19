@@ -253,6 +253,13 @@ private struct ListenPlaybackBar: View {
     }
 }
 
+private struct ChatBottomAccessoryState: Equatable {
+    let isVisible: Bool
+    let showsStop: Bool
+    let isStopDisabled: Bool
+    let isVoiceDisabled: Bool
+}
+
 struct ChatView: View {
     private let bottomAnchorID = "chat-bottom-anchor"
     private let transcriptMessageSpacing: CGFloat = 10
@@ -265,6 +272,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.chatBottomAccessoryModel) private var chatBottomAccessoryModel
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
@@ -314,6 +322,10 @@ struct ChatView: View {
     @State private var gitAlert: GitChatAlert?
     @State private var composerHeight: CGFloat = 52
     @State private var composerIsFocused = false
+    @State private var composerRequiresExpandedPresentation = false
+    @State private var isAccessoryVoiceRequestPending = false
+    @State private var composerVoiceInputRequestID = 0
+    @State private var bottomAccessoryOwner = UUID()
     @State private var didCompleteInitialAppearance = false
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
@@ -396,6 +408,7 @@ struct ChatView: View {
             attachmentUploadGeneration: viewModel.attachmentUploadGeneration,
             isSendingVoiceNote: viewModel.isSendingVoiceNote,
             autoStartsVoiceInput: autoStartsVoiceInput,
+            voiceInputRequestID: composerVoiceInputRequestID,
             apiClient: viewModel.client,
             uploadAttachmentErrorMessage: viewModel.uploadAttachmentErrorMessage,
             onSend: {
@@ -487,6 +500,12 @@ struct ChatView: View {
             },
             onRefreshGitBranches: {
                 Task { await gitAvailabilityViewModel.loadBranches() }
+            },
+            onVoiceInputRequestHandled: {
+                isAccessoryVoiceRequestPending = false
+            },
+            onExpandedPresentationRequirementChange: { isRequired in
+                composerRequiresExpandedPresentation = isRequired
             }
         )
         // The composer flips wholesale with the transcript under the RTL
@@ -537,11 +556,15 @@ struct ChatView: View {
             }
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
 
-            BottomComposerMaterialFade(composerHeight: composerHeight)
+            if !usesNativeBottomAccessoryComposer {
+                BottomComposerMaterialFade(composerHeight: composerHeight)
+            }
 
             composerAccessoryStack
 
-            messageComposer
+            if !usesNativeBottomAccessoryComposer {
+                messageComposer
+            }
 
             if let approvalPrompt = viewModel.approvalPrompt {
                 ApprovalRequestOverlay(
@@ -577,6 +600,9 @@ struct ChatView: View {
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
+        .onChange(of: bottomAccessoryState) {
+            updateBottomAccessory()
+        }
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
@@ -602,6 +628,7 @@ struct ChatView: View {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
             .onDisappear {
+                chatBottomAccessoryModel?.clear(owner: bottomAccessoryOwner)
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
                 viewModel.stopListening()
@@ -609,6 +636,8 @@ struct ChatView: View {
                 viewModel.cleanupPollingTasks()
             }
             .onAppear {
+                chatBottomAccessoryModel?.claim(bottomAccessoryOwner)
+                updateBottomAccessory()
                 Task {
                     await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
 
@@ -1054,7 +1083,7 @@ struct ChatView: View {
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, composerHeight + 8)
+            .padding(.bottom, usesNativeBottomAccessoryComposer ? 8 : composerHeight + 8)
             .allowsHitTesting(false)
             .zIndex(8)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
@@ -1076,7 +1105,11 @@ struct ChatView: View {
             completedToolCallGroupsForAnchor: { anchorMessageID in
                 viewModel.completedToolCallGroupsForAnchor(anchorMessageID)
             },
+            archivedActivityRowsForAnchor: { anchorMessageID in
+                viewModel.archivedActivityRowsForAnchor(anchorMessageID)
+            },
             liveReasoningText: viewModel.liveReasoningText,
+            liveActivityRows: viewModel.liveActivityRows,
             reasoningAnchorMessageID: viewModel.reasoningAnchorMessageID,
             liveToolCalls: viewModel.liveToolCalls,
             toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
@@ -1209,15 +1242,86 @@ struct ChatView: View {
     }
 
     private var isComposerChromeCompact: Bool {
-        isReadingOlderTranscript && !viewModel.messages.isEmpty
+        usesCompactComposer
+    }
+
+    private var usesCompactComposer: Bool {
+        ChatScrollPolicy.shouldUseCompactComposer(
+            isReadingOlderTranscript: isReadingOlderTranscript,
+            hasMessages: !viewModel.messages.isEmpty,
+            isFocused: composerIsFocused,
+            hasDraft: !draftMessage.isEmpty,
+            hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,
+            isBusyOrUnavailable: isComposerBusyOrUnavailable || isAccessoryVoiceRequestPending,
+            requiresExpandedPresentation: composerRequiresExpandedPresentation
+        )
+    }
+
+    private var usesNativeBottomAccessoryComposer: Bool {
+        guard #available(iOS 26, *) else { return false }
+        return UIDevice.current.userInterfaceIdiom == .phone
+            && chatBottomAccessoryModel != nil
+            && usesCompactComposer
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
-        max(96, composerHeight + 44 + composerAccessorySpacerHeight)
+        if usesNativeBottomAccessoryComposer {
+            return max(24, composerAccessorySpacerHeight + 12)
+        }
+        return max(96, composerHeight + 44 + composerAccessorySpacerHeight)
     }
 
     private var scrollToBottomButtonBottomPadding: CGFloat {
-        composerHeight + 12 + composerAccessorySpacerHeight
+        if usesNativeBottomAccessoryComposer {
+            return 12 + composerAccessorySpacerHeight
+        }
+        return composerHeight + 12 + composerAccessorySpacerHeight
+    }
+
+    private var isComposerBusyOrUnavailable: Bool {
+        viewModel.isViewingCachedData
+            || viewModel.isStartingChat
+            || viewModel.isSendingVoiceNote
+            || viewModel.isCompressingSession
+            || viewModel.isUploadingAttachment
+            || viewModel.isUpdatingComposerConfiguration
+            || viewModel.isLoadingComposerConfiguration
+            || viewModel.isCancellingStream
+            || viewModel.sendErrorMessage != nil
+            || viewModel.composerConfigurationErrorMessage != nil
+            || viewModel.uploadAttachmentErrorMessage != nil
+    }
+
+    private var bottomAccessoryState: ChatBottomAccessoryState {
+        ChatBottomAccessoryState(
+            isVisible: usesNativeBottomAccessoryComposer,
+            showsStop: viewModel.activeStreamID != nil && draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            isStopDisabled: viewModel.isCancellingStream,
+            isVoiceDisabled: viewModel.isViewingCachedData
+                || viewModel.isStartingChat
+                || viewModel.isCompressingSession
+                || viewModel.isUploadingAttachment
+                || viewModel.isUpdatingComposerConfiguration
+        )
+    }
+
+    private func updateBottomAccessory() {
+        let state = bottomAccessoryState
+        chatBottomAccessoryModel?.update(
+            owner: bottomAccessoryOwner,
+            isVisible: state.isVisible,
+            showsStop: state.showsStop,
+            isStopDisabled: state.isStopDisabled,
+            isVoiceDisabled: state.isVoiceDisabled,
+            onActivate: requestComposerFocusIfPossible,
+            onVoice: requestVoiceInputFromAccessory,
+            onStop: { Task { await cancelStream() } }
+        )
+    }
+
+    private func requestVoiceInputFromAccessory() {
+        isAccessoryVoiceRequestPending = true
+        composerVoiceInputRequestID += 1
     }
 
     private var pinnedNoticeSpacerHeight: CGFloat {

@@ -348,6 +348,9 @@ private extension ChatMessage {
         } else {
             contentParts = nil
         }
+        let activityScene = cachedMessage.activitySceneData.flatMap {
+            try? JSONDecoder().decode(AssistantActivityScene.self, from: $0)
+        }
         self.init(
             role: cachedMessage.role,
             content: cachedMessage.content,
@@ -359,7 +362,9 @@ private extension ChatMessage {
             toolCalls: toolCalls,
             contentParts: contentParts,
             reasoning: cachedMessage.reasoning,
+            activityScene: activityScene,
             attachments: attachments,
+            turnDuration: cachedMessage.turnDuration,
             turnTps: cachedMessage.turnTps
         )
     }

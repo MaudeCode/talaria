@@ -1,4 +1,67 @@
 import SwiftUI
+import Observation
+
+@MainActor
+@Observable
+final class ChatBottomAccessoryModel {
+    private(set) var isVisible = false
+    private(set) var showsStop = false
+    private(set) var isStopDisabled = false
+    private(set) var isVoiceDisabled = false
+
+    @ObservationIgnored private var owner: UUID?
+    @ObservationIgnored private var activateAction: () -> Void = {}
+    @ObservationIgnored private var voiceAction: () -> Void = {}
+    @ObservationIgnored private var stopAction: () -> Void = {}
+
+    func claim(_ owner: UUID) {
+        self.owner = owner
+    }
+
+    func update(
+        owner: UUID,
+        isVisible: Bool,
+        showsStop: Bool,
+        isStopDisabled: Bool,
+        isVoiceDisabled: Bool,
+        onActivate: @escaping () -> Void,
+        onVoice: @escaping () -> Void,
+        onStop: @escaping () -> Void
+    ) {
+        guard self.owner == owner else { return }
+        self.isVisible = isVisible
+        self.showsStop = showsStop
+        self.isStopDisabled = isStopDisabled
+        self.isVoiceDisabled = isVoiceDisabled
+        activateAction = onActivate
+        voiceAction = onVoice
+        stopAction = onStop
+    }
+
+    func clear(owner: UUID) {
+        guard self.owner == owner else { return }
+        self.owner = nil
+        isVisible = false
+        activateAction = {}
+        voiceAction = {}
+        stopAction = {}
+    }
+
+    func activate() { activateAction() }
+    func startVoiceInput() { voiceAction() }
+    func stop() { stopAction() }
+}
+
+private struct ChatBottomAccessoryModelKey: EnvironmentKey {
+    static let defaultValue: ChatBottomAccessoryModel? = nil
+}
+
+extension EnvironmentValues {
+    var chatBottomAccessoryModel: ChatBottomAccessoryModel? {
+        get { self[ChatBottomAccessoryModelKey.self] }
+        set { self[ChatBottomAccessoryModelKey.self] = newValue }
+    }
+}
 
 struct ContentView: View {
     @Bindable var authManager: AuthManager
@@ -10,6 +73,7 @@ struct ContentView: View {
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
     @State private var selectedTab = RootTab.chats
+    @State private var chatBottomAccessoryModel = ChatBottomAccessoryModel()
 
     var body: some View {
         content
@@ -68,6 +132,7 @@ struct ContentView: View {
                         pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
                         requestedNewChat: $pendingNewChatRequest
                     )
+                    .environment(\.chatBottomAccessoryModel, chatBottomAccessoryModel)
                 }
 
                 Tab("Tasks", systemImage: "calendar.badge.clock", value: RootTab.tasks) {
@@ -91,6 +156,7 @@ struct ContentView: View {
                 }
             }
             .minimizingTabBarOnScroll()
+            .chatBottomAccessory(selectedTab: selectedTab, model: chatBottomAccessoryModel)
             // Switching the active server keeps us in `.loggedIn`, so without a
             // per-server identity SwiftUI would reuse server-bound tab content.
             // Keying on the server tears the tab tree down and rebuilds it against
@@ -172,6 +238,19 @@ private extension View {
             self
         }
     }
+
+    @ViewBuilder
+    func chatBottomAccessory(selectedTab: RootTab, model: ChatBottomAccessoryModel) -> some View {
+        if #available(iOS 26, *) {
+            tabViewBottomAccessory {
+                if selectedTab == .chats, model.isVisible {
+                    ChatBottomAccessoryView(model: model)
+                }
+            }
+        } else {
+            self
+        }
+    }
 }
 
 private enum RootTab: Hashable {
@@ -179,6 +258,41 @@ private enum RootTab: Hashable {
     case tasks
     case kanban
     case more
+}
+
+@available(iOS 26, *)
+private struct ChatBottomAccessoryView: View {
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    let model: ChatBottomAccessoryModel
+
+    var body: some View {
+        HStack(spacing: placement == .inline ? 6 : 10) {
+            Button(action: model.activate) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus")
+                    Text("Follow up")
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel("Follow up")
+
+            Button(action: model.showsStop ? model.stop : model.startVoiceInput) {
+                Image(systemName: model.showsStop ? "stop.fill" : "mic")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.showsStop ? model.isStopDisabled : model.isVoiceDisabled)
+            .accessibilityLabel(model.showsStop ? "Stop response" : "Start dictation")
+        }
+        .font(AppFont.body())
+        .padding(.horizontal, placement == .inline ? 4 : 8)
+    }
 }
 
 private struct MoreView: View {

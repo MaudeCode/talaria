@@ -109,6 +109,7 @@ struct MessageComposerView: View {
     /// When true, dictation auto-starts once this composer appears with the app active —
     /// the "New Chat with Voice" App Intent (#338). Defaults to false for normal composers.
     let autoStartsVoiceInput: Bool
+    let voiceInputRequestID: Int
     let apiClient: APIClient?
     let uploadAttachmentErrorMessage: String?
     let onSend: () -> Void
@@ -136,6 +137,8 @@ struct MessageComposerView: View {
     let onSelectGitBranch: (GitCheckoutTarget) -> Void
     let onCreateGitBranch: (GitCheckoutTarget) -> Void
     let onRefreshGitBranches: () -> Void
+    let onVoiceInputRequestHandled: () -> Void
+    let onExpandedPresentationRequirementChange: (Bool) -> Void
 
     @State private var textFieldHeight: CGFloat = 0
     @State private var textInputHeight: CGFloat = 22
@@ -158,6 +161,10 @@ struct MessageComposerView: View {
     @State private var didAutoStartVoiceInput = false
     @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
+    @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsWorkspaceControl = true
+    @AppStorage(ComposerVisibilitySettings.profileKey) private var showsProfileControl = true
+    @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsGitBranchControl = true
+    @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsContextUsageControl = true
 
     private enum DeferredUploadFocusPhase: Equatable {
         case none
@@ -299,70 +306,7 @@ struct MessageComposerView: View {
                 }
                 .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsSlashAutocomplete)
 
-                VStack(spacing: 0) {
-                    ComposerAttachmentStripView(
-                        attachments: pendingAttachments,
-                        onRemove: onRemoveAttachment,
-                        onPreview: onPreviewAttachment
-                    )
-
-                    ComposerTextInputView(
-                        text: $draftMessage,
-                        isFocused: $isFocused,
-                        inputHeight: $textInputHeight,
-                        measuredHeight: $textFieldHeight,
-                        isDisabled: isOfflineReadOnly,
-                        isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
-                        verticalPadding: textFieldVerticalPadding,
-                        onKeyboardSend: actionButtonTapped,
-                        onPasteFileProviders: onPasteFileProviders,
-                        onPasteFileURLs: onPasteFileURLs,
-                        onPasteImageProviders: onPasteImageProviders,
-                        onPasteImages: onPasteImages
-                    )
-
-                    HStack(alignment: .center, spacing: 12) {
-                        composerPlusMenu
-
-                        modelMenu
-
-                        if showsReasoningControl {
-                            reasoningMenu
-                        }
-
-                        Spacer(minLength: 0)
-
-                        ComposerVoiceControlButton(
-                            isListening: voiceInput.isListening,
-                            isDisabled: isVoiceInputDisabled,
-                            color: metaControlColor,
-                            isRecordingVoiceNote: voiceNoteRecorder.isRecording,
-                            onTap: toggleVoiceInput,
-                            onRecordingStart: startVoiceNoteRecording,
-                            onRecordingDragChanged: { height in
-                                voiceNoteCancelArmed = ComposerVoiceNoteGesture.isCancelArmed(dragTranslationHeight: height)
-                            },
-                            onRecordingEnd: { height in
-                                finishVoiceNote(translationHeight: height)
-                            }
-                        )
-
-                        Button(action: actionButtonTapped) {
-                            actionButtonLabel
-                                .frame(width: actionButtonSize, height: actionButtonSize)
-                                .background(actionButtonBackground)
-                                .foregroundStyle(actionButtonForeground)
-                                .clipShape(Circle())
-                                .chatMinimumHitTarget(in: Circle())
-                        }
-                        .buttonStyle(.chatTactile(.icon))
-                        .disabled(isActionButtonDisabled)
-                        .accessibilityLabel(showsStopButton ? "Stop response" : "Send")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 2)
-                    .padding(.bottom, 8)
-                }
+                composerSurface
                 .adaptiveGlass(
                     .regular,
                     isInteractive: true,
@@ -372,6 +316,7 @@ struct MessageComposerView: View {
                 .clipShape(RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous))
                 .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.12), radius: 14, y: 6)
                 .padding(.horizontal)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
 
                 secondaryBar
                     .padding(.horizontal)
@@ -397,6 +342,17 @@ struct MessageComposerView: View {
             // Cold path: the composer appears already active (the usual case for the
             // "New Chat with Voice" intent once its session is created) — start here.
             autoStartVoiceInputIfNeeded()
+        }
+        .task(id: voiceInputRequestID) {
+            guard voiceInputRequestID > 0 else { return }
+            await performVoiceInputToggle()
+            onVoiceInputRequestHandled()
+        }
+        .onAppear {
+            onExpandedPresentationRequirementChange(requiresExpandedPresentation)
+        }
+        .onChange(of: requiresExpandedPresentation) { _, isRequired in
+            onExpandedPresentationRequirementChange(isRequired)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase != .active {
@@ -543,8 +499,107 @@ struct MessageComposerView: View {
         .onDisappear {
             voiceInput.stopBeforeSubmittingDraft()
             cancelVoiceNote()
+            onExpandedPresentationRequirementChange(false)
         }
         .padding(.bottom, keyboardIsVisible ? 10 : 0)
+    }
+
+    @ViewBuilder
+    private var composerSurface: some View {
+        if usesSingleLineShell {
+            HStack(spacing: 10) {
+                composerPlusMenu
+
+                Button {
+                    requestTextViewFocusIfPossible()
+                } label: {
+                    Text("Ask anything... /commands")
+                        .font(AppFont.body())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canFocusTextView)
+                .accessibilityLabel("Message")
+
+                voiceButton
+                actionButton
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        } else {
+            VStack(spacing: 0) {
+                ComposerAttachmentStripView(
+                    attachments: pendingAttachments,
+                    onRemove: onRemoveAttachment,
+                    onPreview: onPreviewAttachment
+                )
+
+                ComposerTextInputView(
+                    text: $draftMessage,
+                    isFocused: $isFocused,
+                    inputHeight: $textInputHeight,
+                    measuredHeight: $textFieldHeight,
+                    isDisabled: isOfflineReadOnly,
+                    isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
+                    verticalPadding: textFieldVerticalPadding,
+                    onKeyboardSend: actionButtonTapped,
+                    onPasteFileProviders: onPasteFileProviders,
+                    onPasteFileURLs: onPasteFileURLs,
+                    onPasteImageProviders: onPasteImageProviders,
+                    onPasteImages: onPasteImages
+                )
+
+                HStack(alignment: .center, spacing: 12) {
+                    composerPlusMenu
+                    modelMenu
+
+                    if showsReasoningControl {
+                        reasoningMenu
+                    }
+
+                    Spacer(minLength: 0)
+                    voiceButton
+                    actionButton
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    private var voiceButton: some View {
+        ComposerVoiceControlButton(
+            isListening: voiceInput.isListening,
+            isDisabled: isVoiceInputDisabled,
+            color: metaControlColor,
+            isRecordingVoiceNote: voiceNoteRecorder.isRecording,
+            onTap: toggleVoiceInput,
+            onRecordingStart: startVoiceNoteRecording,
+            onRecordingDragChanged: { height in
+                voiceNoteCancelArmed = ComposerVoiceNoteGesture.isCancelArmed(dragTranslationHeight: height)
+            },
+            onRecordingEnd: { height in
+                finishVoiceNote(translationHeight: height)
+            }
+        )
+    }
+
+    private var actionButton: some View {
+        Button(action: actionButtonTapped) {
+            actionButtonLabel
+                .frame(width: actionButtonSize, height: actionButtonSize)
+                .background(actionButtonBackground)
+                .foregroundStyle(actionButtonForeground)
+                .clipShape(Circle())
+                .chatMinimumHitTarget(in: Circle())
+        }
+        .buttonStyle(.chatTactile(.icon))
+        .disabled(isActionButtonDisabled)
+        .accessibilityLabel(showsStopButton ? "Stop response" : "Send")
     }
 
     @ViewBuilder
@@ -668,11 +723,13 @@ struct MessageComposerView: View {
             if usesAccessibilityLayout {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        workspaceSelector
+                        if showsWorkspaceControl {
+                            workspaceSelector
+                        }
 
                         // Single-profile mode: the server rejects profile switches,
                         // so the selector could only no-op or error (#24).
-                        if !isSingleProfileMode {
+                        if showsProfileControl, !isSingleProfileMode {
                             profileSelector
                         }
 
@@ -680,15 +737,19 @@ struct MessageComposerView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
+                    if showsContextUsageControl {
+                        ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             } else {
                 HStack(spacing: 8) {
-                    workspaceSelector
+                    if showsWorkspaceControl {
+                        workspaceSelector
+                    }
 
-                    if !isSingleProfileMode {
+                    if showsProfileControl, !isSingleProfileMode {
                         profileSelector
                     }
 
@@ -696,7 +757,9 @@ struct MessageComposerView: View {
 
                     Spacer(minLength: 0)
 
-                    ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
+                    if showsContextUsageControl {
+                        ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
@@ -708,7 +771,7 @@ struct MessageComposerView: View {
     private var gitBranchPicker: some View {
         // One "Git Actions" toggle covers every git control in chat (#189), so the
         // branch chip goes with the toolbar menu rather than lingering alone.
-        if showsGitControls, gitViewModel.hasRepository {
+        if showsGitBranchControl, showsGitControls, gitViewModel.hasRepository {
             GitBranchPickerButton(
                 currentBranch: gitViewModel.currentBranchName,
                 branches: gitViewModel.branches,
@@ -723,7 +786,14 @@ struct MessageComposerView: View {
     }
 
     private var showsSecondaryChrome: Bool {
-        !keyboardIsVisible && !isChromeCompact
+        !keyboardIsVisible && !isChromeCompact && hasSecondaryControls
+    }
+
+    private var hasSecondaryControls: Bool {
+        showsWorkspaceControl
+            || (showsProfileControl && !isSingleProfileMode)
+            || (showsGitBranchControl && showsGitControls && gitViewModel.hasRepository)
+            || showsContextUsageControl
     }
 
     private var usesAccessibilityLayout: Bool {
@@ -995,7 +1065,30 @@ struct MessageComposerView: View {
     }
 
     private var composerCornerRadius: CGFloat {
-        isComposerExpanded ? 26 : 22
+        usesSingleLineShell ? 28 : (isComposerExpanded ? 26 : 22)
+    }
+
+    private var usesSingleLineShell: Bool {
+        isChromeCompact || (
+            !isFocused
+                && draftMessage.isEmpty
+                && pendingAttachments.isEmpty
+                && !requiresExpandedPresentation
+        )
+    }
+
+    private var requiresExpandedPresentation: Bool {
+        composerStatus != nil
+            || voiceStatus != nil
+            || voiceNoteStatus != nil
+            || voiceNoteRecorder.isRecording
+            || showsSlashAutocomplete
+            || showsAllModelsSheet
+            || showsWorkspaceSheet
+            || showPhotoPicker
+            || showCameraPicker
+            || showFileImporter
+            || noticeMessage != nil
     }
 
     private var textFieldVerticalPadding: CGFloat {
@@ -1060,13 +1153,16 @@ struct MessageComposerView: View {
 
     @MainActor
     private func toggleVoiceInput() {
+        Task { await performVoiceInputToggle() }
+    }
+
+    @MainActor
+    private func performVoiceInputToggle() async {
         voiceInput.apiClient = apiClient
         voiceInput.providerPreference = ComposerSTTProviderPreference.storedValue(sttProviderPreferenceRawValue)
         voiceInput.locale = .current
-        Task {
-            await voiceInput.toggle(currentDraft: draftMessage) { newDraft in
-                draftMessage = newDraft
-            }
+        await voiceInput.toggle(currentDraft: draftMessage) { newDraft in
+            draftMessage = newDraft
         }
     }
 

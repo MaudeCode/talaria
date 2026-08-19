@@ -156,6 +156,140 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(message.reasoning, "I inspected the file and looked for the main type.")
     }
 
+    func testSessionPrefersPersistedReasoningContentOverSummary() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+
+            return apiTestJSONResponse("""
+            {
+              "session": {
+                "session_id": "abc123",
+                "messages": [
+                  {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning": "Planning current directory and date usage",
+                    "reasoning_content": "The writing guidance is unchanged. I’ll now check the live workspace and repository independently.",
+                    "_turnDuration": 532,
+                    "tool_calls": [{"id":"call-1","function":{"name":"terminal","arguments":"{}"}}]
+                  }
+                ]
+              }
+            }
+            """, for: request)
+        }
+
+        let response = try await client.session(id: "abc123")
+        let message = try XCTUnwrap(response.session?.messages?.first)
+
+        XCTAssertEqual(
+            message.reasoning,
+            "The writing guidance is unchanged. I’ll now check the live workspace and repository independently."
+        )
+        XCTAssertEqual(message.turnDuration, 532)
+    }
+
+    func testSessionDecodesHermesActivitySceneInOrder() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse("""
+            {
+              "session": {
+                "session_id": "abc123",
+                "messages": [{
+                  "role": "assistant",
+                  "content": "After tool.",
+                  "message_id": "assistant-1",
+                  "_anchor_activity_scene": {
+                    "version": "activity_scene_v1",
+                    "activity_rows": [
+                      {"row_id":"tool-1","order_index":2,"role":"tool","status":"completed","tool_call_id":"call-1","tool":{"id":"call-1","name":"read_file","args":{"path":"notes.md"},"snippet":"contents","done":true}},
+                      {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
+                      {"row_id":"prose-2","order_index":3,"role":"prose","text":"After tool."},
+                      {"row_id":"thinking-1","order_index":1,"role":"thinking","thinking":{"text":"I should inspect now."}}
+                    ]
+                  }
+                }]
+              }
+            }
+            """, for: request)
+        }
+
+        let response = try await client.session(id: "abc123")
+        let message = try XCTUnwrap(response.session?.messages?.first)
+        let timeline = AssistantActivityTimeline.persisted(
+            message: message,
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+
+        XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "reasoning", "tools", "prose"])
+        XCTAssertEqual(timeline.rows.compactMap(\.text), ["Before tool.", "I should inspect now.", "After tool."])
+        XCTAssertEqual(timeline.toolCalls.map(\.id), ["call-1"])
+        XCTAssertEqual(timeline.toolCalls.first?.preview, "contents")
+
+        let groupedTimeline = AssistantActivityTimeline.persisted(
+            assistantSegments: [
+                TranscriptAssistantSegment(
+                    anchorID: "assistant-earlier",
+                    message: ChatMessage(
+                        role: "assistant",
+                        content: "Duplicated outside the disclosure before this fix.",
+                        timestamp: nil,
+                        messageId: "assistant-earlier",
+                        reasoning: "Earlier reasoning."
+                    )
+                ),
+                TranscriptAssistantSegment(anchorID: "assistant-1", message: message)
+            ],
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+        XCTAssertEqual(groupedTimeline.rows.map(\.kind), timeline.rows.map(\.kind))
+        XCTAssertEqual(groupedTimeline.rows.compactMap(\.text), timeline.rows.compactMap(\.text))
+        XCTAssertEqual(groupedTimeline.toolCalls.map(\.id), timeline.toolCalls.map(\.id))
+
+        let completedTurn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+        XCTAssertEqual(completedTurn.workRows.map(\.kind), ["prose", "reasoning", "tools"])
+        XCTAssertEqual(completedTurn.finalAnswer, "After tool.")
+        XCTAssertNil(CompletedAssistantTurn(rows: Array(timeline.rows.dropLast())))
+        XCTAssertEqual(AssistantActivityDisclosureTitle.text(duration: 532), "Worked for 8m 52s")
+        XCTAssertEqual(AssistantActivityDisclosureTitle.text(duration: nil), "Worked")
+    }
+
+    func testContentPartsPreserveTextToolTextOrderAndOutputText() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse("""
+            {
+              "session": {
+                "session_id": "abc123",
+                "messages": [{
+                  "role": "assistant",
+                  "message_id": "assistant-1",
+                  "content": [
+                    {"type":"text","text":"Before tool."},
+                    {"type":"tool_use","id":"call-1","name":"weather","input":{"city":"Berlin"}},
+                    {"type":"output_text","output_text":"It is 18C and sunny."}
+                  ]
+                }]
+              }
+            }
+            """, for: request)
+        }
+
+        let response = try await client.session(id: "abc123")
+        let message = try XCTUnwrap(response.session?.messages?.first)
+        let timeline = AssistantActivityTimeline.persisted(
+            message: message,
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+
+        XCTAssertEqual(message.content, "Before tool.It is 18C and sunny.")
+        XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "tools", "prose"])
+        XCTAssertEqual(timeline.rows.compactMap(\.text), ["Before tool.", "It is 18C and sunny."])
+        XCTAssertEqual(timeline.toolCalls.first?.id, "call-1")
+    }
+
     func testSessionDecodesMessageAttachments() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session")
@@ -681,7 +815,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(groups[1].toolCalls.first?.name, "terminal")
     }
 
-    func testPersistedToolCallsCoalesceConsecutiveAssistantSegmentsInOneTurn() {
+    func testPersistedToolCallsStayAnchoredToTheirAssistantSegments() {
         let messages = [
             ChatMessage(
                 role: "user",
@@ -732,12 +866,10 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             messageOffset: nil
         )
 
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual(groups.first?.id, "persisted-tools-assistant-a")
-        XCTAssertEqual(groups.first?.anchorMessageID, "assistant-a")
-        XCTAssertEqual(groups.first?.activityTitle, "Activity: 3 tools")
-        XCTAssertEqual(groups.first?.toolCalls.map(\.id), ["skill-xurl", "skill-xitter", "terminal-xurl"])
-        XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["skill_view", "skill_view", "terminal"])
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups.map(\.anchorMessageID), ["assistant-a", "assistant-b"])
+        XCTAssertEqual(groups[0].toolCalls.map(\.id), ["skill-xurl", "skill-xitter"])
+        XCTAssertEqual(groups[1].toolCalls.map(\.id), ["terminal-xurl"])
     }
 
     func testToolCallGroupAnchorLookupReturnsGroupsByAnchor() {
@@ -925,7 +1057,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(groups.first?.toolCalls.last?.args?["query"], .string("Google AI updates 2026"))
     }
 
-    func testAnthropicToolUseSnapshotsCoalesceIntoOneTurnActivity() {
+    func testAnthropicToolUseSnapshotsStayAnchoredToTheirAssistantSegments() {
         let messages = [
             ChatMessage(
                 role: "user",
@@ -1017,24 +1149,32 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             messageOffset: nil
         )
 
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual(groups.first?.anchorMessageID, "assistant-skills")
-        XCTAssertEqual(groups.first?.activityTitle, "Activity: 5 tools")
-        XCTAssertEqual(groups.first?.toolCalls.map(\.id), [
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups[0].anchorMessageID, "assistant-skills")
+        XCTAssertEqual(groups[0].activityTitle, "Activity: 2 tools")
+        XCTAssertEqual(groups[0].toolCalls.map(\.id), [
+            "toolu-skill-xurl",
+            "toolu-skill-xitter"
+        ])
+        XCTAssertEqual(groups[0].toolCalls.first?.preview, "X/Twitter via xurl CLI")
+
+        XCTAssertEqual(groups[1].anchorMessageID, "assistant-snapshot")
+        XCTAssertEqual(groups[1].activityTitle, "Activity: 5 tools")
+        XCTAssertEqual(groups[1].toolCalls.map(\.id), [
             "toolu-skill-xurl",
             "toolu-skill-xitter",
             "toolu-terminal-xurl",
             "toolu-terminal-xcli",
             "toolu-terminal-version"
         ])
-        XCTAssertEqual(groups.first?.toolCalls.map(\.name), [
+        XCTAssertEqual(groups[1].toolCalls.map(\.name), [
             "skill_view",
             "skill_view",
             "terminal",
             "terminal",
             "terminal"
         ])
-        XCTAssertEqual(groups.first?.toolCalls.first?.preview, "X/Twitter via xurl CLI")
+        XCTAssertEqual(groups[1].toolCalls.first?.preview, "X/Twitter via xurl CLI")
     }
 
     func testPersistedToolCallsPointingAtToolResultRowsAnchorToAssistantTurn() {
@@ -1121,20 +1261,6 @@ final class APIClientSessionDetailTests: APIClientTestCase {
     }
 
     func testGeneratedLiveFallbackMergesWithCompletedTurnActivity() {
-        let messages = [
-            ChatMessage(
-                role: "user",
-                content: "Check option 2",
-                timestamp: 1_770_000_000,
-                messageId: "user-option"
-            ),
-            ChatMessage(
-                role: "assistant",
-                content: nil,
-                timestamp: 1_770_000_001,
-                messageId: "assistant-skills"
-            )
-        ]
         let completedGroup = ToolCallGroup(
             id: "persisted-tools-assistant-skills",
             anchorMessageID: "assistant-skills",
@@ -1167,12 +1293,9 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             ]
         )
 
-        let groups = ToolCallGroup.coalescingByAssistantTurn(
-            ToolCallGroup.merging(
-                primaryGroups: [completedGroup],
-                fallbackGroups: [liveFallbackGroup]
-            ),
-            messages: messages
+        let groups = ToolCallGroup.merging(
+            primaryGroups: [completedGroup],
+            fallbackGroups: [liveFallbackGroup]
         )
 
         XCTAssertEqual(groups.count, 1)
@@ -1443,12 +1566,22 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         )
         let transcriptMessages = ChatViewModel.transcriptMessages(from: messages, messageOffset: 4)
 
-        XCTAssertEqual(transcriptMessages.map(\.anchorID), ["raw:4", "raw:5", "raw:7", "raw:9"])
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertEqual(groups.first?.anchorMessageID, "raw:5")
-        XCTAssertEqual(groups.first?.activityTitle, "Activity: 2 tools")
-        XCTAssertEqual(groups.first?.toolCalls.map(\.id), ["functions.terminal:1", "functions.search_files:2"])
-        XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["terminal", "search_files"])
+        XCTAssertEqual(transcriptMessages.map(\.anchorID), ["raw:4", "raw:9"])
+        XCTAssertEqual(
+            transcriptMessages.last?.assistantSegments.map(\.anchorID),
+            ["raw:5", "raw:7", "raw:9"]
+        )
+        let groupedTimeline = AssistantActivityTimeline.persisted(
+            assistantSegments: transcriptMessages.last?.assistantSegments ?? [],
+            reasoningGroups: reasoningGroups,
+            toolCallGroups: groups
+        )
+        XCTAssertEqual(groupedTimeline.toolCalls.map(\.name), ["terminal", "search_files"])
+        XCTAssertEqual(CompletedAssistantTurn(rows: groupedTimeline.rows)?.finalAnswer, finalAnswer)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups.map(\.anchorMessageID), ["raw:5", "raw:7"])
+        XCTAssertEqual(groups.map { $0.toolCalls.map(\.id) }, [["functions.terminal:1"], ["functions.search_files:2"]])
+        XCTAssertEqual(groups.map { $0.toolCalls.map(\.name) }, [["terminal"], ["search_files"]])
         XCTAssertEqual(reasoningGroups.map(\.anchorMessageID), ["raw:5", "raw:7", "raw:9"])
         XCTAssertEqual(reasoningGroups[0].text, "The user wants me to use terminal and search_files. I should run a quick command to show both work.")
         XCTAssertEqual(reasoningGroups[1].text, "Terminal works. Now run search_files to show that works too.")

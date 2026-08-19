@@ -12,7 +12,9 @@ struct ChatTranscriptView: View {
     let compressionReferenceCard: CompressionReferenceCard?
     let reasoningGroups: [ReasoningGroup]
     let completedToolCallGroupsForAnchor: (String?) -> [ToolCallGroup]
+    let archivedActivityRowsForAnchor: (String?) -> [AssistantActivityRow]
     let liveReasoningText: String
+    let liveActivityRows: [AssistantActivityRow]
     let reasoningAnchorMessageID: String?
     let liveToolCalls: [ToolCall]
     let toolCallAnchorMessageID: String?
@@ -217,8 +219,9 @@ struct ChatTranscriptView: View {
                 // their inputs don't change on every ~16ms flush; combined with the
                 // `.equatable()` wrapper below, SwiftUI then skips re-evaluating their
                 // (markdown-heavy) bodies while a response streams in.
-                let isReasoningAnchor = reasoningAnchorMessageID == transcriptMessage.anchorID
-                let isToolCallAnchor = toolCallAnchorMessageID == transcriptMessage.anchorID
+                let activityAnchorIDs = transcriptMessage.assistantSegments.map(\.anchorID)
+                let isReasoningAnchor = reasoningAnchorMessageID.map(activityAnchorIDs.contains) ?? false
+                let isToolCallAnchor = toolCallAnchorMessageID.map(activityAnchorIDs.contains) ?? false
                 let isStreamingRow = streamingAssistantMessageID != nil
                     && transcriptMessage.message.messageId == streamingAssistantMessageID
 
@@ -227,11 +230,9 @@ struct ChatTranscriptView: View {
                     transcriptBlockSpacing: transcriptBlockSpacing,
                     showsThinkingAndToolCards: showsThinkingAndToolCards,
                     reasoningGroups: reasoningGroups,
-                    toolCallGroups: completedToolCallGroupsForAnchor(transcriptMessage.anchorID),
-                    liveReasoningText: isReasoningAnchor ? liveReasoningText : "",
-                    reasoningAnchorMessageID: isReasoningAnchor ? reasoningAnchorMessageID : nil,
-                    liveToolCalls: isToolCallAnchor ? liveToolCalls : [],
-                    toolCallAnchorMessageID: isToolCallAnchor ? toolCallAnchorMessageID : nil,
+                    toolCallGroups: activityAnchorIDs.flatMap(completedToolCallGroupsForAnchor),
+                    archivedActivityRows: activityAnchorIDs.flatMap(archivedActivityRowsForAnchor),
+                    liveActivityRows: (isReasoningAnchor || isToolCallAnchor || isStreamingRow) ? liveActivityRows : [],
                     streamingAssistantMessageID: isStreamingRow ? streamingAssistantMessageID : nil,
                     liveTokensPerSecond: isStreamingRow ? liveTokensPerSecond : nil,
                     localAttachmentPreviews: localAttachmentPreviews[transcriptMessage.message.id],
@@ -445,15 +446,16 @@ struct ChatTranscriptView: View {
 }
 
 private struct ChatTranscriptMessageBlock: View, Equatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isCompletedActivityExpanded = false
+
     let transcriptMessage: TranscriptMessage
     let transcriptBlockSpacing: CGFloat
     let showsThinkingAndToolCards: Bool
     let reasoningGroups: [ReasoningGroup]
     let toolCallGroups: [ToolCallGroup]
-    let liveReasoningText: String
-    let reasoningAnchorMessageID: String?
-    let liveToolCalls: [ToolCall]
-    let toolCallAnchorMessageID: String?
+    let archivedActivityRows: [AssistantActivityRow]
+    let liveActivityRows: [AssistantActivityRow]
     let streamingAssistantMessageID: String?
     let liveTokensPerSecond: Double?
     let localAttachmentPreviews: [String: Data]?
@@ -490,10 +492,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.showsThinkingAndToolCards == rhs.showsThinkingAndToolCards &&
             lhs.reasoningGroups == rhs.reasoningGroups &&
             lhs.toolCallGroups == rhs.toolCallGroups &&
-            lhs.liveReasoningText == rhs.liveReasoningText &&
-            lhs.reasoningAnchorMessageID == rhs.reasoningAnchorMessageID &&
-            lhs.liveToolCalls == rhs.liveToolCalls &&
-            lhs.toolCallAnchorMessageID == rhs.toolCallAnchorMessageID &&
+            lhs.archivedActivityRows == rhs.archivedActivityRows &&
+            lhs.liveActivityRows == rhs.liveActivityRows &&
             lhs.streamingAssistantMessageID == rhs.streamingAssistantMessageID &&
             lhs.liveTokensPerSecond == rhs.liveTokensPerSecond &&
             lhs.localAttachmentPreviews == rhs.localAttachmentPreviews &&
@@ -508,97 +508,218 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
-            reasoningBlocks
-            liveReasoningBlock
-            toolActivityGroups
-            liveToolActivityGroup
+            if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
+                if liveActivityRows.isEmpty,
+                   let completedTurn = CompletedAssistantTurn(rows: activityRows) {
+                    completedActivity(completedTurn)
+                } else {
+                    ForEach(Array(activityRows.enumerated()), id: \.element.id) { index, row in
+                        activityRow(row, at: index)
+                    }
+                }
+            } else {
+                messageRow(transcriptMessage.message)
+            }
+        }
+    }
 
-            if shouldRenderMessageRow(transcriptMessage.message) {
-                ChatTranscriptMessageRow(
-                    message: transcriptMessage.message,
-                    visibleIndex: transcriptMessage.loadedIndex,
-                    actionContext: actionContext(transcriptMessage.message, transcriptMessage.loadedIndex),
-                    localAttachmentPreviews: localAttachmentPreviews,
-                    listeningMessageID: listeningMessageID,
-                    isViewingCachedData: isViewingCachedData,
+    private var activityRows: [AssistantActivityRow] {
+        if !liveActivityRows.isEmpty {
+            return liveActivityRows
+        }
+        let persisted = AssistantActivityTimeline.persisted(
+            assistantSegments: transcriptMessage.assistantSegments,
+            reasoningGroups: reasoningGroups,
+            toolCallGroups: toolCallGroups
+        ).rows
+        if transcriptMessage.message.activityScene != nil || transcriptMessage.message.contentParts != nil {
+            return persisted
+        }
+        return archivedActivityRows.isEmpty ? persisted : archivedActivityRows
+    }
+
+    @ViewBuilder
+    private func completedActivity(_ turn: CompletedAssistantTurn) -> some View {
+        let workRows = turn.workRows.filter(isVisibleWorkRow)
+
+        if !workRows.isEmpty {
+            Button {
+                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                    isCompletedActivityExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(AssistantActivityDisclosureTitle.text(
+                        duration: transcriptMessage.message.turnDuration
+                    ))
+                    .font(AppFont.body())
+                    .foregroundStyle(.primary)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isCompletedActivityExpanded ? 90 : 0))
+
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(
+                isCompletedActivityExpanded
+                    ? "Double tap to collapse work."
+                    : "Double tap to expand work."
+            )
+
+            if isCompletedActivityExpanded {
+                ForEach(Array(workRows.enumerated()), id: \.element.id) { index, row in
+                    activityRow(
+                        row,
+                        at: index,
+                        includesAttachments: false,
+                        includesTurnMetrics: false
+                    )
+                }
+                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+            }
+
+            Divider()
+        }
+
+        messageRow(
+            activityMessage(
+                text: turn.finalAnswer,
+                includesAttachments: true,
+                includesTurnMetrics: true
+            ),
+            isStreaming: false
+        )
+    }
+
+    @ViewBuilder
+    private func activityRow(
+        _ row: AssistantActivityRow,
+        at index: Int,
+        includesAttachments: Bool? = nil,
+        includesTurnMetrics: Bool? = nil
+    ) -> some View {
+        switch row.content {
+        case .prose(let text):
+            messageRow(
+                activityMessage(
+                    text: text,
+                    includesAttachments: includesAttachments ?? (index == firstProseIndex),
+                    includesTurnMetrics: includesTurnMetrics ?? (index == lastProseIndex)
+                ),
+                isStreaming: liveActivityRows.isEmpty ? nil : index == lastProseIndex
+            )
+        case .reasoning(let text):
+            if showsThinkingAndToolCards {
+                ReasoningBlockView(text: text)
+            }
+        case .tools(let toolCalls):
+            if showsThinkingAndToolCards {
+                ToolActivityGroupView(group: ToolCallGroup(
+                    id: row.id,
+                    anchorMessageID: transcriptMessage.anchorID,
+                    toolCalls: toolCalls
+                ))
+            }
+        }
+    }
+
+    private func isVisibleWorkRow(_ row: AssistantActivityRow) -> Bool {
+        switch row.content {
+        case .prose:
+            true
+        case .reasoning, .tools:
+            showsThinkingAndToolCards
+        }
+    }
+
+    @ViewBuilder
+    private func messageRow(_ message: ChatMessage, isStreaming: Bool? = nil) -> some View {
+        if shouldRenderMessageRow(message) {
+            ChatTranscriptMessageRow(
+                message: message,
+                visibleIndex: transcriptMessage.loadedIndex,
+                actionContext: actionContext(message, transcriptMessage.loadedIndex),
+                localAttachmentPreviews: localAttachmentPreviews,
+                listeningMessageID: listeningMessageID,
+                isViewingCachedData: isViewingCachedData,
+                hasActiveStream: hasActiveStream,
+                isStreaming: isStreaming ?? ChatTranscriptDisplaySettings.shouldUseStreamingBubbleRendering(
                     hasActiveStream: hasActiveStream,
-                    isStreaming: ChatTranscriptDisplaySettings.shouldUseStreamingBubbleRendering(
-                        hasActiveStream: hasActiveStream,
-                        messageRole: transcriptMessage.message.role,
-                        messageID: transcriptMessage.message.messageId,
-                        streamingAssistantMessageID: streamingAssistantMessageID
-                    ),
-                    liveTokensPerSecond: liveTokensPerSecond,
-                    isRegeneratingMessage: isRegeneratingMessage,
-                    isEditingMessage: isEditingMessage,
-                    isForkingMessage: isForkingMessage,
-                    loadAttachmentImage: loadAttachmentImage,
-                    loadAttachmentData: loadAttachmentData,
-                    loadTranscriptMediaImage: loadTranscriptMediaImage,
-                    loadTranscriptMediaData: loadTranscriptMediaData,
-                    transcriptMediaCacheNamespace: transcriptMediaCacheNamespace,
-                    onPreviewAttachment: onPreviewAttachment,
-                    onPreviewTranscriptMedia: onPreviewTranscriptMedia,
-                    onToggleListening: onToggleListening,
-                    onSelectText: onSelectText,
-                    onRegenerate: onRegenerate,
-                    onEdit: onEdit,
-                    onFork: onFork,
-                    onCopy: onCopy
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var reasoningBlocks: some View {
-        if showsThinkingAndToolCards {
-            ForEach(reasoningGroups.filter { $0.anchorMessageID == transcriptMessage.anchorID }) { group in
-                ReasoningBlockView(text: group.text)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var liveReasoningBlock: some View {
-        if shouldRenderLiveReasoningBlock {
-            ReasoningBlockView(text: liveReasoningText)
-        }
-    }
-
-    @ViewBuilder
-    private var toolActivityGroups: some View {
-        if showsThinkingAndToolCards {
-            ForEach(toolCallGroups) { group in
-                ToolActivityGroupView(group: group)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var liveToolActivityGroup: some View {
-        if shouldRenderLiveToolActivityGroup {
-            ToolActivityGroupView(
-                group: ToolCallGroup.live(
-                    anchorMessageID: toolCallAnchorMessageID,
-                    toolCalls: liveToolCalls
-                )
+                    messageRole: message.role,
+                    messageID: message.messageId,
+                    streamingAssistantMessageID: streamingAssistantMessageID
+                ),
+                liveTokensPerSecond: isStreaming == false ? nil : liveTokensPerSecond,
+                isRegeneratingMessage: isRegeneratingMessage,
+                isEditingMessage: isEditingMessage,
+                isForkingMessage: isForkingMessage,
+                loadAttachmentImage: loadAttachmentImage,
+                loadAttachmentData: loadAttachmentData,
+                loadTranscriptMediaImage: loadTranscriptMediaImage,
+                loadTranscriptMediaData: loadTranscriptMediaData,
+                transcriptMediaCacheNamespace: transcriptMediaCacheNamespace,
+                onPreviewAttachment: onPreviewAttachment,
+                onPreviewTranscriptMedia: onPreviewTranscriptMedia,
+                onToggleListening: onToggleListening,
+                onSelectText: onSelectText,
+                onRegenerate: onRegenerate,
+                onEdit: onEdit,
+                onFork: onFork,
+                onCopy: onCopy
             )
         }
     }
 
-    private var shouldRenderLiveReasoningBlock: Bool {
-        hasActiveStream &&
-            showsThinkingAndToolCards &&
-            reasoningAnchorMessageID == transcriptMessage.anchorID &&
-            !liveReasoningText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var firstProseIndex: Int? {
+        activityRows.firstIndex { row in
+            if case .prose = row.content { return true }
+            return false
+        }
     }
 
-    private var shouldRenderLiveToolActivityGroup: Bool {
-        hasActiveStream &&
-            showsThinkingAndToolCards &&
-            toolCallAnchorMessageID == transcriptMessage.anchorID &&
-            !liveToolCalls.isEmpty
+    private var lastProseIndex: Int? {
+        activityRows.lastIndex { row in
+            if case .prose = row.content { return true }
+            return false
+        }
+    }
+
+    private func activityMessage(
+        text: String,
+        includesAttachments: Bool,
+        includesTurnMetrics: Bool
+    ) -> ChatMessage {
+        let message = transcriptMessage.message
+        return ChatMessage(
+            role: message.role,
+            content: text,
+            timestamp: includesTurnMetrics ? message.timestamp : nil,
+            messageId: message.messageId,
+            name: message.name,
+            toolCallId: message.toolCallId,
+            toolUseId: message.toolUseId,
+            attachments: includesAttachments ? message.attachments : nil,
+            turnDuration: includesTurnMetrics ? message.turnDuration : nil,
+            turnTps: includesTurnMetrics ? message.turnTps : nil
+        )
+    }
+}
+
+enum AssistantActivityDisclosureTitle {
+    static func text(duration: Double?) -> String {
+        guard let duration, duration.isFinite, duration >= 0 else {
+            return String(localized: "Worked")
+        }
+
+        let elapsed = Duration.seconds(duration).formatted(
+            .units(width: .narrow, maximumUnitCount: 2)
+        )
+        return String(localized: "Worked for \(elapsed)")
     }
 }
 

@@ -139,7 +139,7 @@ Read these from the upstream repo (in this order) and summarize key takeaways in
 2. `server.py` — request lifecycle, auth check, SSE
 3. `api/routes.py` — **the API contract** (every endpoint we use lives here)
 4. `api/auth.py` — cookie format, login flow, `is_auth_enabled()`
-5. `api/streaming.py` — SSE event types (`token`, `tool_call`, `stream_end`, `error`, etc.)
+5. `api/streaming.py` — SSE event types (`token`, `reasoning`, `tool`, `tool_complete`, `done`, `stream_end`, `error`, etc.)
 6. `api/models.py` — Session shape (fields you'll decode in Swift)
 7. `api/workspace.py` — file listing/reading endpoints
 8. `ARCHITECTURE.md` — narrative reference
@@ -215,15 +215,27 @@ These are the endpoints we know we need. Verify each one against your running se
 | POST | `/api/upload` | Multipart upload: fields `session_id`, `file`; returns `{filename, path, mime, size, is_image}` for chat attachments |
 | POST | `/api/upload/extract` | Multipart archive upload/extract; use only for supported archives and show extracted destination |
 
-**SSE event types you must handle** (from `api/streaming.py`):
-- `token` — append text to current assistant message
-- `tool_call` — render a collapsible tool-call card
-- `tool_result` — attach to the last tool call
-- `reasoning` — collapsible "thinking" block
-- `stream_end` — finalize message, close connection
+**SSE event types you must handle** (current Hermes WebUI stream contract):
+- `token` — append prose to the current ordered assistant turn
+- `reasoning` — append a collapsible thinking row at its arrival position
+- `tool` — append a tool row at its arrival position
+- `tool_complete` — complete the matching tool row without moving it
+- `done` — apply the settled session payload while preserving the visible row order
+- `stream_end` — finalize the response and close the connection
 - `error` — show inline error, close connection
 - `cancel` — user cancelled, close connection
 - Heartbeat comments (lines starting with `:`) — ignore
+
+One assistant turn can interleave prose, reasoning, and tools, for example
+`prose → reasoning → tool → prose`. Keep one ordered row sequence for live
+events. Do not store those row types in separate render buckets.
+
+For loaded sessions, `_anchor_activity_scene.version == "activity_scene_v1"`
+is the authoritative assistant-turn ordering contract. Render its
+`activity_rows` by `order_index`, using the array position when the index is
+missing. The supported visible roles are `prose`, `thinking`, and `tool`.
+Fall back to ordered content parts and per-message reasoning/tool metadata for
+older servers. Never merge tool rows across assistant messages in that fallback.
 
 The server keeps connections alive for ~30s with `: heartbeat` comments. **Cloudflare Tunnel is fine with long-lived SSE** — the server already sets `X-Accel-Buffering: no` and Cloudflare respects that for `text/event-stream`. But Cloudflare's free-tier idle timeout caps streams at ~100 seconds without activity. Heartbeats every 30s keep it alive; if a single agent turn produces no tokens for >100s the connection may be cut. Handle reconnect via `/api/chat/stream/status`.
 
@@ -392,8 +404,8 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 - [x] `ChatViewModel` (`@Observable`):
   - Load existing messages with `/api/session?session_id=X&msg_limit=50`.
   - On send: POST `/api/chat/start`, get `stream_id`, open SSE on `/api/chat/stream?stream_id=...`.
-  - Append `token` events to a streaming buffer rendered as the in-flight assistant message.
-  - On `tool_call`, push a `ToolCallCardView` into the message stream.
+  - Append live `token`, `reasoning`, `tool`, and `tool_complete` events to one ordered assistant-turn timeline.
+  - Decode `_anchor_activity_scene.activity_rows` into the same timeline for completed and reloaded turns.
   - On `stream_end`, finalize message and close SSE.
   - On `error`, show banner, finalize partial message.
 - [x] `ToolCallCardView`: collapsible, shows tool name + args + result.

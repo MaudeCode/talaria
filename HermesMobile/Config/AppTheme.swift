@@ -324,6 +324,15 @@ enum SectionVisibilitySettings {
     }
 }
 
+/// Optional session controls shown with the message composer. Core actions such
+/// as attachments, model, reasoning, dictation, and send remain available.
+enum ComposerVisibilitySettings {
+    static let workspaceKey = "composerVisibility.workspace"
+    static let profileKey = "composerVisibility.profile"
+    static let gitBranchKey = "composerVisibility.gitBranch"
+    static let contextUsageKey = "composerVisibility.contextUsage"
+}
+
 /// Pure helpers for the few *physical* layout values SwiftUI does not mirror on
 /// its own under right-to-left layout (issue #294 — app-wide RTL). Semantic edges
 /// (`.leading`/`.trailing`) and toolbar placements flip automatically; these cover

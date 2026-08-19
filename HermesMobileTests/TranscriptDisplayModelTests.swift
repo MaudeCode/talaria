@@ -23,8 +23,9 @@ final class TranscriptMessageTests: XCTestCase {
 
         let transcriptMessages = ChatViewModel.transcriptMessages(from: messages)
 
-        XCTAssertEqual(transcriptMessages.map(\.loadedIndex), [0, 1, 3])
-        XCTAssertEqual(transcriptMessages.map(\.message.id), ["u1", "a1", "a2"])
+        XCTAssertEqual(transcriptMessages.map(\.loadedIndex), [0, 3])
+        XCTAssertEqual(transcriptMessages.map(\.message.id), ["u1", "a2"])
+        XCTAssertEqual(transcriptMessages.last?.assistantSegments.map(\.message.id), ["a1", "a2"])
     }
 
     func testTranscriptMessagesCanHideActiveStreamingAssistantTurn() {

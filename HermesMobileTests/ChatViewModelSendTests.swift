@@ -5908,11 +5908,14 @@ final class ChatViewModelSendTests: XCTestCase {
             inputTokens: nil,
             outputTokens: nil,
             estimatedCost: nil,
-            tokensPerSecond: 20.5
+            tokensPerSecond: 20.5,
+            durationSeconds: 532
         ))))
 
         XCTAssertNil(viewModel.liveTokensPerSecond)
-        XCTAssertEqual(viewModel.messages.last(where: { $0.role == "assistant" })?.turnTps, 20.5)
+        let assistant = viewModel.messages.last(where: { $0.role == "assistant" })
+        XCTAssertEqual(assistant?.turnTps, 20.5)
+        XCTAssertEqual(assistant?.turnDuration, 532)
     }
 
     @MainActor
@@ -7215,6 +7218,84 @@ final class ChatViewModelSendTests: XCTestCase {
         }
 
         return viewModel
+    }
+
+    @MainActor
+    func testLiveAssistantActivityPreservesProseReasoningToolProseOrder() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let modelContext = try makeContext()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse("""
+            {"session_id":"session-abc","stream_id":"stream-123"}
+            """, for: request)
+        }
+
+        let didStart = await viewModel.sendMessage("Inspect it", modelContext: modelContext)
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Before tool. "))
+        streamClient.emit(.reasoning("I should inspect now."))
+        streamClient.emit(.toolStarted(ToolStreamEvent(
+            eventType: "tool",
+            name: "read_file",
+            preview: nil,
+            args: ["path": .string("notes.md")],
+            duration: nil,
+            isError: nil,
+            stableID: "call-1"
+        )))
+        streamClient.emit(.toolCompleted(ToolStreamEvent(
+            eventType: "tool_complete",
+            name: "read_file",
+            preview: "contents",
+            args: ["path": .string("notes.md")],
+            duration: 0.1,
+            isError: false,
+            stableID: "call-1"
+        )))
+        streamClient.emit(.token("After tool."))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["prose", "reasoning", "tools", "prose"])
+        XCTAssertEqual(
+            viewModel.liveActivityRows.compactMap(\.text),
+            ["Before tool. ", "I should inspect now.", "After tool."]
+        )
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
+        XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
+        XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.map(\.content), ["Before tool. After tool."])
+
+        let completedSession = try makeSessionDetail("""
+        {
+          "session_id": "session-abc",
+          "messages": [
+            {"role":"user","content":"Inspect it","message_id":"user-1"},
+            {"role":"assistant","content":"Before tool. After tool.","message_id":"assistant-final"}
+          ]
+        }
+        """)
+        streamClient.emit(.done(DoneStreamEvent(session: completedSession)))
+
+        XCTAssertEqual(
+            viewModel.archivedActivityRowsForAnchor("assistant-final").map(\.kind),
+            ["prose", "reasoning", "tools", "prose"]
+        )
+
+        viewModel.cacheCompletedResponse(modelContext: modelContext)
+        let cachedAssistant = try XCTUnwrap(CacheStore.cachedMessages(
+            serverURL: URL(string: "https://example.test")!,
+            sessionID: "session-abc",
+            in: modelContext
+        ).first(where: { $0.messageId == "assistant-final" }))
+        let restoredTimeline = AssistantActivityTimeline.persisted(
+            message: cachedAssistant,
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+        XCTAssertEqual(restoredTimeline.rows.map(\.kind), ["prose", "reasoning", "tools", "prose"])
+        XCTAssertEqual(
+            restoredTimeline.rows.compactMap(\.text),
+            ["Before tool. ", "I should inspect now.", "After tool."]
+        )
     }
 
     @MainActor

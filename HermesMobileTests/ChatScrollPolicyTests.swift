@@ -64,6 +64,35 @@ final class ChatScrollPolicyTests: XCTestCase {
         )
     }
 
+    func testCompactComposerRequiresIdleReadingState() {
+        XCTAssertTrue(
+            ChatScrollPolicy.shouldUseCompactComposer(
+                isReadingOlderTranscript: true,
+                hasMessages: true,
+                isFocused: false,
+                hasDraft: false,
+                hasPendingAttachments: false,
+                isBusyOrUnavailable: false,
+                requiresExpandedPresentation: false
+            )
+        )
+
+        for blocker in 0..<7 {
+            XCTAssertFalse(
+                ChatScrollPolicy.shouldUseCompactComposer(
+                    isReadingOlderTranscript: blocker != 0,
+                    hasMessages: blocker != 1,
+                    isFocused: blocker == 2,
+                    hasDraft: blocker == 3,
+                    hasPendingAttachments: blocker == 4,
+                    isBusyOrUnavailable: blocker == 5,
+                    requiresExpandedPresentation: blocker == 6
+                ),
+                "Blocker \(blocker) should keep the full composer visible"
+            )
+        }
+    }
+
     func testAutoScrollPausedWhileUserInteracting() {
         XCTAssertTrue(
             ChatScrollPolicy.isAutoScrollPaused(

@@ -17,7 +17,9 @@ final class CachedMessage {
     var toolCallsData: Data?
     var contentPartsData: Data?
     var reasoning: String?
+    var activitySceneData: Data?
     var attachmentsData: Data?
+    var turnDuration: Double?
     var turnTps: Double?
     var cachedAt: Date
     var expiresAt: Date
@@ -73,6 +75,8 @@ final class CachedMessage {
             contentPartsData = nil
         }
         reasoning = message.reasoning
+        activitySceneData = message.activityScene.flatMap { try? JSONEncoder().encode($0) }
+        turnDuration = message.turnDuration
         turnTps = message.turnTps
         if let attachments = message.attachments, !attachments.isEmpty {
             attachmentsData = try? JSONEncoder().encode(attachments)

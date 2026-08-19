@@ -453,7 +453,7 @@ final class SSEClientTests: XCTestCase {
     func testDoneUsageDecodesFinalTokensPerSecond() {
         let event = SSEEventDecoder.decode(
             eventType: "done",
-            data: #"{"usage":{"tps":51.75}}"#
+            data: #"{"usage":{"tps":51.75,"duration_seconds":532}}"#
         )
 
         guard case .done(let payload) = event else {
@@ -462,6 +462,7 @@ final class SSEClientTests: XCTestCase {
         }
 
         XCTAssertEqual(payload.usage?.tokensPerSecond, 51.75)
+        XCTAssertEqual(payload.usage?.durationSeconds, 532)
     }
 
     func testMalformedDoneUsageTpsDoesNotDiscardOtherUsageFields() {

@@ -87,6 +87,10 @@ struct SettingsView: View {
     @AppStorage(SectionVisibilitySettings.projectsKey) private var showsProjectsSection = true
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsChatFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsChatGitControls = true
+    @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsComposerWorkspace = true
+    @AppStorage(ComposerVisibilitySettings.profileKey) private var showsComposerProfile = true
+    @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsComposerGitBranch = true
+    @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -164,9 +168,9 @@ struct SettingsView: View {
                     if let notificationStatusText {
                         SettingsFootnote(notificationStatusText)
                     }
+                }
 
-                    SettingsDivider()
-
+                SettingsCard(title: String(localized: "Composer")) {
                     SettingsPickerRow(
                         title: String(localized: "Send While Responding"),
                         systemImage: "arrow.up.message",
@@ -190,6 +194,40 @@ struct SettingsView: View {
                     }
 
                     SettingsFootnote(String(localized: "On-device only keeps composer dictation audio off your Hermes server."))
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Workspace"),
+                        systemImage: "folder",
+                        isOn: $showsComposerWorkspace
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Profile"),
+                        systemImage: "person.crop.circle",
+                        isOn: $showsComposerProfile
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Git Branch"),
+                        systemImage: "arrow.triangle.branch",
+                        isOn: $showsComposerGitBranch
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Context Usage"),
+                        systemImage: "gauge.with.dots.needle.67percent",
+                        isOn: $showsComposerContextUsage
+                    )
+
+                    SettingsFootnote(String(localized: "Choose which session controls appear below the composer. They hide while you type or read older messages."))
                 }
 
                 SettingsCard(title: String(localized: "Chat")) {

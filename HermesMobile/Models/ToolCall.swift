@@ -140,20 +140,16 @@ struct ToolCallGroup: Identifiable, Equatable {
     ) -> [ToolCallGroup] {
         let derivedGroups = groupsFromMessageMetadata(messages, messageOffset: messageOffset)
         guard !persistedToolCalls.isEmpty else {
-            return coalescingByAssistantTurn(derivedGroups, messages: messages, messageOffset: messageOffset)
+            return derivedGroups
         }
 
-        return coalescingByAssistantTurn(
-            merging(
-                primaryGroups: groupsFromPersistedToolCalls(
-                    persistedToolCalls,
-                    messages: messages,
-                    messageOffset: messageOffset
-                ),
-                fallbackGroups: derivedGroups
+        return merging(
+            primaryGroups: groupsFromPersistedToolCalls(
+                persistedToolCalls,
+                messages: messages,
+                messageOffset: messageOffset
             ),
-            messages: messages,
-            messageOffset: messageOffset
+            fallbackGroups: derivedGroups
         )
     }
 
@@ -211,32 +207,8 @@ struct ToolCallGroup: Identifiable, Equatable {
     private static func groupsFromMessageMetadata(_ messages: [ChatMessage], messageOffset: Int?) -> [ToolCallGroup] {
         let resultsByToolID = toolResultSnippetsByID(from: messages)
         var groups: [ToolCallGroup] = []
-        var currentAnchorMessageID: String?
-        var currentToolCalls: [ToolCall] = []
-
-        func flushCurrentGroup() {
-            guard !currentToolCalls.isEmpty else {
-                currentAnchorMessageID = nil
-                return
-            }
-
-            groups.append(
-                ToolCallGroup(
-                    id: "persisted-tools-\(currentAnchorMessageID ?? "unanchored-\(groups.count)")",
-                    anchorMessageID: currentAnchorMessageID,
-                    toolCalls: uniqueToolCalls(currentToolCalls)
-                )
-            )
-            currentAnchorMessageID = nil
-            currentToolCalls = []
-        }
 
         for (messageIndex, message) in messages.enumerated() {
-            if TranscriptTurnClassifier.isUserTurnBoundary(message) {
-                flushCurrentGroup()
-                continue
-            }
-
             guard message.role == "assistant" else { continue }
 
             let toolCalls = openAIToolCalls(
@@ -251,18 +223,18 @@ struct ToolCallGroup: Identifiable, Equatable {
             )
 
             guard !toolCalls.isEmpty else { continue }
-
-            if currentAnchorMessageID == nil {
-                currentAnchorMessageID = TranscriptTurnClassifier.anchorID(
-                    for: message,
-                    at: messageIndex,
-                    messageOffset: messageOffset
-                )
-            }
-            currentToolCalls += toolCalls
+            let anchorMessageID = TranscriptTurnClassifier.anchorID(
+                for: message,
+                at: messageIndex,
+                messageOffset: messageOffset
+            )
+            groups.append(ToolCallGroup(
+                id: "persisted-tools-\(anchorMessageID)",
+                anchorMessageID: anchorMessageID,
+                toolCalls: uniqueToolCalls(toolCalls)
+            ))
         }
 
-        flushCurrentGroup()
         return groups
     }
 
@@ -466,70 +438,6 @@ struct ToolCallGroup: Identifiable, Equatable {
         return merged
     }
 
-    static func coalescingByAssistantTurn(
-        _ groups: [ToolCallGroup],
-        messages: [ChatMessage],
-        messageOffset: Int? = nil
-    ) -> [ToolCallGroup] {
-        guard groups.count > 1 else {
-            return groups.map { group in
-                ToolCallGroup(
-                    id: group.id,
-                    anchorMessageID: group.anchorMessageID,
-                    toolCalls: uniqueToolCalls(group.toolCalls)
-                )
-            }
-        }
-
-        let messageIndexesByID = messages.enumerated().reduce(into: [String: Int]()) { result, entry in
-            result[TranscriptTurnClassifier.anchorID(
-                for: entry.element,
-                at: entry.offset,
-                messageOffset: messageOffset
-            )] = entry.offset
-        }
-        let turnKeysByAssistantMessageID = TranscriptTurnClassifier.assistantTurnKeysByAnchorID(
-            messages,
-            messageOffset: messageOffset
-        )
-        var mergedGroups: [TurnGroupBuilder] = []
-        var builderIndexesByTurnKey: [String: Int] = [:]
-
-        for (groupOrder, group) in groups.enumerated() {
-            let anchorIndex = group.anchorMessageID.flatMap { messageIndexesByID[$0] } ?? Int.max - groupOrder
-            let turnKey = group.anchorMessageID.flatMap { turnKeysByAssistantMessageID[$0] }
-                ?? "group:\(group.id)"
-
-            if let builderIndex = builderIndexesByTurnKey[turnKey] {
-                mergedGroups[builderIndex].append(group, anchorIndex: anchorIndex)
-            } else {
-                builderIndexesByTurnKey[turnKey] = mergedGroups.count
-                mergedGroups.append(
-                    TurnGroupBuilder(
-                        turnKey: turnKey,
-                        group: group,
-                        anchorIndex: anchorIndex
-                    )
-                )
-            }
-        }
-
-        return mergedGroups
-            .sorted { lhs, rhs in
-                if lhs.anchorIndex == rhs.anchorIndex {
-                    return lhs.turnKey < rhs.turnKey
-                }
-                return lhs.anchorIndex < rhs.anchorIndex
-            }
-            .map { builder in
-                ToolCallGroup(
-                    id: builder.id,
-                    anchorMessageID: builder.anchorMessageID,
-                    toolCalls: uniqueToolCalls(builder.toolCalls)
-                )
-            }
-    }
-
     private static func arguments(from value: JSONValue?) -> [String: JSONValue]? {
         guard let value else { return nil }
 
@@ -697,31 +605,6 @@ struct ToolCallGroupAnchorLookup: Equatable {
 
     func groups(anchorMessageID: String?) -> [ToolCallGroup] {
         groupsByAnchor[anchorMessageID] ?? []
-    }
-}
-
-private struct TurnGroupBuilder {
-    let turnKey: String
-    private(set) var id: String
-    private(set) var anchorMessageID: String?
-    private(set) var anchorIndex: Int
-    private(set) var toolCalls: [ToolCall]
-
-    init(turnKey: String, group: ToolCallGroup, anchorIndex: Int) {
-        self.turnKey = turnKey
-        id = group.id
-        anchorMessageID = group.anchorMessageID
-        self.anchorIndex = anchorIndex
-        toolCalls = group.toolCalls
-    }
-
-    mutating func append(_ group: ToolCallGroup, anchorIndex: Int) {
-        if anchorIndex < self.anchorIndex {
-            id = group.id
-            anchorMessageID = group.anchorMessageID
-            self.anchorIndex = anchorIndex
-        }
-        toolCalls += group.toolCalls
     }
 }
 

@@ -8,6 +8,7 @@ struct ContextWindowSnapshot: Decodable, Equatable {
     let outputTokens: Int?
     let estimatedCost: Double?
     let tokensPerSecond: Double?
+    let durationSeconds: Double?
 
     enum CodingKeys: String, CodingKey {
         case contextLength = "context_length"
@@ -17,6 +18,7 @@ struct ContextWindowSnapshot: Decodable, Equatable {
         case outputTokens = "output_tokens"
         case estimatedCost = "estimated_cost"
         case tokensPerSecond = "tps"
+        case durationSeconds = "duration_seconds"
     }
 
     init(
@@ -26,7 +28,8 @@ struct ContextWindowSnapshot: Decodable, Equatable {
         inputTokens: Int?,
         outputTokens: Int?,
         estimatedCost: Double?,
-        tokensPerSecond: Double? = nil
+        tokensPerSecond: Double? = nil,
+        durationSeconds: Double? = nil
     ) {
         self.contextLength = contextLength
         self.thresholdTokens = thresholdTokens
@@ -35,6 +38,7 @@ struct ContextWindowSnapshot: Decodable, Equatable {
         self.outputTokens = outputTokens
         self.estimatedCost = estimatedCost
         self.tokensPerSecond = tokensPerSecond
+        self.durationSeconds = durationSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -46,6 +50,7 @@ struct ContextWindowSnapshot: Decodable, Equatable {
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
         estimatedCost = container.decodeLossyDoubleIfPresent(forKey: .estimatedCost)
         tokensPerSecond = container.decodeLossyDoubleIfPresent(forKey: .tokensPerSecond)
+        durationSeconds = container.decodeLossyDoubleIfPresent(forKey: .durationSeconds)
     }
 
     var tokensUsed: Int? {
@@ -67,7 +72,8 @@ struct ContextWindowSnapshot: Decodable, Equatable {
             inputTokens: inputTokens,
             outputTokens: outputTokens,
             estimatedCost: estimatedCost,
-            tokensPerSecond: tokensPerSecond
+            tokensPerSecond: tokensPerSecond,
+            durationSeconds: durationSeconds
         )
     }
 }

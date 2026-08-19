@@ -167,7 +167,8 @@ final class CacheStoreTests: XCTestCase {
                 content: "Hi",
                 timestamp: 1_770_000_001,
                 messageId: "m2",
-                reasoning: "Greet the user."
+                reasoning: "Greet the user.",
+                turnDuration: 532
             )
         ]
 
@@ -182,6 +183,7 @@ final class CacheStoreTests: XCTestCase {
         var cachedMessages = try fetchCachedMessages(in: context)
         XCTAssertEqual(cachedMessages.compactMap(\.messageId).sorted(), ["m1", "m2"])
         XCTAssertEqual(cachedMessages.first(where: { $0.messageId == "m2" })?.reasoning, "Greet the user.")
+        XCTAssertEqual(cachedMessages.first(where: { $0.messageId == "m2" })?.turnDuration, 532)
         XCTAssertEqual(cachedMessages.first(where: { $0.messageId == "m1" })?.expiresAt, firstCachedAt.addingTimeInterval(CachePolicy.ttl))
 
         let secondMessages = [
@@ -415,6 +417,60 @@ final class CacheStoreTests: XCTestCase {
             ).first?.turnTps,
             48.75
         )
+    }
+
+    func testCachedMessagesRoundTripOrderedAssistantActivityScene() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"""
+        {
+          "role": "assistant",
+          "content": "Final answer.",
+          "message_id": "assistant-1",
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "final_answer": "Final answer.",
+            "activity_rows": [
+              {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
+              {"row_id":"tool-1","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"read_file","done":true}},
+              {"row_id":"prose-2","order_index":2,"role":"prose","text":"Between tool and thinking."},
+              {"row_id":"thinking-1","order_index":3,"role":"thinking","thinking":{"text":"Checking the result."}},
+              {"row_id":"prose-3","order_index":4,"role":"prose","text":"Final answer."}
+            ]
+          }
+        }
+        """#.utf8))
+
+        try CacheStore.cacheMessages(
+            [message],
+            serverURL: serverURL,
+            sessionID: "abc123",
+            in: context,
+            cachedAt: cachedAt
+        )
+
+        let restored = try XCTUnwrap(CacheStore.cachedMessages(
+            serverURL: serverURL,
+            sessionID: "abc123",
+            in: context,
+            now: cachedAt.addingTimeInterval(60)
+        ).first)
+        let rows = AssistantActivityTimeline.persisted(
+            message: restored,
+            reasoningGroups: [],
+            toolCallGroups: []
+        ).rows
+
+        XCTAssertEqual(rows.map(\.kind), ["prose", "tools", "prose", "reasoning", "prose"])
+        XCTAssertEqual(rows.compactMap(\.text), [
+            "Before tool.",
+            "Between tool and thinking.",
+            "Checking the result.",
+            "Final answer."
+        ])
     }
 
     func testCachedMessagesIgnoresExpiredMessages() throws {

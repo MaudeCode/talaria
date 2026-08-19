@@ -244,6 +244,7 @@ final class ChatViewModel {
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
     private var completedToolCallGroupLookup = ToolCallGroupAnchorLookup()
     private(set) var completedReasoningGroups: [ReasoningGroup] = []
+    private(set) var archivedAssistantActivity: [String: [AssistantActivityRow]] = [:]
     var displayedReasoningGroups: [ReasoningGroup] {
         Self.reasoningDisplayGroups(
             messages: messages,
@@ -253,6 +254,9 @@ final class ChatViewModel {
     }
     func completedToolCallGroupsForAnchor(_ anchorMessageID: String?) -> [ToolCallGroup] {
         completedToolCallGroupLookup.groups(anchorMessageID: anchorMessageID)
+    }
+    func archivedActivityRowsForAnchor(_ anchorMessageID: String?) -> [AssistantActivityRow] {
+        anchorMessageID.flatMap { archivedAssistantActivity[$0] } ?? []
     }
 
     /// Tool calls for the latest assistant turn, driving the in-chat "file changes" recap
@@ -306,8 +310,10 @@ final class ChatViewModel {
 
         compressionReferenceCard = card
     }
-    private(set) var liveToolCalls: [ToolCall] = []
-    private(set) var liveReasoningText = ""
+    private(set) var liveAssistantActivity = AssistantActivityTimeline()
+    var liveActivityRows: [AssistantActivityRow] { liveAssistantActivity.rows }
+    var liveToolCalls: [ToolCall] { liveAssistantActivity.toolCalls }
+    var liveReasoningText: String { liveAssistantActivity.reasoningText }
     private(set) var streamingAssistantMessageID: String?
     private(set) var toolCallAnchorMessageID: String?
     private(set) var reasoningAnchorMessageID: String?
@@ -1255,8 +1261,7 @@ final class ChatViewModel {
                 messageOffset: messagesOffset
             ))
             completedReasoningGroups = []
-            liveToolCalls = []
-            liveReasoningText = ""
+            liveAssistantActivity.removeAll()
             pinnedLocalNotices = []
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
@@ -1291,8 +1296,7 @@ final class ChatViewModel {
                         errorMessage = nil
                         setCompletedToolCallGroups([])
                         completedReasoningGroups = []
-                        liveToolCalls = []
-                        liveReasoningText = ""
+                        liveAssistantActivity.removeAll()
                         pinnedLocalNotices = []
                         toolCallAnchorMessageID = nil
                         reasoningAnchorMessageID = nil
@@ -1693,7 +1697,9 @@ final class ChatViewModel {
                 toolCalls: loadedAssistant.toolCalls ?? snapshotAssistant.toolCalls,
                 contentParts: loadedAssistant.contentParts ?? snapshotAssistant.contentParts,
                 reasoning: loadedAssistant.reasoning ?? snapshotAssistant.reasoning,
+                activityScene: loadedAssistant.activityScene ?? snapshotAssistant.activityScene,
                 attachments: loadedAssistant.attachments ?? snapshotAssistant.attachments,
+                turnDuration: loadedAssistant.turnDuration ?? snapshotAssistant.turnDuration,
                 turnTps: loadedAssistant.turnTps ?? snapshotAssistant.turnTps
             )
             return ActiveStreamMessageMerge(
@@ -2089,10 +2095,8 @@ final class ChatViewModel {
         isStartingChat = true
         sendErrorMessage = nil
         lastError = nil
-        archiveLiveReasoningIfNeeded()
-        archiveLiveToolCallsIfNeeded()
-        liveReasoningText = ""
-        liveToolCalls = []
+        archiveLiveActivityIfNeeded()
+        liveAssistantActivity.removeAll()
         reasoningAnchorMessageID = nil
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
@@ -2292,8 +2296,8 @@ final class ChatViewModel {
         hasOlderMessages = false
         setCompletedToolCallGroups([])
         completedReasoningGroups = []
-        liveToolCalls = []
-        liveReasoningText = ""
+        archivedAssistantActivity = [:]
+        liveAssistantActivity.removeAll()
         pinnedLocalNotices = []
         streamingAssistantMessageID = nil
         toolCallAnchorMessageID = nil
@@ -2967,8 +2971,7 @@ final class ChatViewModel {
                 messageOffset: messagesOffset
             ))
             completedReasoningGroups = []
-            liveToolCalls = []
-            liveReasoningText = ""
+            liveAssistantActivity.removeAll()
             streamingAssistantMessageID = nil
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
@@ -3055,10 +3058,8 @@ final class ChatViewModel {
         isStartingChat = true
         lastError = nil
         sendErrorMessage = nil
-        archiveLiveReasoningIfNeeded()
-        archiveLiveToolCallsIfNeeded()
-        liveReasoningText = ""
-        liveToolCalls = []
+        archiveLiveActivityIfNeeded()
+        liveAssistantActivity.removeAll()
         reasoningAnchorMessageID = nil
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
@@ -3100,8 +3101,8 @@ final class ChatViewModel {
                 }
             }
 
-            liveToolCalls = []
-            liveReasoningText = ""
+            archiveLiveActivityIfNeeded()
+            liveAssistantActivity.removeAll()
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
@@ -3231,7 +3232,9 @@ final class ChatViewModel {
             toolCalls: existing.toolCalls,
             contentParts: existing.contentParts,
             reasoning: existing.reasoning,
+            activityScene: existing.activityScene,
             attachments: existing.attachments,
+            turnDuration: existing.turnDuration,
             turnTps: existing.turnTps
         )
         scheduleStreamingScrollTrigger()
@@ -3350,8 +3353,7 @@ final class ChatViewModel {
                     messageOffset: messagesOffset
                 ))
                 completedReasoningGroups = []
-                liveToolCalls = []
-                liveReasoningText = ""
+                liveAssistantActivity.removeAll()
                 toolCallAnchorMessageID = nil
                 reasoningAnchorMessageID = nil
 
@@ -3453,8 +3455,7 @@ final class ChatViewModel {
                     messageOffset: messagesOffset
                 ))
                 completedReasoningGroups = []
-                liveToolCalls = []
-                liveReasoningText = ""
+                liveAssistantActivity.removeAll()
                 toolCallAnchorMessageID = nil
                 reasoningAnchorMessageID = nil
 
@@ -3707,8 +3708,7 @@ final class ChatViewModel {
                 displayTitle: displayTitle,
                 completedToolCallGroups: completedToolCallGroups,
                 completedReasoningGroups: completedReasoningGroups,
-                liveToolCalls: liveToolCalls,
-                liveReasoningText: liveReasoningText,
+                liveAssistantActivity: liveAssistantActivity,
                 activeStreamLastEventID: streamCoordinator.lastEventID,
                 streamingAssistantMessageID: streamingAssistantMessageID,
                 toolCallAnchorMessageID: toolCallAnchorMessageID,
@@ -3742,8 +3742,7 @@ final class ChatViewModel {
         displayTitle = displayTitle.isEmpty ? snapshot.displayTitle : displayTitle
         setCompletedToolCallGroups(snapshot.completedToolCallGroups)
         completedReasoningGroups = snapshot.completedReasoningGroups
-        liveToolCalls = snapshot.liveToolCalls
-        liveReasoningText = snapshot.liveReasoningText
+        liveAssistantActivity = snapshot.liveAssistantActivity
         streamingAssistantMessageID = merge.streamingAssistantMessageID ?? snapshot.streamingAssistantMessageID
         toolCallAnchorMessageID = Self.remappedAnchorMessageID(
             snapshot.toolCallAnchorMessageID,
@@ -3958,9 +3957,12 @@ final class ChatViewModel {
                 toolCalls: existing.toolCalls,
                 contentParts: existing.contentParts,
                 reasoning: existing.reasoning,
+                activityScene: existing.activityScene,
                 attachments: existing.attachments,
+                turnDuration: existing.turnDuration,
                 turnTps: existing.turnTps
             )
+            liveAssistantActivity.appendProse(separator + textToAppend)
             scheduleStreamingScrollTrigger()
             return true
         }
@@ -3992,6 +3994,7 @@ final class ChatViewModel {
                 previousMessages: previousMessages,
                 previousMessagesOffset: previousMessagesOffset
             )
+            archiveLiveActivityIfNeeded()
             didApplyCompletedTranscript = true
         }
 
@@ -4020,29 +4023,24 @@ final class ChatViewModel {
             )
             if !liveToolCalls.isEmpty {
                 let fallbackAnchorMessageID = currentTurnToolCallFallbackAnchorMessageID()
-                setCompletedToolCallGroups(ToolCallGroup.coalescingByAssistantTurn(
-                    ToolCallGroup.merging(
-                        primaryGroups: rebuiltToolCallGroups,
-                        fallbackGroups: [
-                            ToolCallGroup(
-                                id: "completed-live-tools-\(fallbackAnchorMessageID ?? "unanchored")",
-                                anchorMessageID: fallbackAnchorMessageID,
-                                toolCalls: liveToolCalls
-                            )
-                        ]
-                    ),
-                    messages: messages,
-                    messageOffset: messagesOffset
+                setCompletedToolCallGroups(ToolCallGroup.merging(
+                    primaryGroups: rebuiltToolCallGroups,
+                    fallbackGroups: [
+                        ToolCallGroup(
+                            id: "completed-live-tools-\(fallbackAnchorMessageID ?? "unanchored")",
+                            anchorMessageID: fallbackAnchorMessageID,
+                            toolCalls: liveToolCalls
+                        )
+                    ]
                 ))
             } else {
                 setCompletedToolCallGroups(rebuiltToolCallGroups)
             }
-            liveToolCalls = []
+            liveAssistantActivity.removeAll()
         }
 
         if didApplyCompletedTranscript {
             completedReasoningGroups = []
-            liveReasoningText = ""
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
@@ -4056,6 +4054,55 @@ final class ChatViewModel {
 
         completedToolCallGroups = groups
         completedToolCallGroupLookup = lookup
+    }
+
+    private func archiveLiveActivityIfNeeded() {
+        guard !liveActivityRows.isEmpty else { return }
+        archiveLiveReasoningIfNeeded()
+        archiveLiveToolCallsIfNeeded()
+
+        let currentAnchors = TranscriptTurnClassifier.currentTurnAssistantAnchorIDs(
+            in: messages,
+            messageOffset: messagesOffset
+        )
+        let currentAnchorSet = Set(currentAnchors)
+        let anchorMessageID = [
+            streamingAssistantMessageID,
+            reasoningAnchorMessageID,
+            toolCallAnchorMessageID
+        ]
+            .compactMap { $0 }
+            .first(where: currentAnchorSet.contains)
+            ?? currentAnchors.last
+            ?? Self.latestAssistantAnchorID(in: messages, messageOffset: messagesOffset)
+        if let anchorMessageID {
+            archivedAssistantActivity[anchorMessageID] = liveActivityRows
+
+            guard let messageIndex = messages.indices.last(where: {
+                TranscriptTurnClassifier.anchorID(
+                    for: messages[$0],
+                    at: $0,
+                    messageOffset: messagesOffset
+                ) == anchorMessageID
+            }) else { return }
+            let message = messages[messageIndex]
+            guard message.activityScene == nil, message.contentParts == nil else { return }
+            messages[messageIndex] = ChatMessage(
+                role: message.role,
+                content: message.content,
+                timestamp: message.timestamp,
+                messageId: message.messageId,
+                name: message.name,
+                toolCallId: message.toolCallId,
+                toolUseId: message.toolUseId,
+                toolCalls: message.toolCalls,
+                contentParts: liveAssistantActivity.persistedContentParts,
+                reasoning: message.reasoning,
+                attachments: message.attachments,
+                turnDuration: message.turnDuration,
+                turnTps: message.turnTps
+            )
+        }
     }
 
     private func appendCompletedToolCallGroup(_ group: ToolCallGroup) {
@@ -4148,7 +4195,7 @@ final class ChatViewModel {
             reasoningAnchorMessageID = messageID
         }
 
-        liveReasoningText += appendedText
+        liveAssistantActivity.appendReasoning(appendedText)
         return true
     }
 
@@ -4164,7 +4211,7 @@ final class ChatViewModel {
             return false
         }
 
-        liveToolCalls.append(
+        liveAssistantActivity.appendTool(
             ToolCall(
                 id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
                 name: payload.name,
@@ -4184,13 +4231,15 @@ final class ChatViewModel {
         }
 
         if let duplicateReplayIndex = duplicateReplayToolCompletionIndex(for: payload) {
-            let wasAlreadyCompleted = liveToolCalls[duplicateReplayIndex].isCompleted
+            let wasAlreadyCompleted = liveAssistantActivity.tool(at: duplicateReplayIndex)?.isCompleted == true
             activeStreamReplayToolMatchIndex = duplicateReplayIndex + 1
             activeStreamReplayPendingToolMatchIndex = nil
 
             guard !wasAlreadyCompleted else { return false }
 
-            liveToolCalls[duplicateReplayIndex] = liveToolCalls[duplicateReplayIndex].applyingCompletionPayload(payload)
+            _ = liveAssistantActivity.updateTool(at: duplicateReplayIndex) {
+                $0.applyingCompletionPayload(payload)
+            }
             scheduleStreamingScrollTrigger()
             return true
         }
@@ -4198,7 +4247,7 @@ final class ChatViewModel {
         activeStreamReplayPendingToolMatchIndex = nil
 
         guard let index = liveToolCallCompletionIndex(for: payload) else {
-            liveToolCalls.append(
+            liveAssistantActivity.appendTool(
                 ToolCall(
                     id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
                     name: payload.name,
@@ -4213,7 +4262,9 @@ final class ChatViewModel {
             return true
         }
 
-        liveToolCalls[index] = liveToolCalls[index].applyingCompletionPayload(payload)
+        _ = liveAssistantActivity.updateTool(at: index) {
+            $0.applyingCompletionPayload(payload)
+        }
         scheduleStreamingScrollTrigger()
         return true
     }
@@ -4336,9 +4387,12 @@ final class ChatViewModel {
                 toolCalls: existing.toolCalls,
                 contentParts: existing.contentParts,
                 reasoning: existing.reasoning,
+                activityScene: existing.activityScene,
                 attachments: existing.attachments,
+                turnDuration: existing.turnDuration,
                 turnTps: existing.turnTps
             )
+            liveAssistantActivity.appendProse(appendedContent)
             return true
         }
 
@@ -4350,6 +4404,7 @@ final class ChatViewModel {
                 messageId: messageID
             )
         )
+        liveAssistantActivity.appendProse(appendedContent)
         return true
     }
 
@@ -5023,9 +5078,13 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         if let usage = payload.usage {
             contextWindowSnapshot = usage
         }
-        if let finalTokensPerSecond = payload.usage?.tokensPerSecond,
-           finalTokensPerSecond.isFinite,
-           finalTokensPerSecond > 0,
+        let finalTokensPerSecond = payload.usage?.tokensPerSecond.flatMap {
+            $0.isFinite && $0 > 0 ? $0 : nil
+        }
+        let finalDuration = payload.usage?.durationSeconds.flatMap {
+            $0.isFinite && $0 >= 0 ? $0 : nil
+        }
+        if finalTokensPerSecond != nil || finalDuration != nil,
            let currentStreamingAssistantID {
             let currentAssistantIndex = messages.firstIndex(where: { $0.messageId == currentStreamingAssistantID })
                 ?? TranscriptTurnClassifier
@@ -5055,8 +5114,10 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
                 toolCalls: message.toolCalls,
                 contentParts: message.contentParts,
                 reasoning: message.reasoning,
+                activityScene: message.activityScene,
                 attachments: message.attachments,
-                turnTps: finalTokensPerSecond
+                turnDuration: finalDuration ?? message.turnDuration,
+                turnTps: finalTokensPerSecond ?? message.turnTps
             )
         }
         return hasCompletedTranscript
@@ -5089,8 +5150,7 @@ private struct ActiveChatStreamSnapshot: Equatable {
     let displayTitle: String
     let completedToolCallGroups: [ToolCallGroup]
     let completedReasoningGroups: [ReasoningGroup]
-    let liveToolCalls: [ToolCall]
-    let liveReasoningText: String
+    let liveAssistantActivity: AssistantActivityTimeline
     let activeStreamLastEventID: String?
     let streamingAssistantMessageID: String?
     let toolCallAnchorMessageID: String?
@@ -5157,6 +5217,403 @@ private struct QueuedSlashMessage {
     let attachments: [PendingAttachment]
 }
 
+struct AssistantActivityRow: Identifiable, Equatable {
+    enum Content: Equatable {
+        case prose(String)
+        case reasoning(String)
+        case tools([ToolCall])
+    }
+
+    let id: String
+    var content: Content
+
+    var kind: String {
+        switch content {
+        case .prose: "prose"
+        case .reasoning: "reasoning"
+        case .tools: "tools"
+        }
+    }
+
+    var text: String? {
+        switch content {
+        case .prose(let text), .reasoning(let text): text
+        case .tools: nil
+        }
+    }
+
+    var toolCalls: [ToolCall] {
+        guard case .tools(let toolCalls) = content else { return [] }
+        return toolCalls
+    }
+}
+
+struct CompletedAssistantTurn: Equatable {
+    let workRows: [AssistantActivityRow]
+    let finalAnswer: String
+
+    init?(rows: [AssistantActivityRow]) {
+        guard rows.count > 1,
+              case .prose(let finalAnswer) = rows.last?.content,
+              !finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+
+        workRows = Array(rows.dropLast())
+        self.finalAnswer = finalAnswer
+    }
+}
+
+struct AssistantActivityTimeline: Equatable {
+    private(set) var rows: [AssistantActivityRow] = []
+
+    var persistedContentParts: [JSONValue] {
+        rows.flatMap { row -> [JSONValue] in
+            switch row.content {
+            case .prose(let text):
+                return [.object(["type": .string("text"), "text": .string(text)])]
+            case .reasoning(let text):
+                return [.object(["type": .string("reasoning"), "text": .string(text)])]
+            case .tools(let toolCalls):
+                return toolCalls.map { toolCall in
+                    var part: [String: JSONValue] = [
+                        "type": .string("assistant_activity_tool"),
+                        "id": .string(toolCall.id),
+                        "name": .string(toolCall.name ?? "tool"),
+                        "input": .object(toolCall.args ?? [:])
+                    ]
+                    if let preview = toolCall.preview { part["preview"] = .string(preview) }
+                    if let duration = toolCall.duration { part["duration"] = .number(duration) }
+                    if let isError = toolCall.isError { part["is_error"] = .bool(isError) }
+                    return .object(part)
+                }
+            }
+        }
+    }
+
+    var reasoningText: String {
+        rows.compactMap { row in
+            guard case .reasoning(let text) = row.content else { return nil }
+            return text
+        }.joined()
+    }
+
+    var toolCalls: [ToolCall] {
+        rows.flatMap(\.toolCalls)
+    }
+
+    mutating func removeAll() {
+        rows.removeAll(keepingCapacity: true)
+    }
+
+    mutating func appendProse(_ text: String, id: String? = nil) {
+        appendText(text, kind: "prose", id: id) { .prose($0) }
+    }
+
+    mutating func appendReasoning(_ text: String, id: String? = nil) {
+        appendText(text, kind: "reasoning", id: id) { .reasoning($0) }
+    }
+
+    mutating func appendTool(_ toolCall: ToolCall, id: String? = nil) {
+        if case .tools(var toolCalls)? = rows.last?.content {
+            if let matchingIndex = toolCalls.lastIndex(where: { $0.id == toolCall.id }) {
+                toolCalls[matchingIndex] = toolCall
+            } else {
+                toolCalls.append(toolCall)
+            }
+            rows[rows.index(before: rows.endIndex)].content = .tools(toolCalls)
+            return
+        }
+
+        rows.append(AssistantActivityRow(
+            id: id ?? "tools:\(rows.count)",
+            content: .tools([toolCall])
+        ))
+    }
+
+    func tool(at index: Int) -> ToolCall? {
+        guard index >= 0 else { return nil }
+        var currentIndex = 0
+        for row in rows {
+            guard case .tools(let toolCalls) = row.content else { continue }
+            if index < currentIndex + toolCalls.count {
+                return toolCalls[index - currentIndex]
+            }
+            currentIndex += toolCalls.count
+        }
+        return nil
+    }
+
+    mutating func updateTool(at index: Int, _ update: (ToolCall) -> ToolCall) -> Bool {
+        guard index >= 0 else { return false }
+        var currentIndex = 0
+        for rowIndex in rows.indices {
+            guard case .tools(var toolCalls) = rows[rowIndex].content else { continue }
+            if index < currentIndex + toolCalls.count {
+                let toolIndex = index - currentIndex
+                toolCalls[toolIndex] = update(toolCalls[toolIndex])
+                rows[rowIndex].content = .tools(toolCalls)
+                return true
+            }
+            currentIndex += toolCalls.count
+        }
+        return false
+    }
+
+    static func persisted(
+        message: ChatMessage,
+        reasoningGroups: [ReasoningGroup],
+        toolCallGroups: [ToolCallGroup]
+    ) -> AssistantActivityTimeline {
+        if let scene = message.activityScene,
+           scene.version == "activity_scene_v1",
+           let sceneRows = scene.activityRows,
+           !sceneRows.isEmpty {
+            var timeline = AssistantActivityTimeline()
+            for (sourceIndex, row) in sceneRows.enumerated().sorted(by: { lhs, rhs in
+                (lhs.element.orderIndex ?? lhs.offset) < (rhs.element.orderIndex ?? rhs.offset)
+            }) {
+                timeline.appendSceneRow(row, sourceIndex: sourceIndex)
+            }
+            timeline.appendFinalProseIfNeeded(message.content)
+            if !timeline.rows.isEmpty { return timeline }
+        }
+
+        if let contentParts = message.contentParts, !contentParts.isEmpty {
+            var timeline = AssistantActivityTimeline()
+            for (index, part) in contentParts.enumerated() {
+                timeline.appendContentPart(part, sourceIndex: index)
+            }
+            if !timeline.rows.isEmpty { return timeline }
+        }
+
+        var timeline = AssistantActivityTimeline()
+        for group in reasoningGroups {
+            timeline.appendReasoning(group.text, id: group.id)
+        }
+        for group in toolCallGroups {
+            for toolCall in group.toolCalls {
+                timeline.appendTool(toolCall, id: group.id)
+            }
+        }
+        timeline.appendProseIfPresent(message.content, id: "message:\(message.id)")
+        return timeline
+    }
+
+    static func persisted(
+        assistantSegments: [TranscriptAssistantSegment],
+        reasoningGroups: [ReasoningGroup],
+        toolCallGroups: [ToolCallGroup]
+    ) -> AssistantActivityTimeline {
+        guard let finalSegment = assistantSegments.last else { return AssistantActivityTimeline() }
+        let hasStructuredTurn = finalSegment.message.activityScene != nil
+            || finalSegment.message.contentParts != nil
+        let sourceSegments = hasStructuredTurn ? [finalSegment] : assistantSegments
+        var timeline = AssistantActivityTimeline()
+
+        for segment in sourceSegments {
+            let segmentTimeline = persisted(
+                message: segment.message,
+                reasoningGroups: reasoningGroups.filter { $0.anchorMessageID == segment.anchorID },
+                toolCallGroups: toolCallGroups.filter { $0.anchorMessageID == segment.anchorID }
+            )
+            timeline.rows.append(contentsOf: segmentTimeline.rows)
+        }
+
+        return timeline
+    }
+
+    private mutating func appendText(
+        _ text: String,
+        kind: String,
+        id: String?,
+        content: (String) -> AssistantActivityRow.Content
+    ) {
+        guard !text.isEmpty else { return }
+        if let lastIndex = rows.indices.last,
+           rows[lastIndex].kind == kind,
+           let existing = rows[lastIndex].text {
+            rows[lastIndex].content = content(existing + text)
+            return
+        }
+        rows.append(AssistantActivityRow(
+            id: id ?? "\(kind):\(rows.count)",
+            content: content(text)
+        ))
+    }
+
+    private mutating func appendSceneRow(_ row: AssistantActivitySceneRow, sourceIndex: Int) {
+        let rowID = row.rowID ?? "scene:\(sourceIndex)"
+        switch row.role {
+        case "prose":
+            appendProseIfPresent(row.text, id: rowID)
+        case "thinking":
+            appendReasoningIfPresent(
+                Self.string(row.thinking?["text"]) ?? row.text,
+                id: rowID
+            )
+        case "tool":
+            if let toolCall = Self.toolCall(
+                object: row.tool ?? row.payload,
+                fallbackID: row.toolCallID ?? rowID,
+                status: row.status
+            ) {
+                appendTool(toolCall, id: rowID)
+            }
+        default:
+            break
+        }
+    }
+
+    private mutating func appendContentPart(_ part: JSONValue, sourceIndex: Int) {
+        if case .string(let text) = part {
+            appendProseIfPresent(text, id: "content:\(sourceIndex)")
+            return
+        }
+        guard case .object(let object) = part,
+              let type = Self.string(object["type"])
+        else { return }
+
+        switch type {
+        case "text", "input_text", "output_text":
+            appendProseIfPresent(
+                Self.string(object["text"])
+                    ?? Self.string(object["content"])
+                    ?? Self.string(object["input_text"])
+                    ?? Self.string(object["output_text"]),
+                id: "content:\(sourceIndex)"
+            )
+        case "thinking", "reasoning":
+            appendReasoningIfPresent(
+                Self.string(object["thinking"])
+                    ?? Self.string(object["reasoning"])
+                    ?? Self.string(object["text"])
+                    ?? Self.string(object["content"]),
+                id: "content:\(sourceIndex)"
+            )
+        case "tool_use", "assistant_activity_tool":
+            if let toolCall = Self.toolCall(
+                object: object,
+                fallbackID: "content-tool:\(sourceIndex)",
+                status: "completed"
+            ) {
+                appendTool(toolCall, id: "content:\(sourceIndex)")
+            }
+        default:
+            break
+        }
+    }
+
+    private mutating func appendFinalProseIfNeeded(_ text: String?) {
+        guard let text = Self.nonEmpty(text) else { return }
+        let normalizedText = Self.normalized(text)
+        let alreadyPresent = rows.contains { row in
+            guard case .prose(let prose) = row.content else { return false }
+            return Self.normalized(prose) == normalizedText
+        }
+        if !alreadyPresent {
+            appendProse(text, id: "scene:final")
+        }
+    }
+
+    private mutating func appendProseIfPresent(_ text: String?, id: String) {
+        guard let text = Self.nonEmpty(text) else { return }
+        appendProse(text, id: id)
+    }
+
+    private mutating func appendReasoningIfPresent(_ text: String?, id: String) {
+        guard let text = Self.nonEmpty(text) else { return }
+        appendReasoning(text, id: id)
+    }
+
+    private static func toolCall(
+        object: [String: JSONValue]?,
+        fallbackID: String,
+        status: String?
+    ) -> ToolCall? {
+        guard let object else { return nil }
+        let function = Self.object(object["function"])
+        let id = Self.nonEmpty(Self.string(object["id"]))
+            ?? Self.nonEmpty(Self.string(object["tid"]))
+            ?? Self.nonEmpty(Self.string(object["tool_call_id"]))
+            ?? Self.nonEmpty(Self.string(object["tool_use_id"]))
+            ?? fallbackID
+        let name = Self.nonEmpty(Self.string(object["name"]))
+            ?? Self.nonEmpty(Self.string(object["tool_name"]))
+            ?? Self.nonEmpty(Self.string(function?["name"]))
+            ?? "tool"
+        let preview = Self.nonEmpty(Self.string(object["snippet"]))
+            ?? Self.nonEmpty(Self.string(object["preview"]))
+            ?? Self.nonEmpty(Self.string(object["result"]))
+            ?? Self.nonEmpty(Self.string(object["output"]))
+        let args = Self.object(object["args"])
+            ?? Self.object(object["input"])
+            ?? Self.arguments(Self.string(function?["arguments"]))
+        let isError = Self.bool(object["is_error"]) ?? Self.bool(object["error"])
+        return ToolCall(
+            id: id,
+            name: name,
+            preview: preview,
+            args: args,
+            duration: Self.number(object["duration"]),
+            isError: isError,
+            isCompleted: status == "completed" || Self.bool(object["done"]) == true
+        )
+    }
+
+    private static func string(_ value: JSONValue?) -> String? {
+        guard let value else { return nil }
+        switch value {
+        case .string(let value): return value
+        case .number(let value): return value.formatted()
+        case .bool(let value): return value ? "true" : "false"
+        case .object, .array:
+            guard let data = try? JSONEncoder().encode(value) else { return nil }
+            return String(data: data, encoding: .utf8)
+        case .null: return nil
+        }
+    }
+
+    private static func object(_ value: JSONValue?) -> [String: JSONValue]? {
+        guard case .object(let object) = value else { return nil }
+        return object
+    }
+
+    private static func bool(_ value: JSONValue?) -> Bool? {
+        switch value {
+        case .bool(let value): value
+        case .number(let value): value != 0
+        case .string(let value): ["true", "1", "yes"].contains(value.lowercased())
+        default: nil
+        }
+    }
+
+    private static func number(_ value: JSONValue?) -> Double? {
+        switch value {
+        case .number(let value): value
+        case .string(let value): Double(value)
+        default: nil
+        }
+    }
+
+    private static func arguments(_ value: String?) -> [String: JSONValue]? {
+        guard let value,
+              let data = value.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+              case .object(let object) = decoded
+        else { return nil }
+        return object
+    }
+
+    private static func nonEmpty(_ text: String?) -> String? {
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+}
+
 struct ReasoningGroup: Identifiable, Equatable {
     let id: String
     let anchorMessageID: String?
@@ -5174,8 +5631,14 @@ struct TranscriptMessage: Identifiable, Equatable {
     let renderID: String
     let anchorID: String
     let message: ChatMessage
+    let assistantSegments: [TranscriptAssistantSegment]
 
     var id: String { renderID }
+}
+
+struct TranscriptAssistantSegment: Equatable {
+    let anchorID: String
+    let message: ChatMessage
 }
 
 /// Display model for the synthesized "Context compaction · Reference only" card.
@@ -5304,6 +5767,22 @@ extension ChatViewModel {
         let offset = max(0, messageOffset ?? 0)
         var transcriptMessages: [TranscriptMessage] = []
         transcriptMessages.reserveCapacity(messages.count)
+        var assistantSegments: [(loadedIndex: Int, segment: TranscriptAssistantSegment)] = []
+
+        func appendAssistantTurn() {
+            guard let first = assistantSegments.first,
+                  let last = assistantSegments.last
+            else { return }
+
+            transcriptMessages.append(TranscriptMessage(
+                loadedIndex: last.loadedIndex,
+                renderID: "transcript:\(offset + first.loadedIndex)",
+                anchorID: last.segment.anchorID,
+                message: last.segment.message,
+                assistantSegments: assistantSegments.map(\.segment)
+            ))
+            assistantSegments.removeAll(keepingCapacity: true)
+        }
 
         for (loadedIndex, message) in messages.enumerated() {
             guard message.role != "tool" else { continue }
@@ -5317,6 +5796,16 @@ extension ChatViewModel {
                 at: loadedIndex,
                 messageOffset: messageOffset
             )
+
+            if message.role == "assistant" {
+                assistantSegments.append((
+                    loadedIndex,
+                    TranscriptAssistantSegment(anchorID: anchorID, message: message)
+                ))
+                continue
+            }
+
+            appendAssistantTurn()
             let absoluteIndex = offset + loadedIndex
             let renderID = "transcript:\(absoluteIndex)"
 
@@ -5324,9 +5813,12 @@ extension ChatViewModel {
                 loadedIndex: loadedIndex,
                 renderID: renderID,
                 anchorID: anchorID,
-                message: message
+                message: message,
+                assistantSegments: []
             ))
         }
+
+        appendAssistantTurn()
 
         return transcriptMessages
     }
@@ -5409,6 +5901,7 @@ extension ChatViewModel {
             return jsonStringValue(object["thinking"])
                 ?? jsonStringValue(object["reasoning"])
                 ?? jsonStringValue(object["text"])
+                ?? jsonStringValue(object["content"])
         }
         .joined(separator: "\n")
 

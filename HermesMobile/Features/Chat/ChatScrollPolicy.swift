@@ -51,6 +51,24 @@ enum ChatScrollPolicy {
         distanceFromBottom > bottomThreshold(isStreaming: isStreaming) + readingOlderHysteresis
     }
 
+    static func shouldUseCompactComposer(
+        isReadingOlderTranscript: Bool,
+        hasMessages: Bool,
+        isFocused: Bool,
+        hasDraft: Bool,
+        hasPendingAttachments: Bool,
+        isBusyOrUnavailable: Bool,
+        requiresExpandedPresentation: Bool
+    ) -> Bool {
+        isReadingOlderTranscript
+            && hasMessages
+            && !isFocused
+            && !hasDraft
+            && !hasPendingAttachments
+            && !isBusyOrUnavailable
+            && !requiresExpandedPresentation
+    }
+
     static func cooldownDeadline(after date: Date = Date()) -> Date {
         date.addingTimeInterval(userScrollCooldown)
     }
