@@ -4,8 +4,8 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for issue 
 
 ## Repository
 
-- GitHub repo: `uzairansaruzi/hermex`
-- Remote: `https://github.com/uzairansaruzi/hermex.git`
+- GitHub repo: `MaudeCode/talaria`
+- Remote: `https://github.com/MaudeCode/talaria.git`
 
 Infer the repo from `git remote -v` when possible; `gh` does this automatically when run inside the clone.
 

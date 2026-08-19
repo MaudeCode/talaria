@@ -16,7 +16,7 @@ final class APIClientTTSTests: APIClientTestCase {
                 throw URLError(.badServerResponse)
             }
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-            XCTAssertEqual(json["text"] as? String, "Hello from Hermex.")
+            XCTAssertEqual(json["text"] as? String, "Hello from Talaria.")
             // The server defaults to `zh-CN-XiaoxiaoNeural`, so the voice must
             // always be sent explicitly.
             XCTAssertEqual(json["voice"] as? String, "en-US-AriaNeural")
@@ -33,7 +33,7 @@ final class APIClientTTSTests: APIClientTestCase {
             return (response, audioBytes)
         }
 
-        let data = try await client.synthesizeSpeech(text: "Hello from Hermex.", voice: "en-US-AriaNeural")
+        let data = try await client.synthesizeSpeech(text: "Hello from Talaria.", voice: "en-US-AriaNeural")
 
         XCTAssertEqual(data, audioBytes)
     }

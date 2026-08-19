@@ -150,7 +150,7 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
       ]
     end
 
-    versions = selector.send(:approved_app_store_versions, bundle_id: "com.uzairansar.hermesmobile")
+    versions = selector.send(:approved_app_store_versions, bundle_id: "dev.kil.talaria")
 
     assert_equal(["1.4"], versions)
     assert_equal("/v1/apps/app-123/appStoreVersions", captured.first.first)
@@ -161,7 +161,7 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
     selector.define_singleton_method(:approved_app_store_versions) { |bundle_id:| ["1.4"] }
 
     error = assert_raises(TestFlightBuildNumberSelector::SelectionError) do
-      selector.send(:enforce_open_train!, bundle_id: "com.uzairansar.hermesmobile", marketing_version: "1.4")
+      selector.send(:enforce_open_train!, bundle_id: "dev.kil.talaria", marketing_version: "1.4")
     end
 
     assert_includes(error.message, "train is closed")
@@ -178,7 +178,7 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
         {
           "id" => "app-123",
           "attributes" => {
-            "bundleId" => "com.uzairansar.hermesmobile"
+            "bundleId" => "dev.kil.talaria"
           }
         }
       ]
@@ -186,11 +186,11 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
 
     assert_equal(
       "app-123",
-      selector.send(:app_id_for_bundle_id, "com.uzairansar.hermesmobile")
+      selector.send(:app_id_for_bundle_id, "dev.kil.talaria")
     )
 
     assert_equal("/v1/apps", captured.first.first)
-    assert_equal("com.uzairansar.hermesmobile", captured.first.last.fetch("filter[bundleId]"))
+    assert_equal("dev.kil.talaria", captured.first.last.fetch("filter[bundleId]"))
     refute_includes(captured.first.last.keys, "filter[platform]")
   end
 

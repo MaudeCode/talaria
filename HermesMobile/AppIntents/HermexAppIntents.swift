@@ -2,7 +2,7 @@ import AppIntents
 import Foundation
 
 /// Bridges App Intents (which run outside the SwiftUI view tree) into the app's existing
-/// deep-link router. An intent writes a `hermes-agent://…` URL here; `ContentView` observes
+/// deep-link router. An intent writes a `talaria://…` URL here; `ContentView` observes
 /// `pendingDeepLink` and feeds it through the same `handleOpenURL` path as an external URL,
 /// so intent navigation reuses the share/session deep-link plumbing rather than inventing a
 /// parallel one (issue #337). A shared singleton is the standard bridge because the intent
@@ -32,7 +32,7 @@ final class AppIntentRouter {
 /// Shortcuts, Spotlight, and Siri via `HermexShortcuts`.
 struct NewChatIntent: AppIntent {
     static var title: LocalizedStringResource = "New Chat"
-    static var description = IntentDescription("Open Hermex on a new, empty chat.")
+    static var description = IntentDescription("Open Talaria on a new, empty chat.")
 
     /// Foregrounds the app so the navigation can run in-process.
     static var openAppWhenRun: Bool = true
@@ -52,7 +52,7 @@ struct NewChatIntent: AppIntent {
 /// the system prompt appears, and if it's denied the composer shows a clear error instead.
 struct NewChatVoiceIntent: AppIntent {
     static var title: LocalizedStringResource = "New Chat with Voice"
-    static var description = IntentDescription("Open Hermex on a new chat and start voice dictation.")
+    static var description = IntentDescription("Open Talaria on a new chat and start voice dictation.")
 
     /// Foregrounds the app so the navigation — and the microphone — can run in-process.
     static var openAppWhenRun: Bool = true
@@ -71,7 +71,7 @@ struct NewChatVoiceIntent: AppIntent {
 /// query item, so `PendingNewChatView` can create the session pinned to it.
 struct NewChatInProfileIntent: AppIntent {
     static var title: LocalizedStringResource = "New Chat in Profile"
-    static var description = IntentDescription("Open Hermex on a new chat pinned to a specific profile.")
+    static var description = IntentDescription("Open Talaria on a new chat pinned to a specific profile.")
 
     /// Foregrounds the app so the navigation can run in-process.
     static var openAppWhenRun: Bool = true

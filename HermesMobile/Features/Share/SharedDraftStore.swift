@@ -41,14 +41,14 @@ struct SharedImport: Equatable {
 enum HermesShareDraft {
     static var appGroupIdentifier: String {
         Bundle.main.object(forInfoDictionaryKey: "HermesAppGroupIdentifier") as? String
-            ?? "group.com.uzairansar.hermesmobile"
+            ?? "group.dev.kil.talaria"
     }
 
     static let pendingDraftFileName = "pending-share-draft.json"
     static let pendingAttachmentsDirectoryName = "pending-share-attachments"
     static var urlScheme: String {
         Bundle.main.object(forInfoDictionaryKey: "HermesURLScheme") as? String
-            ?? "hermes-agent"
+            ?? "talaria"
     }
 
     static let shareURLHost = "share"

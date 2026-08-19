@@ -4,7 +4,7 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Layout
 
-This is a single-context repo: Hermex is one native iOS app with related app extension targets, tests, release docs, and one shared product vocabulary.
+This is a single-context repo: Talaria is one native iOS app with related app extension targets, tests, release docs, and one shared product vocabulary.
 
 When present, use:
 

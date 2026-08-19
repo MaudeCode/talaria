@@ -3,7 +3,7 @@ import Foundation
 enum HermesDeepLink {
     static var scheme: String {
         Bundle.main.object(forInfoDictionaryKey: "HermesURLScheme") as? String
-            ?? "hermes-agent"
+            ?? "talaria"
     }
 
     static let sessionHost = "session"
@@ -13,7 +13,7 @@ enum HermesDeepLink {
     /// so the intent can reuse `ContentView.handleOpenURL` rather than inventing a new path.
     static let newChatHost = "new-chat"
 
-    /// `hermes-agent://new-chat` (scheme follows the active build, e.g. `-branch`).
+    /// `talaria://new-chat` (scheme follows the active build, e.g. `-branch`).
     static var newChatURL: URL? {
         var components = URLComponents()
         components.scheme = scheme
@@ -32,7 +32,7 @@ enum HermesDeepLink {
     /// are mutually exclusive.
     static let newChatVoiceHost = "new-chat-voice"
 
-    /// `hermes-agent://new-chat-voice` (scheme follows the active build, e.g. `-branch`).
+    /// `talaria://new-chat-voice` (scheme follows the active build, e.g. `-branch`).
     static var newChatVoiceURL: URL? {
         var components = URLComponents()
         components.scheme = scheme
@@ -55,7 +55,7 @@ enum HermesDeepLink {
     /// Query-item name carrying the profile's server name.
     static let profileQueryItem = "profile"
 
-    /// `hermes-agent://new-chat-profile?profile=<name>` (scheme follows the active build).
+    /// `talaria://new-chat-profile?profile=<name>` (scheme follows the active build).
     /// Returns nil for a blank profile name so callers can pass it straight through.
     static func newChatInProfileURL(profileName: String) -> URL? {
         let trimmed = profileName.trimmingCharacters(in: .whitespacesAndNewlines)

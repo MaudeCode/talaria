@@ -1,4 +1,4 @@
-# Hermex — iOS App Project Specification
+# Talaria — iOS App Project Specification
 
 **Status:** v0.4 spec — revised pre-polish plan with a glass-forward native mobile UI direction
 **Author:** Project owner + planning assistant
@@ -9,7 +9,7 @@
 
 ## 0. How to use this document
 
-You (the coding agent) are building a native iOS app called **Hermex** in App Store Connect. The Xcode target remains `HermesMobile`; the iPhone home-screen display name is `Hermex`. You are NOT modifying the upstream `nesquena/hermes-webui` Python server in this project. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
+You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target remains `HermesMobile`; the iPhone home-screen display name is `Talaria`. You are NOT modifying the upstream `nesquena/hermes-webui` Python server in this project. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
 
 Treat each section's checkboxes as your work plan. After every milestone, update the `## Progress log` at the bottom.
 
@@ -67,8 +67,8 @@ The server owns execution. The app owns mobile interaction quality.
 | 7 | Push notifications | **Skip for v1** |
 | 8 | Terminal feature | **Skip for v1** |
 | 9 | Offline behavior | **Read-only cache** of session list and recent messages |
-| 10 | App name | **Hermex** in App Store Connect; iPhone display name **Hermex**; Xcode target remains `HermesMobile` |
-| 11 | Apple Developer account | **Enrolled** — Team ID `6GYD9C9N6R`; bundle ID `com.uzairansar.hermesmobile`; SKU `hermes-mobile-ios` |
+| 10 | App name | **Talaria** in App Store Connect; iPhone display name **Talaria**; Xcode target remains `HermesMobile` |
+| 11 | Apple Developer account | **Enrolled** — Team ID `Q28NF3NH3D`; development provisioning active for bundle ID `dev.kil.talaria`; App Store Connect record and SKU pending |
 
 ---
 
@@ -93,7 +93,7 @@ If the server appears down during testing, check (in order): the server process,
 
 ## 2b. Mobile UI direction
 
-Hermex aims for a compact, glass-forward native iOS treatment:
+Talaria aims for a compact, glass-forward native iOS treatment:
 
 - Composer: a single Liquid-Glass-style surface with prompt text above and runtime controls below.
 - Runtime controls: compact model and reasoning selectors in a bottom control row inside the composer, with SF Symbols for the reasoning-effort icons.
@@ -108,7 +108,7 @@ This is a design direction, not a dependency. Do not add third-party UI packages
 
 ```
 ┌──────────────────────────┐         HTTPS (REST + SSE)        ┌────────────────────────────┐
-│ Hermex iOS               │ ────────────────────────────────► │  Cloudflare Tunnel edge    │
+│ Talaria iOS               │ ────────────────────────────────► │  Cloudflare Tunnel edge    │
 │   SwiftUI + URLSession   │ ◄──────────────────────────────── │  hermes.yourdomain.com     │
 │   LDSwiftEventSource     │                                   └────────────┬───────────────┘
 │   Keychain (auth token)  │                                                │ cloudflared
@@ -349,7 +349,7 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 
 ### Phase 0 — Setup (½ day)
 - [x] Create new GitHub repo (ask owner for the name; default `hermes-mobile`).
-- [x] Initialize Xcode project: SwiftUI App, iOS 17, Swift 5.9+, name `HermesMobile`, initial placeholder bundle ID later replaced by `com.uzairansar.hermesmobile`.
+- [x] Initialize Xcode project: SwiftUI App, iOS 17, Swift 5.9+, name `HermesMobile`, initial placeholder bundle ID later replaced by `dev.kil.talaria`.
 - [x] Add this `PROJECT_SPEC.md` to the repo root.
 - [x] Add SwiftPM dependencies: LDSwiftEventSource, swift-markdown-ui, Splash, Highlightr, KeychainAccess.
 - [x] Add `.gitignore` (Xcode template), commit.
@@ -666,12 +666,12 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 
 ### Phase 13 — TestFlight prep (½ day)
 - [x] **Owner creates Apple Developer account** ($99/yr).
-- [x] Configure signing in Xcode for Team ID `6GYD9C9N6R`.
-- [x] Create App Store Connect app record: `Hermex`, bundle ID `com.uzairansar.hermesmobile`, SKU `hermes-mobile-ios`.
+- [x] Configure signing in Xcode for Team ID `Q28NF3NH3D`.
+- [ ] Create App Store Connect app record for `Talaria` when TestFlight distribution is needed; bundle ID `dev.kil.talaria`, SKU to be chosen then.
 - [x] Answer export compliance: `None of the algorithms mentioned above`; repo declares `ITSAppUsesNonExemptEncryption = NO`.
-- [x] Add internal TestFlight path for the owner first.
+- [ ] Add an internal TestFlight path after the App Store Connect record exists.
 - [x] Document the install/release process in `DEVELOPMENT.md`.
-- [x] Add CI/manual GitHub Actions upload workflow after the first repo-clean TestFlight setup commit.
+- [ ] Reconfigure and verify the inherited CI/TestFlight upload workflow for the Talaria App Store Connect record.
 - [ ] Add external testers after owner verifies an internal build; first external build requires Beta App Review.
 
 **Total estimate: ~7–8 weeks of focused part-time work after the pre-polish scope expansion.**
@@ -692,7 +692,7 @@ Document it as the recommended path.
 4. In your Cloudflare dashboard, route a hostname (e.g. `hermes.yourdomain.com`) to that tunnel.
 5. Run the tunnel: `cloudflared tunnel run hermes` (or as a launchd / systemd service for auto-start — see Cloudflare's docs).
 6. **Set `HERMES_WEBUI_PASSWORD`** on the server. The hostname is publicly reachable; the password is your only app-level defense unless you add Cloudflare Access.
-7. In Hermex, enter `https://hermes.yourdomain.com` and the password.
+7. In Talaria, enter `https://hermes.yourdomain.com` and the password.
 
 **For macOS users running via launchd:**
 - Server plist at `~/Library/LaunchAgents/com.hermes.webui.plist` (auto-starts at login, auto-restarts on crash).
@@ -711,7 +711,7 @@ Document it as the recommended path.
 6. Verify localhost first: `curl --fail http://127.0.0.1:8787/health`.
 7. Only when HTTPS port 443 at the root path is unused, run `tailscale serve --bg 8787`. If Tailscale requires HTTPS consent, complete its consent flow only after reviewing the certificate-transparency disclosure. Never enable Funnel.
 8. Read the actual `https://…ts.net` URL from `tailscale serve status`, then verify `https://<actual-ts.net-hostname>/health`.
-9. Install Tailscale on the iPhone, join the same tailnet, and enter the exact HTTPS URL and password in Hermex.
+9. Install Tailscale on the iPhone, join the same tailnet, and enter the exact HTTPS URL and password in Talaria.
 
 **Direct-bind fallback:** binding to `0.0.0.0` and connecting to a Tailscale IP over plain HTTP remains an explicit manual fallback only. Explain the wider listener and ATS implications first; onboarding automation must not choose it.
 
@@ -800,9 +800,9 @@ These are useful directions, not approved v1 scope. Before implementing any item
 
 Stop and ask before guessing:
 
-1. **Repo name** for the new iOS project. ~~Default suggestion: `hermes-mobile`.~~ **Answered: `hermes-mobile`**.
-2. **Bundle ID** — **Answered:** `com.uzairansar.hermesmobile`.
-3. **App icon / branding** — **Answered:** owner supplied light and dark Hermes icon assets for v1; App Store Connect name is `Hermex`.
+1. **Repo name** for the iOS project. **Answered: `talaria`.** Internal Xcode target/module names remain `HermesMobile` to avoid a churn-only rename.
+2. **Bundle ID** — **Answered:** `dev.kil.talaria`.
+3. **App icon / branding** — **Open:** Talaria currently retains the inherited Hermes icon assets; replace them when the owner chooses Talaria artwork.
 4. **Crash reporting** — Firebase Crashlytics or skip for v1?
 5. **Privacy policy URL** — required for App Store. Owner needs to provide one (a simple GitHub Pages page is fine).
 6. **Default Server URL** — **Answered for current builds:** leave the field empty and show placeholder text reading `https://hermes.yourdomain.com`; the owner enters their URL once.
@@ -850,7 +850,7 @@ APP_VERSION / APP_BUILD:
 
 ### 17.1 Scope and authority
 
-Hermex will provide native iPhone functional parity with every user-facing Kanban
+Talaria will provide native iPhone functional parity with every user-facing Kanban
 capability in the verified Hermes WebUI baseline. Visual parity is not required. The
 native interaction model, accessibility behavior, and safety boundaries in this
 section are normative even where they differ from the desktop WebUI.
@@ -859,17 +859,17 @@ The compatibility baseline is the maintainer's authenticated running WebUI at co
 `d4e80b45498a914ce67e6b976145804638a46caf`. Its `api/kanban_bridge.py` is byte-for-byte
 identical to pinned upstream commit
 `2f3e42dc649e6d2bae572a0655681d9bb212c78d`. The official Hermes Bridge API
-documentation intentionally omits Kanban internals, so Hermex makes no version-range
+documentation intentionally omits Kanban internals, so Talaria makes no version-range
 promise for this feature. Compatibility is capability-based and must be revalidated
 after a material upstream bridge change.
 
 The canonical rationale and evidence are:
 
 - [Inventory the upstream Kanban domain and API contract](https://github.com/uzairansaruzi/hermex/issues/140)
-- [Map Kanban integration constraints in Hermex](https://github.com/uzairansaruzi/hermex/issues/141)
+- [Map Kanban integration constraints in Talaria](https://github.com/uzairansaruzi/hermex/issues/141)
 - [Verify authenticated Kanban wire responses on the running server](https://github.com/uzairansaruzi/hermex/issues/146)
-- [Choose Hermex's Kanban domain vocabulary](https://github.com/uzairansaruzi/hermex/issues/148)
-- [Choose Hermex's Kanban compatibility boundary](https://github.com/uzairansaruzi/hermex/issues/147)
+- [Choose Talaria's Kanban domain vocabulary](https://github.com/uzairansaruzi/hermex/issues/148)
+- [Choose Talaria's Kanban compatibility boundary](https://github.com/uzairansaruzi/hermex/issues/147)
 - [Choose Kanban mutation, conflict, and failure semantics](https://github.com/uzairansaruzi/hermex/issues/143)
 - [Choose the native iPhone Kanban interaction model](https://github.com/uzairansaruzi/hermex/issues/142)
 
@@ -879,14 +879,14 @@ and a `Kanban` qualifier.
 
 ### 17.2 Compatibility handshake and capability boundaries
 
-Before showing live Kanban data, Hermex must perform this non-mutating handshake:
+Before showing live Kanban data, Talaria must perform this non-mutating handshake:
 
 1. `GET /api/kanban/config`
 2. `GET /api/kanban/boards`
 3. `GET /api/kanban/board?board=<server-reported-current-slug>`
 
 Every upstream wire-model property is optional, unknown fields are ignored, and
-decoding is followed by capability-specific semantic validation. Hermex must not
+decoding is followed by capability-specific semantic validation. Talaria must not
 infer missing Board identity, current Board, Card identity, Card Status, dependency
 direction, or mutation outcome. An unknown Status remains visible as an unsupported
 server value and disables mutations for that Card.
@@ -912,7 +912,7 @@ the pinned upstream source, in the precedence required by `AGENTS.md`.
 
 | Capability | Verified method and path | Required contract notes |
 |---|---|---|
-| Configuration | `GET /api/kanban/config` | Columns, Profiles/counts, defaults, grouping/archive/Markdown flags, and `read_only`. Hermex reads but never writes the server-global grouping setting. |
+| Configuration | `GET /api/kanban/config` | Columns, Profiles/counts, defaults, grouping/archive/Markdown flags, and `read_only`. Talaria reads but never writes the server-global grouping setting. |
 | Boards | `GET /api/kanban/boards` | Board metadata/counts, `current`, and `read_only`. Never surface `db_path` in normal UI or logs. |
 | Board snapshot | `GET /api/kanban/board` | `board`, Profile/tenant/archive filters, and optional event cursor; full `changed:true` or minimal `changed:false` envelope. |
 | Stats and Profiles | `GET /api/kanban/stats`, `GET /api/kanban/assignees` | Stats tolerate the older minimal shape. WebUI-parity UI uses total and per-Status counts. |
@@ -925,8 +925,8 @@ the pinned upstream source, in the precedence required by `AGENTS.md`.
 | Block/Unblock | `POST /api/kanban/tasks/{id}/block`, `POST /api/kanban/tasks/{id}/unblock` | Preserve the structured server verbs and refusal errors. |
 | Dependencies | `POST /api/kanban/links`, `POST /api/kanban/links/delete` | Exact direction is Prerequisite `parent_id` to Dependent `child_id`. |
 | Bulk Actions | `POST /api/kanban/tasks/bulk` | Nonempty IDs with Archive, Status, Assigned Profile, or priority. HTTP 200 can contain per-Card failures and is never treated as atomic success. |
-| Dispatcher | `POST /api/kanban/dispatch` | `board`, `dry_run`, and `max` are query parameters; Board in JSON is ineffective. Hermex always uses maximum eight. |
-| Create Board | `POST /api/kanban/boards` | Slug plus name/description/icon/color. Hermex does not automatically make the new Board active. |
+| Dispatcher | `POST /api/kanban/dispatch` | `board`, `dry_run`, and `max` are query parameters; Board in JSON is ineffective. Talaria always uses maximum eight. |
+| Create Board | `POST /api/kanban/boards` | Slug plus name/description/icon/color. Talaria does not automatically make the new Board active. |
 | Edit/Archive Board | `PATCH /api/kanban/boards/{slug}`, `DELETE /api/kanban/boards/{slug}` | Slug is immutable. Archive uses DELETE without hard-delete query. Default Board cannot be archived. |
 | Make Active Board | `POST /api/kanban/boards/{slug}/switch` | Confirm because it changes shared server state visible to other Hermes clients. |
 
@@ -937,7 +937,7 @@ editing, filtering, or bulk-assigning Cards must never call `/api/profile/switch
 change the active chat Profile cookie, or source assignment state from that client-wide
 chat-profile selection.
 
-Hermex deliberately does not expose backend-only hard deletion, archived-Board
+Talaria deliberately does not expose backend-only hard deletion, archived-Board
 enumeration/restoration, the global `PATCH /api/kanban/config` grouping mutation, the
 legacy Card patch alias, or unsupported task attachments. A single-title quick-create
 control is not required: New Card opens the complete native editor and preserves the
@@ -947,7 +947,7 @@ full user capability.
 
 Kanban is a distinct `SessionListUtilityDestination` constructed with the active
 server URL and centralized authentication-error handling. Browsing a Board is local
-to Hermex and never changes the server's active Board. Profile grouping is also a
+to Talaria and never changes the server's active Board. Profile grouping is also a
 local presentation choice. Any persisted Board/filter/Status preference must be keyed
 by server; initial implementation may keep all Kanban navigation state transient.
 
@@ -991,7 +991,7 @@ Overwrite. This is best-effort detection and must not be described as a guarante
 Require confirmation for:
 
 - Run Dispatcher, warning that it may start workers and consume API budget;
-- Archive Board, warning that Hermex cannot restore it in-app;
+- Archive Board, warning that Talaria cannot restore it in-app;
 - Archive Cards as a Bulk Action;
 - creating a Ready, Unassigned Card;
 - every transition out of Running, warning that claim/worker state may be cleared;

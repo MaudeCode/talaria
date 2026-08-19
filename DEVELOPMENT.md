@@ -32,7 +32,7 @@ Contract test readiness is documented in [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md
 
 Phase 4 streaming uses `GET /api/chat/stream?stream_id=...` over Server-Sent Events. Current upstream source confirms the stream response uses `Content-Type: text/event-stream; charset=utf-8`, `X-Accel-Buffering: no`, `Connection: keep-alive`, and sends `: heartbeat` comments every 30 seconds while no app event is ready.
 
-Cloudflare can still close long-lived responses if the origin does not send data for long enough. The expected healthy behavior for Hermex is:
+Cloudflare can still close long-lived responses if the origin does not send data for long enough. The expected healthy behavior for Talaria is:
 
 - streams longer than 2 minutes continue delivering tokens, tool events, reasoning events, title events, `done`, and `stream_end` when the server emits them;
 - quiet periods under normal heartbeat behavior stay connected because the server writes `: heartbeat` about every 30 seconds;
@@ -102,7 +102,7 @@ XcodeBuildMCP is the preferred local validation path for feature and bug-fix sli
 - Scheme: `HermesMobile`
 - Configuration: `Debug`
 - Simulator: `iPhone 17`
-- Bundle ID: `com.uzairansar.hermesmobile`
+- Bundle ID: `dev.kil.talaria`
 
 After each completed implementation slice:
 
@@ -116,7 +116,7 @@ After each completed implementation slice:
 Agent/MCP flow:
 
 - Call `session_show_defaults` before the first local build/run/test.
-- If defaults are missing, set project `HermesMobile.xcodeproj`, scheme `HermesMobile`, configuration `Debug`, simulator `iPhone 17`, and bundle ID `com.uzairansar.hermesmobile`.
+- If defaults are missing, set project `HermesMobile.xcodeproj`, scheme `HermesMobile`, configuration `Debug`, simulator `iPhone 17`, and bundle ID `dev.kil.talaria`.
 - Use `test_sim` for XCTest validation.
 - Use `build_run_sim` to build, install, launch, and open Simulator for manual testing.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
@@ -183,13 +183,13 @@ If `iPhone 15` is not installed, choose a nearby available iPhone simulator.
 
 Current status:
 
-- App Store Connect app name: `Hermex`.
+- Intended App Store Connect app name: `Talaria` (record not created yet).
 - Xcode target/scheme name: `HermesMobile`.
-- iPhone home-screen display name: `Hermex`.
-- Bundle ID: `com.uzairansar.hermesmobile`.
-- Test bundle ID: `com.uzairansar.hermesmobile.tests`.
-- SKU: `hermes-mobile-ios`.
-- Apple Developer Team ID: `6GYD9C9N6R`.
+- iPhone home-screen display name: `Talaria`.
+- Bundle ID: `dev.kil.talaria`.
+- Test bundle ID: `dev.kil.talaria.tests`.
+- SKU: not chosen yet.
+- Apple Developer Team ID: `Q28NF3NH3D`.
 - Signing uses Xcode automatic signing.
 - Export compliance is declared in `Info.plist` with `ITSAppUsesNonExemptEncryption = NO`; the app does not implement custom/proprietary encryption and uses normal Apple/platform networking security.
 - App icon uses owner-supplied light and dark assets in `AppIcon.appiconset`.
@@ -198,32 +198,32 @@ Current status:
 - Camera capture is deferred and is not declared. Add `NSCameraUsageDescription` and update the privacy review only if camera capture is implemented later.
 - The current GitHub Actions upload path is intentionally internal-only. External TestFlight readiness and Beta App Review sequencing are tracked in [`TESTFLIGHT.md`](TESTFLIGHT.md).
 
-### Owner checklist: App Store Connect rename to Hermex
+### Owner checklist: App Store Connect setup for Talaria
 
-After merging the repo rebrand slice, update App Store Connect metadata separately:
+Development signing is ready. Distribution still needs App Store Connect setup:
 
-1. Production app (`com.uzairansar.hermesmobile`): rename listing from `Hermes Agent Mobile` → `Hermex`.
-2. Branch TestFlight app (`com.uzairansar.hermesmobile.branch`): rename listing from `Hermes Agent Branch` → `Hermex Branch`.
-3. Update TestFlight/review notes and any metadata copy that still says the old app name.
-4. Upload a build and confirm TestFlight shows **Hermex** / **Hermex Branch** on the home screen after processing.
+1. Create the `Talaria` app record for bundle ID `dev.kil.talaria` and choose its SKU.
+2. Create `Talaria Branch` for `dev.kil.talaria.branch` only if side-by-side branch TestFlight builds are still useful.
+3. Configure review metadata, privacy details, agreements, tax/banking, and tester groups as Apple requires.
+4. Upload a build and confirm TestFlight shows the expected Talaria name after processing.
 
 ### Branch TestFlight upload (CLI) — the "push to branch testflight" command
 
 When the owner says **"push to branch testflight"**, upload the current *feature branch*
-to the side-by-side **Hermex Branch** internal TestFlight app. This is a TestFlight
+to the side-by-side **Talaria Branch** internal TestFlight app. This is a TestFlight
 upload, **not** a Git push. Never merge, Git push, or upload the production
-`com.uzairansar.hermesmobile` TestFlight app unless the owner explicitly asks.
+`dev.kil.talaria` TestFlight app unless the owner explicitly asks.
 
 Branch TestFlight app identity:
 
-- App Store Connect app name: `Hermex Branch`
-- Main bundle ID: `com.uzairansar.hermesmobile.branch`
-- Share extension bundle ID: `com.uzairansar.hermesmobile.branch.shareextension`
-- Live Activity widget bundle ID: `com.uzairansar.hermesmobile.branch.liveactivitywidget`
-- Display name: `Hermex Branch`
-- App group: `group.com.uzairansar.hermesmobile.branch`
-- URL scheme: `hermes-agent-branch`
-- SKU: `hermes-mobile-ios-branch`
+- App Store Connect app name: `Talaria Branch`
+- Main bundle ID: `dev.kil.talaria.branch`
+- Share extension bundle ID: `dev.kil.talaria.branch.shareextension`
+- Live Activity widget bundle ID: `dev.kil.talaria.branch.liveactivitywidget`
+- Display name: `Talaria Branch`
+- App group: `group.dev.kil.talaria.branch`
+- URL scheme: `talaria-branch`
+- SKU: `talaria-ios-branch`
 
 Steps:
 
@@ -235,7 +235,7 @@ Steps:
 
    ```zsh
    xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release \
-     -destination 'generic/platform=iOS' -archivePath build/HermesAgentBranch.xcarchive \
+     -destination 'generic/platform=iOS' -archivePath build/TalariaBranch.xcarchive \
      -xcconfig Config/BranchTestFlight.xcconfig CURRENT_PROJECT_VERSION=<unique-build-number> \
      archive -allowProvisioningUpdates
    ```
@@ -243,9 +243,9 @@ Steps:
 4. Upload with the reusable export config `Config/BranchTestFlightExportOptions.plist`:
 
    ```zsh
-   xcodebuild -exportArchive -archivePath build/HermesAgentBranch.xcarchive \
+   xcodebuild -exportArchive -archivePath build/TalariaBranch.xcarchive \
      -exportOptionsPlist Config/BranchTestFlightExportOptions.plist \
-     -exportPath build/HermesAgentBranchExport -allowProvisioningUpdates
+     -exportPath build/TalariaBranchExport -allowProvisioningUpdates
    ```
 
 5. After upload succeeds, tell the owner the version/build number and that App Store
@@ -268,7 +268,7 @@ GitHub Actions internal TestFlight flow:
    - `APP_STORE_CONNECT_KEY_ID`: the App Store Connect API key ID.
    - `APP_STORE_CONNECT_ISSUER_ID`: the App Store Connect issuer ID.
    - `APP_STORE_CONNECT_PRIVATE_KEY`: the full `.p8` private key contents. A one-line value with escaped `\n` separators also works.
-3. Use an App Store Connect team API key with enough access to upload builds and let `xcodebuild -allowProvisioningUpdates` manage automatic signing for Team ID `6GYD9C9N6R`. If provisioning fails in CI, check the API key role, Apple Developer agreements, and App Store Connect access before changing the project to manual signing.
+3. Use an App Store Connect team API key with enough access to upload builds and let `xcodebuild -allowProvisioningUpdates` manage automatic signing for Team ID `Q28NF3NH3D`. If provisioning fails in CI, check the API key role, Apple Developer agreements, and App Store Connect access before changing the project to manual signing.
 4. Run the `Internal TestFlight` workflow manually from the GitHub Actions tab after the workflow file exists on the default branch.
 5. Select `master` as the workflow ref, set `confirm_internal_only` to `INTERNAL`, and leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
 6. The workflow archives the Release build, uploads directly to App Store Connect, and uses `testFlightInternalTestingOnly = true` so uploaded builds cannot be promoted to external TestFlight or App Store distribution.
@@ -297,7 +297,7 @@ GitHub Actions external-capable TestFlight flow:
 ## Full-App Manual Regression Checklist
 
 Use this before internal TestFlight smoke builds and again before adding external testers.
-Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://github.com/uzairansaruzi/hermex/issues).
+Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://github.com/MaudeCode/talaria/issues).
 
 ### Onboarding/Auth
 - Fresh install opens onboarding.

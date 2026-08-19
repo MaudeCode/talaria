@@ -40,7 +40,7 @@ jobs:
       EXPORT_OPTIONS_PLIST: ci/ExternalTestFlightExportOptions.plist
       PROJECT_PATH: HermesMobile.xcodeproj
       SCHEME: HermesMobile
-      TEAM_ID: 6GYD9C9N6R
+      TEAM_ID: Q28NF3NH3D
 
     steps:
       - name: Check manual gate
@@ -126,7 +126,7 @@ jobs:
       # (bitten 2026-06-02 with 1.0 and 2026-08-04 with 1.4).
       - name: Check release train and select build number
         env:
-          BUNDLE_ID: com.uzairansar.hermesmobile
+          BUNDLE_ID: dev.kil.talaria
           REQUESTED_BUILD_NUMBER: ${{ inputs.build_number }}
           ENFORCE_OPEN_TRAIN: "1"
         run: |

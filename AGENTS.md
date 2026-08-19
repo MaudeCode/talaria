@@ -1,7 +1,7 @@
-# AGENTS.md — working agreement for Hermex
+# AGENTS.md — working agreement for Talaria
 
-Hermex is a native SwiftUI iPhone app (Xcode target/scheme `HermesMobile`, App Store
-name `Hermex`) for a self-hosted `hermes-webui` server. `PROJECT_SPEC.md` is the
+Talaria is a native SwiftUI iPhone app (Xcode target/scheme `HermesMobile`, App Store
+name `Talaria`) for a self-hosted `hermes-webui` server. `PROJECT_SPEC.md` is the
 product/API source of truth — if a request conflicts with it, stop and ask.
 Read by every agent (Codex, Claude Code, …); keep it tool-agnostic.
 
@@ -56,14 +56,15 @@ Read by every agent (Codex, Claude Code, …); keep it tool-agnostic.
   build + launch the app for the human's manual simulator test when UI changed.
 
 ## App identity (resolved via xcconfig — not grep-able)
-Bundle ID `com.uzairansar.hermesmobile` · tests `….tests` · Team `6GYD9C9N6R` · SKU `hermes-mobile-ios`.
+Bundle ID `dev.kil.talaria` · tests `….tests` · Team `Q28NF3NH3D` · App Store record/SKU not created yet.
 
 ## "push to branch testflight" (maintainer-only)
-Upload the current branch to the side-by-side **Hermex Branch** internal TestFlight app
-(`com.uzairansar.hermesmobile.branch`) — a TestFlight upload, **not** a git push.
+Upload the current branch to the side-by-side **Talaria Branch** internal TestFlight app
+(`dev.kil.talaria.branch`) — a TestFlight upload, **not** a git push. This path is
+unavailable until the owner creates its App Store Connect record.
 Requires the maintainer's App Store Connect access; contributors never need this. Use a
 unique `CURRENT_PROJECT_VERSION` (e.g. `YYYYMMDDHHMM`) each time. Full commands + branch
-identity: `DEVELOPMENT.md`. Never touch the production `com.uzairansar.hermesmobile` app
+identity: `DEVELOPMENT.md`. Never touch the production `dev.kil.talaria` app
 unless explicitly asked.
 
 ## Working with the human

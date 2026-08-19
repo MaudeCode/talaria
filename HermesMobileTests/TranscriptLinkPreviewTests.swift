@@ -47,7 +47,7 @@ final class TranscriptLinkPreviewTests: XCTestCase {
     func testNonWebSchemesAreIgnored() {
         XCTAssertNil(
             TranscriptLinkPreviewExtractor.firstWebURL(
-                in: "Open file:///tmp/report.txt, ssh://server.test, and hermes-agent://session/1."
+                in: "Open file:///tmp/report.txt, ssh://server.test, and talaria://session/1."
             )
         )
     }

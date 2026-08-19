@@ -25,7 +25,7 @@ final class ShareViewController: UIViewController {
         view.backgroundColor = .clear
         view.isOpaque = false
 
-        statusLabel.text = "Opening Hermex..."
+        statusLabel.text = "Opening Talaria..."
         statusLabel.font = .preferredFont(forTextStyle: .headline)
         statusLabel.textAlignment = .center
         statusLabel.textColor = .secondaryLabel
@@ -48,13 +48,13 @@ final class ShareViewController: UIViewController {
         let draft = HermesShareDraft.draftText(textSnippets: input.textSnippets, urls: input.urls)
 
         guard !draft.isEmpty || !input.attachments.isEmpty else {
-            showStatus("Hermex accepts text, URLs, images, PDFs, and files up to 20 MB.")
+            showStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
             completeRequest(after: 0.8)
             return
         }
 
         guard let directory = HermesShareDraft.containerURL() else {
-            showStatus("Could not access Hermex storage.")
+            showStatus("Could not access Talaria storage.")
             completeRequest(after: 0.8)
             return
         }
@@ -103,7 +103,7 @@ final class ShareViewController: UIViewController {
         }
 
         // Fallback if everything fails
-        showStatus("Shared content saved. Open Hermex manually.")
+        showStatus("Shared content saved. Open Talaria manually.")
         completeRequest(after: 1.5)
     }
 

@@ -62,7 +62,7 @@ struct OnboardingWelcomePage: View {
                         .shadow(color: Color(red: 1.0, green: 0.62, blue: 0.08).opacity(0.35), radius: 24, y: 10)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Hermex")
+                .accessibilityLabel("Talaria")
 
                 Spacer(minLength: 32)
 

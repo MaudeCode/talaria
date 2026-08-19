@@ -1,30 +1,24 @@
 <div align="center">
 
-<img src="docs/assets/readme/hermex-icon.png" alt="Hermex app icon" width="96" />
+<img src="docs/assets/readme/hermex-icon.png" alt="Talaria app icon" width="96" />
 
-# Hermex
+# Talaria
 
 **Control your self-hosted [Hermes](https://github.com/nesquena/hermes-webui) agent from your iPhone.**
 
 Your server. Your iPhone. No middleman.
 
-[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/hermex/id6767006319)
+[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)](https://developer.apple.com/ios/)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
-[![Follow on X](https://img.shields.io/badge/Follow-%40uzairansar-000000?logo=x&logoColor=white)](https://x.com/uzairansar)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/callmeuzi)
 
-<a href="https://apps.apple.com/app/hermex/id6767006319">
-  <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us" alt="Download on the App Store" height="50" />
-</a>
+[Original Hermex project](https://github.com/uzairansaruzi/hermex) · [Contributing](CONTRIBUTING.md)
 
-[Website](https://hermexapp.com) · [App Store](https://apps.apple.com/app/hermex/id6767006319) · [Report a bug](https://github.com/uzairansaruzi/hermex/issues) · [Contributing](CONTRIBUTING.md)
-
-<img src="docs/assets/readme/hero-devices.png" alt="Hermex running on two iPhones: a streaming chat session and the home screen with Tasks, Skills, Memory, Insights, and Sessions" width="720" />
+<img src="docs/assets/readme/hero-devices.png" alt="Talaria running on two iPhones: a streaming chat session and the home screen with Tasks, Skills, Memory, Insights, and Sessions" width="720" />
 
 </div>
 
-Hermex is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/nesquena/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
+Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/nesquena/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
 
 - **Free.** No subscriptions, no in-app purchases.
 - **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
@@ -51,16 +45,15 @@ Hermex is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](h
   </tr>
 </table>
 
-More screenshots at [hermexapp.com](https://hermexapp.com).
 </div>
 
 ## Getting started
 
-Hermex is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/nesquena/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
+Talaria is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/nesquena/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
 
 1. **Run the server.** Install and start `hermes-webui` on macOS, Linux, or Windows/WSL2 (Python 3.11+). Set `HERMES_WEBUI_PASSWORD`.
 2. **Make it reachable from your phone** (see options below).
-3. **Connect.** [Download Hermex](https://apps.apple.com/app/hermex/id6767006319), enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
+3. **Connect.** Build and install Talaria, enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
 
 Self-hosting the server, securing it, and keeping it reachable are your responsibility.
 
@@ -81,9 +74,9 @@ If connection testing fails, check these first:
 
 ## Building from source
 
-Prefer the [App Store build](https://apps.apple.com/app/hermex/id6767006319) unless you're developing. To build yourself you need Xcode 26 or newer (iOS 18 SDK) and an iPhone or simulator on iOS 18+.
+Talaria is currently built from source. You need Xcode 26 or newer (iOS 18 SDK) and an iPhone or simulator on iOS 18+.
 
-Clone the repo, open `HermesMobile.xcodeproj`, and run the `HermesMobile` scheme on an iPhone simulator (the Xcode target is `HermesMobile`; the app's display name is `Hermex`). Dependencies are resolved automatically via Swift Package Manager.
+Clone the repo, open `HermesMobile.xcodeproj`, and run the `HermesMobile` scheme on an iPhone simulator (the Xcode target is `HermesMobile`; the app's display name is `Talaria`). Dependencies are resolved automatically via Swift Package Manager.
 
 From the command line:
 
@@ -116,7 +109,7 @@ The app is developed and tested against the `hermes-webui` commit pinned in [`UP
 - [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md): upstream contract-test readiness and the pin-advance policy.
 - [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`docs/agents/`](docs/agents): repo-local agent workflow conventions (issues, triage labels, domain notes).
-- [GitHub Issues](https://github.com/uzairansaruzi/hermex/issues): source of truth for active bugs, polish notes, and feature requests.
+- [GitHub Issues](https://github.com/MaudeCode/talaria/issues): source of truth for active bugs, polish notes, and feature requests.
 
 ## Contributing
 
@@ -127,18 +120,8 @@ Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for how t
 - Add no third-party dependencies beyond the locked list in `PROJECT_SPEC.md` without explicit approval.
 - Do not modify the upstream `hermes-webui` server from this repo.
 
-## Support the project
-
-Hermex is free and built in the open. If it's useful to you:
-
-- ⭐ **Star this repo** — it helps others find the project.
-- 🐦 **Follow [@uzairansar on X](https://x.com/uzairansar)** for updates and dev logs.
-- ☕ **[Buy me a coffee](https://buymeacoffee.com/callmeuzi)** to support development.
-
-<a href="https://buymeacoffee.com/callmeuzi"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-callmeuzi-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee" height="40" /></a>
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-Hermex is an independent client and is not affiliated with the upstream [hermes-webui](https://github.com/nesquena/hermes-webui) project. Apple, the Apple logo, and App Store are trademarks of Apple Inc.
+Talaria is an independent client and is not affiliated with the upstream [hermes-webui](https://github.com/nesquena/hermes-webui) project. Apple, the Apple logo, and App Store are trademarks of Apple Inc.
