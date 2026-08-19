@@ -86,10 +86,12 @@ struct SessionNavigationState: Equatable {
     /// selection; the stored ID is kept for a later restore.
     mutating func restoreIfNeeded(
         from sessions: [SessionSummary],
+        allowsAutomaticRestore: Bool = true,
         clearsMissingSelection: Bool = true,
         pendingDeepLinkedSessionID: String? = nil
     ) {
-        guard destination == nil,
+        guard allowsAutomaticRestore,
+              destination == nil,
               deepLinkedSessionLoadID == nil,
               Self.normalized(pendingDeepLinkedSessionID) == nil,
               let lastSelectedSessionID

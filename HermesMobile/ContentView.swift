@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
+    @State private var selectedTab = RootTab.chats
 
     var body: some View {
         content
@@ -58,18 +59,42 @@ struct ContentView: View {
         case .loggedOut(let server):
             OnboardingView(authManager: authManager, savedServer: server)
         case .loggedIn(let server):
-            SessionListView(
-                authManager: authManager,
-                server: server,
-                pendingSharedImport: $pendingSharedImport,
-                pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
-                requestedNewChat: $pendingNewChatRequest
-            )
+            TabView(selection: $selectedTab) {
+                Tab("Chats", systemImage: "bubble.left.and.bubble.right", value: RootTab.chats) {
+                    SessionListView(
+                        authManager: authManager,
+                        server: server,
+                        pendingSharedImport: $pendingSharedImport,
+                        pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
+                        requestedNewChat: $pendingNewChatRequest
+                    )
+                }
+
+                Tab("Tasks", systemImage: "calendar.badge.clock", value: RootTab.tasks) {
+                    NavigationStack {
+                        TasksView(server: server, onAPIError: authManager.handleAPIError)
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
+                }
+
+                Tab("Kanban", systemImage: "rectangle.split.3x1", value: RootTab.kanban) {
+                    NavigationStack {
+                        KanbanView(server: server, onAPIError: authManager.handleAPIError)
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
+                }
+
+                Tab("More", systemImage: "ellipsis", value: RootTab.more) {
+                    NavigationStack {
+                        MoreView(authManager: authManager, server: server)
+                    }
+                }
+            }
+            .minimizingTabBarOnScroll()
             // Switching the active server keeps us in `.loggedIn`, so without a
-            // per-server identity SwiftUI would reuse the same SessionListView (and
-            // its server-bound view model), leaving stale sessions/chat on screen.
-            // Keying on the server tears the whole stack down and rebuilds it
-            // against the newly active server (#17).
+            // per-server identity SwiftUI would reuse server-bound tab content.
+            // Keying on the server tears the tab tree down and rebuilds it against
+            // the newly active server (#17).
             .id(server)
         }
     }
@@ -79,6 +104,7 @@ struct ContentView: View {
         // even if the previous one's value still lingers downstream. The voice variant carries
         // `autoStartsVoiceInput` so the composer begins dictation once it appears (#338).
         if HermesDeepLink.isNewChatVoiceURL(url) {
+            selectedTab = .chats
             pendingNewChatRequest = NewChatRequest(autoStartsVoiceInput: true)
             return
         }
@@ -87,6 +113,7 @@ struct ContentView: View {
         // session pinned to it (#339). A malformed link with no profile falls back to a
         // plain new chat (server's active profile) rather than failing.
         if HermesDeepLink.isNewChatInProfileURL(url) {
+            selectedTab = .chats
             pendingNewChatRequest = NewChatRequest(
                 profileName: HermesDeepLink.profileName(fromNewChatInProfile: url)
             )
@@ -94,11 +121,13 @@ struct ContentView: View {
         }
 
         if HermesDeepLink.isNewChatURL(url) {
+            selectedTab = .chats
             pendingNewChatRequest = NewChatRequest(autoStartsVoiceInput: false)
             return
         }
 
         if let sessionID = HermesDeepLink.sessionID(from: url) {
+            selectedTab = .chats
             pendingDeepLinkedSessionID = sessionID
             return
         }
@@ -125,11 +154,65 @@ struct ContentView: View {
 
         do {
             if let sharedImport = try HermesShareDraft.loadPendingImport(from: directory) {
+                selectedTab = .chats
                 pendingSharedImport = sharedImport
             }
         } catch {
             pendingSharedImport = nil
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func minimizingTabBarOnScroll() -> some View {
+        if #available(iOS 26, *) {
+            tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            self
+        }
+    }
+}
+
+private enum RootTab: Hashable {
+    case chats
+    case tasks
+    case kanban
+    case more
+}
+
+private struct MoreView: View {
+    @Bindable var authManager: AuthManager
+    let server: URL
+
+    var body: some View {
+        List {
+            NavigationLink {
+                SkillsView(server: server, onAPIError: authManager.handleAPIError)
+            } label: {
+                Label("Skills", systemImage: "hammer")
+            }
+
+            NavigationLink {
+                MemoryView(server: server, onAPIError: authManager.handleAPIError)
+            } label: {
+                Label("Memory", systemImage: "brain")
+            }
+
+            NavigationLink {
+                InsightsView(server: server, onAPIError: authManager.handleAPIError)
+            } label: {
+                Label("Insights", systemImage: "chart.bar")
+            }
+
+            NavigationLink {
+                SettingsView(authManager: authManager, server: server)
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+        }
+        .navigationTitle("More")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -4,9 +4,6 @@ import UIKit
 
 @MainActor
 struct SessionListView: View {
-    private static let searchChromeIconVisualSize: CGFloat = 36
-    private static let searchChromeIconHitTarget: CGFloat = 44
-
     @Bindable var authManager: AuthManager
     let server: URL
     @Binding private var pendingSharedImport: SharedImport?
@@ -29,18 +26,11 @@ struct SessionListView: View {
     @State private var projectPendingDeletion: ProjectSummary?
     @State private var projectPendingRename: ProjectSummary?
     @State private var searchText = ""
-    @State private var isSearchVisible = false
-    @State private var isSearchFocused = false
-    @State private var searchChromeIsExpanded = false
+    @State private var isSearchPresented = false
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
-    @FocusState private var searchFieldIsFocused: Bool
-    @AppStorage(SessionSidebarDisclosureSettings.profilesAreExpandedKey)
-    private var profilesAreExpanded = SessionSidebarDisclosureSettings.defaultProfilesAreExpanded
-    @AppStorage(SessionSidebarDisclosureSettings.projectsAreExpandedKey)
-    private var projectsAreExpanded = SessionSidebarDisclosureSettings.defaultProjectsAreExpanded
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
@@ -48,11 +38,6 @@ struct SessionListView: View {
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
     @AppStorage(SessionRowDisplaySettings.showSubagentSessionsKey)
     private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
-    @AppStorage(SectionVisibilitySettings.tasksKey) private var showsTasksSection = true
-    @AppStorage(SectionVisibilitySettings.kanbanKey) private var showsKanbanSection = true
-    @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
-    @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
-    @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
     @AppStorage(SectionVisibilitySettings.activeProfileKey) private var showsActiveProfileSection = true
     @AppStorage(SectionVisibilitySettings.projectsKey) private var showsProjectsSection = true
     // Per-server key (#19): the CLI toggle mirrors the active server's
@@ -312,6 +297,18 @@ struct SessionListView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .navigationTitle("Chats")
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearchPresented,
+            prompt: "Search sessions"
+        )
+        .minimizingSearchToolbar()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                settingsButton
+            }
+        }
     }
 
     @ViewBuilder
@@ -399,9 +396,6 @@ struct SessionListView: View {
 
     private var content: some View {
         List {
-            header
-                .sessionsTopChromeListRow()
-
             if viewModel.isViewingCachedData {
                 OfflineCacheBanner()
                     .padding(.top, 16)
@@ -409,19 +403,13 @@ struct SessionListView: View {
             }
 
             if !isSearchingSessions {
-                SessionSidebarUtilityRows(
+                SessionFilterControls(
                     viewModel: viewModel,
-                    topPadding: 10,
-                    automatedVisibility: automatedSessionVisibility,
-                    sectionVisibility: sidebarSectionVisibility,
-                    profilesAreExpanded: $profilesAreExpanded,
-                    projectsAreExpanded: $projectsAreExpanded,
+                    showsProfile: showsActiveProfileSection,
+                    showsProjects: showsProjectsSection,
                     selectedProjectID: $selectedProjectID,
                     projectPendingDeletion: $projectPendingDeletion,
                     projectPendingRename: $projectPendingRename,
-                    openDestination: { destination in
-                        navigationState.select(destination)
-                    },
                     switchActiveProfile: { profile in
                         Task { await switchActiveProfile(profile) }
                     },
@@ -482,159 +470,36 @@ struct SessionListView: View {
         .scrollPosition(id: $sidebarScrollPosition)
         .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
-        // Disclosure subrows are real List rows; drive their fold from the List
-        // so insert/remove animates. Value-based so it works with @AppStorage.
-        .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: profilesAreExpanded)
-        .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: projectsAreExpanded)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: searchChromeIsExpanded ? 0 : 16) {
-            HermesHeaderLogo(selectedColor: selectedHeaderLogoColor)
-                .frame(width: searchChromeIsExpanded ? 0 : 160, alignment: .leading)
-                .opacity(searchChromeIsExpanded ? 0 : 1)
-                .clipped()
-                .accessibilityHidden(searchChromeIsExpanded)
-
-            searchChrome
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 28)
-        .animation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion), value: searchChromeIsExpanded)
-        .animation(SessionListMotion.searchFocusAnimation(reduceMotion: reduceMotion), value: showsSearchClearButton)
-        .onChange(of: searchFieldIsFocused) { _, newValue in
-            handleSearchFieldFocusChange(newValue)
-        }
-    }
-
-    private var searchChrome: some View {
-        HStack(spacing: searchChromeIsExpanded ? 8 : 4) {
-            HapticButton {
-                if searchChromeIsExpanded {
-                    searchFieldIsFocused = true
-                } else {
-                    openSearch()
-                }
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(searchChromeIsExpanded ? .secondary : .primary)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(searchChromeIsExpanded ? "Focus session search" : "Search sessions")
-            .accessibilityHint("Shows the session search field.")
-            .accessibilityHidden(searchChromeIsExpanded)
-
-            searchTextField
-
-            if showsSearchClearButton {
-                searchClearButton
-                    .transition(.scale.combined(with: .opacity))
-            }
-
-            searchTrailingButton
-        }
-        .padding(.vertical, 2)
-        .frame(maxWidth: searchChromeIsExpanded ? .infinity : nil, alignment: .trailing)
-        .sessionsChromeGlass(
-            isInteractive: true,
-            in: Capsule()
-        )
-        .clipShape(Capsule())
-        .contentShape(Capsule())
-    }
-
-    private var searchTextField: some View {
-        TextField("Search sessions", text: $searchText)
-            .font(AppFont.subheadline())
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .focused($searchFieldIsFocused)
-            .submitLabel(.done)
-            .lineLimit(1)
-            .layoutPriority(1)
-            .frame(maxWidth: searchChromeIsExpanded ? .infinity : 0)
-            .opacity(searchChromeIsExpanded ? 1 : 0)
-            .clipped()
-            .accessibilityHidden(!searchChromeIsExpanded)
-    }
-
-    private var searchClearButton: some View {
-        Button {
-            searchText = ""
-            searchFieldIsFocused = true
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(AppFont.subheadline())
-                .foregroundStyle(.secondary)
-                .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Clear search")
-    }
-
-    private var searchTrailingButton: some View {
+    private var settingsButton: some View {
         HapticButton(feedbackStyle: .medium) {
-            if searchChromeIsExpanded {
-                closeSearch()
-            } else {
-                navigationState.select(.settings(nil))
-            }
+            navigationState.select(.settings(nil))
         } label: {
-            ZStack {
-                Text(settingsInitials)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(initialsAvatarForegroundColor)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .background(selectedHeaderLogoColor, in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
-                    .opacity(searchChromeIsExpanded ? 0 : 1)
-                    .scaleEffect(searchChromeIsExpanded ? 0.72 : 1)
-                    .rotationEffect(.degrees(searchChromeIsExpanded ? -18 : 0))
-
-                Image(systemName: "xmark")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .opacity(searchChromeIsExpanded ? 1 : 0)
-                    .scaleEffect(searchChromeIsExpanded ? 1 : 0.72)
-                    .rotationEffect(.degrees(searchChromeIsExpanded ? 0 : 18))
-            }
-            .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-            .contentShape(Rectangle())
+            Text(settingsInitials)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(initialsAvatarForegroundColor)
+                .frame(width: 28, height: 28)
+                .background(selectedHeaderLogoColor, in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(searchChromeIsExpanded ? "Close search" : "Settings")
-        .accessibilityHint(
-            searchChromeIsExpanded
-                ? "Closes search and clears the current query."
-                : "Opens Settings. Long press to switch servers."
-        )
-        // Long-press the avatar to switch the active server, reusing #17's
-        // switch/add actions. Suppressed while search is expanded so the
-        // "close search" tap state is untouched (#283). The plain tap above is
-        // preserved — `contextMenu` adds long-press without stealing the tap.
+        .accessibilityLabel("Settings")
+        .accessibilityHint("Opens Settings. Long press to switch servers.")
+        // Keep the existing long-press server switcher while the avatar moves
+        // into the native toolbar.
         .contextMenu {
-            if !searchChromeIsExpanded {
-                AvatarServerSwitcherMenu(
-                    model: AvatarServerSwitcherModel(
-                        servers: authManager.servers,
-                        activeServerID: authManager.activeServerID
-                    ),
-                    switchToServer: { account in
-                        authManager.switchActiveServer(to: account)
-                    },
-                    addServer: { isPresentingAddServer = true },
-                    manageServers: { navigationState.select(.settings(.servers)) }
-                )
-            }
+            AvatarServerSwitcherMenu(
+                model: AvatarServerSwitcherModel(
+                    servers: authManager.servers,
+                    activeServerID: authManager.activeServerID
+                ),
+                switchToServer: { account in
+                    authManager.switchActiveServer(to: account)
+                },
+                addServer: { isPresentingAddServer = true },
+                manageServers: { navigationState.select(.settings(.servers)) }
+            )
         }
     }
 
@@ -642,36 +507,27 @@ struct SessionListView: View {
         HapticButton(feedbackStyle: .medium) {
             openNewChat()
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "square.and.pencil")
-                    .font(.title3.weight(.semibold))
-
-                Text("Chat")
-                    .font(.headline.weight(.semibold))
-            }
-            .foregroundStyle(newSessionButtonForegroundColor)
-            .padding(.horizontal, 22)
-            .frame(height: 58)
-            // Lock the hit region to the visible capsule so taps in the padding,
-            // rounded ends, and icon↔text gap start a new chat instead of falling
-            // through to the session row behind the FAB (issue #242).
-            .contentShape(Capsule())
-            .background {
-                if let fill = newSessionButtonSolidThemeFill {
-                    Capsule().fill(fill)
+            Image(systemName: "square.and.pencil")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(newSessionButtonForegroundColor)
+                .frame(width: 52, height: 52)
+                .contentShape(Circle())
+                .background {
+                    if let fill = newSessionButtonSolidThemeFill {
+                        Circle().fill(fill)
+                    }
                 }
-            }
-            .sessionsChromeGlass(
-                isInteractive: true,
-                tint: newSessionButtonGlassTint,
-                fallbackMaterial: .regularMaterial,
-                in: Capsule()
-            )
+                .sessionsChromeGlass(
+                    isInteractive: true,
+                    tint: newSessionButtonGlassTint,
+                    fallbackMaterial: .regularMaterial,
+                    in: Circle()
+                )
         }
         .buttonStyle(SessionListFloatingChatButtonStyle())
         .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
-        .accessibilityLabel("New Session")
+        .accessibilityLabel("New Chat")
     }
 
     private var visibleSessions: [SessionSummary] {
@@ -696,18 +552,6 @@ struct SessionListView: View {
             showsCli: showsCliSessions,
             showsClaudeCode: showsClaudeCodeSessions,
             showsSubagents: showsSubagentSessions
-        )
-    }
-
-    private var sidebarSectionVisibility: SidebarSectionVisibility {
-        SidebarSectionVisibility(
-            tasks: showsTasksSection,
-            kanban: showsKanbanSection,
-            skills: showsSkillsSection,
-            memory: showsMemorySection,
-            insights: showsInsightsSection,
-            activeProfile: showsActiveProfileSection,
-            projects: showsProjectsSection
         )
     }
 
@@ -779,10 +623,6 @@ struct SessionListView: View {
 
     private var hasActiveSessionFilter: Bool {
         selectedProjectID != nil || !normalizedSearchText.isEmpty
-    }
-
-    private var showsSearchClearButton: Bool {
-        searchChromeIsExpanded && !searchText.isEmpty
     }
 
     private func isActiveProfile(_ profile: ProfileSummary) -> Bool {
@@ -860,7 +700,7 @@ struct SessionListView: View {
     }
 
     private var isSearchingSessions: Bool {
-        isSearchVisible || isSearchFocused
+        isSearchPresented || !normalizedSearchText.isEmpty
     }
 
     private var remoteSearchTaskID: SessionSearchTaskID {
@@ -920,25 +760,6 @@ struct SessionListView: View {
         await viewModel.loadActiveProfile()
     }
 
-    private func closeSearch() {
-        searchText = ""
-        searchFieldIsFocused = false
-        isSearchFocused = false
-
-        withAnimation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion)) {
-            searchChromeIsExpanded = false
-            isSearchVisible = false
-        }
-    }
-
-    private func openSearch() {
-        withAnimation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion)) {
-            isSearchVisible = true
-            searchChromeIsExpanded = true
-        }
-        searchFieldIsFocused = true
-    }
-
     private var sceneActions: HermexSceneActions {
         HermexSceneActions(
             canCreateNewChat: !viewModel.isViewingCachedData && !navigationState.isCreatingNewChat,
@@ -953,31 +774,14 @@ struct SessionListView: View {
     }
 
     private func openSearchFromKeyboard() {
-        searchFieldIsFocused = false
-
         if horizontalSizeClass != .regular {
             navigationState.clearDestination()
         }
 
         Task { @MainActor in
             await Task.yield()
-            openSearch()
+            isSearchPresented = true
         }
-    }
-
-    private func handleSearchFieldFocusChange(_ isFocused: Bool) {
-        guard isFocused else {
-            isSearchFocused = false
-            return
-        }
-
-        guard searchChromeIsExpanded || isSearchVisible else {
-            searchFieldIsFocused = false
-            isSearchFocused = false
-            return
-        }
-
-        isSearchFocused = true
     }
 
     private func refreshAfterReturningIfNeeded() {
@@ -1014,10 +818,6 @@ struct SessionListView: View {
         handleLastError()
 
         guard didSwitch else { return }
-
-        withAnimation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion)) {
-            profilesAreExpanded = false
-        }
 
         await loadSessions()
     }
@@ -1223,6 +1023,7 @@ struct SessionListView: View {
     private func restoreLastSelectedSessionIfNeeded() {
         navigationState.restoreIfNeeded(
             from: viewModel.sessions,
+            allowsAutomaticRestore: horizontalSizeClass == .regular,
             clearsMissingSelection: viewModel.sessionLoadError == nil,
             pendingDeepLinkedSessionID: pendingDeepLinkedSessionID
         )
@@ -1233,6 +1034,17 @@ struct SessionListView: View {
         SessionNavigationPersistence.save(navigationState.lastSelectedSessionID, for: server)
     }
 
+}
+
+private extension View {
+    @ViewBuilder
+    func minimizingSearchToolbar() -> some View {
+        if #available(iOS 26, *) {
+            searchToolbarBehavior(.minimize)
+        } else {
+            self
+        }
+    }
 }
 
 enum SessionListInitialLoad {
@@ -1262,40 +1074,6 @@ enum SessionListNewChatReturn {
         // latest metadata for a new chat that has become contentful.
         suppressEmptyPlaceholders()
         refreshSessions()
-    }
-}
-
-struct HermesHeaderLogo: View {
-    let selectedColor: Color
-
-    private static let aspectRatio = 643.0 / 185.0
-
-    var body: some View {
-        ZStack {
-            Image("hermes-fill-mask")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(selectedColor)
-
-            Image("hermes-shading-overlay")
-                .resizable()
-                .scaledToFit()
-                .blendMode(.multiply)
-
-            Image("hermes-highlight")
-                .resizable()
-                .scaledToFit()
-                .blendMode(.screen)
-
-            Image("hermes-outline-shadow")
-                .resizable()
-                .scaledToFit()
-        }
-        .aspectRatio(Self.aspectRatio, contentMode: .fit)
-        .compositingGroup()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("HERMEX")
     }
 }
 
@@ -1561,16 +1339,4 @@ private struct PendingNewChatView: View {
             composerIsFocused = true
         }
     }
-}
-
-#Preview("Hermes Header Logo") {
-    VStack(spacing: 16) {
-        ForEach(HeaderLogoColor.presets.prefix(4)) { preset in
-            HermesHeaderLogo(selectedColor: preset.color)
-                .frame(width: 220)
-        }
-    }
-    .padding(24)
-    .background(Color.black)
-    .preferredColorScheme(.dark)
 }

@@ -24,6 +24,16 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.lastSelectedSessionID, "session-2")
     }
 
+    func testRestoreLeavesCompactChatRootAtSessionList() {
+        let stored = SessionSummary(sessionId: "stored")
+        var state = SessionNavigationState(lastSelectedSessionID: "stored")
+
+        state.restoreIfNeeded(from: [stored], allowsAutomaticRestore: false)
+
+        XCTAssertNil(state.destination)
+        XCTAssertEqual(state.lastSelectedSessionID, "stored")
+    }
+
     func testRestoreClearsStoredSelectionWhenSessionNoLongerExists() {
         var state = SessionNavigationState(lastSelectedSessionID: "missing")
 

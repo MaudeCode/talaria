@@ -83,11 +83,6 @@ struct SettingsView: View {
     @AppStorage(PrimaryActionTintSettings.isEnabledKey) private var tintsPrimaryActions = false
     @AppStorage(SessionIdentitySettings.displayNameKey) private var identityDisplayName = ""
     @AppStorage(SessionIdentitySettings.initialsKey) private var identityInitials = ""
-    @AppStorage(SectionVisibilitySettings.tasksKey) private var showsTasksSection = true
-    @AppStorage(SectionVisibilitySettings.kanbanKey) private var showsKanbanSection = true
-    @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
-    @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
-    @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
     @AppStorage(SectionVisibilitySettings.activeProfileKey) private var showsActiveProfileSection = true
     @AppStorage(SectionVisibilitySettings.projectsKey) private var showsProjectsSection = true
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsChatFilesButton = true
@@ -131,7 +126,7 @@ struct SettingsView: View {
 
                     SettingsDivider()
 
-                    HeaderLogoColorSettings(
+                    AccentColorSettings(
                         selectedHex: $headerLogoColorHex,
                         customColor: headerLogoColorBinding
                     )
@@ -144,7 +139,7 @@ struct SettingsView: View {
                         isOn: $tintsPrimaryActions
                     )
 
-                    SettingsFootnote(String(localized: "Apply your header color to these primary buttons."))
+                    SettingsFootnote(String(localized: "Apply your accent color to these primary buttons."))
 
                     SettingsDivider()
 
@@ -309,47 +304,7 @@ struct SettingsView: View {
                     SettingsFootnote(String(localized: "Covers both the git menu in the chat toolbar and the branch picker in the composer."))
                 }
 
-                SettingsCard(title: String(localized: "Main Page")) {
-                    SettingsToggleRow(
-                        title: String(localized: "Tasks"),
-                        systemImage: "calendar.badge.clock",
-                        isOn: $showsTasksSection
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        title: String(localized: "Kanban"),
-                        systemImage: "rectangle.split.3x1",
-                        isOn: $showsKanbanSection
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        title: String(localized: "Skills"),
-                        systemImage: "hammer",
-                        isOn: $showsSkillsSection
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        title: String(localized: "Memory"),
-                        systemImage: "brain",
-                        isOn: $showsMemorySection
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        title: String(localized: "Insights"),
-                        systemImage: "chart.bar",
-                        isOn: $showsInsightsSection
-                    )
-
-                    SettingsDivider()
-
+                SettingsCard(title: String(localized: "Chats")) {
                     SettingsToggleRow(
                         title: String(localized: "Active Profile"),
                         systemImage: "person.crop.circle",
@@ -364,7 +319,7 @@ struct SettingsView: View {
                         isOn: $showsProjectsSection
                     )
 
-                    SettingsFootnote(String(localized: "Turn off the entries you never use to shorten the top of the session list. Each one is the only way into its screen, so turn it back on here when you need it again."))
+                    SettingsFootnote(String(localized: "Choose which filters appear above your chats."))
                 }
 
                 SettingsCard(title: String(localized: "Sessions")) {
@@ -1411,7 +1366,7 @@ private struct SettingsTextFieldRow: View {
     }
 }
 
-private struct HeaderLogoColorSettings: View {
+private struct AccentColorSettings: View {
     @Binding var selectedHex: String
     let customColor: Binding<Color>
 
@@ -1422,7 +1377,7 @@ private struct HeaderLogoColorSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Text("Header Logo Color")
+                Text("Accent Color")
                     .foregroundStyle(.primary)
 
                 Spacer(minLength: 12)
@@ -1432,18 +1387,6 @@ private struct HeaderLogoColorSettings: View {
                     .foregroundStyle(.secondary)
             }
             .font(.subheadline)
-
-            HermesHeaderLogo(selectedColor: HeaderLogoColor.color(for: selectedHex))
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.26), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-                .accessibilityHidden(true)
 
             HStack(spacing: 10) {
                 ForEach(HeaderLogoColor.presets) { preset in
@@ -2061,7 +2004,7 @@ private struct ServerIdentityEditor: View {
 
             SettingsDivider()
 
-            HeaderLogoColorSettings(selectedHex: $colorHex, customColor: colorBinding)
+            AccentColorSettings(selectedHex: $colorHex, customColor: colorBinding)
         }
     }
 }
