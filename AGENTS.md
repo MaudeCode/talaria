@@ -10,15 +10,14 @@ Read by every agent (Codex, Claude Code, …); keep it tool-agnostic.
   local-only (gitignored), never committed; a fresh clone won't have one.
 - Read only the `PROJECT_SPEC.md` sections named in CURRENT.md's **Spec Read** field;
   never the whole ~850-line spec unless told to.
-- Active work lives in GitHub Issues. Implement only the issue the human selects, one
-  labeled `ready-for-agent`, or one named in CURRENT.md — not every open issue.
+- Implement only the task the human selects or the task named in `CURRENT.md`; do not
+  pull work from external trackers unless the human explicitly asks.
 - On "wrap up": verify repo/build/test state, overwrite `CURRENT.md` with the new
   state (it stays uncommitted), then commit the code.
   History lives in `git log` and merged PRs; there is no append-only log.
 
 ## How work flows
-- One issue → one short `issue/<n>-slug` branch → one PR (branches with no issue use
-  `chore/` or `fix/`). Issue/triage/domain conventions live in `docs/agents/`.
+- One scoped change → one short `chore/` or `fix/` branch → one PR.
 - `master` is the protected release-candidate branch (the source for internal
   TestFlight builds): keep it buildable, never do feature work on it.
 - Pushing a branch, opening/updating a PR, or merging needs explicit human approval.
