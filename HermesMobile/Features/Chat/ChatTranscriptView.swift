@@ -527,15 +527,20 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         if !liveActivityRows.isEmpty {
             return liveActivityRows
         }
+        if let authoritativeScene = AssistantActivityTimeline.authoritativeScene(
+            message: transcriptMessage.message
+        ) {
+            return authoritativeScene.rows
+        }
+        if !archivedActivityRows.isEmpty {
+            return archivedActivityRows
+        }
         let persisted = AssistantActivityTimeline.persisted(
             assistantSegments: transcriptMessage.assistantSegments,
             reasoningGroups: reasoningGroups,
             toolCallGroups: toolCallGroups
         ).rows
-        if transcriptMessage.message.activityScene != nil || transcriptMessage.message.contentParts != nil {
-            return persisted
-        }
-        return archivedActivityRows.isEmpty ? persisted : archivedActivityRows
+        return persisted
     }
 
     @ViewBuilder

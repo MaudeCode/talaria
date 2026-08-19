@@ -222,6 +222,34 @@ struct AssistantActivityScene: Codable, Equatable {
     let finalAnswer: String?
     let activityRows: [AssistantActivitySceneRow]?
     let turnDuration: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case finalAnswer
+        case activityRows
+        case turnDuration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = container.decodeLossyStringIfPresent(forKey: .version)
+        finalAnswer = container.decodeLossyStringIfPresent(forKey: .finalAnswer)
+        turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
+
+        guard let values = try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows) else {
+            activityRows = nil
+            return
+        }
+
+        let rowDecoder = JSONDecoder()
+        rowDecoder.keyDecodingStrategy = .convertFromSnakeCase
+        activityRows = values.compactMap { value in
+            guard case .object = value,
+                  let data = try? JSONEncoder().encode(value)
+            else { return nil }
+            return try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
+        }
+    }
 }
 
 struct AssistantActivitySceneRow: Codable, Equatable {
@@ -245,6 +273,19 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         case thinking
         case tool
         case payload
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rowID = container.decodeLossyStringIfPresent(forKey: .rowID)
+        orderIndex = container.decodeLossyIntIfPresent(forKey: .orderIndex)
+        role = container.decodeLossyStringIfPresent(forKey: .role)
+        text = container.decodeLossyStringIfPresent(forKey: .text)
+        status = container.decodeLossyStringIfPresent(forKey: .status)
+        toolCallID = container.decodeLossyStringIfPresent(forKey: .toolCallID)
+        thinking = try? container.decodeIfPresent([String: JSONValue].self, forKey: .thinking)
+        tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)
+        payload = try? container.decodeIfPresent([String: JSONValue].self, forKey: .payload)
     }
 }
 

@@ -1532,16 +1532,40 @@ final class ChatViewModel {
         _ loadedMessages: [ChatMessage],
         withCachedLocalOptimisticMessages cachedMessages: [ChatMessage]
     ) -> [ChatMessage] {
+        let mergedMessages = loadedMessages.map { loadedMessage in
+            guard loadedMessage.role == "assistant",
+                  let cachedMessage = cachedMessages.last(where: {
+                      $0.role == "assistant" && $0.id == loadedMessage.id
+                  })
+            else { return loadedMessage }
+
+            return ChatMessage(
+                role: loadedMessage.role,
+                content: loadedMessage.content,
+                timestamp: loadedMessage.timestamp,
+                messageId: loadedMessage.messageId,
+                name: loadedMessage.name,
+                toolCallId: loadedMessage.toolCallId,
+                toolUseId: loadedMessage.toolUseId,
+                toolCalls: loadedMessage.toolCalls ?? cachedMessage.toolCalls,
+                contentParts: loadedMessage.contentParts ?? cachedMessage.contentParts,
+                reasoning: loadedMessage.reasoning ?? cachedMessage.reasoning,
+                activityScene: loadedMessage.activityScene ?? cachedMessage.activityScene,
+                attachments: loadedMessage.attachments,
+                turnDuration: loadedMessage.turnDuration ?? cachedMessage.turnDuration,
+                turnTps: loadedMessage.turnTps ?? cachedMessage.turnTps
+            )
+        }
         let localUserMessages = cachedMessages.filter { cachedMessage in
             isLocalOptimisticUserMessage(cachedMessage)
-                && !loadedMessagesContainEquivalentUserMessage(loadedMessages, localMessage: cachedMessage)
+                && !loadedMessagesContainEquivalentUserMessage(mergedMessages, localMessage: cachedMessage)
         }
 
         guard !localUserMessages.isEmpty else {
-            return loadedMessages
+            return mergedMessages
         }
 
-        return localUserMessages.reduce(into: loadedMessages) { partialMessages, localMessage in
+        return localUserMessages.reduce(into: mergedMessages) { partialMessages, localMessage in
             insertLocalOptimisticMessage(localMessage, into: &partialMessages)
         }
     }
@@ -5284,6 +5308,7 @@ struct AssistantActivityTimeline: Equatable {
                     if let preview = toolCall.preview { part["preview"] = .string(preview) }
                     if let duration = toolCall.duration { part["duration"] = .number(duration) }
                     if let isError = toolCall.isError { part["is_error"] = .bool(isError) }
+                    part["done"] = .bool(toolCall.isCompleted)
                     return .object(part)
                 }
             }
@@ -5364,18 +5389,8 @@ struct AssistantActivityTimeline: Equatable {
         reasoningGroups: [ReasoningGroup],
         toolCallGroups: [ToolCallGroup]
     ) -> AssistantActivityTimeline {
-        if let scene = message.activityScene,
-           scene.version == "activity_scene_v1",
-           let sceneRows = scene.activityRows,
-           !sceneRows.isEmpty {
-            var timeline = AssistantActivityTimeline()
-            for (sourceIndex, row) in sceneRows.enumerated().sorted(by: { lhs, rhs in
-                (lhs.element.orderIndex ?? lhs.offset) < (rhs.element.orderIndex ?? rhs.offset)
-            }) {
-                timeline.appendSceneRow(row, sourceIndex: sourceIndex)
-            }
-            timeline.appendFinalProseIfNeeded(message.content)
-            if !timeline.rows.isEmpty { return timeline }
+        if let timeline = authoritativeScene(message: message) {
+            return timeline
         }
 
         if let contentParts = message.contentParts, !contentParts.isEmpty {
@@ -5383,7 +5398,10 @@ struct AssistantActivityTimeline: Equatable {
             for (index, part) in contentParts.enumerated() {
                 timeline.appendContentPart(part, sourceIndex: index)
             }
-            if !timeline.rows.isEmpty { return timeline }
+            if !timeline.rows.isEmpty {
+                timeline.enrichTools(from: toolCallGroups)
+                return timeline
+            }
         }
 
         var timeline = AssistantActivityTimeline()
@@ -5405,12 +5423,13 @@ struct AssistantActivityTimeline: Equatable {
         toolCallGroups: [ToolCallGroup]
     ) -> AssistantActivityTimeline {
         guard let finalSegment = assistantSegments.last else { return AssistantActivityTimeline() }
-        let hasStructuredTurn = finalSegment.message.activityScene != nil
-            || finalSegment.message.contentParts != nil
-        let sourceSegments = hasStructuredTurn ? [finalSegment] : assistantSegments
+        if let timeline = authoritativeScene(message: finalSegment.message) {
+            return timeline
+        }
+
         var timeline = AssistantActivityTimeline()
 
-        for segment in sourceSegments {
+        for segment in assistantSegments {
             let segmentTimeline = persisted(
                 message: segment.message,
                 reasoningGroups: reasoningGroups.filter { $0.anchorMessageID == segment.anchorID },
@@ -5420,6 +5439,46 @@ struct AssistantActivityTimeline: Equatable {
         }
 
         return timeline
+    }
+
+    static func authoritativeScene(message: ChatMessage) -> AssistantActivityTimeline? {
+        guard let scene = message.activityScene,
+              scene.version == "activity_scene_v1"
+        else { return nil }
+
+        var timeline = AssistantActivityTimeline()
+        for (sourceIndex, row) in (scene.activityRows ?? []).enumerated().sorted(by: { lhs, rhs in
+            (lhs.element.orderIndex ?? lhs.offset) < (rhs.element.orderIndex ?? rhs.offset)
+        }) {
+            timeline.appendSceneRow(row, sourceIndex: sourceIndex)
+        }
+        guard !timeline.rows.isEmpty else { return nil }
+        timeline.appendFinalProseIfNeeded(Self.nonEmpty(scene.finalAnswer) ?? message.content)
+        return timeline
+    }
+
+    private mutating func enrichTools(from toolCallGroups: [ToolCallGroup]) {
+        let resolvedTools = toolCallGroups.flatMap(\.toolCalls)
+        guard !resolvedTools.isEmpty else { return }
+
+        for rowIndex in rows.indices {
+            guard case .tools(var toolCalls) = rows[rowIndex].content else { continue }
+            for toolIndex in toolCalls.indices {
+                let toolCall = toolCalls[toolIndex]
+                guard let resolved = resolvedTools.last(where: { $0.id == toolCall.id }) else { continue }
+                toolCalls[toolIndex] = ToolCall(
+                    id: toolCall.id,
+                    name: toolCall.name ?? resolved.name,
+                    preview: resolved.preview ?? toolCall.preview,
+                    args: toolCall.args ?? resolved.args,
+                    duration: resolved.duration ?? toolCall.duration,
+                    isError: resolved.isError ?? toolCall.isError,
+                    isCompleted: toolCall.isCompleted || resolved.isCompleted,
+                    startedAt: min(toolCall.startedAt, resolved.startedAt)
+                )
+            }
+            rows[rowIndex].content = .tools(toolCalls)
+        }
     }
 
     private mutating func appendText(
@@ -5494,7 +5553,7 @@ struct AssistantActivityTimeline: Equatable {
             if let toolCall = Self.toolCall(
                 object: object,
                 fallbackID: "content-tool:\(sourceIndex)",
-                status: "completed"
+                status: Self.string(object["status"])
             ) {
                 appendTool(toolCall, id: "content:\(sourceIndex)")
             }

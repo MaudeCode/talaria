@@ -75,4 +75,37 @@ final class ChatViewModelMergeDedupTests: XCTestCase {
         XCTAssertEqual(merged.filter { $0.role == "user" }.count, 2,
                        "Different attachment filenames are distinct messages")
     }
+
+    func testReloadEnrichesMatchingAssistantWithMissingCachedActivity() {
+        let cached = ChatMessage(
+            role: "assistant",
+            content: "Cached answer",
+            timestamp: 4_000,
+            messageId: "assistant-1",
+            toolCalls: [.object(["id": .string("call-1")])],
+            contentParts: [.object(["type": .string("reasoning"), "text": .string("Cached reasoning")])],
+            reasoning: "Cached reasoning",
+            turnDuration: 12,
+            turnTps: 8
+        )
+        let loaded = ChatMessage(
+            role: "assistant",
+            content: "Server answer",
+            timestamp: 4_001,
+            messageId: "assistant-1"
+        )
+
+        let merged = ChatViewModel.mergingLoadedMessages(
+            [loaded],
+            withCachedLocalOptimisticMessages: [cached]
+        )
+
+        XCTAssertEqual(merged.first?.content, "Server answer")
+        XCTAssertEqual(merged.first?.timestamp, 4_001)
+        XCTAssertEqual(merged.first?.contentParts, cached.contentParts)
+        XCTAssertEqual(merged.first?.toolCalls, cached.toolCalls)
+        XCTAssertEqual(merged.first?.reasoning, "Cached reasoning")
+        XCTAssertEqual(merged.first?.turnDuration, 12)
+        XCTAssertEqual(merged.first?.turnTps, 8)
+    }
 }

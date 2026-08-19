@@ -290,6 +290,175 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(timeline.toolCalls.first?.id, "call-1")
     }
 
+    func testTurnFallbackKeepsEarlierSegmentsWhenFinalMessageUsesOutputText() {
+        let segments = [
+            TranscriptAssistantSegment(
+                anchorID: "assistant-work",
+                message: ChatMessage(
+                    role: "assistant",
+                    content: nil,
+                    timestamp: 1,
+                    messageId: "assistant-work",
+                    contentParts: [
+                        .object([
+                            "type": .string("reasoning"),
+                            "text": .string("Inspect the workspace.")
+                        ]),
+                        .object([
+                            "type": .string("tool_use"),
+                            "id": .string("call-1"),
+                            "name": .string("terminal"),
+                            "input": .object(["command": .string("pwd")])
+                        ])
+                    ]
+                )
+            ),
+            TranscriptAssistantSegment(
+                anchorID: "assistant-final",
+                message: ChatMessage(
+                    role: "assistant",
+                    content: "Finished.",
+                    timestamp: 2,
+                    messageId: "assistant-final",
+                    contentParts: [
+                        .object([
+                            "type": .string("output_text"),
+                            "output_text": .string("Finished.")
+                        ])
+                    ]
+                )
+            )
+        ]
+
+        let timeline = AssistantActivityTimeline.persisted(
+            assistantSegments: segments,
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+
+        XCTAssertEqual(timeline.rows.map(\.kind), ["reasoning", "tools", "prose"])
+        XCTAssertEqual(timeline.rows.compactMap(\.text), ["Inspect the workspace.", "Finished."])
+        XCTAssertEqual(timeline.toolCalls.map(\.id), ["call-1"])
+    }
+
+    func testActivitySceneUsesAuthoritativeFinalAnswerInsteadOfFlattenedContent() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "message_id": "assistant-final",
+          "content": [
+            {"type":"text","text":"Progress update."},
+            {"type":"tool_use","id":"call-1","name":"terminal","input":{"command":"pwd"}},
+            {"type":"output_text","output_text":"Finished."}
+          ],
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "final_answer": "Finished.",
+            "activity_rows": [
+              {"row_id":"progress","order_index":0,"role":"prose","text":"Progress update."},
+              {"row_id":"tool","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"terminal","done":true}}
+            ]
+          }
+        }
+        """.utf8))
+
+        let timeline = AssistantActivityTimeline.persisted(
+            message: message,
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+
+        XCTAssertEqual(message.content, "Progress update.Finished.")
+        XCTAssertEqual(timeline.rows.compactMap(\.text), ["Progress update.", "Finished."])
+        XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Finished.")
+    }
+
+    func testActivitySceneDecodingKeepsValidRowsAroundMalformedFields() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "content": "Finished.",
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "final_answer": "Finished.",
+            "turn_duration": "12.5",
+            "activity_rows": [
+              {"row_id":"thinking","order_index":"1","role":"thinking","thinking":{"text":"Inspect first."}},
+              "malformed-row",
+              {"row_id":"tool","order_index":2,"role":"tool","status":"completed","tool":{"id":"call-1","name":"terminal","done":true}}
+            ]
+          }
+        }
+        """.utf8))
+
+        XCTAssertEqual(message.activityScene?.activityRows?.count, 2)
+        XCTAssertEqual(message.activityScene?.activityRows?.first?.orderIndex, 1)
+        XCTAssertEqual(message.turnDuration, 12.5)
+        XCTAssertEqual(
+            AssistantActivityTimeline.persisted(
+                message: message,
+                reasoningGroups: [],
+                toolCallGroups: []
+            ).rows.map(\.kind),
+            ["reasoning", "tools", "prose"]
+        )
+    }
+
+    func testContentPartToolsUseResolvedResultsWithoutCompletingUnresolvedCalls() {
+        let message = ChatMessage(
+            role: "assistant",
+            content: nil,
+            timestamp: 1,
+            messageId: "assistant-tools",
+            contentParts: [
+                .object([
+                    "type": .string("tool_use"),
+                    "id": .string("call-failed"),
+                    "name": .string("terminal"),
+                    "input": .object(["command": .string("false")])
+                ]),
+                .object([
+                    "type": .string("tool_use"),
+                    "id": .string("call-pending"),
+                    "name": .string("search_files"),
+                    "input": .object(["pattern": .string("*.md")])
+                ])
+            ]
+        )
+        let resolvedGroups = [
+            ToolCallGroup(
+                id: "resolved",
+                anchorMessageID: "assistant-tools",
+                toolCalls: [
+                    ToolCall(
+                        id: "call-failed",
+                        name: "terminal",
+                        preview: "Command failed",
+                        args: ["command": .string("false")],
+                        isError: true,
+                        isCompleted: true
+                    )
+                ]
+            )
+        ]
+
+        let timeline = AssistantActivityTimeline.persisted(
+            message: message,
+            reasoningGroups: [],
+            toolCallGroups: resolvedGroups
+        )
+
+        XCTAssertEqual(timeline.toolCalls.map(\.id), ["call-failed", "call-pending"])
+        XCTAssertEqual(timeline.toolCalls.first?.preview, "Command failed")
+        XCTAssertEqual(timeline.toolCalls.first?.isError, true)
+        XCTAssertEqual(timeline.toolCalls.first?.isCompleted, true)
+        XCTAssertEqual(timeline.toolCalls.last?.isCompleted, false)
+    }
+
     func testSessionDecodesMessageAttachments() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session")
