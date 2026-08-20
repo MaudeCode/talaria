@@ -31,6 +31,7 @@ struct SessionListView: View {
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
     @State private var isAppSidebarPresented = false
+    @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
@@ -90,6 +91,7 @@ struct SessionListView: View {
     var body: some View {
         AppSidebarContainer(isPresented: $isAppSidebarPresented) {
             AppSidebarDrawer(
+                isPresented: isAppSidebarPresented,
                 selection: appSidebarSelection,
                 sectionVisibility: appSidebarSectionVisibility,
                 serverName: appSidebarServerName,
@@ -250,6 +252,14 @@ struct SessionListView: View {
             }
             .onChange(of: requestedNewChat) {
                 openRequestedNewChatIfNeeded()
+            }
+            .onChange(of: isAppSidebarPresented) { _, isPresented in
+                guard !isPresented else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    guard !isAppSidebarPresented else { return }
+                    openNavigationIsFocused = true
+                }
             }
             .onChange(of: showsProjectsSection) {
                 // The "All" button that clears a project filter lives in the
@@ -548,6 +558,7 @@ struct SessionListView: View {
                 .font(.body.weight(.semibold))
         }
         .accessibilityLabel("Open navigation")
+        .accessibilityFocused($openNavigationIsFocused)
     }
 
     private var appSidebarSelection: AppSidebarDestination {

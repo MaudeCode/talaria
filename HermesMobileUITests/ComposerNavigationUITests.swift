@@ -146,6 +146,8 @@ final class ComposerNavigationUITests: XCTestCase {
         let navigationTitle = navigationBar.staticTexts.firstMatch
         XCTAssertTrue(navigationTitle.exists)
         let initialTitleFrame = navigationTitle.frame
+        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        XCTAssertTrue(mainSurface.exists)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.45))
             .press(
@@ -155,13 +157,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
-        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
-        XCTAssertEqual(mainSurface.frame.minY, app.frame.minY, accuracy: 1)
-        XCTAssertEqual(mainSurface.frame.maxY, app.frame.maxY, accuracy: 1)
-        let revealedTitleFrame = navigationTitle.frame
-        let revealWidth = min(360, app.frame.width * 0.84)
-        XCTAssertEqual(revealedTitleFrame.minX, initialTitleFrame.minX + revealWidth, accuracy: 1)
-        XCTAssertEqual(revealedTitleFrame.minY, initialTitleFrame.minY, accuracy: 1)
+        XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
         XCTAssertFalse(app.buttons["Pin"].exists)
         XCTAssertTrue(sidebar.staticTexts["Work"].exists)
         XCTAssertTrue(sidebar.staticTexts["Agent"].exists)
@@ -177,9 +173,29 @@ final class ComposerNavigationUITests: XCTestCase {
                 forDuration: 0.1,
                 thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.45))
             )
+        XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
         XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
         XCTAssertEqual(navigationTitle.frame.minX, initialTitleFrame.minX, accuracy: 1)
         XCTAssertFalse(sidebar.isHittable)
+    }
+
+    func testSidebarIsAccessibilityModalUntilClosed() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        XCTAssertTrue(mainSurface.exists)
+        openNavigation.tap()
+
+        let closeNavigation = app.buttons["Close navigation"]
+        XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
+        XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
+
+        closeNavigation.tap()
+        XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
+        XCTAssertTrue(openNavigation.exists)
     }
 
     func testSidebarHeaderRespectsTopSafeArea() throws {
@@ -222,6 +238,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
         openNavigation.tap()
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
             .press(
                 forDuration: 0.2,
@@ -230,6 +247,7 @@ final class ComposerNavigationUITests: XCTestCase {
                 thenHoldForDuration: 0.1
             )
 
+        XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
         XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
     }
 
@@ -250,7 +268,7 @@ final class ComposerNavigationUITests: XCTestCase {
             options: options
         ) {
             openNavigation.tap()
-            XCTAssertGreaterThan(mainSurface.frame.minX, app.frame.width * 0.5)
+            XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
 
             startMeasuring()
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
@@ -263,6 +281,7 @@ final class ComposerNavigationUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.4)
             stopMeasuring()
 
+            XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
             XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
         }
     }

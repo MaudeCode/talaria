@@ -1279,8 +1279,8 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
 
                 sidebar
                     .frame(width: revealWidth, height: proxy.size.height)
-                    .scaleEffect(0.96 + 0.04 * progress, anchor: .leading)
-                    .opacity(0.25 + 0.75 * progress)
+                    .scaleEffect(reduceMotion ? 1 : 0.96 + 0.04 * progress, anchor: .leading)
+                    .opacity(reduceMotion ? 1 : 0.25 + 0.75 * progress)
                     .accessibilityHidden(!isPresented)
 
                 content
@@ -1310,6 +1310,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                         x: -8 * horizontalDirection * progress
                     )
                     .offset(x: revealWidth * progress * horizontalDirection)
+                    .accessibilityHidden(isPresented)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("app-main-surface")
 
@@ -1433,6 +1434,9 @@ enum AppSidebarGesturePolicy {
 }
 
 struct AppSidebarDrawer: View {
+    @AccessibilityFocusState private var closeNavigationIsFocused: Bool
+
+    let isPresented: Bool
     let selection: AppSidebarDestination
     let sectionVisibility: SidebarSectionVisibility
     let serverName: String
@@ -1468,9 +1472,13 @@ struct AppSidebarDrawer: View {
                         .font(.body.weight(.semibold))
                         .frame(width: 36, height: 36)
                         .background(.quaternary, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close navigation")
+                .accessibilityHint("Closes navigation and returns to the current screen.")
+                .accessibilityFocused($closeNavigationIsFocused)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 14)
@@ -1522,7 +1530,16 @@ struct AppSidebarDrawer: View {
         .safeAreaPadding(.bottom, 8)
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("app-sidebar")
+        .onChange(of: isPresented) { _, isPresented in
+            guard isPresented else { return }
+            Task { @MainActor in
+                await Task.yield()
+                guard self.isPresented else { return }
+                closeNavigationIsFocused = true
+            }
+        }
     }
 
     private enum Icon {
