@@ -13,6 +13,7 @@ struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var viewModel: SessionListViewModel
@@ -29,6 +30,8 @@ struct SessionListView: View {
     @State private var isSearchPresented = false
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
+    @State private var isAppSidebarPresented = false
+    @GestureState private var appSidebarDragTranslation: CGFloat = 0
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
@@ -40,6 +43,11 @@ struct SessionListView: View {
     private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
     @AppStorage(SectionVisibilitySettings.activeProfileKey) private var showsActiveProfileSection = true
     @AppStorage(SectionVisibilitySettings.projectsKey) private var showsProjectsSection = true
+    @AppStorage(SectionVisibilitySettings.tasksKey) private var showsTasksSection = true
+    @AppStorage(SectionVisibilitySettings.kanbanKey) private var showsKanbanSection = true
+    @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
+    @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
+    @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
     // Per-server key (#19): the CLI toggle mirrors the active server's
     // `show_cli_sessions`, so its cached value must not leak across servers.
     // Configured in `init`, where the server URL is known.
@@ -81,7 +89,83 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        navigationContainer
+        GeometryReader { proxy in
+            let revealWidth = min(360, proxy.size.width * 0.84)
+            let progress = appSidebarProgress(revealWidth: revealWidth)
+            let horizontalDirection: CGFloat = layoutDirection == .rightToLeft ? -1 : 1
+            let surfaceTint = colorScheme == .dark ? Color.white : Color.black
+
+            ZStack(alignment: .leading) {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+
+                AppSidebarDrawer(
+                    selection: appSidebarSelection,
+                    sectionVisibility: appSidebarSectionVisibility,
+                    select: selectAppSidebarDestination,
+                    close: { isAppSidebarPresented = false }
+                )
+                .frame(width: revealWidth, height: proxy.size.height)
+                .scaleEffect(0.96 + 0.04 * progress, anchor: .leading)
+                .opacity(0.25 + 0.75 * progress)
+                .accessibilityHidden(!isAppSidebarPresented)
+
+                ZStack {
+                    Color(.systemBackground)
+                    navigationContainer
+                }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .overlay {
+                        if isAppSidebarPresented {
+                            surfaceTint.opacity(0.12 * progress)
+                                .contentShape(Rectangle())
+                                .highPriorityGesture(
+                                    appSidebarDragGesture(
+                                        containerWidth: proxy.size.width,
+                                        revealWidth: revealWidth
+                                    )
+                                )
+                                .onTapGesture {
+                                    isAppSidebarPresented = false
+                                }
+                                .accessibilityHidden(true)
+                        } else {
+                            surfaceTint.opacity(0.12 * progress)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .clipShape(
+                        appSidebarSurfaceShape(progress: progress)
+                    )
+                    .shadow(
+                        color: .black.opacity(0.28 * progress),
+                        radius: 24 * progress,
+                        x: -8 * horizontalDirection * progress
+                    )
+                    .offset(x: revealWidth * progress * horizontalDirection)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("app-main-surface")
+
+                if !isAppSidebarPresented {
+                    Color.clear
+                        .frame(width: AppSidebarGesturePolicy.edgeActivationWidth)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            appSidebarDragGesture(
+                                containerWidth: proxy.size.width,
+                                revealWidth: revealWidth
+                            )
+                        )
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .animation(
+            reduceMotion ? .easeOut(duration: 0.12) : .snappy(duration: 0.28),
+            value: isAppSidebarPresented
+        )
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)
                     .presentationDetents([.medium, .large])
@@ -273,9 +357,20 @@ struct SessionListView: View {
             }
             .navigationSplitViewStyle(.balanced)
             .id(navigationState.rootRevision)
+        } else if let utility = navigationState.destination?.compactRootUtility {
+            NavigationStack {
+                utilityDestination(utility)
+                    .background(NavigationBarLeadingMarginObserver())
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            sidebarButton
+                        }
+                    }
+            }
         } else {
             NavigationStack {
                 sessionListSurface
+                    .background(NavigationBarLeadingMarginObserver())
                     .navigationDestination(item: navigationDestinationBinding) { destination in
                         navigationDestination(destination)
                     }
@@ -305,6 +400,10 @@ struct SessionListView: View {
         )
         .minimizingSearchToolbar()
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                sidebarButton
+            }
+
             ToolbarItem(placement: .topBarTrailing) {
                 settingsButton
             }
@@ -386,7 +485,7 @@ struct SessionListView: View {
 
     private var navigationDestinationBinding: Binding<SessionNavigationDestination?> {
         Binding(
-            get: { navigationState.destination },
+            get: { navigationState.destination?.compactPushedDestination },
             set: { destination in
                 guard destination == nil else { return }
                 navigationState.clearDestination()
@@ -501,6 +600,120 @@ struct SessionListView: View {
                 manageServers: { navigationState.select(.settings(.servers)) }
             )
         }
+    }
+
+    private var sidebarButton: some View {
+        Button {
+            isAppSidebarPresented = true
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.body.weight(.semibold))
+        }
+        .accessibilityLabel("Open navigation")
+    }
+
+    private func appSidebarProgress(revealWidth: CGFloat) -> CGFloat {
+        AppSidebarGesturePolicy.progress(
+            isPresented: isAppSidebarPresented,
+            translationWidth: appSidebarDragTranslation,
+            revealWidth: revealWidth,
+            isRightToLeft: layoutDirection == .rightToLeft
+        )
+    }
+
+    private func appSidebarSurfaceShape(progress: CGFloat) -> AnyShape {
+        if #available(iOS 26.0, *) {
+            AnyShape(
+                ConcentricRectangle(
+                    corners: .concentric(minimum: .fixed(56 * progress))
+                )
+            )
+        } else {
+            AnyShape(RoundedRectangle(cornerRadius: 42 * progress, style: .continuous))
+        }
+    }
+
+    private func appSidebarDragGesture(
+        containerWidth: CGFloat,
+        revealWidth: CGFloat
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .updating($appSidebarDragTranslation) { value, translation, _ in
+                guard AppSidebarGesturePolicy.accepts(
+                    isPresented: isAppSidebarPresented,
+                    startX: value.startLocation.x,
+                    containerWidth: containerWidth,
+                    translation: value.translation,
+                    isRightToLeft: layoutDirection == .rightToLeft
+                ) else { return }
+
+                translation = value.translation.width
+            }
+            .onEnded { value in
+                guard AppSidebarGesturePolicy.accepts(
+                    isPresented: isAppSidebarPresented,
+                    startX: value.startLocation.x,
+                    containerWidth: containerWidth,
+                    translation: value.translation,
+                    isRightToLeft: layoutDirection == .rightToLeft
+                ) else { return }
+
+                isAppSidebarPresented = AppSidebarGesturePolicy.progress(
+                    isPresented: isAppSidebarPresented,
+                    translationWidth: value.predictedEndTranslation.width,
+                    revealWidth: revealWidth,
+                    isRightToLeft: layoutDirection == .rightToLeft
+                ) >= 0.5
+            }
+    }
+
+    private var appSidebarSelection: AppSidebarDestination {
+        guard case .utility(let destination) = navigationState.destination else {
+            return .chats
+        }
+
+        switch destination {
+        case .tasks: return .tasks
+        case .kanban: return .kanban
+        case .skills: return .skills
+        case .memory: return .memory
+        case .insights: return .insights
+        case .settings: return .settings
+        case .archived, .scheduled: return .chats
+        }
+    }
+
+    private var appSidebarSectionVisibility: SidebarSectionVisibility {
+        SidebarSectionVisibility(
+            tasks: showsTasksSection,
+            kanban: showsKanbanSection,
+            skills: showsSkillsSection,
+            memory: showsMemorySection,
+            insights: showsInsightsSection,
+            activeProfile: showsActiveProfileSection,
+            projects: showsProjectsSection
+        )
+    }
+
+    private func selectAppSidebarDestination(_ destination: AppSidebarDestination) {
+        switch destination {
+        case .chats:
+            navigationState.clearDestination()
+        case .tasks:
+            navigationState.select(.tasks)
+        case .kanban:
+            navigationState.select(.kanban)
+        case .skills:
+            navigationState.select(.skills)
+        case .memory:
+            navigationState.select(.memory)
+        case .insights:
+            navigationState.select(.insights)
+        case .settings:
+            navigationState.select(.settings(nil))
+        }
+
+        isAppSidebarPresented = false
     }
 
     private var newSessionButton: some View {

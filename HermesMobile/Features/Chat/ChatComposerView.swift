@@ -74,6 +74,7 @@ struct MessageComposerView: View {
     let isOfflineReadOnly: Bool
     let isChromeCompact: Bool
     let hidesSecondaryChrome: Bool
+    let joinsSecondaryChrome: Bool
     let errorMessage: String?
     let configurationErrorMessage: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
@@ -307,7 +308,7 @@ struct MessageComposerView: View {
                 }
                 .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsSlashAutocomplete)
 
-                composerSurface
+                composerChrome
                 .adaptiveGlass(
                     .regular,
                     isInteractive: true,
@@ -319,7 +320,7 @@ struct MessageComposerView: View {
                 .padding(.horizontal)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
 
-                if !hidesSecondaryChrome {
+                if !hidesSecondaryChrome && !joinsSecondaryChrome {
                     secondaryBar
                         .padding(.horizontal)
                         .padding(.bottom, 7)
@@ -505,6 +506,20 @@ struct MessageComposerView: View {
             onExpandedPresentationRequirementChange(false)
         }
         .padding(.bottom, keyboardIsVisible ? 10 : 0)
+    }
+
+    @ViewBuilder
+    private var composerChrome: some View {
+        VStack(spacing: 0) {
+            composerSurface
+
+            if joinsSecondaryChrome {
+                secondaryBar
+                    .padding(.horizontal, 8)
+                    .padding(.top, 2)
+                    .padding(.bottom, 8)
+            }
+        }
     }
 
     @ViewBuilder

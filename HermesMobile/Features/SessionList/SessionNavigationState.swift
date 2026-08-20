@@ -11,6 +11,21 @@ enum SessionNavigationDestination: Hashable, Identifiable {
         guard case .session(let session) = self else { return nil }
         return session.sessionId
     }
+
+    var compactRootUtility: SessionListUtilityDestination? {
+        guard case .utility(let utility) = self else { return nil }
+        switch utility {
+        case .archived, .scheduled:
+            return nil
+        default:
+            return utility
+        }
+    }
+
+    var compactPushedDestination: Self? {
+        guard compactRootUtility == nil else { return nil }
+        return self
+    }
 }
 
 struct SessionNavigationState: Equatable {

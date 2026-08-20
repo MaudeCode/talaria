@@ -256,6 +256,21 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(state.selectedSessionID)
     }
 
+    func testCompactNavigationPresentsUtilitiesAsRootsAndChatsAsDetails() {
+        let session = SessionNavigationDestination.session(
+            SessionSummary(sessionId: "session-1")
+        )
+        let kanban = SessionNavigationDestination.utility(.kanban)
+        let archived = SessionNavigationDestination.utility(.archived)
+
+        XCTAssertEqual(session.compactPushedDestination, session)
+        XCTAssertNil(session.compactRootUtility)
+        XCTAssertNil(kanban.compactPushedDestination)
+        XCTAssertEqual(kanban.compactRootUtility, .kanban)
+        XCTAssertEqual(archived.compactPushedDestination, archived)
+        XCTAssertNil(archived.compactRootUtility)
+    }
+
     func testReselectingRootDestinationAdvancesNavigationRevision() {
         var state = SessionNavigationState()
         state.select(SessionListUtilityDestination.skills)
@@ -273,6 +288,36 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertLessThan(
             AdaptiveReadableContentWidth.secondaryDestination,
             AdaptiveReadableContentWidth.workspace
+        )
+    }
+
+    func testSidebarGestureStartsAtEdgeAndTracksEitherDirectionOnceOpen() {
+        XCTAssertTrue(
+            AppSidebarGesturePolicy.accepts(
+                isPresented: false,
+                startX: 20,
+                containerWidth: 390,
+                translation: CGSize(width: 80, height: 4),
+                isRightToLeft: false
+            )
+        )
+        XCTAssertFalse(
+            AppSidebarGesturePolicy.accepts(
+                isPresented: false,
+                startX: 100,
+                containerWidth: 390,
+                translation: CGSize(width: 80, height: 4),
+                isRightToLeft: false
+            )
+        )
+        XCTAssertEqual(
+            AppSidebarGesturePolicy.progress(
+                isPresented: true,
+                translationWidth: -180,
+                revealWidth: 360,
+                isRightToLeft: false
+            ),
+            0.5
         )
     }
 

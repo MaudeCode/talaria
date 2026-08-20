@@ -1,0 +1,70 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+runtime_dir="$repo_root/.codex-tmp/xctest"
+lock_file="$runtime_dir/runner.lock"
+mkdir -p "$runtime_dir/results"
+
+if ! /usr/bin/shlock -f "$lock_file" -p $$; then
+    print -u2 "Talaria tests are already running (PID $(<"$lock_file")). Wait for that run to finish."
+    exit 75
+fi
+trap 'unlink "$lock_file" 2>/dev/null || true' EXIT INT TERM
+
+existing_runs=$(pgrep -fl '/usr/bin/xcodebuild test .*HermesMobile.xcodeproj' || true)
+if [[ -n "$existing_runs" ]]; then
+    print -u2 "A direct Talaria xcodebuild test is already running:"
+    print -u2 "$existing_runs"
+    print -u2 "Wait for it to finish; future runs must use scripts/test-ios."
+    exit 75
+fi
+
+preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' .xcodebuildmcp/config.yaml | head -1)
+simulator_id=${TALARIA_SIMULATOR_ID:-$(
+    xcrun simctl list devices available | awk -v preferred="$preferred_simulator" '
+        /^-- iOS / { in_ios = 1; next }
+        /^-- / { in_ios = 0 }
+        in_ios && /\(Booted\)/ {
+            count = split($0, fields, "(")
+            simulator = fields[count - 1]
+            sub(/\).*/, "", simulator)
+            name = $0
+            sub(/^[[:space:]]*/, "", name)
+            sub(/[[:space:]]+\(.*/, "", name)
+            if (name == preferred) {
+                fallback = ""
+                print simulator
+                exit
+            }
+            if (fallback == "") fallback = simulator
+        }
+        END { if (fallback != "") print fallback }
+    '
+)}
+
+if [[ -n "$simulator_id" ]]; then
+    destination="platform=iOS Simulator,id=$simulator_id"
+else
+    destination="platform=iOS Simulator,name=$preferred_simulator,OS=latest"
+fi
+
+result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$.xcresult"
+typeset -a test_filters
+for selector in "$@"; do
+    test_filters+=("-only-testing:$selector")
+done
+
+print "Simulator: $destination"
+print "Result bundle: $result_bundle"
+
+cd "$repo_root"
+xcodebuild test -quiet \
+    -project HermesMobile.xcodeproj \
+    -scheme HermesMobile \
+    -destination "$destination" \
+    -parallel-testing-enabled NO \
+    -enableCodeCoverage NO \
+    -resultBundlePath "$result_bundle" \
+    "${test_filters[@]}"

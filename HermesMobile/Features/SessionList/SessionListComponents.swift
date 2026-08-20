@@ -1,6 +1,40 @@
 import SwiftUI
 import UIKit
 
+struct NavigationBarLeadingMarginObserver: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> NavigationBarLeadingMarginViewController {
+        NavigationBarLeadingMarginViewController()
+    }
+
+    func updateUIViewController(
+        _ uiViewController: NavigationBarLeadingMarginViewController,
+        context: Context
+    ) {
+        uiViewController.applyMargin()
+    }
+}
+
+@MainActor
+final class NavigationBarLeadingMarginViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.isUserInteractionEnabled = false
+        view.accessibilityElementsHidden = true
+    }
+
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        applyMargin()
+    }
+
+    func applyMargin() {
+        guard let navigationBar = navigationController?.navigationBar else { return }
+        var margins = navigationBar.directionalLayoutMargins
+        margins.leading = 16
+        navigationBar.directionalLayoutMargins = margins
+    }
+}
+
 struct SessionListRowActions {
     let retryLoad: () -> Void
     let open: (SessionSummary) -> Void
@@ -1209,6 +1243,141 @@ struct SidebarNavButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+    }
+}
+
+enum AppSidebarDestination: Hashable {
+    case chats
+    case tasks
+    case kanban
+    case skills
+    case memory
+    case insights
+    case settings
+}
+
+enum AppSidebarGesturePolicy {
+    static let edgeActivationWidth: CGFloat = 28
+
+    static func accepts(
+        isPresented: Bool,
+        startX: CGFloat,
+        containerWidth: CGFloat,
+        translation: CGSize,
+        isRightToLeft: Bool
+    ) -> Bool {
+        guard abs(translation.width) > abs(translation.height) else { return false }
+        guard !isPresented else { return true }
+
+        return isRightToLeft
+            ? startX >= containerWidth - edgeActivationWidth
+            : startX <= edgeActivationWidth
+    }
+
+    static func progress(
+        isPresented: Bool,
+        translationWidth: CGFloat,
+        revealWidth: CGFloat,
+        isRightToLeft: Bool
+    ) -> CGFloat {
+        guard revealWidth > 0 else { return 0 }
+        let direction: CGFloat = isRightToLeft ? -1 : 1
+        let currentOffset = isPresented ? revealWidth : 0
+        return min(max((currentOffset + translationWidth * direction) / revealWidth, 0), 1)
+    }
+}
+
+struct AppSidebarDrawer: View {
+    let selection: AppSidebarDestination
+    let sectionVisibility: SidebarSectionVisibility
+    let select: (AppSidebarDestination) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Talaria")
+                    .font(.title2.weight(.bold))
+
+                Spacer()
+
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.quaternary, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close navigation")
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
+
+            ScrollView {
+                VStack(spacing: 4) {
+                    row("Chats", systemImage: "bubble.left.and.bubble.right", destination: .chats)
+                    if sectionVisibility.tasks {
+                        row("Tasks", systemImage: "calendar.badge.clock", destination: .tasks)
+                    }
+                    if sectionVisibility.kanban {
+                        row("Kanban", systemImage: "rectangle.split.3x1", destination: .kanban)
+                    }
+
+                    Divider().padding(.vertical, 10)
+
+                    if sectionVisibility.skills {
+                        row("Skills", systemImage: "hammer", destination: .skills)
+                    }
+                    if sectionVisibility.memory {
+                        row("Memory", systemImage: "brain", destination: .memory)
+                    }
+                    if sectionVisibility.insights {
+                        row("Insights", systemImage: "chart.bar", destination: .insights)
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+
+            Divider().padding(.horizontal, 12)
+            row("Settings", systemImage: "gearshape", destination: .settings)
+                .padding(12)
+        }
+        .safeAreaPadding(.top, 12)
+        .safeAreaPadding(.bottom, 8)
+        .frame(maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("app-sidebar")
+    }
+
+    private func row(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        destination: AppSidebarDestination
+    ) -> some View {
+        Button {
+            select(destination)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 26)
+
+                Text(title)
+                    .font(.body.weight(.semibold))
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(selection == destination ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
+            .background(
+                selection == destination ? Color.accentColor.opacity(0.14) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selection == destination ? .isSelected : [])
     }
 }
 

@@ -101,7 +101,7 @@ XcodeBuildMCP is the preferred local validation path for feature and bug-fix sli
 - Project: `HermesMobile.xcodeproj`
 - Scheme: `HermesMobile`
 - Configuration: `Debug`
-- Simulator: `iPhone 17`
+- Simulator: configured in `.xcodebuildmcp/config.yaml`
 - Bundle ID: `dev.kil.talaria`
 
 After each completed implementation slice:
@@ -116,8 +116,8 @@ After each completed implementation slice:
 Agent/MCP flow:
 
 - Call `session_show_defaults` before the first local build/run/test.
-- If defaults are missing, set project `HermesMobile.xcodeproj`, scheme `HermesMobile`, configuration `Debug`, simulator `iPhone 17`, and bundle ID `dev.kil.talaria`.
-- Use `test_sim` for XCTest validation.
+- If defaults are missing, copy them from `.xcodebuildmcp/config.yaml`.
+- Use `scripts/test-ios [test-identifier ...]` for serialized XCTest validation.
 - Use `build_run_sim` to build, install, launch, and open Simulator for manual testing.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 
@@ -128,14 +128,15 @@ xcodebuildmcp simulator list --enabled
 ```
 
 ```zsh
-xcodebuildmcp simulator test --output jsonl
+scripts/test-ios HermesMobileTests/ExampleTests/testExample
+scripts/test-ios
 ```
 
 ```zsh
 xcodebuildmcp simulator build-and-run --output jsonl
 ```
 
-If `iPhone 17` is not installed, choose a nearby available iPhone simulator and update `.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
+If the configured simulator is not installed, choose a nearby available iPhone simulator and update `.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
 
 ## Swift File-Size Policy
 

@@ -14,13 +14,37 @@ final class ComposerNavigationUITests: XCTestCase {
         app = nil
     }
 
-    func testComposerMovesIntoBottomAccessoryAndExpandsAgain() throws {
+    func testChatListScrolls() throws {
+        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
+        guard session.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        let initialY = session.frame.minY
+        let sessionList = app.collectionViews.firstMatch
+        XCTAssertTrue(sessionList.exists)
+        sessionList.swipeUp(velocity: .slow)
+        if session.exists {
+            XCTAssertGreaterThan(abs(session.frame.minY - initialY), 20)
+        }
+    }
+
+    func testChatSessionOpensFromList() throws {
+        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
+        guard session.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        session.tap()
+        XCTAssertTrue(app.buttons["Message"].waitForExistence(timeout: 15))
+    }
+
+    func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
         var idleComposer = try openFixtureSession()
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
         XCTAssertTrue(app.buttons["Choose profile"].exists)
-        let initialBottomAccessory = app.descendants(matching: .any)["chat-bottom-accessory"]
-        XCTAssertTrue(initialBottomAccessory.waitForExistence(timeout: 3))
-        XCTAssertTrue(initialBottomAccessory.buttons["Choose workspace path"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["chat-bottom-accessory"].exists)
 
         idleComposer.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
@@ -69,39 +93,21 @@ final class ComposerNavigationUITests: XCTestCase {
             )
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3))
 
-        let sessionOptions = app.buttons["Session options"]
-        XCTAssertTrue(sessionOptions.waitForExistence(timeout: 3))
-        let bottomAccessory = app.descendants(matching: .any)["chat-bottom-accessory"]
-        XCTAssertTrue(bottomAccessory.waitForExistence(timeout: 3))
-        XCTAssertTrue(bottomAccessory.buttons["Session options"].exists)
-
-        let chatsTab = app.tabBars.buttons["Chats"]
-        XCTAssertTrue(chatsTab.exists)
-        XCTAssertLessThan(abs(sessionOptions.frame.midY - chatsTab.frame.midY), 30)
-
-        sessionOptions.tap()
-        XCTAssertTrue(
-            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Workspace:'")).firstMatch
-                .waitForExistence(timeout: 3)
-        )
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
-
-        let integratedExtrasScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        integratedExtrasScreenshot.name = "Optional composer controls inside compact-tab composer"
-        integratedExtrasScreenshot.lifetime = .keepAlways
-        add(integratedExtrasScreenshot)
+        XCTAssertTrue(app.buttons["Choose workspace path"].exists)
+        XCTAssertTrue(app.buttons["Choose profile"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
     }
 
     func testComposerSettingsAreGroupedAndConfigurable() throws {
-        let chatsTab = app.tabBars.buttons["Chats"]
-        guard chatsTab.waitForExistence(timeout: 15) else {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
 
-        app.tabBars.buttons["More"].tap()
-        let settings = app.staticTexts["Settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        settings.tap()
+        openNavigation.tap()
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        sidebar.descendants(matching: .any)["Settings"].firstMatch.tap()
 
         let composerHeading = app.staticTexts["Composer"]
         for _ in 0..<8 where !composerHeading.exists {
@@ -128,18 +134,50 @@ final class ComposerNavigationUITests: XCTestCase {
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
     }
 
-    func testBottomAccessoryIsAbsentFromRootPages() throws {
-        let chatsTab = app.tabBars.buttons["Chats"]
-        guard chatsTab.waitForExistence(timeout: 15) else {
+    func testSidebarReplacesRootTabs() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
 
-        for tabName in ["Chats", "Tasks", "Kanban", "More"] {
-            let tab = app.tabBars.buttons[tabName]
-            tab.tap()
-            XCTAssertTrue(tab.isSelected)
-            assertNoBottomAccessory(on: tabName)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        let navigationBar = app.navigationBars.firstMatch
+        XCTAssertTrue(navigationBar.exists)
+        let navigationTitle = navigationBar.staticTexts.firstMatch
+        XCTAssertTrue(navigationTitle.exists)
+        let initialTitleFrame = navigationTitle.frame
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.45))
+            .press(
+                forDuration: 0.1,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.45))
+            )
+
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        XCTAssertEqual(mainSurface.frame.minY, app.frame.minY, accuracy: 1)
+        XCTAssertEqual(mainSurface.frame.maxY, app.frame.maxY, accuracy: 1)
+        let revealedTitleFrame = navigationTitle.frame
+        let revealWidth = min(360, app.frame.width * 0.84)
+        XCTAssertEqual(revealedTitleFrame.minX, initialTitleFrame.minX + revealWidth, accuracy: 1)
+        XCTAssertEqual(revealedTitleFrame.minY, initialTitleFrame.minY, accuracy: 1)
+        XCTAssertFalse(app.buttons["Pin"].exists)
+        for destination in ["Chats", "Tasks", "Kanban", "Skills", "Memory", "Insights", "Settings"] {
+            XCTAssertTrue(
+                sidebar.descendants(matching: .any)[destination].exists,
+                "Missing sidebar destination: \(destination)"
+            )
         }
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45))
+            .press(
+                forDuration: 0.1,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.45))
+            )
+        XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
+        XCTAssertEqual(navigationTitle.frame.minX, initialTitleFrame.minX, accuracy: 1)
+        XCTAssertFalse(sidebar.isHittable)
     }
 
     private func openFixtureSession() throws -> XCUIElement {
@@ -157,16 +195,4 @@ final class ComposerNavigationUITests: XCTestCase {
         return idleComposer
     }
 
-    private func assertNoBottomAccessory(
-        on page: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        XCTAssertFalse(
-            app.descendants(matching: .any)["chat-bottom-accessory"].exists,
-            "Unexpected chat bottom accessory on \(page)",
-            file: file,
-            line: line
-        )
-    }
 }

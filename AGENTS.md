@@ -42,16 +42,20 @@ Read by every agent (Codex, Claude Code, …); keep it tool-agnostic.
 ## Tooling
 - The maintainer works in Agentic Development Environments (Codex, Claude Code), not the Xcode UI — prefer terminal validation;
   ask to open Xcode only when the terminal can't answer.
-- Use **XcodeBuildMCP** for simulator build/test/run/log; fall back to raw
+- Use **XcodeBuildMCP** for simulator build/run/log; fall back to raw
   `xcodebuild`/`xcrun simctl` for release/archive or low-level diagnosis. Defaults live
-  in `.xcodebuildmcp/config.yaml` (scheme `HermesMobile`, sim **iPhone 17**); if that
+  in `.xcodebuildmcp/config.yaml` (scheme `HermesMobile`); if that
   sim is missing, pick a nearby iPhone and say which.
+- Run every local XCTest invocation through `scripts/test-ios [test-identifier ...]`.
+  It serializes runs and isolates result bundles. Run the focused identifier first,
+  wait for it to exit, then run `scripts/test-ios` for the full suite. Never start a
+  direct or overlapping `xcodebuild test` process.
 - **Simulator installs must be signed.** Never install a `CODE_SIGNING_ALLOWED=NO`
   build on the simulator for manual testing — that flag is for compile-only checks
   (see `TESTFLIGHT.md`) and strips entitlements, so Keychain writes fail with
   `errSecMissingEntitlement` and login breaks. Put the app on the sim via XcodeBuildMCP
   `build_run_sim` or a plain signed Debug build (no signing-disabling flags), then install/launch.
-- Before asking for review or committing a slice: run the full XCTest suite, and
+- Before asking for review or committing a slice: run `scripts/test-ios`, and
   build + launch the app for the human's manual simulator test when UI changed.
 
 ## App identity (resolved via xcconfig — not grep-able)

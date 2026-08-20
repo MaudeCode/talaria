@@ -253,15 +253,6 @@ private struct ListenPlaybackBar: View {
     }
 }
 
-private struct ChatBottomAccessoryState: Equatable {
-    let isVisible: Bool
-    let secondaryControls: ComposerSecondaryControlsState?
-    let showsStop: Bool
-    let isStopDisabled: Bool
-    let isVoiceDisabled: Bool
-    let isAttachmentDisabled: Bool
-}
-
 struct ChatView: View {
     private let bottomAnchorID = "chat-bottom-anchor"
     private let transcriptMessageSpacing: CGFloat = 10
@@ -274,7 +265,6 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.chatBottomAccessoryModel) private var chatBottomAccessoryModel
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
@@ -329,14 +319,6 @@ struct ChatView: View {
     @State private var composerHeight: CGFloat = 52
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
-    @State private var isAccessoryVoiceRequestPending = false
-    @State private var accessorySelectedPhotoItems: [PhotosPickerItem] = []
-    @State private var showsAccessoryPhotoPicker = false
-    @State private var showsAccessoryCameraPicker = false
-    @State private var showsAccessoryFileImporter = false
-    @State private var showsAccessoryWorkspaceSheet = false
-    @State private var composerVoiceInputRequestID = 0
-    @State private var bottomAccessoryOwner = UUID()
     @State private var didCompleteInitialAppearance = false
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
@@ -389,7 +371,8 @@ struct ChatView: View {
             isCancellingStream: viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isChromeCompact: isComposerChromeCompact,
-            hidesSecondaryChrome: usesNativeSecondaryControls,
+            hidesSecondaryChrome: false,
+            joinsSecondaryChrome: !usesCompactComposer && composerSecondaryControlsState.hasControls,
             errorMessage: viewModel.sendErrorMessage,
             configurationErrorMessage: viewModel.composerConfigurationErrorMessage,
             contextWindowSnapshot: viewModel.contextWindowSnapshot,
@@ -420,7 +403,7 @@ struct ChatView: View {
             attachmentUploadGeneration: viewModel.attachmentUploadGeneration,
             isSendingVoiceNote: viewModel.isSendingVoiceNote,
             autoStartsVoiceInput: autoStartsVoiceInput,
-            voiceInputRequestID: composerVoiceInputRequestID,
+            voiceInputRequestID: 0,
             apiClient: viewModel.client,
             uploadAttachmentErrorMessage: viewModel.uploadAttachmentErrorMessage,
             onSend: {
@@ -513,9 +496,7 @@ struct ChatView: View {
             onRefreshGitBranches: {
                 Task { await gitAvailabilityViewModel.loadBranches() }
             },
-            onVoiceInputRequestHandled: {
-                isAccessoryVoiceRequestPending = false
-            },
+            onVoiceInputRequestHandled: {},
             onExpandedPresentationRequirementChange: { isRequired in
                 composerRequiresExpandedPresentation = isRequired
             }
@@ -568,15 +549,11 @@ struct ChatView: View {
             }
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
 
-            if !usesNativeBottomAccessoryComposer {
-                BottomComposerMaterialFade(composerHeight: composerHeight)
-            }
+            BottomComposerMaterialFade(composerHeight: composerHeight)
 
             composerAccessoryStack
 
-            if !usesNativeBottomAccessoryComposer {
-                messageComposer
-            }
+            messageComposer
 
             if let approvalPrompt = viewModel.approvalPrompt {
                 ApprovalRequestOverlay(
@@ -612,9 +589,6 @@ struct ChatView: View {
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
-        .onChange(of: bottomAccessoryState) {
-            updateBottomAccessory()
-        }
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
@@ -640,7 +614,6 @@ struct ChatView: View {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
             .onDisappear {
-                chatBottomAccessoryModel?.clear(owner: bottomAccessoryOwner)
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
                 viewModel.stopListening()
@@ -648,8 +621,6 @@ struct ChatView: View {
                 viewModel.cleanupPollingTasks()
             }
             .onAppear {
-                chatBottomAccessoryModel?.claim(bottomAccessoryOwner)
-                updateBottomAccessory()
                 Task {
                     await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
 
@@ -704,60 +675,6 @@ struct ChatView: View {
             }
             .navigationDestination(item: $forkedSession) { session in
                 ChatView(session: session, server: server, onAPIError: onAPIError)
-            }
-            .photosPicker(
-                isPresented: $showsAccessoryPhotoPicker,
-                selection: $accessorySelectedPhotoItems,
-                matching: .images
-            )
-            .onChange(of: accessorySelectedPhotoItems) {
-                let items = accessorySelectedPhotoItems
-                accessorySelectedPhotoItems.removeAll()
-                for item in items {
-                    Task { await handlePhotoSelection(item) }
-                }
-            }
-            .fileImporter(
-                isPresented: $showsAccessoryFileImporter,
-                allowedContentTypes: [.item],
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case let .success(urls):
-                    Task { await handleSelectedFileURLs(urls) }
-                case let .failure(error):
-                    if !isFileImporterCancellation(error) {
-                        viewModel.setUploadAttachmentError(error.localizedDescription)
-                    }
-                }
-            }
-            .fullScreenCover(isPresented: $showsAccessoryCameraPicker) {
-                CameraPickerView { image in
-                    Task { await handlePastedImages([image]) }
-                }
-                .ignoresSafeArea()
-            }
-            .sheet(isPresented: $showsAccessoryWorkspaceSheet) {
-                ComposerWorkspacePickerSheet(
-                    workspaceRoots: viewModel.workspaceRoots,
-                    selectedWorkspacePath: viewModel.selectedWorkspacePath,
-                    suggestions: viewModel.workspaceSuggestions,
-                    managementServer: viewModel.isViewingCachedData ? nil : server,
-                    onLoadSuggestions: { prefix in
-                        await viewModel.loadWorkspaceSuggestions(prefix: prefix)
-                    },
-                    onSelect: { path in
-                        let didSelect = await viewModel.selectWorkspacePath(path)
-                        if didSelect {
-                            ChatHaptics.configurationSelected(isEnabled: isHapticsEnabled)
-                        }
-                    },
-                    onRegistryChanged: {
-                        await viewModel.refreshWorkspaceRoots()
-                    }
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
             }
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
@@ -1149,7 +1066,7 @@ struct ChatView: View {
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, usesNativeBottomAccessoryComposer ? 8 : composerHeight + 8)
+            .padding(.bottom, composerHeight + 8)
             .allowsHitTesting(false)
             .zIndex(8)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
@@ -1171,7 +1088,11 @@ struct ChatView: View {
             completedToolCallGroupsForAnchor: { anchorMessageID in
                 viewModel.completedToolCallGroupsForAnchor(anchorMessageID)
             },
+            archivedActivityRowsForAnchor: { anchorMessageID in
+                viewModel.archivedActivityRowsForAnchor(anchorMessageID)
+            },
             liveReasoningText: viewModel.liveReasoningText,
+            liveActivityRows: viewModel.liveActivityRows,
             reasoningAnchorMessageID: viewModel.reasoningAnchorMessageID,
             liveToolCalls: viewModel.liveToolCalls,
             toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
@@ -1315,37 +1236,16 @@ struct ChatView: View {
             hasDraft: !draftMessage.isEmpty,
             hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,
             isLoadingComposerConfiguration: viewModel.isLoadingComposerConfiguration,
-            isBusyOrUnavailable: isComposerBusyOrUnavailable || isAccessoryVoiceRequestPending,
+            isBusyOrUnavailable: isComposerBusyOrUnavailable,
             requiresExpandedPresentation: composerRequiresExpandedPresentation
         )
     }
 
-    private var usesNativeBottomAccessoryComposer: Bool {
-        guard #available(iOS 26.1, *) else { return false }
-        return UIDevice.current.userInterfaceIdiom == .phone
-            && chatBottomAccessoryModel != nil
-            && usesCompactComposer
-    }
-
-    private var usesNativeSecondaryControls: Bool {
-        guard #available(iOS 26.1, *) else { return false }
-        return UIDevice.current.userInterfaceIdiom == .phone
-            && chatBottomAccessoryModel != nil
-            && !usesCompactComposer
-            && composerSecondaryControlsState.hasControls
-    }
-
     private var transcriptBottomInsetHeight: CGFloat {
-        if usesNativeBottomAccessoryComposer {
-            return max(24, composerAccessorySpacerHeight + 12)
-        }
         return max(96, composerHeight + 44 + composerAccessorySpacerHeight)
     }
 
     private var scrollToBottomButtonBottomPadding: CGFloat {
-        if usesNativeBottomAccessoryComposer {
-            return 12 + composerAccessorySpacerHeight
-        }
         return composerHeight + 12 + composerAccessorySpacerHeight
     }
 
@@ -1360,26 +1260,6 @@ struct ChatView: View {
             || viewModel.sendErrorMessage != nil
             || viewModel.composerConfigurationErrorMessage != nil
             || viewModel.uploadAttachmentErrorMessage != nil
-    }
-
-    private var bottomAccessoryState: ChatBottomAccessoryState {
-        ChatBottomAccessoryState(
-            isVisible: usesNativeBottomAccessoryComposer || usesNativeSecondaryControls,
-            secondaryControls: usesNativeSecondaryControls ? composerSecondaryControlsState : nil,
-            showsStop: viewModel.activeStreamID != nil && draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            isStopDisabled: viewModel.isCancellingStream,
-            isVoiceDisabled: viewModel.isViewingCachedData
-                || viewModel.isStartingChat
-                || viewModel.isCompressingSession
-                || viewModel.isUploadingAttachment
-                || viewModel.isUpdatingComposerConfiguration,
-            isAttachmentDisabled: viewModel.isViewingCachedData
-                || viewModel.isStartingChat
-                || viewModel.isCompressingSession
-                || viewModel.activeStreamID != nil
-                || viewModel.isUploadingAttachment
-                || viewModel.isUpdatingComposerConfiguration
-        )
     }
 
     private var composerSecondaryControlsState: ComposerSecondaryControlsState {
@@ -1420,36 +1300,6 @@ struct ChatView: View {
         }
 
         return path.lastPathComponentFallback
-    }
-
-    private func updateBottomAccessory() {
-        let state = bottomAccessoryState
-        chatBottomAccessoryModel?.update(
-            owner: bottomAccessoryOwner,
-            isVisible: state.isVisible,
-            showsStop: state.showsStop,
-            isStopDisabled: state.isStopDisabled,
-            isVoiceDisabled: state.isVoiceDisabled,
-            isAttachmentDisabled: state.isAttachmentDisabled,
-            isCameraAvailable: UIImagePickerController.isSourceTypeAvailable(.camera),
-            secondaryControls: state.secondaryControls,
-            onActivate: requestComposerFocusIfPossible,
-            onVoice: requestVoiceInputFromAccessory,
-            onStop: { Task { await cancelStream() } },
-            onAttachFile: { showsAccessoryFileImporter = true },
-            onAttachPhoto: { showsAccessoryPhotoPicker = true },
-            onTakePhoto: { showsAccessoryCameraPicker = true },
-            onChooseWorkspace: { showsAccessoryWorkspaceSheet = true },
-            onSelectProfile: handleProfileSelection,
-            onSelectGitBranch: { target in Task { await performGitCheckout(target) } },
-            onCreateGitBranch: { target in Task { await performGitCheckout(target) } },
-            onRefreshGitBranches: { Task { await gitAvailabilityViewModel.loadBranches() } }
-        )
-    }
-
-    private func requestVoiceInputFromAccessory() {
-        isAccessoryVoiceRequestPending = true
-        composerVoiceInputRequestID += 1
     }
 
     private var pinnedNoticeSpacerHeight: CGFloat {
