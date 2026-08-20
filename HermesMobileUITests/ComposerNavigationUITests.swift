@@ -196,6 +196,22 @@ final class ComposerNavigationUITests: XCTestCase {
         }
     }
 
+    func testSidebarNewChatOpensExistingComposer() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        openNavigation.tap()
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        let newChat = sidebar.buttons["New Chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 3))
+        newChat.tap()
+
+        XCTAssertTrue(app.navigationBars["New Chat"].waitForExistence(timeout: 15))
+        XCTAssertFalse(sidebar.isHittable)
+    }
+
     func testFullyOpenSidebarClosesWithSlowDiagonalSwipe() throws {
         let openNavigation = app.buttons["Open navigation"]
         guard openNavigation.waitForExistence(timeout: 15) else {

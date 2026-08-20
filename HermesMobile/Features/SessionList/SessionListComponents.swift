@@ -1435,14 +1435,31 @@ enum AppSidebarGesturePolicy {
 struct AppSidebarDrawer: View {
     let selection: AppSidebarDestination
     let sectionVisibility: SidebarSectionVisibility
+    let serverName: String
+    let activeProfileName: String?
+    let newChat: () -> Void
     let select: (AppSidebarDestination) -> Void
     let close: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Talaria")
-                    .font(.title2.weight(.bold))
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Talaria")
+                        .font(.title2.weight(.bold))
+
+                    Text(serverName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    if let activeProfileName {
+                        Text("Profile: \(activeProfileName)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
                 Spacer()
 
@@ -1456,7 +1473,16 @@ struct AppSidebarDrawer: View {
                 .accessibilityLabel("Close navigation")
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 18)
+            .padding(.bottom, 14)
+
+            HapticButton(feedbackStyle: .medium, action: newChat) {
+                Label("New Chat", systemImage: "square.and.pencil")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
 
             ScrollView {
                 VStack(spacing: 4) {

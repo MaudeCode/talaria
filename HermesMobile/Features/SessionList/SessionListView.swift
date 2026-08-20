@@ -92,6 +92,12 @@ struct SessionListView: View {
             AppSidebarDrawer(
                 selection: appSidebarSelection,
                 sectionVisibility: appSidebarSectionVisibility,
+                serverName: appSidebarServerName,
+                activeProfileName: appSidebarProfileName,
+                newChat: {
+                    isAppSidebarPresented = false
+                    openNewChat()
+                },
                 select: selectAppSidebarDestination,
                 close: { isAppSidebarPresented = false }
             )
@@ -524,10 +530,7 @@ struct SessionListView: View {
         // into the native toolbar.
         .contextMenu {
             AvatarServerSwitcherMenu(
-                model: AvatarServerSwitcherModel(
-                    servers: authManager.servers,
-                    activeServerID: authManager.activeServerID
-                ),
+                model: avatarServerSwitcherModel,
                 switchToServer: { account in
                     authManager.switchActiveServer(to: account)
                 },
@@ -561,6 +564,25 @@ struct SessionListView: View {
         case .settings: return .settings
         case .archived, .scheduled: return .chats
         }
+    }
+
+    private var avatarServerSwitcherModel: AvatarServerSwitcherModel {
+        AvatarServerSwitcherModel(
+            servers: authManager.servers,
+            activeServerID: authManager.activeServerID
+        )
+    }
+
+    private var appSidebarServerName: String {
+        avatarServerSwitcherModel.entries.first(where: \.isActive)?.displayName
+            ?? server.host
+            ?? server.absoluteString
+    }
+
+    private var appSidebarProfileName: String? {
+        let profileName = (viewModel.activeProfileDisplayName ?? viewModel.activeProfileName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return profileName?.isEmpty == false ? profileName : nil
     }
 
     private var appSidebarSectionVisibility: SidebarSectionVisibility {
