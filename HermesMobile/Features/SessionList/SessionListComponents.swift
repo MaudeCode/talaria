@@ -1458,8 +1458,11 @@ struct AppSidebarDrawer: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Talaria")
-                        .font(.title2.weight(.bold))
+                    Image("TalariaWordmark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 145, height: 34, alignment: .leading)
+                        .accessibilityLabel("Talaria")
 
                     Text(serverName)
                         .font(.subheadline)
