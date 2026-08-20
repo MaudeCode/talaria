@@ -44,6 +44,8 @@ project only where Talaria has explicitly adopted it.
 
 - Prefer terminal validation. Use XcodeBuildMCP when available; otherwise use
   `xcodebuild` and `xcrun simctl`.
+- Run app UI validation through XCTest/XCUIAutomation and simulator tooling.
+  Never use Computer Use to test Talaria.
 - Run local XCTest only through `scripts/test-ios [test-identifier ...]`. Run a
   focused test first, wait for it to finish, then run the full suite before review
   or commit. Never overlap test runs.
