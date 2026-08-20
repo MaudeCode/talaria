@@ -101,7 +101,6 @@ struct SessionListView: View {
                 navigationContainer
             }
         }
-        .ignoresSafeArea()
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)
                     .presentationDetents([.medium, .large])
@@ -260,9 +259,6 @@ struct SessionListView: View {
                     suppressEmptyPlaceholders: viewModel.removeEmptySidebarPlaceholders,
                     refreshSessions: refreshAfterReturningIfNeeded
                 )
-            }
-            .refreshable {
-                await refreshSessionsAndActiveProfile()
             }
             .modifier(
                 SessionActionConfirmations(
@@ -505,6 +501,9 @@ struct SessionListView: View {
         .scrollPosition(id: $sidebarScrollPosition)
         .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
+        .refreshable {
+            await refreshSessionsAndActiveProfile()
+        }
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
     }
 

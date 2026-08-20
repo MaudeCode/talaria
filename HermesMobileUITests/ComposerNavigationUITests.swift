@@ -180,6 +180,22 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertFalse(sidebar.isHittable)
     }
 
+    func testSidebarHeaderRespectsTopSafeArea() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        openNavigation.tap()
+        let closeNavigation = app.buttons["Close navigation"]
+        XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
+
+        let statusBar = app.statusBars.firstMatch
+        if statusBar.exists {
+            XCTAssertGreaterThanOrEqual(closeNavigation.frame.minY, statusBar.frame.maxY)
+        }
+    }
+
     func testFullyOpenSidebarClosesWithSlowDiagonalSwipe() throws {
         let openNavigation = app.buttons["Open navigation"]
         guard openNavigation.waitForExistence(timeout: 15) else {

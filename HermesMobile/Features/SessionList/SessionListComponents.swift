@@ -1482,6 +1482,7 @@ struct AppSidebarDrawer: View {
                 }
                 .padding(.horizontal, 12)
             }
+            .scrollBounceBehavior(.basedOnSize)
 
             Divider().padding(.horizontal, 12)
             row("Settings", systemImage: "gearshape", destination: .settings)
