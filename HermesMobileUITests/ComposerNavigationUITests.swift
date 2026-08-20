@@ -180,7 +180,7 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertFalse(sidebar.isHittable)
     }
 
-    func testFullyOpenSidebarTracksSlowSwipeWithoutJitter() throws {
+    func testFullyOpenSidebarClosesWithSlowDiagonalSwipe() throws {
         let openNavigation = app.buttons["Open navigation"]
         guard openNavigation.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
@@ -188,32 +188,49 @@ final class ComposerNavigationUITests: XCTestCase {
 
         openNavigation.tap()
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
-        let dragFinished = expectation(description: "Sidebar drag finished")
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.57))
-
-        DispatchQueue.global().async {
-            start.press(
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
+            .press(
                 forDuration: 0.2,
-                thenDragTo: end,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.57)),
                 withVelocity: 100,
-                thenHoldForDuration: 1
+                thenHoldForDuration: 0.1
             )
-            dragFinished.fulfill()
+
+        XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
+    }
+
+    @available(iOS 26.0, *)
+    func testSidebarCloseHitchPerformance() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
 
-        Thread.sleep(forTimeInterval: 0.3)
-        var sampledOffsets: [CGFloat] = []
-        for _ in 0..<20 {
-            sampledOffsets.append(mainSurface.frame.minX)
-            Thread.sleep(forTimeInterval: 0.05)
-        }
+        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
 
-        XCTAssertGreaterThan(sampledOffsets.max() ?? 0, sampledOffsets.min() ?? 0)
-        for (previous, current) in zip(sampledOffsets, sampledOffsets.dropFirst()) {
-            XCTAssertLessThanOrEqual(current, previous + 1)
+        measure(
+            metrics: [XCTHitchMetric(application: app), XCTCPUMetric(application: app)],
+            options: options
+        ) {
+            openNavigation.tap()
+            XCTAssertGreaterThan(mainSurface.frame.minX, app.frame.width * 0.5)
+
+            startMeasuring()
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
+                .press(
+                    forDuration: 0.1,
+                    thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)),
+                    withVelocity: 500,
+                    thenHoldForDuration: 0.1
+                )
+            Thread.sleep(forTimeInterval: 0.4)
+            stopMeasuring()
+
+            XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
         }
-        wait(for: [dragFinished], timeout: 3)
     }
 
     private func openFixtureSession() throws -> XCUIElement {
