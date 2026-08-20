@@ -180,6 +180,42 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertFalse(sidebar.isHittable)
     }
 
+    func testFullyOpenSidebarTracksSlowSwipeWithoutJitter() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        openNavigation.tap()
+        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        let dragFinished = expectation(description: "Sidebar drag finished")
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.57))
+
+        DispatchQueue.global().async {
+            start.press(
+                forDuration: 0.2,
+                thenDragTo: end,
+                withVelocity: 100,
+                thenHoldForDuration: 1
+            )
+            dragFinished.fulfill()
+        }
+
+        Thread.sleep(forTimeInterval: 0.3)
+        var sampledOffsets: [CGFloat] = []
+        for _ in 0..<20 {
+            sampledOffsets.append(mainSurface.frame.minX)
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        XCTAssertGreaterThan(sampledOffsets.max() ?? 0, sampledOffsets.min() ?? 0)
+        for (previous, current) in zip(sampledOffsets, sampledOffsets.dropFirst()) {
+            XCTAssertLessThanOrEqual(current, previous + 1)
+        }
+        wait(for: [dragFinished], timeout: 3)
+    }
+
     private func openFixtureSession() throws -> XCUIElement {
         let idleComposer = app.buttons["Message"]
         if idleComposer.waitForExistence(timeout: 3) {

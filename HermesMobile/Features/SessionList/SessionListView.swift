@@ -31,7 +31,7 @@ struct SessionListView: View {
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
     @State private var isAppSidebarPresented = false
-    @GestureState private var appSidebarDragTranslation: CGFloat = 0
+    @State private var appSidebarDragTranslation: CGFloat = 0
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
@@ -637,8 +637,8 @@ struct SessionListView: View {
         containerWidth: CGFloat,
         revealWidth: CGFloat
     ) -> some Gesture {
-        DragGesture(minimumDistance: 10)
-            .updating($appSidebarDragTranslation) { value, translation, _ in
+        DragGesture(minimumDistance: 10, coordinateSpace: .global)
+            .onChanged { value in
                 guard AppSidebarGesturePolicy.accepts(
                     isPresented: isAppSidebarPresented,
                     startX: value.startLocation.x,
@@ -647,9 +647,11 @@ struct SessionListView: View {
                     isRightToLeft: layoutDirection == .rightToLeft
                 ) else { return }
 
-                translation = value.translation.width
+                appSidebarDragTranslation = value.translation.width
             }
             .onEnded { value in
+                defer { appSidebarDragTranslation = 0 }
+
                 guard AppSidebarGesturePolicy.accepts(
                     isPresented: isAppSidebarPresented,
                     startX: value.startLocation.x,
