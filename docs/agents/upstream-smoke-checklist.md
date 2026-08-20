@@ -291,9 +291,8 @@ set) before stopping, and remove the cookie jar: `rm -f "$JAR"`.
 3. Commit the pin move with a one-line note of which smoke validated it.
 
 **Where to record the result** (per "Advance Policy" → "Cadence and owner"):
-the smoke outcome + chosen pin go in `CURRENT.md` for the session,
-or in issue #181. If the smoke was **skipped or held**, the pin stays and the
-reason is recorded in the same place.
+the smoke outcome + chosen pin go in issue #181. If the smoke was **skipped or
+held**, the pin stays and the reason is recorded there.
 
 **Cleanup:** `rm -f "$JAR"` when done.
 

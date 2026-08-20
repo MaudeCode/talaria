@@ -26,4 +26,4 @@ The intended feel is dense, calm, operator-grade, and mobile-native. Prefer scan
 
 ## Fresh-Session Reading
 
-Follow `AGENTS.md`: read `CURRENT.md` first if it exists (it is local-only and gitignored — a fresh clone won't have one), then only the `PROJECT_SPEC.md` sections listed there. Read this file only when product intent or tradeoffs are unclear.
+Follow `AGENTS.md` and read only the `PROJECT_SPEC.md` sections relevant to the selected task. Read this file only when product intent or tradeoffs are unclear.

@@ -147,8 +147,7 @@ implementation**, not pre-cached in this index. When you pick up a `roadmap` row
 
 ## Implementation rules for any slice
 
-1. Start from `CURRENT.md` if it exists (local-only, gitignored — a fresh clone
-   won't have one), then this index.
+1. Start from this index.
 2. Create a short `issue/<n>-slug` branch unless the owner explicitly says otherwise.
 3. Validate the route in `.codex-tmp/hermes-webui/api/routes.py` before coding
    (the just-in-time rule above).
@@ -162,15 +161,13 @@ implementation**, not pre-cached in this index. When you pick up a `roadmap` row
    asking for review.
 8. For `write`/`exec`/`secret`/`admin`/`privacy` surfaces, add explicit
    confirmation copy and avoid default-on dangerous behavior.
-9. At wrap-up or completed-slice handoff, update `CURRENT.md`,
-   update this index's status if the durable judgment changed, and commit only a
-   validated build/test state.
+9. At wrap-up or completed-slice handoff, update this index's status if the durable
+   judgment changed, and commit only a validated build/test state.
 
 ## Agent prompt template
 
 ```markdown
-Read CURRENT.md first if it exists (it is local-only and gitignored), then read
-docs/agents/feature-gap-index.md.
+Read docs/agents/feature-gap-index.md.
 
 We are implementing "[FEATURE NAME]".
 
@@ -187,6 +184,6 @@ Implementation:
 3. Integrate view-model and SwiftUI changes using existing patterns.
 4. Add focused XCTest coverage for endpoint/body/decode/view-model behavior.
 5. Run focused tests, then full simulator XCTest.
-6. Update the feature-gap-index row (only if durable judgment changed)
-   and CURRENT.md before a checkpoint commit.
+6. Update the feature-gap-index row before a checkpoint commit, but only if its
+   durable judgment changed.
 ```

@@ -1103,7 +1103,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
                         "id": .string("call-2"),
                         "function": .object([
                             "name": .string("read_file"),
-                            "arguments": .string(#"{"path":"CURRENT.md"}"#)
+                            "arguments": .string(#"{"path":"README.md"}"#)
                         ])
                     ])
                 ]
@@ -1131,7 +1131,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["terminal", "read_file"])
         XCTAssertEqual(groups.first?.toolCalls.first?.preview, "/Users/uzair/project")
         XCTAssertEqual(groups.first?.toolCalls.first?.args?["command"], .string("pwd"))
-        XCTAssertEqual(groups.first?.toolCalls.last?.args?["path"], .string("CURRENT.md"))
+        XCTAssertEqual(groups.first?.toolCalls.last?.args?["path"], .string("README.md"))
         XCTAssertEqual(groups.first?.isComplete, true)
     }
 

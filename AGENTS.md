@@ -5,19 +5,15 @@ name `Talaria`) for a self-hosted `hermes-webui` server. `PROJECT_SPEC.md` is th
 product/API source of truth — if a request conflicts with it, stop and ask.
 Read by every agent (Codex, Claude Code, …); keep it tool-agnostic.
 
-## Session start & wrap-up
-- Read `CURRENT.md` first if it exists — it holds the latest resumable state. It is
-  local-only (gitignored), never committed; a fresh clone won't have one.
-- Read only the `PROJECT_SPEC.md` sections named in CURRENT.md's **Spec Read** field;
-  never the whole ~850-line spec unless told to.
-- Implement only the task the human selects or the task named in `CURRENT.md`; do not
-  pull work from external trackers unless the human explicitly asks.
-- On "wrap up": verify repo/build/test state, overwrite `CURRENT.md` with the new
-  state (it stays uncommitted), then commit the code.
-  History lives in `git log` and merged PRs; there is no append-only log.
+## Session scope & wrap-up
+- Read only the `PROJECT_SPEC.md` sections relevant to the selected task; never the
+  whole ~850-line spec unless told to.
+- Implement only the task the human selects; do not pull work from external trackers
+  unless the human explicitly asks.
+- On "wrap up": verify repo/build/test state, then commit the code. History lives in
+  `git log` and merged PRs; there is no append-only log.
 
 ## How work flows
-- One scoped change → one short `chore/` or `fix/` branch → one PR.
 - `main` is the protected release-candidate branch (the source for internal
   TestFlight builds): keep it buildable, never do feature work on it.
 - Pushing a branch, opening/updating a PR, or merging needs explicit human approval.

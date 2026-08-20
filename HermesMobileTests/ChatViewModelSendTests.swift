@@ -2047,8 +2047,8 @@ final class ChatViewModelSendTests: XCTestCase {
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: "tool.started",
             name: "read_file",
-            preview: "Reading CURRENT.md",
-            args: ["path": .string("CURRENT.md")],
+            preview: "Reading README.md",
+            args: ["path": .string("README.md")],
             duration: nil,
             isError: nil
         )))

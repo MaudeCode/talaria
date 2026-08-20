@@ -17,7 +17,7 @@ As of 2026-08-04:
 - Run `30888612331` selected build number `1`, used `ci/ExternalTestFlightExportOptions.plist`, archived successfully, and uploaded to App Store Connect successfully.
 - Owner still needs to wait for App Store Connect processing, confirm build `1.5 (1)` appears and is not internal-only, and resolve any compliance prompts before using it for external testing or App Review replacement.
 - The share extension's automatic app-launch workaround remains the highest Beta/App Store Review code risk until removed or explicitly accepted.
-- Full local XCTest passed on iPhone 17 Simulator for the latest code validation recorded in `CURRENT.md`, but every RC should be validated again before submission.
+- Full local XCTest passed on iPhone 17 Simulator for the latest code validation, but every RC should be validated again before submission.
 
 ## Stop Conditions
 
@@ -74,9 +74,7 @@ Purpose: make sure future sessions and the owner see the real RC state.
 
 Codex tasks:
 
-1. Update `CURRENT.md` to describe the RC candidate state.
-2. Confirm any merged readiness slice is reflected in `CURRENT.md` (history lives in `git log` and merged PRs).
-3. Confirm `README.md`, `DEVELOPMENT.md`, `PROJECT_SPEC.md`, and this file agree about:
+1. Confirm `README.md`, `DEVELOPMENT.md`, `PROJECT_SPEC.md`, and this file agree about the RC candidate state and any merged readiness slice:
    - whether `I-013` is done;
    - whether external TestFlight is still pending;
    - the current tested WebUI pin;
@@ -449,7 +447,7 @@ Use the existing internal-only workflow:
 Exit criteria:
 
 - The owner installs the internal RC build from TestFlight.
-- The installed build number is recorded in `CURRENT.md`.
+- The installed build number is recorded in this file or the review notes.
 - Internal smoke passes before any external-capable upload.
 
 Current Step 10 status as of 2026-05-17:
@@ -481,7 +479,7 @@ Exit criteria:
 
 - 30 minutes of normal iPhone use without crashes.
 - Full checklist has no unresolved P0/P1.
-- Accepted known risks are written down in GitHub Issues, `CURRENT.md`, or review notes.
+- Accepted known risks are written down in GitHub Issues or review notes.
 
 Current Step 11 status as of 2026-05-17:
 
@@ -617,7 +615,7 @@ Owner task in App Store Connect:
 3. Fill `What to Test` with concise tester instructions.
 4. Submit for review.
 5. Monitor App Store Connect review status and email.
-6. If rejected, capture the rejection in GitHub Issues or `CURRENT.md`, fix only the rejection scope, upload a new external-capable build, and resubmit.
+6. If rejected, capture the rejection in GitHub Issues or review notes, fix only the rejection scope, upload a new external-capable build, and resubmit.
 
 Suggested `What to Test`:
 

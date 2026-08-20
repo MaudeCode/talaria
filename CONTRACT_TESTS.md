@@ -25,8 +25,8 @@ Only after both pass is the target release "validated".
 **Cadence and owner.** The repo owner runs the smoke and advances the pin
 **after each successful smoke** — there is no fixed calendar; the smoke is the
 gate. When a smoke is green, move the pin to the latest release it validated.
-When a smoke is skipped or held, the pin stays and the reason is recorded (in
-`CURRENT.md` for the session, or the relevant issue).
+When a smoke is skipped or held, the pin stays and the reason is recorded in the
+relevant issue or PR.
 
 **How to advance.** Replace the SHA in `UPSTREAM_TESTED_SHA` with the peeled
 commit of the validated release, then update the human-readable tag references
