@@ -1272,8 +1272,14 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
             let progress = progress(revealWidth: revealWidth)
             let horizontalDirection: CGFloat = layoutDirection == .rightToLeft ? -1 : 1
             let surfaceTint = colorScheme == .dark ? Color.white : Color.black
+            let surfaceWidth = proxy.size.width
+                + proxy.safeAreaInsets.leading
+                + proxy.safeAreaInsets.trailing
+            let surfaceHeight = proxy.size.height
+                + proxy.safeAreaInsets.top
+                + proxy.safeAreaInsets.bottom
 
-            ZStack(alignment: .leading) {
+            ZStack(alignment: .topLeading) {
                 Color(.systemBackground)
                     .ignoresSafeArea()
 
@@ -1281,10 +1287,9 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                     .frame(width: revealWidth, height: proxy.size.height)
                     .scaleEffect(reduceMotion ? 1 : 0.96 + 0.04 * progress, anchor: .leading)
                     .opacity(reduceMotion ? 1 : 0.25 + 0.75 * progress)
-                    .accessibilityHidden(!isPresented)
 
                 content
-                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .frame(width: surfaceWidth, height: surfaceHeight)
                     .overlay {
                         if isPresented {
                             surfaceTint.opacity(0.12 * progress)
@@ -1309,7 +1314,11 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                         radius: 24 * progress,
                         x: -8 * horizontalDirection * progress
                     )
-                    .offset(x: revealWidth * progress * horizontalDirection)
+                    .offset(
+                        x: revealWidth * progress * horizontalDirection
+                            - proxy.safeAreaInsets.leading,
+                        y: -proxy.safeAreaInsets.top
+                    )
                     .accessibilityHidden(isPresented)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("app-main-surface")
@@ -1530,7 +1539,7 @@ struct AppSidebarDrawer: View {
         .safeAreaPadding(.bottom, 8)
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
+        .accessibilityAddTraits(isPresented ? .isModal : [])
         .accessibilityIdentifier("app-sidebar")
         .onChange(of: isPresented) { _, isPresented in
             guard isPresented else { return }
@@ -1540,6 +1549,7 @@ struct AppSidebarDrawer: View {
                 closeNavigationIsFocused = true
             }
         }
+        .accessibilityHidden(!isPresented)
     }
 
     private enum Icon {

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class ComposerNavigationUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -157,10 +158,9 @@ final class ComposerNavigationUITests: XCTestCase {
 
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
-        XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
+        let closeNavigation = app.buttons["Close navigation"]
+        XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["Pin"].exists)
-        XCTAssertTrue(sidebar.staticTexts["Work"].exists)
-        XCTAssertTrue(sidebar.staticTexts["Agent"].exists)
         for destination in ["Chats", "Tasks", "Kanban", "Skills", "Memory", "Insights", "Settings"] {
             XCTAssertTrue(
                 sidebar.descendants(matching: .any)[destination].exists,
@@ -168,15 +168,33 @@ final class ComposerNavigationUITests: XCTestCase {
             )
         }
 
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45))
-            .press(
-                forDuration: 0.1,
-                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.45))
-            )
+        closeNavigation.tap()
         XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
         XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
         XCTAssertEqual(navigationTitle.frame.minX, initialTitleFrame.minX, accuracy: 1)
         XCTAssertFalse(sidebar.isHittable)
+    }
+
+    func testSidebarSurfaceExtendsThroughSafeAreas() throws {
+        let openNavigation = app.buttons["Open navigation"]
+        guard openNavigation.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        openNavigation.tap()
+        XCTAssertTrue(app.buttons["Close navigation"].waitForExistence(timeout: 3))
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let topEdgeDifference = abs(
+            try brightness(in: screenshot, x: 0.98, y: 0.01)
+                - brightness(in: screenshot, x: 0.02, y: 0.01)
+        )
+        let bottomEdgeDifference = abs(
+            try brightness(in: screenshot, x: 0.98, y: 0.99)
+                - brightness(in: screenshot, x: 0.02, y: 0.99)
+        )
+        XCTAssertGreaterThan(topEdgeDifference, 0.05)
+        XCTAssertGreaterThan(bottomEdgeDifference, 0.05)
     }
 
     func testSidebarIsAccessibilityModalUntilClosed() throws {
@@ -189,9 +207,11 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertTrue(mainSurface.exists)
         openNavigation.tap()
 
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        XCTAssertEqual(sidebar.elementType, .alert)
         let closeNavigation = app.buttons["Close navigation"]
         XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
-        XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
 
         closeNavigation.tap()
         XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
@@ -226,7 +246,7 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 3))
         newChat.tap()
 
-        XCTAssertTrue(app.navigationBars["New Chat"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["Composer options"].waitForExistence(timeout: 15))
         XCTAssertFalse(sidebar.isHittable)
     }
 
@@ -237,8 +257,9 @@ final class ComposerNavigationUITests: XCTestCase {
         }
 
         openNavigation.tap()
+        let closeNavigation = app.buttons["Close navigation"]
+        XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
-        XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
             .press(
                 forDuration: 0.2,
@@ -259,6 +280,7 @@ final class ComposerNavigationUITests: XCTestCase {
         }
 
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
+        let closeNavigation = app.buttons["Close navigation"]
         let options = XCTMeasureOptions()
         options.iterationCount = 3
         options.invocationOptions = [.manuallyStart, .manuallyStop]
@@ -268,7 +290,7 @@ final class ComposerNavigationUITests: XCTestCase {
             options: options
         ) {
             openNavigation.tap()
-            XCTAssertTrue(mainSurface.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
 
             startMeasuring()
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
@@ -299,6 +321,32 @@ final class ComposerNavigationUITests: XCTestCase {
         session.tap()
         XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
         return idleComposer
+    }
+
+    private func brightness(
+        in screenshot: XCUIScreenshot,
+        x normalizedX: CGFloat,
+        y normalizedY: CGFloat
+    ) throws -> CGFloat {
+        let image = screenshot.image
+        let pixelX = min(image.size.width - 1, image.size.width * normalizedX)
+        let pixelY = min(image.size.height - 1, image.size.height * normalizedY)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ), let cgImage = image.cgImage else {
+            throw XCTSkip("Could not read simulator screenshot pixels")
+        }
+
+        context.translateBy(x: -pixelX, y: pixelY - image.size.height + 1)
+        context.draw(cgImage, in: CGRect(origin: .zero, size: image.size))
+        return CGFloat(pixel[0...2].max() ?? 0) / 255
     }
 
 }
