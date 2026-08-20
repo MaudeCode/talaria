@@ -394,6 +394,14 @@ extension SessionSummary {
             .contains("cron")
     }
 
+    /// Webhook sessions require an explicit source marker. Unlike cron rows,
+    /// upstream does not define a session-id prefix fallback for this source.
+    var isWebhookSession: Bool {
+        [sessionSource, sourceTag, rawSource, sourceLabel]
+            .compactMap(Self.normalizedSourceMarker)
+            .contains("webhook")
+    }
+
     private var hasPlaceholderTitle: Bool {
         guard let normalizedTitle = Self.nonEmpty(title)?.lowercased() else { return true }
         return normalizedTitle == "untitled" || normalizedTitle == "untitled session"

@@ -21,7 +21,9 @@ struct SessionListSection: Identifiable {
 struct ScheduledSessionGroups: Equatable {
     let ordinary: [SessionSummary]
     let scheduled: [SessionSummary]
+    let webhook: [SessionSummary]
     let totalScheduledCount: Int
+    let totalWebhookCount: Int
 
     var scheduledPreview: [SessionSummary] {
         Array(scheduled.prefix(5))
@@ -31,8 +33,20 @@ struct ScheduledSessionGroups: Equatable {
         scheduled.count > scheduledPreview.count
     }
 
+    var webhookPreview: [SessionSummary] {
+        Array(webhook.prefix(5))
+    }
+
+    var hasAdditionalWebhookSessions: Bool {
+        webhook.count > webhookPreview.count
+    }
+
     func showsDisclosure(isSearchActive: Bool) -> Bool {
         totalScheduledCount > 0 && (!isSearchActive || !scheduled.isEmpty)
+    }
+
+    func showsWebhookDisclosure(isSearchActive: Bool) -> Bool {
+        totalWebhookCount > 0 && (!isSearchActive || !webhook.isEmpty)
     }
 }
 
@@ -186,23 +200,22 @@ final class SessionListViewModel {
         selectedProjectID: String?,
         automatedVisibility: AutomatedSessionVisibility = .showAll
     ) -> ScheduledSessionGroups {
-        let ordinaryCandidates = visibleSessions(
-            searchText: searchText,
-            selectedProjectID: selectedProjectID,
-            automatedVisibility: automatedVisibility
-        )
-        let scheduledCandidates = visibleSessions(
+        let candidates = visibleSessions(
             searchText: searchText,
             selectedProjectID: selectedProjectID,
             automatedVisibility: automatedVisibility
         )
 
         return ScheduledSessionGroups(
-            ordinary: ordinaryCandidates.filter { !$0.isCronSession },
-            scheduled: scheduledCandidates.filter { $0.isCronSession && $0.archived != true },
+            ordinary: candidates.filter { !$0.isCronSession && !$0.isWebhookSession },
+            scheduled: candidates.filter {
+                $0.isCronSession && !$0.isWebhookSession && $0.archived != true
+            },
+            webhook: candidates.filter { $0.isWebhookSession && $0.archived != true },
             totalScheduledCount: automatedVisibility.showsCron
                 ? sessions.filter { $0.isCronSession && $0.archived != true }.count
-                : 0
+                : 0,
+            totalWebhookCount: sessions.filter { $0.isWebhookSession && $0.archived != true }.count
         )
     }
 

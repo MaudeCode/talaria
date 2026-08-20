@@ -761,8 +761,13 @@ struct SessionInteractiveRow: View {
     }
 }
 
-struct ScheduledSessionsDisclosure: View {
+struct GroupedSessionsDisclosure: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let title: String
+    let assetImage: String?
+    let systemImage: String?
+    let expandAccessibilityLabel: String
+    let collapseAccessibilityLabel: String
     let viewModel: SessionListViewModel
     let sessions: [SessionSummary]
     let totalCount: Int
@@ -781,8 +786,9 @@ struct ScheduledSessionsDisclosure: View {
 
     var body: some View {
         SidebarDisclosureButton(
-            title: String(localized: "Scheduled sessions"),
-            assetImage: "LucideCalendarClock",
+            title: title,
+            assetImage: assetImage,
+            systemImage: systemImage,
             isExpanded: isExpanded
         ) {
             guard !isSearchActive else { return }
@@ -800,10 +806,10 @@ struct ScheduledSessionsDisclosure: View {
         .sessionsScreenListRow()
         .accessibilityLabel(
             isSearchActive
-                ? String(localized: "Scheduled sessions")
+                ? title
                 : isExpanded
-                    ? String(localized: "Collapse scheduled sessions")
-                    : String(localized: "Expand scheduled sessions")
+                    ? collapseAccessibilityLabel
+                    : expandAccessibilityLabel
         )
 
         if isExpanded {
@@ -843,9 +849,12 @@ struct ScheduledSessionsDisclosure: View {
     }
 }
 
-struct ScheduledSessionsView: View {
+struct GroupedSessionsView: View {
+    let title: String
+    let isEnabled: Bool
+    let emptySystemImage: String
+    let includes: (SessionSummary) -> Bool
     let viewModel: SessionListViewModel
-    let showsCronSessions: Bool
     let showsMessageCount: Bool
     let showsWorkspace: Bool
     let selectedSessionID: String?
@@ -863,7 +872,7 @@ struct ScheduledSessionsView: View {
                     description: searchText.isEmpty
                         ? nil
                         : String(localized: "Try another search or project filter."),
-                    systemImage: "calendar.badge.clock"
+                    systemImage: emptySystemImage
                 )
                 .padding(.horizontal, 24)
                 .sessionsScreenListRow()
@@ -883,15 +892,15 @@ struct ScheduledSessionsView: View {
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Scheduled sessions")
+        .navigationTitle(title)
         .searchable(text: $searchText, prompt: "Search sessions")
     }
 
     private var sessions: [SessionSummary] {
-        guard showsCronSessions else { return [] }
+        guard isEnabled else { return [] }
 
         return viewModel.visibleSessions(searchText: searchText, selectedProjectID: nil)
-            .filter { $0.isCronSession && $0.archived != true }
+            .filter { includes($0) && $0.archived != true }
     }
 }
 
@@ -1620,7 +1629,8 @@ struct AppSidebarDrawer: View {
 struct SidebarDisclosureButton<Accessory: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
-    let assetImage: String
+    var assetImage: String? = nil
+    var systemImage: String? = nil
     let isExpanded: Bool
     var tint: Color = .primary
     let action: () -> Void
@@ -1629,7 +1639,15 @@ struct SidebarDisclosureButton<Accessory: View>: View {
     var body: some View {
         HapticButton(action: action) {
             HStack(alignment: .center, spacing: 18) {
-                SidebarUtilityIcon(assetImage: assetImage, tint: tint)
+                if let assetImage {
+                    SidebarUtilityIcon(assetImage: assetImage, tint: tint)
+                } else if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.body)
+                        .foregroundStyle(tint)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                }
 
                 Text(title)
                     .font(.body.weight(.semibold))

@@ -36,6 +36,8 @@ struct SessionListView: View {
     @State private var returnRefreshID: UUID?
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
+    @AppStorage(SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
+    private var webhookSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultWebhookSessionsAreExpanded
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
@@ -416,9 +418,26 @@ struct SessionListView: View {
             case .archived:
                 ArchivedSessionsView(server: server, onAPIError: authManager.handleAPIError)
             case .scheduled:
-                ScheduledSessionsView(
+                GroupedSessionsView(
+                    title: String(localized: "Scheduled sessions"),
+                    isEnabled: showsCronSessions,
+                    emptySystemImage: "calendar.badge.clock",
+                    includes: { $0.isCronSession && !$0.isWebhookSession },
                     viewModel: viewModel,
-                    showsCronSessions: showsCronSessions,
+                    showsMessageCount: showsSessionMessageCount,
+                    showsWorkspace: showsSessionWorkspace,
+                    selectedSessionID: horizontalSizeClass == .regular
+                        ? navigationState.selectedSessionID
+                        : nil,
+                    actions: sessionRowActions
+                )
+            case .webhook:
+                GroupedSessionsView(
+                    title: String(localized: "Webhook sessions"),
+                    isEnabled: true,
+                    emptySystemImage: "bolt.horizontal.circle",
+                    includes: { $0.isWebhookSession },
+                    viewModel: viewModel,
                     showsMessageCount: showsSessionMessageCount,
                     showsWorkspace: showsSessionWorkspace,
                     selectedSessionID: horizontalSizeClass == .regular
@@ -467,7 +486,12 @@ struct SessionListView: View {
             }
 
             if scheduledSessionGroups.showsDisclosure(isSearchActive: isSearchingSessions) {
-                ScheduledSessionsDisclosure(
+                GroupedSessionsDisclosure(
+                    title: String(localized: "Scheduled sessions"),
+                    assetImage: "LucideCalendarClock",
+                    systemImage: nil,
+                    expandAccessibilityLabel: String(localized: "Expand scheduled sessions"),
+                    collapseAccessibilityLabel: String(localized: "Collapse scheduled sessions"),
                     viewModel: viewModel,
                     sessions: scheduledSessionGroups.scheduled,
                     totalCount: scheduledSessionGroups.totalScheduledCount,
@@ -480,6 +504,28 @@ struct SessionListView: View {
                     userIsExpanded: $scheduledSessionsAreExpanded,
                     actions: sessionRowActions,
                     viewAll: { navigationState.select(.scheduled) }
+                )
+            }
+
+            if scheduledSessionGroups.showsWebhookDisclosure(isSearchActive: isSearchingSessions) {
+                GroupedSessionsDisclosure(
+                    title: String(localized: "Webhook sessions"),
+                    assetImage: nil,
+                    systemImage: "bolt.horizontal.circle",
+                    expandAccessibilityLabel: String(localized: "Expand webhook sessions"),
+                    collapseAccessibilityLabel: String(localized: "Collapse webhook sessions"),
+                    viewModel: viewModel,
+                    sessions: scheduledSessionGroups.webhook,
+                    totalCount: scheduledSessionGroups.totalWebhookCount,
+                    isSearchActive: isSearchingSessions,
+                    showsMessageCount: showsSessionMessageCount,
+                    showsWorkspace: showsSessionWorkspace,
+                    selectedSessionID: horizontalSizeClass == .regular
+                        ? navigationState.selectedSessionID
+                        : nil,
+                    userIsExpanded: $webhookSessionsAreExpanded,
+                    actions: sessionRowActions,
+                    viewAll: { navigationState.select(.webhook) }
                 )
             }
 
@@ -496,6 +542,7 @@ struct SessionListView: View {
                     : nil,
                 actions: sessionRowActions,
                 suppressEmptyState: !scheduledSessionGroups.scheduled.isEmpty
+                    || !scheduledSessionGroups.webhook.isEmpty
             )
 
             if showsArchivedEntry {
@@ -521,6 +568,7 @@ struct SessionListView: View {
             await refreshSessionsAndActiveProfile()
         }
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
+        .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: webhookSessionsAreExpanded)
     }
 
     private var settingsButton: some View {
@@ -573,7 +621,7 @@ struct SessionListView: View {
         case .memory: return .memory
         case .insights: return .insights
         case .settings: return .settings
-        case .archived, .scheduled: return .chats
+        case .archived, .scheduled, .webhook: return .chats
         }
     }
 
@@ -1264,6 +1312,7 @@ enum SessionListUtilityDestination: Hashable, Identifiable {
     /// Archived sessions screen (issue #17), also reachable from Settings.
     case archived
     case scheduled
+    case webhook
 
     var id: Self { self }
 }

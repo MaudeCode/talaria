@@ -2215,6 +2215,18 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(SessionSummary(sessionId: "s6").isCronSession)
     }
 
+    func testWebhookSessionRequiresExplicitSourceMarker() {
+        XCTAssertTrue(SessionSummary(sessionId: "s1", sourceTag: "webhook").isWebhookSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s2", sessionSource: " WEBHOOK ").isWebhookSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s3", rawSource: "Webhook").isWebhookSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s4", sourceLabel: "webhook").isWebhookSession)
+
+        XCTAssertFalse(SessionSummary(sessionId: "webhook_123").isWebhookSession)
+        XCTAssertFalse(SessionSummary(sessionId: "s5", sourceTag: "webhook-listener").isWebhookSession)
+        XCTAssertFalse(SessionSummary(sessionId: "s6", sessionSource: "other").isWebhookSession)
+        XCTAssertFalse(SessionSummary(sessionId: "s7").isWebhookSession)
+    }
+
     func testDelegatedSubagentRequiresExplicitSourceMarker() {
         XCTAssertTrue(SessionSummary(sessionId: "s1", sourceTag: "subagent").isDelegatedSubagentSession)
         XCTAssertTrue(SessionSummary(sessionId: "s2", rawSource: " SubAgent ").isDelegatedSubagentSession)
@@ -2505,6 +2517,80 @@ final class SessionListMutationTests: XCTestCase {
         // The badge is intentionally global even when rows are project-filtered:
         // issue #125 requires the total number of non-archived scheduled sessions.
         XCTAssertEqual(groups.totalScheduledCount, 2)
+    }
+
+    @MainActor
+    func testWebhookSessionGroupsSeparateArchivedRowsAndCapPreview() async throws {
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/sessions")
+            return apiTestJSONResponse("""
+            {
+              "sessions": [
+                {"session_id":"ordinary","title":"Ordinary","updated_at":50},
+                {"session_id":"cron_1","title":"Scheduled","updated_at":60},
+                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10},
+                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20},
+                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30},
+                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40},
+                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50},
+                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60},
+                {"session_id":"webhook_7","title":"Webhook 7","source_tag":"webhook","updated_at":70},
+                {"session_id":"webhook_archived","title":"Archived webhook","source_tag":"webhook","updated_at":80,"archived":true}
+              ]
+            }
+            """, for: request)
+        }
+
+        await viewModel.load()
+        let groups = viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+
+        XCTAssertEqual(groups.ordinary.compactMap(\.sessionId), ["ordinary"])
+        XCTAssertEqual(groups.scheduled.compactMap(\.sessionId), ["cron_1"])
+        XCTAssertEqual(groups.totalWebhookCount, 7)
+        XCTAssertEqual(
+            groups.webhook.compactMap(\.sessionId),
+            ["webhook_7", "webhook_6", "webhook_5", "webhook_4", "webhook_3", "webhook_2", "webhook_1"]
+        )
+        XCTAssertEqual(
+            groups.webhookPreview.compactMap(\.sessionId),
+            ["webhook_7", "webhook_6", "webhook_5", "webhook_4", "webhook_3"]
+        )
+        XCTAssertTrue(groups.hasAdditionalWebhookSessions)
+        XCTAssertTrue(groups.showsWebhookDisclosure(isSearchActive: false))
+    }
+
+    @MainActor
+    func testWebhookSessionGroupsRespectSearchAndProjectFilter() async throws {
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/sessions")
+            return apiTestJSONResponse("""
+            {
+              "sessions": [
+                {"session_id":"ordinary-1","title":"Needle ordinary","project_id":"project-1"},
+                {"session_id":"webhook-1","title":"Needle webhook","source_tag":"webhook","project_id":"project-1"},
+                {"session_id":"webhook-2","title":"Other webhook","session_source":"webhook","project_id":"project-2"}
+              ]
+            }
+            """, for: request)
+        }
+
+        await viewModel.load()
+        let matches = viewModel.scheduledSessionGroups(
+            searchText: "needle",
+            selectedProjectID: "project-1"
+        )
+
+        XCTAssertEqual(matches.ordinary.compactMap(\.sessionId), ["ordinary-1"])
+        XCTAssertEqual(matches.webhook.compactMap(\.sessionId), ["webhook-1"])
+        XCTAssertEqual(matches.totalWebhookCount, 2)
+        XCTAssertTrue(matches.showsWebhookDisclosure(isSearchActive: true))
+
+        let noWebhookMatches = viewModel.scheduledSessionGroups(
+            searchText: "ordinary",
+            selectedProjectID: "project-1"
+        )
+        XCTAssertFalse(noWebhookMatches.showsWebhookDisclosure(isSearchActive: true))
+        XCTAssertTrue(noWebhookMatches.showsWebhookDisclosure(isSearchActive: false))
     }
 
     @MainActor

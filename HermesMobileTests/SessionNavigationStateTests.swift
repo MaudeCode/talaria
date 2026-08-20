@@ -262,6 +262,7 @@ final class SessionNavigationStateTests: XCTestCase {
         )
         let kanban = SessionNavigationDestination.utility(.kanban)
         let archived = SessionNavigationDestination.utility(.archived)
+        let webhook = SessionNavigationDestination.utility(.webhook)
 
         XCTAssertEqual(session.compactPushedDestination, session)
         XCTAssertNil(session.compactRootUtility)
@@ -269,6 +270,8 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(kanban.compactRootUtility, .kanban)
         XCTAssertEqual(archived.compactPushedDestination, archived)
         XCTAssertNil(archived.compactRootUtility)
+        XCTAssertEqual(webhook.compactPushedDestination, webhook)
+        XCTAssertNil(webhook.compactRootUtility)
     }
 
     func testReselectingRootDestinationAdvancesNavigationRevision() {

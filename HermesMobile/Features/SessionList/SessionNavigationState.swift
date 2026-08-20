@@ -15,7 +15,7 @@ enum SessionNavigationDestination: Hashable, Identifiable {
     var compactRootUtility: SessionListUtilityDestination? {
         guard case .utility(let utility) = self else { return nil }
         switch utility {
-        case .archived, .scheduled:
+        case .archived, .scheduled, .webhook:
             return nil
         default:
             return utility

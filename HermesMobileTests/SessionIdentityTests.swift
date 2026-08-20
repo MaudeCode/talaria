@@ -160,27 +160,33 @@ final class SessionSidebarDisclosureSettingsTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.profilesAreExpandedKey))
         XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.projectsAreExpandedKey))
         XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey))
+        XCTAssertNil(defaults.object(forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey))
         XCTAssertFalse(SessionSidebarDisclosureSettings.profilesAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.projectsAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.scheduledSessionsAreExpanded(in: defaults))
+        XCTAssertFalse(SessionSidebarDisclosureSettings.webhookSessionsAreExpanded(in: defaults))
     }
 
     func testDisclosureStatesRoundTripThroughUserDefaults() {
         defaults.set(true, forKey: SessionSidebarDisclosureSettings.profilesAreExpandedKey)
         defaults.set(false, forKey: SessionSidebarDisclosureSettings.projectsAreExpandedKey)
         defaults.set(true, forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
+        defaults.set(true, forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
         XCTAssertTrue(SessionSidebarDisclosureSettings.profilesAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.projectsAreExpanded(in: defaults))
         XCTAssertTrue(SessionSidebarDisclosureSettings.scheduledSessionsAreExpanded(in: defaults))
+        XCTAssertTrue(SessionSidebarDisclosureSettings.webhookSessionsAreExpanded(in: defaults))
 
         defaults.set(false, forKey: SessionSidebarDisclosureSettings.profilesAreExpandedKey)
         defaults.set(true, forKey: SessionSidebarDisclosureSettings.projectsAreExpandedKey)
         defaults.set(false, forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
+        defaults.set(false, forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
         XCTAssertFalse(SessionSidebarDisclosureSettings.profilesAreExpanded(in: defaults))
         XCTAssertTrue(SessionSidebarDisclosureSettings.projectsAreExpanded(in: defaults))
         XCTAssertFalse(SessionSidebarDisclosureSettings.scheduledSessionsAreExpanded(in: defaults))
+        XCTAssertFalse(SessionSidebarDisclosureSettings.webhookSessionsAreExpanded(in: defaults))
     }
 }
 
