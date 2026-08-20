@@ -1485,25 +1485,29 @@ struct AppSidebarDrawer: View {
             .padding(.bottom, 14)
 
             ScrollView {
-                VStack(spacing: 4) {
-                    row("Chats", systemImage: "bubble.left.and.bubble.right", destination: .chats)
+                VStack(alignment: .leading, spacing: 2) {
+                    sectionHeader("Work")
+                    row("Chats", icon: .system("bubble.left.and.bubble.right"), destination: .chats)
                     if sectionVisibility.tasks {
-                        row("Tasks", systemImage: "calendar.badge.clock", destination: .tasks)
+                        row("Tasks", icon: .asset("LucideCalendarClock"), destination: .tasks)
                     }
                     if sectionVisibility.kanban {
-                        row("Kanban", systemImage: "rectangle.split.3x1", destination: .kanban)
+                        row("Kanban", icon: .asset("LucideColumns3"), destination: .kanban)
                     }
 
-                    Divider().padding(.vertical, 10)
+                    if showsAgentSection {
+                        sectionHeader("Agent")
+                            .padding(.top, 10)
+                    }
 
                     if sectionVisibility.skills {
-                        row("Skills", systemImage: "hammer", destination: .skills)
+                        row("Skills", icon: .asset("LucideHammer"), destination: .skills)
                     }
                     if sectionVisibility.memory {
-                        row("Memory", systemImage: "brain", destination: .memory)
+                        row("Memory", icon: .asset("LucideBrain"), destination: .memory)
                     }
                     if sectionVisibility.insights {
-                        row("Insights", systemImage: "chart.bar", destination: .insights)
+                        row("Insights", icon: .asset("LucideChartColumnIncreasing"), destination: .insights)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -1511,7 +1515,7 @@ struct AppSidebarDrawer: View {
             .scrollBounceBehavior(.basedOnSize)
 
             Divider().padding(.horizontal, 12)
-            row("Settings", systemImage: "gearshape", destination: .settings)
+            row("Settings", icon: .system("gearshape"), destination: .settings)
                 .padding(12)
         }
         .safeAreaPadding(.top, 12)
@@ -1521,35 +1525,68 @@ struct AppSidebarDrawer: View {
         .accessibilityIdentifier("app-sidebar")
     }
 
+    private enum Icon {
+        case asset(String)
+        case system(String)
+    }
+
+    private var showsAgentSection: Bool {
+        sectionVisibility.skills || sectionVisibility.memory || sectionVisibility.insights
+    }
+
+    private func sectionHeader(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 2)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     private func row(
         _ title: LocalizedStringKey,
-        systemImage: String,
+        icon: Icon,
         destination: AppSidebarDestination
     ) -> some View {
-        Button {
+        let tint = selection == destination ? Color.accentColor : Color.primary
+
+        return Button {
             select(destination)
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: 26)
+            HStack(spacing: 12) {
+                sidebarIcon(icon, tint: tint)
 
                 Text(title)
                     .font(.body.weight(.semibold))
+                    .multilineTextAlignment(.leading)
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(selection == destination ? Color.accentColor : Color.primary)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 48)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
             .background(
                 selection == destination ? Color.accentColor.opacity(0.14) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selection == destination ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func sidebarIcon(_ icon: Icon, tint: Color) -> some View {
+        switch icon {
+        case .asset(let name):
+            SidebarUtilityIcon(assetImage: name, tint: tint)
+        case .system(let name):
+            Image(systemName: name)
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 28)
+                .accessibilityHidden(true)
+        }
     }
 }
 

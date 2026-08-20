@@ -163,6 +163,8 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertEqual(revealedTitleFrame.minX, initialTitleFrame.minX + revealWidth, accuracy: 1)
         XCTAssertEqual(revealedTitleFrame.minY, initialTitleFrame.minY, accuracy: 1)
         XCTAssertFalse(app.buttons["Pin"].exists)
+        XCTAssertTrue(sidebar.staticTexts["Work"].exists)
+        XCTAssertTrue(sidebar.staticTexts["Agent"].exists)
         for destination in ["Chats", "Tasks", "Kanban", "Skills", "Memory", "Insights", "Settings"] {
             XCTAssertTrue(
                 sidebar.descendants(matching: .any)[destination].exists,
