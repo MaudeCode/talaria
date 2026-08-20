@@ -5,49 +5,88 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 runtime_dir="$repo_root/.codex-tmp/xctest"
 lock_file="$runtime_dir/runner.lock"
+lease_dir="/tmp/talaria-xctest-$EUID/leases"
+lease_file=""
+simulator_id=""
+shutdown_on_release=false
 mkdir -p "$runtime_dir/results"
+mkdir -p "$lease_dir"
+
+cleanup() {
+    if [[ "$shutdown_on_release" == true && -n "$simulator_id" ]]; then
+        xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+    fi
+    [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
+    unlink "$lock_file" 2>/dev/null || true
+}
 
 if ! /usr/bin/shlock -f "$lock_file" -p $$; then
     print -u2 "Talaria tests are already running (PID $(<"$lock_file")). Wait for that run to finish."
     exit 75
 fi
-trap 'unlink "$lock_file" 2>/dev/null || true' EXIT INT TERM
+trap cleanup EXIT INT TERM
 
-existing_runs=$(pgrep -fl '/usr/bin/xcodebuild test .*HermesMobile.xcodeproj' || true)
-if [[ -n "$existing_runs" ]]; then
-    print -u2 "A direct Talaria xcodebuild test is already running:"
-    print -u2 "$existing_runs"
-    print -u2 "Wait for it to finish; future runs must use scripts/test-ios."
+typeset -a simulator_ids=()
+if [[ -n "${TALARIA_SIMULATOR_ID:-}" ]]; then
+    simulator_ids=("$TALARIA_SIMULATOR_ID")
+else
+    pool_ids=$(
+        xcrun simctl list devices available | awk '
+            /^-- iOS / { in_ios = 1; next }
+            /^-- / { in_ios = 0 }
+            in_ios && /^[[:space:]]+Talaria Test [0-9]+ \([0-9A-F-]+\)/ {
+                match($0, /\([0-9A-F-]+\)/)
+                print substr($0, RSTART + 1, RLENGTH - 2)
+            }
+        '
+    )
+    if [[ -n "$pool_ids" ]]; then
+        simulator_ids=("${(@f)pool_ids}")
+        shutdown_on_release=true
+    fi
+
+    if (( ${#simulator_ids} == 0 )); then
+        preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
+            "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
+        preferred_id=$(xcrun simctl list devices available | awk -v wanted="$preferred_simulator" '
+            /^-- iOS / { in_ios = 1; next }
+            /^-- / { in_ios = 0 }
+            in_ios {
+                line = $0
+                sub(/^[[:space:]]*/, "", line)
+                if (index(line, wanted " (") == 1) {
+                    match($0, /\([0-9A-F-]+\)/)
+                    print substr($0, RSTART + 1, RLENGTH - 2)
+                    exit
+                }
+            }
+        ')
+        [[ -z "$preferred_id" ]] || simulator_ids=("$preferred_id")
+    fi
+fi
+
+for candidate_id in "${simulator_ids[@]}"; do
+    candidate_lease="$lease_dir/$candidate_id.lock"
+    if /usr/bin/shlock -f "$candidate_lease" -p $$; then
+        simulator_id="$candidate_id"
+        lease_file="$candidate_lease"
+        break
+    fi
+done
+
+if [[ -z "$simulator_id" ]]; then
+    if (( ${#simulator_ids} == 0 )); then
+        print -u2 "No Talaria test simulator is available."
+    else
+        print -u2 "Every Talaria test simulator is busy. Retry when another worktree finishes."
+    fi
     exit 75
 fi
 
-preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' .xcodebuildmcp/config.yaml | head -1)
-simulator_id=${TALARIA_SIMULATOR_ID:-$(
-    xcrun simctl list devices available | awk -v preferred="$preferred_simulator" '
-        /^-- iOS / { in_ios = 1; next }
-        /^-- / { in_ios = 0 }
-        in_ios && /\(Booted\)/ {
-            count = split($0, fields, "(")
-            simulator = fields[count - 1]
-            sub(/\).*/, "", simulator)
-            name = $0
-            sub(/^[[:space:]]*/, "", name)
-            sub(/[[:space:]]+\(.*/, "", name)
-            if (name == preferred) {
-                fallback = ""
-                print simulator
-                exit
-            }
-            if (fallback == "") fallback = simulator
-        }
-        END { if (fallback != "") print fallback }
-    '
-)}
+destination="platform=iOS Simulator,id=$simulator_id"
 
-if [[ -n "$simulator_id" ]]; then
-    destination="platform=iOS Simulator,id=$simulator_id"
-else
-    destination="platform=iOS Simulator,name=$preferred_simulator,OS=latest"
+if [[ "$shutdown_on_release" == true ]]; then
+    xcrun simctl bootstatus "$simulator_id" -b >/dev/null
 fi
 
 result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$.xcresult"
@@ -64,6 +103,7 @@ xcodebuild test -quiet \
     -project HermesMobile.xcodeproj \
     -scheme HermesMobile \
     -destination "$destination" \
+    -derivedDataPath "$runtime_dir/derived-data" \
     -parallel-testing-enabled NO \
     -enableCodeCoverage NO \
     -resultBundlePath "$result_bundle" \

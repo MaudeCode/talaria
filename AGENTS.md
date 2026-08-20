@@ -48,7 +48,8 @@ project only where Talaria has explicitly adopted it.
   Never use Computer Use to test Talaria.
 - Run local XCTest only through `scripts/test-ios [test-identifier ...]`. Run a
   focused test first, wait for it to finish, then run the full suite before review
-  or commit. Never overlap test runs.
+  or commit. Never overlap runs in one worktree; the script leases separate pooled
+  simulators so different worktrees can test concurrently.
 - Manual simulator installs must be signed. Never install a
   `CODE_SIGNING_ALLOWED=NO` build; Keychain login will fail.
 - For UI or runtime changes, build and launch the app before handoff and include a

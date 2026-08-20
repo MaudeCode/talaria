@@ -1,0 +1,64 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+pool_size=${TALARIA_SIMULATOR_POOL_SIZE:-4}
+
+if [[ "$pool_size" != <-> || "$pool_size" -lt 1 ]]; then
+    print -u2 "TALARIA_SIMULATOR_POOL_SIZE must be a positive integer."
+    exit 64
+fi
+
+preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
+    "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
+devices=$(xcrun simctl list devices available)
+source_line=$(print -r -- "$devices" | awk -v wanted="$preferred_simulator" '
+    /^-- iOS / { in_ios = 1; next }
+    /^-- / { in_ios = 0 }
+    in_ios {
+        line = $0
+        sub(/^[[:space:]]*/, "", line)
+        if (index(line, wanted " (") == 1) {
+            print $0
+            exit
+        }
+    }
+')
+
+if [[ -z "$source_line" ]]; then
+    print -u2 "Configured simulator '$preferred_simulator' is not available."
+    exit 69
+fi
+
+if [[ "$source_line" != *"(Shutdown)"* ]]; then
+    print -u2 "Configured simulator '$preferred_simulator' is in use."
+    print -u2 "This command will not stop it. Retry after the current session shuts it down."
+    exit 75
+fi
+
+source_id=$(print -r -- "$source_line" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
+
+for (( slot = 1; slot <= pool_size; slot++ )); do
+    simulator_name="Talaria Test $slot"
+    existing=$(print -r -- "$devices" | awk -v wanted="$simulator_name" '
+        /^-- iOS / { in_ios = 1; next }
+        /^-- / { in_ios = 0 }
+        in_ios {
+            line = $0
+            sub(/^[[:space:]]*/, "", line)
+            if (index(line, wanted " (") == 1) {
+                print $0
+                exit
+            }
+        }
+    ')
+
+    if [[ -n "$existing" ]]; then
+        print "Reusing $simulator_name"
+        continue
+    fi
+
+    simulator_id=$(xcrun simctl clone "$source_id" "$simulator_name")
+    print "Created $simulator_name ($simulator_id)"
+done

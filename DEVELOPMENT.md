@@ -117,7 +117,10 @@ Agent/MCP flow:
 
 - Call `session_show_defaults` before the first local build/run/test.
 - If defaults are missing, copy them from `.xcodebuildmcp/config.yaml`.
-- Use `scripts/test-ios [test-identifier ...]` for serialized XCTest validation.
+- Run `scripts/setup-ios-test-pool` once while the configured fixture simulator is
+  shut down. It creates four reusable clones without stopping an active session.
+- Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
+  each worktree and leases separate simulators across worktrees.
 - Use `build_run_sim` to build, install, launch, and open Simulator for manual testing.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 
