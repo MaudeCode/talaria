@@ -18,7 +18,7 @@ Read by every agent (Codex, Claude Code, …); keep it tool-agnostic.
 
 ## How work flows
 - One scoped change → one short `chore/` or `fix/` branch → one PR.
-- `master` is the protected release-candidate branch (the source for internal
+- `main` is the protected release-candidate branch (the source for internal
   TestFlight builds): keep it buildable, never do feature work on it.
 - Pushing a branch, opening/updating a PR, or merging needs explicit human approval.
   Triage bot/review comments before accepting them.
