@@ -98,6 +98,80 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
     }
 
     @MainActor
+    func testToolBoundaryPreservesBufferedProseOrderThroughCompletion() async throws {
+        let streamClient = PacingSpySSEStreamingClient()
+        let viewModel = try makeStalledDrainViewModel(streamClient: streamClient)
+
+        let didStart = await viewModel.sendMessage("Watch the cluster")
+        XCTAssertTrue(didStart)
+
+        streamClient.emit(.token("I'm watching "))
+        streamClient.emit(.toolStarted(ToolStreamEvent(
+            eventType: "tool",
+            name: "cluster",
+            preview: nil,
+            args: nil,
+            duration: nil,
+            isError: nil,
+            stableID: "call-1"
+        )))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["prose", "tools"])
+
+        streamClient.emit(.token("k8s-ceous come back."))
+        streamClient.emit(.done(DoneStreamEvent()))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["prose", "tools", "prose"])
+        XCTAssertEqual(
+            viewModel.liveActivityRows.compactMap(\.text),
+            ["I'm watching ", "k8s-ceous come back."]
+        )
+    }
+
+    @MainActor
+    func testCompletionWithoutStartPreservesBufferedProseOrder() async throws {
+        let streamClient = PacingSpySSEStreamingClient()
+        let viewModel = try makeStalledDrainViewModel(streamClient: streamClient)
+
+        let didStart = await viewModel.sendMessage("Recover the tool result")
+        XCTAssertTrue(didStart)
+
+        streamClient.emit(.token("Before tool. "))
+        streamClient.emit(.toolCompleted(ToolStreamEvent(
+            eventType: "tool_complete",
+            name: "cluster",
+            preview: "Recovered",
+            args: nil,
+            duration: 0.2,
+            isError: false,
+            stableID: "call-1"
+        )))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["prose", "tools"])
+        XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
+    }
+
+    @MainActor
+    func testReasoningBoundariesPreserveBufferedArrivalOrder() async throws {
+        let streamClient = PacingSpySSEStreamingClient()
+        let viewModel = try makeStalledDrainViewModel(streamClient: streamClient)
+
+        let didStart = await viewModel.sendMessage("Think between updates")
+        XCTAssertTrue(didStart)
+
+        streamClient.emit(.token("Before reasoning. "))
+        streamClient.emit(.reasoning("Check the state."))
+        streamClient.emit(.token("After reasoning."))
+        streamClient.emit(.done(DoneStreamEvent()))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["prose", "reasoning", "prose"])
+        XCTAssertEqual(
+            viewModel.liveActivityRows.compactMap(\.text),
+            ["Before reasoning. ", "Check the state.", "After reasoning."]
+        )
+    }
+
+    @MainActor
     func testCancelledEventFlushesRemainingBufferImmediately() async throws {
         let streamClient = PacingSpySSEStreamingClient()
         let viewModel = try makeStalledDrainViewModel(streamClient: streamClient)

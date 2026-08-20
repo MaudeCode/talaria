@@ -4190,6 +4190,10 @@ final class ChatViewModel {
     private func appendReasoning(_ text: String) -> Bool {
         guard !text.isEmpty else { return false }
 
+        if !pendingAssistantTokenChunks.isEmpty {
+            flushPendingStreamingContent()
+        }
+
         // Same append-time dedup contract as appendAssistantToken: return true iff
         // the event contributed new content, mutate only via the coalesced flush.
         _ = ensureStreamingAssistantMessage()
@@ -4225,6 +4229,8 @@ final class ChatViewModel {
 
     @discardableResult
     private func appendToolCall(_ payload: ToolStreamEvent) -> Bool {
+        flushPendingStreamingContent()
+
         let messageID = ensureStreamingAssistantMessage()
         if toolCallAnchorMessageID == nil {
             toolCallAnchorMessageID = messageID
@@ -4271,6 +4277,7 @@ final class ChatViewModel {
         activeStreamReplayPendingToolMatchIndex = nil
 
         guard let index = liveToolCallCompletionIndex(for: payload) else {
+            flushPendingStreamingContent()
             liveAssistantActivity.appendTool(
                 ToolCall(
                     id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
@@ -4355,6 +4362,10 @@ final class ChatViewModel {
     @discardableResult
     private func appendAssistantToken(_ token: String) -> Bool {
         guard !token.isEmpty else { return false }
+
+        if !pendingReasoningChunks.isEmpty {
+            flushPendingStreamingContent()
+        }
 
         // Dedup at append time against effective content (flushed + pending) so the
         // return value stays a synchronous progress signal for the reconnect watchdog
