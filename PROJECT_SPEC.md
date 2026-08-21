@@ -2,14 +2,14 @@
 
 **Status:** v0.4 spec — revised pre-polish plan with a glass-forward native mobile UI direction
 **Author:** Project owner + planning assistant
-**Target:** Native iOS client for the [`nesquena/hermes-webui`](https://github.com/nesquena/hermes-webui) Python server
+**Target:** Native iOS client for the [`MaudeCode/hermes-webui`](https://github.com/MaudeCode/hermes-webui) Python server
 **Audience:** A coding agent tasked with building the app, plus the human owner reviewing it
 
 ---
 
 ## 0. How to use this document
 
-You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target remains `HermesMobile`; the iPhone home-screen display name is `Talaria`. You are NOT modifying the upstream `nesquena/hermes-webui` Python server in this project. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
+You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target and iPhone home-screen display name are both `Talaria`. You are NOT modifying the upstream `MaudeCode/hermes-webui` Python server in this project. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
 
 Treat each section's checkboxes as your work plan. After every milestone, update the `## Progress log` at the bottom.
 
@@ -42,7 +42,7 @@ The phone is not the compute plane. The phone is the control plane and review su
 The server owns execution. The app owns mobile interaction quality.
 
 ### 1.5 Upstream project — quick facts
-- Repo: https://github.com/nesquena/hermes-webui
+- Repo: https://github.com/MaudeCode/hermes-webui
 - Language: Python 3 (server), HTML/CSS/vanilla JS (existing browser client)
 - License: MIT
 - Default port: `8787`
@@ -67,7 +67,7 @@ The server owns execution. The app owns mobile interaction quality.
 | 7 | Push notifications | **Skip for v1** |
 | 8 | Terminal feature | **Skip for v1** |
 | 9 | Offline behavior | **Read-only cache** of session list and recent messages |
-| 10 | App name | **Talaria** in App Store Connect; iPhone display name **Talaria**; Xcode target remains `HermesMobile` |
+| 10 | App name | **Talaria** in App Store Connect, on the Home Screen, and as the Xcode target/module |
 | 11 | Apple Developer account | **Enrolled** — Team ID `Q28NF3NH3D`; development provisioning active for bundle ID `dev.kil.talaria`; App Store Connect record and SKU pending |
 
 ---
@@ -144,7 +144,7 @@ Read these from the upstream repo (in this order) and summarize key takeaways in
 7. `api/workspace.py` — file listing/reading endpoints
 8. `ARCHITECTURE.md` — narrative reference
 
-Also note: this repo uses a pinned, read-only upstream clone at `.codex-tmp/hermes-webui/` (clone it if missing: `git clone https://github.com/nesquena/hermes-webui .codex-tmp/hermes-webui`). **Read from that pinned copy first** when convenient. Cross-check against GitHub master only when you need to confirm something changed after the pin.
+Also note: this repo uses a pinned, read-only upstream clone at `.codex-tmp/hermes-webui/` (clone it if missing: `git clone https://github.com/MaudeCode/hermes-webui .codex-tmp/hermes-webui`). **Read from that pinned copy first** when convenient. Cross-check against GitHub master only when you need to confirm something changed after the pin.
 
 When in doubt about behavior, hit your running server with `curl` and inspect the JSON. **The wire format is the source of truth — not docs.**
 
@@ -294,8 +294,8 @@ Terminal (`/api/terminal/*`), cron create/edit/delete/run/pause/resume, skills s
 ## 7. App structure (target file layout)
 
 ```
-HermesMobile/
-├── HermesMobileApp.swift              # @main, App scene
+Talaria/
+├── TalariaApp.swift              # @main, App scene
 ├── Config/
 │   └── AppConfig.swift                # build constants, log subsystems
 ├── Networking/
@@ -364,15 +364,15 @@ HermesMobile/
 Each phase ends in a working, committable state. Run on the simulator after every phase.
 
 ### Phase 0 — Setup (½ day)
-- [x] Create new GitHub repo (ask owner for the name; default `hermes-mobile`).
-- [x] Initialize Xcode project: SwiftUI App, iOS 17, Swift 5.9+, name `HermesMobile`, initial placeholder bundle ID later replaced by `dev.kil.talaria`.
+- [x] Create new GitHub repo (ask owner for the name; default `talaria`).
+- [x] Initialize Xcode project: SwiftUI App, iOS 17, Swift 5.9+, name `Talaria`, initial placeholder bundle ID later replaced by `dev.kil.talaria`.
 - [x] Add this `PROJECT_SPEC.md` to the repo root.
 - [x] Add SwiftPM dependencies: LDSwiftEventSource, swift-markdown-ui, Splash, Highlightr, KeychainAccess.
 - [x] Add `.gitignore` (Xcode template), commit.
 - [x] Add a `README.md` that points at this spec.
 - [x] Write a one-page `DEVELOPMENT.md` with:
   - **Primary test target:** the developer's own HTTPS-exposed `hermes-webui` instance (needs the password). Works from simulator AND a physical device.
-  - **Local-only fallback**: clone `nesquena/hermes-webui`, run via Docker OR `python3 server.py` from the repo. Note: physical-device testing against `http://localhost:8787` requires either a Tailscale IP or an ATS exception.
+  - **Local-only fallback**: clone `MaudeCode/hermes-webui`, run via Docker OR `python3 server.py` from the repo. Note: physical-device testing against `http://localhost:8787` requires either a Tailscale IP or an ATS exception.
   - How to verify the server is up before debugging the app: `curl https://<your-server>/health`.
 
 ### Phase 1 — Onboarding + auth (1–2 days)
@@ -770,7 +770,7 @@ This is the long-term maintenance plan. Implement the basics in v1.
 
 ### 11.2 In the iOS repo
 - [ ] Add a GitHub Action (`.github/workflows/upstream-watch.yml`) that runs daily:
-  - Clones latest `nesquena/hermes-webui` master.
+  - Clones latest `MaudeCode/hermes-webui` master.
   - Diffs `api/routes.py` vs the SHA last marked "tested" in `UPSTREAM_TESTED_SHA` file.
   - If diff non-empty, opens an issue: "Upstream API drift — review needed" with the diff inline.
 - [ ] Add a "contract test" target in Xcode: spins up upstream via Docker in CI and hits each endpoint we use, asserting the JSON shape decodes. Run on every PR + nightly.
@@ -816,7 +816,7 @@ These are useful directions, not approved v1 scope. Before implementing any item
 
 Stop and ask before guessing:
 
-1. **Repo name** for the iOS project. **Answered: `talaria`.** Internal Xcode target/module names remain `HermesMobile` to avoid a churn-only rename.
+1. **Repo and Xcode names.** **Answered: `talaria` for the repository and `Talaria` for the target/module.**
 2. **Bundle ID** — **Answered:** `dev.kil.talaria`.
 3. **App icon / branding** — **Open:** Talaria currently retains the inherited Hermes icon assets; replace them when the owner chooses Talaria artwork.
 4. **Crash reporting** — Firebase Crashlytics or skip for v1?
@@ -827,10 +827,10 @@ Stop and ask before guessing:
 
 ## 15. References
 
-- Upstream repo: https://github.com/nesquena/hermes-webui
-- Upstream `api/routes.py`: https://github.com/nesquena/hermes-webui/blob/master/api/routes.py
-- Upstream `server.py`: https://github.com/nesquena/hermes-webui/blob/master/server.py
-- Upstream `ARCHITECTURE.md`: https://github.com/nesquena/hermes-webui/blob/master/ARCHITECTURE.md
+- Upstream repo: https://github.com/MaudeCode/hermes-webui
+- Upstream `api/routes.py`: https://github.com/MaudeCode/hermes-webui/blob/master/api/routes.py
+- Upstream `server.py`: https://github.com/MaudeCode/hermes-webui/blob/master/server.py
+- Upstream `ARCHITECTURE.md`: https://github.com/MaudeCode/hermes-webui/blob/master/ARCHITECTURE.md
 - Pinned local upstream copy: `.codex-tmp/hermes-webui/` (read-only; see `CONTRACT_TESTS.md`)
 - Cloudflare Tunnel docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
 - Tailscale download: https://tailscale.com/download
@@ -857,7 +857,7 @@ UPSTREAM_TESTED_SHA / UPSTREAM_TESTED_TAG / TESTED_AGAINST_VERSION:
   duplicate the values here — they rot.
 APP_VERSION / APP_BUILD:
   read MARKETING_VERSION / CURRENT_PROJECT_VERSION from
-  `HermesMobile.xcodeproj/project.pbxproj`.
+  `Talaria.xcodeproj/project.pbxproj`.
 ```
 
 ---
@@ -881,13 +881,13 @@ after a material upstream bridge change.
 
 The canonical rationale and evidence are:
 
-- [Inventory the upstream Kanban domain and API contract](https://github.com/uzairansaruzi/hermex/issues/140)
-- [Map Kanban integration constraints in Talaria](https://github.com/uzairansaruzi/hermex/issues/141)
-- [Verify authenticated Kanban wire responses on the running server](https://github.com/uzairansaruzi/hermex/issues/146)
-- [Choose Talaria's Kanban domain vocabulary](https://github.com/uzairansaruzi/hermex/issues/148)
-- [Choose Talaria's Kanban compatibility boundary](https://github.com/uzairansaruzi/hermex/issues/147)
-- [Choose Kanban mutation, conflict, and failure semantics](https://github.com/uzairansaruzi/hermex/issues/143)
-- [Choose the native iPhone Kanban interaction model](https://github.com/uzairansaruzi/hermex/issues/142)
+- Inventory the upstream Kanban domain and API contract.
+- Map Kanban integration constraints in Talaria.
+- Verify authenticated Kanban wire responses on the running server.
+- Choose Talaria's Kanban domain vocabulary.
+- Choose Talaria's Kanban compatibility boundary.
+- Choose Kanban mutation, conflict, and failure semantics.
+- Choose the native iPhone Kanban interaction model.
 
 Use the Kanban vocabulary in root `CONTEXT.md`. In particular, upstream `task` and
 `task_id` remain network-boundary names; user-facing and Swift domain names use Card

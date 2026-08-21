@@ -3,8 +3,8 @@ enabledWorkflows:
   - simulator
   - ui-automation
 sessionDefaults:
-  projectPath: "./HermesMobile.xcodeproj"
-  scheme: "HermesMobile"
+  projectPath: "./Talaria.xcodeproj"
+  scheme: "Talaria"
   configuration: "Debug"
   simulatorName: "i17Pro 26.4"
   bundleId: "dev.kil.talaria"

@@ -8,13 +8,13 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - **Xcode 26 or newer** (the project builds with the iOS 18 SDK or later; the
   deployment target is iOS 18).
-- Clone the repo and open `HermesMobile.xcodeproj`. Dependencies resolve
+- Clone the repo and open `Talaria.xcodeproj`. Dependencies resolve
   automatically via Swift Package Manager — the dependency list is locked in
   `PROJECT_SPEC.md`; do not add new ones without maintainer approval.
-- Build and run the **`HermesMobile`** scheme on an iPhone simulator
+- Build and run the **`Talaria`** scheme on an iPhone simulator
   (`iPhone 17` is the reference device; any recent iPhone simulator works).
 - To actually use the app you need your own
-  [hermes-webui](https://github.com/nesquena/hermes-webui) server — the app is
+  [hermes-webui](https://github.com/MaudeCode/hermes-webui) server — the app is
   a client only. See the [README](README.md#you-need-your-own-server) for
   reachable-server options (Cloudflare Tunnel, reverse proxy, Tailscale, or
   `http://localhost:8787` for simulator-only testing).
@@ -24,7 +24,7 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 The full XCTest suite is the repo's green bar — it must pass before any PR:
 
 ```zsh
-xcodebuild test -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17'
+xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 If that simulator name isn't installed, pick a nearby iPhone from
@@ -43,8 +43,8 @@ team** — override locally instead:
    DEVELOPMENT_TEAM = YOUR_TEAM_ID
    // Optional — only needed if provisioning complains about the bundle ID.
    // The app-group entitlement must stay in sync with the bundle ID.
-   // APP_BUNDLE_IDENTIFIER = com.yourname.hermex
-   // APP_GROUP_IDENTIFIER = group.com.yourname.hermex
+   // APP_BUNDLE_IDENTIFIER = com.yourname.talaria
+   // APP_GROUP_IDENTIFIER = group.com.yourname.talaria
    ```
 
 2. Build normally. `Config/Shared.xcconfig` is wired into the project and ends
@@ -70,12 +70,12 @@ independently useful, it deserves its own PR.
 
 ## App bug or server bug?
 
-Talaria is a thin client over [hermes-webui](https://github.com/nesquena/hermes-webui),
+Talaria is a thin client over [hermes-webui](https://github.com/MaudeCode/hermes-webui),
 so a fair share of apparent app bugs are really server bugs. Before filing a
 bug here, reproduce it in the hermes-webui **web UI** against the same server:
 
 - **Breaks in the web UI too** → it's a server bug. File it
-  [upstream](https://github.com/nesquena/hermes-webui/issues); if the app
+  [upstream](https://github.com/MaudeCode/hermes-webui/issues); if the app
   should still handle it more gracefully, open an issue here that links the
   upstream ticket (we track those with the `upstream-change` label).
 - **Only breaks in the app** → file it here with the bug-report form.

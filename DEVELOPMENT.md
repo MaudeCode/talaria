@@ -53,7 +53,7 @@ For contributors without access to the tunnel:
 1. Clone the upstream server:
 
 ```zsh
-git clone https://github.com/nesquena/hermes-webui.git
+git clone https://github.com/MaudeCode/hermes-webui.git
 cd hermes-webui
 ```
 
@@ -98,8 +98,8 @@ lsof -i :8787
 
 XcodeBuildMCP is the preferred local validation path for feature and bug-fix slices. The repo config lives in `.xcodebuildmcp/config.yaml` and sets:
 
-- Project: `HermesMobile.xcodeproj`
-- Scheme: `HermesMobile`
+- Project: `Talaria.xcodeproj`
+- Scheme: `Talaria`
 - Configuration: `Debug`
 - Simulator: configured in `.xcodebuildmcp/config.yaml`
 - Bundle ID: `dev.kil.talaria`
@@ -127,7 +127,7 @@ Agent/MCP flow:
   each worktree and leases separate simulators across worktrees. XCTest and XCUI
   use the normal authenticated Talaria app cloned from the fixture. Unit tests that
   exercise cookie deletion inject a private cookie store, so they cannot alter the
-  simulator's Hermes session. A skipped `HermesMobileUITests` test fails the run,
+  simulator's Hermes session. A skipped `TalariaUITests` test fails the run,
   since a skip usually means the fixture lost its login or expected UI data.
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
   builds and verifies the signed app, installs and launches it, and opens Simulator.
@@ -142,7 +142,7 @@ xcodebuildmcp simulator list --enabled
 ```
 
 ```zsh
-scripts/test-ios HermesMobileTests/ExampleTests/testExample
+scripts/test-ios TalariaTests/ExampleTests/testExample
 scripts/test-ios
 ```
 
@@ -166,7 +166,7 @@ Policy:
 
 - Warn on production app Swift files over 500 LOC.
 - Exit successfully even when warnings are present.
-- Scope the check to `HermesMobile/` production app files.
+- Scope the check to `Talaria/` production app files.
 - Exempt tests, generated files, preview files, the share extension, and the live activity widget for now.
 - Use warnings to make future drift visible; do not block current work on known oversized files.
 
@@ -189,7 +189,7 @@ xcrun simctl list devices available
 Build for an available iPhone simulator:
 
 ```zsh
-xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 15' build
 ```
 
 If `iPhone 15` is not installed, choose a nearby available iPhone simulator.
@@ -199,7 +199,7 @@ If `iPhone 15` is not installed, choose a nearby available iPhone simulator.
 Current status:
 
 - Intended App Store Connect app name: `Talaria` (record not created yet).
-- Xcode target/scheme name: `HermesMobile`.
+- Xcode target/scheme name: `Talaria`.
 - iPhone home-screen display name: `Talaria`.
 - Bundle ID: `dev.kil.talaria`.
 - Test bundle ID: `dev.kil.talaria.tests`.
@@ -249,7 +249,7 @@ Steps:
 3. Archive with the reusable branch build config `Config/BranchTestFlight.xcconfig`:
 
    ```zsh
-   xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release \
+   xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release \
      -destination 'generic/platform=iOS' -archivePath build/TalariaBranch.xcarchive \
      -xcconfig Config/BranchTestFlight.xcconfig CURRENT_PROJECT_VERSION=<unique-build-number> \
      archive -allowProvisioningUpdates

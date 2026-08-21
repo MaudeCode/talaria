@@ -441,7 +441,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        with tempfile.TemporaryDirectory(prefix="hermex-kanban-reference-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="talaria-kanban-reference-") as temporary:
             state_root = Path(temporary)
             bridge, kanban_db = configure_imports(
                 args.agent_root.resolve(),

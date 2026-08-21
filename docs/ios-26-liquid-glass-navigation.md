@@ -38,7 +38,7 @@ refined structures in iOS 26. See
 [Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
 and the [WWDC25 SwiftUI walkthrough](https://developer.apple.com/videos/play/wwdc2025/323/?time=168).
 
-Talaria's root in `HermesMobile/ContentView.swift` already uses the modern
+Talaria's root in `Talaria/ContentView.swift` already uses the modern
 `Tab("Chats", systemImage:value:)` form. No custom tab-bar implementation or
 manual `.glassEffect` is needed. The local project targets iOS 18, so any iOS 26
 modifier needs an availability branch even though the current development
@@ -75,7 +75,7 @@ Apple presents two distinct patterns in
 
 Talaria's current search filters chat sessions, so it should remain scoped to
 Chats. Replacing the custom expanding search capsule in
-`HermesMobile/Features/SessionList/SessionListView.swift` with native
+`Talaria/Features/SessionList/SessionListView.swift` with native
 `.searchable` would be the more current follow-up. A dedicated Search tab only
 makes sense if Talaria later searches across sessions, tasks, memory, and other
 top-level content.

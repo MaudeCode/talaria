@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to Hermex. Version headings correspond to App Store releases;
+Notable changes to Talaria. Version headings correspond to App Store releases;
 unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
@@ -20,7 +20,7 @@ Security sections per release.
   (Tasks, Kanban, Skills, Memory, Insights, Active Profile, Projects) and chat
   controls (Files button, Git actions). Everything stays visible by default.
 - Opt-in response speed metrics.
-- Public open-source release of the Hermex codebase.
+- Public open-source release of the Talaria codebase.
 
 ### Fixed
 - Interrupted backend streams now recover instead of stalling the response.

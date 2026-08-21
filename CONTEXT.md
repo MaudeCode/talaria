@@ -1,11 +1,11 @@
-# Hermex Domain
+# Talaria Domain
 
-Canonical language for Hermex concepts that need consistent names across the product, planning, and support.
+Canonical language for Talaria concepts that need consistent names across the product, planning, and support.
 
 ## Kanban
 
 **Kanban**:
-The Hermex destination for organizing and operating server-backed work across workflow states.
+The Talaria destination for organizing and operating server-backed work across workflow states.
 _Avoid_: Boards, Tasks
 
 **Board**:
@@ -69,7 +69,7 @@ The action that changes a Card's Status to Archived.
 _Avoid_: Delete Card, remove Card
 
 **Archive Board**:
-The action that removes a non-default Board from active use. Hermex cannot restore an archived Board in-app.
+The action that removes a non-default Board from active use. Talaria cannot restore an archived Board in-app.
 _Avoid_: Delete Board, remove Board
 
 **Bulk Action**:

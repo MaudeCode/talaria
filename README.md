@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="docs/assets/readme/hermex-icon.png" alt="Talaria app icon" width="96" />
+<img src="docs/assets/readme/talaria-icon.png" alt="Talaria app icon" width="96" />
 
 # Talaria
 
-**Control your self-hosted [Hermes](https://github.com/nesquena/hermes-webui) agent from your iPhone.**
+**Control your self-hosted [Hermes](https://github.com/MaudeCode/hermes-webui) agent from your iPhone.**
 
 Your server. Your iPhone. No middleman.
 
@@ -12,13 +12,13 @@ Your server. Your iPhone. No middleman.
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 
-[Original Hermex project](https://github.com/uzairansaruzi/hermex) · [Contributing](CONTRIBUTING.md)
+[Contributing](CONTRIBUTING.md)
 
 <img src="docs/assets/readme/hero-devices.png" alt="Talaria running on two iPhones: a streaming chat session and the home screen with Tasks, Skills, Memory, Insights, and Sessions" width="720" />
 
 </div>
 
-Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/nesquena/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
+Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/MaudeCode/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
 
 - **Free.** No subscriptions, no in-app purchases.
 - **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
@@ -49,7 +49,7 @@ Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](
 
 ## Getting started
 
-Talaria is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/nesquena/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
+Talaria is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/MaudeCode/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
 
 1. **Run the server.** Install and start `hermes-webui` on macOS, Linux, or Windows/WSL2 (Python 3.11+). Set `HERMES_WEBUI_PASSWORD`.
 2. **Make it reachable from your phone** (see options below).
@@ -76,16 +76,16 @@ If connection testing fails, check these first:
 
 Talaria is currently built from source. You need Xcode 26 or newer (iOS 18 SDK) and an iPhone or simulator on iOS 18+.
 
-Clone the repo, open `HermesMobile.xcodeproj`, and run the `HermesMobile` scheme on an iPhone simulator (the Xcode target is `HermesMobile`; the app's display name is `Talaria`). Dependencies are resolved automatically via Swift Package Manager.
+Clone the repo, open `Talaria.xcodeproj`, and run the `Talaria` scheme on an iPhone simulator (the Xcode target is `Talaria`; the app's display name is `Talaria`). Dependencies are resolved automatically via Swift Package Manager.
 
 From the command line:
 
 ```zsh
-xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 ```zsh
-xcodebuild test -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17'
+xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 If that simulator is not installed, list available devices and choose a nearby iPhone simulator:
@@ -124,4 +124,4 @@ Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for how t
 
 MIT — see [LICENSE](LICENSE).
 
-Talaria is an independent client and is not affiliated with the upstream [hermes-webui](https://github.com/nesquena/hermes-webui) project. Apple, the Apple logo, and App Store are trademarks of Apple Inc.
+Talaria is an independent client and is not affiliated with the upstream [hermes-webui](https://github.com/MaudeCode/hermes-webui) project. Apple, the Apple logo, and App Store are trademarks of Apple Inc.

@@ -37,7 +37,7 @@ jobs:
 
     env:
       DIGEST_TITLE: "Upstream Hermes-WebUI watch digest"
-      UPSTREAM_REPO: "https://github.com/nesquena/hermes-webui.git"
+      UPSTREAM_REPO: "https://github.com/MaudeCode/hermes-webui.git"
       TARGET_REF: ${{ inputs.target_ref || 'origin/master' }}
 
     steps:

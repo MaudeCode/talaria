@@ -26,7 +26,7 @@ Some steps below read from `.codex-tmp/hermes-webui` — the repo's pinned, read
 local clone of the public upstream. If it is missing, clone it first:
 
 ```bash
-git clone https://github.com/nesquena/hermes-webui .codex-tmp/hermes-webui
+git clone https://github.com/MaudeCode/hermes-webui .codex-tmp/hermes-webui
 ```
 
 The directory is gitignored; never modify it — it exists so tags/commits can be
@@ -303,5 +303,5 @@ held**, the pin stays and the reason is recorded there.
 - `CONTRACT_TESTS.md` → "Endpoint Priority" (the source list this sheet mirrors)
   and "Advance Policy" (the gate + how to advance the pin).
 - Issue #181 — the owner task to run this smoke and advance `UPSTREAM_TESTED_SHA`.
-- `HermesMobile/Networking/Endpoints.swift` — authoritative paths/methods/query
+- `Talaria/Networking/Endpoints.swift` — authoritative paths/methods/query
   params every `curl` above mirrors.

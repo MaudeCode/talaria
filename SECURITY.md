@@ -21,7 +21,7 @@ reasonable window to ship a fix before disclosing publicly.
 ## Scope
 
 This repository contains only the iOS client. Vulnerabilities in the
-[hermes-webui](https://github.com/nesquena/hermes-webui) server should be
+[hermes-webui](https://github.com/MaudeCode/hermes-webui) server should be
 reported to that project instead. Issues with how *this app* stores
 credentials, talks to the server, or handles untrusted server responses are in
 scope here.

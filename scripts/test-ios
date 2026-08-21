@@ -117,8 +117,8 @@ print "Result bundle: $result_bundle"
 
 cd "$repo_root"
 xcodebuild test -quiet \
-    -project HermesMobile.xcodeproj \
-    -scheme HermesMobile \
+    -project Talaria.xcodeproj \
+    -scheme Talaria \
     -destination "$destination" \
     -derivedDataPath "$runtime_dir/derived-data" \
     -parallel-testing-enabled NO \
@@ -133,14 +133,14 @@ skipped_ui_tests=$(
             select(
                 .nodeType? == "Test Case" and
                 .result? == "Skipped" and
-                ((.nodeIdentifierURL? // "") | startswith("test://com.apple.xcode/HermesMobile/HermesMobileUITests/"))
+                ((.nodeIdentifierURL? // "") | startswith("test://com.apple.xcode/Talaria/TalariaUITests/"))
             ) |
             .nodeIdentifierURL
         '
 )
 
 if [[ -n "$skipped_ui_tests" ]]; then
-    print -u2 "HermesMobileUITests cannot skip on the authenticated simulator pool:"
+    print -u2 "TalariaUITests cannot skip on the authenticated simulator pool:"
     print -u2 -r -- "$skipped_ui_tests"
     exit 1
 fi

@@ -1,6 +1,6 @@
 # Contract Test Readiness
 
-Hermex is tested against `hermes-webui` tag `v0.51.85`, peeled commit `f1d399b437c1ca7fe4b6d2093aebe334c32f34a3`.
+Talaria is tested against `hermes-webui` tag `v0.51.85`, peeled commit `f1d399b437c1ca7fe4b6d2093aebe334c32f34a3`.
 
 The machine-readable pin is `UPSTREAM_TESTED_SHA`. Any future contract test runner must clone or check out upstream at that exact SHA unless the pin is intentionally updated after manual verification.
 
@@ -52,7 +52,7 @@ time the owner runs a green smoke.
 This slice adds lightweight readiness coverage, not the full Docker-backed CI contract target from `PROJECT_SPEC.md`.
 
 Implemented now:
-- `HermesMobileTests/APIClientTests.swift` contains a contract-readiness matrix for every app-used `Endpoint` case.
+- `TalariaTests/APIClientTests.swift` contains a contract-readiness matrix for every app-used `Endpoint` case.
 - The matrix asserts HTTP method intent, path, and query parameters for health, auth, sessions, destructive session actions, streaming, uploads, workspaces/files, models/providers/profiles/reasoning, slash-command endpoints, read-only server panels, skills, memory, and analytics source endpoints.
 - Focused request tests assert native POST calls do not send `Origin` or `Referer`, preserving the upstream CSRF contract for non-browser clients.
 - Multipart upload request tests also assert no `Origin` or `Referer`.
@@ -128,7 +128,7 @@ Upload checks:
 
 The full v1 target should:
 
-1. Clone `nesquena/hermes-webui`.
+1. Clone `MaudeCode/hermes-webui`.
 2. Check out the SHA in `UPSTREAM_TESTED_SHA`.
 3. Start upstream in Docker with a disposable workspace and password.
 4. Run an XCTest or command-line Swift contract harness against the local upstream base URL.
@@ -151,7 +151,7 @@ prints a markdown report.
 that contributors create themselves (it is gitignored):
 
 ```bash
-git clone https://github.com/nesquena/hermes-webui .codex-tmp/hermes-webui
+git clone https://github.com/MaudeCode/hermes-webui .codex-tmp/hermes-webui
 ```
 
 Never modify that clone; it exists so endpoint shapes, tags, and diffs can be

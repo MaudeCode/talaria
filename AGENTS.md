@@ -1,8 +1,8 @@
 # AGENTS.md — Talaria project instructions
 
 Talaria is a native SwiftUI iPhone client for a self-hosted `hermes-webui`
-server. It was derived from Hermex, so inherited documentation describes this
-project only where Talaria has explicitly adopted it.
+server. Inherited documentation describes this project only where Talaria has
+explicitly adopted it.
 
 ## Scope and issue tracking
 

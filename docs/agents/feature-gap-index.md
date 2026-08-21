@@ -1,7 +1,7 @@
 # Hermes Upstream Feature-Gap Index
 
 Thin, **always-current** classification of upstream `Hermes-WebUI` API route
-groups against `Hermes-Mobile`. This file replaces an earlier 1,400-line
+groups against Talaria. This file replaces an earlier 1,400-line
 per-endpoint catalog, which mixed durable judgment (priority, defer/skip
 decisions, safety notes) with volatile detail (exact JSON shapes, handler names)
 that rotted between upstream releases.
@@ -23,7 +23,7 @@ unless the item is explicitly an upstream WebUI parity gap.
 
 | Status | Meaning | Source |
 | :--- | :--- | :--- |
-| `implemented` | Shipping in the app. | **Derived live** from `HermesMobile/Networking/Endpoints.swift` — never hand-listed here, so it cannot drift from what the app ships. |
+| `implemented` | Shipping in the app. | **Derived live** from `Talaria/Networking/Endpoints.swift` — never hand-listed here, so it cannot drift from what the app ships. |
 | `roadmap` | A known upstream feature tracked as a future/deferred mobile slice (covers the old `[ ]`/`[~]`/`[defer]`). | The hand-maintained table below. |
 | `n-a` | Web-, desktop-, or server-internal surface. No mobile implementation expected. | The hand-maintained table below. |
 | `new` | Genuinely uncatalogued upstream route — the triage queue. | **Computed**: any upstream route matching neither `Endpoints.swift` nor the table below falls through to `new`. |

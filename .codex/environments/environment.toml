@@ -2,12 +2,12 @@ version = 1
 name = "Talaria"
 
 [setup]
-script = "xcodebuild -resolvePackageDependencies -project HermesMobile.xcodeproj -scheme HermesMobile -derivedDataPath .codex-tmp/build-derived-data"
+script = "xcodebuild -resolvePackageDependencies -project Talaria.xcodeproj -scheme Talaria -derivedDataPath .codex-tmp/build-derived-data"
 
 [[actions]]
 name = "Build"
 icon = "run"
-command = "xcodebuild -quiet -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath .codex-tmp/build-derived-data build"
+command = "xcodebuild -quiet -project Talaria.xcodeproj -scheme Talaria -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath .codex-tmp/build-derived-data build"
 
 [[actions]]
 name = "Test"

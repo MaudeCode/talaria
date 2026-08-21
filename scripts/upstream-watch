@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report upstream Hermes-WebUI changes that may affect Hermex."""
+"""Report upstream Hermes-WebUI changes that may affect Talaria."""
 
 from __future__ import annotations
 
@@ -293,7 +293,7 @@ def extract_app_sse_cases(repo_root: Path) -> set[str]:
     Degrades to an empty set when the file is absent so a moved/renamed client
     never fails the digest (mirrors the other Swift-side extractors).
     """
-    sse_file = repo_root / "HermesMobile/Networking/SSEClient.swift"
+    sse_file = repo_root / "Talaria/Networking/SSEClient.swift"
     if not sse_file.exists():
         return set()
     text = sse_file.read_text(encoding="utf-8")
@@ -304,7 +304,7 @@ def extract_app_sse_cases(repo_root: Path) -> set[str]:
 
 
 def extract_mobile_paths(repo_root: Path) -> set[str]:
-    endpoints_file = repo_root / "HermesMobile/Networking/Endpoints.swift"
+    endpoints_file = repo_root / "Talaria/Networking/Endpoints.swift"
     if not endpoints_file.exists():
         return set()
     text = endpoints_file.read_text(encoding="utf-8")
@@ -317,7 +317,7 @@ def extract_mobile_paths(repo_root: Path) -> set[str]:
 
 
 def extract_contract_test_paths(repo_root: Path) -> set[str]:
-    test_file = repo_root / "HermesMobileTests/APIEndpointContractTests.swift"
+    test_file = repo_root / "TalariaTests/APIEndpointContractTests.swift"
     if not test_file.exists():
         return set()
     text = test_file.read_text(encoding="utf-8")
@@ -857,7 +857,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate a markdown upstream-watch report for Hermes-WebUI changes."
     )
-    parser.add_argument("--repo-root", default=".", help="Hermex repository root.")
+    parser.add_argument("--repo-root", default=".", help="Talaria repository root.")
     parser.add_argument("--upstream-dir", default=DEFAULT_UPSTREAM_DIR)
     parser.add_argument("--base-sha-file", default=DEFAULT_BASE_SHA_FILE)
     parser.add_argument("--triaged-sha-file", default=DEFAULT_TRIAGED_SHA_FILE)

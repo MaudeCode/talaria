@@ -63,8 +63,8 @@ jobs:
     timeout-minutes: 90
 
     env:
-      PROJECT_PATH: HermesMobile.xcodeproj
-      SCHEME: HermesMobile
+      PROJECT_PATH: Talaria.xcodeproj
+      SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
       TEST_WORKER_COUNT: 1
