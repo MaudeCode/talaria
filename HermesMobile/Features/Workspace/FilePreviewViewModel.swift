@@ -105,9 +105,11 @@ final class FilePreviewViewModel {
         guard !path.isEmpty else {
             throw FileExportError.missingPath
         }
+        let exportPath = path
+        let generation = loadGeneration
 
         if let exportData {
-            return payload(with: exportData)
+            return payload(with: exportData, path: exportPath)
         }
 
         isExporting = true
@@ -118,10 +120,16 @@ final class FilePreviewViewModel {
         }
 
         do {
-            let data = try await apiClient.rawFileData(sessionID: sessionID, path: path)
+            let data = try await apiClient.rawFileData(sessionID: sessionID, path: exportPath)
+            guard !Task.isCancelled, loadGeneration == generation, path == exportPath else {
+                throw FileExportError.selectionChanged
+            }
             exportData = data
-            return payload(with: data)
+            return payload(with: data, path: exportPath)
         } catch {
+            guard loadGeneration == generation, path == exportPath else {
+                throw FileExportError.selectionChanged
+            }
             lastError = error
             exportErrorMessage = error.localizedDescription
             throw error
@@ -133,7 +141,7 @@ final class FilePreviewViewModel {
     }
 
     private var isRasterImagePath: Bool {
-        ["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp"].contains(pathExtension)
+        Self.rasterImageExtensions.contains(pathExtension)
     }
 
     private var isKnownUnsupportedBinaryPath: Bool {
@@ -145,24 +153,28 @@ final class FilePreviewViewModel {
         ].contains(pathExtension)
     }
 
-    private func payload(with data: Data) -> FileExportPayload {
-        FileExportPayload(
+    private func payload(with data: Data, path: String) -> FileExportPayload {
+        let pathExtension = pathExtension(for: path)
+        return FileExportPayload(
             data: data,
-            filename: exportFilename,
+            filename: exportFilename(for: path),
             contentType: UTType(filenameExtension: pathExtension) ?? .data,
-            isImage: isRasterImagePath,
-            isVideo: isVideoPath
+            isImage: Self.rasterImageExtensions.contains(pathExtension),
+            isVideo: Self.videoExtensions.contains(pathExtension)
         )
     }
 
-    private var isVideoPath: Bool {
-        ["m4v", "mov", "mp4"].contains(pathExtension)
+    private func pathExtension(for path: String) -> String {
+        URL(fileURLWithPath: path).pathExtension.lowercased()
     }
 
-    private var exportFilename: String {
+    private func exportFilename(for path: String) -> String {
         let lastPathComponent = URL(fileURLWithPath: path).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
         return lastPathComponent.isEmpty ? String(localized: "Hermes File") : lastPathComponent
     }
+
+    private static let rasterImageExtensions = Set(["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp"])
+    private static let videoExtensions = Set(["m4v", "mov", "mp4"])
 }
 
 enum FilePreviewContent {
@@ -217,9 +229,10 @@ struct FileExportPayload {
     let isVideo: Bool
 }
 
-enum FileExportError: LocalizedError {
+enum FileExportError: LocalizedError, Equatable {
     case missingSessionID
     case missingPath
+    case selectionChanged
 
     var errorDescription: String? {
         switch self {
@@ -227,6 +240,8 @@ enum FileExportError: LocalizedError {
             String(localized: "Session ID is missing.")
         case .missingPath:
             String(localized: "File path is missing.")
+        case .selectionChanged:
+            String(localized: "The selected file changed before export finished.")
         }
     }
 }

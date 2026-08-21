@@ -745,6 +745,40 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
     }
 
     @MainActor
+    func testFilePreviewExportRejectsOldBytesAfterPathChanges() async throws {
+        DeferredFilePreviewURLProtocol.pendingRequest = nil
+        defer { DeferredFilePreviewURLProtocol.pendingRequest = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredFilePreviewURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test")),
+            session: URLSession(configuration: configuration)
+        )
+        let viewModel = try FilePreviewViewModel(
+            session: makeFilePreviewSession(),
+            server: XCTUnwrap(URL(string: "https://example.test")),
+            path: "first.zip",
+            apiClient: client
+        )
+
+        let export = Task { try await viewModel.exportPayload() }
+        for _ in 0..<1_000 where DeferredFilePreviewURLProtocol.pendingRequest == nil {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let pendingRequest = try XCTUnwrap(DeferredFilePreviewURLProtocol.pendingRequest)
+        await viewModel.load(path: "second.zip")
+        pendingRequest.succeed(with: Data([0x50, 0x4B]))
+
+        do {
+            _ = try await export.value
+            XCTFail("The stale export should be rejected.")
+        } catch {
+            XCTAssertEqual(error as? FileExportError, .selectionChanged)
+        }
+        XCTAssertNil(viewModel.exportErrorMessage)
+    }
+
+    @MainActor
     func testFilePreviewExportPayloadFetchesRawDataForUnsupportedPreview() async throws {
         let rawData = Data([0x50, 0x4B, 0x03, 0x04])
         var requestedPaths: [String] = []
@@ -821,5 +855,34 @@ private actor FilePreviewImagePreparationGate {
     func releaseFirstPreparation() {
         firstContinuation?.resume()
         firstContinuation = nil
+    }
+}
+
+private final class DeferredFilePreviewURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var pendingRequest: DeferredFilePreviewURLProtocol?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.pendingRequest = self
+    }
+
+    override func stopLoading() {}
+
+    func succeed(with data: Data) {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                  url: url,
+                  statusCode: 200,
+                  httpVersion: nil,
+                  headerFields: ["Content-Type": "application/octet-stream"]
+              )
+        else { return }
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
     }
 }

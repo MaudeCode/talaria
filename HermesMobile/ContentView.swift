@@ -126,9 +126,7 @@ struct ContentView: View {
             if let sharedImport = try await HermesShareDraft.loadPendingImportOffMainActor(from: directory) {
                 pendingSharedImport = sharedImport
             }
-        } catch {
-            pendingSharedImport = nil
-        }
+        } catch {}
     }
 }
 

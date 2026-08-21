@@ -38,7 +38,42 @@ struct SharedImport: Equatable, Sendable {
     }
 }
 
+enum SharedDraftStoreError: LocalizedError, Equatable {
+    case totalAttachmentBytesExceeded(maximumBytes: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case let .totalAttachmentBytesExceeded(maximumBytes):
+            let limit = ByteCountFormatter.string(fromByteCount: Int64(maximumBytes), countStyle: .file)
+            return String(localized: "Shared attachments must be \(limit) total or less.")
+        }
+    }
+}
+
+actor SharedDraftImportCoordinator {
+    private var inFlight: [String: Task<SharedImport?, Error>] = [:]
+
+    func load(
+        key: String,
+        operation: @escaping @Sendable () async throws -> SharedImport?
+    ) async throws -> SharedImport? {
+        if let task = inFlight[key] {
+            return try await task.value
+        }
+
+        let task = Task { try await operation() }
+        inFlight[key] = task
+        defer { inFlight[key] = nil }
+        return try await task.value
+    }
+}
+
+private struct SendableFileManager: @unchecked Sendable {
+    let value: FileManager
+}
+
 enum HermesShareDraft {
+    private static let importCoordinator = SharedDraftImportCoordinator()
     static var appGroupIdentifier: String {
         Bundle.main.object(forInfoDictionaryKey: "HermesAppGroupIdentifier") as? String
             ?? "group.dev.kil.talaria"
@@ -123,16 +158,15 @@ enum HermesShareDraft {
         now: Date = Date()
     ) throws {
         let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        var totalAttachmentBytes = 0
-        let uploadableAttachments = attachments.compactMap { attachment -> SharedAttachmentImport? in
-            guard !attachment.data.isEmpty,
-                  attachment.data.count <= maximumSharedAttachmentBytes,
-                  totalAttachmentBytes + attachment.data.count <= maximumSharedImportBytes
-            else { return nil }
-
-            totalAttachmentBytes += attachment.data.count
-            return attachment
-        }.prefix(maximumSharedAttachmentCount)
+        let uploadableAttachments = Array(attachments
+            .filter { !$0.data.isEmpty && $0.data.count <= maximumSharedAttachmentBytes }
+            .prefix(maximumSharedAttachmentCount))
+        let totalAttachmentBytes = uploadableAttachments.reduce(0) { $0 + $1.data.count }
+        guard totalAttachmentBytes <= maximumSharedImportBytes else {
+            throw SharedDraftStoreError.totalAttachmentBytesExceeded(
+                maximumBytes: maximumSharedImportBytes
+            )
+        }
 
         guard !trimmedDraft.isEmpty || !uploadableAttachments.isEmpty else {
             return
@@ -189,18 +223,23 @@ enum HermesShareDraft {
             return nil
         }
 
-        defer {
+        do {
+            let payload = try JSONDecoder().decode(SharedDraftPayload.self, from: Data(contentsOf: url))
+            let draft = payload.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let attachments = try loadAttachments(from: payload, in: directory, fileManager: fileManager)
+            let sharedImport = SharedImport(draft: draft, attachments: attachments)
             if removeAfterLoad {
-                try? fileManager.removeItem(at: url)
-                try? fileManager.removeItem(at: pendingAttachmentsDirectoryURL(in: directory))
+                removePendingImport(from: directory, fileManager: fileManager)
             }
+            return sharedImport.isEmpty ? nil : sharedImport
+        } catch let error as SharedDraftStoreError {
+            throw error
+        } catch {
+            if removeAfterLoad {
+                removePendingImport(from: directory, fileManager: fileManager)
+            }
+            throw error
         }
-
-        let payload = try JSONDecoder().decode(SharedDraftPayload.self, from: Data(contentsOf: url))
-        let draft = payload.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachments = loadAttachments(from: payload, in: directory, fileManager: fileManager)
-        let sharedImport = SharedImport(draft: draft, attachments: attachments)
-        return sharedImport.isEmpty ? nil : sharedImport
     }
 
     static func loadPendingImportOffMainActor(
@@ -208,13 +247,17 @@ enum HermesShareDraft {
         fileManager: FileManager = .default,
         removeAfterLoad: Bool = true
     ) async throws -> SharedImport? {
-        try await Task.detached(priority: .userInitiated) {
-            try loadPendingImport(
-                from: directory,
-                fileManager: fileManager,
-                removeAfterLoad: removeAfterLoad
-            )
-        }.value
+        let key = "\(ObjectIdentifier(fileManager))|\(directory.standardizedFileURL.path)|\(removeAfterLoad)"
+        let sendableFileManager = SendableFileManager(value: fileManager)
+        return try await importCoordinator.load(key: key) {
+            try await Task.detached(priority: .userInitiated) {
+                try loadPendingImport(
+                    from: directory,
+                    fileManager: sendableFileManager.value,
+                    removeAfterLoad: removeAfterLoad
+                )
+            }.value
+        }
     }
 
     private static func pendingDraftURL(in directory: URL) -> URL {
@@ -229,9 +272,9 @@ enum HermesShareDraft {
         from payload: SharedDraftPayload,
         in directory: URL,
         fileManager: FileManager
-    ) -> [SharedAttachmentImport] {
+    ) throws -> [SharedAttachmentImport] {
         let attachmentsDirectory = pendingAttachmentsDirectoryURL(in: directory)
-        var remainingBytes = maximumSharedImportBytes
+        var candidates: [(payload: SharedAttachmentPayload, url: URL, size: Int)] = []
         var imports: [SharedAttachmentImport] = []
 
         for attachment in (payload.attachments ?? []).prefix(maximumSharedAttachmentCount) {
@@ -242,21 +285,36 @@ enum HermesShareDraft {
             guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path),
                   let fileSize = (attributes[.size] as? NSNumber)?.intValue,
                   fileSize > 0,
-                  fileSize <= maximumSharedAttachmentBytes,
-                  fileSize <= remainingBytes,
-                  let data = try? Data(contentsOf: fileURL),
-                  data.count == fileSize
+                  fileSize <= maximumSharedAttachmentBytes
+            else { continue }
+
+            candidates.append((attachment, fileURL, fileSize))
+        }
+
+        guard candidates.reduce(0, { $0 + $1.size }) <= maximumSharedImportBytes else {
+            throw SharedDraftStoreError.totalAttachmentBytesExceeded(
+                maximumBytes: maximumSharedImportBytes
+            )
+        }
+
+        for candidate in candidates {
+            guard let data = try? Data(contentsOf: candidate.url),
+                  data.count == candidate.size
             else { continue }
 
             imports.append(SharedAttachmentImport(
-                filename: sanitizedFilename(attachment.filename),
-                typeIdentifier: attachment.typeIdentifier,
+                filename: sanitizedFilename(candidate.payload.filename),
+                typeIdentifier: candidate.payload.typeIdentifier,
                 data: data
             ))
-            remainingBytes -= data.count
         }
 
         return imports
+    }
+
+    private static func removePendingImport(from directory: URL, fileManager: FileManager) {
+        try? fileManager.removeItem(at: pendingDraftURL(in: directory))
+        try? fileManager.removeItem(at: pendingAttachmentsDirectoryURL(in: directory))
     }
 
     private static func sanitizedFilename(_ filename: String) -> String {

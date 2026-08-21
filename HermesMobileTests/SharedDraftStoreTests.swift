@@ -192,7 +192,7 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertEqual(sharedImport.attachments.last?.filename, "file-9.txt")
     }
 
-    func testPendingImportLoadCapsAggregateAttachmentBytes() throws {
+    func testPendingImportRejectsAggregateOverflowWithoutDeletingStagedFiles() throws {
         let directory = try temporaryDirectory()
         let attachmentsDirectory = directory.appendingPathComponent(
             HermesShareDraft.pendingAttachmentsDirectoryName,
@@ -223,15 +223,63 @@ final class SharedDraftStoreTests: XCTestCase {
             to: directory.appendingPathComponent(HermesShareDraft.pendingDraftFileName)
         )
 
-        let sharedImport = try XCTUnwrap(
-            try HermesShareDraft.loadPendingImport(from: directory, removeAfterLoad: false)
+        XCTAssertThrowsError(try HermesShareDraft.loadPendingImport(from: directory)) { error in
+            XCTAssertEqual(
+                error as? SharedDraftStoreError,
+                .totalAttachmentBytesExceeded(maximumBytes: HermesShareDraft.maximumSharedImportBytes)
+            )
+        }
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(HermesShareDraft.pendingDraftFileName).path
+            )
         )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: attachmentsDirectory.path))
+    }
 
-        XCTAssertEqual(sharedImport.attachments.map(\.filename), ["first.bin"])
-        XCTAssertLessThanOrEqual(
-            sharedImport.attachments.reduce(0) { $0 + $1.data.count },
-            HermesShareDraft.maximumSharedImportBytes
-        )
+    func testPendingImportSaveRejectsAggregateOverflowWithoutReplacingExistingDraft() throws {
+        let directory = try temporaryDirectory()
+        try HermesShareDraft.savePendingDraft("Keep me", in: directory)
+        let attachmentSize = HermesShareDraft.maximumSharedImportBytes / 2 + 1
+        let oversizedTotal = ["first.bin", "second.bin"].map {
+            SharedAttachmentImport(
+                filename: $0,
+                typeIdentifier: nil,
+                data: Data(count: attachmentSize)
+            )
+        }
+
+        XCTAssertThrowsError(
+            try HermesShareDraft.savePendingImport(
+                draft: "Replacement",
+                attachments: oversizedTotal,
+                in: directory
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? SharedDraftStoreError,
+                .totalAttachmentBytesExceeded(maximumBytes: HermesShareDraft.maximumSharedImportBytes)
+            )
+        }
+
+        XCTAssertEqual(try HermesShareDraft.loadPendingDraft(from: directory), "Keep me")
+    }
+
+    func testConcurrentImportCoordinatorCoalescesOneDestructiveLoad() async throws {
+        let coordinator = SharedDraftImportCoordinator()
+        let gate = SharedDraftImportGate()
+
+        async let first = coordinator.load(key: "shared") { await gate.load() }
+        await gate.waitUntilFirstLoadStarts()
+        async let second = coordinator.load(key: "shared") { await gate.load() }
+        await Task.yield()
+        await gate.releaseFirstLoad()
+
+        let (firstResult, secondResult) = try await (first, second)
+        let callCount = await gate.callCount
+        XCTAssertEqual(firstResult?.draft, "coalesced")
+        XCTAssertEqual(secondResult?.draft, "coalesced")
+        XCTAssertEqual(callCount, 1)
     }
 
     func testPendingImportDecodesLegacyDraftOnlyPayload() throws {
@@ -264,5 +312,33 @@ final class SharedDraftStoreTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+}
+
+private actor SharedDraftImportGate {
+    private(set) var callCount = 0
+    private var didStartFirstLoad = false
+    private var firstContinuation: CheckedContinuation<Void, Never>?
+
+    func load() async -> SharedImport? {
+        callCount += 1
+        guard callCount == 1 else {
+            return SharedImport(draft: "duplicate", attachments: [])
+        }
+
+        didStartFirstLoad = true
+        await withCheckedContinuation { firstContinuation = $0 }
+        return SharedImport(draft: "coalesced", attachments: [])
+    }
+
+    func waitUntilFirstLoadStarts() async {
+        while !didStartFirstLoad {
+            await Task.yield()
+        }
+    }
+
+    func releaseFirstLoad() {
+        firstContinuation?.resume()
+        firstContinuation = nil
     }
 }

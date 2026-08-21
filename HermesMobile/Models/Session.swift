@@ -60,7 +60,8 @@ struct ProjectMutationResponse: Decodable, Equatable {
 }
 
 struct ProjectSummary: Decodable, Equatable, Hashable, Identifiable {
-    var id: String { projectId ?? name ?? "project:\(color ?? "unknown"):\(createdAt ?? 0)" }
+    private let fallbackIdentity = DecodedIdentityToken()
+    var id: String { projectId ?? fallbackIdentity.value }
 
     let projectId: String?
     let name: String?

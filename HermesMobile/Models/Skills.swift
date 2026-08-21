@@ -5,8 +5,9 @@ struct SkillsResponse: Decodable, Equatable {
 }
 
 struct SkillSummary: Decodable, Equatable, Identifiable {
+    private let fallbackIdentity = DecodedIdentityToken()
     var id: String {
-        name ?? path ?? "skill:\(category ?? "uncategorized"):\(description?.prefix(64) ?? "")"
+        name ?? fallbackIdentity.value
     }
 
     let name: String?
@@ -16,6 +17,16 @@ struct SkillSummary: Decodable, Equatable, Identifiable {
     let disabled: Bool?
     let tags: [String]?
     let relatedSkills: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case category
+        case description
+        case path
+        case disabled
+        case tags
+        case relatedSkills
+    }
 
     init(
         name: String?,
@@ -33,6 +44,17 @@ struct SkillSummary: Decodable, Equatable, Identifiable {
         self.disabled = disabled
         self.tags = tags
         self.relatedSkills = relatedSkills
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = container.decodeLossyStringIfPresent(forKey: .name)
+        category = container.decodeLossyStringIfPresent(forKey: .category)
+        description = container.decodeLossyStringIfPresent(forKey: .description)
+        path = container.decodeLossyStringIfPresent(forKey: .path)
+        disabled = container.decodeLossyBoolIfPresent(forKey: .disabled)
+        tags = try? container.decodeIfPresent([String].self, forKey: .tags)
+        relatedSkills = try? container.decodeIfPresent([String].self, forKey: .relatedSkills)
     }
 }
 

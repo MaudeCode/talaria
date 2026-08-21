@@ -61,6 +61,10 @@ final class ShareViewController: UIViewController {
 
         do {
             try HermesShareDraft.savePendingImport(draft: draft, attachments: input.attachments, in: directory)
+        } catch let error as SharedDraftStoreError {
+            showStatus(error.localizedDescription)
+            completeRequest(after: 0.8)
+            return
         } catch {
             showStatus("Could not save shared content.")
             completeRequest(after: 0.8)

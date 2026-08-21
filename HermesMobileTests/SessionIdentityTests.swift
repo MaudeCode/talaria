@@ -139,32 +139,34 @@ final class SessionIdentityTests: XCTestCase {
 
     func testProjectFallbackIDIsDeterministicWithoutProjectIDOrName() throws {
         let project = try decode(ProjectSummary.self, from: #"{"color":"blue","created_at":1770000000}"#)
+        let duplicate = try decode(ProjectSummary.self, from: #"{"color":"blue","created_at":1770000000}"#)
 
-        XCTAssertEqual(project.id, "project:blue:1770000000.0")
         XCTAssertEqual(project.id, project.id)
+        XCTAssertNotEqual(project.id, duplicate.id)
     }
 
     func testCronFallbackIDsAreDeterministicWithoutServerIDs() throws {
         let job = try decode(CronJob.self, from: #"{"schedule_display":"0 7 * * *","profile":"default"}"#)
+        let duplicateJob = try decode(CronJob.self, from: #"{"schedule_display":"0 7 * * *","profile":"default"}"#)
         let output = try decode(CronOutputItem.self, from: #"{"content":"completed"}"#)
+        let duplicateOutput = try decode(CronOutputItem.self, from: #"{"content":"completed"}"#)
         let delivery = try decode(CronDeliveryOption.self, from: #"{}"#)
+        let duplicateDelivery = try decode(CronDeliveryOption.self, from: #"{}"#)
 
-        XCTAssertEqual(job.id, "cron:0 7 * * *:default")
         XCTAssertEqual(job.id, job.id)
-        XCTAssertEqual(output.id, "cron-output:9:completed")
+        XCTAssertNotEqual(job.id, duplicateJob.id)
         XCTAssertEqual(output.id, output.id)
-        XCTAssertEqual(delivery.id, "cron-delivery:unknown")
+        XCTAssertNotEqual(output.id, duplicateOutput.id)
         XCTAssertEqual(delivery.id, delivery.id)
+        XCTAssertNotEqual(delivery.id, duplicateDelivery.id)
     }
 
     func testSkillFallbackIDIsDeterministicWithoutName() throws {
-        let skill = try decode(
-            SkillSummary.self,
-            from: #"{"category":"coding","description":"Refactors Swift","path":"/skills/swift"}"#
-        )
+        let skill = try decode(SkillSummary.self, from: #"{"category":"coding"}"#)
+        let duplicate = try decode(SkillSummary.self, from: #"{"category":"coding"}"#)
 
-        XCTAssertEqual(skill.id, "/skills/swift")
         XCTAssertEqual(skill.id, skill.id)
+        XCTAssertNotEqual(skill.id, duplicate.id)
     }
 
     func testWorkspaceEntryFallbackIDIsDeterministicWithoutPathOrName() throws {
@@ -172,9 +174,13 @@ final class SessionIdentityTests: XCTestCase {
             WorkspaceEntry.self,
             from: #"{"type":"file","size":42,"modified":1770000000,"is_directory":false}"#
         )
+        let duplicate = try decode(
+            WorkspaceEntry.self,
+            from: #"{"type":"file","size":42,"modified":1770000000,"is_directory":false}"#
+        )
 
-        XCTAssertEqual(entry.id, "workspace-entry:file:42:1770000000.0:false")
         XCTAssertEqual(entry.id, entry.id)
+        XCTAssertNotEqual(entry.id, duplicate.id)
     }
 
     private func decode<Value: Decodable>(_ type: Value.Type, from json: String) throws -> Value {

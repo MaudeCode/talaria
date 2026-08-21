@@ -45,3 +45,16 @@ enum JSONValue: Codable, Equatable {
         }
     }
 }
+
+/// Per-decoded-instance identity for malformed or older rows that omit their
+/// authoritative ID. Equality and hashing intentionally ignore the token so it
+/// does not change the model's payload-value semantics.
+struct DecodedIdentityToken: Hashable, Sendable {
+    let value = UUID().uuidString
+
+    static func == (_ lhs: DecodedIdentityToken, _ rhs: DecodedIdentityToken) -> Bool {
+        true
+    }
+
+    func hash(into hasher: inout Hasher) {}
+}
