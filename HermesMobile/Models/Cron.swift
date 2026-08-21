@@ -37,7 +37,7 @@ struct CronStatusResponse: Decodable, Equatable {
 
 struct CronJob: Decodable, Equatable, Identifiable {
     var id: String {
-        jobId ?? name ?? UUID().uuidString
+        jobId ?? name ?? "cron:\(scheduleText ?? "unscheduled"):\(profile ?? "default")"
     }
 
     let jobId: String?
@@ -223,7 +223,9 @@ struct CronOutputResponse: Decodable, Equatable {
 }
 
 struct CronOutputItem: Decodable, Equatable, Identifiable {
-    var id: String { filename ?? UUID().uuidString }
+    var id: String {
+        filename ?? "cron-output:\(content?.count ?? 0):\(content?.prefix(64) ?? "")"
+    }
 
     let filename: String?
     let content: String?
@@ -258,7 +260,7 @@ struct CronDeliveryOptionsResponse: Decodable, Equatable {
 }
 
 struct CronDeliveryOption: Decodable, Equatable, Identifiable {
-    var id: String { value ?? label ?? UUID().uuidString }
+    var id: String { value ?? label ?? "cron-delivery:unknown" }
 
     let value: String?
     let label: String?

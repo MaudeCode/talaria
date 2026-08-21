@@ -60,7 +60,7 @@ struct ProjectMutationResponse: Decodable, Equatable {
 }
 
 struct ProjectSummary: Decodable, Equatable, Hashable, Identifiable {
-    var id: String { projectId ?? name ?? UUID().uuidString }
+    var id: String { projectId ?? name ?? "project:\(color ?? "unknown"):\(createdAt ?? 0)" }
 
     let projectId: String?
     let name: String?

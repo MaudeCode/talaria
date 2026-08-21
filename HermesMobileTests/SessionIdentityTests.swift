@@ -136,6 +136,52 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertEqual(session.id, "session-Legacy Session-1770000100.0")
         XCTAssertEqual(session.id, "session-Legacy Session-1770000100.0")
     }
+
+    func testProjectFallbackIDIsDeterministicWithoutProjectIDOrName() throws {
+        let project = try decode(ProjectSummary.self, from: #"{"color":"blue","created_at":1770000000}"#)
+
+        XCTAssertEqual(project.id, "project:blue:1770000000.0")
+        XCTAssertEqual(project.id, project.id)
+    }
+
+    func testCronFallbackIDsAreDeterministicWithoutServerIDs() throws {
+        let job = try decode(CronJob.self, from: #"{"schedule_display":"0 7 * * *","profile":"default"}"#)
+        let output = try decode(CronOutputItem.self, from: #"{"content":"completed"}"#)
+        let delivery = try decode(CronDeliveryOption.self, from: #"{}"#)
+
+        XCTAssertEqual(job.id, "cron:0 7 * * *:default")
+        XCTAssertEqual(job.id, job.id)
+        XCTAssertEqual(output.id, "cron-output:9:completed")
+        XCTAssertEqual(output.id, output.id)
+        XCTAssertEqual(delivery.id, "cron-delivery:unknown")
+        XCTAssertEqual(delivery.id, delivery.id)
+    }
+
+    func testSkillFallbackIDIsDeterministicWithoutName() throws {
+        let skill = try decode(
+            SkillSummary.self,
+            from: #"{"category":"coding","description":"Refactors Swift","path":"/skills/swift"}"#
+        )
+
+        XCTAssertEqual(skill.id, "/skills/swift")
+        XCTAssertEqual(skill.id, skill.id)
+    }
+
+    func testWorkspaceEntryFallbackIDIsDeterministicWithoutPathOrName() throws {
+        let entry = try decode(
+            WorkspaceEntry.self,
+            from: #"{"type":"file","size":42,"modified":1770000000,"is_directory":false}"#
+        )
+
+        XCTAssertEqual(entry.id, "workspace-entry:file:42:1770000000.0:false")
+        XCTAssertEqual(entry.id, entry.id)
+    }
+
+    private func decode<Value: Decodable>(_ type: Value.Type, from json: String) throws -> Value {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(type, from: Data(json.utf8))
+    }
 }
 
 final class SessionSidebarDisclosureSettingsTests: XCTestCase {

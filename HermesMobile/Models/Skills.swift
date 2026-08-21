@@ -6,7 +6,7 @@ struct SkillsResponse: Decodable, Equatable {
 
 struct SkillSummary: Decodable, Equatable, Identifiable {
     var id: String {
-        name ?? UUID().uuidString
+        name ?? path ?? "skill:\(category ?? "uncategorized"):\(description?.prefix(64) ?? "")"
     }
 
     let name: String?
