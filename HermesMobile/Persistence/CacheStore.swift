@@ -70,24 +70,31 @@ enum CacheStore {
             guard let sessionID = session.sessionId else { return nil }
             return CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
         })
-
-        for session in cacheableSessions {
-            guard let sessionID = session.sessionId else { continue }
-            let cacheKey = CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
-            if let cachedSession = try cachedSession(cacheKey: cacheKey, in: context) {
-                cachedSession.apply(session, cachedAt: cachedAt)
-            } else {
-                context.insert(CachedSession(serverURLString: serverURLString, session: session, cachedAt: cachedAt))
-            }
-        }
-
         let descriptor = FetchDescriptor<CachedSession>(
             predicate: #Predicate { cachedSession in
                 cachedSession.serverURLString == serverURLString
             }
         )
-        let staleSessions = try context.fetch(descriptor).filter { !freshKeys.contains($0.cacheKey) }
-        for staleSession in staleSessions {
+        let existingSessions = try context.fetch(descriptor)
+        var existingByKey = Dictionary(uniqueKeysWithValues: existingSessions.map { ($0.cacheKey, $0) })
+
+        for session in cacheableSessions {
+            guard let sessionID = session.sessionId else { continue }
+            let cacheKey = CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
+            if let cachedSession = existingByKey[cacheKey] {
+                cachedSession.apply(session, cachedAt: cachedAt)
+            } else {
+                let cachedSession = CachedSession(
+                    serverURLString: serverURLString,
+                    session: session,
+                    cachedAt: cachedAt
+                )
+                context.insert(cachedSession)
+                existingByKey[cacheKey] = cachedSession
+            }
+        }
+
+        for staleSession in existingSessions where !freshKeys.contains(staleSession.cacheKey) {
             context.delete(staleSession)
         }
 
@@ -138,6 +145,14 @@ enum CacheStore {
                 sortIndex: offset
             )
         })
+        let descriptor = FetchDescriptor<CachedMessage>(
+            predicate: #Predicate { cachedMessage in
+                cachedMessage.serverURLString == serverURLString
+                    && cachedMessage.sessionID == sessionID
+            }
+        )
+        let existingMessages = try context.fetch(descriptor)
+        var existingByKey = Dictionary(uniqueKeysWithValues: existingMessages.map { ($0.cacheKey, $0) })
 
         for (offset, message) in messages.enumerated() {
             let cacheKey = CachedMessage.cacheKey(
@@ -146,27 +161,22 @@ enum CacheStore {
                 message: message,
                 sortIndex: offset
             )
-            if let cachedMessage = try cachedMessage(cacheKey: cacheKey, in: context) {
+            if let cachedMessage = existingByKey[cacheKey] {
                 cachedMessage.apply(message, sortIndex: offset, cachedAt: cachedAt)
             } else {
-                context.insert(CachedMessage(
+                let cachedMessage = CachedMessage(
                     serverURLString: serverURLString,
                     sessionID: sessionID,
                     message: message,
                     sortIndex: offset,
                     cachedAt: cachedAt
-                ))
+                )
+                context.insert(cachedMessage)
+                existingByKey[cacheKey] = cachedMessage
             }
         }
 
-        let descriptor = FetchDescriptor<CachedMessage>(
-            predicate: #Predicate { cachedMessage in
-                cachedMessage.serverURLString == serverURLString
-                    && cachedMessage.sessionID == sessionID
-            }
-        )
-        let staleMessages = try context.fetch(descriptor).filter { !freshKeys.contains($0.cacheKey) }
-        for staleMessage in staleMessages {
+        for staleMessage in existingMessages where !freshKeys.contains(staleMessage.cacheKey) {
             context.delete(staleMessage)
         }
 
@@ -226,44 +236,42 @@ enum CacheStore {
 
     @MainActor
     private static func deleteExpiredSessions(in context: ModelContext, now: Date) throws {
-        let descriptor = FetchDescriptor<CachedSession>()
-        let expiredSessions = try context.fetch(descriptor).filter { $0.expiresAt <= now }
-        for session in expiredSessions {
+        let descriptor = FetchDescriptor<CachedSession>(
+            predicate: #Predicate { cachedSession in
+                cachedSession.expiresAt <= now
+            }
+        )
+        for session in try context.fetch(descriptor) {
             context.delete(session)
         }
     }
 
     @MainActor
     private static func deleteExpiredMessages(in context: ModelContext, now: Date) throws {
-        let descriptor = FetchDescriptor<CachedMessage>()
-        let expiredMessages = try context.fetch(descriptor).filter { $0.expiresAt <= now }
-        for message in expiredMessages {
+        let descriptor = FetchDescriptor<CachedMessage>(
+            predicate: #Predicate { cachedMessage in
+                cachedMessage.expiresAt <= now
+            }
+        )
+        for message in try context.fetch(descriptor) {
             context.delete(message)
         }
     }
 
     @MainActor
     private static func evictOldestMessagesIfNeeded(in context: ModelContext) throws {
-        let descriptor = FetchDescriptor<CachedMessage>()
-        let messages = try context.fetch(descriptor)
-        let overflowCount = messages.count - CachePolicy.maxMessages
+        let overflowCount = try context.fetchCount(FetchDescriptor<CachedMessage>()) - CachePolicy.maxMessages
         guard overflowCount > 0 else { return }
 
-        let messagesToEvict = messages
-            .sorted { left, right in
-                if left.cachedAt != right.cachedAt {
-                    return left.cachedAt < right.cachedAt
-                }
-
-                if left.timestamp != right.timestamp {
-                    return (left.timestamp ?? 0) < (right.timestamp ?? 0)
-                }
-
-                return left.sortIndex < right.sortIndex
-            }
-            .prefix(overflowCount)
-
-        for message in messagesToEvict {
+        var descriptor = FetchDescriptor<CachedMessage>(
+            sortBy: [
+                SortDescriptor(\CachedMessage.cachedAt),
+                SortDescriptor(\CachedMessage.timestamp),
+                SortDescriptor(\CachedMessage.sortIndex)
+            ]
+        )
+        descriptor.fetchLimit = overflowCount
+        for message in try context.fetch(descriptor) {
             context.delete(message)
         }
     }
@@ -279,16 +287,6 @@ enum CacheStore {
         return try context.fetch(descriptor).first
     }
 
-    @MainActor
-    private static func cachedMessage(cacheKey: String, in context: ModelContext) throws -> CachedMessage? {
-        var descriptor = FetchDescriptor<CachedMessage>(
-            predicate: #Predicate { cachedMessage in
-                cachedMessage.cacheKey == cacheKey
-            }
-        )
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first
-    }
 }
 
 private extension SessionSummary {
