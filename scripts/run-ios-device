@@ -1,0 +1,102 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+build_dir="$repo_root/.codex-tmp/device-build"
+fresh=false
+
+usage() {
+    print "Usage: scripts/run-ios-device [--fresh]"
+    print
+    print "Builds, installs, and launches Talaria on the connected physical iPhone."
+    print "  --fresh  Clear the local device build cache first. Phone data is preserved."
+    print
+    print "Set TALARIA_DEVICE_ID when more than one physical iPhone is connected."
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --fresh)
+            fresh=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            print -u2 "Unknown option: $1"
+            usage >&2
+            exit 64
+            ;;
+    esac
+    shift
+done
+
+if [[ "$fresh" == true && -d "$build_dir" ]]; then
+    [[ ! -L "$build_dir" ]] || {
+        print -u2 "Refusing to clear symlinked build directory: $build_dir"
+        exit 1
+    }
+    print "Clearing $build_dir"
+    find "$build_dir" -mindepth 1 -delete
+fi
+mkdir -p "$build_dir"
+
+device_id=${TALARIA_DEVICE_ID:-}
+if [[ -z "$device_id" ]]; then
+    connected_ids=$(xcrun devicectl list devices \
+        --filter 'State == "connected" AND Reality == "physical" AND Model CONTAINS "iPhone"' \
+        --hide-default-columns \
+        --columns Identifier \
+        --hide-headers)
+    typeset -a device_ids=()
+    [[ -z "$connected_ids" ]] || device_ids=("${(@f)connected_ids}")
+
+    if (( ${#device_ids} != 1 )); then
+        print -u2 "Expected one connected physical iPhone; found ${#device_ids}."
+        print -u2 "Set TALARIA_DEVICE_ID to choose one."
+        exit 69
+    fi
+    device_id=$device_ids[1]
+fi
+
+cd "$repo_root"
+print "Building for iPhone $device_id"
+build_log="$build_dir/build.log"
+if ! xcodebuild build -quiet \
+    -project HermesMobile.xcodeproj \
+    -scheme HermesMobile \
+    -configuration Debug \
+    -destination "platform=iOS,id=$device_id" \
+    -derivedDataPath "$build_dir" \
+    COMPILER_INDEX_STORE_ENABLE=NO >"$build_log" 2>&1; then
+    cat "$build_log" >&2
+    exit 1
+fi
+print "Build complete"
+
+app_path="$build_dir/Build/Products/Debug-iphoneos/HermesMobile.app"
+[[ -d "$app_path" ]] || {
+    print -u2 "Build succeeded but the app was not found at $app_path"
+    exit 1
+}
+codesign --verify --deep --strict "$app_path"
+bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
+
+print "Installing $bundle_id"
+xcrun devicectl device install app --device "$device_id" "$app_path"
+
+print "Launching $bundle_id"
+if ! launch_output=$(xcrun devicectl device process launch \
+    --device "$device_id" \
+    --terminate-existing \
+    "$bundle_id" 2>&1); then
+    if [[ "$launch_output" == *"reason: Locked"* ]]; then
+        print -u2 "Installed successfully. Unlock the iPhone and rerun; the cached build will be fast."
+    else
+        print -u2 "$launch_output"
+    fi
+    exit 1
+fi
+print "$launch_output"
