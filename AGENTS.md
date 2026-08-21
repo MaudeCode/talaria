@@ -22,10 +22,11 @@ project only where Talaria has explicitly adopted it.
 
 ## Workflow boundaries
 
-- `main` is the default release branch. Keep it buildable and do implementation
-  work on a short-lived branch.
+- `main` is the default release branch. Keep it buildable. Name each tracked-work
+  branch `<type>/TAL-<number>-<slug>`, using the selected Kaneo issue number.
 - Commit each coherent, verified slice as it is completed so it has a rollback
-  point. Keep unrelated changes out of the commit.
+  point. Start every tracked-work commit subject with the same Kaneo key, for
+  example `TAL-29: require ticket keys`. Keep unrelated changes out of the commit.
 - Pushing, opening or updating a PR, merging, and uploading a build each require
   explicit human approval.
 - Triage automated review feedback before accepting it.
