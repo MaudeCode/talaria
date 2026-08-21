@@ -73,7 +73,7 @@ struct FilePreviewView: View {
                 }
             }
         }
-        .task {
+        .task(id: entry.path) {
             await loadFile()
         }
         .refreshable {
@@ -134,7 +134,7 @@ struct FilePreviewView: View {
         case let .text(file):
             fileContent(file.content ?? "")
         case let .image(file):
-            imageContent(file.data)
+            imageContent(file)
         case .audio:
             // The workspace file browser never produces audio previews; this
             // arm only keeps the shared `FilePreviewContent` switch exhaustive.
@@ -201,8 +201,8 @@ struct FilePreviewView: View {
     }
 
     @ViewBuilder
-    private func imageContent(_ data: Data) -> some View {
-        if let image = UIImage(data: data) {
+    private func imageContent(_ file: ImageFilePreview) -> some View {
+        if let image = file.preparedImage {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     fileHeader
@@ -217,11 +217,7 @@ struct FilePreviewView: View {
             }
             .background(Color(.systemBackground))
         } else {
-            ContentUnavailableView {
-                Label("Could Not Preview Image", systemImage: "photo")
-            } description: {
-                Text(displayPath)
-            }
+            unavailableContent(String(localized: "Could not preview this image."))
         }
     }
 
@@ -281,7 +277,7 @@ struct FilePreviewView: View {
     }
 
     private func loadFile() async {
-        await viewModel.load()
+        await viewModel.load(path: entry.path ?? "")
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }

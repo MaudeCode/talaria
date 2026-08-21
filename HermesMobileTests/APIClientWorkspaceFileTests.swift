@@ -672,6 +672,79 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
     }
 
     @MainActor
+    func testFilePreviewImageLoadStoresPreparedImageOutsideTheView() async throws {
+        let imageData = try XCTUnwrap(Self.largeImageData())
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/file/raw")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "image/png"]
+            )
+            return (try XCTUnwrap(response), imageData)
+        }
+        let viewModel = try FilePreviewViewModel(
+            session: makeFilePreviewSession(),
+            server: XCTUnwrap(URL(string: "https://example.test")),
+            path: "Screenshots/result.png",
+            apiClient: client
+        )
+
+        await viewModel.load()
+
+        guard case let .image(file) = viewModel.preview else {
+            return XCTFail("Expected a prepared image preview.")
+        }
+        let preparedImage = try XCTUnwrap(file.preparedImage?.cgImage)
+        XCTAssertLessThanOrEqual(
+            max(preparedImage.width, preparedImage.height),
+            ImagePreviewDownsampler.filePreviewMaxPixelSize
+        )
+        XCTAssertEqual(file.originalByteCount, imageData.count)
+        let payload = try await viewModel.exportPayload()
+        XCTAssertEqual(payload.data, imageData)
+    }
+
+    @MainActor
+    func testFilePreviewIgnoresStaleImagePreparationAfterPathChanges() async throws {
+        let gate = FilePreviewImagePreparationGate()
+        let client = makeClient { request in
+            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+            let path = components?.queryItems?.first(where: { $0.name == "path" })?.value
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "image/png"]
+            )
+            return (try XCTUnwrap(response), Data([path == "first.png" ? 1 : 2]))
+        }
+        let viewModel = try FilePreviewViewModel(
+            session: makeFilePreviewSession(),
+            server: XCTUnwrap(URL(string: "https://example.test")),
+            path: "first.png",
+            apiClient: client,
+            imagePreparer: { data, byteCount in
+                await gate.prepare(data: data, byteCount: byteCount)
+            }
+        )
+
+        let firstLoad = Task { await viewModel.load() }
+        await gate.waitUntilFirstPreparationStarts()
+        await viewModel.load(path: "second.png")
+        await gate.releaseFirstPreparation()
+        await firstLoad.value
+
+        guard case let .image(file) = viewModel.preview else {
+            return XCTFail("Expected the second path's image preview.")
+        }
+        XCTAssertEqual(file.data, Data([2]))
+        let payload = try await viewModel.exportPayload()
+        XCTAssertEqual(payload.data, Data([2]))
+    }
+
+    @MainActor
     func testFilePreviewExportPayloadFetchesRawDataForUnsupportedPreview() async throws {
         let rawData = Data([0x50, 0x4B, 0x03, 0x04])
         var requestedPaths: [String] = []
@@ -712,5 +785,41 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
         XCTAssertEqual(payload.contentType, UTType.zip)
         XCTAssertFalse(payload.isImage)
         XCTAssertEqual(requestedPaths, ["/api/file/raw"])
+    }
+
+    private static func largeImageData() -> Data? {
+        UIGraphicsImageRenderer(size: CGSize(width: 4_096, height: 4_096)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4_096, height: 4_096))
+        }.pngData()
+    }
+}
+
+private actor FilePreviewImagePreparationGate {
+    private var didStartFirstPreparation = false
+    private var firstContinuation: CheckedContinuation<Void, Never>?
+
+    func prepare(data: Data, byteCount: Int) async -> ImageFilePreview? {
+        if data == Data([1]) {
+            didStartFirstPreparation = true
+            await withCheckedContinuation { firstContinuation = $0 }
+        }
+
+        return ImageFilePreview(
+            data: data,
+            preparedImage: UIImage(),
+            originalByteCount: byteCount
+        )
+    }
+
+    func waitUntilFirstPreparationStarts() async {
+        while !didStartFirstPreparation {
+            await Task.yield()
+        }
+    }
+
+    func releaseFirstPreparation() {
+        firstContinuation?.resume()
+        firstContinuation = nil
     }
 }

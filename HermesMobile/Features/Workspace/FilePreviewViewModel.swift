@@ -1,11 +1,15 @@
 import Foundation
+import UIKit
 import UniformTypeIdentifiers
 
+@MainActor
 @Observable
 final class FilePreviewViewModel {
     private let session: SessionSummary
-    private let path: String
+    private var path: String
     private let apiClient: APIClient
+    private let imagePreparer: (Data, Int) async -> ImageFilePreview?
+    private var loadGeneration = 0
 
     private(set) var preview: FilePreviewContent?
     private(set) var isLoading = false
@@ -15,10 +19,17 @@ final class FilePreviewViewModel {
     private(set) var lastError: Error?
     private var exportData: Data?
 
-    init(session: SessionSummary, server: URL, path: String, apiClient: APIClient? = nil) {
+    init(
+        session: SessionSummary,
+        server: URL,
+        path: String,
+        apiClient: APIClient? = nil,
+        imagePreparer: @escaping (Data, Int) async -> ImageFilePreview? = ImageFilePreview.prepare
+    ) {
         self.session = session
         self.path = path
         self.apiClient = apiClient ?? APIClient(baseURL: server)
+        self.imagePreparer = imagePreparer
     }
 
     var canExportFile: Bool {
@@ -29,8 +40,16 @@ final class FilePreviewViewModel {
         canExportFile && isRasterImagePath
     }
 
-    @MainActor
-    func load() async {
+    func load(path requestedPath: String? = nil) async {
+        if let requestedPath, requestedPath != path {
+            path = requestedPath
+            preview = nil
+            exportData = nil
+        }
+        loadGeneration += 1
+        let generation = loadGeneration
+        let loadingPath = path
+
         guard let sessionID = session.sessionId else {
             errorMessage = String(localized: "Session ID is missing.")
             return
@@ -45,35 +64,39 @@ final class FilePreviewViewModel {
         errorMessage = nil
         exportErrorMessage = nil
         lastError = nil
+        defer {
+            if loadGeneration == generation {
+                isLoading = false
+            }
+        }
 
         do {
             if isRasterImagePath {
-                let data = try await apiClient.rawFileData(sessionID: sessionID, path: path)
+                let data = try await apiClient.rawFileData(sessionID: sessionID, path: loadingPath)
+                guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
                 exportData = data
-                if let previewData = ImagePreviewDownsampler.previewData(
-                    from: data,
-                    maxPixelSize: ImagePreviewDownsampler.filePreviewMaxPixelSize
-                ) {
-                    preview = .image(.init(data: previewData, originalByteCount: data.count))
+                if let preparedImage = await imagePreparer(data, data.count) {
+                    guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
+                    preview = .image(preparedImage)
                 } else {
+                    guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
                     preview = .unavailable(String(localized: "Could not decode this image."))
                 }
             } else if isKnownUnsupportedBinaryPath {
                 preview = .unavailable(String(localized: "Preview is not available for this file type."))
             } else {
-                let file = try await apiClient.file(sessionID: sessionID, path: path)
+                let file = try await apiClient.file(sessionID: sessionID, path: loadingPath)
+                guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
                 exportData = Data((file.content ?? "").utf8)
                 preview = .text(file)
             }
         } catch {
+            guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }
-
-        isLoading = false
     }
 
-    @MainActor
     func exportPayload() async throws -> FileExportPayload {
         guard let sessionID = session.sessionId else {
             throw FileExportError.missingSessionID
@@ -149,9 +172,41 @@ enum FilePreviewContent {
     case unavailable(String)
 }
 
-struct ImageFilePreview {
+struct ImageFilePreview: @unchecked Sendable {
     let data: Data
+    let preparedImage: UIImage?
     let originalByteCount: Int
+
+    init(data: Data, preparedImage: UIImage? = nil, originalByteCount: Int) {
+        self.data = data
+        self.preparedImage = preparedImage
+        self.originalByteCount = originalByteCount
+    }
+
+    nonisolated static func prepare(data: Data, originalByteCount: Int) async -> ImageFilePreview? {
+        let task = Task.detached(priority: .userInitiated) { () -> ImageFilePreview? in
+            guard !Task.isCancelled,
+                  let previewData = ImagePreviewDownsampler.previewData(
+                      from: data,
+                      maxPixelSize: ImagePreviewDownsampler.filePreviewMaxPixelSize
+                  ),
+                  !Task.isCancelled,
+                  let image = UIImage(data: previewData)
+            else { return nil }
+
+            return ImageFilePreview(
+                data: previewData,
+                preparedImage: image,
+                originalByteCount: originalByteCount
+            )
+        }
+
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
 }
 
 struct FileExportPayload {
