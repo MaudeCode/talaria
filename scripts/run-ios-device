@@ -50,21 +50,34 @@ mkdir -p "$build_dir"
 
 device_id=${TALARIA_DEVICE_ID:-}
 if [[ -z "$device_id" ]]; then
-    connected_ids=$(xcrun devicectl list devices \
+    device_json="$build_dir/connected-devices.json"
+    if ! xcrun devicectl list devices \
         --filter 'State == "connected" AND Reality == "physical" AND Model CONTAINS "iPhone"' \
-        --hide-default-columns \
-        --columns Identifier \
-        --hide-headers)
-    typeset -a device_ids=()
-    [[ -z "$connected_ids" ]] || device_ids=("${(@f)connected_ids}")
+        --json-output "$device_json" \
+        --omit-deprecated-fields-in-json >/dev/null; then
+        print -u2 "Could not list connected physical iPhones."
+        exit 69
+    fi
 
-    if (( ${#device_ids} != 1 )); then
-        print -u2 "Expected one connected physical iPhone; found ${#device_ids}."
+    device_count=$(/usr/bin/plutil -extract result.devices raw -o - "$device_json")
+
+    if (( device_count != 1 )); then
+        unlink "$device_json"
+        print -u2 "Expected one connected physical iPhone; found $device_count."
         print -u2 "Set TALARIA_DEVICE_ID to choose one."
         exit 69
     fi
-    device_id=$device_ids[1]
+
+    device_id=$(/usr/bin/plutil \
+        -extract result.devices.0.properties.hardware.udid \
+        raw -o - "$device_json")
+    unlink "$device_json"
 fi
+
+[[ "$device_id" =~ '^[[:xdigit:]]+-[[:xdigit:]]+$' ]] || {
+    print -u2 "Invalid iPhone UDID: $device_id"
+    exit 69
+}
 
 cd "$repo_root"
 print "Building for iPhone $device_id"
