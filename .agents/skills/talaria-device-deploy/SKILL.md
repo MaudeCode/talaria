@@ -27,14 +27,21 @@ scripts/run-ios-device --fresh
 `--fresh` clears the local device build cache. It preserves the app and its data
 on the iPhone.
 
+When the user asks to install without opening Talaria, run:
+
+```zsh
+scripts/run-ios-device --no-launch
+```
+
 The script discovers one connected physical iPhone, builds a signed Debug app,
-verifies its signature, installs it, and launches it. If multiple iPhones are
-connected, set `TALARIA_DEVICE_ID` to the requested device identifier.
+verifies its signature, and installs it. It launches the app unless `--no-launch`
+is set. If multiple iPhones are connected, set `TALARIA_DEVICE_ID` to the
+requested device identifier.
 
 ## Completion
 
-- Success means the signed build was installed and launched on the requested
-  iPhone.
+- Success means the signed build was installed and, unless `--no-launch` was set,
+  launched on the requested iPhone.
 - If installation succeeds but launch reports a locked phone, say that the app is
   installed. Ask the user to unlock the phone, then rerun without `--fresh` so the
   cached build is reused.

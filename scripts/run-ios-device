@@ -5,12 +5,14 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 build_dir="$repo_root/.codex-tmp/device-build"
 fresh=false
+no_launch=false
 
 usage() {
-    print "Usage: scripts/run-ios-device [--fresh]"
+    print "Usage: scripts/run-ios-device [--fresh] [--no-launch]"
     print
     print "Builds, installs, and launches Talaria on the connected physical iPhone."
     print "  --fresh  Clear the local device build cache first. Phone data is preserved."
+    print "  --no-launch  Install the app without launching it."
     print
     print "Set TALARIA_DEVICE_ID when more than one physical iPhone is connected."
 }
@@ -19,6 +21,9 @@ while (( $# > 0 )); do
     case "$1" in
         --fresh)
             fresh=true
+            ;;
+        --no-launch)
+            no_launch=true
             ;;
         -h|--help)
             usage
@@ -86,6 +91,11 @@ bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/In
 
 print "Installing $bundle_id"
 xcrun devicectl device install app --device "$device_id" "$app_path"
+
+if [[ "$no_launch" == true ]]; then
+    print "Launch skipped"
+    exit 0
+fi
 
 print "Launching $bundle_id"
 if ! launch_output=$(xcrun devicectl device process launch \
