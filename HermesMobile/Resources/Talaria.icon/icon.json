@@ -1,15 +1,11 @@
 {
   "fill-specializations" : [
     {
-      "value" : {
-        "solid" : "display-p3:0.97363,0.97363,0.97363,1.00000"
-      }
+      "value" : "system-light"
     },
     {
       "appearance" : "dark",
-      "value" : {
-        "solid" : "display-p3:0.00000,0.00000,0.00000,1.00000"
-      }
+      "value" : "system-dark"
     }
   ],
   "groups" : [
@@ -26,7 +22,7 @@
             {
               "appearance" : "dark",
               "value" : {
-                "solid" : "display-p3:0.77078,0.60976,0.00836,0.96000"
+                "solid" : "display-p3:0.96956,0.76701,0.01051,0.96000"
               }
             }
           ],
