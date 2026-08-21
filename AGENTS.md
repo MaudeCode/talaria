@@ -47,18 +47,9 @@ project only where Talaria has explicitly adopted it.
 
 ## Validation and handoff
 
-- Prefer terminal validation. Use XcodeBuildMCP when available; otherwise use
-  `xcodebuild` and `xcrun simctl`.
-- Run app UI validation through XCTest/XCUIAutomation and simulator tooling.
-  Never use Computer Use to test Talaria.
-- Run local XCTest only through `scripts/test-ios [test-identifier ...]`. Run a
-  focused test first, wait for it to finish, then run the full suite before review
-  or commit. Never overlap runs in one worktree; the script leases separate pooled
-  simulators so different worktrees can test concurrently.
-- Manual simulator installs must be signed. Never install a
-  `CODE_SIGNING_ALLOWED=NO` build; Keychain login will fail.
-- For UI or runtime changes, build and launch the app before handoff and include a
-  short manual simulator test plan.
+- For XCTest and simulator validation, use `$talaria-ios-testing`.
+- For signed physical-iPhone builds, installs, or launches, use
+  `$talaria-device-deploy`.
 - Report files changed, validation commands and results, and any unresolved risk.
   For docs-only changes, `git diff --check` is sufficient.
 - Propose an `AGENTS.md` edit when these instructions drift; do not silently work
