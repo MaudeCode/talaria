@@ -35,13 +35,9 @@ project only where Talaria has explicitly adopted it.
 
 ## API and code rules
 
-- Never invent endpoints or JSON shapes. Inspect upstream at the exact
-  `UPSTREAM_TESTED_SHA` for the supported contract. Use a running server to
-  reproduce behavior for that server version; use official docs as secondary
-  context.
+- For API requests, JSON decoding, SSE or streaming, and server-version
+  compatibility, use `$talaria-upstream-contract`.
 - Do not add a third-party package without approval.
-- Decode missing or version-varying response fields tolerantly, ignore unknown
-  keys, and validate required values before use.
 - Do not commit a build or test failure caused by the change. Diagnose and report
   unrelated failures without expanding the task.
 
