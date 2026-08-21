@@ -8,8 +8,12 @@ project only where Talaria has explicitly adopted it.
 
 - Kaneo project `Talaria` (`TAL`) is the canonical issue tracker. For issue work,
   read the human-selected Kaneo item and its linked context before coding.
-- Implement only the selected task. Do not pick another issue, invent backlog
-  work, create tracker items, or change tracker state unless the human asks.
+- Move the selected issue to `In Progress` before changing code. After the work is
+  committed and required validation passes, move it to `In Review` while it waits
+  for human review. Move it to `Done` only after the commit is verified on `main`,
+  whether merged through a PR or locally.
+- Implement only the selected task. Do not pick another issue or invent backlog
+  work. If selected work has no Kaneo issue, create one before coding.
 - Read only the `PROJECT_SPEC.md` sections relevant to the task. Treat the spec as
   product intent; code, tests, configuration, `UPSTREAM_TESTED_SHA`, and
   `CONTRACT_TESTS.md` describe implemented behavior.
@@ -22,8 +26,8 @@ project only where Talaria has explicitly adopted it.
   work on a short-lived branch.
 - Commit each coherent, verified slice as it is completed so it has a rollback
   point. Keep unrelated changes out of the commit.
-- Pushing, opening or updating a PR, merging, uploading a build, and mutating
-  Kaneo each require explicit human approval.
+- Pushing, opening or updating a PR, merging, and uploading a build each require
+  explicit human approval.
 - Triage automated review feedback before accepting it.
 - Do not modify or restart the user's Hermes server, tunnel, macOS services,
   upstream checkout, or Apple resources unless explicitly asked.
