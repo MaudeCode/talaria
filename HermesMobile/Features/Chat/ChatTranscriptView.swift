@@ -565,6 +565,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 Text(title)
                     .font(AppFont.body())
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer(minLength: 4)
 
@@ -639,6 +641,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                                         isActive: isActive
                                     )
                                     .font(AppFont.callout())
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
                                     .multilineTextAlignment(.leading)
 
                                     Spacer(minLength: 4)

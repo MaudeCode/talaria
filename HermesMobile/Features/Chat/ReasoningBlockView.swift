@@ -43,7 +43,8 @@ struct ReasoningBlockView: View {
                             isActive: isActive
                         )
                             .font(AppFont.callout())
-                            .lineLimit(2)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
                         Spacer(minLength: 4)
 

@@ -89,7 +89,8 @@ struct ToolCallCardView: View {
             isActive: !toolCall.isCompleted && toolCall.isError != true
         )
             .font(AppFont.callout())
-            .lineLimit(usesStackedHeader ? 2 : 1)
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
 
     private var statusIcon: String {
