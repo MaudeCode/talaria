@@ -218,6 +218,27 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(event, .reasoning("I need to inspect the file first."))
     }
 
+    func testDecodesOptionalReasoningTitleSnapshot() {
+        let event = SSEEventDecoder.decode(
+            eventType: "reasoning",
+            data: #"{"text":" reasoning delta","titles":["Planning implementation","Running tests"]}"#
+        )
+
+        XCTAssertEqual(event, .reasoning(ReasoningStreamEvent(
+            text: " reasoning delta",
+            titles: ["Planning implementation", "Running tests"]
+        )))
+    }
+
+    func testMalformedOptionalReasoningTitlesDoNotDropText() {
+        let event = SSEEventDecoder.decode(
+            eventType: "reasoning",
+            data: #"{"text":"legacy text","titles":{"bad":true}}"#
+        )
+
+        XCTAssertEqual(event, .reasoning("legacy text"))
+    }
+
     func testDecodesInterimAssistantEventFromUpstreamPayload() {
         let event = SSEEventDecoder.decode(
             eventType: "interim_assistant",

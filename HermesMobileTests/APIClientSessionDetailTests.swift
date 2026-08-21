@@ -142,6 +142,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
                     "role": "assistant",
                     "content": "The file defines a SwiftUI view.",
                     "reasoning": "I inspected the file and looked for the main type.",
+                    "reasoning_titles": ["Inspecting the Swift file"],
                     "_ts": 1770000000
                   }
                 ]
@@ -154,6 +155,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         let message = try XCTUnwrap(response.session?.messages?.first)
 
         XCTAssertEqual(message.reasoning, "I inspected the file and looked for the main type.")
+        XCTAssertEqual(message.reasoningTitles, ["Inspecting the Swift file"])
     }
 
     func testSessionPrefersPersistedReasoningContentOverSummary() async throws {
@@ -205,7 +207,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
                       {"row_id":"tool-1","order_index":2,"role":"tool","status":"completed","tool_call_id":"call-1","tool":{"id":"call-1","name":"read_file","args":{"path":"notes.md"},"snippet":"contents","done":true}},
                       {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
                       {"row_id":"prose-2","order_index":3,"role":"prose","text":"After tool."},
-                      {"row_id":"thinking-1","order_index":1,"role":"thinking","thinking":{"text":"I should inspect now."}}
+                      {"row_id":"thinking-1","order_index":1,"role":"thinking","thinking":{"text":"I should inspect now.","titles":["Planning implementation"]}}
                     ]
                   }
                 }]
@@ -224,6 +226,10 @@ final class APIClientSessionDetailTests: APIClientTestCase {
 
         XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "reasoning", "tools", "prose"])
         XCTAssertEqual(timeline.rows.compactMap(\.text), ["Before tool.", "I should inspect now.", "After tool."])
+        guard case .reasoning(let reasoning) = timeline.rows[1].content else {
+            return XCTFail("Expected a reasoning row")
+        }
+        XCTAssertEqual(reasoning.titles, ["Planning implementation"])
         XCTAssertEqual(timeline.toolCalls.map(\.id), ["call-1"])
         XCTAssertEqual(timeline.toolCalls.first?.preview, "contents")
 
@@ -251,9 +257,13 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         let completedTurn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
         XCTAssertEqual(completedTurn.workRows.map(\.kind), ["prose", "reasoning", "tools"])
         XCTAssertEqual(completedTurn.finalAnswer, "After tool.")
-        XCTAssertNil(CompletedAssistantTurn(rows: Array(timeline.rows.dropLast())))
-        XCTAssertEqual(AssistantActivityDisclosureTitle.text(duration: 532), "Worked for 8m 52s")
-        XCTAssertEqual(AssistantActivityDisclosureTitle.text(duration: nil), "Worked")
+        XCTAssertEqual(completedTurn.segments.count, 3)
+        guard case .prose("Before tool.") = completedTurn.segments[0].content,
+              case .activity(let sealedRows) = completedTurn.segments[1].content,
+              case .prose("After tool.") = completedTurn.segments[2].content
+        else { return XCTFail("Assistant prose should seal each activity group") }
+        XCTAssertEqual(sealedRows.map(\.kind), ["reasoning", "tools"])
+        XCTAssertNotNil(CompletedAssistantTurn(rows: Array(timeline.rows.dropLast())))
     }
 
     func testContentPartsPreserveTextToolTextOrderAndOutputText() async throws {
@@ -1842,5 +1852,20 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(anchoredGroup.isComplete, false)
         XCTAssertEqual(anchoredGroup.hasFailedTool, true)
         XCTAssertEqual(unanchoredGroup.id, "live-tools-unanchored")
+    }
+
+    func testAssistantActivitySummaryUsesNaturalCategoryPhrasesWithoutCounts() {
+        let tools = [
+            ToolCall(name: "skill_view", preview: nil, args: nil, isCompleted: true),
+            ToolCall(name: "read_file", preview: nil, args: nil, isCompleted: true),
+            ToolCall(name: "terminal", preview: nil, args: nil, isCompleted: true),
+            ToolCall(name: "terminal", preview: nil, args: nil, isCompleted: true)
+        ]
+
+        XCTAssertEqual(
+            AssistantActivitySummary.title(for: tools),
+            "Loaded a tool, read a file, ran commands"
+        )
+        XCTAssertFalse(AssistantActivitySummary.title(for: tools).contains("2"))
     }
 }

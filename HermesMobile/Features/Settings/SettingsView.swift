@@ -234,7 +234,7 @@ struct SettingsView: View {
 
                 SettingsCard(title: String(localized: "Chat")) {
                     SettingsToggleRow(
-                        title: String(localized: "Thinking and Tool Cards"),
+                        title: String(localized: "Activity"),
                         systemImage: "brain.head.profile",
                         isOn: $showsThinkingAndToolCards
                     )
@@ -254,8 +254,6 @@ struct SettingsView: View {
                         systemImage: "wrench.and.screwdriver",
                         isOn: $toolCardsStartExpanded
                     )
-
-                    SettingsFootnote(String(localized: "Thinking and Tool cards start expanded instead of collapsed. Tapping a card still toggles it."))
 
                     SettingsDivider()
 

@@ -1005,8 +1005,8 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         payload.text?.isEmpty == false
     }
 
-    func streamCoordinatorAppendReasoning(_ text: String) -> Bool {
-        !text.isEmpty
+    func streamCoordinatorAppendReasoning(_ payload: ReasoningStreamEvent) -> Bool {
+        !payload.text.isEmpty || !payload.titles.isEmpty
     }
 
     func streamCoordinatorAppendToolCall(_ payload: ToolStreamEvent) -> Bool {

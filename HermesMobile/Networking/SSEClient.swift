@@ -67,7 +67,7 @@ final class SSEClient: SSEStreamingClient {
 enum SSEEvent: Equatable {
     case token(String)
     case interimAssistant(InterimAssistantStreamEvent)
-    case reasoning(String)
+    case reasoning(ReasoningStreamEvent)
     case toolStarted(ToolStreamEvent)
     case toolCompleted(ToolStreamEvent)
     case title(TitleStreamEvent)
@@ -82,6 +82,35 @@ enum SSEEvent: Equatable {
     case transportError(String)
     case heartbeat
     case ignored
+}
+
+extension SSEEvent {
+    static func reasoning(_ text: String) -> SSEEvent {
+        .reasoning(ReasoningStreamEvent(text: text))
+    }
+}
+
+struct ReasoningStreamEvent: Decodable, Equatable {
+    let text: String
+    let titles: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case titles
+    }
+
+    init(text: String, titles: [String] = []) {
+        self.text = text
+        self.titles = ReasoningTitleMetadata.normalize(titles)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = container.decodeLossyStringIfPresent(forKey: .text) ?? ""
+        titles = ReasoningTitleMetadata.normalize(
+            (try? container.decodeIfPresent([String].self, forKey: .titles)) ?? []
+        )
+    }
 }
 
 struct TitleStreamEvent: Decodable, Equatable {
@@ -244,7 +273,7 @@ struct SSEEventDecoder {
             return .interimAssistant(payload ?? InterimAssistantStreamEvent())
         case "reasoning":
             let payload = decodePayload(ReasoningPayload.self, eventType: eventType, from: eventData, decoder: decoder)
-            return .reasoning(payload?.text ?? "")
+            return .reasoning(payload?.event ?? ReasoningStreamEvent(text: ""))
         case "tool":
             let payload = decodePayload(ToolStreamEvent.self, eventType: eventType, from: eventData, decoder: decoder)
             return .toolStarted(payload ?? ToolStreamEvent())
@@ -412,7 +441,11 @@ private struct TokenPayload: Decodable {
 }
 
 private struct ReasoningPayload: Decodable {
-    let text: String?
+    let event: ReasoningStreamEvent
+
+    init(from decoder: Decoder) throws {
+        event = try ReasoningStreamEvent(from: decoder)
+    }
 }
 
 private struct ErrorPayload: Decodable {

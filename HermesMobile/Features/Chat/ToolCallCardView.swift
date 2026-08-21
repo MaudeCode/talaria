@@ -23,28 +23,20 @@ struct ToolCallCardView: View {
                     userToggledExpansion = !isExpanded
                 }
             } label: {
-                header(statusDisplay: statusDisplay)
+                header
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "\(toolCall.displayName), \(statusDisplay.detailText)"))
+            .accessibilityLabel(String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(statusDisplay.detailText)"))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
             if isExpanded {
                 expandedContent(statusDisplay: statusDisplay)
+                    .padding(.leading, 24)
+                    .forcedLeftToRight()
                     .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, isExpanded ? 8 : 7)
-        .chatTimelineAccessorySurface(
-            fallbackMaterial: .thinMaterial,
-            cornerRadius: 9
-        )
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Tool-call bodies are commands, JSON, file paths, and results — code-like
-        // content that must stay left-to-right inside an RTL message (#259). The
-        // group's summary header above (ToolActivityGroupView) still mirrors.
-        .forcedLeftToRight()
     }
 
     private func expandedContent(statusDisplay: ToolCallStatusDisplay) -> some View {
@@ -69,43 +61,35 @@ struct ToolCallCardView: View {
         dynamicTypeSize.isAccessibilitySize
     }
 
-    private func header(statusDisplay: ToolCallStatusDisplay) -> some View {
-        HStack(alignment: usesStackedHeader ? .top : .center, spacing: 8) {
+    private var header: some View {
+        HStack(alignment: .center, spacing: 8) {
             Image(systemName: statusIcon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 14))
                 .foregroundStyle(statusColor)
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
 
-            if usesStackedHeader {
-                VStack(alignment: .leading, spacing: 3) {
-                    titleText
-                    if let collapsedText = statusDisplay.collapsedText {
-                        TranscriptStatusPill(text: collapsedText, color: statusColor)
-                    }
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    titleText
-                    if let collapsedText = statusDisplay.collapsedText {
-                        TranscriptStatusPill(text: collapsedText, color: statusColor)
-                    }
-                }
-            }
+            titleText
 
             Spacer(minLength: 6)
 
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            if hasExpandableContent {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
         }
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 
     private var titleText: some View {
-        Text(toolCall.displayName)
-            .font(AppFont.caption(weight: .semibold))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
+        ActivityGlowText(
+            text: AssistantActivitySummary.label(for: toolCall),
+            isActive: !toolCall.isCompleted && toolCall.isError != true
+        )
+            .font(AppFont.caption())
+            .lineLimit(usesStackedHeader ? 2 : 1)
     }
 
     private var statusIcon: String {
@@ -113,7 +97,7 @@ struct ToolCallCardView: View {
             return "exclamationmark.triangle.fill"
         }
 
-        return toolCall.isCompleted ? "checkmark.circle.fill" : "wrench.and.screwdriver.fill"
+        return AssistantActivitySummary.icon(for: toolCall)
     }
 
     private var statusColor: Color {
@@ -122,6 +106,11 @@ struct ToolCallCardView: View {
         }
 
         return .secondary
+    }
+
+    private var hasExpandableContent: Bool {
+        let content = ToolCallDisplayFormatter.content(for: toolCall)
+        return !content.argumentRows.isEmpty || content.result != nil || shouldShowStatusDetail(displayContent: content)
     }
 
     private func shouldShowStatusDetail(displayContent: ToolCallDisplayContent) -> Bool {

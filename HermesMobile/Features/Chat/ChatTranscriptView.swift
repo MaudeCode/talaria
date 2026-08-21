@@ -344,7 +344,7 @@ struct ChatTranscriptView: View {
             if showsThinkingAndToolCards {
                 if hasLiveReasoningText,
                    !hasDisplayedTranscriptMessage(anchorID: reasoningAnchorMessageID) {
-                    ReasoningBlockView(text: liveReasoningText)
+                    ReasoningBlockView(text: liveReasoningText, isActive: true)
                 }
 
                 if !liveToolCalls.isEmpty,
@@ -430,7 +430,7 @@ struct ChatTranscriptView: View {
     private func reasoningBlocks(anchorMessageID: String?) -> some View {
         if showsThinkingAndToolCards {
             ForEach(reasoningGroups.filter { $0.anchorMessageID == anchorMessageID }) { group in
-                ReasoningBlockView(text: group.text)
+                ReasoningBlockView(text: group.text, titles: group.titles)
             }
         }
     }
@@ -447,7 +447,7 @@ struct ChatTranscriptView: View {
 
 private struct ChatTranscriptMessageBlock: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isCompletedActivityExpanded = false
+    @State private var expandedCompletedActivityIDs = Set<String>()
 
     let transcriptMessage: TranscriptMessage
     let transcriptBlockSpacing: CGFloat
@@ -545,60 +545,76 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
 
     @ViewBuilder
     private func completedActivity(_ turn: CompletedAssistantTurn) -> some View {
-        let workRows = turn.workRows.filter(isVisibleWorkRow)
+        let lastProseID = turn.segments.last(where: {
+            if case .prose = $0.content { return true }
+            return false
+        })?.id
 
-        if !workRows.isEmpty {
-            Button {
-                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                    isCompletedActivityExpanded.toggle()
+        ForEach(turn.segments) { segment in
+            switch segment.content {
+            case .activity(let rows):
+                let visibleRows = rows.filter(isVisibleWorkRow)
+                if !visibleRows.isEmpty {
+                    let isExpanded = expandedCompletedActivityIDs.contains(segment.id)
+                    let title = completedActivityTitle(for: visibleRows)
+                    Button {
+                        withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                            if isExpanded {
+                                expandedCompletedActivityIDs.remove(segment.id)
+                            } else {
+                                expandedCompletedActivityIDs.insert(segment.id)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: completedActivityIcon(for: visibleRows))
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16, height: 16)
+
+                            Text(title)
+                                .font(AppFont.caption())
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+
+                            Spacer(minLength: 4)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "Completed activity, \(title)"))
+                    .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
+
+                    if isExpanded {
+                        ForEach(Array(visibleRows.enumerated()), id: \.element.id) { index, row in
+                            activityRow(
+                                row,
+                                at: index,
+                                includesAttachments: false,
+                                includesTurnMetrics: false
+                            )
+                        }
+                        .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+                    }
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(AssistantActivityDisclosureTitle.text(
-                        duration: transcriptMessage.message.turnDuration
-                    ))
-                    .font(AppFont.body())
-                    .foregroundStyle(.primary)
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isCompletedActivityExpanded ? 90 : 0))
-
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
+            case .prose(let text):
+                let isFinal = segment.id == lastProseID
+                messageRow(
+                    activityMessage(
+                        text: text,
+                        includesAttachments: isFinal,
+                        includesTurnMetrics: isFinal
+                    ),
+                    isStreaming: false
+                )
             }
-            .buttonStyle(.plain)
-            .accessibilityHint(
-                isCompletedActivityExpanded
-                    ? "Double tap to collapse work."
-                    : "Double tap to expand work."
-            )
-
-            if isCompletedActivityExpanded {
-                ForEach(Array(workRows.enumerated()), id: \.element.id) { index, row in
-                    activityRow(
-                        row,
-                        at: index,
-                        includesAttachments: false,
-                        includesTurnMetrics: false
-                    )
-                }
-                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
-            }
-
-            Divider()
         }
-
-        messageRow(
-            activityMessage(
-                text: turn.finalAnswer,
-                includesAttachments: true,
-                includesTurnMetrics: true
-            ),
-            isStreaming: false
-        )
     }
 
     @ViewBuilder
@@ -618,9 +634,13 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 ),
                 isStreaming: liveActivityRows.isEmpty ? nil : index == lastProseIndex
             )
-        case .reasoning(let text):
+        case .reasoning(let reasoning):
             if showsThinkingAndToolCards {
-                ReasoningBlockView(text: text)
+                ReasoningBlockView(
+                    text: reasoning.text,
+                    titles: reasoning.titles,
+                    isActive: !liveActivityRows.isEmpty && index == activityRows.count - 1
+                )
             }
         case .tools(let toolCalls):
             if showsThinkingAndToolCards {
@@ -640,6 +660,21 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         case .reasoning, .tools:
             showsThinkingAndToolCards
         }
+    }
+
+    private func completedActivityTitle(for rows: [AssistantActivityRow]) -> String {
+        let tools = rows.flatMap(\.toolCalls)
+        if !tools.isEmpty { return AssistantActivitySummary.title(for: tools) }
+        for row in rows.reversed() {
+            guard case .reasoning(let reasoning) = row.content else { continue }
+            return reasoning.titles.last ?? String(localized: "Thinking")
+        }
+        return String(localized: "Thinking")
+    }
+
+    private func completedActivityIcon(for rows: [AssistantActivityRow]) -> String {
+        let tools = rows.flatMap(\.toolCalls)
+        return tools.isEmpty ? "brain" : AssistantActivitySummary.icon(for: tools)
     }
 
     @ViewBuilder
@@ -712,19 +747,6 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
             turnTps: includesTurnMetrics ? message.turnTps : nil
         )
-    }
-}
-
-enum AssistantActivityDisclosureTitle {
-    static func text(duration: Double?) -> String {
-        guard let duration, duration.isFinite, duration >= 0 else {
-            return String(localized: "Worked")
-        }
-
-        let elapsed = Duration.seconds(duration).formatted(
-            .units(width: .narrow, maximumUnitCount: 2)
-        )
-        return String(localized: "Worked for \(elapsed)")
     }
 }
 

@@ -217,7 +217,9 @@ These are the endpoints we know we need. Verify each one against your running se
 
 **SSE event types you must handle** (current Hermes WebUI stream contract):
 - `token` — append prose to the current ordered assistant turn
-- `reasoning` — append a collapsible thinking row at its arrival position
+- `reasoning` — append a collapsible thinking row at its arrival position. The
+  payload may include an optional ordered `titles` snapshot beside `text`;
+  text-only payloads remain valid and display `Thinking`.
 - `tool` — append a tool row at its arrival position
 - `tool_complete` — complete the matching tool row without moving it
 - `done` — apply the settled session payload while preserving the visible row order
@@ -234,6 +236,8 @@ For loaded sessions, `_anchor_activity_scene.version == "activity_scene_v1"`
 is the authoritative assistant-turn ordering contract. Render its
 `activity_rows` by `order_index`, using the array position when the index is
 missing. The supported visible roles are `prose`, `thinking`, and `tool`.
+An optional `thinking.titles` array is presentation metadata on that same row;
+it does not create a second activity timeline.
 Fall back to ordered content parts and per-message reasoning/tool metadata for
 older servers. Never merge tool rows across assistant messages in that fallback.
 

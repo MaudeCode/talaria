@@ -63,7 +63,7 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
     @discardableResult
     func streamCoordinatorAppendInterimAssistant(_ payload: InterimAssistantStreamEvent) -> Bool
     @discardableResult
-    func streamCoordinatorAppendReasoning(_ text: String) -> Bool
+    func streamCoordinatorAppendReasoning(_ payload: ReasoningStreamEvent) -> Bool
     @discardableResult
     func streamCoordinatorAppendToolCall(_ payload: ToolStreamEvent) -> Bool
     @discardableResult
@@ -453,9 +453,11 @@ final class ChatStreamCoordinator {
             if delegate?.streamCoordinatorAppendInterimAssistant(payload) == true {
                 markProgress()
             }
-        case .reasoning(let text):
-            liveActivityManager.update(.reasoning(text))
-            if delegate?.streamCoordinatorAppendReasoning(text) == true {
+        case .reasoning(let payload):
+            if !payload.text.isEmpty {
+                liveActivityManager.update(.reasoning(payload.text))
+            }
+            if delegate?.streamCoordinatorAppendReasoning(payload) == true {
                 markProgress()
             }
         case .toolStarted(let payload):

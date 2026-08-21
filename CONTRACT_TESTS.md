@@ -204,6 +204,9 @@ The report highlights:
   (`tool.started`, etc.) are out of scope. The list caps at `--sse-event-limit`
   (default 40) with a `- ... N more` marker + stderr notice, shows "None" when fully
   covered, and degrades gracefully if either source file is missing.
+- focused decoder coverage also pins the additive reasoning payload shape:
+  legacy `{text}` and `{text, titles:[...]}` both decode, while malformed
+  optional titles are ignored without dropping reasoning text.
 
 Treat the report as triage input, not approved scope. Create `needs-triage`
 issues for likely contract breakage or meaningful parity opportunities, and

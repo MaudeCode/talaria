@@ -1,5 +1,19 @@
 import Foundation
 
+enum ReasoningTitleMetadata {
+    static func normalize(_ values: [String]) -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for value in values {
+            let title = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, seen.insert(title.lowercased()).inserted else { continue }
+            result.append(title)
+            if result.count == 8 { break }
+        }
+        return result
+    }
+}
+
 struct ChatMessage: Decodable, Equatable, Identifiable {
     var id: String {
         messageId ?? "\(role ?? "unknown")-\(timestamp ?? 0)-\(content ?? "")"
@@ -15,6 +29,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     let toolCalls: [JSONValue]?
     let contentParts: [JSONValue]?
     let reasoning: String?
+    let reasoningTitles: [String]?
     let activityScene: AssistantActivityScene?
     let attachments: [MessageAttachment]?
     let turnDuration: Double?
@@ -31,6 +46,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         toolCalls: [JSONValue]? = nil,
         contentParts: [JSONValue]? = nil,
         reasoning: String? = nil,
+        reasoningTitles: [String]? = nil,
         activityScene: AssistantActivityScene? = nil,
         attachments: [MessageAttachment]? = nil,
         turnDuration: Double? = nil,
@@ -46,6 +62,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         self.toolCalls = toolCalls
         self.contentParts = contentParts
         self.reasoning = reasoning
+        self.reasoningTitles = reasoningTitles
         self.activityScene = activityScene
         self.attachments = attachments
         self.turnDuration = turnDuration
@@ -63,6 +80,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         case toolCalls
         case reasoning
         case reasoningContent
+        case reasoningTitles
         case activityScene = "_anchorActivityScene"
         case attachments
         case turnDuration = "_turnDuration"
@@ -85,6 +103,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         contentParts = decodedContent.parts
         reasoning = container.decodeLossyStringIfPresent(forKey: .reasoningContent)
             ?? container.decodeLossyStringIfPresent(forKey: .reasoning)
+        reasoningTitles = (try? container.decodeIfPresent([String].self, forKey: .reasoningTitles))
+            .map(ReasoningTitleMetadata.normalize)
         activityScene = try? container.decodeIfPresent(AssistantActivityScene.self, forKey: .activityScene)
         let decodedAttachments = Self.decodeAttachmentsTolerantly(from: container)
         attachments = Self.attachments(decodedAttachments, enrichedByMarkerIn: content)

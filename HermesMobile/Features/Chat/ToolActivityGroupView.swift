@@ -2,158 +2,133 @@ import SwiftUI
 
 struct ToolActivityGroupView: View {
     let group: ToolCallGroup
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
-    @State private var userToggledExpansion: Bool?
-
-    private var isExpanded: Bool {
-        ChatTranscriptDisplaySettings.isCardExpanded(
-            userToggled: userToggledExpansion,
-            startsExpanded: startsExpanded
-        )
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {
-            Button {
-                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                    userToggledExpansion = !isExpanded
-                }
-            } label: {
-                header
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(activityAccessibilityLabel)
-            .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
-
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(group.toolCalls) { toolCall in
-                        ToolCallCardView(toolCall: toolCall)
-                    }
-                }
-                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(group.toolCalls) { toolCall in
+                ToolCallCardView(toolCall: toolCall)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .chatTimelineAccessorySurface(
-            fallbackMaterial: .thinMaterial,
-            cornerRadius: 10
-        )
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
     }
+}
 
-    private var usesStackedHeader: Bool {
-        dynamicTypeSize.isAccessibilitySize
+enum AssistantActivitySummary {
+    enum Category: Hashable {
+        case command
+        case read
+        case edit
+        case search
+        case web
+        case load
+        case generic
     }
 
-    private var header: some View {
-        HStack(alignment: usesStackedHeader ? .top : .center, spacing: 8) {
-            Image(systemName: activityIcon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(activityColor)
-                .frame(width: 18, height: 18)
-
-            if usesStackedHeader {
-                VStack(alignment: .leading, spacing: 3) {
-                    titleText
-                    summaryTextView(lineLimit: 2)
-                    if let collapsedStateText {
-                        TranscriptStatusPill(text: collapsedStateText, color: activityColor)
-                    }
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    titleText
-                    summaryTextView(lineLimit: 1)
-                    if let collapsedStateText {
-                        TranscriptStatusPill(text: collapsedStateText, color: activityColor)
-                    }
-                }
-            }
-
-            Spacer(minLength: 6)
-
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+    static func title(for toolCalls: [ToolCall]) -> String {
+        guard !toolCalls.isEmpty else { return String(localized: "Thinking") }
+        var order: [Category] = []
+        var counts: [Category: Int] = [:]
+        var failed = Set<Category>()
+        for toolCall in toolCalls {
+            let category = category(for: toolCall)
+            if counts[category] == nil { order.append(category) }
+            counts[category, default: 0] += 1
+            if toolCall.isError == true { failed.insert(category) }
         }
-        .contentShape(Rectangle())
+        return order.enumerated().map { index, category in
+            let phrase = failed.contains(category)
+                ? failedPhrase(for: category)
+                : phrase(for: category, count: counts[category] ?? 1, completed: true)
+            guard index > 0, let first = phrase.first else { return phrase }
+            return first.lowercased() + phrase.dropFirst()
+        }.joined(separator: ", ")
     }
 
-    private var titleText: some View {
-        Text(group.activityTitle)
-            .font(AppFont.caption(weight: .semibold))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-    }
-
-    private func summaryTextView(lineLimit: Int) -> some View {
-        Text(summaryText)
-            .font(AppFont.caption())
-            .foregroundStyle(.secondary)
-            .lineLimit(lineLimit)
-    }
-
-    private var activityIcon: String {
-        if group.hasFailedTool {
-            return "exclamationmark.triangle.fill"
+    static func label(for toolCall: ToolCall) -> String {
+        if toolCall.isError == true {
+            return failedPhrase(for: category(for: toolCall))
         }
-
-        return group.isComplete ? "checkmark.circle.fill" : "wrench.and.screwdriver.fill"
+        return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
     }
 
-    private var activityColor: Color {
-        if group.hasFailedTool {
-            return .red
-        }
-
-        return .secondary
+    static func icon(for toolCalls: [ToolCall]) -> String {
+        icon(for: toolCalls.first.map(category) ?? .generic)
     }
 
-    private var collapsedStateText: String? {
-        if group.hasFailedTool {
-            return String(localized: "Failed")
-        }
-
-        return group.isComplete ? nil : String(localized: "Running")
+    static func icon(for toolCall: ToolCall) -> String {
+        icon(for: category(for: toolCall))
     }
 
-    private var activityAccessibilityLabel: String {
-        "\(group.activityTitle), \(activityStateText), \(summaryText)"
+    private static func category(for toolCall: ToolCall) -> Category {
+        let name = (toolCall.name ?? "").lowercased()
+        if name.contains("web") || name.contains("browse") || name.contains("fetch") || name.contains("url") {
+            return .web
+        }
+        if name.contains("write") || name.contains("edit") || name.contains("patch") || name.contains("replace") {
+            return .edit
+        }
+        if name.contains("skill") || name.contains("load") {
+            return .load
+        }
+        switch AgentRunActivitySanitizer.toolKind(name: toolCall.name) {
+        case .command: return .command
+        case .search: return .search
+        case .files: return .read
+        case .generic: return .generic
+        }
     }
 
-    private var activityStateText: String {
-        if group.hasFailedTool {
-            return String(localized: "Failed")
+    private static func phrase(for category: Category, count: Int, completed: Bool) -> String {
+        switch (category, count == 1, completed) {
+        case (.command, true, true): String(localized: "Ran a command")
+        case (.command, false, true): String(localized: "Ran commands")
+        case (.command, true, false): String(localized: "Running a command")
+        case (.command, false, false): String(localized: "Running commands")
+        case (.read, true, true): String(localized: "Read a file")
+        case (.read, false, true): String(localized: "Read files")
+        case (.read, true, false): String(localized: "Reading a file")
+        case (.read, false, false): String(localized: "Reading files")
+        case (.edit, true, true): String(localized: "Edited a file")
+        case (.edit, false, true): String(localized: "Edited files")
+        case (.edit, true, false): String(localized: "Editing a file")
+        case (.edit, false, false): String(localized: "Editing files")
+        case (.search, _, true): String(localized: "Searched files")
+        case (.search, _, false): String(localized: "Searching files")
+        case (.web, _, true): String(localized: "Searched the web")
+        case (.web, _, false): String(localized: "Searching the web")
+        case (.load, true, true): String(localized: "Loaded a tool")
+        case (.load, false, true): String(localized: "Loaded tools")
+        case (.load, true, false): String(localized: "Loading a tool")
+        case (.load, false, false): String(localized: "Loading tools")
+        case (.generic, true, true): String(localized: "Called a tool")
+        case (.generic, false, true): String(localized: "Called tools")
+        case (.generic, true, false): String(localized: "Calling a tool")
+        case (.generic, false, false): String(localized: "Calling tools")
         }
-
-        return group.isComplete ? String(localized: "Completed") : String(localized: "Running")
     }
 
-    private var summaryText: String {
-        let names = group.toolCalls.map(\.displayName)
-        let uniqueNames = names.reduce(into: [String]()) { result, name in
-            if !result.contains(name) {
-                result.append(name)
-            }
+    private static func failedPhrase(for category: Category) -> String {
+        switch category {
+        case .command: String(localized: "Failed to run a command")
+        case .read: String(localized: "Failed to read a file")
+        case .edit: String(localized: "Failed to edit a file")
+        case .search: String(localized: "Failed to search files")
+        case .web: String(localized: "Failed to search the web")
+        case .load: String(localized: "Failed to load a tool")
+        case .generic: String(localized: "Tool failed")
         }
+    }
 
-        guard !uniqueNames.isEmpty else {
-            return String(localized: "No tools")
+    private static func icon(for category: Category) -> String {
+        switch category {
+        case .command: "terminal"
+        case .read: "doc.text"
+        case .edit: "doc.badge.ellipsis"
+        case .search: "magnifyingglass"
+        case .web: "globe"
+        case .load: "puzzlepiece.extension"
+        case .generic: "wrench"
         }
-
-        let visibleNames = uniqueNames.prefix(3)
-        let remainingCount = uniqueNames.count - visibleNames.count
-        let visibleSummary = visibleNames.joined(separator: ", ")
-
-        guard remainingCount > 0 else {
-            return visibleSummary
-        }
-
-        return "\(visibleSummary), +\(remainingCount)"
     }
 }

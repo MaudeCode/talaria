@@ -437,7 +437,7 @@ final class CacheStoreTests: XCTestCase {
               {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
               {"row_id":"tool-1","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"read_file","done":true}},
               {"row_id":"prose-2","order_index":2,"role":"prose","text":"Between tool and thinking."},
-              {"row_id":"thinking-1","order_index":3,"role":"thinking","thinking":{"text":"Checking the result."}},
+              {"row_id":"thinking-1","order_index":3,"role":"thinking","thinking":{"text":"Checking the result.","titles":["Reviewing results"]}},
               {"row_id":"prose-3","order_index":4,"role":"prose","text":"Final answer."}
             ]
           }
@@ -471,6 +471,10 @@ final class CacheStoreTests: XCTestCase {
             "Checking the result.",
             "Final answer."
         ])
+        guard case .reasoning(let reasoning) = rows[3].content else {
+            return XCTFail("Expected cached reasoning row")
+        }
+        XCTAssertEqual(reasoning.titles, ["Reviewing results"])
     }
 
     func testCachedMessagesIgnoresExpiredMessages() throws {

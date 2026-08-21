@@ -1727,7 +1727,14 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertTrue(didStart)
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
 
-        streamClient.emit(.reasoning("I need to inspect the workspace."))
+        streamClient.emit(.reasoning(ReasoningStreamEvent(
+            text: "I need to inspect the workspace.",
+            titles: ["Planning workspace inspection"]
+        )))
+        streamClient.emit(.reasoning(ReasoningStreamEvent(
+            text: "",
+            titles: ["Inspecting files"]
+        )))
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: "tool.started",
             name: "read_file",
@@ -1747,6 +1754,10 @@ final class ChatViewModelSendTests: XCTestCase {
         streamClient.emit(.token("First live token."))
 
         XCTAssertEqual(viewModel.liveReasoningText, "I need to inspect the workspace.")
+        guard case .reasoning(let reasoning) = viewModel.liveActivityRows.first?.content else {
+            return XCTFail("Expected live reasoning metadata")
+        }
+        XCTAssertEqual(reasoning.titles, ["Inspecting files"])
         XCTAssertEqual(viewModel.liveToolCalls.count, 1)
         XCTAssertEqual(viewModel.liveToolCalls.first?.name, "read_file")
         XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)

@@ -246,6 +246,7 @@ final class ChatViewModel {
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
+    @ObservationIgnored private var pendingReasoningTitles: [String] = []
     @ObservationIgnored private var pendingStreamingContentFlushTask: Task<Void, Never>?
     @ObservationIgnored private var isUpdatingStreamingAssistantContent = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
@@ -695,6 +696,7 @@ final class ChatViewModel {
         cancelPendingStreamingContentFlush()
         pendingAssistantTokenText = ""
         pendingReasoningText = ""
+        pendingReasoningTitles = []
         // Text is deduplicated at append time, so the replay matched-prefix
         // counters can reference unflushed content; dropping the buffers makes them
         // stale. Reset only the counters — the replay connection may still be live
@@ -1560,6 +1562,7 @@ final class ChatViewModel {
                 toolCalls: loadedMessage.toolCalls ?? cachedMessage.toolCalls,
                 contentParts: loadedMessage.contentParts ?? cachedMessage.contentParts,
                 reasoning: loadedMessage.reasoning ?? cachedMessage.reasoning,
+                reasoningTitles: loadedMessage.reasoningTitles ?? cachedMessage.reasoningTitles,
                 activityScene: loadedMessage.activityScene ?? cachedMessage.activityScene,
                 attachments: loadedMessage.attachments,
                 turnDuration: loadedMessage.turnDuration ?? cachedMessage.turnDuration,
@@ -1731,6 +1734,7 @@ final class ChatViewModel {
                 toolCalls: loadedAssistant.toolCalls ?? snapshotAssistant.toolCalls,
                 contentParts: loadedAssistant.contentParts ?? snapshotAssistant.contentParts,
                 reasoning: loadedAssistant.reasoning ?? snapshotAssistant.reasoning,
+                reasoningTitles: loadedAssistant.reasoningTitles ?? snapshotAssistant.reasoningTitles,
                 activityScene: loadedAssistant.activityScene ?? snapshotAssistant.activityScene,
                 attachments: loadedAssistant.attachments ?? snapshotAssistant.attachments,
                 turnDuration: loadedAssistant.turnDuration ?? snapshotAssistant.turnDuration,
@@ -3266,6 +3270,7 @@ final class ChatViewModel {
             toolCalls: existing.toolCalls,
             contentParts: existing.contentParts,
             reasoning: existing.reasoning,
+            reasoningTitles: existing.reasoningTitles,
             activityScene: existing.activityScene,
             attachments: existing.attachments,
             turnDuration: existing.turnDuration,
@@ -3964,6 +3969,7 @@ final class ChatViewModel {
         guard !text.isEmpty else { return false }
 
         flushPendingStreamingContent()
+        pendingReasoningTitles = []
 
         if let streamingAssistantMessageID,
            let index = messages.firstIndex(where: { $0.messageId == streamingAssistantMessageID }) {
@@ -3991,6 +3997,7 @@ final class ChatViewModel {
                 toolCalls: existing.toolCalls,
                 contentParts: existing.contentParts,
                 reasoning: existing.reasoning,
+                reasoningTitles: existing.reasoningTitles,
                 activityScene: existing.activityScene,
                 attachments: existing.attachments,
                 turnDuration: existing.turnDuration,
@@ -4132,6 +4139,7 @@ final class ChatViewModel {
                 toolCalls: message.toolCalls,
                 contentParts: liveAssistantActivity.persistedContentParts,
                 reasoning: message.reasoning,
+                reasoningTitles: message.reasoningTitles,
                 attachments: message.attachments,
                 turnDuration: message.turnDuration,
                 turnTps: message.turnTps
@@ -4172,7 +4180,8 @@ final class ChatViewModel {
         completedReasoningGroups.append(
             ReasoningGroup(
                 anchorMessageID: reasoningAnchorMessageID,
-                text: liveReasoningText
+                text: liveReasoningText,
+                titles: liveAssistantActivity.latestReasoningTitles
             )
         )
     }
@@ -4225,6 +4234,21 @@ final class ChatViewModel {
     }
 
     @discardableResult
+    private func appendReasoning(_ payload: ReasoningStreamEvent) -> Bool {
+        let titlesChanged = !payload.titles.isEmpty && payload.titles != pendingReasoningTitles
+        if !payload.titles.isEmpty {
+            pendingReasoningTitles = payload.titles
+        }
+        if payload.text.isEmpty, !payload.titles.isEmpty {
+            if !pendingReasoningText.isEmpty {
+                flushPendingStreamingContent()
+            }
+            return liveAssistantActivity.updateLatestReasoningTitles(payload.titles) || titlesChanged
+        }
+        return appendReasoning(payload.text) || titlesChanged
+    }
+
+    @discardableResult
     private func flushReasoningChunks() -> Bool {
         guard !pendingReasoningText.isEmpty else { return false }
 
@@ -4237,13 +4261,14 @@ final class ChatViewModel {
             reasoningAnchorMessageID = messageID
         }
 
-        liveAssistantActivity.appendReasoning(appendedText)
+        liveAssistantActivity.appendReasoning(appendedText, titles: pendingReasoningTitles)
         return true
     }
 
     @discardableResult
     private func appendToolCall(_ payload: ToolStreamEvent) -> Bool {
         flushPendingStreamingContent()
+        pendingReasoningTitles = []
 
         let messageID = ensureStreamingAssistantMessage()
         if toolCallAnchorMessageID == nil {
@@ -4379,6 +4404,7 @@ final class ChatViewModel {
 
         if !pendingReasoningText.isEmpty {
             flushPendingStreamingContent()
+            pendingReasoningTitles = []
         }
 
         // Replay dedup needs the effective content (flushed + pending). Ordinary
@@ -4442,6 +4468,7 @@ final class ChatViewModel {
                 toolCalls: existing.toolCalls,
                 contentParts: existing.contentParts,
                 reasoning: existing.reasoning,
+                reasoningTitles: existing.reasoningTitles,
                 activityScene: existing.activityScene,
                 attachments: existing.attachments,
                 turnDuration: existing.turnDuration,
@@ -5135,8 +5162,8 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     @discardableResult
-    func streamCoordinatorAppendReasoning(_ text: String) -> Bool {
-        appendReasoning(text)
+    func streamCoordinatorAppendReasoning(_ payload: ReasoningStreamEvent) -> Bool {
+        appendReasoning(payload)
     }
 
     @discardableResult
@@ -5201,6 +5228,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
                 toolCalls: message.toolCalls,
                 contentParts: message.contentParts,
                 reasoning: message.reasoning,
+                reasoningTitles: message.reasoningTitles,
                 activityScene: message.activityScene,
                 attachments: message.attachments,
                 turnDuration: finalDuration ?? message.turnDuration,
@@ -5305,9 +5333,19 @@ private struct QueuedSlashMessage {
 }
 
 struct AssistantActivityRow: Identifiable, Equatable {
+    struct Reasoning: Equatable {
+        var text: String
+        var titles: [String]
+
+        init(text: String, titles: [String] = []) {
+            self.text = text
+            self.titles = titles
+        }
+    }
+
     enum Content: Equatable {
         case prose(String)
-        case reasoning(String)
+        case reasoning(Reasoning)
         case tools([ToolCall])
     }
 
@@ -5324,7 +5362,8 @@ struct AssistantActivityRow: Identifiable, Equatable {
 
     var text: String? {
         switch content {
-        case .prose(let text), .reasoning(let text): text
+        case .prose(let text): text
+        case .reasoning(let reasoning): reasoning.text
         case .tools: nil
         }
     }
@@ -5336,17 +5375,58 @@ struct AssistantActivityRow: Identifiable, Equatable {
 }
 
 struct CompletedAssistantTurn: Equatable {
+    struct Segment: Identifiable, Equatable {
+        enum Content: Equatable {
+            case activity([AssistantActivityRow])
+            case prose(String)
+        }
+
+        let id: String
+        let content: Content
+    }
+
+    let segments: [Segment]
     let workRows: [AssistantActivityRow]
     let finalAnswer: String
 
     init?(rows: [AssistantActivityRow]) {
-        guard rows.count > 1,
-              case .prose(let finalAnswer) = rows.last?.content,
-              !finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
+        var segments: [Segment] = []
+        var pendingActivity: [AssistantActivityRow] = []
 
-        workRows = Array(rows.dropLast())
-        self.finalAnswer = finalAnswer
+        func appendActivity() {
+            guard !pendingActivity.isEmpty else { return }
+            segments.append(Segment(
+                id: "activity:\(segments.count):\(pendingActivity.first?.id ?? "row")",
+                content: .activity(pendingActivity)
+            ))
+            pendingActivity = []
+        }
+
+        for row in rows {
+            switch row.content {
+            case .prose(let text):
+                appendActivity()
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                segments.append(Segment(id: "prose:\(segments.count):\(row.id)", content: .prose(text)))
+            case .reasoning, .tools:
+                pendingActivity.append(row)
+            }
+        }
+        appendActivity()
+
+        guard segments.contains(where: {
+            if case .activity = $0.content { return true }
+            return false
+        }) else { return nil }
+
+        self.segments = segments
+        if case .prose(let finalAnswer)? = segments.last?.content {
+            self.finalAnswer = finalAnswer
+            workRows = Array(rows.dropLast())
+        } else {
+            finalAnswer = ""
+            workRows = rows
+        }
     }
 }
 
@@ -5358,8 +5438,15 @@ struct AssistantActivityTimeline: Equatable {
             switch row.content {
             case .prose(let text):
                 return [.object(["type": .string("text"), "text": .string(text)])]
-            case .reasoning(let text):
-                return [.object(["type": .string("reasoning"), "text": .string(text)])]
+            case .reasoning(let reasoning):
+                var part: [String: JSONValue] = [
+                    "type": .string("reasoning"),
+                    "text": .string(reasoning.text)
+                ]
+                if !reasoning.titles.isEmpty {
+                    part["titles"] = .array(reasoning.titles.map(JSONValue.string))
+                }
+                return [.object(part)]
             case .tools(let toolCalls):
                 return toolCalls.map { toolCall in
                     var part: [String: JSONValue] = [
@@ -5380,9 +5467,31 @@ struct AssistantActivityTimeline: Equatable {
 
     var reasoningText: String {
         rows.compactMap { row in
-            guard case .reasoning(let text) = row.content else { return nil }
-            return text
+            guard case .reasoning(let reasoning) = row.content else { return nil }
+            return reasoning.text
         }.joined()
+    }
+
+    var latestReasoningTitles: [String] {
+        for row in rows.reversed() {
+            guard case .reasoning(let reasoning) = row.content else { continue }
+            if !reasoning.titles.isEmpty { return reasoning.titles }
+        }
+        return []
+    }
+
+    @discardableResult
+    mutating func updateLatestReasoningTitles(_ titles: [String]) -> Bool {
+        let normalizedTitles = ReasoningTitleMetadata.normalize(titles)
+        guard !normalizedTitles.isEmpty else { return false }
+        for index in rows.indices.reversed() {
+            guard case .reasoning(var reasoning) = rows[index].content else { continue }
+            guard reasoning.titles != normalizedTitles else { return false }
+            reasoning.titles = normalizedTitles
+            rows[index].content = .reasoning(reasoning)
+            return true
+        }
+        return false
     }
 
     var toolCalls: [ToolCall] {
@@ -5397,8 +5506,22 @@ struct AssistantActivityTimeline: Equatable {
         appendText(text, kind: "prose", id: id) { .prose($0) }
     }
 
-    mutating func appendReasoning(_ text: String, id: String? = nil) {
-        appendText(text, kind: "reasoning", id: id) { .reasoning($0) }
+    mutating func appendReasoning(_ text: String, titles: [String] = [], id: String? = nil) {
+        let normalizedTitles = ReasoningTitleMetadata.normalize(titles)
+        if let lastIndex = rows.indices.last,
+           case .reasoning(var reasoning) = rows[lastIndex].content {
+            reasoning.text.append(contentsOf: text)
+            if !normalizedTitles.isEmpty {
+                reasoning.titles = normalizedTitles
+            }
+            rows[lastIndex].content = .reasoning(reasoning)
+            return
+        }
+        guard !text.isEmpty else { return }
+        rows.append(AssistantActivityRow(
+            id: id ?? "reasoning:\(rows.count)",
+            content: .reasoning(AssistantActivityRow.Reasoning(text: text, titles: normalizedTitles))
+        ))
     }
 
     mutating func appendTool(_ toolCall: ToolCall, id: String? = nil) {
@@ -5468,8 +5591,11 @@ struct AssistantActivityTimeline: Equatable {
         }
 
         var timeline = AssistantActivityTimeline()
-        for group in reasoningGroups {
-            timeline.appendReasoning(group.text, id: group.id)
+        for (index, group) in reasoningGroups.enumerated() {
+            let titles = !group.titles.isEmpty
+                ? group.titles
+                : (index == reasoningGroups.count - 1 ? message.reasoningTitles ?? [] : [])
+            timeline.appendReasoning(group.text, titles: titles, id: group.id)
         }
         for group in toolCallGroups {
             for toolCall in group.toolCalls {
@@ -5571,6 +5697,7 @@ struct AssistantActivityTimeline: Equatable {
         case "thinking":
             appendReasoningIfPresent(
                 Self.string(row.thinking?["text"]) ?? row.text,
+                titles: Self.strings(row.thinking?["titles"]),
                 id: rowID
             )
         case "tool":
@@ -5610,6 +5737,7 @@ struct AssistantActivityTimeline: Equatable {
                     ?? Self.string(object["reasoning"])
                     ?? Self.string(object["text"])
                     ?? Self.string(object["content"]),
+                titles: Self.strings(object["titles"]),
                 id: "content:\(sourceIndex)"
             )
         case "tool_use", "assistant_activity_tool":
@@ -5642,9 +5770,9 @@ struct AssistantActivityTimeline: Equatable {
         appendProse(text, id: id)
     }
 
-    private mutating func appendReasoningIfPresent(_ text: String?, id: String) {
+    private mutating func appendReasoningIfPresent(_ text: String?, titles: [String] = [], id: String) {
         guard let text = Self.nonEmpty(text) else { return }
-        appendReasoning(text, id: id)
+        appendReasoning(text, titles: titles, id: id)
     }
 
     private static func toolCall(
@@ -5700,6 +5828,14 @@ struct AssistantActivityTimeline: Equatable {
         return object
     }
 
+    private static func strings(_ value: JSONValue?) -> [String] {
+        guard case .array(let values) = value else { return [] }
+        return ReasoningTitleMetadata.normalize(values.compactMap { value in
+            guard case .string(let string) = value else { return nil }
+            return string
+        })
+    }
+
     private static func bool(_ value: JSONValue?) -> Bool? {
         switch value {
         case .bool(let value): value
@@ -5740,11 +5876,13 @@ struct ReasoningGroup: Identifiable, Equatable {
     let id: String
     let anchorMessageID: String?
     let text: String
+    let titles: [String]
 
-    init(id: String = UUID().uuidString, anchorMessageID: String?, text: String) {
+    init(id: String = UUID().uuidString, anchorMessageID: String?, text: String, titles: [String] = []) {
         self.id = id
         self.anchorMessageID = anchorMessageID
         self.text = text
+        self.titles = titles
     }
 }
 
