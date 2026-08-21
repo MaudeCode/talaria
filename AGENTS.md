@@ -12,8 +12,9 @@ project only where Talaria has explicitly adopted it.
   committed and required validation passes, move it to `In Review` while it waits
   for human review. Move it to `Done` only after the commit is verified on `main`,
   whether merged through a PR or locally.
-- Implement only the selected task. Do not pick another issue or invent backlog
-  work. If selected work has no Kaneo issue, create one before coding.
+- Implement only the human-selected task or task batch. Do not pick another issue
+  or invent backlog work. If selected work has no Kaneo issue, create one before
+  coding.
 - Read only the `PROJECT_SPEC.md` sections relevant to the task. Treat the spec as
   product intent; code, tests, configuration, `UPSTREAM_TESTED_SHA`, and
   `CONTRACT_TESTS.md` describe implemented behavior.
@@ -22,11 +23,13 @@ project only where Talaria has explicitly adopted it.
 
 ## Workflow boundaries
 
-- `main` is the default release branch. Keep it buildable. Name each tracked-work
-  branch `<type>/TAL-<number>-<slug>`, using the selected Kaneo issue number.
+- `main` is the default release branch. Keep it buildable. For one issue, name the
+  tracked-work branch `<type>/TAL-<number>-<slug>`. A human-selected issue batch
+  may share one branch named for its lead issue or the batch.
 - Commit each coherent, verified slice as it is completed so it has a rollback
-  point. Start every tracked-work commit subject with the same Kaneo key, for
-  example `TAL-29: require ticket keys`. Keep unrelated changes out of the commit.
+  point. Start every tracked-work commit subject with the Kaneo key it addresses,
+  for example `TAL-29: require ticket keys`; include every addressed key if a
+  commit intentionally spans issues. Keep unrelated changes out of the commit.
 - Pushing, opening or updating a PR, merging, and uploading a build each require
   explicit human approval.
 - Triage automated review feedback before accepting it.
