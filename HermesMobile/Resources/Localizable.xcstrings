@@ -22302,6 +22302,9 @@
         }
       }
     },
+    "Collapse webhook sessions" : {
+
+    },
     "Color" : {
       "localizations" : {
         "ar" : {
@@ -40473,6 +40476,9 @@
           }
         }
       }
+    },
+    "Expand webhook sessions" : {
+
     },
     "Expired" : {
       "localizations" : {
@@ -124266,6 +124272,12 @@
           }
         }
       }
+    },
+    "Webhook Sessions" : {
+
+    },
+    "Webhook sessions" : {
+
     },
     "What you get" : {
       "localizations" : {

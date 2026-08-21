@@ -65,6 +65,8 @@ struct SettingsView: View {
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
+    @AppStorage(SessionRowDisplaySettings.showWebhookSessionsKey)
+    private var showsWebhookSessions = SessionRowDisplaySettings.showsWebhookSessions()
     @AppStorage(SessionRowDisplaySettings.showSubagentSessionsKey)
     private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
     @State private var cliSessionsSync: CliSessionsSyncModel
@@ -381,6 +383,14 @@ struct SettingsView: View {
                         title: String(localized: "Cron Sessions"),
                         systemImage: "clock.arrow.2.circlepath",
                         isOn: $showsCronSessions
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Webhook Sessions"),
+                        systemImage: "bolt.horizontal.circle",
+                        isOn: $showsWebhookSessions
                     )
 
                     SettingsDivider()

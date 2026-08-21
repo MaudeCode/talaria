@@ -362,9 +362,10 @@ private enum SessionRelativeDateFormatter {
 enum SessionRowDisplaySettings {
     static let showMessageCountKey = "sessionRow.showMessageCount"
     static let showWorkspaceKey = "sessionRow.showWorkspace"
-    // Cron and CLI sessions default to shown; delegated subagents default to
+    // Cron, webhook, and CLI sessions default to shown; delegated subagents default to
     // hidden. Each kind has an independent visibility control.
     static let showCronSessionsKey = "sessionRow.showCronSessions"
+    static let showWebhookSessionsKey = "sessionRow.showWebhookSessions"
     static let showSubagentSessionsKey = "sessionRow.showSubagentSessions"
     static let defaultShowsSubagentSessions = false
     // Legacy global CLI-sessions key. Since #19 the CLI toggle is stored
@@ -415,15 +416,21 @@ enum SessionRowDisplaySettings {
 
         return stored
     }
+
+    static func showsWebhookSessions(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: showWebhookSessionsKey) as? Bool ?? true
+    }
 }
 
 enum SessionSidebarDisclosureSettings {
     static let profilesAreExpandedKey = "sessionSidebar.profilesAreExpanded"
     static let projectsAreExpandedKey = "sessionSidebar.projectsAreExpanded"
     static let scheduledSessionsAreExpandedKey = "sessionSidebar.scheduledSessionsAreExpanded"
+    static let webhookSessionsAreExpandedKey = "sessionSidebar.webhookSessionsAreExpanded"
     static let defaultProfilesAreExpanded = false
     static let defaultProjectsAreExpanded = false
     static let defaultScheduledSessionsAreExpanded = false
+    static let defaultWebhookSessionsAreExpanded = false
 
     static func profilesAreExpanded(in defaults: UserDefaults = .standard) -> Bool {
         guard let value = defaults.object(forKey: profilesAreExpandedKey) as? Bool else {
@@ -444,6 +451,14 @@ enum SessionSidebarDisclosureSettings {
     static func scheduledSessionsAreExpanded(in defaults: UserDefaults = .standard) -> Bool {
         guard let value = defaults.object(forKey: scheduledSessionsAreExpandedKey) as? Bool else {
             return defaultScheduledSessionsAreExpanded
+        }
+
+        return value
+    }
+
+    static func webhookSessionsAreExpanded(in defaults: UserDefaults = .standard) -> Bool {
+        guard let value = defaults.object(forKey: webhookSessionsAreExpandedKey) as? Bool else {
+            return defaultWebhookSessionsAreExpanded
         }
 
         return value
