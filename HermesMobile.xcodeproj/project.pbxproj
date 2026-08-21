@@ -24,6 +24,7 @@
 		1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */; };
 		1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */; };
 		1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000014 /* Assets.xcassets */; };
+		7A1350000000000000000001 /* Talaria.icon in Resources */ = {isa = PBXBuildFile; fileRef = 7A1350000000000000000002 /* Talaria.icon */; };
 		10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
 		10CA110C0DE000000000B003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
 		10CA110C0DE000000000B004 /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */; };
@@ -377,6 +378,7 @@
 		1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentNewChatInProfileTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7A1350000000000000000002 /* Talaria.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Talaria.icon; sourceTree = "<group>"; };
 		10CA110C0DE000000000B002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		10CA110C0DE000000000C002 /* LocalizationCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationCatalogTests.swift; sourceTree = "<group>"; };
@@ -770,6 +772,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F700000000014 /* Assets.xcassets */,
+				7A1350000000000000000002 /* Talaria.icon */,
 				10CA110C0DE000000000B002 /* Localizable.xcstrings */,
 				10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */,
 				1A2B3C4D5E6F700000000013 /* Info.plist */,
@@ -1443,6 +1446,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */,
+				7A1350000000000000000001 /* Talaria.icon in Resources */,
 				10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */,
 				10CA110C0DE000000000B004 /* AppShortcuts.xcstrings in Resources */,
 				1A2B3C4D5E6F70000000300 /* PrivacyInfo.xcprivacy in Resources */,
@@ -1952,7 +1956,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark";
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Talaria;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -1981,7 +1985,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark";
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Talaria;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
