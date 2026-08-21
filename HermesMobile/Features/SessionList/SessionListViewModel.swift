@@ -213,9 +213,11 @@ final class SessionListViewModel {
             },
             webhook: candidates.filter { $0.isWebhookSession && $0.archived != true },
             totalScheduledCount: automatedVisibility.showsCron
-                ? sessions.filter { $0.isCronSession && $0.archived != true }.count
+                ? sessions.filter { $0.isCronSession && !$0.isWebhookSession && $0.archived != true }.count
                 : 0,
-            totalWebhookCount: sessions.filter { $0.isWebhookSession && $0.archived != true }.count
+            totalWebhookCount: automatedVisibility.showsWebhook
+                ? sessions.filter { $0.isWebhookSession && $0.archived != true }.count
+                : 0
         )
     }
 

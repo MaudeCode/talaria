@@ -217,6 +217,16 @@ final class SessionRowDisplaySettingsTests: XCTestCase {
         defaults.set(false, forKey: SessionRowDisplaySettings.showSubagentSessionsKey)
         XCTAssertFalse(SessionRowDisplaySettings.showsSubagentSessions(in: defaults))
     }
+
+    func testWebhookSessionsDefaultShownAndPersistStoredChoice() {
+        XCTAssertTrue(SessionRowDisplaySettings.showsWebhookSessions(in: defaults))
+
+        defaults.set(false, forKey: SessionRowDisplaySettings.showWebhookSessionsKey)
+        XCTAssertFalse(SessionRowDisplaySettings.showsWebhookSessions(in: defaults))
+
+        defaults.set(true, forKey: SessionRowDisplaySettings.showWebhookSessionsKey)
+        XCTAssertTrue(SessionRowDisplaySettings.showsWebhookSessions(in: defaults))
+    }
 }
 
 /// The avatar long-press server switcher's menu contents (#283). The switch

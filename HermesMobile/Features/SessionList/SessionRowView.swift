@@ -362,9 +362,10 @@ private enum SessionRelativeDateFormatter {
 enum SessionRowDisplaySettings {
     static let showMessageCountKey = "sessionRow.showMessageCount"
     static let showWorkspaceKey = "sessionRow.showWorkspace"
-    // Cron and CLI sessions default to shown; delegated subagents default to
+    // Cron, webhook, and CLI sessions default to shown; delegated subagents default to
     // hidden. Each kind has an independent visibility control.
     static let showCronSessionsKey = "sessionRow.showCronSessions"
+    static let showWebhookSessionsKey = "sessionRow.showWebhookSessions"
     static let showSubagentSessionsKey = "sessionRow.showSubagentSessions"
     static let defaultShowsSubagentSessions = false
     // Legacy global CLI-sessions key. Since #19 the CLI toggle is stored
@@ -414,6 +415,10 @@ enum SessionRowDisplaySettings {
         }
 
         return stored
+    }
+
+    static func showsWebhookSessions(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: showWebhookSessionsKey) as? Bool ?? true
     }
 }
 

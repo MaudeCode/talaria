@@ -2557,6 +2557,20 @@ final class SessionListMutationTests: XCTestCase {
         )
         XCTAssertTrue(groups.hasAdditionalWebhookSessions)
         XCTAssertTrue(groups.showsWebhookDisclosure(isSearchActive: false))
+
+        let hiddenGroups = viewModel.scheduledSessionGroups(
+            searchText: "",
+            selectedProjectID: nil,
+            automatedVisibility: AutomatedSessionVisibility(
+                showsCron: true,
+                showsCli: true,
+                showsWebhook: false
+            )
+        )
+        XCTAssertEqual(hiddenGroups.ordinary.compactMap(\.sessionId), ["ordinary"])
+        XCTAssertTrue(hiddenGroups.webhook.isEmpty)
+        XCTAssertEqual(hiddenGroups.totalWebhookCount, 0)
+        XCTAssertFalse(hiddenGroups.showsWebhookDisclosure(isSearchActive: false))
     }
 
     @MainActor

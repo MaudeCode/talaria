@@ -433,12 +433,13 @@ extension SessionSummary {
     }
 }
 
-/// Which non-standard session kinds the session list should show. Cron jobs,
-/// CLI imports, Claude Code imports, and delegated subagents are controlled independently. A row
-/// with unknown/missing source data remains visible as a normal session.
+/// Which non-standard session kinds the session list should show. Webhooks,
+/// cron jobs, CLI imports, Claude Code imports, and delegated subagents are
+/// controlled independently. A row with unknown/missing source data remains visible.
 struct AutomatedSessionVisibility: Equatable {
     var showsCron: Bool
     var showsCli: Bool
+    var showsWebhook: Bool
     var showsClaudeCode: Bool
     var showsSubagents: Bool
 
@@ -446,6 +447,7 @@ struct AutomatedSessionVisibility: Equatable {
     static let showAll = AutomatedSessionVisibility(
         showsCron: true,
         showsCli: true,
+        showsWebhook: true,
         showsClaudeCode: true,
         showsSubagents: true
     )
@@ -453,11 +455,13 @@ struct AutomatedSessionVisibility: Equatable {
     init(
         showsCron: Bool,
         showsCli: Bool,
+        showsWebhook: Bool = true,
         showsClaudeCode: Bool = true,
         showsSubagents: Bool = false
     ) {
         self.showsCron = showsCron
         self.showsCli = showsCli
+        self.showsWebhook = showsWebhook
         self.showsClaudeCode = showsClaudeCode
         self.showsSubagents = showsSubagents
     }
@@ -468,6 +472,7 @@ struct AutomatedSessionVisibility: Equatable {
     /// every row by `_normalize_sidebar_source_flags` in `api/routes.py`); cron
     /// detection is client-side (`SessionSummary.isCronSession`).
     func shows(_ session: SessionSummary) -> Bool {
+        if session.isWebhookSession, !showsWebhook { return false }
         if session.isDelegatedSubagentSession, !showsSubagents { return false }
         if session.isCronSession, !showsCron { return false }
         if session.isCliSession == true, !showsCli { return false }

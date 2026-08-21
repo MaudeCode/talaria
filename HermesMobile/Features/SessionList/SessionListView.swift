@@ -41,6 +41,8 @@ struct SessionListView: View {
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
+    @AppStorage(SessionRowDisplaySettings.showWebhookSessionsKey)
+    private var showsWebhookSessions = SessionRowDisplaySettings.showsWebhookSessions()
     @AppStorage(SessionRowDisplaySettings.showSubagentSessionsKey)
     private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
     @AppStorage(SectionVisibilitySettings.activeProfileKey) private var showsActiveProfileSection = true
@@ -434,7 +436,7 @@ struct SessionListView: View {
             case .webhook:
                 GroupedSessionsView(
                     title: String(localized: "Webhook sessions"),
-                    isEnabled: true,
+                    isEnabled: showsWebhookSessions,
                     emptySystemImage: "bolt.horizontal.circle",
                     includes: { $0.isWebhookSession },
                     viewModel: viewModel,
@@ -724,6 +726,7 @@ struct SessionListView: View {
         AutomatedSessionVisibility(
             showsCron: showsCronSessions,
             showsCli: showsCliSessions,
+            showsWebhook: showsWebhookSessions,
             showsClaudeCode: showsClaudeCodeSessions,
             showsSubagents: showsSubagentSessions
         )
