@@ -120,7 +120,10 @@ Agent/MCP flow:
 - Run `scripts/setup-ios-test-pool` once while the configured fixture simulator is
   shut down. It creates four reusable clones without stopping an active session.
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
-  each worktree and leases separate simulators across worktrees.
+  each worktree and leases separate simulators across worktrees. XCTest uses the
+  separate `dev.kil.talaria.xctest` app identity, so tests cannot clear the normal
+  app's cookies or Keychain login even when a worktree targets your development
+  simulator directly.
 - Use `build_run_sim` to build, install, launch, and open Simulator for manual testing.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 

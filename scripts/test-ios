@@ -104,6 +104,7 @@ xcodebuild test -quiet \
     -scheme HermesMobile \
     -destination "$destination" \
     -derivedDataPath "$runtime_dir/derived-data" \
+    APP_IDENTIFIER_SUFFIX=.xctest \
     -parallel-testing-enabled NO \
     -enableCodeCoverage NO \
     -resultBundlePath "$result_bundle" \
