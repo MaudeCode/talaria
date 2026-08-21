@@ -2,7 +2,12 @@ import XCTest
 import UIKit
 
 final class ComposerNavigationUITests: XCTestCase {
+    private let fixtureSessionTitle = "Workstream L Kopiur"
     private var app: XCUIApplication!
+
+    private var fixtureSessionButton: XCUIElement {
+        app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
+    }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -16,7 +21,7 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     func testChatListScrolls() throws {
-        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
+        let session = fixtureSessionButton
         guard session.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
@@ -31,17 +36,17 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     func testChatSessionOpensFromList() throws {
-        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
+        let session = fixtureSessionButton
         guard session.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
 
-        session.tap()
+        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["Message"].waitForExistence(timeout: 15))
     }
 
     func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
-        var idleComposer = try openFixtureSession()
+        let idleComposer = try openFixtureSession()
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
         XCTAssertTrue(app.buttons["Choose profile"].exists)
         XCTAssertFalse(app.tabBars.firstMatch.exists)
@@ -56,17 +61,17 @@ final class ComposerNavigationUITests: XCTestCase {
 
         app.terminate()
         app.launch()
-        idleComposer = try openFixtureSession()
+        _ = try openFixtureSession()
 
-        let transcript = app.scrollViews.firstMatch
+        let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
         XCTAssertTrue(transcript.waitForExistence(timeout: 3))
         transcript.swipeDown(velocity: .fast)
         transcript.swipeDown(velocity: .fast)
         transcript.swipeUp(velocity: .slow)
 
-        let reply = app.buttons["Reply"]
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        XCTAssertFalse(idleComposer.exists)
+        XCTAssertTrue(app.buttons["Choose workspace path"].waitForNonExistence(timeout: 5))
+        let collapsedComposer = app.buttons["Message"]
+        XCTAssertTrue(collapsedComposer.exists)
 
         let composerOptions = app.buttons["Composer options"]
         XCTAssertTrue(composerOptions.exists)
@@ -77,11 +82,11 @@ final class ComposerNavigationUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
 
         let collapsedComposerScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        collapsedComposerScreenshot.name = "Collapsed reply composer"
+        collapsedComposerScreenshot.name = "Collapsed composer"
         collapsedComposerScreenshot.lifetime = .keepAlways
         add(collapsedComposerScreenshot)
 
-        reply.tap()
+        collapsedComposer.tap()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
         XCTAssertTrue(app.textViews.firstMatch.exists)
@@ -314,11 +319,11 @@ final class ComposerNavigationUITests: XCTestCase {
             return idleComposer
         }
 
-        let session = app.staticTexts["Workstream L Kopiur"].firstMatch
+        let session = fixtureSessionButton
         guard session.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
-        session.tap()
+        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
         return idleComposer
     }

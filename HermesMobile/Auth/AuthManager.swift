@@ -40,6 +40,8 @@ final class AuthManager {
     /// server's live headers (#17).
     private let probeClientFactory: (URL, [CustomHeader]) -> any AuthAPIClient
     private let headerStore: CustomHeaderStore
+    private let cookieStorage: HTTPCookieStorage
+    private let profileEntityCache: ProfileEntityCache
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
 
@@ -50,6 +52,8 @@ final class AuthManager {
             APIClient(baseURL: url, customHeaderProvider: { headers })
         },
         headerStore: CustomHeaderStore = .shared,
+        cookieStorage: HTTPCookieStorage = .shared,
+        profileEntityCache: ProfileEntityCache = .shared,
         logoutTimeout: Duration = .seconds(5),
         serverRegistry: ServerRegistry = .shared
     ) {
@@ -57,6 +61,8 @@ final class AuthManager {
         self.clientFactory = clientFactory
         self.probeClientFactory = probeClientFactory
         self.headerStore = headerStore
+        self.cookieStorage = cookieStorage
+        self.profileEntityCache = profileEntityCache
         self.logoutTimeout = logoutTimeout
         self.serverRegistry = serverRegistry
         restoreSavedServer()
@@ -317,7 +323,7 @@ final class AuthManager {
         // Drop the App Intents profile picker cache (#339): it holds the previous server's
         // profiles, which would leak into Shortcuts / Siri if the new server's fetch is
         // delayed or fails. The new server's profiles reload on the next foreground fetch.
-        ProfileEntityCache.shared.save([])
+        profileEntityCache.save([])
         lastErrorMessage = nil
         state = .loggedIn(server: serverURL)
     }
@@ -350,7 +356,7 @@ final class AuthManager {
         // Drop the App Intents profile picker cache (#339): the cached profiles belong to the
         // server being removed, so they're stale whether we switch to another server (its
         // profiles reload on the next foreground fetch) or return to onboarding.
-        ProfileEntityCache.shared.save([])
+        profileEntityCache.save([])
 
         let nextActive = serverRegistry.remove(id: server.absoluteString)
         refreshServers()
@@ -447,7 +453,7 @@ final class AuthManager {
         headerStore.replace(with: [])
         // Drop the App Intents profile picker cache (#339) so a signed-out user doesn't see
         // the previous server's profiles lingering in Shortcuts / Siri.
-        ProfileEntityCache.shared.save([])
+        profileEntityCache.save([])
     }
 
     /// Mirrors the in-memory header snapshot to `server`'s scoped Keychain entry:
@@ -493,15 +499,14 @@ final class AuthManager {
     /// port-scoped) — a documented limitation; closing it would need the per-server
     /// cookie snapshot/restore deferred to the #17 switcher.
     private func clearSessionCookies(for server: URL) {
-        let storage = HTTPCookieStorage.shared
-        storage.cookies(for: server)?.forEach { storage.deleteCookie($0) }
+        cookieStorage.cookies(for: server)?.forEach { cookieStorage.deleteCookie($0) }
     }
 
-    /// Clears the entire shared cookie jar. Used only as a fallback when there's no
+    /// Clears the entire configured cookie jar. Used only as a fallback when there's no
     /// active server to scope to (a 401 while unconfigured).
     private func clearAllSessionCookies() {
-        HTTPCookieStorage.shared.cookies?.forEach {
-            HTTPCookieStorage.shared.deleteCookie($0)
+        cookieStorage.cookies?.forEach {
+            cookieStorage.deleteCookie($0)
         }
     }
 

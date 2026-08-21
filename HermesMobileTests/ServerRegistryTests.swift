@@ -5,6 +5,8 @@ import XCTest
 final class ServerRegistryTests: XCTestCase {
     /// Fixed timestamp so seeded `createdAt`/`updatedAt` are deterministic.
     private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    private let cookieStorage = URLSessionConfiguration.ephemeral.httpCookieStorage!
+    private let profileEntityCache = ProfileEntityCache(defaults: nil)
 
     private func makeRegistry(
         keychain: InMemoryKeychainStore = InMemoryKeychainStore(),
@@ -349,6 +351,7 @@ final class ServerRegistryTests: XCTestCase {
         _ = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false, loggedIn: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
 
@@ -364,6 +367,7 @@ final class ServerRegistryTests: XCTestCase {
         _ = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false, loggedIn: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
 
@@ -377,6 +381,7 @@ final class ServerRegistryTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false, loggedIn: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
 
@@ -391,6 +396,8 @@ final class ServerRegistryTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false, loggedIn: false)) },
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "example.test", password: "")
@@ -407,6 +414,7 @@ final class ServerRegistryTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false, loggedIn: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "example.test", password: "")
