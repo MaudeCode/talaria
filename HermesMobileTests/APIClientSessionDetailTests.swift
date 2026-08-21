@@ -263,6 +263,10 @@ final class APIClientSessionDetailTests: APIClientTestCase {
               case .prose("After tool.") = completedTurn.segments[2].content
         else { return XCTFail("Assistant prose should seal each activity group") }
         XCTAssertEqual(sealedRows.map(\.kind), ["reasoning", "tools"])
+        XCTAssertEqual(completedTurn.workSegments.count, 2)
+        guard case .activity = completedTurn.workSegments.last?.content else {
+            return XCTFail("Completed work must exclude the final answer segment")
+        }
         XCTAssertNotNil(CompletedAssistantTurn(rows: Array(timeline.rows.dropLast())))
     }
 
@@ -1867,5 +1871,16 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             "Loaded a tool, read a file, ran commands"
         )
         XCTAssertFalse(AssistantActivitySummary.title(for: tools).contains("2"))
+
+        let runningTools = tools + [
+            ToolCall(name: "write_file", preview: nil, args: nil, isCompleted: false)
+        ]
+        XCTAssertEqual(
+            AssistantActivitySummary.title(for: runningTools),
+            "Loaded a tool, read a file, ran commands, editing a file"
+        )
+        XCTAssertEqual(AssistantWorkSummary.title(duration: nil), "Worked")
+        XCTAssertEqual(AssistantWorkSummary.title(duration: 12.4), "Worked for 12s")
+        XCTAssertEqual(AssistantWorkSummary.title(duration: 83), "Worked for 1m 23s")
     }
 }

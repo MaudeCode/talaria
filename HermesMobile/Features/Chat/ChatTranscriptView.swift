@@ -509,9 +509,12 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
-                if liveActivityRows.isEmpty,
-                   let completedTurn = CompletedAssistantTurn(rows: activityRows) {
-                    completedActivity(completedTurn)
+                if let turn = CompletedAssistantTurn(rows: activityRows) {
+                    if liveActivityRows.isEmpty {
+                        completedRun(turn)
+                    } else {
+                        activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
+                    }
                 } else {
                     ForEach(Array(activityRows.enumerated()), id: \.element.id) { index, row in
                         activityRow(row, at: index)
@@ -544,37 +547,92 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     }
 
     @ViewBuilder
-    private func completedActivity(_ turn: CompletedAssistantTurn) -> some View {
-        let lastProseID = turn.segments.last(where: {
-            if case .prose = $0.content { return true }
-            return false
-        })?.id
+    private func completedRun(_ turn: CompletedAssistantTurn) -> some View {
+        let disclosureID = "worked:\(transcriptMessage.anchorID)"
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        let title = AssistantWorkSummary.title(duration: transcriptMessage.message.turnDuration)
 
-        ForEach(turn.segments) { segment in
+        Button {
+            withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                if isExpanded {
+                    expandedCompletedActivityIDs.remove(disclosureID)
+                } else {
+                    expandedCompletedActivityIDs.insert(disclosureID)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
+
+        if isExpanded {
+            activityTimeline(turn.workSegments, activeSegmentID: nil)
+                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        }
+
+        if !turn.finalAnswer.isEmpty {
+            messageRow(
+                activityMessage(
+                    text: turn.finalAnswer,
+                    includesAttachments: true,
+                    includesTurnMetrics: true
+                ),
+                isStreaming: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func activityTimeline(
+        _ segments: [CompletedAssistantTurn.Segment],
+        activeSegmentID: String?
+    ) -> some View {
+        ForEach(segments) { segment in
             switch segment.content {
             case .activity(let rows):
                 let visibleRows = rows.filter(isVisibleWorkRow)
                 if !visibleRows.isEmpty {
-                    let isExpanded = expandedCompletedActivityIDs.contains(segment.id)
-                    let title = completedActivityTitle(for: visibleRows)
+                    let disclosureID = "\(activeSegmentID == nil ? "completed" : "live"):\(segment.id)"
+                    let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+                    let isActive = activeSegmentID == segment.id
+                    let title = activityTitle(for: visibleRows)
+                    let titles = activityTitles(for: visibleRows)
                     Button {
                         withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                             if isExpanded {
-                                expandedCompletedActivityIDs.remove(segment.id)
+                                expandedCompletedActivityIDs.remove(disclosureID)
                             } else {
-                                expandedCompletedActivityIDs.insert(segment.id)
+                                expandedCompletedActivityIDs.insert(disclosureID)
                             }
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: completedActivityIcon(for: visibleRows))
+                            Image(systemName: activityIcon(for: visibleRows))
                                 .font(.system(size: 14))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 16, height: 16)
 
-                            Text(title)
+                            RotatingActivityTitle(
+                                fallback: title,
+                                titles: titles,
+                                isActive: isActive
+                            )
                                 .font(AppFont.caption())
-                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.leading)
 
                             Spacer(minLength: 4)
@@ -588,7 +646,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "Completed activity, \(title)"))
+                    .accessibilityLabel(String(localized: "\(isActive ? "Active" : "Completed") activity, \(titles.last ?? title)"))
                     .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
 
                     if isExpanded {
@@ -597,21 +655,21 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                                 row,
                                 at: index,
                                 includesAttachments: false,
-                                includesTurnMetrics: false
+                                includesTurnMetrics: false,
+                                isActive: isActive && index == visibleRows.count - 1
                             )
                         }
                         .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
                     }
                 }
             case .prose(let text):
-                let isFinal = segment.id == lastProseID
                 messageRow(
                     activityMessage(
                         text: text,
-                        includesAttachments: isFinal,
-                        includesTurnMetrics: isFinal
+                        includesAttachments: false,
+                        includesTurnMetrics: false
                     ),
-                    isStreaming: false
+                    isStreaming: activeSegmentID == segment.id
                 )
             }
         }
@@ -622,7 +680,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         _ row: AssistantActivityRow,
         at index: Int,
         includesAttachments: Bool? = nil,
-        includesTurnMetrics: Bool? = nil
+        includesTurnMetrics: Bool? = nil,
+        isActive: Bool? = nil
     ) -> some View {
         switch row.content {
         case .prose(let text):
@@ -639,7 +698,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 ReasoningBlockView(
                     text: reasoning.text,
                     titles: reasoning.titles,
-                    isActive: !liveActivityRows.isEmpty && index == activityRows.count - 1
+                    isActive: isActive ?? (!liveActivityRows.isEmpty && index == activityRows.count - 1)
                 )
             }
         case .tools(let toolCalls):
@@ -662,17 +721,23 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
-    private func completedActivityTitle(for rows: [AssistantActivityRow]) -> String {
-        let tools = rows.flatMap(\.toolCalls)
-        if !tools.isEmpty { return AssistantActivitySummary.title(for: tools) }
+    private func activityTitles(for rows: [AssistantActivityRow]) -> [String] {
         for row in rows.reversed() {
             guard case .reasoning(let reasoning) = row.content else { continue }
-            return reasoning.titles.last ?? String(localized: "Thinking")
+            let titles = ReasoningTitleMetadata.normalize(reasoning.titles)
+            if !titles.isEmpty { return titles }
         }
-        return String(localized: "Thinking")
+        return []
     }
 
-    private func completedActivityIcon(for rows: [AssistantActivityRow]) -> String {
+    private func activityTitle(for rows: [AssistantActivityRow]) -> String {
+        let titles = activityTitles(for: rows)
+        if let title = titles.last { return title }
+        let tools = rows.flatMap(\.toolCalls)
+        return tools.isEmpty ? String(localized: "Thinking") : AssistantActivitySummary.title(for: tools)
+    }
+
+    private func activityIcon(for rows: [AssistantActivityRow]) -> String {
         let tools = rows.flatMap(\.toolCalls)
         return tools.isEmpty ? "brain" : AssistantActivitySummary.icon(for: tools)
     }

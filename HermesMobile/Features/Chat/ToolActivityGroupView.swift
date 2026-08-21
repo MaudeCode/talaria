@@ -14,6 +14,20 @@ struct ToolActivityGroupView: View {
     }
 }
 
+enum AssistantWorkSummary {
+    static func title(duration: Double?) -> String {
+        guard let duration, duration.isFinite, duration >= 0 else {
+            return String(localized: "Worked")
+        }
+        let total = Int(duration.rounded())
+        if total < 60 { return String(localized: "Worked for \(total)s") }
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        if hours > 0 { return String(localized: "Worked for \(hours)h \(minutes)m") }
+        return String(localized: "Worked for \(minutes)m \(total % 60)s")
+    }
+}
+
 enum AssistantActivitySummary {
     enum Category: Hashable {
         case command
@@ -30,16 +44,18 @@ enum AssistantActivitySummary {
         var order: [Category] = []
         var counts: [Category: Int] = [:]
         var failed = Set<Category>()
+        var running = Set<Category>()
         for toolCall in toolCalls {
             let category = category(for: toolCall)
             if counts[category] == nil { order.append(category) }
             counts[category, default: 0] += 1
             if toolCall.isError == true { failed.insert(category) }
+            if !toolCall.isCompleted && toolCall.isError != true { running.insert(category) }
         }
         return order.enumerated().map { index, category in
             let phrase = failed.contains(category)
                 ? failedPhrase(for: category)
-                : phrase(for: category, count: counts[category] ?? 1, completed: true)
+                : phrase(for: category, count: counts[category] ?? 1, completed: !running.contains(category))
             guard index > 0, let first = phrase.first else { return phrase }
             return first.lowercased() + phrase.dropFirst()
         }.joined(separator: ", ")

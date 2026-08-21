@@ -8,7 +8,6 @@ struct ReasoningBlockView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var startsExpanded = false
     @State private var userToggledExpansion: Bool?
-    @State private var titleIndex = 0
 
     init(text: String, titles: [String] = [], isActive: Bool = false) {
         self.text = text
@@ -26,11 +25,6 @@ struct ReasoningBlockView: View {
     var body: some View {
         if let trimmedText {
             VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
-                let title = ReasoningTitleRotation.displayedTitle(
-                    titles: normalizedTitles,
-                    index: titleIndex,
-                    isActive: isActive
-                ) ?? String(localized: "Thinking")
                 Button {
                     withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                         userToggledExpansion = !isExpanded
@@ -43,7 +37,11 @@ struct ReasoningBlockView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 16, height: 16)
 
-                        ActivityGlowText(text: title, isActive: isActive)
+                        RotatingActivityTitle(
+                            fallback: String(localized: "Thinking"),
+                            titles: normalizedTitles,
+                            isActive: isActive
+                        )
                             .font(AppFont.caption())
                             .lineLimit(2)
 
@@ -58,7 +56,7 @@ struct ReasoningBlockView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "Thinking, \(title)"))
+                .accessibilityLabel(String(localized: "Thinking, \(normalizedTitles.last ?? String(localized: "Thinking"))"))
                 .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
                 if isExpanded {
@@ -72,22 +70,6 @@ struct ReasoningBlockView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .task(id: rotationTaskID) {
-                titleIndex = 0
-                guard ReasoningTitleRotation.shouldRotate(
-                    isActive: isActive,
-                    reduceMotion: reduceMotion,
-                    titleCount: normalizedTitles.count
-                ) else { return }
-                while !Task.isCancelled {
-                    do {
-                        try await Task.sleep(for: .seconds(1.5))
-                    } catch {
-                        return
-                    }
-                    titleIndex = (titleIndex + 1) % normalizedTitles.count
-                }
-            }
         }
     }
 
@@ -100,9 +82,6 @@ struct ReasoningBlockView: View {
         ReasoningTitleMetadata.normalize(titles)
     }
 
-    private var rotationTaskID: String {
-        "\(isActive)|\(reduceMotion)|\(normalizedTitles.joined(separator: "\u{1F}"))"
-    }
 }
 
 enum ReasoningTitleRotation {
@@ -141,5 +120,45 @@ struct ActivityGlowText: View {
             Text(text)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+struct RotatingActivityTitle: View {
+    let fallback: String
+    let titles: [String]
+    let isActive: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var titleIndex = 0
+
+    var body: some View {
+        ActivityGlowText(
+            text: ReasoningTitleRotation.displayedTitle(
+                titles: titles,
+                index: titleIndex,
+                isActive: isActive
+            ) ?? fallback,
+            isActive: isActive
+        )
+        .task(id: rotationTaskID) {
+            titleIndex = 0
+            guard ReasoningTitleRotation.shouldRotate(
+                isActive: isActive,
+                reduceMotion: reduceMotion,
+                titleCount: titles.count
+            ) else { return }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(1.5))
+                } catch {
+                    return
+                }
+                titleIndex = (titleIndex + 1) % titles.count
+            }
+        }
+    }
+
+    private var rotationTaskID: String {
+        "\(isActive)|\(reduceMotion)|\(titles.joined(separator: "\u{1F}"))"
     }
 }

@@ -5389,6 +5389,10 @@ struct CompletedAssistantTurn: Equatable {
     let workRows: [AssistantActivityRow]
     let finalAnswer: String
 
+    var workSegments: [Segment] {
+        finalAnswer.isEmpty ? segments : Array(segments.dropLast())
+    }
+
     init?(rows: [AssistantActivityRow]) {
         var segments: [Segment] = []
         var pendingActivity: [AssistantActivityRow] = []
