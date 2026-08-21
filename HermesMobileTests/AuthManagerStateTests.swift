@@ -6,30 +6,13 @@ final class AuthManagerStateTests: XCTestCase {
     private struct PreconditionFailure: Error {}
 
     private static let sessionExpiredMessage = "Your session expired. Sign in again."
-
-    // These tests assert against the global HTTPCookieStorage; reset it on both
-    // sides so pre-existing cookies or a mid-test failure can't leak across tests.
-    nonisolated override func setUp() {
-        super.setUp()
-        Self.clearSharedCookies()
-    }
-
-    nonisolated override func tearDown() {
-        Self.clearSharedCookies()
-        super.tearDown()
-    }
-
-    private nonisolated static func clearSharedCookies() {
-        HTTPCookieStorage.shared.cookies?.forEach {
-            HTTPCookieStorage.shared.deleteCookie($0)
-        }
-    }
+    private let cookieStorage = URLSessionConfiguration.ephemeral.httpCookieStorage!
+    private let profileEntityCache = ProfileEntityCache(defaults: nil)
 
     func testUnauthorizedWhileLoggedInKeepsServerAndMovesToLoggedOut() async throws {
         let keychain = InMemoryKeychainStore()
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://example.test")
         let server = try XCTUnwrap(URL(string: "https://example.test"))
-        let cookieStorage = HTTPCookieStorage.shared
         cookieStorage.setCookie(try makeSessionCookie(for: server))
 
         manager.handleAPIError(APIError.unauthorized)
@@ -52,16 +35,25 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(keychain.savedValues[.serverURL], server.absoluteString)
     }
 
-    func testUnauthorizedWhileUnconfiguredKeepsFullClearBehavior() {
+    func testUnauthorizedWhileUnconfiguredKeepsFullClearBehavior() throws {
         let keychain = InMemoryKeychainStore()
-        let manager = AuthManager(keychain: keychain) { _ in
-            MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
-        }
+        cookieStorage.setCookie(
+            try makeSessionCookie(for: XCTUnwrap(URL(string: "https://example.test")))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in
+                MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
+            },
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache
+        )
 
         manager.handleAPIError(APIError.unauthorized)
 
         XCTAssertEqual(manager.state, .unconfigured)
         XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertEqual(cookieStorage.cookies?.isEmpty, true)
         XCTAssertEqual(manager.lastErrorMessage, Self.sessionExpiredMessage)
     }
 
@@ -145,11 +137,11 @@ final class AuthManagerStateTests: XCTestCase {
             serverURLString: "https://example.test",
             client: client
         )
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: server))
+        cookieStorage.setCookie(try makeSessionCookie(for: server))
 
         await manager.signOut()
 
-        XCTAssertEqual(HTTPCookieStorage.shared.cookies?.isEmpty, true)
+        XCTAssertEqual(cookieStorage.cookies?.isEmpty, true)
         XCTAssertEqual(manager.state, .unconfigured)
     }
 
@@ -160,16 +152,15 @@ final class AuthManagerStateTests: XCTestCase {
         let serverA = try XCTUnwrap(URL(string: "https://a.test"))
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://a.test")
-        // Both servers hold a session cookie in the shared jar (which both APIClient
-        // and SSEClient stream against).
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
+        // Both servers hold a session cookie in the manager's jar.
+        cookieStorage.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
+        cookieStorage.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
         await manager.signOut()
 
         // A's cookie is cleared; B (a different host) is untouched.
-        XCTAssertTrue(HTTPCookieStorage.shared.cookies(for: serverA)?.isEmpty ?? true)
-        XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: serverB)?.map(\.value), ["b-cookie"])
+        XCTAssertTrue(cookieStorage.cookies(for: serverA)?.isEmpty ?? true)
+        XCTAssertEqual(cookieStorage.cookies(for: serverB)?.map(\.value), ["b-cookie"])
     }
 
     func testUnauthorizedClearsOnlyActiveServerCookies() async throws {
@@ -177,15 +168,15 @@ final class AuthManagerStateTests: XCTestCase {
         let serverA = try XCTUnwrap(URL(string: "https://a.test"))
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://a.test")
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
+        cookieStorage.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
+        cookieStorage.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
         manager.handleAPIError(APIError.unauthorized)
 
         // Only the active server's auth is affected by its 401.
         XCTAssertEqual(manager.state, .loggedOut(server: serverA))
-        XCTAssertTrue(HTTPCookieStorage.shared.cookies(for: serverA)?.isEmpty ?? true)
-        XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: serverB)?.map(\.value), ["b-cookie"])
+        XCTAssertTrue(cookieStorage.cookies(for: serverA)?.isEmpty ?? true)
+        XCTAssertEqual(cookieStorage.cookies(for: serverB)?.map(\.value), ["b-cookie"])
     }
 
     func testSignOutLeavesOtherServerHeadersAndRegistryIntact() async throws {
@@ -203,6 +194,8 @@ final class AuthManagerStateTests: XCTestCase {
             keychain: keychain,
             clientFactory: { _ in client },
             headerStore: CustomHeaderStore(),
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
             serverRegistry: registry
         )
         await manager.configure(
@@ -267,6 +260,8 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")
@@ -298,13 +293,13 @@ final class AuthManagerStateTests: XCTestCase {
         let (manager, _, bAccount) = try await makeTwoServerManager(keychain: keychain, registry: registry)
         let serverA = try XCTUnwrap(URL(string: "https://a.test"))
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
+        cookieStorage.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
+        cookieStorage.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
         await manager.removeServer(bAccount)
 
-        XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: serverA)?.map(\.value), ["a-cookie"])
-        XCTAssertTrue(HTTPCookieStorage.shared.cookies(for: serverB)?.isEmpty ?? true)
+        XCTAssertEqual(cookieStorage.cookies(for: serverA)?.map(\.value), ["a-cookie"])
+        XCTAssertTrue(cookieStorage.cookies(for: serverB)?.isEmpty ?? true)
     }
 
     func testSignOutWithRemainingServerAutoSwitches() async throws {
@@ -325,6 +320,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
 
@@ -340,6 +336,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: InMemoryKeychainStore(),
             probeClientFactory: { _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: ServerRegistry.inMemory()
         )
 
@@ -356,6 +353,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")
@@ -375,6 +373,7 @@ final class AuthManagerStateTests: XCTestCase {
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
             probeClientFactory: { _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")
@@ -400,6 +399,7 @@ final class AuthManagerStateTests: XCTestCase {
             clientFactory: { $0.absoluteString.contains("a.test") ? clientA : clientB },
             probeClientFactory: { url, _ in url.absoluteString.contains("a.test") ? clientA : clientB },
             headerStore: CustomHeaderStore(),
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
         await manager.configure(
@@ -439,6 +439,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")
@@ -471,6 +472,8 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")
@@ -496,6 +499,8 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
             logoutTimeout: logoutTimeout,
             serverRegistry: ServerRegistry.inMemory()
         )

@@ -332,23 +332,30 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         client.stop()
     }
 
-    /// SSE streams against `HTTPCookieStorage.shared`, the same jar as `APIClient`.
-    /// Verify that jar only surfaces a server's own cookie for its stream URL, so
-    /// domain isolation covers the SSE stream too (#16).
-    func testSSESharedCookieJarIsDomainIsolatedPerStreamURL() throws {
+    /// Verify the shared jar only surfaces a server's own cookie for its stream
+    /// URL, so domain isolation covers SSE too (#16). The test adds and removes
+    /// only cookies for its synthetic hosts; it never clears the jar.
+    func testSSECookieJarIsDomainIsolatedPerStreamURL() throws {
         let storage = HTTPCookieStorage.shared
-        storage.cookies?.forEach { storage.deleteCookie($0) }
-        defer { storage.cookies?.forEach { storage.deleteCookie($0) } }
+        let nonce = UUID().uuidString.lowercased()
+        let hostA = "a-\(nonce).test"
+        let hostB = "b-\(nonce).test"
 
         func sessionCookie(host: String, value: String) throws -> HTTPCookie {
             try XCTUnwrap(HTTPCookie(properties: [
                 .domain: host, .path: "/", .name: "hermes_session", .value: value
             ]))
         }
-        storage.setCookie(try sessionCookie(host: "a.test", value: "a-cookie"))
-        storage.setCookie(try sessionCookie(host: "b.test", value: "b-cookie"))
+        let cookieA = try sessionCookie(host: hostA, value: "a-cookie")
+        let cookieB = try sessionCookie(host: hostB, value: "b-cookie")
+        storage.setCookie(cookieA)
+        storage.setCookie(cookieB)
+        defer {
+            storage.deleteCookie(cookieA)
+            storage.deleteCookie(cookieB)
+        }
 
-        let streamA = try XCTUnwrap(URL(string: "https://a.test/api/chat/stream?stream_id=s1"))
+        let streamA = try XCTUnwrap(URL(string: "https://\(hostA)/api/chat/stream?stream_id=s1"))
         XCTAssertEqual(storage.cookies(for: streamA)?.map(\.value), ["a-cookie"])
     }
 }
@@ -357,12 +364,22 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
 
 @MainActor
 final class CustomHeaderAuthManagerTests: XCTestCase {
+    private let cookieStorage = URLSessionConfiguration.ephemeral.httpCookieStorage!
+    private let profileEntityCache = ProfileEntityCache(defaults: nil)
+
     private func makeManager(
         keychain: InMemoryKeychainStore,
         store: CustomHeaderStore,
         client: MockAuthAPIClient
     ) -> AuthManager {
-        AuthManager(keychain: keychain, clientFactory: { _ in client }, headerStore: store, serverRegistry: ServerRegistry.inMemory())
+        AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            headerStore: store,
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
+            serverRegistry: ServerRegistry.inMemory()
+        )
     }
 
     func testConfigurePersistsHeadersOnSuccess() async throws {
