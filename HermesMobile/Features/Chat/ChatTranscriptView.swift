@@ -563,7 +563,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         } label: {
             HStack(spacing: 8) {
                 Text(title)
-                    .font(AppFont.caption())
+                    .font(AppFont.body())
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 4)
@@ -577,6 +577,10 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.35)
+        }
         .accessibilityLabel(title)
         .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
 
@@ -602,77 +606,83 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         _ segments: [CompletedAssistantTurn.Segment],
         activeSegmentID: String?
     ) -> some View {
-        ForEach(segments) { segment in
-            switch segment.content {
-            case .activity(let rows):
-                let visibleRows = rows.filter(isVisibleWorkRow)
-                if !visibleRows.isEmpty {
-                    let disclosureID = "\(activeSegmentID == nil ? "completed" : "live"):\(segment.id)"
-                    let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
-                    let isActive = activeSegmentID == segment.id
-                    let title = activityTitle(for: visibleRows)
-                    let titles = activityTitles(for: visibleRows)
-                    Button {
-                        withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+        VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
+            ForEach(segments) { segment in
+                switch segment.content {
+                case .activity(let rows):
+                    let visibleRows = rows.filter(isVisibleWorkRow)
+                    if !visibleRows.isEmpty {
+                        let disclosureID = "\(activeSegmentID == nil ? "completed" : "live"):\(segment.id)"
+                        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+                        let isActive = activeSegmentID == segment.id
+                        let title = AssistantActivityHeaderSummary.title(for: visibleRows, isActive: isActive)
+                        let titles = AssistantActivityHeaderSummary.titles(for: visibleRows, isActive: isActive)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Button {
+                                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                                    if isExpanded {
+                                        expandedCompletedActivityIDs.remove(disclosureID)
+                                    } else {
+                                        expandedCompletedActivityIDs.insert(disclosureID)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: activityIcon(for: visibleRows))
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 16, height: 16)
+
+                                    RotatingActivityTitle(
+                                        fallback: title,
+                                        titles: titles,
+                                        isActive: isActive
+                                    )
+                                    .font(AppFont.callout())
+                                    .multilineTextAlignment(.leading)
+
+                                    Spacer(minLength: 4)
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                }
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(String(localized: "\(isActive ? "Active" : "Completed") activity, \(titles.last ?? title)"))
+                            .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
+
                             if isExpanded {
-                                expandedCompletedActivityIDs.remove(disclosureID)
-                            } else {
-                                expandedCompletedActivityIDs.insert(disclosureID)
+                                ForEach(Array(visibleRows.enumerated()), id: \.element.id) { index, row in
+                                    activityRow(
+                                        row,
+                                        at: index,
+                                        includesAttachments: false,
+                                        includesTurnMetrics: false,
+                                        isActive: isActive && index == visibleRows.count - 1
+                                    )
+                                }
+                                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
                             }
                         }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: activityIcon(for: visibleRows))
-                                .font(.system(size: 14))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16, height: 16)
-
-                            RotatingActivityTitle(
-                                fallback: title,
-                                titles: titles,
-                                isActive: isActive
-                            )
-                                .font(AppFont.caption())
-                                .multilineTextAlignment(.leading)
-
-                            Spacer(minLength: 4)
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "\(isActive ? "Active" : "Completed") activity, \(titles.last ?? title)"))
-                    .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
-
-                    if isExpanded {
-                        ForEach(Array(visibleRows.enumerated()), id: \.element.id) { index, row in
-                            activityRow(
-                                row,
-                                at: index,
-                                includesAttachments: false,
-                                includesTurnMetrics: false,
-                                isActive: isActive && index == visibleRows.count - 1
-                            )
-                        }
-                        .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
-                    }
+                case .prose(let text):
+                    messageRow(
+                        activityMessage(
+                            text: text,
+                            includesAttachments: false,
+                            includesTurnMetrics: false
+                        ),
+                        isStreaming: activeSegmentID == segment.id
+                    )
                 }
-            case .prose(let text):
-                messageRow(
-                    activityMessage(
-                        text: text,
-                        includesAttachments: false,
-                        includesTurnMetrics: false
-                    ),
-                    isStreaming: activeSegmentID == segment.id
-                )
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -719,22 +729,6 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         case .reasoning, .tools:
             showsThinkingAndToolCards
         }
-    }
-
-    private func activityTitles(for rows: [AssistantActivityRow]) -> [String] {
-        for row in rows.reversed() {
-            guard case .reasoning(let reasoning) = row.content else { continue }
-            let titles = ReasoningTitleMetadata.normalize(reasoning.titles)
-            if !titles.isEmpty { return titles }
-        }
-        return []
-    }
-
-    private func activityTitle(for rows: [AssistantActivityRow]) -> String {
-        let titles = activityTitles(for: rows)
-        if let title = titles.last { return title }
-        let tools = rows.flatMap(\.toolCalls)
-        return tools.isEmpty ? String(localized: "Thinking") : AssistantActivitySummary.title(for: tools)
     }
 
     private func activityIcon(for rows: [AssistantActivityRow]) -> String {

@@ -42,7 +42,7 @@ struct ReasoningBlockView: View {
                             titles: normalizedTitles,
                             isActive: isActive
                         )
-                            .font(AppFont.caption())
+                            .font(AppFont.callout())
                             .lineLimit(2)
 
                         Spacer(minLength: 4)

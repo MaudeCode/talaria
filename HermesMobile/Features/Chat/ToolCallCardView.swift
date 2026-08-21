@@ -88,7 +88,7 @@ struct ToolCallCardView: View {
             text: AssistantActivitySummary.label(for: toolCall),
             isActive: !toolCall.isCompleted && toolCall.isError != true
         )
-            .font(AppFont.caption())
+            .font(AppFont.callout())
             .lineLimit(usesStackedHeader ? 2 : 1)
     }
 

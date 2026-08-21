@@ -28,7 +28,47 @@ enum AssistantWorkSummary {
     }
 }
 
+enum AssistantActivityHeaderSummary {
+    static func title(for rows: [AssistantActivityRow], isActive: Bool) -> String {
+        let titles = titles(for: rows, isActive: isActive)
+        if let title = titles.last { return title }
+        if isActive, case .tools(let toolCalls)? = rows.last?.content,
+           let current = toolCalls.last(where: { !$0.isCompleted && $0.isError != true }) ?? toolCalls.last {
+            return AssistantActivitySummary.label(for: current)
+        }
+        let tools = rows.flatMap(\.toolCalls)
+        return tools.isEmpty ? String(localized: "Thinking") : AssistantActivitySummary.title(for: tools)
+    }
+
+    static func titles(for rows: [AssistantActivityRow], isActive: Bool) -> [String] {
+        if isActive {
+            guard case .reasoning(let reasoning)? = rows.last?.content else { return [] }
+            return ReasoningTitleMetadata.normalize(reasoning.titles)
+        }
+        guard rows.flatMap(\.toolCalls).isEmpty else { return [] }
+        for row in rows.reversed() {
+            guard case .reasoning(let reasoning) = row.content else { continue }
+            let titles = ReasoningTitleMetadata.normalize(reasoning.titles)
+            if !titles.isEmpty { return titles }
+        }
+        return []
+    }
+}
+
 enum AssistantActivitySummary {
+    private enum CollapsedAction: Equatable {
+        case shell
+        case read
+        case list
+        case search
+        case web
+        case write
+        case skill
+        case memory
+        case delegate
+        case generic
+    }
+
     enum Category: Hashable {
         case command
         case read
@@ -62,10 +102,131 @@ enum AssistantActivitySummary {
     }
 
     static func label(for toolCall: ToolCall) -> String {
+        if let specificLabel = specificLabel(for: toolCall) {
+            return specificLabel
+        }
         if toolCall.isError == true {
             return failedPhrase(for: category(for: toolCall))
         }
         return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
+    }
+
+    private static func specificLabel(for toolCall: ToolCall) -> String? {
+        let action = collapsedAction(for: toolCall)
+        guard action != .generic, let target = collapsedTarget(for: toolCall, action: action) else {
+            return nil
+        }
+        if toolCall.isError == true {
+            switch action {
+            case .shell: return String(localized: "Failed to run \(target)")
+            case .read: return String(localized: "Failed to read \(target)")
+            case .list: return String(localized: "Failed to list \(target)")
+            case .search: return String(localized: "Failed to search for \(target)")
+            case .web: return String(localized: "Failed to check \(target)")
+            case .write: return String(localized: "Failed to edit \(target)")
+            case .skill: return String(localized: "Failed to load \(target)")
+            case .memory: return String(localized: "Failed to save \(target)")
+            case .delegate: return String(localized: "Failed to delegate \(target)")
+            case .generic: return nil
+            }
+        }
+        switch (action, toolCall.isCompleted) {
+        case (.shell, true): return String(localized: "Ran \(target)")
+        case (.shell, false): return String(localized: "Running \(target)")
+        case (.read, true): return String(localized: "Read \(target)")
+        case (.read, false): return String(localized: "Reading \(target)")
+        case (.list, true): return String(localized: "Listed \(target)")
+        case (.list, false): return String(localized: "Listing \(target)")
+        case (.search, true): return String(localized: "Searched for \(target)")
+        case (.search, false): return String(localized: "Searching for \(target)")
+        case (.web, true): return String(localized: "Checked \(target)")
+        case (.web, false): return String(localized: "Checking \(target)")
+        case (.write, true): return String(localized: "Edited \(target)")
+        case (.write, false): return String(localized: "Editing \(target)")
+        case (.skill, true): return String(localized: "Loaded \(target)")
+        case (.skill, false): return String(localized: "Loading \(target)")
+        case (.memory, true): return String(localized: "Saved \(target)")
+        case (.memory, false): return String(localized: "Saving \(target)")
+        case (.delegate, true): return String(localized: "Delegated \(target)")
+        case (.delegate, false): return String(localized: "Delegating \(target)")
+        case (.generic, _): return nil
+        }
+    }
+
+    private static func collapsedAction(for toolCall: ToolCall) -> CollapsedAction {
+        let name = (toolCall.name ?? "").lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
+        if name == "subagent_progress" || name == "delegate_task" { return .delegate }
+        if name.contains("skill") { return .skill }
+        if name.contains("memory") { return .memory }
+        if name.contains("terminal") || name.contains("shell") || name.contains("command")
+            || name.contains("process") || name == "execute_code" { return .shell }
+        if name.contains("read") || name.contains("view") || name.contains("open")
+            || name == "vision_analyze" { return .read }
+        if name.contains("list") || name == "todo" { return .list }
+        if name.contains("web") || name.contains("fetch") || name.contains("curl")
+            || name.contains("extract") || name.contains("browse") || name.contains("navigate") { return .web }
+        if name.contains("search") || name.contains("grep") || name.contains("find") { return .search }
+        if name.contains("write") || name.contains("patch") || name.contains("edit") { return .write }
+        return .generic
+    }
+
+    private static func collapsedTarget(for toolCall: ToolCall, action: CollapsedAction) -> String? {
+        let keys: [String]
+        switch action {
+        case .shell: keys = ["cmd", "command"]
+        case .read, .write: keys = ["path", "file_path", "file", "target", "name"]
+        case .list: keys = ["path", "dir", "target", "name"]
+        case .search, .web: keys = ["query", "pattern", "url", "uri"]
+        case .skill: keys = ["name", "skill"]
+        case .memory: keys = ["target", "name", "action"]
+        case .delegate: keys = ["task", "name"]
+        case .generic: return nil
+        }
+        guard var target = firstStringArgument(keys, in: toolCall.args) else { return nil }
+        target = target.components(separatedBy: .newlines).first ?? target
+        target = target.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !target.isEmpty, isSafeCollapsedTarget(target) else { return nil }
+        if action == .read || action == .write || action == .list {
+            let normalized = target.replacingOccurrences(of: "\\", with: "/")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            target = normalized.split(separator: "/").last.map(String.init) ?? normalized
+        } else if action == .skill, !target.lowercased().hasSuffix(" skill") {
+            target += " " + String(localized: "skill")
+        }
+        return shortened(target, limit: 112)
+    }
+
+    private static func firstStringArgument(_ keys: [String], in args: [String: JSONValue]?) -> String? {
+        guard let args else { return nil }
+        for key in keys {
+            guard case .string(let value)? = args[key] else { continue }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
+    private static func isSafeCollapsedTarget(_ target: String) -> Bool {
+        let lowercased = target.lowercased()
+        let sensitiveFragments = [
+            "token", "api_key", "apikey", "secret", "password", "passwd", "credential",
+            "authorization", "bearer", "private_key", "access_key", "session_key", "client_secret",
+            "?key=", "&key="
+        ]
+        // ponytail: sensitive-looking targets use the generic label; add value-level redaction only if benign false positives become common.
+        return !sensitiveFragments.contains { lowercased.contains($0) }
+    }
+
+    private static func shortened(_ value: String, limit: Int) -> String {
+        guard value.count > limit else { return value }
+        let headCount = max(24, Int(Double(limit) * 0.68))
+        let tailCount = max(12, limit - headCount - 3)
+        return String(value.prefix(headCount)).trimmingCharacters(in: .whitespaces)
+            + "..."
+            + String(value.suffix(tailCount)).trimmingCharacters(in: .whitespaces)
     }
 
     static func icon(for toolCalls: [ToolCall]) -> String {
