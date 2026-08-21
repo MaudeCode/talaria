@@ -100,11 +100,10 @@ private struct TranscriptMediaThumbnailView: View {
                 guard let loadMediaImage else { return }
                 image = nil
                 didAttemptLoad = false
-                let loadedImage = await TranscriptMediaImageCache.shared.image(
-                    for: reference,
-                    cacheNamespace: cacheNamespace,
-                    loadMediaImage: loadMediaImage
-                )
+                let loadedImage = await DecodedImageCache.shared.image(for: imageCacheKey) {
+                    guard let data = await loadMediaImage(reference) else { return nil }
+                    return UIImage(data: data)
+                }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     image = loadedImage
@@ -149,8 +148,8 @@ private struct TranscriptMediaThumbnailView: View {
         }
     }
 
-    private var imageCacheKey: TranscriptMediaImageCacheKey {
-        TranscriptMediaImageCacheKey(namespace: cacheNamespace, reference: reference)
+    private var imageCacheKey: DecodedImageCacheKey {
+        DecodedImageCacheKey(namespace: cacheNamespace, resourceID: reference.id)
     }
 
     private var imageButtonAccessibilityLabel: String {
@@ -592,19 +591,22 @@ private struct TranscriptMediaUnavailableChip: View {
     }
 }
 
-private actor TranscriptMediaImageCache {
-    static let shared = TranscriptMediaImageCache()
+actor DecodedImageCache {
+    static let shared = DecodedImageCache()
 
-    private var cache: [TranscriptMediaImageCacheKey: UIImage] = [:]
-    private var inFlight: [TranscriptMediaImageCacheKey: Task<UIImage?, Never>] = [:]
+    private let cache: NSCache<NSString, UIImage>
+    private var inFlight: [DecodedImageCacheKey: Task<UIImage?, Never>] = [:]
+
+    init(totalCostLimit: Int = 64 * 1_024 * 1_024) {
+        cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = totalCostLimit
+    }
 
     func image(
-        for reference: TranscriptMediaReference,
-        cacheNamespace: String,
-        loadMediaImage: @escaping (TranscriptMediaReference) async -> Data?
+        for key: DecodedImageCacheKey,
+        load: @escaping () async -> UIImage?
     ) async -> UIImage? {
-        let key = TranscriptMediaImageCacheKey(namespace: cacheNamespace, reference: reference)
-        if let cached = cache[key] {
+        if let cached = cache.object(forKey: key.cacheKey) {
             return cached
         }
 
@@ -612,31 +614,35 @@ private actor TranscriptMediaImageCache {
             return await task.value
         }
 
-        let task = Task<UIImage?, Never> {
-            guard let data = await loadMediaImage(reference) else {
-                return nil
-            }
-            return UIImage(data: data)
-        }
+        let task = Task<UIImage?, Never> { await load() }
 
         inFlight[key] = task
         let image = await task.value
         inFlight[key] = nil
 
         if let image {
-            cache[key] = image
+            cache.setObject(image, forKey: key.cacheKey, cost: image.decodedByteCost)
         }
         return image
     }
 }
 
-struct TranscriptMediaImageCacheKey: Hashable {
+struct DecodedImageCacheKey: Hashable {
     let namespace: String
-    let referenceID: String
+    let resourceID: String
 
-    init(namespace: String, reference: TranscriptMediaReference) {
-        self.namespace = namespace
-        referenceID = reference.id
+    var cacheKey: NSString {
+        "\(namespace.utf8.count):\(namespace)\(resourceID)" as NSString
+    }
+}
+
+private extension UIImage {
+    var decodedByteCost: Int {
+        if let cgImage {
+            return cgImage.bytesPerRow * cgImage.height
+        }
+
+        return Int(size.width * scale) * Int(size.height * scale) * 4
     }
 }
 

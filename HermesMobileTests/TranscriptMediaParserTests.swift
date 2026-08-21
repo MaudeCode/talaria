@@ -307,24 +307,33 @@ final class TranscriptMediaParserTests: XCTestCase {
         XCTAssertEqual(TranscriptMediaReference(rawReference: "").displayName, "Media")
     }
 
-    func testImageCacheKeySeparatesSameReferenceAcrossSessions() {
-        let reference = TranscriptMediaReference(rawReference: "/tmp/result.png")
-
-        let firstSessionKey = TranscriptMediaImageCacheKey(
+    func testImageCacheSeparatesSameResourceAcrossSessions() async {
+        let firstSessionKey = DecodedImageCacheKey(
             namespace: "https://one.example.test|session-a",
-            reference: reference
+            resourceID: "/tmp/result.png"
         )
-        let secondSessionKey = TranscriptMediaImageCacheKey(
+        let secondSessionKey = DecodedImageCacheKey(
             namespace: "https://one.example.test|session-b",
-            reference: reference
+            resourceID: "/tmp/result.png"
         )
-        let secondServerKey = TranscriptMediaImageCacheKey(
+        let secondServerKey = DecodedImageCacheKey(
             namespace: "https://two.example.test|session-a",
-            reference: reference
+            resourceID: "/tmp/result.png"
         )
 
         XCTAssertNotEqual(firstSessionKey, secondSessionKey)
         XCTAssertNotEqual(firstSessionKey, secondServerKey)
+
+        let cache = DecodedImageCache()
+        let firstImage = UIImage()
+        let secondImage = UIImage()
+        let loadedFirst = await cache.image(for: firstSessionKey) { firstImage }
+        let loadedSecond = await cache.image(for: secondSessionKey) { secondImage }
+        let cachedFirst = await cache.image(for: firstSessionKey) { nil }
+
+        XCTAssertTrue(loadedFirst === firstImage)
+        XCTAssertTrue(loadedSecond === secondImage)
+        XCTAssertTrue(cachedFirst === firstImage)
     }
 
     private func mediaReferences(in segments: [TranscriptMediaSegment]) -> [TranscriptMediaReference] {

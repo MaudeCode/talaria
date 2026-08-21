@@ -302,6 +302,7 @@ struct MessageBubbleView: View {
                         let item = items[index]
                         GridAttachmentCell(
                             attachment: item.attachment,
+                            cacheNamespace: transcriptMediaCacheNamespace,
                             localData: item.localData,
                             loadAttachmentImage: loadAttachmentImage,
                             onPreviewAttachment: onPreviewAttachment,
@@ -422,6 +423,7 @@ private extension [TranscriptMediaSegment] {
 
 private struct GridAttachmentCell: View {
     let attachment: MessageAttachment
+    let cacheNamespace: String
     let localData: Data?
     let loadAttachmentImage: ((String) async -> Data?)?
     let onPreviewAttachment: ((MessageAttachment, Data?) -> Void)?
@@ -483,6 +485,7 @@ private struct GridAttachmentCell: View {
             } else if let path = resolvedPath, let loadAttachmentImage {
                 RemoteAttachmentImage(
                     path: path,
+                    cacheNamespace: cacheNamespace,
                     loadAttachmentImage: loadAttachmentImage
                 )
                 .frame(width: size, height: size)
@@ -613,6 +616,7 @@ private struct GridAttachmentCell: View {
 /// cookie. Deduplicates concurrent requests and caches in memory.
 private struct RemoteAttachmentImage: View {
     let path: String
+    let cacheNamespace: String
     let loadAttachmentImage: (String) async -> Data?
     @State private var image: UIImage?
     @State private var didAttempt = false
@@ -629,17 +633,25 @@ private struct RemoteAttachmentImage: View {
                 fallbackImage
             }
         }
-        .task(id: path) {
-            let loaded = await AttachmentImageCache.shared.image(
-                for: path,
-                loadAttachmentImage: loadAttachmentImage
-            )
+        .task(id: imageCacheKey) {
+            let loaded = await DecodedImageCache.shared.image(for: imageCacheKey) {
+                guard let data = await loadAttachmentImage(path) else { return nil }
+                let previewData = ImagePreviewDownsampler.previewData(
+                    from: data,
+                    maxPixelSize: ImagePreviewDownsampler.attachmentMaxPixelSize
+                ) ?? data
+                return UIImage(data: previewData)
+            }
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self.image = loaded
                 self.didAttempt = true
             }
         }
+    }
+
+    private var imageCacheKey: DecodedImageCacheKey {
+        DecodedImageCacheKey(namespace: cacheNamespace, resourceID: path)
     }
 
     private var fallbackImage: some View {
@@ -659,48 +671,6 @@ private struct RemoteAttachmentImage: View {
                 ProgressView()
                     .tint(Color(.tertiaryLabel))
             )
-    }
-}
-
-/// In-memory image cache that delegates loading to the authenticated client.
-/// Deduplicates concurrent requests for the same path.
-private actor AttachmentImageCache {
-    static let shared = AttachmentImageCache()
-
-    private var cache: [String: UIImage] = [:]
-    private var inFlight: [String: Task<UIImage?, Never>] = [:]
-
-    func image(
-        for path: String,
-        loadAttachmentImage: @escaping (String) async -> Data?
-    ) async -> UIImage? {
-        if let cached = cache[path] {
-            return cached
-        }
-
-        if let task = inFlight[path] {
-            return await task.value
-        }
-
-        let task = Task<UIImage?, Never> {
-            guard let data = await loadAttachmentImage(path) else {
-                return nil
-            }
-            let previewData = ImagePreviewDownsampler.previewData(
-                from: data,
-                maxPixelSize: ImagePreviewDownsampler.attachmentMaxPixelSize
-            ) ?? data
-            return UIImage(data: previewData)
-        }
-
-        inFlight[path] = task
-        let image = await task.value
-        inFlight[path] = nil
-
-        if let image {
-            cache[path] = image
-        }
-        return image
     }
 }
 
