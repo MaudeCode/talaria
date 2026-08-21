@@ -16,7 +16,7 @@ struct ContentView: View {
             .task {
                 guard !didCheckInitialPendingShare else { return }
                 didCheckInitialPendingShare = true
-                importPendingSharedDraftIfAvailable()
+                await importPendingSharedDraftIfAvailable()
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
                 drainPendingIntentDeepLink()
@@ -34,7 +34,7 @@ struct ContentView: View {
             }
             .onChange(of: scenePhase) {
                 guard scenePhase == .active else { return }
-                importPendingSharedDraftIfAvailable()
+                Task { await importPendingSharedDraftIfAvailable() }
                 // #248: the foreground pass stays silent — the in-session completion
                 // paths own notifications while the app is alive.
                 Task { await reconcileOrphanedLiveActivities(notifiesOnCompletion: false) }
@@ -106,7 +106,7 @@ struct ContentView: View {
             return
         }
 
-        importPendingSharedDraftIfAvailable()
+        Task { await importPendingSharedDraftIfAvailable() }
     }
 
     /// Routes a deep link queued by an App Intent through the same `handleOpenURL` parser
@@ -117,13 +117,13 @@ struct ContentView: View {
         handleOpenURL(url)
     }
 
-    private func importPendingSharedDraftIfAvailable() {
+    private func importPendingSharedDraftIfAvailable() async {
         guard let directory = HermesShareDraft.containerURL() else {
             return
         }
 
         do {
-            if let sharedImport = try HermesShareDraft.loadPendingImport(from: directory) {
+            if let sharedImport = try await HermesShareDraft.loadPendingImportOffMainActor(from: directory) {
                 pendingSharedImport = sharedImport
             }
         } catch {

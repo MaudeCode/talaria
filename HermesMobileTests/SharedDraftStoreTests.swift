@@ -99,6 +99,28 @@ final class SharedDraftStoreTests: XCTestCase {
         )
     }
 
+    func testOffMainActorPendingImportLoadsAndClearsStagedFiles() async throws {
+        let directory = try temporaryDirectory()
+        try HermesShareDraft.savePendingImport(
+            draft: "Review this",
+            attachments: [
+                SharedAttachmentImport(
+                    filename: "report.txt",
+                    typeIdentifier: "public.plain-text",
+                    data: Data("report".utf8)
+                )
+            ],
+            in: directory
+        )
+
+        let loadedImport = try await HermesShareDraft.loadPendingImportOffMainActor(from: directory)
+        let sharedImport = try XCTUnwrap(loadedImport)
+
+        XCTAssertEqual(sharedImport.draft, "Review this")
+        XCTAssertEqual(sharedImport.attachments.first?.data, Data("report".utf8))
+        XCTAssertNil(try HermesShareDraft.loadPendingImport(from: directory))
+    }
+
     func testPendingImportSupportsAttachmentOnlyShare() throws {
         let directory = try temporaryDirectory()
 
@@ -168,6 +190,48 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertEqual(sharedImport.attachments.count, HermesShareDraft.maximumSharedAttachmentCount)
         XCTAssertEqual(sharedImport.attachments.first?.filename, "file-0.txt")
         XCTAssertEqual(sharedImport.attachments.last?.filename, "file-9.txt")
+    }
+
+    func testPendingImportLoadCapsAggregateAttachmentBytes() throws {
+        let directory = try temporaryDirectory()
+        let attachmentsDirectory = directory.appendingPathComponent(
+            HermesShareDraft.pendingAttachmentsDirectoryName,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: attachmentsDirectory, withIntermediateDirectories: true)
+
+        let attachmentSize = HermesShareDraft.maximumSharedImportBytes / 2 + 1
+        let attachments = ["first.bin", "second.bin"]
+        for filename in attachments {
+            try Data(count: attachmentSize).write(
+                to: attachmentsDirectory.appendingPathComponent(filename)
+            )
+        }
+        let payload = SharedDraftPayload(
+            draft: "",
+            createdAt: Date(),
+            attachments: attachments.map {
+                SharedAttachmentPayload(
+                    filename: $0,
+                    storedFileName: $0,
+                    typeIdentifier: nil,
+                    size: attachmentSize
+                )
+            }
+        )
+        try JSONEncoder().encode(payload).write(
+            to: directory.appendingPathComponent(HermesShareDraft.pendingDraftFileName)
+        )
+
+        let sharedImport = try XCTUnwrap(
+            try HermesShareDraft.loadPendingImport(from: directory, removeAfterLoad: false)
+        )
+
+        XCTAssertEqual(sharedImport.attachments.map(\.filename), ["first.bin"])
+        XCTAssertLessThanOrEqual(
+            sharedImport.attachments.reduce(0) { $0 + $1.data.count },
+            HermesShareDraft.maximumSharedImportBytes
+        )
     }
 
     func testPendingImportDecodesLegacyDraftOnlyPayload() throws {

@@ -1,6 +1,6 @@
 import Foundation
 
-struct SharedDraftPayload: Codable, Equatable {
+struct SharedDraftPayload: Codable, Equatable, Sendable {
     let draft: String
     let createdAt: Date
     let attachments: [SharedAttachmentPayload]?
@@ -16,20 +16,20 @@ struct SharedDraftPayload: Codable, Equatable {
     }
 }
 
-struct SharedAttachmentPayload: Codable, Equatable {
+struct SharedAttachmentPayload: Codable, Equatable, Sendable {
     let filename: String
     let storedFileName: String
     let typeIdentifier: String?
     let size: Int?
 }
 
-struct SharedAttachmentImport: Equatable {
+struct SharedAttachmentImport: Equatable, Sendable {
     let filename: String
     let typeIdentifier: String?
     let data: Data
 }
 
-struct SharedImport: Equatable {
+struct SharedImport: Equatable, Sendable {
     let draft: String
     let attachments: [SharedAttachmentImport]
 
@@ -53,6 +53,9 @@ enum HermesShareDraft {
 
     static let shareURLHost = "share"
     static let maximumSharedAttachmentBytes = 20 * 1_024 * 1_024
+    /// The main app materializes staged attachments together, so the aggregate
+    /// import uses the same 20 MB ceiling as one composer upload.
+    static let maximumSharedImportBytes = maximumSharedAttachmentBytes
     static let maximumSharedAttachmentCount = 10
 
     static var openURL: URL {
@@ -120,9 +123,16 @@ enum HermesShareDraft {
         now: Date = Date()
     ) throws {
         let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let uploadableAttachments = attachments
-            .filter { !$0.data.isEmpty && $0.data.count <= maximumSharedAttachmentBytes }
-            .prefix(maximumSharedAttachmentCount)
+        var totalAttachmentBytes = 0
+        let uploadableAttachments = attachments.compactMap { attachment -> SharedAttachmentImport? in
+            guard !attachment.data.isEmpty,
+                  attachment.data.count <= maximumSharedAttachmentBytes,
+                  totalAttachmentBytes + attachment.data.count <= maximumSharedImportBytes
+            else { return nil }
+
+            totalAttachmentBytes += attachment.data.count
+            return attachment
+        }.prefix(maximumSharedAttachmentCount)
 
         guard !trimmedDraft.isEmpty || !uploadableAttachments.isEmpty else {
             return
@@ -188,9 +198,23 @@ enum HermesShareDraft {
 
         let payload = try JSONDecoder().decode(SharedDraftPayload.self, from: Data(contentsOf: url))
         let draft = payload.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachments = loadAttachments(from: payload, in: directory)
+        let attachments = loadAttachments(from: payload, in: directory, fileManager: fileManager)
         let sharedImport = SharedImport(draft: draft, attachments: attachments)
         return sharedImport.isEmpty ? nil : sharedImport
+    }
+
+    static func loadPendingImportOffMainActor(
+        from directory: URL,
+        fileManager: FileManager = .default,
+        removeAfterLoad: Bool = true
+    ) async throws -> SharedImport? {
+        try await Task.detached(priority: .userInitiated) {
+            try loadPendingImport(
+                from: directory,
+                fileManager: fileManager,
+                removeAfterLoad: removeAfterLoad
+            )
+        }.value
     }
 
     private static func pendingDraftURL(in directory: URL) -> URL {
@@ -203,22 +227,36 @@ enum HermesShareDraft {
 
     private static func loadAttachments(
         from payload: SharedDraftPayload,
-        in directory: URL
+        in directory: URL,
+        fileManager: FileManager
     ) -> [SharedAttachmentImport] {
         let attachmentsDirectory = pendingAttachmentsDirectoryURL(in: directory)
+        var remainingBytes = maximumSharedImportBytes
+        var imports: [SharedAttachmentImport] = []
 
-        return (payload.attachments ?? []).compactMap { attachment in
+        for attachment in (payload.attachments ?? []).prefix(maximumSharedAttachmentCount) {
+            guard attachment.storedFileName == URL(fileURLWithPath: attachment.storedFileName).lastPathComponent
+            else { continue }
+
             let fileURL = attachmentsDirectory.appendingPathComponent(attachment.storedFileName, isDirectory: false)
-            guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
-                return nil
-            }
+            guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path),
+                  let fileSize = (attributes[.size] as? NSNumber)?.intValue,
+                  fileSize > 0,
+                  fileSize <= maximumSharedAttachmentBytes,
+                  fileSize <= remainingBytes,
+                  let data = try? Data(contentsOf: fileURL),
+                  data.count == fileSize
+            else { continue }
 
-            return SharedAttachmentImport(
+            imports.append(SharedAttachmentImport(
                 filename: sanitizedFilename(attachment.filename),
                 typeIdentifier: attachment.typeIdentifier,
                 data: data
-            )
+            ))
+            remainingBytes -= data.count
         }
+
+        return imports
     }
 
     private static func sanitizedFilename(_ filename: String) -> String {
