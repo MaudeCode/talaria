@@ -8,6 +8,7 @@ struct ReasoningBlockView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var startsExpanded = false
     @State private var userToggledExpansion: Bool?
+    @State private var titleIndex = 0
 
     init(text: String, titles: [String] = [], isActive: Bool = false) {
         self.text = text
@@ -25,41 +26,40 @@ struct ReasoningBlockView: View {
     var body: some View {
         if let trimmedText {
             VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
-                TimelineView(.animation(
-                    minimumInterval: 1.5,
-                    paused: !isActive || normalizedTitles.count < 2
-                )) { context in
-                    let title = displayedTitle(at: context.date)
-                    Button {
-                        withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                            userToggledExpansion = !isExpanded
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image("LucideBrain")
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16, height: 16)
-
-                            ActivityGlowText(text: title, isActive: isActive)
-                                .font(AppFont.caption())
-                                .lineLimit(2)
-
-                            Spacer(minLength: 4)
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
+                let title = ReasoningTitleRotation.displayedTitle(
+                    titles: normalizedTitles,
+                    index: titleIndex,
+                    isActive: isActive
+                ) ?? String(localized: "Thinking")
+                Button {
+                    withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
+                        userToggledExpansion = !isExpanded
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "Thinking, \(title)"))
-                    .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
+                } label: {
+                    HStack(spacing: 8) {
+                        Image("LucideBrain")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+
+                        ActivityGlowText(text: title, isActive: isActive)
+                            .font(AppFont.caption())
+                            .lineLimit(2)
+
+                        Spacer(minLength: 4)
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "Thinking, \(title)"))
+                .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
                 if isExpanded {
                     Text(trimmedText)
@@ -72,6 +72,22 @@ struct ReasoningBlockView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .task(id: rotationTaskID) {
+                titleIndex = 0
+                guard ReasoningTitleRotation.shouldRotate(
+                    isActive: isActive,
+                    reduceMotion: reduceMotion,
+                    titleCount: normalizedTitles.count
+                ) else { return }
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(for: .seconds(1.5))
+                    } catch {
+                        return
+                    }
+                    titleIndex = (titleIndex + 1) % normalizedTitles.count
+                }
+            }
         }
     }
 
@@ -84,12 +100,20 @@ struct ReasoningBlockView: View {
         ReasoningTitleMetadata.normalize(titles)
     }
 
-    private func displayedTitle(at date: Date) -> String {
-        let values = normalizedTitles
-        guard !values.isEmpty else { return String(localized: "Thinking") }
-        guard isActive, values.count > 1 else { return values.last! }
-        let index = Int(date.timeIntervalSinceReferenceDate / 1.5) % values.count
-        return values[index]
+    private var rotationTaskID: String {
+        "\(isActive)|\(reduceMotion)|\(normalizedTitles.joined(separator: "\u{1F}"))"
+    }
+}
+
+enum ReasoningTitleRotation {
+    static func shouldRotate(isActive: Bool, reduceMotion: Bool, titleCount: Int) -> Bool {
+        isActive && !reduceMotion && titleCount > 1
+    }
+
+    static func displayedTitle(titles: [String], index: Int, isActive: Bool) -> String? {
+        guard !titles.isEmpty else { return nil }
+        guard isActive else { return titles.last }
+        return titles[min(max(0, index), titles.count - 1)]
     }
 }
 

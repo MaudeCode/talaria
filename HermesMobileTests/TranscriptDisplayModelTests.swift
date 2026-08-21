@@ -577,3 +577,20 @@ final class ResponseSpeedFormatterTests: XCTestCase {
         XCTAssertNil(ResponseSpeedFormatter.compactText(.nan))
     }
 }
+
+final class ReasoningTitleRotationTests: XCTestCase {
+    func testStartsAtFirstTitleAndStopsForReduceMotion() {
+        let titles = ["Plan", "Inspect", "Test"]
+
+        XCTAssertEqual(
+            ReasoningTitleRotation.displayedTitle(titles: titles, index: 0, isActive: true),
+            "Plan"
+        )
+        XCTAssertTrue(ReasoningTitleRotation.shouldRotate(isActive: true, reduceMotion: false, titleCount: 3))
+        XCTAssertFalse(ReasoningTitleRotation.shouldRotate(isActive: true, reduceMotion: true, titleCount: 3))
+        XCTAssertEqual(
+            ReasoningTitleRotation.displayedTitle(titles: titles, index: 2, isActive: false),
+            "Test"
+        )
+    }
+}
