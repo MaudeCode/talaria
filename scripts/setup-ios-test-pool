@@ -5,6 +5,19 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 pool_size=${TALARIA_SIMULATOR_POOL_SIZE:-4}
 refresh=false
+pool_runtime_dir="/tmp/talaria-xctest-$EUID"
+pool_lock="$pool_runtime_dir/pool.lock"
+lease_dir="$pool_runtime_dir/leases"
+typeset -a held_lease_files=()
+
+mkdir -p "$lease_dir"
+
+cleanup() {
+    for lease_file in "${held_lease_files[@]}"; do
+        unlink "$lease_file" 2>/dev/null || true
+    done
+    unlink "$pool_lock" 2>/dev/null || true
+}
 
 if (( $# > 1 )); then
     print -u2 "Usage: scripts/setup-ios-test-pool [--refresh]"
@@ -23,6 +36,13 @@ if [[ "$pool_size" != <-> || "$pool_size" -lt 1 ]]; then
     print -u2 "TALARIA_SIMULATOR_POOL_SIZE must be a positive integer."
     exit 64
 fi
+
+if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
+    print -u2 "The Talaria simulator pool is already being configured. Retry when it finishes."
+    exit 75
+fi
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
     "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
@@ -59,12 +79,44 @@ fi
 source_id=$(print -r -- "$source_line" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
 
 if [[ "$refresh" == true ]]; then
+    typeset -a refresh_ids=()
     for (( slot = 1; slot <= pool_size; slot++ )); do
         simulator_name="Talaria Test $slot"
         existing=$(device_line_named "$simulator_name")
 
+        if [[ -n "$existing" ]]; then
+            existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
+            lease_file="$lease_dir/$existing_id.lock"
+            if ! /usr/bin/shlock -f "$lease_file" -p $$; then
+                print -u2 "$simulator_name is leased by another worktree. Retry when it finishes."
+                exit 75
+            fi
+            held_lease_files+=("$lease_file")
+            refresh_ids[$slot]="$existing_id"
+        fi
+    done
+
+    devices=$(xcrun simctl list devices available)
+    source_line=$(device_line_named "$preferred_simulator")
+    current_source_id=$(print -r -- "$source_line" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
+
+    if [[ -z "$source_line" || "$current_source_id" != "$source_id" || "$source_line" != *"(Shutdown)"* ]]; then
+        print -u2 "Configured simulator '$preferred_simulator' changed while the refresh was being prepared. No devices were removed."
+        exit 75
+    fi
+
+    for (( slot = 1; slot <= pool_size; slot++ )); do
+        simulator_name="Talaria Test $slot"
+        existing=$(device_line_named "$simulator_name")
+        existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
+
+        if [[ "$existing_id" != "${refresh_ids[$slot]:-}" ]]; then
+            print -u2 "$simulator_name changed while the refresh was being prepared. No devices were removed."
+            exit 75
+        fi
+
         if [[ -n "$existing" && "$existing" != *"(Shutdown)"* ]]; then
-            print -u2 "$simulator_name is in use. Shut down the test pool before refreshing it."
+            print -u2 "$simulator_name is in use. No devices were removed."
             exit 75
         fi
     done
@@ -80,7 +132,20 @@ for (( slot = 1; slot <= pool_size; slot++ )); do
     fi
 
     if [[ -n "$existing" ]]; then
+        devices=$(xcrun simctl list devices available)
+        existing=$(device_line_named "$simulator_name")
         existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
+
+        if [[ -z "$existing" || "$existing_id" != "${refresh_ids[$slot]:-}" ]]; then
+            print -u2 "$simulator_name changed while the refresh was being prepared. No further devices were removed."
+            exit 75
+        fi
+
+        if [[ "$existing" != *"(Shutdown)"* ]]; then
+            print -u2 "$simulator_name is in use. Shut down the test pool before refreshing it."
+            exit 75
+        fi
+
         xcrun simctl delete "$existing_id"
         print "Removed stale $simulator_name ($existing_id)"
     fi

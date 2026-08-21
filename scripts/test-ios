@@ -5,10 +5,13 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 runtime_dir="$repo_root/.codex-tmp/xctest"
 lock_file="$runtime_dir/runner.lock"
-lease_dir="/tmp/talaria-xctest-$EUID/leases"
+pool_runtime_dir="/tmp/talaria-xctest-$EUID"
+pool_lock="$pool_runtime_dir/pool.lock"
+lease_dir="$pool_runtime_dir/leases"
 lease_file=""
 simulator_id=""
 shutdown_on_release=false
+pool_lock_held=false
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
 
@@ -17,6 +20,10 @@ cleanup() {
         xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
     fi
     [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
+    if [[ "$pool_lock_held" == true ]]; then
+        pool_lock_held=false
+        unlink "$pool_lock" 2>/dev/null || true
+    fi
     unlink "$lock_file" 2>/dev/null || true
 }
 
@@ -24,7 +31,14 @@ if ! /usr/bin/shlock -f "$lock_file" -p $$; then
     print -u2 "Talaria tests are already running (PID $(<"$lock_file")). Wait for that run to finish."
     exit 75
 fi
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
+    print -u2 "The Talaria simulator pool is being configured. Retry when it finishes."
+    exit 75
+fi
+pool_lock_held=true
 
 typeset -a simulator_ids=()
 if [[ -n "${TALARIA_SIMULATOR_ID:-}" ]]; then
@@ -83,6 +97,9 @@ if [[ -z "$simulator_id" ]]; then
     exit 75
 fi
 
+pool_lock_held=false
+unlink "$pool_lock"
+
 destination="platform=iOS Simulator,id=$simulator_id"
 
 if [[ "$shutdown_on_release" == true ]]; then
@@ -104,8 +121,26 @@ xcodebuild test -quiet \
     -scheme HermesMobile \
     -destination "$destination" \
     -derivedDataPath "$runtime_dir/derived-data" \
-    APP_IDENTIFIER_SUFFIX=.xctest \
     -parallel-testing-enabled NO \
     -enableCodeCoverage NO \
     -resultBundlePath "$result_bundle" \
     "${test_filters[@]}"
+
+skipped_ui_tests=$(
+    xcrun xcresulttool get test-results tests --path "$result_bundle" --compact |
+        /usr/bin/jq -r '
+            .. | objects |
+            select(
+                .nodeType? == "Test Case" and
+                .result? == "Skipped" and
+                ((.nodeIdentifierURL? // "") | startswith("test://com.apple.xcode/HermesMobile/HermesMobileUITests/"))
+            ) |
+            .nodeIdentifierURL
+        '
+)
+
+if [[ -n "$skipped_ui_tests" ]]; then
+    print -u2 "HermesMobileUITests cannot skip on the authenticated simulator pool:"
+    print -u2 -r -- "$skipped_ui_tests"
+    exit 1
+fi

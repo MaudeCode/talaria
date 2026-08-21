@@ -122,12 +122,17 @@ Agent/MCP flow:
   four disposable test simulators with clones of that authenticated fixture, so
   every worktree starts with the same Hermes login. Plain
   `scripts/setup-ios-test-pool` keeps an existing pool and fills missing slots.
+  Refresh aborts instead of replacing a simulator leased by another worktree.
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
-  each worktree and leases separate simulators across worktrees. XCTest uses the
-  separate `dev.kil.talaria.xctest` app identity, so tests cannot clear the normal
-  app's cookies or Keychain login even when a worktree targets your development
-  simulator directly.
-- Use `build_run_sim` to build, install, launch, and open Simulator for manual testing.
+  each worktree and leases separate simulators across worktrees. XCTest and XCUI
+  use the normal authenticated Talaria app cloned from the fixture. Unit tests that
+  exercise cookie deletion inject a private cookie store, so they cannot alter the
+  simulator's Hermes session. A skipped `HermesMobileUITests` test fails the run,
+  since a skip usually means the fixture lost its login or expected UI data.
+- Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
+  builds and verifies the signed app, installs and launches it, and opens Simulator.
+  Keep the command running for the manual session, then press Control-C to shut down
+  the simulator and release its lease.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 
 Human/CLI equivalents:
@@ -142,7 +147,7 @@ scripts/test-ios
 ```
 
 ```zsh
-xcodebuildmcp simulator build-and-run --output jsonl
+scripts/run-ios
 ```
 
 If the configured simulator is not installed, choose a nearby available iPhone simulator and update `.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
