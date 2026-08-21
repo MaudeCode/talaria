@@ -4,6 +4,20 @@ set -euo pipefail
 
 repo_root=${0:A:h:h}
 pool_size=${TALARIA_SIMULATOR_POOL_SIZE:-4}
+refresh=false
+
+if (( $# > 1 )); then
+    print -u2 "Usage: scripts/setup-ios-test-pool [--refresh]"
+    exit 64
+fi
+
+if (( $# == 1 )); then
+    if [[ "$1" != "--refresh" ]]; then
+        print -u2 "Usage: scripts/setup-ios-test-pool [--refresh]"
+        exit 64
+    fi
+    refresh=true
+fi
 
 if [[ "$pool_size" != <-> || "$pool_size" -lt 1 ]]; then
     print -u2 "TALARIA_SIMULATOR_POOL_SIZE must be a positive integer."
@@ -13,18 +27,23 @@ fi
 preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
     "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
 devices=$(xcrun simctl list devices available)
-source_line=$(print -r -- "$devices" | awk -v wanted="$preferred_simulator" '
-    /^-- iOS / { in_ios = 1; next }
-    /^-- / { in_ios = 0 }
-    in_ios {
-        line = $0
-        sub(/^[[:space:]]*/, "", line)
-        if (index(line, wanted " (") == 1) {
-            print $0
-            exit
+
+device_line_named() {
+    print -r -- "$devices" | awk -v wanted="$1" '
+        /^-- iOS / { in_ios = 1; next }
+        /^-- / { in_ios = 0 }
+        in_ios {
+            line = $0
+            sub(/^[[:space:]]*/, "", line)
+            if (index(line, wanted " (") == 1) {
+                print $0
+                exit
+            }
         }
-    }
-')
+    '
+}
+
+source_line=$(device_line_named "$preferred_simulator")
 
 if [[ -z "$source_line" ]]; then
     print -u2 "Configured simulator '$preferred_simulator' is not available."
@@ -39,24 +58,31 @@ fi
 
 source_id=$(print -r -- "$source_line" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
 
+if [[ "$refresh" == true ]]; then
+    for (( slot = 1; slot <= pool_size; slot++ )); do
+        simulator_name="Talaria Test $slot"
+        existing=$(device_line_named "$simulator_name")
+
+        if [[ -n "$existing" && "$existing" != *"(Shutdown)"* ]]; then
+            print -u2 "$simulator_name is in use. Shut down the test pool before refreshing it."
+            exit 75
+        fi
+    done
+fi
+
 for (( slot = 1; slot <= pool_size; slot++ )); do
     simulator_name="Talaria Test $slot"
-    existing=$(print -r -- "$devices" | awk -v wanted="$simulator_name" '
-        /^-- iOS / { in_ios = 1; next }
-        /^-- / { in_ios = 0 }
-        in_ios {
-            line = $0
-            sub(/^[[:space:]]*/, "", line)
-            if (index(line, wanted " (") == 1) {
-                print $0
-                exit
-            }
-        }
-    ')
+    existing=$(device_line_named "$simulator_name")
 
-    if [[ -n "$existing" ]]; then
+    if [[ -n "$existing" && "$refresh" == false ]]; then
         print "Reusing $simulator_name"
         continue
+    fi
+
+    if [[ -n "$existing" ]]; then
+        existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
+        xcrun simctl delete "$existing_id"
+        print "Removed stale $simulator_name ($existing_id)"
     fi
 
     simulator_id=$(xcrun simctl clone "$source_id" "$simulator_name")
