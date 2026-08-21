@@ -201,12 +201,18 @@ final class ChatViewModel {
     private static let messagePageLimit = 50
 
     private(set) var messages: [ChatMessage] = [] {
-        didSet { recomputeDisplayedTranscriptMessages() }
+        didSet {
+            if !isUpdatingStreamingAssistantContent {
+                recomputeDisplayedTranscriptMessages()
+            }
+        }
     }
-    /// Memoized transcript mapping, recomputed once whenever `messages` or
-    /// `messagesOffset` changes. Views read this single cached value instead of
-    /// re-running the full classification pass on every body evaluation.
+    /// Memoized transcript mapping. Structural changes rebuild it; paced content
+    /// flushes replace only the active transcript row.
     private(set) var displayedTranscriptMessages: [TranscriptMessage] = []
+#if DEBUG
+    @ObservationIgnored private(set) var displayedTranscriptRecomputeCount = 0
+#endif
     private(set) var isLoading = false
     private(set) var isLoadingOlderMessages = false
     private(set) var isStartingChat = false
@@ -238,9 +244,10 @@ final class ChatViewModel {
     private(set) var cacheFirstReconcileScrollToken = 0
     private var hasPrimedInitialCachedMessages = false
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
-    @ObservationIgnored private var pendingAssistantTokenChunks: [String] = []
-    @ObservationIgnored private var pendingReasoningChunks: [String] = []
+    @ObservationIgnored private var pendingAssistantTokenText = ""
+    @ObservationIgnored private var pendingReasoningText = ""
     @ObservationIgnored private var pendingStreamingContentFlushTask: Task<Void, Never>?
+    @ObservationIgnored private var isUpdatingStreamingAssistantContent = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
     private var completedToolCallGroupLookup = ToolCallGroupAnchorLookup()
     private(set) var completedReasoningGroups: [ReasoningGroup] = []
@@ -276,6 +283,9 @@ final class ChatViewModel {
     }
 
     private func recomputeDisplayedTranscriptMessages() {
+#if DEBUG
+        displayedTranscriptRecomputeCount += 1
+#endif
         displayedTranscriptMessages = Self.transcriptMessages(
             from: messages,
             messageOffset: messagesOffset
@@ -656,7 +666,7 @@ final class ChatViewModel {
     private func drainStreamingContentTick() {
         var didMutate = false
         let quota = StreamingWordDrain.drainQuota(
-            backlogUnitCount: StreamingWordDrain.unitCount(in: pendingAssistantTokenChunks.joined()),
+            backlogUnitCount: StreamingWordDrain.unitCount(in: pendingAssistantTokenText),
             cadenceNanoseconds: streamingWordRevealCadenceNanoseconds,
             maxLagNanoseconds: streamingMaxRevealLagNanoseconds
         )
@@ -671,7 +681,7 @@ final class ChatViewModel {
             scheduleStreamingScrollTrigger()
         }
 
-        if !pendingAssistantTokenChunks.isEmpty {
+        if !pendingAssistantTokenText.isEmpty {
             scheduleStreamingContentFlush(afterNanoseconds: streamingWordRevealCadenceNanoseconds)
         }
     }
@@ -683,9 +693,9 @@ final class ChatViewModel {
 
     private func resetPendingStreamingContentBuffers() {
         cancelPendingStreamingContentFlush()
-        pendingAssistantTokenChunks = []
-        pendingReasoningChunks = []
-        // Chunks are deduplicated at append time, so the replay matched-prefix
+        pendingAssistantTokenText = ""
+        pendingReasoningText = ""
+        // Text is deduplicated at append time, so the replay matched-prefix
         // counters can reference unflushed content; dropping the buffers makes them
         // stale. Reset only the counters — the replay connection may still be live
         // (e.g. loadOlderMessages pagination mid-catch-up), so dedup must stay armed.
@@ -4190,33 +4200,37 @@ final class ChatViewModel {
     private func appendReasoning(_ text: String) -> Bool {
         guard !text.isEmpty else { return false }
 
-        if !pendingAssistantTokenChunks.isEmpty {
+        if !pendingAssistantTokenText.isEmpty {
             flushPendingStreamingContent()
         }
 
         // Same append-time dedup contract as appendAssistantToken: return true iff
         // the event contributed new content, mutate only via the coalesced flush.
         _ = ensureStreamingAssistantMessage()
-        let effectiveContent = liveReasoningText + pendingReasoningChunks.joined()
-        let remainder = deduplicatedReplayText(
-            text,
-            existingContent: effectiveContent,
-            matchedPrefixLength: &activeStreamReplayMatchedReasoningLength
-        )
+        let remainder: String
+        if isActiveStreamReplayConnection {
+            remainder = deduplicatedReplayText(
+                text,
+                existingContent: liveReasoningText + pendingReasoningText,
+                matchedPrefixLength: &activeStreamReplayMatchedReasoningLength
+            )
+        } else {
+            remainder = text
+        }
         guard !remainder.isEmpty else { return false }
 
-        pendingReasoningChunks.append(remainder)
+        pendingReasoningText.append(contentsOf: remainder)
         scheduleStreamingContentFlush()
         return true
     }
 
     @discardableResult
     private func flushReasoningChunks() -> Bool {
-        guard !pendingReasoningChunks.isEmpty else { return false }
+        guard !pendingReasoningText.isEmpty else { return false }
 
-        // Chunks were deduplicated at append time, so flushing is pure concatenation.
-        let appendedText = pendingReasoningChunks.joined()
-        pendingReasoningChunks = []
+        // Text was deduplicated at append time, so flushing is pure concatenation.
+        let appendedText = pendingReasoningText
+        pendingReasoningText = ""
 
         let messageID = ensureStreamingAssistantMessage()
         if reasoningAnchorMessageID == nil {
@@ -4363,42 +4377,48 @@ final class ChatViewModel {
     private func appendAssistantToken(_ token: String) -> Bool {
         guard !token.isEmpty else { return false }
 
-        if !pendingReasoningChunks.isEmpty {
+        if !pendingReasoningText.isEmpty {
             flushPendingStreamingContent()
         }
 
-        // Dedup at append time against effective content (flushed + pending) so the
-        // return value stays a synchronous progress signal for the reconnect watchdog
-        // while transcript mutation stays batched behind the coalesced flush.
+        // Replay dedup needs the effective content (flushed + pending). Ordinary
+        // streaming skips that full-string construction and appends directly.
         let messageID = ensureStreamingAssistantMessage()
-        let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
-        let effectiveContent = flushedContent + pendingAssistantTokenChunks.joined()
-        let remainder = deduplicatedReplayToken(token, existingContent: effectiveContent)
+        let remainder: String
+        if isActiveStreamReplayConnection {
+            let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
+            remainder = deduplicatedReplayToken(
+                token,
+                existingContent: flushedContent + pendingAssistantTokenText
+            )
+        } else {
+            remainder = token
+        }
         guard !remainder.isEmpty else { return false }
 
-        pendingAssistantTokenChunks.append(remainder)
+        pendingAssistantTokenText.append(contentsOf: remainder)
         scheduleStreamingContentFlush()
         return true
     }
 
     @discardableResult
     private func flushAssistantTokens(maxWordUnits: Int? = nil) -> Bool {
-        guard !pendingAssistantTokenChunks.isEmpty else { return false }
+        guard !pendingAssistantTokenText.isEmpty else { return false }
 
-        // Chunks were deduplicated at append time, so flushing is pure concatenation.
+        // Text was deduplicated at append time, so flushing is pure concatenation.
         // A word-unit limit moves only the head of the buffer into the visible
         // message; the tail stays pending, keeping the replay-dedup invariant that
         // flushed + pending text is the full received content.
-        let pendingText = pendingAssistantTokenChunks.joined()
+        let pendingText = pendingAssistantTokenText
         let appendedContent: String
         if let maxWordUnits {
             let (head, tail) = StreamingWordDrain.splitAtUnitBoundary(pendingText, unitCount: maxWordUnits)
             guard !head.isEmpty else { return false }
             appendedContent = head
-            pendingAssistantTokenChunks = tail.isEmpty ? [] : [tail]
+            pendingAssistantTokenText = tail
         } else {
             appendedContent = pendingText
-            pendingAssistantTokenChunks = []
+            pendingAssistantTokenText = ""
         }
 
         let messageID = ensureStreamingAssistantMessage()
@@ -4411,7 +4431,7 @@ final class ChatViewModel {
 
         if let index = messages.firstIndex(where: { $0.messageId == messageID }) {
             let existing = messages[index]
-            messages[index] = ChatMessage(
+            let updatedMessage = ChatMessage(
                 role: existing.role,
                 content: (existing.content ?? "") + appendedContent,
                 timestamp: existing.timestamp,
@@ -4427,6 +4447,7 @@ final class ChatViewModel {
                 turnDuration: existing.turnDuration,
                 turnTps: existing.turnTps
             )
+            updateStreamingAssistantMessage(at: index, with: updatedMessage)
             liveAssistantActivity.appendProse(appendedContent)
             return true
         }
@@ -4441,6 +4462,37 @@ final class ChatViewModel {
         )
         liveAssistantActivity.appendProse(appendedContent)
         return true
+    }
+
+    private func updateStreamingAssistantMessage(at messageIndex: Int, with message: ChatMessage) {
+        isUpdatingStreamingAssistantContent = true
+        messages[messageIndex] = message
+        isUpdatingStreamingAssistantContent = false
+
+        guard let transcriptIndex = displayedTranscriptMessages.lastIndex(where: { transcriptMessage in
+            transcriptMessage.assistantSegments.contains { $0.message.messageId == message.messageId }
+        }) else {
+            recomputeDisplayedTranscriptMessages()
+            return
+        }
+
+        let existingTranscriptMessage = displayedTranscriptMessages[transcriptIndex]
+        let updatedSegments = existingTranscriptMessage.assistantSegments.map { segment in
+            guard segment.message.messageId == message.messageId else { return segment }
+            return TranscriptAssistantSegment(anchorID: segment.anchorID, message: message)
+        }
+        guard let lastSegment = updatedSegments.last else {
+            recomputeDisplayedTranscriptMessages()
+            return
+        }
+
+        displayedTranscriptMessages[transcriptIndex] = TranscriptMessage(
+            loadedIndex: existingTranscriptMessage.loadedIndex,
+            renderID: existingTranscriptMessage.renderID,
+            anchorID: lastSegment.anchorID,
+            message: lastSegment.message,
+            assistantSegments: updatedSegments
+        )
     }
 
     private func deduplicatedReplayToken(_ token: String, existingContent: String) -> String {

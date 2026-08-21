@@ -78,6 +78,28 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
     }
 
     @MainActor
+    func testPacedContentUpdatesOnlyTheStreamingTranscriptRow() async throws {
+        let streamClient = PacingSpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            wordCadenceNanoseconds: 10_000_000,
+            maxLagNanoseconds: 1_000_000_000
+        )
+
+        let didStart = await viewModel.sendMessage("Stream a reply")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("alpha "))
+        _ = try await observeAssistantContent(viewModel, until: "alpha ")
+        let recomputeCount = viewModel.displayedTranscriptRecomputeCount
+
+        streamClient.emit(.token("beta"))
+        _ = try await observeAssistantContent(viewModel, until: "alpha beta")
+
+        XCTAssertEqual(viewModel.displayedTranscriptRecomputeCount, recomputeCount)
+        XCTAssertEqual(viewModel.displayedTranscriptMessages.last?.message.content, "alpha beta")
+    }
+
+    @MainActor
     func testDoneEventFlushesRemainingBufferImmediately() async throws {
         let streamClient = PacingSpySSEStreamingClient()
         let viewModel = try makeStalledDrainViewModel(streamClient: streamClient)
