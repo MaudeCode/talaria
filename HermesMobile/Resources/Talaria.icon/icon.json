@@ -8,7 +8,7 @@
     {
       "appearance" : "dark",
       "value" : {
-        "solid" : "display-p3:0.13544,0.13544,0.13544,1.00000"
+        "solid" : "display-p3:0.00000,0.00000,0.00000,1.00000"
       }
     }
   ],
@@ -17,15 +17,25 @@
       "layers" : [
         {
           "blend-mode" : "normal",
-          "fill" : {
-            "solid" : "display-p3:0.96783,0.76282,0.00000,0.96000"
-          },
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.96783,0.76282,0.00000,0.96000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.77078,0.60976,0.00836,0.96000"
+              }
+            }
+          ],
           "glass" : true,
           "hidden" : false,
           "image-name" : "Sandal.svg",
           "name" : "Sandal",
           "position" : {
-            "scale" : 1,
+            "scale" : 0.9,
             "translation-in-points" : [
               10,
               0.36130238672467385
