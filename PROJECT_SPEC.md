@@ -820,7 +820,7 @@ Stop and ask before guessing:
 2. **Bundle ID** — **Answered:** `dev.kil.talaria`.
 3. **App icon / branding** — **Open:** Talaria currently retains the inherited Hermes icon assets; replace them when the owner chooses Talaria artwork.
 4. **Crash reporting** — Firebase Crashlytics or skip for v1?
-5. **Privacy policy URL** — required for App Store. Owner needs to provide one (a simple GitHub Pages page is fine).
+5. **Privacy policy URL** — **Answered:** `https://talaria.kil.dev/privacy`; the page still needs to be published before App Store submission.
 6. **Default Server URL** — **Answered for current builds:** leave the field empty and show placeholder text reading `https://hermes.yourdomain.com`; the owner enters their URL once.
 
 ---
