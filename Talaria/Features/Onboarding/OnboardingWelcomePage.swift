@@ -43,7 +43,7 @@ struct OnboardingWelcomePage: View {
                     )
                     .frame(width: iconSize * 1.8, height: iconSize * 1.8)
 
-                    Image("HermesAppIcon")
+                    Image("TalariaAppIcon")
                         .resizable()
                         .scaledToFit()
                         .frame(width: iconSize, height: iconSize)
