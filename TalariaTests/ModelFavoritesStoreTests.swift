@@ -19,6 +19,20 @@ final class ModelFavoritesStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testFavoritesDefaultStorageKeyLoadsTalariaValues() throws {
+        let expected = [ModelFavoriteKey(modelID: "openai/gpt-5.5", providerID: "openai")]
+        defaults.set(try JSONEncoder().encode(expected), forKey: "talaria.favoriteModels")
+
+        XCTAssertEqual(ModelFavoritesStore(defaults: defaults).favoriteKeys, expected)
+    }
+
+    func testRecentsDefaultStorageKeyLoadsTalariaValues() throws {
+        let expected = [ModelFavoriteKey(modelID: "openai/gpt-5.5", providerID: "openai")]
+        defaults.set(try JSONEncoder().encode(expected), forKey: "talaria.recentModels")
+
+        XCTAssertEqual(ModelRecentsStore(defaults: defaults).recentKeys, expected)
+    }
+
     func testToggleFavoritePersistsExactModelAndProvider() {
         let store = ModelFavoritesStore(defaults: defaults, storageKey: "favorites")
         let option = ModelCatalogOption(id: "openai/gpt-5.5", displayName: "GPT-5.5", providerID: "openai")

@@ -253,7 +253,7 @@ Suggested review path:
 3. Open Sessions and select an existing session.
 4. Send a short message and watch the streamed response.
 5. Open Files, Tasks, Skills, Memory, and Usage Analytics from the Sessions screen.
-6. Optional: use the iOS share sheet from Safari/Notes/Files/Photos to import content into a new Hermes draft. The app stages shared content locally, uploads selected attachments to the configured Hermes server, and does not send a chat message until the user taps Send.
+6. Optional: use the iOS share sheet from Safari/Notes/Files/Photos to import content into a new Talaria draft. The app stages shared content locally, uploads selected attachments to the configured Hermes server, and does not send a chat message until the user taps Send.
 
 Notes:
 - There is no in-app account creation or purchase flow.
@@ -289,7 +289,7 @@ Decision options:
    - Required: explain the share flow clearly in Notes for Review and be ready to remove it quickly if rejected.
 2. Replace with a review-safer flow before external submission.
    - Pros: lower review risk.
-   - Cons: less automatic UX; may require user to open Hermes manually after sharing.
+   - Cons: less automatic UX; may require user to open Talaria manually after sharing.
    - Required: implement, test Safari/Notes/Files/Photos share cases, and update docs.
 
 Recommended path:
@@ -298,10 +298,10 @@ Recommended path:
 
 Current code note as of 2026-05-15:
 
-- The extension saves the pending draft/attachment import to the App Group before attempting to open Hermes.
+- The extension saves the pending draft/attachment import to the App Group before attempting to open Talaria.
 - The automatic launch path uses responder-chain and dynamic `UIApplication` URL-opening fallbacks to open `talaria://share`.
-- If automatic launch fails, the App Group import fallback still lets Hermes import the pending share when the app is next opened or foregrounded.
-- The review-safer alternative is to remove automatic launch and show a saved status, requiring the user to open Hermes manually.
+- If automatic launch fails, the App Group import fallback still lets Talaria import the pending share when the app is next opened or foregrounded.
+- The review-safer alternative is to remove automatic launch and show a saved status, requiring the user to open Talaria manually.
 
 Exit criteria:
 
@@ -345,15 +345,15 @@ Exit criteria:
 - full XCTest passes.
 - generic iOS Release build passes.
 
-Current Step 7 status as of 2026-05-15:
+Current Step 7 status as of 2026-05-15 (pre-target-rename evidence):
 
 - Complete on `codex/testflight-doc-reconcile`.
 - iPhone 17 Simulator is available.
 - `git diff --check` passed.
 - plist lint passed for app/share-extension Info.plist and privacy manifests.
-- `xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'` completed with `TEST SUCCEEDED`.
-- XCTest result bundle: `~/Library/Developer/Xcode/DerivedData/Talaria-dodyrzzipcxecicrwnfmjwjkqngb/Logs/Test/Test-Talaria-2026.05.14_22-45-59--0400.xcresult`.
-- `xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` completed with `BUILD SUCCEEDED`.
+- `xcodebuild test -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17'` completed with `TEST SUCCEEDED`.
+- XCTest result bundle: `~/Library/Developer/Xcode/DerivedData/HermesMobile-dodyrzzipcxecicrwnfmjwjkqngb/Logs/Test/Test-HermesMobile-2026.05.14_22-45-59--0400.xcresult`.
+- `xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` completed with `BUILD SUCCEEDED`.
 
 ### 8. Run Live Authenticated Server Smoke
 
@@ -706,7 +706,7 @@ Suggested review path:
 3. Open Sessions and select an existing session.
 4. Send a short message and watch the streamed response.
 5. Open Files, Tasks, Skills, Memory, and Usage Analytics from the Sessions screen.
-6. Optional: use the iOS share sheet from Safari/Notes/Files/Photos to import content into a new Hermes draft. The app stages shared content locally, uploads selected attachments to the configured Hermes server, and does not send a chat message until the user taps Send.
+6. Optional: use the iOS share sheet from Safari/Notes/Files/Photos to import content into a new Talaria draft. The app stages shared content locally, uploads selected attachments to the configured Hermes server, and does not send a chat message until the user taps Send.
 
 Notes:
 - There is no in-app account creation or purchase flow.
