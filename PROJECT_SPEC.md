@@ -677,7 +677,7 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 - **Model/networking changes:** None expected. Use local notifications only for v1; push notifications remain skipped for v1.
 - **Persistence/cache impact:** Store only minimal local preference/permission state if needed. Do not store transcript content in notification payloads.
 - **Tests:** Notification scheduling/cancellation helper tests where practical. Implemented policy coverage for preference, authorization, foreground/background, streaming, and normal-completion gates.
-- **Manual simulator/device test plan:** Start a response, background the app, wait for completion, confirm local notification appears, tap it, and verify the app returns to Hermes. Confirm no notification appears for foreground completion or cancelled streams.
+- **Manual simulator/device test plan:** Start a response, background the app, wait for completion, confirm local notification appears, tap it, and verify the app returns to Talaria. Confirm no notification appears for foreground completion or cancelled streams.
 - **Risks/open questions:** Spec decision remains “no push notifications in v1.” This item is local iOS notification only and must be clearly scoped that way. The app uses only a finite iOS background task when notifications are enabled; it still does not keep streams alive indefinitely. Notification payloads include the `session_id` for future exact-session routing, but broad navigation refactoring was intentionally deferred.
 
 ### Phase 13 — TestFlight prep (½ day)
@@ -799,7 +799,7 @@ The app is "v1 done" when:
 
 These are useful directions, not approved v1 scope. Before implementing any item here, confirm the owner wants it, check whether it changes App Store/privacy/security posture, and verify any required upstream API behavior instead of guessing.
 
-- **Share extension:** Accept URLs/text from Safari, Notes, Mail, Files, Photos, and similar apps, then open Hermes with a draft or import screen. Start with URL/text before richer files/images/PDFs.
+- **Share extension:** Accept URLs/text from Safari, Notes, Mail, Files, Photos, and similar apps, then open Talaria with a draft or import screen. Start with URL/text before richer files/images/PDFs.
 - **Live Activities:** Show glanceable status for long-running Hermes responses on the Lock Screen / Dynamic Island. Do not stream every token; show coarse status, elapsed time, and completion.
 - **Session search:** Add fast local search across loaded/cached sessions by title, preview, workspace/project, and date grouping. Use server-backed full-text search only if upstream exposes it.
 - **Mobile command launcher:** Provide quick saved commands/templates for repeated owner workflows, reusing the existing chat send/start path.
@@ -818,7 +818,7 @@ Stop and ask before guessing:
 
 1. **Repo and Xcode names.** **Answered: `talaria` for the repository and `Talaria` for the target/module.**
 2. **Bundle ID** — **Answered:** `dev.kil.talaria`.
-3. **App icon / branding** — **Open:** Talaria currently retains the inherited Hermes icon assets; replace them when the owner chooses Talaria artwork.
+3. **App icon / branding** — **Answered:** the app and onboarding use Talaria's winged-sandal artwork. README marketing images still need a separate refresh.
 4. **Crash reporting** — Firebase Crashlytics or skip for v1?
 5. **Privacy policy URL** — **Answered:** `https://talaria.kil.dev/privacy`; the page still needs to be published before App Store submission.
 6. **Default Server URL** — **Answered for current builds:** leave the field empty and show placeholder text reading `https://hermes.yourdomain.com`; the owner enters their URL once.

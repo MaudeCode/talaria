@@ -191,7 +191,7 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(message.turnDuration, 532)
     }
 
-    func testSessionDecodesHermesActivitySceneInOrder() async throws {
+    func testSessionDecodesActivitySceneInOrder() async throws {
         let client = makeClient { request in
             apiTestJSONResponse("""
             {

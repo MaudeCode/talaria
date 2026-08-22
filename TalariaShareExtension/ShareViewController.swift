@@ -17,7 +17,7 @@ final class ShareViewController: UIViewController {
         didStartOpening = true
 
         Task {
-            await saveDraftAndOpenHermes()
+            await saveDraftAndOpenTalaria()
         }
     }
 
@@ -43,7 +43,7 @@ final class ShareViewController: UIViewController {
         ])
     }
 
-    private func saveDraftAndOpenHermes() async {
+    private func saveDraftAndOpenTalaria() async {
         let input = await ShareInputReader.input(from: extensionContext)
         let draft = TalariaShareDraft.draftText(textSnippets: input.textSnippets, urls: input.urls)
 
@@ -71,7 +71,7 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        openHermes()
+        openTalaria()
     }
 
     private func showStatus(_ text: String) {
@@ -79,7 +79,7 @@ final class ShareViewController: UIViewController {
         statusLabel.isHidden = false
     }
 
-    private func openHermes() {
+    private func openTalaria() {
         let url = TalariaShareDraft.openURL
 
         extensionContext?.open(url, completionHandler: { [weak self] success in
@@ -88,13 +88,13 @@ final class ShareViewController: UIViewController {
                 if success {
                     self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
                 } else {
-                    self.openHermesViaWorkaround(url)
+                    self.openTalariaViaWorkaround(url)
                 }
             }
         })
     }
 
-    private func openHermesViaWorkaround(_ url: URL) {
+    private func openTalariaViaWorkaround(_ url: URL) {
         let application = containingApplicationResponder()
         if let application, open(url, using: application) {
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)

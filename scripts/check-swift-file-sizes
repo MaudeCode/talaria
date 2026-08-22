@@ -2,18 +2,18 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-raw_limit="${HERMES_SWIFT_FILE_SIZE_LIMIT:-500}"
+raw_limit="${TALARIA_SWIFT_FILE_SIZE_LIMIT:-500}"
 scan_root="$repo_root/Talaria"
 
 if [[ ! "$raw_limit" =~ ^[0-9]+$ ]]; then
-  echo "HERMES_SWIFT_FILE_SIZE_LIMIT must be a positive integer. Received: $raw_limit" >&2
+  echo "TALARIA_SWIFT_FILE_SIZE_LIMIT must be a positive integer. Received: $raw_limit" >&2
   exit 2
 fi
 
 limit="$((10#$raw_limit))"
 
 if (( limit <= 0 )); then
-  echo "HERMES_SWIFT_FILE_SIZE_LIMIT must be a positive integer. Received: $raw_limit" >&2
+  echo "TALARIA_SWIFT_FILE_SIZE_LIMIT must be a positive integer. Received: $raw_limit" >&2
   exit 2
 fi
 

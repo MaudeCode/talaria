@@ -36,7 +36,7 @@ final class ComposerVoiceInputController {
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
     @ObservationIgnored private var serverRecordingTimeoutTask: Task<Void, Never>?
     private var activeTranscriptionID: UUID?
-    private let logger = Logger.hermesVoiceInput
+    private let logger = Logger.talariaVoiceInput
 
     @ObservationIgnored var apiClient: APIClient?
     @ObservationIgnored var providerPreference = ComposerSTTProviderPreference.defaultValue
@@ -932,7 +932,7 @@ struct ComposerVoiceDraftUpdateSession {
 }
 
 private extension Logger {
-    static let hermesVoiceInput = Logger(
+    static let talariaVoiceInput = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Talaria",
         category: "VoiceInput"
     )

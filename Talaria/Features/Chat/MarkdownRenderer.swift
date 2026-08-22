@@ -417,7 +417,7 @@ private struct ChatCodeBlock: View {
     @State private var didCopy = false
     @State private var highlightedCode: NSAttributedString?
 
-    private let logger = Logger.hermesMarkdownRendering
+    private let logger = Logger.talariaMarkdownRendering
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1166,7 +1166,7 @@ private struct PlainMarkdownFallbackView: View {
     let content: String
     let reason: MarkdownContentFallbackReason
 
-    private let logger = Logger.hermesMarkdownRendering
+    private let logger = Logger.talariaMarkdownRendering
 
     var body: some View {
         Text(verbatim: content)
@@ -1328,7 +1328,7 @@ private extension String {
 }
 
 private extension Logger {
-    static let hermesMarkdownRendering = Logger(
+    static let talariaMarkdownRendering = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Talaria",
         category: "MarkdownRendering"
     )

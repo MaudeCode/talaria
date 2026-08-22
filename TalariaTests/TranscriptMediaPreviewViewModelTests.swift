@@ -101,7 +101,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url, remoteURL)
             XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "*/*")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Test-Session"), "authenticated")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "authenticated")
             return self.response(statusCode: 200, data: imageData, for: request)
         }
         let viewModel = TranscriptMediaPreviewViewModel(
@@ -120,12 +120,12 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(recorder.requestCount, 1)
     }
 
-    func testLoadExternalRemoteImageDoesNotSendHermesCookies() async throws {
+    func testLoadExternalRemoteImageDoesNotSendServerSessionCookies() async throws {
         let recorder = TranscriptMediaPreviewRequestRecorder()
         let imageData = try XCTUnwrap(Self.imageData())
         let externalURL = try XCTUnwrap(URL(string: "https://cdn.example.test/output/image.png"))
         let cookieStorage = HTTPCookieStorage()
-        let cookie = try XCTUnwrap(Self.hermesCookie(domain: ".example.test"))
+        let cookie = try XCTUnwrap(Self.serverSessionCookie(domain: ".example.test"))
         cookieStorage.setCookie(cookie)
 
         let client = makeClient(cookieStorage: cookieStorage) { request in
@@ -133,7 +133,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url, externalURL)
             XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "*/*")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Test-Session"), "public")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "public")
             XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
             return self.response(statusCode: 200, data: imageData, for: request)
         }
@@ -283,7 +283,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
             recorder.record(request)
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url, remoteURL)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Test-Session"), "public")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "public")
             return self.response(statusCode: 200, data: videoData, for: request)
         }
         let viewModel = TranscriptMediaPreviewViewModel(
@@ -327,7 +327,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
             recorder.record(request)
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url, remoteURL)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Test-Session"), "public")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "public")
             return self.response(statusCode: 200, data: audioData, for: request)
         }
         let viewModel = TranscriptMediaPreviewViewModel(
@@ -393,7 +393,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         configuration.httpCookieStorage = cookieStorage
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
-        configuration.httpAdditionalHeaders = ["X-Hermes-Test-Session": "authenticated"]
+        configuration.httpAdditionalHeaders = ["X-Talaria-Test-Session": "authenticated"]
         let session = URLSession(configuration: configuration)
 
         let publicConfiguration = URLSessionConfiguration.ephemeral
@@ -401,7 +401,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         publicConfiguration.httpCookieStorage = nil
         publicConfiguration.httpCookieAcceptPolicy = .never
         publicConfiguration.httpShouldSetCookies = false
-        publicConfiguration.httpAdditionalHeaders = ["X-Hermes-Test-Session": "public"]
+        publicConfiguration.httpAdditionalHeaders = ["X-Talaria-Test-Session": "public"]
         let publicSession = URLSession(configuration: publicConfiguration)
 
         return APIClient(baseURL: Self.baseURL, session: session, publicMediaSession: publicSession)
@@ -461,7 +461,7 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         return data
     }
 
-    private static func hermesCookie(domain: String) -> HTTPCookie? {
+    private static func serverSessionCookie(domain: String) -> HTTPCookie? {
         HTTPCookie(properties: [
             .domain: domain,
             .path: "/",

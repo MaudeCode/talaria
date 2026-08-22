@@ -45,7 +45,7 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertEqual(TalariaShareDraft.composerDraft(from: " \n\t "), "")
     }
 
-    func testShareOpenURLRecognizesOnlyHermesShareLinks() {
+    func testShareOpenURLRecognizesOnlyTalariaShareLinks() {
         let scheme = TalariaShareDraft.urlScheme
 
         XCTAssertTrue(TalariaShareDraft.isShareOpenURL(URL(string: "\(scheme)://share")!))

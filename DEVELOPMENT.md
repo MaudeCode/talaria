@@ -173,7 +173,7 @@ Policy:
 You can override the warning threshold for local experiments:
 
 ```zsh
-HERMES_SWIFT_FILE_SIZE_LIMIT=300 scripts/check-swift-file-sizes
+TALARIA_SWIFT_FILE_SIZE_LIMIT=300 scripts/check-swift-file-sizes
 ```
 
 ## Raw xcodebuild Fallback

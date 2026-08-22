@@ -14,7 +14,7 @@ struct ModelFavoritesStore: @unchecked Sendable {
 
     init(
         defaults: UserDefaults = .standard,
-        storageKey: String = "hermes.mobile.favoriteModels"
+        storageKey: String = "talaria.favoriteModels"
     ) {
         self.defaults = defaults
         self.storageKey = storageKey
@@ -93,7 +93,7 @@ struct ModelRecentsStore: @unchecked Sendable {
 
     init(
         defaults: UserDefaults = .standard,
-        storageKey: String = "hermes.mobile.recentModels",
+        storageKey: String = "talaria.recentModels",
         limit: Int = 5
     ) {
         self.defaults = defaults

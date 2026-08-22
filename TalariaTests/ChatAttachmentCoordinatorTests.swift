@@ -177,7 +177,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         let remoteURL = try XCTUnwrap(URL(string: "https://example.test/generated/media/image.png?variant=full"))
         let client = makeAuthenticatedMediaClient { request in
             XCTAssertEqual(request.url, remoteURL)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Test-Session"), "authenticated")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "authenticated")
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: 200,
@@ -260,7 +260,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         let remoteURL = try XCTUnwrap(URL(string: "https://cdn.example.test/generated/movie.mp4"))
         let client = makeAuthenticatedMediaClient { request in
             XCTAssertEqual(request.url, remoteURL)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Test-Session"), "public")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "public")
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
                 statusCode: 200,
@@ -319,11 +319,11 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
 
         let authenticatedConfiguration = URLSessionConfiguration.ephemeral
         authenticatedConfiguration.protocolClasses = [MockURLProtocol.self]
-        authenticatedConfiguration.httpAdditionalHeaders = ["X-Hermes-Test-Session": "authenticated"]
+        authenticatedConfiguration.httpAdditionalHeaders = ["X-Talaria-Test-Session": "authenticated"]
 
         let publicConfiguration = URLSessionConfiguration.ephemeral
         publicConfiguration.protocolClasses = [MockURLProtocol.self]
-        publicConfiguration.httpAdditionalHeaders = ["X-Hermes-Test-Session": "public"]
+        publicConfiguration.httpAdditionalHeaders = ["X-Talaria-Test-Session": "public"]
 
         return APIClient(
             baseURL: URL(string: "https://example.test")!,

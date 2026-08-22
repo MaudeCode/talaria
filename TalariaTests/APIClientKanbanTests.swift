@@ -695,7 +695,7 @@ final class APIClientKanbanTests: APIClientTestCase {
 
     func testKanbanCarriesConfiguredCustomHeaders() async throws {
         MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Hermes-Proxy"), "enabled")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Proxy"), "enabled")
             XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
             XCTAssertNil(request.value(forHTTPHeaderField: "Origin"))
             XCTAssertNil(request.value(forHTTPHeaderField: "Referer"))
@@ -707,7 +707,7 @@ final class APIClientKanbanTests: APIClientTestCase {
         let client = APIClient(
             baseURL: serverURL,
             session: URLSession(configuration: configuration),
-            customHeaderProvider: { [CustomHeader(name: "X-Hermes-Proxy", value: "enabled")] }
+            customHeaderProvider: { [CustomHeader(name: "X-Talaria-Proxy", value: "enabled")] }
         )
 
         _ = try await client.kanbanConfiguration()
