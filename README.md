@@ -14,8 +14,6 @@ Your server. Your iPhone. No middleman.
 
 [Contributing](CONTRIBUTING.md)
 
-<img src="docs/assets/readme/hero-devices.png" alt="Talaria running on two iPhones: a streaming chat session and the home screen with Tasks, Skills, Memory, Insights, and Sessions" width="720" />
-
 </div>
 
 Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/MaudeCode/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
