@@ -521,30 +521,6 @@ struct SettingsView: View {
                 SettingsCard(title: String(localized: "App")) {
                     SettingsInfoRow(title: String(localized: "Version"), value: appVersion)
                     SettingsInfoRow(title: String(localized: "Build"), value: appBuild)
-
-                    SettingsDivider()
-
-                    Link(destination: AppConfig.privacyPolicyURL) {
-                        SettingsAccessoryRow(
-                            title: String(localized: "Privacy Policy"),
-                            systemImage: "hand.raised",
-                            accessorySystemImage: "arrow.up.forward"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Privacy Policy")
-
-                    SettingsDivider()
-
-                    Link(destination: AppConfig.supportURL) {
-                        SettingsAccessoryRow(
-                            title: String(localized: "Support"),
-                            systemImage: "questionmark.circle",
-                            accessorySystemImage: "arrow.up.forward"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Support")
                 }
 
                 #if DEBUG
@@ -2355,6 +2331,6 @@ struct AddServerView: View {
 
 #Preview {
     NavigationStack {
-        SettingsView(authManager: AuthManager(), server: URL(staticString: "https://webui.example.test"))
+        SettingsView(authManager: AuthManager(), server: URL(string: "https://webui.example.test")!)
     }
 }
