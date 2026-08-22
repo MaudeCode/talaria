@@ -73,7 +73,7 @@ final class ShareInputReaderTests: XCTestCase {
     // MARK: - Attachments
 
     func testOversizedImageDataProducesNoAttachment() async {
-        let oversized = Data(count: HermesShareDraft.maximumSharedAttachmentBytes + 1)
+        let oversized = Data(count: TalariaShareDraft.maximumSharedAttachmentBytes + 1)
         let provider = NSItemProvider(item: oversized as NSData, typeIdentifier: UTType.png.identifier)
 
         let input = await ShareInputReader.input(from: [provider])
@@ -82,14 +82,14 @@ final class ShareInputReaderTests: XCTestCase {
     }
 
     func testAttachmentsCappedAtSharedLimit() async {
-        let providers = (0...HermesShareDraft.maximumSharedAttachmentCount).map { index in
+        let providers = (0...TalariaShareDraft.maximumSharedAttachmentCount).map { index in
             NSItemProvider(item: Data([UInt8(index)]) as NSData, typeIdentifier: UTType.png.identifier)
         }
-        XCTAssertEqual(providers.count, HermesShareDraft.maximumSharedAttachmentCount + 1)
+        XCTAssertEqual(providers.count, TalariaShareDraft.maximumSharedAttachmentCount + 1)
 
         let input = await ShareInputReader.input(from: providers)
 
-        XCTAssertEqual(input.attachments.count, HermesShareDraft.maximumSharedAttachmentCount)
+        XCTAssertEqual(input.attachments.count, TalariaShareDraft.maximumSharedAttachmentCount)
     }
 
     // Exercises the security-scoped file path (loadFileAttachment → attachment(from:provider:)),

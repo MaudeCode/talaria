@@ -1116,7 +1116,7 @@ struct SessionListView: View {
         }
 
         pendingSharedImport = nil
-        let draft = HermesShareDraft.composerDraft(from: sharedImport.draft)
+        let draft = TalariaShareDraft.composerDraft(from: sharedImport.draft)
         guard !draft.isEmpty || !sharedImport.attachments.isEmpty else {
             return
         }

@@ -31,7 +31,7 @@ struct KeychainStore: KeychainStoring {
 
     init(service: String? = nil) {
         let service = service
-            ?? Bundle.main.object(forInfoDictionaryKey: "HermesKeychainService") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "TalariaKeychainService") as? String
             ?? Bundle.main.bundleIdentifier
             ?? "dev.kil.talaria"
         self.keychain = Keychain(service: service)

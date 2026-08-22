@@ -164,7 +164,7 @@ Local validation:
 
 ```zsh
 plutil -p Talaria/Resources/Talaria.entitlements
-plutil -p HermesShareExtension/Resources/HermesShareExtension.entitlements
+plutil -p TalariaShareExtension/Resources/TalariaShareExtension.entitlements
 xcodebuild -showBuildSettings -project Talaria.xcodeproj -scheme Talaria -configuration Release | rg "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_ENTITLEMENTS|CODE_SIGN_STYLE"
 ```
 
@@ -176,7 +176,7 @@ Current local result as of 2026-05-15:
 
 - Local validation passed on `codex/testflight-doc-reconcile`.
 - App target Release settings use automatic signing, Team ID `Q28NF3NH3D`, bundle ID `dev.kil.talaria`, and `Talaria/Resources/Talaria.entitlements`.
-- Share extension Release settings use automatic signing, Team ID `Q28NF3NH3D`, bundle ID `dev.kil.talaria.shareextension`, and `HermesShareExtension/Resources/HermesShareExtension.entitlements`.
+- Share extension Release settings use automatic signing, Team ID `Q28NF3NH3D`, bundle ID `dev.kil.talaria.shareextension`, and `TalariaShareExtension/Resources/TalariaShareExtension.entitlements`.
 - Both entitlement files include `group.dev.kil.talaria`.
 - Owner confirmed the Apple Developer Portal and App Store Connect API key items on 2026-05-15.
 
@@ -325,7 +325,7 @@ Commands:
 xcrun simctl list devices available
 git status --short --branch
 git diff --check
-plutil -lint Talaria/Resources/Info.plist Talaria/Resources/PrivacyInfo.xcprivacy HermesShareExtension/Resources/Info.plist HermesShareExtension/Resources/PrivacyInfo.xcprivacy
+plutil -lint Talaria/Resources/Info.plist Talaria/Resources/PrivacyInfo.xcprivacy TalariaShareExtension/Resources/Info.plist TalariaShareExtension/Resources/PrivacyInfo.xcprivacy
 xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
 xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```

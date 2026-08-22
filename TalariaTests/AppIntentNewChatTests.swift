@@ -21,41 +21,41 @@ final class AppIntentNewChatTests: XCTestCase {
     }
 
     func testNewChatURLUsesNewChatHostOnTheAppScheme() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatURL)
-        XCTAssertEqual(url.scheme, HermesDeepLink.scheme)
-        XCTAssertEqual(url.host, HermesDeepLink.newChatHost)
+        let url = try XCTUnwrap(TalariaDeepLink.newChatURL)
+        XCTAssertEqual(url.scheme, TalariaDeepLink.scheme)
+        XCTAssertEqual(url.host, TalariaDeepLink.newChatHost)
     }
 
     func testIsNewChatURLAcceptsItsOwnURL() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatURL)
-        XCTAssertTrue(HermesDeepLink.isNewChatURL(url))
+        let url = try XCTUnwrap(TalariaDeepLink.newChatURL)
+        XCTAssertTrue(TalariaDeepLink.isNewChatURL(url))
     }
 
     func testIsNewChatURLIsCaseInsensitiveOnHost() throws {
-        let url = try XCTUnwrap(URL(string: "\(HermesDeepLink.scheme)://New-Chat"))
-        XCTAssertTrue(HermesDeepLink.isNewChatURL(url))
+        let url = try XCTUnwrap(URL(string: "\(TalariaDeepLink.scheme)://New-Chat"))
+        XCTAssertTrue(TalariaDeepLink.isNewChatURL(url))
     }
 
     func testSessionURLIsNotANewChatURL() throws {
-        let session = try XCTUnwrap(HermesDeepLink.sessionURL(sessionID: "abc123"))
-        XCTAssertFalse(HermesDeepLink.isNewChatURL(session))
+        let session = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "abc123"))
+        XCTAssertFalse(TalariaDeepLink.isNewChatURL(session))
     }
 
     func testNewChatURLDoesNotParseAsASessionID() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatURL)
-        XCTAssertNil(HermesDeepLink.sessionID(from: url))
+        let url = try XCTUnwrap(TalariaDeepLink.newChatURL)
+        XCTAssertNil(TalariaDeepLink.sessionID(from: url))
     }
 
     func testForeignSchemeIsNotANewChatURL() throws {
         let url = try XCTUnwrap(URL(string: "https://new-chat"))
-        XCTAssertFalse(HermesDeepLink.isNewChatURL(url))
+        XCTAssertFalse(TalariaDeepLink.isNewChatURL(url))
     }
 
     @MainActor
     func testRouterRecordsDeepLink() {
         let router = AppIntentRouter.shared
-        router.requestDeepLink(HermesDeepLink.newChatURL)
-        XCTAssertEqual(router.pendingDeepLink, HermesDeepLink.newChatURL)
+        router.requestDeepLink(TalariaDeepLink.newChatURL)
+        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatURL)
     }
 
     @MainActor
@@ -69,7 +69,7 @@ final class AppIntentNewChatTests: XCTestCase {
     func testNewChatIntentQueuesTheNewChatDeepLink() async throws {
         let router = AppIntentRouter.shared
         _ = try await NewChatIntent().perform()
-        XCTAssertEqual(router.pendingDeepLink, HermesDeepLink.newChatURL)
+        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatURL)
     }
 
     func testIntentOpensAppWhenRun() {
@@ -79,50 +79,50 @@ final class AppIntentNewChatTests: XCTestCase {
     // MARK: - New Chat with Voice (issue #338)
 
     func testNewChatVoiceURLUsesVoiceHostOnTheAppScheme() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatVoiceURL)
-        XCTAssertEqual(url.scheme, HermesDeepLink.scheme)
-        XCTAssertEqual(url.host, HermesDeepLink.newChatVoiceHost)
+        let url = try XCTUnwrap(TalariaDeepLink.newChatVoiceURL)
+        XCTAssertEqual(url.scheme, TalariaDeepLink.scheme)
+        XCTAssertEqual(url.host, TalariaDeepLink.newChatVoiceHost)
     }
 
     func testIsNewChatVoiceURLAcceptsItsOwnURL() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatVoiceURL)
-        XCTAssertTrue(HermesDeepLink.isNewChatVoiceURL(url))
+        let url = try XCTUnwrap(TalariaDeepLink.newChatVoiceURL)
+        XCTAssertTrue(TalariaDeepLink.isNewChatVoiceURL(url))
     }
 
     func testIsNewChatVoiceURLIsCaseInsensitiveOnHost() throws {
-        let url = try XCTUnwrap(URL(string: "\(HermesDeepLink.scheme)://New-Chat-Voice"))
-        XCTAssertTrue(HermesDeepLink.isNewChatVoiceURL(url))
+        let url = try XCTUnwrap(URL(string: "\(TalariaDeepLink.scheme)://New-Chat-Voice"))
+        XCTAssertTrue(TalariaDeepLink.isNewChatVoiceURL(url))
     }
 
     func testVoiceAndPlainNewChatURLsDoNotAlias() throws {
-        let voiceURL = try XCTUnwrap(HermesDeepLink.newChatVoiceURL)
-        let plainURL = try XCTUnwrap(HermesDeepLink.newChatURL)
+        let voiceURL = try XCTUnwrap(TalariaDeepLink.newChatVoiceURL)
+        let plainURL = try XCTUnwrap(TalariaDeepLink.newChatURL)
         // The two intents must route distinctly: a voice URL is not a plain new-chat URL,
         // and vice versa.
-        XCTAssertFalse(HermesDeepLink.isNewChatURL(voiceURL))
-        XCTAssertFalse(HermesDeepLink.isNewChatVoiceURL(plainURL))
+        XCTAssertFalse(TalariaDeepLink.isNewChatURL(voiceURL))
+        XCTAssertFalse(TalariaDeepLink.isNewChatVoiceURL(plainURL))
     }
 
     func testNewChatVoiceURLDoesNotParseAsASessionID() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatVoiceURL)
-        XCTAssertNil(HermesDeepLink.sessionID(from: url))
+        let url = try XCTUnwrap(TalariaDeepLink.newChatVoiceURL)
+        XCTAssertNil(TalariaDeepLink.sessionID(from: url))
     }
 
     func testSessionURLIsNotAVoiceURL() throws {
-        let session = try XCTUnwrap(HermesDeepLink.sessionURL(sessionID: "abc123"))
-        XCTAssertFalse(HermesDeepLink.isNewChatVoiceURL(session))
+        let session = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "abc123"))
+        XCTAssertFalse(TalariaDeepLink.isNewChatVoiceURL(session))
     }
 
     func testForeignSchemeIsNotAVoiceURL() throws {
         let url = try XCTUnwrap(URL(string: "https://new-chat-voice"))
-        XCTAssertFalse(HermesDeepLink.isNewChatVoiceURL(url))
+        XCTAssertFalse(TalariaDeepLink.isNewChatVoiceURL(url))
     }
 
     @MainActor
     func testNewChatVoiceIntentQueuesTheVoiceDeepLink() async throws {
         let router = AppIntentRouter.shared
         _ = try await NewChatVoiceIntent().perform()
-        XCTAssertEqual(router.pendingDeepLink, HermesDeepLink.newChatVoiceURL)
+        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatVoiceURL)
     }
 
     func testVoiceIntentOpensAppWhenRun() {

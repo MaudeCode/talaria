@@ -20,60 +20,60 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
     // MARK: - Deep link shape
 
     func testNewChatInProfileURLUsesProfileHostAndCarriesName() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatInProfileURL(profileName: "dev"))
-        XCTAssertEqual(url.scheme, HermesDeepLink.scheme)
-        XCTAssertEqual(url.host, HermesDeepLink.newChatInProfileHost)
-        XCTAssertEqual(HermesDeepLink.profileName(fromNewChatInProfile: url), "dev")
+        let url = try XCTUnwrap(TalariaDeepLink.newChatInProfileURL(profileName: "dev"))
+        XCTAssertEqual(url.scheme, TalariaDeepLink.scheme)
+        XCTAssertEqual(url.host, TalariaDeepLink.newChatInProfileHost)
+        XCTAssertEqual(TalariaDeepLink.profileName(fromNewChatInProfile: url), "dev")
     }
 
     func testBlankProfileNameProducesNoURL() {
-        XCTAssertNil(HermesDeepLink.newChatInProfileURL(profileName: ""))
-        XCTAssertNil(HermesDeepLink.newChatInProfileURL(profileName: "   "))
+        XCTAssertNil(TalariaDeepLink.newChatInProfileURL(profileName: ""))
+        XCTAssertNil(TalariaDeepLink.newChatInProfileURL(profileName: "   "))
     }
 
     func testProfileNameWithSpacesAndUnicodeRoundTrips() throws {
         let name = "Work Café 工作"
-        let url = try XCTUnwrap(HermesDeepLink.newChatInProfileURL(profileName: name))
-        XCTAssertEqual(HermesDeepLink.profileName(fromNewChatInProfile: url), name)
+        let url = try XCTUnwrap(TalariaDeepLink.newChatInProfileURL(profileName: name))
+        XCTAssertEqual(TalariaDeepLink.profileName(fromNewChatInProfile: url), name)
     }
 
     func testProfileNameIsTrimmedOnBuildAndRead() throws {
-        let url = try XCTUnwrap(HermesDeepLink.newChatInProfileURL(profileName: "  dev  "))
-        XCTAssertEqual(HermesDeepLink.profileName(fromNewChatInProfile: url), "dev")
+        let url = try XCTUnwrap(TalariaDeepLink.newChatInProfileURL(profileName: "  dev  "))
+        XCTAssertEqual(TalariaDeepLink.profileName(fromNewChatInProfile: url), "dev")
     }
 
     func testIsNewChatInProfileURLIsCaseInsensitiveOnHost() throws {
-        let url = try XCTUnwrap(URL(string: "\(HermesDeepLink.scheme)://New-Chat-Profile?profile=dev"))
-        XCTAssertTrue(HermesDeepLink.isNewChatInProfileURL(url))
+        let url = try XCTUnwrap(URL(string: "\(TalariaDeepLink.scheme)://New-Chat-Profile?profile=dev"))
+        XCTAssertTrue(TalariaDeepLink.isNewChatInProfileURL(url))
     }
 
     func testProfileNameNilWhenQueryMissing() throws {
-        let url = try XCTUnwrap(URL(string: "\(HermesDeepLink.scheme)://new-chat-profile"))
-        XCTAssertNil(HermesDeepLink.profileName(fromNewChatInProfile: url))
+        let url = try XCTUnwrap(URL(string: "\(TalariaDeepLink.scheme)://new-chat-profile"))
+        XCTAssertNil(TalariaDeepLink.profileName(fromNewChatInProfile: url))
     }
 
     func testForeignSchemeIsNotAProfileURL() throws {
         let url = try XCTUnwrap(URL(string: "https://new-chat-profile?profile=dev"))
-        XCTAssertFalse(HermesDeepLink.isNewChatInProfileURL(url))
+        XCTAssertFalse(TalariaDeepLink.isNewChatInProfileURL(url))
     }
 
     // MARK: - Non-aliasing with the other new-chat links
 
     func testProfileURLDoesNotAliasPlainVoiceOrSession() throws {
-        let profileURL = try XCTUnwrap(HermesDeepLink.newChatInProfileURL(profileName: "dev"))
-        XCTAssertFalse(HermesDeepLink.isNewChatURL(profileURL))
-        XCTAssertFalse(HermesDeepLink.isNewChatVoiceURL(profileURL))
-        XCTAssertNil(HermesDeepLink.sessionID(from: profileURL))
+        let profileURL = try XCTUnwrap(TalariaDeepLink.newChatInProfileURL(profileName: "dev"))
+        XCTAssertFalse(TalariaDeepLink.isNewChatURL(profileURL))
+        XCTAssertFalse(TalariaDeepLink.isNewChatVoiceURL(profileURL))
+        XCTAssertNil(TalariaDeepLink.sessionID(from: profileURL))
     }
 
     func testPlainVoiceAndSessionURLsAreNotProfileURLs() throws {
-        let plain = try XCTUnwrap(HermesDeepLink.newChatURL)
-        let voice = try XCTUnwrap(HermesDeepLink.newChatVoiceURL)
-        let session = try XCTUnwrap(HermesDeepLink.sessionURL(sessionID: "abc123"))
-        XCTAssertFalse(HermesDeepLink.isNewChatInProfileURL(plain))
-        XCTAssertFalse(HermesDeepLink.isNewChatInProfileURL(voice))
-        XCTAssertFalse(HermesDeepLink.isNewChatInProfileURL(session))
-        XCTAssertNil(HermesDeepLink.profileName(fromNewChatInProfile: plain))
+        let plain = try XCTUnwrap(TalariaDeepLink.newChatURL)
+        let voice = try XCTUnwrap(TalariaDeepLink.newChatVoiceURL)
+        let session = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "abc123"))
+        XCTAssertFalse(TalariaDeepLink.isNewChatInProfileURL(plain))
+        XCTAssertFalse(TalariaDeepLink.isNewChatInProfileURL(voice))
+        XCTAssertFalse(TalariaDeepLink.isNewChatInProfileURL(session))
+        XCTAssertNil(TalariaDeepLink.profileName(fromNewChatInProfile: plain))
     }
 
     // MARK: - NewChatRequest threading
@@ -105,7 +105,7 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         _ = try await intent.perform()
         XCTAssertEqual(
             AppIntentRouter.shared.pendingDeepLink,
-            HermesDeepLink.newChatInProfileURL(profileName: "dev")
+            TalariaDeepLink.newChatInProfileURL(profileName: "dev")
         )
     }
 

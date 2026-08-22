@@ -72,17 +72,17 @@ private struct SendableFileManager: @unchecked Sendable {
     let value: FileManager
 }
 
-enum HermesShareDraft {
+enum TalariaShareDraft {
     private static let importCoordinator = SharedDraftImportCoordinator()
     static var appGroupIdentifier: String {
-        Bundle.main.object(forInfoDictionaryKey: "HermesAppGroupIdentifier") as? String
+        Bundle.main.object(forInfoDictionaryKey: "TalariaAppGroupIdentifier") as? String
             ?? "group.dev.kil.talaria"
     }
 
     static let pendingDraftFileName = "pending-share-draft.json"
     static let pendingAttachmentsDirectoryName = "pending-share-attachments"
     static var urlScheme: String {
-        Bundle.main.object(forInfoDictionaryKey: "HermesURLScheme") as? String
+        Bundle.main.object(forInfoDictionaryKey: "TalariaURLScheme") as? String
             ?? "talaria"
     }
 

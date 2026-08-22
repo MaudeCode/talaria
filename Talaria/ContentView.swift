@@ -77,7 +77,7 @@ struct ContentView: View {
         // A fresh request each time (new `id`) so a repeat invocation re-triggers navigation
         // even if the previous one's value still lingers downstream. The voice variant carries
         // `autoStartsVoiceInput` so the composer begins dictation once it appears (#338).
-        if HermesDeepLink.isNewChatVoiceURL(url) {
+        if TalariaDeepLink.isNewChatVoiceURL(url) {
             pendingNewChatRequest = NewChatRequest(autoStartsVoiceInput: true)
             return
         }
@@ -85,24 +85,24 @@ struct ContentView: View {
         // The profile variant carries the chosen profile name, so the composer creates the
         // session pinned to it (#339). A malformed link with no profile falls back to a
         // plain new chat (server's active profile) rather than failing.
-        if HermesDeepLink.isNewChatInProfileURL(url) {
+        if TalariaDeepLink.isNewChatInProfileURL(url) {
             pendingNewChatRequest = NewChatRequest(
-                profileName: HermesDeepLink.profileName(fromNewChatInProfile: url)
+                profileName: TalariaDeepLink.profileName(fromNewChatInProfile: url)
             )
             return
         }
 
-        if HermesDeepLink.isNewChatURL(url) {
+        if TalariaDeepLink.isNewChatURL(url) {
             pendingNewChatRequest = NewChatRequest(autoStartsVoiceInput: false)
             return
         }
 
-        if let sessionID = HermesDeepLink.sessionID(from: url) {
+        if let sessionID = TalariaDeepLink.sessionID(from: url) {
             pendingDeepLinkedSessionID = sessionID
             return
         }
 
-        guard HermesShareDraft.isShareOpenURL(url) else {
+        guard TalariaShareDraft.isShareOpenURL(url) else {
             return
         }
 
@@ -118,12 +118,12 @@ struct ContentView: View {
     }
 
     private func importPendingSharedDraftIfAvailable() async {
-        guard let directory = HermesShareDraft.containerURL() else {
+        guard let directory = TalariaShareDraft.containerURL() else {
             return
         }
 
         do {
-            if let sharedImport = try await HermesShareDraft.loadPendingImportOffMainActor(from: directory) {
+            if let sharedImport = try await TalariaShareDraft.loadPendingImportOffMainActor(from: directory) {
                 pendingSharedImport = sharedImport
             }
         } catch {}

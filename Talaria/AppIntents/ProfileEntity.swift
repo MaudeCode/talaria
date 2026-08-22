@@ -150,7 +150,7 @@ struct ProfileEntityCache {
     // `updateAppShortcutParameters()` once even though the profile list itself is unchanged.
     private let storageKey = "cachedProfileEntities.v2"
 
-    init(defaults: UserDefaults? = UserDefaults(suiteName: HermesShareDraft.appGroupIdentifier)) {
+    init(defaults: UserDefaults? = UserDefaults(suiteName: TalariaShareDraft.appGroupIdentifier)) {
         self.defaults = defaults
     }
 

@@ -1,8 +1,8 @@
 import Foundation
 
-enum HermesDeepLink {
+enum TalariaDeepLink {
     static var scheme: String {
-        Bundle.main.object(forInfoDictionaryKey: "HermesURLScheme") as? String
+        Bundle.main.object(forInfoDictionaryKey: "TalariaURLScheme") as? String
             ?? "talaria"
     }
 

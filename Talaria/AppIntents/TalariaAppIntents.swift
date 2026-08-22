@@ -20,7 +20,7 @@ final class AppIntentRouter {
     private init() {}
 
     /// Records a deep link for the view layer to route. No-op on a nil URL so callers can
-    /// pass the optional `HermesDeepLink` builders without unwrapping.
+    /// pass the optional `TalariaDeepLink` builders without unwrapping.
     func requestDeepLink(_ url: URL?) {
         guard let url else { return }
         pendingDeepLink = url
@@ -39,7 +39,7 @@ struct NewChatIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        AppIntentRouter.shared.requestDeepLink(HermesDeepLink.newChatURL)
+        AppIntentRouter.shared.requestDeepLink(TalariaDeepLink.newChatURL)
         return .result()
     }
 }
@@ -59,7 +59,7 @@ struct NewChatVoiceIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        AppIntentRouter.shared.requestDeepLink(HermesDeepLink.newChatVoiceURL)
+        AppIntentRouter.shared.requestDeepLink(TalariaDeepLink.newChatVoiceURL)
         return .result()
     }
 }
@@ -86,7 +86,7 @@ struct NewChatInProfileIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         AppIntentRouter.shared.requestDeepLink(
-            HermesDeepLink.newChatInProfileURL(profileName: profile.id)
+            TalariaDeepLink.newChatInProfileURL(profileName: profile.id)
         )
         return .result()
     }

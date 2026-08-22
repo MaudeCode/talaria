@@ -3,7 +3,7 @@ import SwiftUI
 import WidgetKit
 
 @main
-struct HermesLiveActivityWidgetBundle: WidgetBundle {
+struct TalariaLiveActivityWidgetBundle: WidgetBundle {
     var body: some Widget {
         AgentRunLiveActivityWidget()
     }
@@ -15,7 +15,7 @@ struct AgentRunLiveActivityWidget: Widget {
             AgentRunLockScreenView(context: context)
                 .activityBackgroundTint(AgentRunLiveActivityTheme.background)
                 .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
-                .widgetURL(HermesDeepLink.sessionURL(sessionID: context.state.sessionID))
+                .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -42,7 +42,7 @@ struct AgentRunLiveActivityWidget: Widget {
             } minimal: {
                 AgentRunIslandCompactMark(status: context.state.status)
             }
-            .widgetURL(HermesDeepLink.sessionURL(sessionID: context.state.sessionID))
+            .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID))
             .keylineTint(AgentRunStatusStyle.color(for: context.state.status, isStale: context.state.isStale))
         }
     }

@@ -3,7 +3,7 @@ import XCTest
 
 final class SharedDraftStoreTests: XCTestCase {
     func testDraftTextCombinesTextAndURLsInOrder() {
-        let draft = HermesShareDraft.draftText(
+        let draft = TalariaShareDraft.draftText(
             textSnippets: [
                 "  Summarize this page  ",
                 "\nSummarize this page\n",
@@ -32,46 +32,46 @@ final class SharedDraftStoreTests: XCTestCase {
     }
 
     func testDraftTextIgnoresEmptyInput() {
-        let draft = HermesShareDraft.draftText(textSnippets: [" \n\t "], urls: [])
+        let draft = TalariaShareDraft.draftText(textSnippets: [" \n\t "], urls: [])
 
         XCTAssertEqual(draft, "")
     }
 
     func testComposerDraftAddsTrailingNewlineForFollowupInput() {
         XCTAssertEqual(
-            HermesShareDraft.composerDraft(from: "  https://example.com/article  "),
+            TalariaShareDraft.composerDraft(from: "  https://example.com/article  "),
             "https://example.com/article\n"
         )
-        XCTAssertEqual(HermesShareDraft.composerDraft(from: " \n\t "), "")
+        XCTAssertEqual(TalariaShareDraft.composerDraft(from: " \n\t "), "")
     }
 
     func testShareOpenURLRecognizesOnlyHermesShareLinks() {
-        let scheme = HermesShareDraft.urlScheme
+        let scheme = TalariaShareDraft.urlScheme
 
-        XCTAssertTrue(HermesShareDraft.isShareOpenURL(URL(string: "\(scheme)://share")!))
-        XCTAssertFalse(HermesShareDraft.isShareOpenURL(URL(string: "\(scheme)://settings")!))
-        XCTAssertFalse(HermesShareDraft.isShareOpenURL(URL(string: "https://example.com/share")!))
+        XCTAssertTrue(TalariaShareDraft.isShareOpenURL(URL(string: "\(scheme)://share")!))
+        XCTAssertFalse(TalariaShareDraft.isShareOpenURL(URL(string: "\(scheme)://settings")!))
+        XCTAssertFalse(TalariaShareDraft.isShareOpenURL(URL(string: "https://example.com/share")!))
     }
 
     func testPendingDraftStorageLoadsAndClearsDraft() throws {
         let directory = try temporaryDirectory()
 
-        try HermesShareDraft.savePendingDraft(
+        try TalariaShareDraft.savePendingDraft(
             "  Draft from Safari  ",
             in: directory,
             now: Date(timeIntervalSince1970: 1_800_000_000)
         )
 
-        let draft = try HermesShareDraft.loadPendingDraft(from: directory)
+        let draft = try TalariaShareDraft.loadPendingDraft(from: directory)
         XCTAssertEqual(draft, "Draft from Safari")
-        XCTAssertNil(try HermesShareDraft.loadPendingDraft(from: directory))
+        XCTAssertNil(try TalariaShareDraft.loadPendingDraft(from: directory))
     }
 
     func testPendingImportStorageLoadsAttachmentAndClearsStagedFiles() throws {
         let directory = try temporaryDirectory()
         let attachmentData = Data("pdf bytes".utf8)
 
-        try HermesShareDraft.savePendingImport(
+        try TalariaShareDraft.savePendingImport(
             draft: "  Review this  ",
             attachments: [
                 SharedAttachmentImport(
@@ -84,24 +84,24 @@ final class SharedDraftStoreTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_800_000_001)
         )
 
-        let sharedImport = try XCTUnwrap(try HermesShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
 
         XCTAssertEqual(sharedImport.draft, "Review this")
         XCTAssertEqual(sharedImport.attachments.count, 1)
         XCTAssertEqual(sharedImport.attachments.first?.filename, "report.pdf")
         XCTAssertEqual(sharedImport.attachments.first?.typeIdentifier, "com.adobe.pdf")
         XCTAssertEqual(sharedImport.attachments.first?.data, attachmentData)
-        XCTAssertNil(try HermesShareDraft.loadPendingImport(from: directory))
+        XCTAssertNil(try TalariaShareDraft.loadPendingImport(from: directory))
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent(HermesShareDraft.pendingAttachmentsDirectoryName).path
+                atPath: directory.appendingPathComponent(TalariaShareDraft.pendingAttachmentsDirectoryName).path
             )
         )
     }
 
     func testOffMainActorPendingImportLoadsAndClearsStagedFiles() async throws {
         let directory = try temporaryDirectory()
-        try HermesShareDraft.savePendingImport(
+        try TalariaShareDraft.savePendingImport(
             draft: "Review this",
             attachments: [
                 SharedAttachmentImport(
@@ -113,18 +113,18 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory
         )
 
-        let loadedImport = try await HermesShareDraft.loadPendingImportOffMainActor(from: directory)
+        let loadedImport = try await TalariaShareDraft.loadPendingImportOffMainActor(from: directory)
         let sharedImport = try XCTUnwrap(loadedImport)
 
         XCTAssertEqual(sharedImport.draft, "Review this")
         XCTAssertEqual(sharedImport.attachments.first?.data, Data("report".utf8))
-        XCTAssertNil(try HermesShareDraft.loadPendingImport(from: directory))
+        XCTAssertNil(try TalariaShareDraft.loadPendingImport(from: directory))
     }
 
     func testPendingImportSupportsAttachmentOnlyShare() throws {
         let directory = try temporaryDirectory()
 
-        try HermesShareDraft.savePendingImport(
+        try TalariaShareDraft.savePendingImport(
             draft: " \n ",
             attachments: [
                 SharedAttachmentImport(
@@ -136,7 +136,7 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory
         )
 
-        let sharedImport = try XCTUnwrap(try HermesShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
 
         XCTAssertEqual(sharedImport.draft, "")
         XCTAssertEqual(sharedImport.attachments.first?.filename, "photo.jpg")
@@ -146,7 +146,7 @@ final class SharedDraftStoreTests: XCTestCase {
     func testPendingImportKeepsMultipleUploadableAttachments() throws {
         let directory = try temporaryDirectory()
 
-        try HermesShareDraft.savePendingImport(
+        try TalariaShareDraft.savePendingImport(
             draft: "",
             attachments: [
                 SharedAttachmentImport(
@@ -163,7 +163,7 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory
         )
 
-        let sharedImport = try XCTUnwrap(try HermesShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
 
         XCTAssertEqual(sharedImport.attachments.map(\.filename), ["first.txt", "second.txt"])
         XCTAssertEqual(sharedImport.attachments.map(\.data), [Data("first".utf8), Data("second".utf8)])
@@ -171,7 +171,7 @@ final class SharedDraftStoreTests: XCTestCase {
 
     func testPendingImportCapsAttachmentsAtSharedLimit() throws {
         let directory = try temporaryDirectory()
-        let attachments = (0..<(HermesShareDraft.maximumSharedAttachmentCount + 1)).map { index in
+        let attachments = (0..<(TalariaShareDraft.maximumSharedAttachmentCount + 1)).map { index in
             SharedAttachmentImport(
                 filename: "file-\(index).txt",
                 typeIdentifier: "public.plain-text",
@@ -179,15 +179,15 @@ final class SharedDraftStoreTests: XCTestCase {
             )
         }
 
-        try HermesShareDraft.savePendingImport(
+        try TalariaShareDraft.savePendingImport(
             draft: "",
             attachments: attachments,
             in: directory
         )
 
-        let sharedImport = try XCTUnwrap(try HermesShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
 
-        XCTAssertEqual(sharedImport.attachments.count, HermesShareDraft.maximumSharedAttachmentCount)
+        XCTAssertEqual(sharedImport.attachments.count, TalariaShareDraft.maximumSharedAttachmentCount)
         XCTAssertEqual(sharedImport.attachments.first?.filename, "file-0.txt")
         XCTAssertEqual(sharedImport.attachments.last?.filename, "file-9.txt")
     }
@@ -195,12 +195,12 @@ final class SharedDraftStoreTests: XCTestCase {
     func testPendingImportRejectsAggregateOverflowWithoutDeletingStagedFiles() throws {
         let directory = try temporaryDirectory()
         let attachmentsDirectory = directory.appendingPathComponent(
-            HermesShareDraft.pendingAttachmentsDirectoryName,
+            TalariaShareDraft.pendingAttachmentsDirectoryName,
             isDirectory: true
         )
         try FileManager.default.createDirectory(at: attachmentsDirectory, withIntermediateDirectories: true)
 
-        let attachmentSize = HermesShareDraft.maximumSharedImportBytes / 2 + 1
+        let attachmentSize = TalariaShareDraft.maximumSharedImportBytes / 2 + 1
         let attachments = ["first.bin", "second.bin"]
         for filename in attachments {
             try Data(count: attachmentSize).write(
@@ -220,18 +220,18 @@ final class SharedDraftStoreTests: XCTestCase {
             }
         )
         try JSONEncoder().encode(payload).write(
-            to: directory.appendingPathComponent(HermesShareDraft.pendingDraftFileName)
+            to: directory.appendingPathComponent(TalariaShareDraft.pendingDraftFileName)
         )
 
-        XCTAssertThrowsError(try HermesShareDraft.loadPendingImport(from: directory)) { error in
+        XCTAssertThrowsError(try TalariaShareDraft.loadPendingImport(from: directory)) { error in
             XCTAssertEqual(
                 error as? SharedDraftStoreError,
-                .totalAttachmentBytesExceeded(maximumBytes: HermesShareDraft.maximumSharedImportBytes)
+                .totalAttachmentBytesExceeded(maximumBytes: TalariaShareDraft.maximumSharedImportBytes)
             )
         }
         XCTAssertTrue(
             FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent(HermesShareDraft.pendingDraftFileName).path
+                atPath: directory.appendingPathComponent(TalariaShareDraft.pendingDraftFileName).path
             )
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: attachmentsDirectory.path))
@@ -239,8 +239,8 @@ final class SharedDraftStoreTests: XCTestCase {
 
     func testPendingImportSaveRejectsAggregateOverflowWithoutReplacingExistingDraft() throws {
         let directory = try temporaryDirectory()
-        try HermesShareDraft.savePendingDraft("Keep me", in: directory)
-        let attachmentSize = HermesShareDraft.maximumSharedImportBytes / 2 + 1
+        try TalariaShareDraft.savePendingDraft("Keep me", in: directory)
+        let attachmentSize = TalariaShareDraft.maximumSharedImportBytes / 2 + 1
         let oversizedTotal = ["first.bin", "second.bin"].map {
             SharedAttachmentImport(
                 filename: $0,
@@ -250,7 +250,7 @@ final class SharedDraftStoreTests: XCTestCase {
         }
 
         XCTAssertThrowsError(
-            try HermesShareDraft.savePendingImport(
+            try TalariaShareDraft.savePendingImport(
                 draft: "Replacement",
                 attachments: oversizedTotal,
                 in: directory
@@ -258,11 +258,11 @@ final class SharedDraftStoreTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? SharedDraftStoreError,
-                .totalAttachmentBytesExceeded(maximumBytes: HermesShareDraft.maximumSharedImportBytes)
+                .totalAttachmentBytesExceeded(maximumBytes: TalariaShareDraft.maximumSharedImportBytes)
             )
         }
 
-        XCTAssertEqual(try HermesShareDraft.loadPendingDraft(from: directory), "Keep me")
+        XCTAssertEqual(try TalariaShareDraft.loadPendingDraft(from: directory), "Keep me")
     }
 
     func testConcurrentImportCoordinatorCoalescesOneDestructiveLoad() async throws {
@@ -284,7 +284,7 @@ final class SharedDraftStoreTests: XCTestCase {
 
     func testPendingImportDecodesLegacyDraftOnlyPayload() throws {
         let directory = try temporaryDirectory()
-        let payloadURL = directory.appendingPathComponent(HermesShareDraft.pendingDraftFileName)
+        let payloadURL = directory.appendingPathComponent(TalariaShareDraft.pendingDraftFileName)
         let legacyPayload = """
         {
           "draft": "Legacy note",
@@ -293,7 +293,7 @@ final class SharedDraftStoreTests: XCTestCase {
         """
         try Data(legacyPayload.utf8).write(to: payloadURL)
 
-        let sharedImport = try XCTUnwrap(try HermesShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
 
         XCTAssertEqual(sharedImport.draft, "Legacy note")
         XCTAssertTrue(sharedImport.attachments.isEmpty)
@@ -302,9 +302,9 @@ final class SharedDraftStoreTests: XCTestCase {
     func testEmptyPendingDraftIsNotWritten() throws {
         let directory = try temporaryDirectory()
 
-        try HermesShareDraft.savePendingDraft(" \n ", in: directory)
+        try TalariaShareDraft.savePendingDraft(" \n ", in: directory)
 
-        XCTAssertNil(try HermesShareDraft.loadPendingDraft(from: directory))
+        XCTAssertNil(try TalariaShareDraft.loadPendingDraft(from: directory))
     }
 
     private func temporaryDirectory() throws -> URL {

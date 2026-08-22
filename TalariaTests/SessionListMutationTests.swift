@@ -2308,7 +2308,7 @@ final class SessionListMutationTests: XCTestCase {
                 isMutating: false
             )
         )
-        XCTAssertEqual(HermesDeepLink.sessionID(from: url), session.sessionId)
+        XCTAssertEqual(TalariaDeepLink.sessionID(from: url), session.sessionId)
         XCTAssertNil(
             SessionRowActionPolicy.deepLinkURL(
                 for: session,

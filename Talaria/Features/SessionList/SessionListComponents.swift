@@ -70,7 +70,7 @@ enum SessionRowActionPolicy {
             return nil
         }
 
-        return HermesDeepLink.sessionURL(sessionID: sessionID)
+        return TalariaDeepLink.sessionURL(sessionID: sessionID)
     }
 }
 

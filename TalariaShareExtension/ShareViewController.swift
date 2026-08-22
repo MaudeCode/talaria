@@ -45,7 +45,7 @@ final class ShareViewController: UIViewController {
 
     private func saveDraftAndOpenHermes() async {
         let input = await ShareInputReader.input(from: extensionContext)
-        let draft = HermesShareDraft.draftText(textSnippets: input.textSnippets, urls: input.urls)
+        let draft = TalariaShareDraft.draftText(textSnippets: input.textSnippets, urls: input.urls)
 
         guard !draft.isEmpty || !input.attachments.isEmpty else {
             showStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
@@ -53,14 +53,14 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        guard let directory = HermesShareDraft.containerURL() else {
+        guard let directory = TalariaShareDraft.containerURL() else {
             showStatus("Could not access Talaria storage.")
             completeRequest(after: 0.8)
             return
         }
 
         do {
-            try HermesShareDraft.savePendingImport(draft: draft, attachments: input.attachments, in: directory)
+            try TalariaShareDraft.savePendingImport(draft: draft, attachments: input.attachments, in: directory)
         } catch let error as SharedDraftStoreError {
             showStatus(error.localizedDescription)
             completeRequest(after: 0.8)
@@ -80,7 +80,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func openHermes() {
-        let url = HermesShareDraft.openURL
+        let url = TalariaShareDraft.openURL
 
         extensionContext?.open(url, completionHandler: { [weak self] success in
             Task { @MainActor [weak self] in

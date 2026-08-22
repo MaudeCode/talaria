@@ -285,14 +285,14 @@
 		B5A220000000000000000005 /* ChatMarkerMessageClassifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A220000000000000000006 /* ChatMarkerMessageClassifierTests.swift */; };
 		B5A100000000000000000004 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000014 /* PrivacyInfo.xcprivacy */; };
 		B5A100000000000000000005 /* SharedDraftStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000016 /* SharedDraftStoreTests.swift */; };
-		B5A100000000000000000006 /* HermesShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000017 /* HermesShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B5A100000000000000000006 /* TalariaShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000017 /* TalariaShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
-		A04500000000000000000002 /* HermesDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* HermesDeepLink.swift */; };
+		A04500000000000000000002 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000012 /* AgentLiveActivityManager.swift */; };
 		A04500000000000000000004 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
-		A04500000000000000000005 /* HermesDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* HermesDeepLink.swift */; };
+		A04500000000000000000005 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */; };
-		A04500000000000000000007 /* HermesLiveActivityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A04500000000000000000017 /* HermesLiveActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A04500000000000000000007 /* TalariaLiveActivityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A04500000000000000000017 /* TalariaLiveActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A04500000000000000000008 /* LiveActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000018 /* LiveActivityTests.swift */; };
 		2BE8F2B38F094C4C9EB18301 /* SkillsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE8F2B38F094C4C9EB18300 /* SkillsViewModelTests.swift */; };
 		22AB000000000000000000B3 /* WorkspaceRegistryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F3 /* WorkspaceRegistryViewModelTests.swift */; };
@@ -330,14 +330,14 @@
 			containerPortal = 1A2B3C4D5E6F700000000070 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = B5A100000000000000000040;
-			remoteInfo = HermesShareExtension;
+			remoteInfo = TalariaShareExtension;
 		};
 		A04500000000000000000030 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 1A2B3C4D5E6F700000000070 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A04500000000000000000040;
-			remoteInfo = HermesLiveActivityWidget;
+			remoteInfo = TalariaLiveActivityWidget;
 		};
 		A19000000000000000000008 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -355,8 +355,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				B5A100000000000000000006 /* HermesShareExtension.appex in Embed App Extensions */,
-				A04500000000000000000007 /* HermesLiveActivityWidget.appex in Embed App Extensions */,
+				B5A100000000000000000006 /* TalariaShareExtension.appex in Embed App Extensions */,
+				A04500000000000000000007 /* TalariaLiveActivityWidget.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -619,7 +619,7 @@
 		B5A100000000000000000011 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		B5A100000000000000000018 /* ShareInputReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInputReader.swift; sourceTree = "<group>"; };
 		B5A100000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B5A100000000000000000013 /* HermesShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HermesShareExtension.entitlements; sourceTree = "<group>"; };
+		B5A100000000000000000013 /* TalariaShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TalariaShareExtension.entitlements; sourceTree = "<group>"; };
 		B5A100000000000000000014 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B5A100000000000000000015 /* Talaria.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Talaria.entitlements; sourceTree = "<group>"; };
 		488791F556304AD2AC59BC5D /* ThirdPartyNotices */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ThirdPartyNotices; sourceTree = "<group>"; };
@@ -655,13 +655,13 @@
 		C15300000000000000000006 /* KanbanCardEditorStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardEditorStateTests.swift; sourceTree = "<group>"; };
 		C15400000000000000000006 /* KanbanCardDetailStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailStateTests.swift; sourceTree = "<group>"; };
 		B5A220000000000000000006 /* ChatMarkerMessageClassifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkerMessageClassifierTests.swift; sourceTree = "<group>"; };
-		B5A100000000000000000017 /* HermesShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HermesShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B5A100000000000000000017 /* TalariaShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TalariaShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A04500000000000000000010 /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
-		A04500000000000000000011 /* HermesDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDeepLink.swift; sourceTree = "<group>"; };
+		A04500000000000000000011 /* TalariaDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaDeepLink.swift; sourceTree = "<group>"; };
 		A04500000000000000000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
 		A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivityWidget.swift; sourceTree = "<group>"; };
 		A04500000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A04500000000000000000017 /* HermesLiveActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HermesLiveActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A04500000000000000000017 /* TalariaLiveActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TalariaLiveActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A04500000000000000000018 /* LiveActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityTests.swift; sourceTree = "<group>"; };
 		C0CAM000000000000000B002 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		C0DEC0DE0000000000000002 /* ChatComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerView.swift; sourceTree = "<group>"; };
@@ -724,8 +724,8 @@
 				1A2B3C4D5E6F700000000031 /* Talaria */,
 				1A2B3C4D5E6F700000000034 /* TalariaTests */,
 				A19000000000000000000004 /* TalariaUITests */,
-				B5A100000000000000000051 /* HermesShareExtension */,
-				A04500000000000000000021 /* HermesLiveActivityWidget */,
+				B5A100000000000000000051 /* TalariaShareExtension */,
+				A04500000000000000000021 /* TalariaLiveActivityWidget */,
 				1A2B3C4D5E6F700000000032 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -754,8 +754,8 @@
 				1A2B3C4D5E6F700000000010 /* Talaria.app */,
 				1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */,
 				A19000000000000000000003 /* TalariaUITests.xctest */,
-				B5A100000000000000000017 /* HermesShareExtension.appex */,
-				A04500000000000000000017 /* HermesLiveActivityWidget.appex */,
+				B5A100000000000000000017 /* TalariaShareExtension.appex */,
+				A04500000000000000000017 /* TalariaLiveActivityWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1164,21 +1164,21 @@
 			path = Share;
 			sourceTree = "<group>";
 		};
-		B5A100000000000000000051 /* HermesShareExtension */ = {
+		B5A100000000000000000051 /* TalariaShareExtension */ = {
 			isa = PBXGroup;
 			children = (
 				B5A100000000000000000011 /* ShareViewController.swift */,
 				B5A100000000000000000018 /* ShareInputReader.swift */,
 				B5A100000000000000000052 /* Resources */,
 			);
-			path = HermesShareExtension;
+			path = TalariaShareExtension;
 			sourceTree = "<group>";
 		};
 		B5A100000000000000000052 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 				B5A100000000000000000012 /* Info.plist */,
-				B5A100000000000000000013 /* HermesShareExtension.entitlements */,
+				B5A100000000000000000013 /* TalariaShareExtension.entitlements */,
 				B5A100000000000000000014 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
@@ -1188,7 +1188,7 @@
 			isa = PBXGroup;
 			children = (
 				A04500000000000000000010 /* AgentRunActivityAttributes.swift */,
-				A04500000000000000000011 /* HermesDeepLink.swift */,
+				A04500000000000000000011 /* TalariaDeepLink.swift */,
 				A04500000000000000000012 /* AgentLiveActivityManager.swift */,
 			);
 			path = LiveActivities;
@@ -1203,13 +1203,13 @@
 			path = AppIntents;
 			sourceTree = "<group>";
 		};
-		A04500000000000000000021 /* HermesLiveActivityWidget */ = {
+		A04500000000000000000021 /* TalariaLiveActivityWidget */ = {
 			isa = PBXGroup;
 			children = (
 				A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */,
 				A04500000000000000000022 /* Resources */,
 			);
-			path = HermesLiveActivityWidget;
+			path = TalariaLiveActivityWidget;
 			sourceTree = "<group>";
 		};
 		A04500000000000000000022 /* Resources */ = {
@@ -1330,9 +1330,9 @@
 			productReference = A19000000000000000000003 /* TalariaUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		B5A100000000000000000040 /* HermesShareExtension */ = {
+		B5A100000000000000000040 /* TalariaShareExtension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B5A100000000000000000041 /* Build configuration list for PBXNativeTarget "HermesShareExtension" */;
+			buildConfigurationList = B5A100000000000000000041 /* Build configuration list for PBXNativeTarget "TalariaShareExtension" */;
 			buildPhases = (
 				B5A100000000000000000021 /* Sources */,
 				B5A100000000000000000022 /* Resources */,
@@ -1342,14 +1342,14 @@
 			);
 			dependencies = (
 			);
-			name = HermesShareExtension;
-			productName = HermesShareExtension;
-			productReference = B5A100000000000000000017 /* HermesShareExtension.appex */;
+			name = TalariaShareExtension;
+			productName = TalariaShareExtension;
+			productReference = B5A100000000000000000017 /* TalariaShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		A04500000000000000000040 /* HermesLiveActivityWidget */ = {
+		A04500000000000000000040 /* TalariaLiveActivityWidget */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A04500000000000000000041 /* Build configuration list for PBXNativeTarget "HermesLiveActivityWidget" */;
+			buildConfigurationList = A04500000000000000000041 /* Build configuration list for PBXNativeTarget "TalariaLiveActivityWidget" */;
 			buildPhases = (
 				A04500000000000000000050 /* Sources */,
 				A04500000000000000000060 /* Resources */,
@@ -1359,9 +1359,9 @@
 			);
 			dependencies = (
 			);
-			name = HermesLiveActivityWidget;
-			productName = HermesLiveActivityWidget;
-			productReference = A04500000000000000000017 /* HermesLiveActivityWidget.appex */;
+			name = TalariaLiveActivityWidget;
+			productName = TalariaLiveActivityWidget;
+			productReference = A04500000000000000000017 /* TalariaLiveActivityWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -1434,8 +1434,8 @@
 				1A2B3C4D5E6F700000000040 /* Talaria */,
 				1A2B3C4D5E6F700000000044 /* TalariaTests */,
 				A19000000000000000000005 /* TalariaUITests */,
-				B5A100000000000000000040 /* HermesShareExtension */,
-				A04500000000000000000040 /* HermesLiveActivityWidget */,
+				B5A100000000000000000040 /* TalariaShareExtension */,
+				A04500000000000000000040 /* TalariaLiveActivityWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -1484,7 +1484,7 @@
 				1A2B3C4D5E6F7000000000A1 /* AuthManager.swift in Sources */,
 				1A2B3C4D5E6F700000000300 /* ServerAccount.swift in Sources */,
 				A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */,
-				A04500000000000000000002 /* HermesDeepLink.swift in Sources */,
+				A04500000000000000000002 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */,
 				1A2B3C4D5E6F7000000000A2 /* APIClient.swift in Sources */,
 				C04000000000000000000001 /* APIClient+Sessions.swift in Sources */,
@@ -1794,7 +1794,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A04500000000000000000004 /* AgentRunActivityAttributes.swift in Sources */,
-				A04500000000000000000005 /* HermesDeepLink.swift in Sources */,
+				A04500000000000000000005 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1814,12 +1814,12 @@
 		};
 		B5A100000000000000000031 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B5A100000000000000000040 /* HermesShareExtension */;
+			target = B5A100000000000000000040 /* TalariaShareExtension */;
 			targetProxy = B5A100000000000000000030 /* PBXContainerItemProxy */;
 		};
 		A04500000000000000000031 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A04500000000000000000040 /* HermesLiveActivityWidget */;
+			target = A04500000000000000000040 /* TalariaLiveActivityWidget */;
 			targetProxy = A04500000000000000000030 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -2098,11 +2098,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = HermesShareExtension/Resources/HermesShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = TalariaShareExtension/Resources/TalariaShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = HermesShareExtension/Resources/Info.plist;
+				INFOPLIST_FILE = TalariaShareExtension/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2126,11 +2126,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = HermesShareExtension/Resources/HermesShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = TalariaShareExtension/Resources/TalariaShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = HermesShareExtension/Resources/Info.plist;
+				INFOPLIST_FILE = TalariaShareExtension/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2157,7 +2157,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = HermesLiveActivityWidget/Resources/Info.plist;
+				INFOPLIST_FILE = TalariaLiveActivityWidget/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2184,7 +2184,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = HermesLiveActivityWidget/Resources/Info.plist;
+				INFOPLIST_FILE = TalariaLiveActivityWidget/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2243,7 +2243,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B5A100000000000000000041 /* Build configuration list for PBXNativeTarget "HermesShareExtension" */ = {
+		B5A100000000000000000041 /* Build configuration list for PBXNativeTarget "TalariaShareExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B5A100000000000000000042 /* Debug */,
@@ -2252,7 +2252,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A04500000000000000000041 /* Build configuration list for PBXNativeTarget "HermesLiveActivityWidget" */ = {
+		A04500000000000000000041 /* Build configuration list for PBXNativeTarget "TalariaLiveActivityWidget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A04500000000000000000042 /* Debug */,

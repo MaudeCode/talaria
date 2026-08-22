@@ -194,22 +194,22 @@ final class LiveActivityTests: XCTestCase {
     }
 
     func testBuildsAndParsesSessionDeepLink() throws {
-        let url = try XCTUnwrap(HermesDeepLink.sessionURL(sessionID: "session-abc"))
-        let scheme = HermesDeepLink.scheme
+        let url = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: "session-abc"))
+        let scheme = TalariaDeepLink.scheme
 
         XCTAssertEqual(url.scheme, scheme)
         XCTAssertEqual(url.host, "session")
-        XCTAssertEqual(HermesDeepLink.sessionID(from: url), "session-abc")
-        XCTAssertEqual(HermesDeepLink.sessionID(from: URL(string: "\(scheme)://session/session-xyz")!), "session-xyz")
-        XCTAssertNil(HermesDeepLink.sessionID(from: HermesShareDraft.openURL))
+        XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "session-abc")
+        XCTAssertEqual(TalariaDeepLink.sessionID(from: URL(string: "\(scheme)://session/session-xyz")!), "session-xyz")
+        XCTAssertNil(TalariaDeepLink.sessionID(from: TalariaShareDraft.openURL))
     }
 
     func testSessionDeepLinkURLPercentEncodesSessionID() throws {
         let sessionID = "session & /?=✓"
-        let url = try XCTUnwrap(HermesDeepLink.sessionURL(sessionID: sessionID))
+        let url = try XCTUnwrap(TalariaDeepLink.sessionURL(sessionID: sessionID))
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
 
-        XCTAssertEqual(url.scheme, HermesDeepLink.scheme)
+        XCTAssertEqual(url.scheme, TalariaDeepLink.scheme)
         XCTAssertEqual(url.host, "session")
         XCTAssertEqual(components?.queryItems, [URLQueryItem(name: "id", value: sessionID)])
         XCTAssertFalse(url.absoluteString.contains(sessionID))

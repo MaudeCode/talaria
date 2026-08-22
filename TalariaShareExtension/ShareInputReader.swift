@@ -29,7 +29,7 @@ enum ShareInputReader {
                 input.textSnippets.append(text)
             }
 
-            if input.attachments.count < HermesShareDraft.maximumSharedAttachmentCount,
+            if input.attachments.count < TalariaShareDraft.maximumSharedAttachmentCount,
                let attachment = await loadAttachment(from: provider) {
                 input.attachments.append(attachment)
             }
@@ -131,7 +131,7 @@ enum ShareInputReader {
         }
 
         let data = await loadData(from: provider, typeIdentifier: typeIdentifier)
-        guard let data, data.count <= HermesShareDraft.maximumSharedAttachmentBytes else {
+        guard let data, data.count <= TalariaShareDraft.maximumSharedAttachmentBytes else {
             return nil
         }
 
@@ -151,12 +151,12 @@ enum ShareInputReader {
         }
 
         if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-           size > HermesShareDraft.maximumSharedAttachmentBytes {
+           size > TalariaShareDraft.maximumSharedAttachmentBytes {
             return nil
         }
 
         let data = try Data(contentsOf: url)
-        guard data.count <= HermesShareDraft.maximumSharedAttachmentBytes else {
+        guard data.count <= TalariaShareDraft.maximumSharedAttachmentBytes else {
             return nil
         }
 
