@@ -324,6 +324,75 @@ enum SectionVisibilitySettings {
     }
 }
 
+enum ProviderQuotaSidebarSettings {
+    static let firstSourceKey = "providerQuotaSidebar.source1"
+    static let secondSourceKey = "providerQuotaSidebar.source2"
+
+    static func sourceIDs(first: String, second: String) -> [String] {
+        var seen = Set<String>()
+        return [first, second].compactMap { value in
+            let id = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, seen.insert(id).inserted else { return nil }
+            return id
+        }
+    }
+}
+
+enum ProviderQuotaVisibilitySettings {
+    static let storageKey = "providerQuota.hiddenProviders"
+
+    static func hiddenProviderIDs(from data: Data) -> Set<String> {
+        guard let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(values.compactMap(normalizedProviderID))
+    }
+
+    static func data(
+        bySetting providerID: String,
+        hidden: Bool,
+        in data: Data
+    ) -> Data {
+        guard let providerID = normalizedProviderID(providerID) else { return data }
+        var hiddenIDs = hiddenProviderIDs(from: data)
+        if hidden {
+            hiddenIDs.insert(providerID)
+        } else {
+            hiddenIDs.remove(providerID)
+        }
+        return (try? JSONEncoder().encode(hiddenIDs.sorted())) ?? data
+    }
+
+    private static func normalizedProviderID(_ value: String) -> String? {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
+enum ProviderQuotaRefreshInterval: Int, CaseIterable, Identifiable {
+    case oneMinute = 60
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case thirtyMinutes = 1_800
+
+    static let storageKey = "providerQuota.refreshIntervalSeconds"
+    static let defaultValue = ProviderQuotaRefreshInterval.fiveMinutes
+
+    var id: Int { rawValue }
+    var duration: Duration { .seconds(rawValue) }
+
+    var title: String {
+        switch self {
+        case .oneMinute: String(localized: "Every minute")
+        case .fiveMinutes: String(localized: "Every 5 minutes")
+        case .fifteenMinutes: String(localized: "Every 15 minutes")
+        case .thirtyMinutes: String(localized: "Every 30 minutes")
+        }
+    }
+
+    static func storedValue(_ rawValue: Int) -> ProviderQuotaRefreshInterval {
+        ProviderQuotaRefreshInterval(rawValue: rawValue) ?? defaultValue
+    }
+}
+
 /// Optional session controls shown with the message composer. Core actions such
 /// as attachments, model, reasoning, dictation, and send remain available.
 enum ComposerVisibilitySettings {

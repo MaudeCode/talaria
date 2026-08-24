@@ -343,7 +343,7 @@ Talaria/
 │   ├── Memory/
 │   │   └── MemoryView.swift            # read-only notes + user profile
 │   ├── Insights/
-│   │   └── InsightsView.swift          # limited session-based usage analytics
+│   │   └── InsightsView.swift          # session analytics + provider-account quotas
 │   └── Settings/
 │       ├── SettingsView.swift
 │       └── ServerHealthCheckView.swift
@@ -618,9 +618,9 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 ### Phase 11 — Limited usage analytics (1–2 days)
 **Classification:** required before polish/TestFlight, but limited scope.
 
-- **User-facing goal:** Add an Insights row/button on the Sessions screen that opens a usage analytics dashboard with a timeframe picker.
+- **User-facing goal:** Add an Insights row/button on the Sessions screen that opens session analytics plus provider-account quotas, with up to two opt-in quota shortcuts above Settings in the app sidebar.
 - **Upstream API/server contract to verify:** No full `/insights` REST endpoint is available in the pinned upstream source. Use `/api/sessions` token/cost fields and optional `/api/session/usage` per-session refresh.
-- **iOS UI changes:** Timeframe dropdown/segmented control; dashboard cards for total input tokens, output tokens, total tokens, estimated cost, sessions touched, and top recent costly sessions. Clearly label it as session-based analytics.
+- **iOS UI changes:** Compact provider quota rows with aliases, hide/show controls, Used/Remaining presentation, visible-only configurable refresh (five-minute default), and one-line sidebar pins; timeframe dropdown/segmented control; dashboard cards for total input tokens, output tokens, total tokens, estimated cost, sessions touched, and top recent costly sessions. Keep provider quota and session analytics visibly separated.
 - **Model/networking changes:** Add local aggregation over session metadata plus optional per-session usage fetch on demand.
 - **Persistence/cache impact:** Can use cached sessions for offline/stale display if available; clearly mark cached/stale analytics.
 - **Tests:** Timeframe filtering, aggregate math, missing token/cost tolerance.
@@ -806,7 +806,7 @@ These are useful directions, not approved v1 scope. Before implementing any item
 - **Session search:** Add fast local search across loaded/cached sessions by title, preview, workspace/project, and date grouping. Use server-backed full-text search only if upstream exposes it.
 - **Mobile command launcher:** Provide quick saved commands/templates for repeated owner workflows, reusing the existing chat send/start path.
 - **Voice-first workflow:** Expand voice input beyond dictation into hold-to-talk, optional auto-send, and possibly spoken summaries, with explicit safeguards against accidental sends.
-- **Home Screen widgets / App Shortcuts / Siri shortcuts:** Provider quota widgets now use explicit stable account selections and sanitized app-group snapshots. Additional quick actions such as "Ask Hermes" or "Run Hermes command" remain future work.
+- **Home Screen widgets / App Shortcuts / Siri shortcuts:** Provider quota widgets now use explicit stable account selections, sanitized app-group snapshots, configurable pace/appearance/tap behavior, and Home Screen plus accessory families. Additional quick actions such as "Ask Hermes" or "Run Hermes command" remain future work.
 - **Offline/cache strategy:** Decide how much transcript/workspace context should live on-device, whether extra encryption is needed beyond iOS defaults, and whether Settings needs "Clear local cache" or sensitive-session exclusions.
 - **Chat maintainability:** Continue optional focused extraction slices for `ChatView`, `ChatViewModel`, and composer/services after behavior is locked down. Keep these refactors small, test-backed, and behavior-preserving.
 - **Cloudflare Access login flow:** If the owner later puts Cloudflare Access in front of the server, design an iOS authentication flow deliberately instead of bolting it onto password auth.

@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var pendingSharedImport: SharedImport?
     @State private var pendingDeepLinkedSessionID: String?
     @State private var pendingQuotaSourceID: String?
+    @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
@@ -65,6 +66,7 @@ struct ContentView: View {
                 pendingSharedImport: $pendingSharedImport,
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
                 pendingQuotaSourceID: $pendingQuotaSourceID,
+                opensProviderQuotaWidgetSettings: $opensProviderQuotaWidgetSettings,
                 requestedNewChat: $pendingNewChatRequest
             )
             // Switching the active server keeps us in `.loggedIn`, so without a
@@ -76,7 +78,24 @@ struct ContentView: View {
     }
 
     private func handleOpenURL(_ url: URL) {
+        if TalariaDeepLink.isOpenAppURL(url) {
+            return
+        }
+
+        if let providerID = TalariaDeepLink.providerID(fromNewChatWithProvider: url) {
+            pendingNewChatRequest = NewChatRequest(providerID: providerID)
+            return
+        }
+
+        if TalariaDeepLink.isProviderQuotaWidgetSettingsURL(url) {
+            opensProviderQuotaWidgetSettings = true
+            return
+        }
+
         if let sourceID = TalariaDeepLink.quotaSourceID(from: url) {
+            if TalariaDeepLink.requestsQuotaRefresh(url) {
+                UserDefaults.standard.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
+            }
             pendingQuotaSourceID = sourceID
             return
         }

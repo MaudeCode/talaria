@@ -1417,6 +1417,7 @@ enum AppSidebarDestination: Hashable {
     case skills
     case memory
     case insights
+    case quota(String)
     case settings
 }
 
@@ -1453,12 +1454,21 @@ enum AppSidebarGesturePolicy {
 
 struct AppSidebarDrawer: View {
     @AccessibilityFocusState private var closeNavigationIsFocused: Bool
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @AppStorage(
+        ProviderQuotaPercentageMode.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var quotaPercentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
 
     let isPresented: Bool
     let selection: AppSidebarDestination
     let sectionVisibility: SidebarSectionVisibility
     let serverName: String
     let activeProfileName: String?
+    let quotaSources: [ProviderQuotaWidgetSource]
     let newChat: () -> Void
     let select: (AppSidebarDestination) -> Void
     let close: () -> Void
@@ -1543,6 +1553,17 @@ struct AppSidebarDrawer: View {
             }
             .scrollBounceBehavior(.basedOnSize)
 
+            if !quotaSources.isEmpty {
+                Divider().padding(.horizontal, 12)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(quotaSources) { source in
+                        quotaRow(source)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+
             Divider().padding(.horizontal, 12)
             row("Settings", icon: .system("gearshape"), destination: .settings)
                 .padding(12)
@@ -1613,6 +1634,68 @@ struct AppSidebarDrawer: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selection == destination ? .isSelected : [])
+    }
+
+    private func quotaRow(_ source: ProviderQuotaWidgetSource) -> some View {
+        let destination = AppSidebarDestination.quota(source.sourceID)
+        let tint = selection == destination ? Color.accentColor : Color.primary
+        let detail = quotaDetail(source)
+
+        return Button {
+            select(destination)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "gauge.with.dots.needle.33percent")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                Text(providerDisplayName(source))
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text(detail)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(
+                selection == destination ? Color.accentColor.opacity(0.14) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("app-sidebar-quota-\(source.sourceID)")
+        .accessibilityLabel("\(providerDisplayName(source)), \(detail)")
+        .accessibilityAddTraits(selection == destination ? .isSelected : [])
+    }
+
+    private func quotaDetail(_ source: ProviderQuotaWidgetSource) -> String {
+        guard let window = source.windows.first,
+              let percent = ProviderQuotaPresentation.percent(window, mode: quotaPercentageMode)
+        else {
+            return ProviderQuotaPresentation.statusLabel(source.status)
+        }
+        let suffix = quotaPercentageMode == .used ? String(localized: "used") : String(localized: "remaining")
+        return "\(insightsFormattedPercent(percent)) \(suffix)"
+    }
+
+    private var quotaPercentageMode: ProviderQuotaPercentageMode {
+        ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue
+    }
+
+    private func providerDisplayName(_ source: ProviderQuotaWidgetSource) -> String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: providerAliasesData
+        )
     }
 
     @ViewBuilder

@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 /// Read-only provider status screen (#26): which providers the server knows
 /// about, whether each has a credential (and where it came from), which one is
@@ -6,15 +7,19 @@ import SwiftUI
 /// affordances — API-key set/delete stays a server-side operation.
 struct ProvidersView: View {
     let server: URL
-    let initialQuotaSourceID: String?
 
     @State private var viewModel: ProvidersViewModel
     @State private var expandedProviderKeys: Set<String> = []
-    @State private var quotaScrollPosition: String?
+    @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @State private var providerPendingRenameID: String?
+    @State private var providerRenameText = ""
 
-    init(server: URL, initialQuotaSourceID: String? = nil) {
+    init(server: URL) {
         self.server = server
-        self.initialQuotaSourceID = initialQuotaSourceID
         _viewModel = State(initialValue: ProvidersViewModel(server: server))
     }
 
@@ -24,15 +29,23 @@ struct ProvidersView: View {
             .background(Color(.systemBackground))
             .task {
                 await viewModel.load()
-                await viewModel.loadQuotas()
-                quotaScrollPosition = initialQuotaSourceID
             }
             .refreshable {
                 await viewModel.load()
-                await viewModel.loadQuotas(refresh: true)
             }
             .onDisappear {
                 viewModel.cancelLoads()
+            }
+            .alert("Rename Provider", isPresented: renameAlertIsPresented) {
+                TextField("Provider name", text: $providerRenameText)
+                Button("Cancel", role: .cancel) {
+                    providerPendingRenameID = nil
+                }
+                Button("Save") {
+                    saveProviderRename()
+                }
+            } message: {
+                Text("Leave the name empty to restore the server-provided name.")
             }
     }
 
@@ -40,92 +53,11 @@ struct ProvidersView: View {
     private var content: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                quotaSection
                 providersSection
             }
             .padding(.top, 20)
             .padding(.bottom, 44)
         }
-        .scrollPosition(id: $quotaScrollPosition)
-    }
-
-    @ViewBuilder
-    private var quotaSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Provider quotas")
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-
-                Spacer(minLength: 8)
-
-                Button {
-                    Task { await viewModel.loadQuotas(refresh: true) }
-                } label: {
-                    if viewModel.isQuotaLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                .buttonStyle(.plain)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
-                .disabled(viewModel.isQuotaLoading)
-                .accessibilityLabel("Refresh all provider quotas")
-            }
-
-            if let capability = viewModel.quotaCapabilityMessage {
-                quotaNotice(capability, color: .orange, systemImage: "info.circle.fill")
-            }
-
-            if let error = viewModel.quotaErrorMessage, !viewModel.quotaSources.isEmpty {
-                quotaNotice(
-                    String(localized: "Couldn't refresh quotas. Showing the last loaded values. \(error)"),
-                    color: .orange,
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-            }
-
-            if viewModel.isQuotaLoading && viewModel.quotaSources.isEmpty {
-                ProvidersStatusRow(title: String(localized: "Loading provider quotas…"), systemImage: "gauge.with.dots.needle.33percent")
-            } else if let error = viewModel.quotaErrorMessage, viewModel.quotaSources.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ProvidersStatusRow(title: String(localized: "Could not load provider quotas"), systemImage: "exclamationmark.triangle")
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                    Button("Try Again") {
-                        Task { await viewModel.loadQuotas() }
-                    }
-                    .font(.subheadline.weight(.medium))
-                }
-            } else if viewModel.quotaSources.isEmpty {
-                ProvidersStatusRow(title: String(localized: "No quota sources reported by this server."), systemImage: "gauge.with.dots.needle.33percent")
-            } else {
-                ForEach(Array(viewModel.quotaSources.enumerated()), id: \.element.id) { index, source in
-                    if index == 0 || viewModel.quotaSources[index - 1].providerID != source.providerID {
-                        Text(source.providerLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .padding(.top, index == 0 ? 2 : 8)
-                            .accessibilityAddTraits(.isHeader)
-                    }
-
-                    ProviderQuotaRow(
-                        source: source,
-                        isRefreshing: viewModel.refreshingQuotaSourceIDs.contains(source.id),
-                        refresh: { Task { await viewModel.refreshQuota(sourceID: source.id) } }
-                    )
-                    .id(source.id)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .accessibilityIdentifier("provider-quota-section")
     }
 
     @ViewBuilder
@@ -157,15 +89,28 @@ struct ProvidersView: View {
 
                 ForEach(Array(viewModel.providers.enumerated()), id: \.offset) { index, provider in
                     let key = Self.expansionKey(for: provider, at: index)
+                    let providerID = ProvidersViewModel.normalizedProviderID(provider.id)
                     ProviderRow(
                         provider: provider,
+                        displayName: providerDisplayName(provider),
                         isActive: viewModel.isActive(provider),
+                        isHiddenFromInsights: providerID.map { hiddenProviderIDs.contains($0) } ?? false,
+                        canChangeInsightsVisibility: providerID != nil,
                         isExpanded: expandedProviderKeys.contains(key),
-                        toggleExpanded: { toggleExpanded(key) }
+                        toggleExpanded: { toggleExpanded(key) },
+                        toggleInsightsVisibility: {
+                            guard let providerID else { return }
+                            toggleInsightsVisibility(providerID)
+                        },
+                        rename: {
+                            guard let providerID else { return }
+                            providerPendingRenameID = providerID
+                            providerRenameText = providerDisplayName(provider)
+                        }
                     )
                 }
 
-                Text("Provider keys are managed on the server. This screen is read-only.")
+                Text("Provider keys are managed on the server. Use the eye controls to choose which quotas appear in Insights.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.top, 6)
@@ -173,16 +118,6 @@ struct ProvidersView: View {
             }
             .padding(.horizontal, 16)
         }
-    }
-
-    private func quotaNotice(_ text: String, color: Color, systemImage: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.footnote)
-            .foregroundStyle(.primary)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.14)))
-            .accessibilityElement(children: .combine)
     }
 
     /// Shown above cached rows when a pull-to-refresh fails: the list would
@@ -235,215 +170,61 @@ struct ProvidersView: View {
             }
         }
     }
-}
 
-private struct ProviderQuotaRow: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private var hiddenProviderIDs: Set<String> {
+        ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: hiddenProviderData)
+    }
 
-    let source: ProviderQuotaSource
-    let isRefreshing: Bool
-    let refresh: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        accountTitle
-                        Spacer(minLength: 4)
-                        refreshButton
-                    }
-                    HStack(spacing: 8) {
-                        badges
-                        Spacer(minLength: 0)
-                    }
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    accountTitle
-                    badges
-                    Spacer(minLength: 4)
-                    refreshButton
-                }
-            }
-
-            if !source.windows.isEmpty {
-                ForEach(Array(source.windows.enumerated()), id: \.offset) { _, window in
-                    quotaWindow(window)
-                }
-            } else if let quota = source.quota {
-                openRouterQuota(quota)
-            } else {
-                statusLine
-            }
-
-            if let detail = source.details.first, !detail.isEmpty {
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let retryAt = ProviderQuotaDateParser.date(from: source.retryAfter) {
-                Text("Retry \(retryAt, style: .relative)")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-            }
-
-            if let fetchedAt = ProviderQuotaDateParser.date(from: source.fetchedAt) {
-                Text("Updated \(fetchedAt, style: .relative)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+    private func toggleInsightsVisibility(_ providerID: String) {
+        hiddenProviderData = ProviderQuotaVisibilitySettings.data(
+            bySetting: providerID,
+            hidden: !hiddenProviderIDs.contains(providerID),
+            in: hiddenProviderData
         )
-        .accessibilityIdentifier("provider-quota-source-\(source.id)")
-        .accessibilityElement(children: .contain)
     }
 
-    private var accountTitle: some View {
-        Text(source.accountLabel)
-            .font(.subheadline.weight(.semibold))
-            .lineLimit(2)
+    private var renameAlertIsPresented: Binding<Bool> {
+        Binding(
+            get: { providerPendingRenameID != nil },
+            set: { if !$0 { providerPendingRenameID = nil } }
+        )
     }
 
-    @ViewBuilder
-    private var badges: some View {
-        if let plan = source.plan, !plan.isEmpty {
-            Text(plan)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color(.tertiarySystemFill)))
-        }
-        if source.isActiveProvider {
-            Text("Active provider")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.green)
-        }
+    private func providerDisplayName(_ provider: ProviderSummary) -> String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: ProvidersViewModel.normalizedProviderID(provider.id),
+            fallback: ProvidersViewModel.displayName(for: provider),
+            aliasesData: providerAliasesData
+        )
     }
 
-    private var refreshButton: some View {
-        Button(action: refresh) {
-            if isRefreshing {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "arrow.clockwise")
-                    .font(.caption.weight(.semibold))
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(Rectangle())
-        .disabled(isRefreshing || source.status == "removed")
-        .accessibilityLabel(Text("Refresh quota for \(source.accountLabel)"))
+    private func saveProviderRename() {
+        guard let providerPendingRenameID else { return }
+        providerAliasesData = ProviderQuotaDisplaySettings.data(
+            byRenaming: providerPendingRenameID,
+            to: providerRenameText,
+            in: providerAliasesData
+        )
+        self.providerPendingRenameID = nil
+        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
     }
-
-    private func quotaWindow(_ window: ProviderQuotaWindow) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(window.label)
-                    .font(.footnote.weight(.medium))
-
-                Spacer(minLength: 8)
-
-                if let percent = ProvidersViewModel.quotaPercentText(window) {
-                    Text(percent)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if let used = ProvidersViewModel.quotaUsedPercent(window) {
-                ProgressView(value: used, total: 100)
-                    .tint(used >= 90 ? .red : used >= 75 ? .orange : .accentColor)
-                    .accessibilityValue(Text(ProvidersViewModel.quotaPercentText(window) ?? ""))
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if let resetAt = ProviderQuotaDateParser.date(from: window.resetAt) {
-                    Text("Resets \(resetAt, style: .relative)")
-                } else if let detail = window.detail, !detail.isEmpty {
-                    Text(detail)
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private func openRouterQuota(_ quota: ProviderQuotaAmount) -> some View {
-        if let usage = quota.usage, let limit = quota.limit, limit > 0 {
-            let used = min(max(usage / limit * 100, 0), 100)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text("Credits")
-                        .font(.footnote.weight(.medium))
-                    Spacer(minLength: 8)
-                    Text("\(insightsFormattedPercent(used)) used")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                ProgressView(value: used, total: 100)
-                    .tint(used >= 90 ? .red : used >= 75 ? .orange : .accentColor)
-            }
-            .accessibilityElement(children: .combine)
-        } else if let remaining = quota.limitRemaining {
-            Text("\(remaining.formatted()) credits remaining")
-                .font(.footnote)
-        } else {
-            statusLine
-        }
-    }
-
-    private var statusLine: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-
-            Text(source.unavailableReason ?? source.message ?? statusLabel)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var statusLabel: String {
-        ProviderQuotaPresentation.statusLabel(source.status)
-    }
-
-    private var statusColor: Color {
-        switch source.status {
-        case "available": .green
-        case "exhausted", "dead", "invalid_key": .red
-        case "removed", "unsupported", "no_key": .orange
-        default: .secondary
-        }
-    }
-
 }
 
 private struct ProviderRow: View {
     let provider: ProviderSummary
+    let displayName: String
     let isActive: Bool
+    let isHiddenFromInsights: Bool
+    let canChangeInsightsVisibility: Bool
     let isExpanded: Bool
     let toggleExpanded: () -> Void
+    let toggleInsightsVisibility: () -> Void
+    let rename: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(ProvidersViewModel.displayName(for: provider))
+                Text(displayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -469,6 +250,30 @@ private struct ProviderRow: View {
                         .background(Capsule().fill(Color(.tertiarySystemFill)))
                         .foregroundStyle(.secondary)
                 }
+
+                Button(action: toggleInsightsVisibility) {
+                    Image(systemName: isHiddenFromInsights ? "eye" : "eye.slash")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .disabled(!canChangeInsightsVisibility)
+                .accessibilityLabel(
+                    isHiddenFromInsights
+                        ? "Show \(displayName) in Insights"
+                        : "Hide \(displayName) from Insights"
+                )
+
+                Button(action: rename) {
+                    Image(systemName: "pencil")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .disabled(!canChangeInsightsVisibility)
+                .accessibilityLabel("Rename \(displayName)")
             }
 
             keyStatusLine

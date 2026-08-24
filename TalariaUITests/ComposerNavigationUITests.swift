@@ -137,26 +137,52 @@ final class ComposerNavigationUITests: XCTestCase {
             }
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
         }
+
+        let quotaRefresh = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Refresh"))
+            .firstMatch
+        for _ in 0..<12 where !quotaRefresh.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(quotaRefresh.exists)
+        XCTAssertTrue(app.staticTexts["Every 5 minutes"].exists)
+        XCTAssertTrue(app.staticTexts["Percentage"].exists)
+        XCTAssertTrue(app.staticTexts["Used"].exists)
+
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
     }
 
-    func testProvidersShowsQuotaSurface() throws {
+    func testInsightsShowsQuotaSurface() throws {
         app.terminate()
         app.launchArguments = ["--provider-quotas"]
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Provider quotas"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Refresh all provider quotas"].exists)
+        XCTAssertTrue(app.buttons["Open provider quota settings"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["provider-quota-section"].exists)
         let quotaSource = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "provider-quota-source-"))
             .firstMatch
         XCTAssertTrue(quotaSource.waitForExistence(timeout: 10), "Expected at least one rendered quota source")
+        XCTAssertTrue(app.staticTexts["OpenAI Codex"].exists)
+        XCTAssertFalse(app.staticTexts["device_code"].exists)
+        XCTAssertTrue(app.images["Active provider"].exists)
+
+        let warning = app.buttons["Provider quota warning"]
+        XCTAssertTrue(warning.exists)
+        XCTAssertFalse(app.staticTexts["This server supports active-provider quota only. Multi-account sources require the companion server update."].exists)
 
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "Provider quota surface"
+        screenshot.name = "Insights provider quota surface"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+
+        warning.tap()
+        XCTAssertTrue(
+            app.staticTexts["This server supports active-provider quota only. Multi-account sources require the companion server update."]
+                .waitForExistence(timeout: 3)
+        )
     }
 
     func testProviderQuotaWidgetFixtureWritesSharedSnapshot() throws {

@@ -141,6 +141,7 @@ struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
 
 struct ProviderQuotaWindow: Codable, Equatable, Sendable {
     let label: String
+    let windowSeconds: Int?
     let usedPercent: Double?
     let remainingPercent: Double?
     let resetAt: String?
@@ -148,6 +149,7 @@ struct ProviderQuotaWindow: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case label
+        case windowSeconds
         case usedPercent
         case remainingPercent
         case resetAt
@@ -156,12 +158,14 @@ struct ProviderQuotaWindow: Codable, Equatable, Sendable {
 
     init(
         label: String,
+        windowSeconds: Int? = nil,
         usedPercent: Double? = nil,
         remainingPercent: Double? = nil,
         resetAt: String? = nil,
         detail: String? = nil
     ) {
         self.label = label
+        self.windowSeconds = windowSeconds
         self.usedPercent = usedPercent
         self.remainingPercent = remainingPercent
         self.resetAt = resetAt
@@ -171,6 +175,7 @@ struct ProviderQuotaWindow: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         label = container.decodeQuotaStringIfPresent(forKey: .label) ?? String(localized: "Quota")
+        windowSeconds = container.decodeQuotaIntIfPresent(forKey: .windowSeconds)
         usedPercent = container.decodeQuotaDoubleIfPresent(forKey: .usedPercent)
         remainingPercent = container.decodeQuotaDoubleIfPresent(forKey: .remainingPercent)
         resetAt = container.decodeQuotaStringIfPresent(forKey: .resetAt)

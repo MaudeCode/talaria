@@ -13,7 +13,7 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(Set(json.keys), ["updatedAt", "sources"])
         XCTAssertEqual(
             Set(try XCTUnwrap(sources.first).keys),
-            ["sourceID", "scopeID", "scopeLabel", "cachedAt", "providerLabel", "accountLabel", "isActiveProvider", "status", "plan", "windows", "fetchedAt"]
+            ["sourceID", "scopeID", "scopeLabel", "cachedAt", "providerID", "providerLabel", "accountLabel", "isActiveProvider", "status", "plan", "windows", "fetchedAt"]
         )
         XCTAssertEqual(try JSONDecoder().decode(ProviderQuotaWidgetSnapshot.self, from: data), snapshot)
         let encoded = String(decoding: data, as: UTF8.self)
@@ -104,6 +104,175 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(ProviderQuotaWidgetSelection.sourceIDs(slotIDs: slots, capacity: 4), ["one", "three", "four"])
     }
 
+    func testSidebarQuotaSelectionDefaultsEmptyAndKeepsAtMostTwoUniqueSources() {
+        XCTAssertEqual(ProviderQuotaSidebarSettings.sourceIDs(first: "", second: "  "), [])
+        XCTAssertEqual(
+            ProviderQuotaSidebarSettings.sourceIDs(first: " qsrc_work ", second: "qsrc_personal"),
+            ["qsrc_work", "qsrc_personal"]
+        )
+        XCTAssertEqual(
+            ProviderQuotaSidebarSettings.sourceIDs(first: "qsrc_work", second: "qsrc_work"),
+            ["qsrc_work"]
+        )
+    }
+
+    func testQuotaRefreshIntervalDefaultsToFiveMinutesAndRejectsUnknownValues() {
+        XCTAssertEqual(ProviderQuotaRefreshInterval.defaultValue, .fiveMinutes)
+        XCTAssertEqual(ProviderQuotaRefreshInterval.defaultValue.rawValue, 300)
+        XCTAssertEqual(ProviderQuotaRefreshInterval.storedValue(900), .fifteenMinutes)
+        XCTAssertEqual(ProviderQuotaRefreshInterval.storedValue(123), .fiveMinutes)
+    }
+
+    func testWidgetAppearanceDefaultsStayMinimal() {
+        XCTAssertEqual(ProviderQuotaWidgetArcColor.defaultValue, .automatic)
+        XCTAssertEqual(ProviderQuotaWidgetArcWeight.defaultValue, .regular)
+        XCTAssertEqual(ProviderQuotaWidgetColorBasis.defaultValue, .pace)
+        XCTAssertEqual(ProviderQuotaWidgetStatusText.defaultValue, .percentage)
+        XCTAssertEqual(ProviderQuotaWidgetResetDisplay.defaultValue, .compact)
+        XCTAssertEqual(ProviderQuotaWidgetBackground.defaultValue, .system)
+        XCTAssertEqual(ProviderQuotaWidgetTapAction.defaultValue, .insights)
+        XCTAssertTrue(ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent, 18)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent, 25)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultCriticalRemainingPercent, 10)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceTolerancePercent, 3)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent, 125)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent, 175)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours, 12)
+    }
+
+    func testAutomaticUrgencyDefaultsToWeeklyPaceAndCanUseOverallPercentage() {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let resetInFiveDays = ISO8601DateFormatter().string(from: now.addingTimeInterval(5 * 24 * 60 * 60))
+
+        func urgency(used: Double, basis: ProviderQuotaWidgetColorBasis) -> ProviderQuotaUrgency {
+            ProviderQuotaUrgencyCalculator.urgency(
+                windows: [ProviderQuotaWindow(label: "Weekly", usedPercent: used, resetAt: resetInFiveDays)],
+                status: "available",
+                isStale: false,
+                referenceDate: now,
+                basis: basis,
+                warningRemainingPercent: 25,
+                criticalRemainingPercent: 10,
+                paceTolerancePercent: 3,
+                paceWarningBurnRatePercent: 125,
+                paceCriticalBurnRatePercent: 175,
+                paceMinimumElapsedHours: 12
+            )
+        }
+
+        XCTAssertEqual(urgency(used: 10, basis: .pace), .healthy)
+        XCTAssertEqual(urgency(used: 30, basis: .pace), .healthy)
+        XCTAssertEqual(urgency(used: 32, basis: .pace), .warning)
+        XCTAssertEqual(urgency(used: 90, basis: .pace), .critical)
+        XCTAssertEqual(urgency(used: 90, basis: .overall), .critical)
+
+        let windows = [
+            ProviderQuotaWindow(label: "Session", usedPercent: 10),
+            ProviderQuotaWindow(label: "Weekly", usedPercent: 30, resetAt: resetInFiveDays),
+        ]
+        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(from: windows, basis: .pace)?.label, "Weekly")
+        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(from: windows, basis: .overall)?.label, "Session")
+
+        let sessionReset = ISO8601DateFormatter().string(from: now.addingTimeInterval(4 * 60 * 60))
+        let sessionPace = ProviderQuotaUrgencyCalculator.pace(
+            for: ProviderQuotaWindow(label: "Session", usedPercent: 10, resetAt: sessionReset),
+            referenceDate: now,
+            minimumElapsedHours: 0
+        )
+        XCTAssertEqual(sessionPace?.expectedRemainingPercent, 80)
+        XCTAssertEqual(sessionPace?.paceDeltaPercent, 10)
+
+        let collapsedWeeklyReset = ISO8601DateFormatter().string(
+            from: now.addingTimeInterval((6 * 24 + 6) * 60 * 60)
+        )
+        let collapsedWeeklyPace = ProviderQuotaUrgencyCalculator.pace(
+            for: ProviderQuotaWindow(label: "Session", usedPercent: 12, resetAt: collapsedWeeklyReset),
+            referenceDate: now,
+            minimumElapsedHours: 0
+        )
+        XCTAssertEqual(collapsedWeeklyPace?.expectedRemainingPercent, 89.3)
+        XCTAssertEqual(collapsedWeeklyPace?.paceDeltaPercent, -1.3)
+    }
+
+    func testHiddenProviderSettingsNormalizePersistAndRestoreProviders() {
+        var data = Data()
+
+        data = ProviderQuotaVisibilitySettings.data(
+            bySetting: " OpenAI-Codex ",
+            hidden: true,
+            in: data
+        )
+        data = ProviderQuotaVisibilitySettings.data(
+            bySetting: "GEMINI",
+            hidden: true,
+            in: data
+        )
+
+        XCTAssertEqual(
+            ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: data),
+            ["openai-codex", "gemini"]
+        )
+
+        data = ProviderQuotaVisibilitySettings.data(
+            bySetting: "openai-codex",
+            hidden: false,
+            in: data
+        )
+        XCTAssertEqual(ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: data), ["gemini"])
+    }
+
+    func testProviderAliasesRenameAndRestoreProviderNames() {
+        var data = Data()
+        data = ProviderQuotaDisplaySettings.data(
+            byRenaming: "openai-codex",
+            to: "Work Codex",
+            in: data
+        )
+
+        XCTAssertEqual(
+            ProviderQuotaDisplaySettings.displayName(
+                providerID: "openai-codex",
+                fallback: "OpenAI Codex",
+                aliasesData: data
+            ),
+            "Work Codex"
+        )
+
+        data = ProviderQuotaDisplaySettings.data(
+            byRenaming: "openai-codex",
+            to: "",
+            in: data
+        )
+        XCTAssertEqual(
+            ProviderQuotaDisplaySettings.displayName(
+                providerID: "openai-codex",
+                fallback: "OpenAI Codex",
+                aliasesData: data
+            ),
+            "OpenAI Codex"
+        )
+    }
+
+    func testWidgetEntityQueryEnumeratesSavedProviderAccounts() async throws {
+        let store = ProviderQuotaWidgetSnapshotStore()
+        defer { store.clear() }
+        XCTAssertTrue(
+            store.save(
+                scopeID: "qscope_default",
+                sources: [
+                    makeSource(id: "qsrc_work", account: "Work"),
+                    makeSource(id: "qsrc_personal", account: "Personal"),
+                ]
+            )
+        )
+
+        let entities = try await ProviderQuotaSourceEntityQuery().allEntities()
+
+        XCTAssertEqual(entities.map(\.id), ["qsrc_work", "qsrc_personal"])
+        XCTAssertEqual(entities.map(\.name), ["Codex", "Codex"])
+    }
+
     func testSameProviderAccountsRemainDistinctAcrossReorderAndRename() {
         let selected = ["qsrc_work", "qsrc_personal"]
         let reordered = ProviderQuotaWidgetSnapshot(
@@ -146,6 +315,15 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(url.host, TalariaDeepLink.quotaSourceHost)
         XCTAssertEqual(TalariaDeepLink.quotaSourceID(from: url), "qsrc_work")
         XCTAssertNil(TalariaDeepLink.quotaSourceURL(sourceID: "  "))
+
+        let refreshURL = try XCTUnwrap(TalariaDeepLink.quotaSourceURL(sourceID: "qsrc_work", refresh: true))
+        XCTAssertTrue(TalariaDeepLink.requestsQuotaRefresh(refreshURL))
+        XCTAssertEqual(TalariaDeepLink.quotaSourceID(from: refreshURL), "qsrc_work")
+        XCTAssertTrue(
+            TalariaDeepLink.isProviderQuotaWidgetSettingsURL(
+                try XCTUnwrap(TalariaDeepLink.providerQuotaWidgetSettingsURL)
+            )
+        )
     }
 
     func testQuotaDatesDecodeWithAndWithoutFractionalSeconds() {
@@ -161,6 +339,13 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             ),
             40
         )
+        XCTAssertEqual(
+            ProviderQuotaPresentation.percent(
+                ProviderQuotaWindow(label: "Weekly", usedPercent: 40),
+                mode: .remaining
+            ),
+            60
+        )
     }
 
     private func makeSource(
@@ -174,6 +359,7 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             scopeID: scopeID,
             scopeLabel: "Test server · default",
             cachedAt: cachedAt,
+            providerID: "openai-codex",
             providerLabel: "Codex",
             accountLabel: account,
             isActiveProvider: true,

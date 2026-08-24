@@ -98,11 +98,15 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let client = makeClient { request in
             switch request.url?.path {
             case "/api/provider/quotas":
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertTrue(query?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
                 return (
                     HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
                     Data()
                 )
             case "/api/provider/quota":
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertTrue(query?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
                 return apiTestJSONResponse("""
                 {
                   "ok": true,
@@ -123,7 +127,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
         }
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
 
-        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
 
         XCTAssertEqual(model.quotaSources.map(\.providerID), ["openai-codex"])
         XCTAssertFalse(model.hasStableQuotaSources)
@@ -333,6 +337,38 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
         XCTAssertNil(store.load())
         XCTAssertTrue(model.quotaSources.isEmpty)
+        XCTAssertFalse(model.isQuotaLoading)
+    }
+
+    @MainActor
+    func testPeriodicQuotaRefreshForcesServerRefreshWhileVisible() async {
+        let refreshed = expectation(description: "periodic quota refresh")
+        var requestCount = 0
+        let client = makeClient { request in
+            requestCount += 1
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            XCTAssertTrue(components?.queryItems?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
+            if requestCount == 1 {
+                refreshed.fulfill()
+            }
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_widget",
+              "profile_id": "default",
+              "sources": []
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        let refreshTask = Task {
+            await model.refreshQuotasPeriodically(every: .milliseconds(10))
+        }
+        await fulfillment(of: [refreshed], timeout: 2)
+        refreshTask.cancel()
+        await refreshTask.value
+
         XCTAssertFalse(model.isQuotaLoading)
     }
 

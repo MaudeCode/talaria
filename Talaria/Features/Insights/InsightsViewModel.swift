@@ -29,6 +29,15 @@ enum AnalyticsTimeframe: String, CaseIterable, Identifiable {
         }
     }
 
+    var pickerTitle: String {
+        switch self {
+        case .today: String(localized: "Today")
+        case .last7Days: String(localized: "7 Days")
+        case .last30Days: String(localized: "30 Days")
+        case .allTime: String(localized: "All Time")
+        }
+    }
+
     var serverDays: Int {
         switch self {
         case .today:
@@ -123,19 +132,34 @@ final class InsightsViewModel {
     private var activeLoadID: UUID?
 
     private let client: any InsightsDataClient
+    private let cache: InsightsResponseCache?
 
     init(server: URL) {
         client = APIClient(baseURL: server)
+        let cache = InsightsResponseCache(server: server)
+        self.cache = cache
+        if let response = cache.load(timeframe: selectedTimeframe) {
+            serverInsights = response
+            loadedTimeframe = selectedTimeframe
+            dataSource = .server
+        }
     }
 
     init(client: any InsightsDataClient) {
         self.client = client
+        cache = nil
     }
 
     func load() async {
         let loadID = UUID()
         let timeframe = selectedTimeframe
         activeLoadID = loadID
+        if let cached = cache?.load(timeframe: timeframe) {
+            serverInsights = cached
+            sessions = []
+            loadedTimeframe = timeframe
+            dataSource = .server
+        }
         isLoading = true
         errorMessage = nil
         lastError = nil
@@ -155,6 +179,7 @@ final class InsightsViewModel {
             sessions = []
             loadedTimeframe = timeframe
             dataSource = .server
+            cache?.save(response, timeframe: timeframe)
         } catch is CancellationError {
             return
         } catch {
@@ -290,6 +315,35 @@ final class InsightsViewModel {
     var topSessions: [SessionSummary] {
         guard dataSource != .server else { return [] }
         return analytics.topSessions
+    }
+}
+
+private struct InsightsResponseCache {
+    private static let storageKey = "insights.responseCache.v1"
+
+    private let serverKey: String
+    private let defaults: UserDefaults
+
+    init(server: URL, defaults: UserDefaults = .standard) {
+        serverKey = server.absoluteString
+        self.defaults = defaults
+    }
+
+    func load(timeframe: AnalyticsTimeframe) -> InsightsResponse? {
+        payload()[serverKey]?[timeframe.rawValue]
+    }
+
+    func save(_ response: InsightsResponse, timeframe: AnalyticsTimeframe) {
+        var payload = payload()
+        var serverResponses = payload[serverKey] ?? [:]
+        serverResponses[timeframe.rawValue] = response
+        payload[serverKey] = serverResponses
+        defaults.set(try? JSONEncoder().encode(payload), forKey: Self.storageKey)
+    }
+
+    private func payload() -> [String: [String: InsightsResponse]] {
+        guard let data = defaults.data(forKey: Self.storageKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: [String: InsightsResponse]].self, from: data)) ?? [:]
     }
 }
 

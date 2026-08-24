@@ -37,6 +37,7 @@ final class APIClientProvidersTests: APIClientTestCase {
                 "windows": [
                   {
                     "label": "Session",
+                    "window_seconds": 18000,
                     "used_percent": 25,
                     "remaining_percent": 75,
                     "reset_at": "2030-03-17T17:30:00Z",
@@ -44,6 +45,7 @@ final class APIClientProvidersTests: APIClientTestCase {
                   },
                   {
                     "label": "Weekly",
+                    "window_seconds": 604800,
                     "used_percent": 40.5,
                     "remaining_percent": 59.5,
                     "reset_at": "2030-03-24T12:30:00Z"
@@ -74,6 +76,7 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertTrue(source.isActiveProvider)
         XCTAssertEqual(source.plan, "Pro")
         XCTAssertEqual(source.windows.map(\.label), ["Session", "Weekly"])
+        XCTAssertEqual(source.windows.map(\.windowSeconds), [18_000, 604_800])
         XCTAssertEqual(source.windows[0].usedPercent, 25)
         XCTAssertEqual(source.windows[1].remainingPercent, 59.5)
         XCTAssertEqual(source.fetchedAt, "2030-03-17T12:30:00Z")

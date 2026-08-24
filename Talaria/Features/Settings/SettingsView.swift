@@ -2,11 +2,13 @@ import SwiftUI
 import SwiftData
 import UIKit
 import UserNotifications
+import WidgetKit
 
 /// A Settings section a deep link can scroll to when the screen opens — the
 /// avatar long-press "Manage Servers" shortcut lands on the Servers card (#283).
 enum SettingsScrollAnchor: Hashable {
     case servers
+    case providerQuotas
 }
 
 struct SettingsView: View {
@@ -61,6 +63,7 @@ struct SettingsView: View {
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @AppStorage(ResponseCompletionNotifications.hasRequestedPermissionKey) private var hasRequestedResponseCompletionNotificationPermission = false
+    @AppStorage(ProviderQuotaAlertSettings.isEnabledKey) private var isProviderQuotaAlertsEnabled = false
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
@@ -93,6 +96,12 @@ struct SettingsView: View {
     @AppStorage(ComposerVisibilitySettings.profileKey) private var showsComposerProfile = true
     @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsComposerGitBranch = true
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsComposerContextUsage = true
+    @AppStorage(ProviderQuotaRefreshInterval.storageKey)
+    private var providerQuotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
+    @AppStorage(
+        ProviderQuotaPercentageMode.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerQuotaPercentageMode = ProviderQuotaPercentageMode.defaultValue.rawValue
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -486,19 +495,6 @@ struct SettingsView: View {
                     SettingsDivider()
 
                     NavigationLink {
-                        ProvidersView(server: server)
-                    } label: {
-                        SettingsAccessoryRow(
-                            title: String(localized: "Providers"),
-                            systemImage: "key.horizontal"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the provider status screen.")
-
-                    SettingsDivider()
-
-                    NavigationLink {
                         CustomHeadersSettingsView(authManager: authManager)
                     } label: {
                         SettingsAccessoryRow(
@@ -516,6 +512,71 @@ struct SettingsView: View {
                     serverUpdateCheckAction
                     serverUpdateNote
                     serverUpdateAction
+                }
+
+                SettingsCard(title: String(localized: "Provider Quotas")) {
+                    NavigationLink {
+                        ProvidersView(server: server)
+                    } label: {
+                        SettingsAccessoryRow(
+                            title: String(localized: "Providers"),
+                            systemImage: "key.horizontal"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens provider rename and Insights visibility settings.")
+
+                    SettingsDivider()
+
+                    SettingsPickerRow(
+                        title: String(localized: "Percentage"),
+                        systemImage: "percent",
+                        selection: $providerQuotaPercentageMode
+                    ) {
+                        ForEach(ProviderQuotaPercentageMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+
+                    SettingsDivider()
+
+                    SettingsPickerRow(
+                        title: String(localized: "Quota Refresh"),
+                        systemImage: "arrow.clockwise",
+                        selection: $providerQuotaRefreshIntervalSeconds
+                    ) {
+                        ForEach(ProviderQuotaRefreshInterval.allCases) { interval in
+                            Text(interval.title).tag(interval.rawValue)
+                        }
+                    }
+
+                    SettingsFootnote(String(localized: "Controls automatic provider-quota refresh while Insights is open."))
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Quota Pace Alerts"),
+                        systemImage: "bell.badge",
+                        isOn: providerQuotaAlertsBinding
+                    )
+
+                    if let notificationStatusText {
+                        SettingsFootnote(notificationStatusText)
+                    }
+                }
+                .id(SettingsScrollAnchor.providerQuotas)
+
+                SettingsCard(title: String(localized: "Widgets")) {
+                    NavigationLink {
+                        ProviderQuotaWidgetAppearanceView()
+                    } label: {
+                        SettingsAccessoryRow(
+                            title: String(localized: "Provider Quotas"),
+                            systemImage: "gauge.open.with.lines.needle.33percent"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens provider quota widget appearance settings.")
                 }
 
                 SettingsCard(title: String(localized: "App")) {
@@ -655,6 +716,9 @@ struct SettingsView: View {
         .onChange(of: identityDisplayName) { syncActiveServerIdentity() }
         .onChange(of: identityInitials) { syncActiveServerIdentity() }
         .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
+        .onChange(of: providerQuotaPercentageMode) {
+            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
         }
@@ -831,6 +895,21 @@ struct SettingsView: View {
                     Task {
                         await refreshNotificationPermissionStatus()
                     }
+                }
+            }
+        )
+    }
+
+    private var providerQuotaAlertsBinding: Binding<Bool> {
+        Binding(
+            get: { isProviderQuotaAlertsEnabled },
+            set: { isEnabled in
+                if isEnabled {
+                    Task { await enableProviderQuotaAlerts() }
+                } else {
+                    isProviderQuotaAlertsEnabled = false
+                    UserDefaults.standard.removeObject(forKey: ProviderQuotaAlertSettings.stateKey)
+                    Task { await refreshNotificationPermissionStatus() }
                 }
             }
         )
@@ -1239,38 +1318,50 @@ struct SettingsView: View {
 
         if !status.allowsSettingsToggleOn {
             isResponseCompletionNotificationsEnabled = false
+            isProviderQuotaAlertsEnabled = false
         }
 
         notificationStatusMessage = nil
     }
 
     private func enableResponseCompletionNotifications() async {
+        isResponseCompletionNotificationsEnabled = await requestNotificationAccessIfAvailable()
+    }
+
+    private func enableProviderQuotaAlerts() async {
+        isProviderQuotaAlertsEnabled = await requestNotificationAccessIfAvailable()
+        if isProviderQuotaAlertsEnabled {
+            UserDefaults.standard.removeObject(forKey: ProviderQuotaAlertSettings.stateKey)
+        }
+    }
+
+    private func requestNotificationAccessIfAvailable() async -> Bool {
         let currentStatus = await ResponseCompletionNotificationService.authorizationStatus()
         notificationPermissionStatus = currentStatus
 
         switch currentStatus {
         case .authorized, .provisional, .ephemeral:
-            isResponseCompletionNotificationsEnabled = true
             notificationStatusMessage = nil
+            return true
         case .notDetermined:
             guard !hasRequestedResponseCompletionNotificationPermission else {
-                isResponseCompletionNotificationsEnabled = false
                 notificationStatusMessage = String(localized: "Permission not requested.")
-                return
+                return false
             }
 
             hasRequestedResponseCompletionNotificationPermission = true
             let granted = await ResponseCompletionNotificationService.requestAuthorization()
             let updatedStatus = await ResponseCompletionNotificationService.authorizationStatus()
             notificationPermissionStatus = updatedStatus
-            isResponseCompletionNotificationsEnabled = granted && updatedStatus.allowsSettingsToggleOn
-            notificationStatusMessage = isResponseCompletionNotificationsEnabled ? nil : notificationPermissionLabel(updatedStatus)
+            let isEnabled = granted && updatedStatus.allowsSettingsToggleOn
+            notificationStatusMessage = isEnabled ? nil : notificationPermissionLabel(updatedStatus)
+            return isEnabled
         case .denied:
-            isResponseCompletionNotificationsEnabled = false
             notificationStatusMessage = notificationPermissionLabel(currentStatus)
+            return false
         @unknown default:
-            isResponseCompletionNotificationsEnabled = false
             notificationStatusMessage = String(localized: "Notifications unavailable.")
+            return false
         }
     }
 
@@ -1533,6 +1624,646 @@ private struct SettingsCard<Content: View>: View {
 
     private var cardStrokeOpacity: Double {
         colorSchemeContrast == .increased ? 0.16 : 0.06
+    }
+}
+
+private enum ProviderQuotaWidgetPreviewState: String, CaseIterable, Identifiable {
+    case healthy
+    case warning
+    case critical
+    case stale
+    case unavailable
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .healthy: String(localized: "Healthy")
+        case .warning: String(localized: "Warning")
+        case .critical: String(localized: "Critical")
+        case .stale: String(localized: "Stale")
+        case .unavailable: String(localized: "Unavailable")
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .healthy: "checkmark"
+        case .warning: "exclamationmark"
+        case .critical: "exclamationmark.triangle.fill"
+        case .stale: "clock"
+        case .unavailable: "slash.circle"
+        }
+    }
+    var urgency: ProviderQuotaUrgency {
+        switch self {
+        case .healthy: .healthy
+        case .warning: .warning
+        case .critical: .critical
+        case .stale: .stale
+        case .unavailable: .unavailable
+        }
+    }
+}
+
+private enum ProviderQuotaWidgetPreviewFamily: String, CaseIterable, Identifiable {
+    case small
+    case medium
+    case large
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .small: String(localized: "Small")
+        case .medium: String(localized: "Medium")
+        case .large: String(localized: "Large")
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .small: "widget.small"
+        case .medium: "widget.medium"
+        case .large: "widget.large"
+        }
+    }
+}
+
+struct ProviderQuotaWidgetAppearanceView: View {
+    @State private var previewState = ProviderQuotaWidgetPreviewState.healthy
+    @State private var previewFamily = ProviderQuotaWidgetPreviewFamily.small
+    @AppStorage(
+        ProviderQuotaWidgetArcColor.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var arcColorRawValue = ProviderQuotaWidgetArcColor.defaultValue.rawValue
+    @AppStorage(
+        ProviderQuotaWidgetArcWeight.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var arcWeightRawValue = ProviderQuotaWidgetArcWeight.defaultValue.rawValue
+    @AppStorage(
+        ProviderQuotaWidgetColorBasis.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var colorBasisRawValue = ProviderQuotaWidgetColorBasis.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetStatusText.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var statusTextRawValue = ProviderQuotaWidgetStatusText.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetResetDisplay.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var resetDisplayRawValue = ProviderQuotaWidgetResetDisplay.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var showsPaceMarker = ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var trackColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultTrackColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var trackOpacityPercent = ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customArcColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customArcColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomArcColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customTrackColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customTrackColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomTrackColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.healthyColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var healthyColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultHealthyColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.warningColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var warningColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultWarningColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.criticalColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var criticalColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultCriticalColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.staleColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var staleColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultStaleColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.unavailableColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var unavailableColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultUnavailableColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customHealthyColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customHealthyColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomHealthyColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customWarningColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customWarningColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomWarningColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customCriticalColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customCriticalColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomCriticalColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customStaleColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customStaleColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomStaleColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customUnavailableColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customUnavailableColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomUnavailableColorHex
+    @AppStorage(ProviderQuotaWidgetBackground.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var backgroundRawValue = ProviderQuotaWidgetBackground.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetBackground.customColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customBackgroundColorHex = ProviderQuotaWidgetBackground.defaultCustomColorHex
+    @AppStorage(ProviderQuotaWidgetBackground.opacityPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var backgroundOpacityPercent = ProviderQuotaWidgetBackground.defaultOpacityPercent
+    @AppStorage(ProviderQuotaWidgetTapAction.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var tapActionRawValue = ProviderQuotaWidgetTapAction.defaultValue.rawValue
+    @AppStorage(
+        ProviderQuotaPercentageMode.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var percentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: 10) {
+                    VStack(spacing: 3) {
+                        HStack(spacing: 12) {
+                            preview
+                            sizeSelector
+                        }
+
+                        Text(previewState.title)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Picker("State", selection: $previewState) {
+                        ForEach(ProviderQuotaWidgetPreviewState.allCases) { state in
+                            Label(state.title, systemImage: state.systemImage)
+                                .labelStyle(.iconOnly)
+                                .tag(state)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .frame(maxWidth: .infinity)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            Section("Arc") {
+                Picker("Color", selection: $arcColorRawValue) {
+                    ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
+                        Text(color.title).tag(color.rawValue)
+                    }
+                }
+
+                if arcColor == .custom {
+                    ColorPicker("Custom Color", selection: colorBinding($customArcColorHex))
+                }
+
+                Picker("Weight", selection: $arcWeightRawValue) {
+                    ForEach(ProviderQuotaWidgetArcWeight.allCases) { weight in
+                        Text(weight.title).tag(weight.rawValue)
+                    }
+                }
+
+                if arcColor == .automatic {
+                    Picker("Automatic Color", selection: $colorBasisRawValue) {
+                        ForEach(ProviderQuotaWidgetColorBasis.allCases) { basis in
+                            Text(basis.title).tag(basis.rawValue)
+                        }
+                    }
+
+                    Toggle("Show Pace Marker", isOn: $showsPaceMarker)
+                }
+            }
+
+            Section("Labels") {
+                Picker("Status", selection: $statusTextRawValue) {
+                    ForEach(ProviderQuotaWidgetStatusText.allCases.filter { $0 != .appDefault }) { value in
+                        Text(value.title).tag(value.rawValue)
+                    }
+                }
+
+                Picker("Reset", selection: $resetDisplayRawValue) {
+                    ForEach(ProviderQuotaWidgetResetDisplay.allCases.filter { $0 != .appDefault }) { value in
+                        Text(value.title).tag(value.rawValue)
+                    }
+                }
+            }
+
+            Section("Surface") {
+                Picker("Track Color", selection: $trackColorRawValue) {
+                    ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
+                        Text(color.title).tag(color.rawValue)
+                    }
+                }
+
+                if trackColor == .custom {
+                    ColorPicker("Custom Track Color", selection: colorBinding($customTrackColorHex))
+                }
+
+                Stepper("Track Opacity: \(trackOpacityPercent)%", value: $trackOpacityPercent, in: 0...100, step: 5)
+
+                Picker("Background", selection: $backgroundRawValue) {
+                    ForEach(ProviderQuotaWidgetBackground.allCases.filter { $0 != .appDefault }) { value in
+                        Text(value.title).tag(value.rawValue)
+                    }
+                }
+
+                if background == .custom {
+                    ColorPicker("Custom Background Color", selection: colorBinding($customBackgroundColorHex))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Background Opacity")
+                            Spacer()
+                            Text("\(backgroundOpacityPercent)%")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: backgroundOpacityBinding, in: 0...100, step: 1)
+                    }
+                }
+            }
+
+            Section("Behavior") {
+                Picker("Tap", selection: $tapActionRawValue) {
+                    ForEach(ProviderQuotaWidgetTapAction.allCases.filter { $0 != .appDefault }) { value in
+                        Text(value.title).tag(value.rawValue)
+                    }
+                }
+            }
+
+            if arcColor == .automatic {
+                ProviderQuotaWidgetAutomaticSettingsSections(
+                    healthyColor: $healthyColorRawValue,
+                    warningColor: $warningColorRawValue,
+                    criticalColor: $criticalColorRawValue,
+                    staleColor: $staleColorRawValue,
+                    unavailableColor: $unavailableColorRawValue,
+                    customHealthyColorHex: $customHealthyColorHex,
+                    customWarningColorHex: $customWarningColorHex,
+                    customCriticalColorHex: $customCriticalColorHex,
+                    customStaleColorHex: $customStaleColorHex,
+                    customUnavailableColorHex: $customUnavailableColorHex
+                )
+            }
+        }
+        .navigationTitle("Widget Appearance")
+        .onChange(of: arcColorRawValue) { reloadWidgets() }
+        .onChange(of: arcWeightRawValue) { reloadWidgets() }
+        .onChange(of: colorBasisRawValue) { reloadWidgets() }
+        .onChange(of: showsPaceMarker) { reloadWidgets() }
+        .onChange(of: statusTextRawValue) { reloadWidgets() }
+        .onChange(of: resetDisplayRawValue) { reloadWidgets() }
+        .onChange(of: trackColorRawValue) { reloadWidgets() }
+        .onChange(of: trackOpacityPercent) { reloadWidgets() }
+        .onChange(of: backgroundRawValue) { reloadWidgets() }
+        .onChange(of: tapActionRawValue) { reloadWidgets() }
+        .onChange(of: customArcColorHex) { reloadWidgets() }
+        .onChange(of: customTrackColorHex) { reloadWidgets() }
+        .onChange(of: customBackgroundColorHex) { reloadWidgets() }
+        .onChange(of: backgroundOpacityPercent) { reloadWidgets() }
+    }
+
+    private var preview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(previewBackground)
+            previewContent.padding(previewFamily == .small ? 22 : 16)
+        }
+        .frame(width: previewBaseSize.width, height: previewBaseSize.height)
+        .scaleEffect(previewScale)
+        .frame(width: previewSize.width, height: previewSize.height)
+        .clipped()
+    }
+
+    private var sizeSelector: some View {
+        VStack(spacing: 2) {
+            ForEach(ProviderQuotaWidgetPreviewFamily.allCases) { family in
+                Button {
+                    previewFamily = family
+                } label: {
+                    Image(systemName: family.systemImage)
+                        .font(.title3)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            previewFamily == family ? Color(.tertiarySystemFill) : .clear,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(family.title)
+                .accessibilityAddTraits(previewFamily == family ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        if previewFamily == .small {
+            previewGauge(compact: false)
+        } else {
+            HStack(spacing: previewFamily == .large ? 20 : 12) {
+                previewGauge(compact: true)
+                    .frame(maxWidth: .infinity)
+                ProviderQuotaForecastView(plan: previewSource.plan, state: previewPresentation)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func previewGauge(compact: Bool) -> some View {
+        ProviderQuotaGaugeView(
+            displayName: "OpenAI Codex",
+            sourceStatus: previewSource.status,
+            state: previewPresentation,
+            statusText: ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue,
+            resetDisplay: ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue,
+            style: ProviderQuotaGaugeStyle(
+                arcColor: previewColor,
+                trackColor: previewTrackColor.opacity(Double(trackOpacityPercent) / 100),
+                lineWidth: previewLineWidth(compact: compact),
+                showsPaceMarker: arcColor == .automatic
+                    && previewPresentation.settings.colorBasis == .pace
+                    && showsPaceMarker
+            ),
+            compact: compact
+        )
+    }
+
+    private var arcColor: ProviderQuotaWidgetArcColor {
+        ProviderQuotaWidgetArcColor(rawValue: arcColorRawValue) ?? .defaultValue
+    }
+
+    private var trackColor: ProviderQuotaWidgetArcColor {
+        ProviderQuotaWidgetArcColor(rawValue: trackColorRawValue) ?? .automatic
+    }
+
+    private var background: ProviderQuotaWidgetBackground {
+        ProviderQuotaWidgetBackground(rawValue: backgroundRawValue) ?? .defaultValue
+    }
+
+    private var backgroundOpacityBinding: Binding<Double> {
+        Binding(
+            get: { Double(backgroundOpacityPercent) },
+            set: { backgroundOpacityPercent = Int($0.rounded()) }
+        )
+    }
+
+    private func previewLineWidth(compact: Bool) -> Double {
+        switch ProviderQuotaWidgetArcWeight(rawValue: arcWeightRawValue) ?? .defaultValue {
+        case .thin: compact ? 5 : 7
+        case .regular: compact ? 7 : 10
+        case .bold: compact ? 10 : 14
+        }
+    }
+
+    private var previewColor: Color {
+        guard arcColor == .automatic else {
+            return ProviderQuotaWidgetColorResolver.color(arcColor, customHex: customArcColorHex)
+        }
+        let palette: (ProviderQuotaWidgetArcColor, String) = switch previewPresentation.urgency {
+        case .healthy: (paletteColor(healthyColorRawValue, fallback: .accent), customHealthyColorHex)
+        case .warning: (paletteColor(warningColorRawValue, fallback: .orange), customWarningColorHex)
+        case .critical: (paletteColor(criticalColorRawValue, fallback: .red), customCriticalColorHex)
+        case .stale: (paletteColor(staleColorRawValue, fallback: .orange), customStaleColorHex)
+        case .unavailable: (paletteColor(unavailableColorRawValue, fallback: .orange), customUnavailableColorHex)
+        }
+        return ProviderQuotaWidgetColorResolver.color(palette.0, customHex: palette.1)
+    }
+
+    private var previewTrackColor: Color {
+        if trackColor == .automatic { return .secondary }
+        return ProviderQuotaWidgetColorResolver.color(trackColor, customHex: customTrackColorHex)
+    }
+
+    private var previewSource: ProviderQuotaWidgetSource {
+        let usedPercent: Double = switch previewState {
+        case .healthy, .stale: 13
+        case .warning: 40
+        case .critical: 90
+        case .unavailable: 0
+        }
+        let now = Date()
+        return ProviderQuotaWidgetSource(
+            sourceID: "preview-codex",
+            cachedAt: previewState == .stale ? now.addingTimeInterval(-30 * 60) : now,
+            providerID: "openai-codex",
+            providerLabel: "OpenAI Codex",
+            accountLabel: "OpenAI Codex",
+            isActiveProvider: true,
+            status: previewState == .unavailable ? "unavailable" : "available",
+            plan: "Pro",
+            windows: previewState == .unavailable ? [] : [
+                ProviderQuotaWindow(
+                    label: "Weekly",
+                    windowSeconds: 604_800,
+                    usedPercent: usedPercent,
+                    remainingPercent: 100 - usedPercent,
+                    resetAt: ISO8601DateFormatter().string(
+                        from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
+                    )
+                )
+            ],
+            retryAfter: nil,
+            fetchedAt: nil
+        )
+    }
+
+    private var previewPresentation: ProviderQuotaPresentationState {
+        ProviderQuotaPresentation.state(
+            for: previewSource,
+            settings: ProviderQuotaEvaluationSettings.stored(),
+            at: Date()
+        ).withUrgency(previewState.urgency)
+    }
+
+    private var previewSize: CGSize {
+        CGSize(
+            width: previewTargetWidth,
+            height: previewBaseSize.height * previewScale
+        )
+    }
+
+    private var previewBaseSize: CGSize {
+        switch previewFamily {
+        case .small: CGSize(width: 170, height: 170)
+        case .medium: CGSize(width: 338, height: 158)
+        case .large: CGSize(width: 338, height: 338)
+        }
+    }
+
+    private var previewTargetWidth: CGFloat {
+        switch previewFamily {
+        case .small: 210
+        case .medium: 275
+        case .large: 270
+        }
+    }
+
+    private var previewScale: CGFloat {
+        previewTargetWidth / previewBaseSize.width
+    }
+
+    private var previewBackground: Color {
+        switch background {
+        case .appDefault, .system: Color(.secondarySystemBackground)
+        case .clear: .clear
+        case .tinted: .accentColor.opacity(0.16)
+        case .dark: Color(white: 0.08)
+        case .light: Color(white: 0.96)
+        case .custom:
+            ProviderQuotaWidgetColorResolver.color(
+                hex: customBackgroundColorHex,
+                fallback: Color(.secondarySystemBackground)
+            )
+                .opacity(Double(backgroundOpacityPercent) / 100)
+        }
+    }
+
+    private func paletteColor(
+        _ rawValue: String,
+        fallback: ProviderQuotaWidgetArcColor
+    ) -> ProviderQuotaWidgetArcColor {
+        ProviderQuotaWidgetArcColor(rawValue: rawValue) ?? fallback
+    }
+
+    private func colorBinding(_ hex: Binding<String>) -> Binding<Color> {
+        Binding(
+            get: { HeaderLogoColor.color(for: hex.wrappedValue) },
+            set: { color in
+                if let value = HeaderLogoColor.hexString(from: color) {
+                    hex.wrappedValue = value
+                }
+            }
+        )
+    }
+
+    private func reloadWidgets() {
+        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+    }
+}
+
+private struct ProviderQuotaWidgetAutomaticSettingsSections: View {
+    @AppStorage(ProviderQuotaWidgetColorBasis.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var colorBasisRawValue = ProviderQuotaWidgetColorBasis.defaultValue.rawValue
+    @Binding var healthyColor: String
+    @Binding var warningColor: String
+    @Binding var criticalColor: String
+    @Binding var staleColor: String
+    @Binding var unavailableColor: String
+    @Binding var customHealthyColorHex: String
+    @Binding var customWarningColorHex: String
+    @Binding var customCriticalColorHex: String
+    @Binding var customStaleColorHex: String
+    @Binding var customUnavailableColorHex: String
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var warningRemainingPercent = ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var criticalRemainingPercent = ProviderQuotaWidgetAppearanceSettings.defaultCriticalRemainingPercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var paceTolerancePercent = ProviderQuotaWidgetAppearanceSettings.defaultPaceTolerancePercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var paceWarningBurnRatePercent = ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var paceCriticalBurnRatePercent = ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var paceMinimumElapsedHours = ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours
+
+    var body: some View {
+        Group {
+            Section("Automatic Colors") {
+                colorPicker("Healthy", selection: $healthyColor, customHex: $customHealthyColorHex)
+                colorPicker("Warning", selection: $warningColor, customHex: $customWarningColorHex)
+                colorPicker("Critical", selection: $criticalColor, customHex: $customCriticalColorHex)
+                colorPicker("Stale", selection: $staleColor, customHex: $customStaleColorHex)
+                colorPicker("Unavailable", selection: $unavailableColor, customHex: $customUnavailableColorHex)
+            }
+
+            if colorBasis == .pace {
+                Section {
+                    Stepper(
+                        "Over pace at \(paceTolerancePercent)%",
+                        value: $paceTolerancePercent,
+                        in: 0...25
+                    )
+                    Stepper(
+                        "Warning burn rate: \(paceWarningBurnRatePercent)%",
+                        value: $paceWarningBurnRatePercent,
+                        in: 100...300,
+                        step: 5
+                    )
+                    Stepper(
+                        "Critical burn rate: \(paceCriticalBurnRatePercent)%",
+                        value: $paceCriticalBurnRatePercent,
+                        in: 100...400,
+                        step: 5
+                    )
+                    Stepper(
+                        "Projection after \(paceMinimumElapsedHours) hr",
+                        value: $paceMinimumElapsedHours,
+                        in: 0...72
+                    )
+                } header: {
+                    Text("Pace Breakpoints")
+                } footer: {
+                    Text("Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts apply only when current usage projects exhaustion before reset.")
+                }
+            } else {
+                Section {
+                    Stepper(
+                        "Warning at \(warningRemainingPercent)% remaining",
+                        value: $warningRemainingPercent,
+                        in: 1...99
+                    )
+                    Stepper(
+                        "Critical at \(criticalRemainingPercent)% remaining",
+                        value: $criticalRemainingPercent,
+                        in: 0...99
+                    )
+                } header: {
+                    Text("Overall Breakpoints")
+                } footer: {
+                    Text("Overall Percentage ignores reset time and colors the widget from the quota remaining.")
+                }
+            }
+        }
+        .onChange(of: warningRemainingPercent) {
+            if criticalRemainingPercent > warningRemainingPercent {
+                criticalRemainingPercent = warningRemainingPercent
+            }
+            reloadWidgets()
+        }
+        .onChange(of: criticalRemainingPercent) { reloadWidgets() }
+        .onChange(of: paceTolerancePercent) { reloadWidgets() }
+        .onChange(of: paceWarningBurnRatePercent) {
+            if paceCriticalBurnRatePercent < paceWarningBurnRatePercent {
+                paceCriticalBurnRatePercent = paceWarningBurnRatePercent
+            }
+            reloadWidgets()
+        }
+        .onChange(of: paceCriticalBurnRatePercent) { reloadWidgets() }
+        .onChange(of: paceMinimumElapsedHours) { reloadWidgets() }
+        .onChange(of: healthyColor) { reloadWidgets() }
+        .onChange(of: warningColor) { reloadWidgets() }
+        .onChange(of: criticalColor) { reloadWidgets() }
+        .onChange(of: staleColor) { reloadWidgets() }
+        .onChange(of: unavailableColor) { reloadWidgets() }
+        .onChange(of: customHealthyColorHex) { reloadWidgets() }
+        .onChange(of: customWarningColorHex) { reloadWidgets() }
+        .onChange(of: customCriticalColorHex) { reloadWidgets() }
+        .onChange(of: customStaleColorHex) { reloadWidgets() }
+        .onChange(of: customUnavailableColorHex) { reloadWidgets() }
+    }
+
+    @ViewBuilder
+    private func colorPicker(
+        _ title: String,
+        selection: Binding<String>,
+        customHex: Binding<String>
+    ) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(ProviderQuotaWidgetArcColor.allCases.filter { $0 != .automatic }) { color in
+                Text(color.title).tag(color.rawValue)
+            }
+        }
+        if selection.wrappedValue == ProviderQuotaWidgetArcColor.custom.rawValue {
+            ColorPicker("Custom \(title) Color", selection: colorBinding(customHex))
+        }
+    }
+
+    private func colorBinding(_ hex: Binding<String>) -> Binding<Color> {
+        Binding(
+            get: { HeaderLogoColor.color(for: hex.wrappedValue) },
+            set: { color in
+                if let value = HeaderLogoColor.hexString(from: color) {
+                    hex.wrappedValue = value
+                }
+            }
+        )
+    }
+
+    private var colorBasis: ProviderQuotaWidgetColorBasis {
+        ProviderQuotaWidgetColorBasis(rawValue: colorBasisRawValue) ?? .defaultValue
+    }
+
+    private func reloadWidgets() {
+        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
     }
 }
 

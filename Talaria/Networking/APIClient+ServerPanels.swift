@@ -114,8 +114,8 @@ extension APIClient {
         )
     }
 
-    func activeProviderQuota() async throws -> LegacyProviderQuotaResponse {
-        try await send(endpoint: .providerQuota, method: "GET")
+    func activeProviderQuota(refresh: Bool = false) async throws -> LegacyProviderQuotaResponse {
+        try await send(endpoint: .providerQuota(refresh: refresh), method: "GET")
     }
 
     func settings() async throws -> SettingsResponse {

@@ -5,6 +5,42 @@ struct ProviderQuotaTimelineEntry: TimelineEntry {
     let date: Date
     let configuration: ProviderQuotaWidgetConfigurationIntent
     let snapshot: ProviderQuotaWidgetSnapshot?
+
+    var relevance: TimelineEntryRelevance? {
+        ProviderQuotaWidgetRelevance.relevance(
+            snapshot: snapshot,
+            configuration: configuration,
+            at: date
+        )
+    }
+}
+
+private enum ProviderQuotaWidgetRelevance {
+    static func relevance(
+        snapshot: ProviderQuotaWidgetSnapshot?,
+        configuration: ProviderQuotaWidgetConfigurationIntent,
+        at date: Date
+    ) -> TimelineEntryRelevance? {
+        let sourceIDs = ProviderQuotaWidgetSelection.sourceIDs(
+            slotIDs: configuration.sourceIDs,
+            capacity: 4
+        )
+        let sources = ProviderQuotaWidgetSelection.resolve(sourceIDs: sourceIDs, snapshot: snapshot).compactMap { $0 }
+        guard !sources.isEmpty else { return nil }
+
+        let settings = ProviderQuotaEvaluationSettings.stored(configuration: configuration)
+        let score = sources.map { source in
+            let state = ProviderQuotaPresentation.state(for: source, settings: settings, at: date)
+            return switch state.urgency {
+            case .critical: 100
+            case .warning: 70
+            case .stale: 20
+            case .unavailable: 10
+            case .healthy: 0
+            }
+        }.max() ?? 0
+        return score > 0 ? TimelineEntryRelevance(score: Float(score), duration: 15 * 60) : nil
+    }
 }
 
 struct ProviderQuotaTimelineProvider: AppIntentTimelineProvider {
@@ -37,21 +73,43 @@ struct ProviderQuotaWidget: Widget {
             provider: ProviderQuotaTimelineProvider()
         ) { entry in
             ProviderQuotaWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Provider quotas")
-        .description("Track explicitly selected provider accounts and reset windows.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .description("Track quota percentages for explicitly selected providers.")
+        .supportedFamilies([
+            .systemSmall,
+            .systemMedium,
+            .systemLarge,
+            .accessoryInline,
+            .accessoryCircular,
+            .accessoryRectangular,
+        ])
     }
 }
 
 private struct ProviderQuotaWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @AppStorage(
+        ProviderQuotaWidgetBackground.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var defaultBackgroundRawValue = ProviderQuotaWidgetBackground.defaultValue.rawValue
+    @AppStorage(
+        ProviderQuotaWidgetBackground.customColorHexKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var customBackgroundColorHex = ProviderQuotaWidgetBackground.defaultCustomColorHex
+    @AppStorage(
+        ProviderQuotaWidgetBackground.opacityPercentKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var backgroundOpacityPercent = ProviderQuotaWidgetBackground.defaultOpacityPercent
+    @AppStorage(
+        ProviderQuotaWidgetTapAction.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var defaultTapActionRawValue = ProviderQuotaWidgetTapAction.defaultValue.rawValue
     let entry: ProviderQuotaTimelineEntry
 
     private var capacity: Int {
         switch family {
-        case .systemSmall: 1
+        case .systemSmall, .accessoryInline, .accessoryCircular, .accessoryRectangular: 1
         case .systemMedium: 2
         case .systemLarge: 4
         default: 1
@@ -66,21 +124,13 @@ private struct ProviderQuotaWidgetView: View {
         ProviderQuotaWidgetSelection.resolve(sourceIDs: sourceIDs, snapshot: entry.snapshot)
     }
 
-    private var freshnessDate: Date? {
-        resolvedSources.compactMap { $0?.cachedAt }.min()
-    }
-
-    private var isStale: Bool {
-        guard let freshnessDate else { return false }
-        return entry.date.timeIntervalSince(freshnessDate) > ProviderQuotaWidgetSnapshot.staleAfter
-    }
-
     private var smallWidgetURL: URL? {
-        guard family == .systemSmall,
+        guard family != .systemMedium,
+              family != .systemLarge,
               let candidate = resolvedSources.first,
               let source = candidate
         else { return nil }
-        return TalariaDeepLink.quotaSourceURL(sourceID: source.sourceID)
+        return destinationURL(for: source)
     }
 
     var body: some View {
@@ -90,41 +140,29 @@ private struct ProviderQuotaWidgetView: View {
             } else if entry.snapshot == nil {
                 ProviderQuotaWidgetPrompt(title: "Open Talaria", detail: "Refresh Provider quotas to load widget data.", systemImage: "arrow.clockwise")
             } else {
-                VStack(alignment: .leading, spacing: family == .systemLarge ? 10 : 7) {
-                    HStack {
-                        Text("Talaria quotas")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 4)
-                        if isStale {
-                            Text("Stale")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.orange)
-                        }
-                    }
-
-                    sourceGrid
-
-                    if let updatedAt = freshnessDate {
-                        Text("Updated \(updatedAt, style: .relative)")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                sourceGrid
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .widgetURL(smallWidgetURL)
+        .containerBackground(widgetBackground, for: .widget)
     }
 
     @ViewBuilder
     private var sourceGrid: some View {
-        if family == .systemSmall {
+        if usesTwoWindowLayout {
+            twoWindowGrid
+        } else if usesSingleSourceExpandedLayout {
+            singleSourceExpandedLayout
+        } else if family == .accessoryInline || family == .accessoryCircular || family == .accessoryRectangular {
+            accessorySource
+        } else if family == .systemSmall {
             sourceCell(at: 0)
         } else {
             LazyVGrid(
                 columns: [GridItem(.flexible()), GridItem(.flexible())],
-                alignment: .leading,
-                spacing: family == .systemLarge ? 8 : 6
+                alignment: .center,
+                spacing: family == .systemLarge ? 12 : 8
             ) {
                 ForEach(sourceIDs.indices, id: \.self) { index in
                     sourceCell(at: index)
@@ -134,11 +172,89 @@ private struct ProviderQuotaWidgetView: View {
     }
 
     @ViewBuilder
-    private func sourceCell(at index: Int) -> some View {
-        let sourceID = sourceIDs[index]
-        if let source = resolvedSources[index], let url = TalariaDeepLink.quotaSourceURL(sourceID: sourceID) {
+    private var twoWindowGrid: some View {
+        if let source = resolvedSources.first ?? nil,
+           let url = destinationURL(for: source) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(Array(source.windows.prefix(2).enumerated()), id: \.offset) { _, window in
+                    Link(destination: url) {
+                        ProviderQuotaWidgetSourceView(
+                            source: source,
+                            configuration: entry.configuration,
+                            compact: true,
+                            referenceDate: Date(),
+                            windowOverride: window
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var usesTwoWindowLayout: Bool {
+        guard family == .systemMedium || family == .systemLarge,
+              entry.configuration.windowSelection == .automatic,
+              sourceIDs.count == 1,
+              let source = resolvedSources.first ?? nil
+        else { return false }
+        return source.windows.count >= 2
+    }
+
+    @ViewBuilder
+    private var singleSourceExpandedLayout: some View {
+        if let source = resolvedSources.first ?? nil,
+           let url = destinationURL(for: source) {
             Link(destination: url) {
-                ProviderQuotaWidgetSourceView(source: source, compact: family != .systemSmall)
+                HStack(spacing: family == .systemLarge ? 20 : 12) {
+                    ProviderQuotaWidgetSourceView(
+                        source: source,
+                        configuration: entry.configuration,
+                        compact: family == .systemMedium,
+                        referenceDate: Date(),
+                        windowOverride: nil
+                    )
+                    .frame(maxWidth: .infinity)
+
+                    ProviderQuotaForecastView(
+                        plan: source.plan,
+                        state: ProviderQuotaPresentation.state(
+                            for: source,
+                            settings: ProviderQuotaEvaluationSettings.stored(configuration: entry.configuration),
+                            at: Date()
+                        )
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var usesSingleSourceExpandedLayout: Bool {
+        (family == .systemMedium || family == .systemLarge) && sourceIDs.count == 1
+    }
+
+    @ViewBuilder
+    private var accessorySource: some View {
+        if let source = resolvedSources.first ?? nil {
+            ProviderQuotaAccessoryView(source: source, entry: entry, family: family)
+        } else {
+            Image(systemName: "gauge.open.with.lines.needle.33percent")
+        }
+    }
+
+    @ViewBuilder
+    private func sourceCell(at index: Int) -> some View {
+        if let source = resolvedSources[index], let url = destinationURL(for: source) {
+            Link(destination: url) {
+                ProviderQuotaWidgetSourceView(
+                    source: source,
+                    configuration: entry.configuration,
+                    compact: family != .systemSmall,
+                    referenceDate: Date(),
+                    windowOverride: nil
+                )
             }
             .buttonStyle(.plain)
         } else {
@@ -149,154 +265,288 @@ private struct ProviderQuotaWidgetView: View {
             )
         }
     }
+
+    private var effectiveTapAction: ProviderQuotaWidgetTapAction {
+        if entry.configuration.tapAction != .appDefault { return entry.configuration.tapAction }
+        return ProviderQuotaWidgetTapAction(rawValue: defaultTapActionRawValue) ?? .defaultValue
+    }
+
+    private func destinationURL(for source: ProviderQuotaWidgetSource) -> URL? {
+        switch effectiveTapAction {
+        case .settings:
+            TalariaDeepLink.providerQuotaWidgetSettingsURL
+        case .refresh:
+            TalariaDeepLink.quotaSourceURL(sourceID: source.sourceID, refresh: true)
+        case .openApp:
+            TalariaDeepLink.openAppURL
+        case .newChatWithProvider:
+            source.providerID.flatMap { TalariaDeepLink.newChatWithProviderURL(providerID: $0) }
+                ?? TalariaDeepLink.newChatURL
+        case .appDefault, .insights:
+            TalariaDeepLink.quotaSourceURL(sourceID: source.sourceID)
+        }
+    }
+
+    private var effectiveBackground: ProviderQuotaWidgetBackground {
+        if entry.configuration.background != .appDefault { return entry.configuration.background }
+        return ProviderQuotaWidgetBackground(rawValue: defaultBackgroundRawValue) ?? .defaultValue
+    }
+
+    private var widgetBackground: Color {
+        switch effectiveBackground {
+        case .appDefault, .system: Color(.secondarySystemBackground)
+        case .clear: .clear
+        case .tinted: .accentColor.opacity(0.16)
+        case .dark: Color(white: 0.08)
+        case .light: Color(white: 0.96)
+        case .custom:
+            ProviderQuotaWidgetColorResolver.color(
+                hex: customBackgroundColorHex,
+                fallback: Color(.secondarySystemBackground)
+            )
+                .opacity(Double(min(max(backgroundOpacityPercent, 0), 100)) / 100)
+        }
+    }
 }
 
 private struct ProviderQuotaWidgetSourceView: View {
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @AppStorage(
+        ProviderQuotaWidgetArcColor.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var arcColorRawValue = ProviderQuotaWidgetArcColor.defaultValue.rawValue
+    @AppStorage(
+        ProviderQuotaWidgetArcWeight.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var arcWeightRawValue = ProviderQuotaWidgetArcWeight.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetStatusText.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var statusTextRawValue = ProviderQuotaWidgetStatusText.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetResetDisplay.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var resetDisplayRawValue = ProviderQuotaWidgetResetDisplay.defaultValue.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var defaultShowsPaceMarker = ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var trackColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultTrackColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var trackOpacityPercent = ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customArcColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customArcColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomArcColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customTrackColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customTrackColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomTrackColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customHealthyColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customHealthyColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomHealthyColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customWarningColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customWarningColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomWarningColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customCriticalColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customCriticalColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomCriticalColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customStaleColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customStaleColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomStaleColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customUnavailableColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var customUnavailableColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomUnavailableColorHex
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.healthyColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var healthyColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultHealthyColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.warningColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var warningColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultWarningColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.criticalColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var criticalColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultCriticalColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.staleColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var staleColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultStaleColor.rawValue
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.unavailableColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var unavailableColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultUnavailableColor.rawValue
+
     let source: ProviderQuotaWidgetSource
+    let configuration: ProviderQuotaWidgetConfigurationIntent
     let compact: Bool
+    let referenceDate: Date
+    let windowOverride: ProviderQuotaWindow?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 3 : 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(source.accountLabel)
-                        .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+        ProviderQuotaGaugeView(
+            displayName: displayName,
+            sourceStatus: source.status,
+            state: presentation,
+            statusText: statusText,
+            resetDisplay: resetDisplay,
+            style: ProviderQuotaGaugeStyle(
+                arcColor: arcColor,
+                trackColor: trackColor.opacity(Double(min(max(trackOpacityPercent, 0), 100)) / 100),
+                lineWidth: lineWidth,
+                showsPaceMarker: showsPaceMarker
+            ),
+            compact: compact
+        )
+    }
+
+    private var displayName: String {
+        let name = ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: providerAliasesData
+        )
+        guard let windowOverride else { return name }
+        return "\(name) · \(windowOverride.label)"
+    }
+
+    private var presentation: ProviderQuotaPresentationState {
+        ProviderQuotaPresentation.state(
+            for: source,
+            settings: ProviderQuotaEvaluationSettings.stored(configuration: configuration),
+            at: referenceDate,
+            windowOverride: windowOverride
+        )
+    }
+
+    private var statusText: ProviderQuotaWidgetStatusText {
+        if configuration.statusText != .appDefault { return configuration.statusText }
+        return ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue
+    }
+
+    private var resetDisplay: ProviderQuotaWidgetResetDisplay {
+        if configuration.resetDisplay != .appDefault { return configuration.resetDisplay }
+        return ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue
+    }
+
+    private var arcColor: Color {
+        guard configuredArcColor == .automatic else {
+            return ProviderQuotaWidgetColorResolver.color(
+                configuredArcColor,
+                customHex: customArcColorHex
+            )
+        }
+        let palette: (ProviderQuotaWidgetArcColor, String) = switch presentation.urgency {
+        case .healthy: (paletteColor(healthyColorRawValue, fallback: .accent), customHealthyColorHex)
+        case .warning: (paletteColor(warningColorRawValue, fallback: .orange), customWarningColorHex)
+        case .critical: (paletteColor(criticalColorRawValue, fallback: .red), customCriticalColorHex)
+        case .stale: (paletteColor(staleColorRawValue, fallback: .orange), customStaleColorHex)
+        case .unavailable: (paletteColor(unavailableColorRawValue, fallback: .orange), customUnavailableColorHex)
+        }
+        return ProviderQuotaWidgetColorResolver.color(
+            palette.0,
+            customHex: palette.1
+        )
+    }
+
+    private func paletteColor(
+        _ rawValue: String,
+        fallback: ProviderQuotaWidgetArcColor
+    ) -> ProviderQuotaWidgetArcColor {
+        ProviderQuotaWidgetArcColor(rawValue: rawValue) ?? fallback
+    }
+
+    private var trackColor: Color {
+        let appDefault = ProviderQuotaWidgetArcColor(rawValue: trackColorRawValue)
+            ?? ProviderQuotaWidgetAppearanceSettings.defaultTrackColor
+        let resolved = configuration.trackColor.resolved(default: appDefault)
+        return resolved == .automatic
+            ? .secondary
+            : ProviderQuotaWidgetColorResolver.color(resolved, customHex: customTrackColorHex)
+    }
+
+    private var showsPaceMarker: Bool {
+        presentation.settings.colorBasis == .pace
+            && configuration.paceMarker.resolved(default: defaultShowsPaceMarker)
+    }
+
+    private var lineWidth: Double {
+        let baseWidth: Double
+        switch configuredArcWeight {
+        case .thin: baseWidth = compact ? 5 : 7
+        case .regular: baseWidth = compact ? 7 : 10
+        case .bold: baseWidth = compact ? 10 : 14
+        }
+        return baseWidth
+    }
+
+    private var configuredArcColor: ProviderQuotaWidgetArcColor {
+        configuration.gaugeColor.resolved(
+            default: ProviderQuotaWidgetArcColor(rawValue: arcColorRawValue) ?? .defaultValue
+        )
+    }
+
+    private var configuredArcWeight: ProviderQuotaWidgetArcWeight {
+        configuration.gaugeWeight.resolved(
+            default: ProviderQuotaWidgetArcWeight(rawValue: arcWeightRawValue) ?? .defaultValue
+        )
+    }
+
+}
+
+private struct ProviderQuotaAccessoryView: View {
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+
+    let source: ProviderQuotaWidgetSource
+    let entry: ProviderQuotaTimelineEntry
+    let family: WidgetFamily
+
+    var body: some View {
+        switch family {
+        case .accessoryInline:
+            Text("\(displayName) \(formattedPercent)")
+        case .accessoryCircular:
+            Gauge(value: percent ?? 0, in: 0...100) {
+                Text(displayName)
+            } currentValueLabel: {
+                Text(formattedPercent)
+                    .font(.caption.weight(.semibold))
+                    .minimumScaleFactor(0.7)
+            }
+            .gaugeStyle(.accessoryCircularCapacity)
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(displayName)
+                        .font(.headline)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                    Text(source.providerLabel)
+                    Spacer(minLength: 4)
+                    Text(formattedPercent)
+                        .font(.headline.monospacedDigit())
+                }
+                ProgressView(value: percent ?? 0, total: 100)
+                if let resetAt {
+                    Text("Resets \(resetAt, style: .relative)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 3)
-                Image(systemName: statusSymbol)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(statusColor)
-                    .widgetAccentable()
-                    .accessibilityLabel(statusLabel)
             }
-
-            if source.windows.isEmpty, let quota = source.quota {
-                ProviderQuotaWidgetAmountView(quota: quota)
-            } else if source.windows.isEmpty {
-                Text(statusLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            } else {
-                ForEach(Array(source.windows.prefix(2).enumerated()), id: \.offset) { _, window in
-                    ProviderQuotaWidgetWindowView(window: window, compact: compact)
-                }
-            }
-
-            if let retryAt = ProviderQuotaDateParser.date(from: source.retryAfter) {
-                Text("Retry \(retryAt, style: .relative)")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .lineLimit(1)
-            }
-        }
-        .padding(compact ? 7 : 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var statusLabel: String {
-        ProviderQuotaPresentation.statusLabel(source.status)
-    }
-
-    private var statusSymbol: String {
-        switch source.status {
-        case "available": "checkmark.circle.fill"
-        case "exhausted": "exclamationmark.circle.fill"
-        case "removed": "person.crop.circle.badge.xmark"
-        case "invalid_key", "no_key", "dead": "key.slash.fill"
-        default: "questionmark.circle.fill"
+        default:
+            EmptyView()
         }
     }
 
-    private var statusColor: Color {
-        switch source.status {
-        case "available": .green
-        case "exhausted", "invalid_key", "dead": .red
-        default: .orange
-        }
+    private var state: ProviderQuotaPresentationState {
+        ProviderQuotaPresentation.state(
+            for: source,
+            settings: ProviderQuotaEvaluationSettings.stored(configuration: entry.configuration),
+            at: entry.date
+        )
     }
 
-}
-
-private struct ProviderQuotaWidgetWindowView: View {
-    let window: ProviderQuotaWindow
-    let compact: Bool
-
-    private var used: Double? {
-        ProviderQuotaPresentation.usedPercent(window)
+    private var percent: Double? {
+        state.percent
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text(window.label).lineLimit(1)
-                Spacer(minLength: 2)
-                if let used {
-                    Text(used, format: .percent.scale(1).precision(.fractionLength(0...1)))
-                        .monospacedDigit()
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-
-            if let used {
-                ProgressView(value: used, total: 100)
-                    .tint(used >= 90 ? .red : used >= 75 ? .orange : .accentColor)
-                    .widgetAccentable()
-            }
-
-            if let reset = ProviderQuotaDateParser.date(from: window.resetAt) {
-                Group {
-                    if compact {
-                        Text("Resets \(reset.formatted(date: .omitted, time: .shortened))")
-                    } else {
-                        Text("Resets \(reset, style: .relative)")
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            }
-        }
+    private var formattedPercent: String {
+        guard let percent else { return ProviderQuotaPresentation.statusLabel(source.status) }
+        return percent.formatted(.percent.scale(1).precision(.fractionLength(0)))
     }
 
-}
+    private var resetAt: Date? {
+        state.resetAt
+    }
 
-private struct ProviderQuotaWidgetAmountView: View {
-    let quota: ProviderQuotaAmount
-
-    var body: some View {
-        if let usage = quota.usage, let limit = quota.limit, limit > 0 {
-            let used = min(max(usage / limit * 100, 0), 100)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("Credits")
-                    Spacer(minLength: 2)
-                    Text(used, format: .percent.scale(1).precision(.fractionLength(0...1)))
-                        .monospacedDigit()
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                ProgressView(value: used, total: 100)
-                    .widgetAccentable()
-            }
-        } else if let remaining = quota.limitRemaining {
-            Text("\(remaining.formatted()) credits remaining")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        } else {
-            Text("Credits unavailable")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
+    private var displayName: String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: providerAliasesData
+        )
     }
 }
 

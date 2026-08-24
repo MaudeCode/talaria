@@ -62,7 +62,7 @@ struct TalariaApp: App {
                       let rawServer = ServerRegistry.shared.activeServer?.urlString,
                       let server = URL(string: rawServer) {
                 NavigationStack {
-                    ProvidersView(server: server)
+                    InsightsView(server: server, onAPIError: { _ in })
                 }
             } else {
                 ContentView(authManager: authManager)

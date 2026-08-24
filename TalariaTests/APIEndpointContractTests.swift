@@ -215,7 +215,13 @@ final class ContractReadinessTests: XCTestCase {
                 path: "/api/provider/quotas",
                 query: ["source": "qsrc_123", "refresh": "1"]
             ),
-            .init(name: "legacy provider quota", method: "GET", endpoint: .providerQuota, path: "/api/provider/quota"),
+            .init(
+                name: "legacy provider quota refresh",
+                method: "GET",
+                endpoint: .providerQuota(refresh: true),
+                path: "/api/provider/quota",
+                query: ["refresh": "1"]
+            ),
             .init(name: "settings", method: "GET", endpoint: .settings, path: "/api/settings"),
             .init(
                 name: "insights",

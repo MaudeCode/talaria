@@ -1,10 +1,11 @@
 import Foundation
 import Observation
+import UserNotifications
 import WidgetKit
 
-/// Backs the read-only Providers status screen (#26). Loads `GET /api/providers`
-/// once per appearance and exposes pure, testable presentation helpers — no
-/// write operations by design (key set/delete stays a server-side concern).
+/// Backs the read-only Providers status screen and Insights quota section.
+/// Provider-key writes remain server-side; the only client persistence here is
+/// the sanitized app-group snapshot consumed by widgets and sidebar shortcuts.
 @MainActor
 @Observable
 final class ProvidersViewModel {
@@ -55,6 +56,13 @@ final class ProvidersViewModel {
         } else {
             self.quotaServerLabel = String(localized: "Server")
         }
+        if let snapshot = self.quotaSnapshotStore?.load(),
+           !snapshot.sources.isEmpty,
+           snapshot.sources.allSatisfy({ $0.scopeLabel.hasPrefix("\(self.quotaServerLabel) · ") }) {
+            quotaSources = snapshot.sources.map(Self.cachedQuotaSource)
+            hasStableQuotaSources = true
+            quotaScopeID = snapshot.sources.first?.scopeID
+        }
     }
 
     func load() async {
@@ -96,7 +104,7 @@ final class ProvidersViewModel {
             applyStableQuotaResponse(response)
         } catch APIError.http(let statusCode, _) where statusCode == 404 {
             do {
-                let legacy = try await client.activeProviderQuota()
+                let legacy = try await client.activeProviderQuota(refresh: refresh)
                 guard generation == quotaLoadGeneration else { return }
                 quotaSources = Self.legacyQuotaSources(legacy)
                 hasStableQuotaSources = false
@@ -129,6 +137,19 @@ final class ProvidersViewModel {
         isLoading = false
         isQuotaLoading = false
         refreshingQuotaSourceIDs.removeAll()
+    }
+
+    func refreshQuotasPeriodically(
+        every interval: Duration = ProviderQuotaRefreshInterval.defaultValue.duration
+    ) async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
+            await loadQuotas(refresh: true)
+        }
     }
 
     func refreshQuota(sourceID: String) async {
@@ -186,24 +207,22 @@ final class ProvidersViewModel {
     }
 
     private func persistQuotaWidgetSnapshot(updatedSourceIDs: Set<String>? = nil) {
-        guard let quotaSnapshotStore,
-              let quotaScopeID,
-              let quotaProfileID,
-              quotaSnapshotStore.save(
+        guard let quotaSnapshotStore, let quotaScopeID, let quotaProfileID else { return }
+        let widgetSources = quotaSources.map {
+            ProviderQuotaWidgetSource(
+                $0,
                 scopeID: quotaScopeID,
-                sources: quotaSources.map {
-                    ProviderQuotaWidgetSource(
-                        $0,
-                        scopeID: quotaScopeID,
-                        scopeLabel: "\(quotaServerLabel) · \(quotaProfileID)"
-                    )
-                },
+                scopeLabel: "\(quotaServerLabel) · \(quotaProfileID)"
+            )
+        }
+        guard quotaSnapshotStore.save(
+                scopeID: quotaScopeID,
+                sources: widgetSources,
                 updatedSourceIDs: updatedSourceIDs
               )
-        else {
-            return
-        }
+        else { return }
         reloadQuotaWidgets()
+        Task { await ProviderQuotaAlertService.evaluate(widgetSources) }
     }
 
     private func clearQuotaWidgetSnapshot() {
@@ -254,6 +273,23 @@ final class ProvidersViewModel {
                 message: response.message
             )
         ]
+    }
+
+    private static func cachedQuotaSource(_ source: ProviderQuotaWidgetSource) -> ProviderQuotaSource {
+        ProviderQuotaSource(
+            id: source.sourceID,
+            providerID: source.providerID ?? "",
+            providerLabel: source.providerLabel,
+            accountLabel: source.accountLabel,
+            isActiveProvider: source.isActiveProvider,
+            supported: source.status != "unsupported",
+            status: source.status,
+            plan: source.plan,
+            windows: source.windows,
+            quota: source.quota,
+            retryAfter: source.retryAfter,
+            fetchedAt: source.fetchedAt
+        )
     }
 
     func isActive(_ provider: ProviderSummary) -> Bool {
@@ -357,4 +393,89 @@ final class ProvidersViewModel {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil
     }
+}
+
+private enum ProviderQuotaAlertService {
+    private enum Level: String, Codable {
+        case warning
+        case critical
+
+        var rank: Int { self == .critical ? 2 : 1 }
+    }
+
+    static func evaluate(_ sources: [ProviderQuotaWidgetSource]) async {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: ProviderQuotaAlertSettings.isEnabledKey),
+              await notificationsAreAllowed()
+        else { return }
+
+        let appGroup = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+        let settings = ProviderQuotaEvaluationSettings.stored(defaults: appGroup)
+        let aliasesData = appGroup.data(forKey: ProviderQuotaDisplaySettings.aliasesKey) ?? Data()
+        var previous = decodedStates(defaults.data(forKey: ProviderQuotaAlertSettings.stateKey))
+        let currentSourceIDs = Set(sources.filter { $0.status != "removed" }.map(\.sourceID))
+        previous = previous.filter { currentSourceIDs.contains($0.key) }
+
+        for source in sources where source.status != "removed" {
+            let state = ProviderQuotaPresentation.state(for: source, settings: settings, at: source.freshnessDate)
+            let level: Level? = switch state.urgency {
+            case .critical: .critical
+            case .warning: .warning
+            default: nil
+            }
+            let oldLevel = previous[source.sourceID].flatMap(Level.init(rawValue:))
+            if let level {
+                previous[source.sourceID] = level.rawValue
+                if oldLevel == nil || level.rank > (oldLevel?.rank ?? 0) {
+                    await schedule(level, source: source, aliasesData: aliasesData, remaining: state.remainingPercent)
+                }
+            } else {
+                previous.removeValue(forKey: source.sourceID)
+            }
+        }
+
+        defaults.set(try? JSONEncoder().encode(previous), forKey: ProviderQuotaAlertSettings.stateKey)
+    }
+
+    private static func schedule(
+        _ level: Level,
+        source: ProviderQuotaWidgetSource,
+        aliasesData: Data,
+        remaining: Double?
+    ) async {
+        let name = ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: aliasesData
+        )
+        let content = UNMutableNotificationContent()
+        content.title = level == .critical
+            ? String(localized: "\(name) quota critical")
+            : String(localized: "\(name) quota warning")
+        content.body = remaining.map {
+            String(localized: "\($0.formatted(.number.precision(.fractionLength(0...1))))% remaining. Open Talaria for current pace and reset details.")
+        } ?? String(localized: "Open Talaria for current quota details.")
+        content.sound = .default
+        content.userInfo = ["quota_source_id": source.sourceID]
+        let request = UNNotificationRequest(
+            identifier: "provider-quota-\(source.sourceID)-\(level.rawValue)",
+            content: content,
+            trigger: nil
+        )
+        try? await UNUserNotificationCenter.current().add(request)
+    }
+
+    private static func notificationsAreAllowed() async -> Bool {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return true
+        default: return false
+        }
+    }
+
+    private static func decodedStates(_ data: Data?) -> [String: String] {
+        guard let data else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+
 }
