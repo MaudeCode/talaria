@@ -79,6 +79,8 @@ Read-only checks, safe for live contract smoke tests:
 - `GET /api/file/raw?session_id=...&path=...`
 - `GET /api/models`
 - `GET /api/providers`
+- `GET /api/provider/quotas`
+- `GET /api/provider/quota` (older active-provider fallback)
 - `GET /api/settings`
 - `GET /api/reasoning`
 - `GET /api/profiles`
@@ -90,6 +92,17 @@ Read-only checks, safe for live contract smoke tests:
 - `GET /api/skills`
 - `GET /api/skills/content?name=...`
 - `GET /api/memory`
+
+`GET /api/provider/quotas` is a Talaria-adopted server extension beyond the
+current pinned tag. It returns sanitized, stable multi-provider/account quota
+sources for the active server profile and accepts optional `source` and
+`refresh=1` query parameters. Talaria falls back to the older singular endpoint
+without treating its active-only rows as stable configurable sources.
+
+The main app alone performs authenticated quota refresh. It persists only
+allowlisted display snapshots to the configured app group and reloads the
+`ProviderQuotaWidget` timeline. The widget extension reads those snapshots and
+never reads cookies, Keychain values, server URLs, or provider credentials.
 
 State-changing checks, only safe against disposable test data:
 - `POST /api/auth/login`

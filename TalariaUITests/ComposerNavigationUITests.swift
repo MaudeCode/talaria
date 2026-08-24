@@ -140,6 +140,36 @@ final class ComposerNavigationUITests: XCTestCase {
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
     }
 
+    func testProvidersShowsQuotaSurface() throws {
+        app.terminate()
+        app.launchArguments = ["--provider-quotas"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Provider quotas"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Refresh all provider quotas"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["provider-quota-section"].exists)
+        let quotaSource = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "provider-quota-source-"))
+            .firstMatch
+        XCTAssertTrue(quotaSource.waitForExistence(timeout: 10), "Expected at least one rendered quota source")
+
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Provider quota surface"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testProviderQuotaWidgetFixtureWritesSharedSnapshot() throws {
+        app.terminate()
+        app.launchArguments = ["--provider-quota-widget-fixture"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Widget fixture ready"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.staticTexts["Add or edit the Talaria Provider quotas widget to inspect its configured states."].exists
+        )
+    }
+
     func testSidebarReplacesRootTabs() throws {
         let openNavigation = app.buttons["Open navigation"]
         guard openNavigation.waitForExistence(timeout: 15) else {

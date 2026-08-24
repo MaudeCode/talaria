@@ -208,6 +208,14 @@ final class ContractReadinessTests: XCTestCase {
             .init(name: "switch profile", method: "POST", endpoint: .switchProfile, path: "/api/profile/switch"),
             .init(name: "create profile", method: "POST", endpoint: .createProfile, path: "/api/profile/create"),
             .init(name: "providers", method: "GET", endpoint: .providers, path: "/api/providers"),
+            .init(
+                name: "provider quotas targeted refresh",
+                method: "GET",
+                endpoint: .providerQuotas(sourceID: "qsrc_123", refresh: true),
+                path: "/api/provider/quotas",
+                query: ["source": "qsrc_123", "refresh": "1"]
+            ),
+            .init(name: "legacy provider quota", method: "GET", endpoint: .providerQuota, path: "/api/provider/quota"),
             .init(name: "settings", method: "GET", endpoint: .settings, path: "/api/settings"),
             .init(
                 name: "insights",

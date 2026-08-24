@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WidgetKit
 
 @MainActor
 @Observable
@@ -117,6 +118,7 @@ final class AuthManager {
         customHeaders: [CustomHeader]? = nil
     ) async {
         lastErrorMessage = nil
+        let previousServerID = state.server?.absoluteString
 
         if let customHeaders {
             headerStore.replace(with: customHeaders.sanitizedForStorage())
@@ -160,6 +162,9 @@ final class AuthManager {
             // so they never apply to a different server (#16).
             persistCustomHeaders(for: serverURL)
             refreshServers()
+            if previousServerID != serverURL.absoluteString {
+                clearQuotaWidgetSnapshot()
+            }
             state = .loggedIn(server: serverURL)
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -244,6 +249,7 @@ final class AuthManager {
             serverRegistry.activate(url: serverURL)
             persistCustomHeaders(for: serverURL)
             refreshServers()
+            clearQuotaWidgetSnapshot()
             state = .loggedIn(server: serverURL)
             return .added(serverURL)
         } catch {
@@ -324,6 +330,7 @@ final class AuthManager {
         // profiles, which would leak into Shortcuts / Siri if the new server's fetch is
         // delayed or fails. The new server's profiles reload on the next foreground fetch.
         profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
         lastErrorMessage = nil
         state = .loggedIn(server: serverURL)
     }
@@ -357,6 +364,7 @@ final class AuthManager {
         // server being removed, so they're stale whether we switch to another server (its
         // profiles reload on the next foreground fetch) or return to onboarding.
         profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
 
         let nextActive = serverRegistry.remove(id: server.absoluteString)
         refreshServers()
@@ -378,6 +386,11 @@ final class AuthManager {
     private func clearLocalArtifacts(for server: URL) {
         try? keychain.delete(.customHeaders, scope: server.absoluteString)
         clearSessionCookies(for: server)
+    }
+
+    private func clearQuotaWidgetSnapshot() {
+        guard ProviderQuotaWidgetSnapshotStore().clear() else { return }
+        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
     }
 
     /// Tells the server to end the session, but never lets an unreachable or

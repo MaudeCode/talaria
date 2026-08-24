@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 extension APIClient {
     func models() async throws -> ModelsResponse {
@@ -65,11 +66,15 @@ extension APIClient {
     }
 
     func switchProfile(name: String) async throws -> ProfileSwitchResponse {
-        try await send(
+        let response: ProfileSwitchResponse = try await send(
             endpoint: .switchProfile,
             method: "POST",
             body: ProfileSwitchRequest(name: name)
         )
+        if response.error == nil, ProviderQuotaWidgetSnapshotStore().clear() {
+            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        }
+        return response
     }
 
     /// Creates a new profile (`POST /api/profile/create`), mirroring the webui's
@@ -100,6 +105,17 @@ extension APIClient {
 
     func providers() async throws -> ProvidersResponse {
         try await send(endpoint: .providers, method: "GET")
+    }
+
+    func providerQuotas(sourceID: String? = nil, refresh: Bool = false) async throws -> ProviderQuotasResponse {
+        try await send(
+            endpoint: .providerQuotas(sourceID: sourceID, refresh: refresh),
+            method: "GET"
+        )
+    }
+
+    func activeProviderQuota() async throws -> LegacyProviderQuotaResponse {
+        try await send(endpoint: .providerQuota, method: "GET")
     }
 
     func settings() async throws -> SettingsResponse {

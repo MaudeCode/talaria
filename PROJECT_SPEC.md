@@ -259,6 +259,8 @@ The server keeps connections alive for ~30s with `: heartbeat` comments. **Cloud
 |---|---|---|
 | GET | `/api/models` | Populate model picker |
 | GET | `/api/providers` | Show which providers are configured |
+| GET | `/api/provider/quotas?source=...&refresh=...` | Read sanitized quota for all configured provider accounts, or refresh one stable source |
+| GET | `/api/provider/quota` | Capability-limited active-provider fallback for older servers |
 | GET | `/api/settings` | Bot name, theme hints, version |
 | POST | `/api/default-model` | Save global default model from Settings |
 | GET | `/api/reasoning` | Read current reasoning display/effort |
@@ -804,7 +806,7 @@ These are useful directions, not approved v1 scope. Before implementing any item
 - **Session search:** Add fast local search across loaded/cached sessions by title, preview, workspace/project, and date grouping. Use server-backed full-text search only if upstream exposes it.
 - **Mobile command launcher:** Provide quick saved commands/templates for repeated owner workflows, reusing the existing chat send/start path.
 - **Voice-first workflow:** Expand voice input beyond dictation into hold-to-talk, optional auto-send, and possibly spoken summaries, with explicit safeguards against accidental sends.
-- **Home Screen widgets / App Shortcuts / Siri shortcuts:** Add quick entry points such as "Ask Hermes" or "Run Hermes command" after the core app is stable.
+- **Home Screen widgets / App Shortcuts / Siri shortcuts:** Provider quota widgets now use explicit stable account selections and sanitized app-group snapshots. Additional quick actions such as "Ask Hermes" or "Run Hermes command" remain future work.
 - **Offline/cache strategy:** Decide how much transcript/workspace context should live on-device, whether extra encryption is needed beyond iOS defaults, and whether Settings needs "Clear local cache" or sensitive-session exclusions.
 - **Chat maintainability:** Continue optional focused extraction slices for `ChatView`, `ChatViewModel`, and composer/services after behavior is locked down. Keep these refactors small, test-backed, and behavior-preserving.
 - **Cloudflare Access login flow:** If the owner later puts Cloudflare Access in front of the server, design an iOS authentication flow deliberately instead of bolting it onto password auth.

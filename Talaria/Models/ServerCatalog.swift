@@ -163,6 +163,7 @@ struct ProvidersResponse: Decodable, Equatable {
     }
 }
 
+
 /// One provider entry from `GET /api/providers`. `keySource` vocabulary upstream:
 /// `env_file`, `env_var`, `config_yaml`, `oauth`, `none` — plus `env`, `config`,
 /// and `token` from the live-auth fallback probe. Unknown values are kept verbatim.

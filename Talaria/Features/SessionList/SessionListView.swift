@@ -8,6 +8,7 @@ struct SessionListView: View {
     let server: URL
     @Binding private var pendingSharedImport: SharedImport?
     @Binding private var pendingDeepLinkedSessionID: String?
+    @Binding private var pendingQuotaSourceID: String?
     @Binding private var requestedNewChat: NewChatRequest?
 
     @Environment(\.modelContext) private var modelContext
@@ -69,12 +70,14 @@ struct SessionListView: View {
         server: URL,
         pendingSharedImport: Binding<SharedImport?> = .constant(nil),
         pendingDeepLinkedSessionID: Binding<String?> = .constant(nil),
+        pendingQuotaSourceID: Binding<String?> = .constant(nil),
         requestedNewChat: Binding<NewChatRequest?> = .constant(nil)
     ) {
         self.authManager = authManager
         self.server = server
         _pendingSharedImport = pendingSharedImport
         _pendingDeepLinkedSessionID = pendingDeepLinkedSessionID
+        _pendingQuotaSourceID = pendingQuotaSourceID
         _requestedNewChat = requestedNewChat
         _viewModel = State(initialValue: SessionListViewModel(server: server))
         _navigationState = State(
@@ -245,6 +248,7 @@ struct SessionListView: View {
             }
             .onAppear {
                 openPendingSharedImportIfNeeded()
+                openPendingQuotaSourceIfNeeded()
                 openRequestedNewChatIfNeeded()
                 refreshAfterReturningIfNeeded()
             }
@@ -253,6 +257,9 @@ struct SessionListView: View {
             }
             .onChange(of: pendingDeepLinkedSessionID) {
                 Task { await openPendingDeepLinkedSessionIfNeeded() }
+            }
+            .onChange(of: pendingQuotaSourceID) {
+                openPendingQuotaSourceIfNeeded()
             }
             .onChange(of: requestedNewChat) {
                 openRequestedNewChatIfNeeded()
@@ -407,6 +414,9 @@ struct SessionListView: View {
             switch destination {
             case .settings(let scrollTo):
                 SettingsView(authManager: authManager, server: server, initialScrollTarget: scrollTo)
+            case .providers(let sourceID):
+                ProvidersView(server: server, initialQuotaSourceID: sourceID)
+                    .id(viewModel.activeProfileName)
             case .tasks:
                 TasksView(server: server, onAPIError: authManager.handleAPIError)
             case .kanban:
@@ -623,6 +633,7 @@ struct SessionListView: View {
         case .memory: return .memory
         case .insights: return .insights
         case .settings: return .settings
+        case .providers: return .settings
         case .archived, .scheduled, .webhook: return .chats
         }
     }
@@ -1178,6 +1189,12 @@ struct SessionListView: View {
         )
     }
 
+    private func openPendingQuotaSourceIfNeeded() {
+        guard let sourceID = pendingQuotaSourceID else { return }
+        pendingQuotaSourceID = nil
+        navigationState.select(.providers(sourceID))
+    }
+
     private func openNewChat() {
         navigationState.select(PendingNewChatRoute())
     }
@@ -1307,6 +1324,7 @@ enum SessionListUtilityDestination: Hashable, Identifiable {
     /// Optional section to scroll to when Settings opens — "Manage Servers"
     /// passes `.servers`, a plain avatar tap passes `nil` (#283).
     case settings(SettingsScrollAnchor?)
+    case providers(String?)
     case tasks
     case kanban
     case skills

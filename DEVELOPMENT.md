@@ -234,7 +234,7 @@ Branch TestFlight app identity:
 - App Store Connect app name: `Talaria Branch`
 - Main bundle ID: `dev.kil.talaria.branch`
 - Share extension bundle ID: `dev.kil.talaria.branch.shareextension`
-- Live Activity widget bundle ID: `dev.kil.talaria.branch.liveactivitywidget`
+- Widget extension bundle ID (Live Activity + Provider quotas): `dev.kil.talaria.branch.liveactivitywidget`
 - Display name: `Talaria Branch`
 - App group: `group.dev.kil.talaria.branch`
 - URL scheme: `talaria-branch`

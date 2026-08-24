@@ -6,6 +6,129 @@ import XCTest
 /// `api/providers.py::get_providers()` @ `312d3fab`, including a
 /// `custom_providers`-derived entry that omits most fields.
 final class APIClientProvidersTests: APIClientTestCase {
+    func testProviderQuotasRequestTargetsOneStableSourceAndDecodesWidgetReadyShape() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).compactMap { item in
+                item.value.map { (item.name, $0) }
+            })
+            XCTAssertEqual(query["source"], "qsrc_personal")
+            XCTAssertEqual(query["refresh"], "1")
+
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_work",
+              "profile_id": "work",
+              "active_provider": "openai-codex",
+              "requested_source_id": "qsrc_personal",
+              "missing_source": false,
+              "sources": [{
+                "source_id": "qsrc_personal",
+                "provider_id": "openai-codex",
+                "provider_label": "Codex",
+                "account_label": "Personal",
+                "is_active_provider": true,
+                "supported": true,
+                "status": "available",
+                "plan": "Pro",
+                "windows": [
+                  {
+                    "label": "Session",
+                    "used_percent": 25,
+                    "remaining_percent": 75,
+                    "reset_at": "2030-03-17T17:30:00Z",
+                    "detail": null
+                  },
+                  {
+                    "label": "Weekly",
+                    "used_percent": 40.5,
+                    "remaining_percent": 59.5,
+                    "reset_at": "2030-03-24T12:30:00Z"
+                  }
+                ],
+                "quota": null,
+                "details": ["Fresh"],
+                "unavailable_reason": null,
+                "retry_after": null,
+                "fetched_at": "2030-03-17T12:30:00Z",
+                "message": "Codex account limits loaded."
+              }]
+            }
+            """, for: request)
+        }
+
+        let response = try await client.providerQuotas(sourceID: "qsrc_personal", refresh: true)
+
+        XCTAssertEqual(response.version, 1)
+        XCTAssertEqual(response.scopeID, "qscope_work")
+        XCTAssertEqual(response.profileID, "work")
+        XCTAssertEqual(response.requestedSourceID, "qsrc_personal")
+        XCTAssertEqual(response.missingSource, false)
+        let source = try XCTUnwrap(response.sources.first)
+        XCTAssertEqual(source.id, "qsrc_personal")
+        XCTAssertEqual(source.providerID, "openai-codex")
+        XCTAssertEqual(source.accountLabel, "Personal")
+        XCTAssertTrue(source.isActiveProvider)
+        XCTAssertEqual(source.plan, "Pro")
+        XCTAssertEqual(source.windows.map(\.label), ["Session", "Weekly"])
+        XCTAssertEqual(source.windows[0].usedPercent, 25)
+        XCTAssertEqual(source.windows[1].remainingPercent, 59.5)
+        XCTAssertEqual(source.fetchedAt, "2030-03-17T12:30:00Z")
+    }
+
+    func testProviderQuotaModelsRoundTripAsSanitizedWidgetSnapshots() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ProviderQuotasResponse.self, from: Data("""
+        {
+          "version": 1,
+          "profile_id": "work",
+          "server_url": "https://hostile.example.test",
+          "access_token": "root-secret",
+          "api_key": "root-api-secret",
+          "apiKey": "root-camel-api-secret",
+          "sources": [{
+            "source_id": "qsrc_safe",
+            "provider_id": "openai-codex",
+            "provider_label": "Codex",
+            "account_label": "Work",
+            "status": "available",
+            "supported": true,
+            "server_url": "https://source-hostile.example.test",
+            "access_token": "source-secret",
+            "api_key": "source-api-secret",
+            "apiKey": "source-camel-api-secret",
+            "windows": [{ "label": "Session", "used_percent": 20 }]
+          }]
+        }
+        """.utf8))
+
+        let encoded = try JSONEncoder().encode(response)
+        let snapshot = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(
+            Set(snapshot.keys),
+            ["version", "profileId", "missingSource", "sources"]
+        )
+        let sources = try XCTUnwrap(snapshot["sources"] as? [[String: Any]])
+        let source = try XCTUnwrap(sources.first)
+        XCTAssertEqual(
+            Set(source.keys),
+            [
+                "sourceId", "providerId", "providerLabel", "accountLabel",
+                "isActiveProvider", "supported", "status", "windows", "details",
+            ]
+        )
+        let windows = try XCTUnwrap(source["windows"] as? [[String: Any]])
+        XCTAssertEqual(Set(try XCTUnwrap(windows.first).keys), ["label", "usedPercent"])
+
+        let roundTrip = try JSONDecoder().decode(ProviderQuotasResponse.self, from: encoded)
+
+        XCTAssertEqual(roundTrip, response)
+    }
+
     func testProvidersRequestDecodesLiveShape() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.httpMethod, "GET")

@@ -5,6 +5,338 @@ final class ProvidersViewModelTests: APIClientTestCase {
     private static let serverURL = URL(string: "https://example.test")!
 
     @MainActor
+    func testLoadQuotasKeepsDuplicateProviderAccountsDistinct() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_widget",
+              "profile_id": "default",
+              "sources": [
+                {
+                  "source_id": "qsrc_work",
+                  "provider_id": "openai-codex",
+                  "provider_label": "Codex",
+                  "account_label": "Work",
+                  "status": "available",
+                  "supported": true,
+                  "windows": [{ "label": "Session", "used_percent": 25, "remaining_percent": 75 }]
+                },
+                {
+                  "source_id": "qsrc_personal",
+                  "provider_id": "openai-codex",
+                  "provider_label": "Codex",
+                  "account_label": "Personal",
+                  "status": "available",
+                  "supported": true,
+                  "windows": [{ "label": "Weekly", "used_percent": 40, "remaining_percent": 60 }]
+                },
+                {
+                  "source_id": "qsrc_openrouter",
+                  "provider_id": "openrouter",
+                  "provider_label": "OpenRouter",
+                  "account_label": "OpenRouter",
+                  "status": "available",
+                  "supported": true,
+                  "windows": []
+                }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_work", "qsrc_personal", "qsrc_openrouter"])
+        XCTAssertEqual(model.quotaSources.map(\.accountLabel), ["Work", "Personal", "OpenRouter"])
+        XCTAssertTrue(model.hasStableQuotaSources)
+        XCTAssertNil(model.quotaErrorMessage)
+    }
+
+    @MainActor
+    func testQuotaReloadTracksRenameReorderingAndRemovalByStableIdentity() async throws {
+        var load = 0
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            load += 1
+            if load == 1 {
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "profile_id": "default",
+                  "sources": [
+                    { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [] },
+                    { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B", "status": "available", "supported": true, "windows": [] }
+                  ]
+                }
+                """, for: request)
+            }
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "profile_id": "default",
+              "sources": [
+                { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B renamed", "status": "available", "supported": true, "windows": [] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_b", "qsrc_a"])
+        XCTAssertEqual(model.quotaSources[0].accountLabel, "B renamed")
+        XCTAssertEqual(model.quotaSources[1].status, "removed")
+    }
+
+    @MainActor
+    func testMissingMultiSourceEndpointFallsBackToActiveOnlyQuota() async throws {
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/provider/quotas":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            case "/api/provider/quota":
+                return apiTestJSONResponse("""
+                {
+                  "ok": true,
+                  "provider": "openai-codex",
+                  "display_name": "Codex",
+                  "supported": true,
+                  "status": "available",
+                  "account_limits": {
+                    "plan": "Pro",
+                    "windows": [{ "label": "Session", "used_percent": 10, "remaining_percent": 90 }]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.absoluteString ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+
+        XCTAssertEqual(model.quotaSources.map(\.providerID), ["openai-codex"])
+        XCTAssertFalse(model.hasStableQuotaSources)
+        XCTAssertEqual(
+            model.quotaCapabilityMessage,
+            "This server supports active-provider quota only. Multi-account sources require the companion server update."
+        )
+        XCTAssertNil(model.quotaErrorMessage)
+    }
+
+    @MainActor
+    func testTargetedQuotaRefreshUpdatesOnlySelectedSource() async throws {
+        var requestCount = 0
+        let client = makeClient { request in
+            requestCount += 1
+            if requestCount == 1 {
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "sources": [
+                    { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": 10 }] },
+                    { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": 20 }] }
+                  ]
+                }
+                """, for: request)
+            }
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).compactMap { item in
+                item.value.map { (item.name, $0) }
+            })
+            XCTAssertEqual(query["source"], "qsrc_b")
+            XCTAssertEqual(query["refresh"], "1")
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "requested_source_id": "qsrc_b",
+              "sources": [
+                { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": 30 }] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+        await model.refreshQuota(sourceID: "qsrc_b")
+
+        XCTAssertEqual(model.quotaSources[0].windows.first?.usedPercent, 10)
+        XCTAssertEqual(model.quotaSources[1].windows.first?.usedPercent, 30)
+    }
+
+    @MainActor
+    func testTargetedQuotaRefreshCannotOverwriteNewerFullLoad() async throws {
+        let initialRequestArrived = expectation(description: "initial quota request arrived")
+        let targetedRequestArrived = expectation(description: "targeted quota request arrived")
+        let reloadRequestArrived = expectation(description: "quota reload request arrived")
+        let requests = DeferredProvidersRequests()
+
+        DeferredProvidersMockURLProtocol.onRequest = { pendingRequest in
+            switch requests.append(pendingRequest) {
+            case 1: initialRequestArrived.fulfill()
+            case 2: targetedRequestArrived.fulfill()
+            case 3: reloadRequestArrived.fulfill()
+            default: XCTFail("unexpected extra quota request")
+            }
+        }
+        defer { DeferredProvidersMockURLProtocol.onRequest = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredProvidersMockURLProtocol.self]
+        let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        let initialLoad = Task { await model.loadQuotas() }
+        await fulfillment(of: [initialRequestArrived], timeout: 5)
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "version": 1,
+          "profile_id": "default",
+          "sources": [
+            { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": 20 }] }
+          ]
+        }
+        """)
+        await initialLoad.value
+
+        let staleRefresh = Task { await model.refreshQuota(sourceID: "qsrc_a") }
+        await fulfillment(of: [targetedRequestArrived], timeout: 5)
+
+        let freshLoad = Task { await model.loadQuotas(refresh: true) }
+        await fulfillment(of: [reloadRequestArrived], timeout: 5)
+        requests.request(at: 2).complete(withJSON: """
+        {
+          "version": 1,
+          "profile_id": "work",
+          "sources": [
+            { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Work", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": 70 }] }
+          ]
+        }
+        """)
+        await freshLoad.value
+
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "version": 1,
+          "profile_id": "default",
+          "requested_source_id": "qsrc_a",
+          "sources": [
+            { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": 99 }] }
+          ]
+        }
+        """)
+        await staleRefresh.value
+
+        XCTAssertEqual(model.quotaProfileID, "work")
+        XCTAssertEqual(model.quotaSources.first?.accountLabel, "Work")
+        XCTAssertEqual(model.quotaSources.first?.windows.first?.usedPercent, 70)
+        XCTAssertNil(model.quotaErrorMessage)
+    }
+
+    @MainActor
+    func testQuotaFormattingUsesReturnedPercentWithoutInventingZero() {
+        let used = ProviderQuotaWindow(label: "Session", usedPercent: 25)
+        let remaining = ProviderQuotaWindow(label: "Weekly", remainingPercent: 60)
+        let missing = ProviderQuotaWindow(label: "Monthly")
+
+        XCTAssertEqual(ProvidersViewModel.quotaUsedPercent(used), 25)
+        XCTAssertEqual(ProvidersViewModel.quotaUsedPercent(remaining), 40)
+        XCTAssertNil(ProvidersViewModel.quotaUsedPercent(missing))
+        XCTAssertEqual(
+            ProvidersViewModel.quotaPercentText(used, locale: Locale(identifier: "en_US")),
+            "25% used"
+        )
+    }
+
+    @MainActor
+    func testStableQuotaLoadPersistsSanitizedWidgetSnapshotAndReloadsTimeline() async throws {
+        let suite = "ProvidersViewModelWidgetSnapshot.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        var reloadCount = 0
+        let client = makeClient { request in
+            apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_widget",
+              "profile_id": "default",
+              "sources": [{
+                "source_id": "qsrc_widget",
+                "provider_id": "openai-codex",
+                "provider_label": "Codex",
+                "account_label": "Widget account",
+                "status": "available",
+                "supported": true,
+                "windows": [{ "label": "Session", "used_percent": 25 }]
+              }]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(
+            server: Self.serverURL,
+            client: client,
+            quotaSnapshotStore: store,
+            reloadQuotaWidgets: { reloadCount += 1 }
+        )
+
+        await model.loadQuotas()
+
+        XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_widget"])
+        XCTAssertEqual(reloadCount, 1)
+    }
+
+    @MainActor
+    func testCancelledQuotaLoadCannotRestoreClearedWidgetSnapshot() async throws {
+        let requestArrived = expectation(description: "quota request arrived")
+        let requests = DeferredProvidersRequests()
+        DeferredProvidersMockURLProtocol.onRequest = { request in
+            _ = requests.append(request)
+            requestArrived.fulfill()
+        }
+        defer { DeferredProvidersMockURLProtocol.onRequest = nil }
+
+        let suite = "ProvidersViewModelCancelledWidgetSnapshot.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredProvidersMockURLProtocol.self]
+        let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
+        let model = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store)
+
+        let staleLoad = Task { await model.loadQuotas() }
+        await fulfillment(of: [requestArrived], timeout: 5)
+        model.cancelLoads()
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "version": 1,
+          "scope_id": "qscope_old",
+          "profile_id": "old",
+          "sources": [
+            { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Old", "status": "available", "supported": true, "windows": [] }
+          ]
+        }
+        """)
+        await staleLoad.value
+
+        XCTAssertNil(store.load())
+        XCTAssertTrue(model.quotaSources.isEmpty)
+        XCTAssertFalse(model.isQuotaLoading)
+    }
+
+    @MainActor
     func testLoadPopulatesProvidersPreservingServerOrder() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/providers")

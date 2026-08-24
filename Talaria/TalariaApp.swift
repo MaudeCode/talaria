@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 struct TalariaSceneActions {
     let canCreateNewChat: Bool
@@ -55,6 +56,14 @@ struct TalariaApp: App {
                 NavigationStack {
                     StreamingLabView()
                 }
+            } else if ProcessInfo.processInfo.arguments.contains("--provider-quota-widget-fixture") {
+                ProviderQuotaWidgetDebugFixtureView()
+            } else if ProcessInfo.processInfo.arguments.contains("--provider-quotas"),
+                      let rawServer = ServerRegistry.shared.activeServer?.urlString,
+                      let server = URL(string: rawServer) {
+                NavigationStack {
+                    ProvidersView(server: server)
+                }
             } else {
                 ContentView(authManager: authManager)
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
@@ -71,3 +80,54 @@ struct TalariaApp: App {
         }
     }
 }
+
+#if DEBUG
+private struct ProviderQuotaWidgetDebugFixtureView: View {
+    @State private var isReady = false
+
+    var body: some View {
+        ContentUnavailableView(
+            isReady ? "Widget fixture ready" : "Preparing widget fixture",
+            systemImage: "gauge.with.dots.needle.33percent",
+            description: Text("Add or edit the Talaria Provider quotas widget to inspect its configured states.")
+        )
+        .task {
+            let sources = [
+                fixtureSource(id: "fixture-work", provider: "Codex", account: "Work", used: 24),
+                fixtureSource(id: "fixture-personal", provider: "Codex", account: "Personal", used: 61),
+                fixtureSource(id: "fixture-openrouter", provider: "OpenRouter", account: "Credits", used: 78),
+                fixtureSource(id: "fixture-anthropic", provider: "Anthropic", account: "Team", used: 42),
+            ]
+            isReady = ProviderQuotaWidgetSnapshotStore().save(
+                scopeID: "qscope_fixture",
+                sources: sources
+            )
+            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        }
+    }
+
+    private func fixtureSource(
+        id: String,
+        provider: String,
+        account: String,
+        used: Double
+    ) -> ProviderQuotaWidgetSource {
+        ProviderQuotaWidgetSource(
+            sourceID: id,
+            scopeID: "qscope_fixture",
+            scopeLabel: "Fixture · default",
+            providerLabel: provider,
+            accountLabel: account,
+            isActiveProvider: id == "fixture-work",
+            status: "available",
+            plan: "Pro",
+            windows: [
+                ProviderQuotaWindow(label: "Session", usedPercent: used, remainingPercent: 100 - used),
+                ProviderQuotaWindow(label: "Weekly", usedPercent: min(used + 12, 100), remainingPercent: max(88 - used, 0)),
+            ],
+            retryAfter: nil,
+            fetchedAt: ISO8601DateFormatter().string(from: Date())
+        )
+    }
+}
+#endif

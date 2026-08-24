@@ -79,6 +79,8 @@ enum Endpoint {
     case switchProfile
     case createProfile
     case providers
+    case providerQuotas(sourceID: String? = nil, refresh: Bool = false)
+    case providerQuota
     case settings
     case updatesCheck
     case updatesApply
@@ -283,6 +285,10 @@ enum Endpoint {
             return "/api/profile/create"
         case .providers:
             return "/api/providers"
+        case .providerQuotas:
+            return "/api/provider/quotas"
+        case .providerQuota:
+            return "/api/provider/quota"
         case .settings:
             return "/api/settings"
         case .updatesCheck:
@@ -510,6 +516,15 @@ enum Endpoint {
             }
             if let provider, !provider.isEmpty {
                 items.append(URLQueryItem(name: "provider", value: provider))
+            }
+            return items
+        case let .providerQuotas(sourceID, refresh):
+            var items: [URLQueryItem] = []
+            if let sourceID, !sourceID.isEmpty {
+                items.append(URLQueryItem(name: "source", value: sourceID))
+            }
+            if refresh {
+                items.append(URLQueryItem(name: "refresh", value: "1"))
             }
             return items
         case let .insights(days):

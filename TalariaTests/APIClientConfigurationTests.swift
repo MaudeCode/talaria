@@ -562,6 +562,11 @@ final class APIClientConfigurationTests: APIClientTestCase {
     }
 
     func testSwitchProfileBuildsExpectedBodyAndDecodesResponse() async throws {
+        let widgetDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
+        )
+        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/profile/switch")
             XCTAssertEqual(request.httpMethod, "POST")
@@ -589,6 +594,23 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(response.defaultModel, "gpt-5.5")
         XCTAssertEqual(response.defaultWorkspace, "/Users/test/work")
         XCTAssertEqual(response.profiles?.last?.isActive, true)
+        XCTAssertNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
+    }
+
+    func testRejectedProfileSwitchKeepsWidgetSnapshot() async throws {
+        let widgetDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
+        )
+        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
+        let client = makeClient { request in
+            apiTestJSONResponse(#"{"error":"profile unavailable"}"#, for: request)
+        }
+
+        let response = try await client.switchProfile(name: "missing")
+
+        XCTAssertEqual(response.error, "profile unavailable")
+        XCTAssertNotNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 
     func testCreateProfileBuildsExpectedBodyAndDecodesResponse() async throws {

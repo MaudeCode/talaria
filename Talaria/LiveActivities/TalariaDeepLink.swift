@@ -7,6 +7,33 @@ enum TalariaDeepLink {
     }
 
     static let sessionHost = "session"
+    static let quotaSourceHost = "quota-source"
+    static let quotaSourceQueryItem = "source"
+
+    static func quotaSourceURL(sourceID: String) -> URL? {
+        let trimmed = sourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = quotaSourceHost
+        components.queryItems = [URLQueryItem(name: quotaSourceQueryItem, value: trimmed)]
+        return components.url
+    }
+
+    static func quotaSourceID(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == scheme,
+              url.host?.lowercased() == quotaSourceHost,
+              let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == quotaSourceQueryItem })?
+                .value
+        else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     /// Host for the parameter-less "open the New Chat composer" deep link used by the
     /// New Chat App Intent (issue #337). Mirrors the share extension's host-based routing

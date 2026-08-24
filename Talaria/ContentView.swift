@@ -6,6 +6,7 @@ struct ContentView: View {
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @State private var pendingSharedImport: SharedImport?
     @State private var pendingDeepLinkedSessionID: String?
+    @State private var pendingQuotaSourceID: String?
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
@@ -63,6 +64,7 @@ struct ContentView: View {
                 server: server,
                 pendingSharedImport: $pendingSharedImport,
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
+                pendingQuotaSourceID: $pendingQuotaSourceID,
                 requestedNewChat: $pendingNewChatRequest
             )
             // Switching the active server keeps us in `.loggedIn`, so without a
@@ -74,6 +76,11 @@ struct ContentView: View {
     }
 
     private func handleOpenURL(_ url: URL) {
+        if let sourceID = TalariaDeepLink.quotaSourceID(from: url) {
+            pendingQuotaSourceID = sourceID
+            return
+        }
+
         // A fresh request each time (new `id`) so a repeat invocation re-triggers navigation
         // even if the previous one's value still lingers downstream. The voice variant carries
         // `autoStartsVoiceInput` so the composer begins dictation once it appears (#338).
