@@ -102,6 +102,10 @@ struct SettingsView: View {
         ProviderQuotaPercentageMode.storageKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var providerQuotaPercentageMode = ProviderQuotaPercentageMode.defaultValue.rawValue
+    @AppStorage(
+        ProviderIconStyle.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerIconStyle = ProviderIconStyle.defaultValue.rawValue
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -529,6 +533,30 @@ struct SettingsView: View {
                     SettingsDivider()
 
                     SettingsPickerRow(
+                        title: String(localized: "Provider Icons"),
+                        systemImage: "paintpalette",
+                        selection: $providerIconStyle
+                    ) {
+                        ForEach(ProviderIconStyle.allCases) { style in
+                            Text(style.title).tag(style.rawValue)
+                        }
+                    }
+
+                    SettingsDivider()
+
+                    NavigationLink {
+                        ProviderQuotaSidebarDisplayView()
+                    } label: {
+                        SettingsAccessoryRow(
+                            title: String(localized: "Sidebar Display"),
+                            systemImage: "sidebar.left"
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    SettingsDivider()
+
+                    SettingsPickerRow(
                         title: String(localized: "Percentage"),
                         systemImage: "percent",
                         selection: $providerQuotaPercentageMode
@@ -550,7 +578,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    SettingsFootnote(String(localized: "Controls automatic provider-quota refresh while Insights is open."))
+                    SettingsFootnote(String(localized: "Controls refresh while Talaria is active. Background and widget refreshes request the same interval, but iOS controls when they run."))
 
                     SettingsDivider()
 
@@ -1749,36 +1777,12 @@ struct ProviderQuotaWidgetAppearanceView: View {
     ) private var percentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
 
     var body: some View {
-        Form {
-            Section {
-                VStack(spacing: 10) {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 12) {
-                            preview
-                            sizeSelector
-                        }
+        VStack(spacing: 0) {
+            pinnedPreviewPanel
+            Divider()
 
-                        Text(previewState.title)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Picker("State", selection: $previewState) {
-                        ForEach(ProviderQuotaWidgetPreviewState.allCases) { state in
-                            Label(state.title, systemImage: state.systemImage)
-                                .labelStyle(.iconOnly)
-                                .tag(state)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                .frame(maxWidth: .infinity)
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
-
-            Section("Arc") {
+            Form {
+                Section("Arc") {
                 Picker("Color", selection: $arcColorRawValue) {
                     ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
                         Text(color.title).tag(color.rawValue)
@@ -1878,7 +1882,19 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 )
             }
         }
-        .navigationTitle("Widget Appearance")
+        }
+        .navigationTitle("Customization")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    ProviderQuotaWidgetProfilesView()
+                } label: {
+                    Image(systemName: "square.stack.3d.up")
+                }
+                .accessibilityLabel("Widget Profiles")
+            }
+        }
         .onChange(of: arcColorRawValue) { reloadWidgets() }
         .onChange(of: arcWeightRawValue) { reloadWidgets() }
         .onChange(of: colorBasisRawValue) { reloadWidgets() }
@@ -1893,6 +1909,34 @@ struct ProviderQuotaWidgetAppearanceView: View {
         .onChange(of: customTrackColorHex) { reloadWidgets() }
         .onChange(of: customBackgroundColorHex) { reloadWidgets() }
         .onChange(of: backgroundOpacityPercent) { reloadWidgets() }
+    }
+
+    private var pinnedPreviewPanel: some View {
+        VStack(spacing: 8) {
+            VStack(spacing: 3) {
+                Text(previewState.title)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                preview
+                    .frame(maxWidth: .infinity, minHeight: max(previewSize.height, 140))
+                    .overlay(alignment: .topTrailing) {
+                        sizeSelector
+                    }
+            }
+
+            Picker("State", selection: $previewState) {
+                ForEach(ProviderQuotaWidgetPreviewState.allCases) { state in
+                    Label(state.title, systemImage: state.systemImage)
+                        .labelStyle(.iconOnly)
+                        .tag(state)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(.systemGroupedBackground))
     }
 
     private var preview: some View {
@@ -1997,14 +2041,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
         guard arcColor == .automatic else {
             return ProviderQuotaWidgetColorResolver.color(arcColor, customHex: customArcColorHex)
         }
-        let palette: (ProviderQuotaWidgetArcColor, String) = switch previewPresentation.urgency {
-        case .healthy: (paletteColor(healthyColorRawValue, fallback: .accent), customHealthyColorHex)
-        case .warning: (paletteColor(warningColorRawValue, fallback: .orange), customWarningColorHex)
-        case .critical: (paletteColor(criticalColorRawValue, fallback: .red), customCriticalColorHex)
-        case .stale: (paletteColor(staleColorRawValue, fallback: .orange), customStaleColorHex)
-        case .unavailable: (paletteColor(unavailableColorRawValue, fallback: .orange), customUnavailableColorHex)
-        }
-        return ProviderQuotaWidgetColorResolver.color(palette.0, customHex: palette.1)
+        return ProviderQuotaWidgetPalette.arcColor(
+            urgency: previewPresentation.urgency,
+            profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil, followsSelectedDefault: false)
+        )
     }
 
     private var previewTrackColor: Color {
@@ -2048,7 +2088,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
     private var previewPresentation: ProviderQuotaPresentationState {
         ProviderQuotaPresentation.state(
             for: previewSource,
-            settings: ProviderQuotaEvaluationSettings.stored(),
+            settings: ProviderQuotaEvaluationSettings.stored(followsSelectedDefault: false),
             at: Date()
         ).withUrgency(previewState.urgency)
     }
@@ -2096,13 +2136,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
         }
     }
 
-    private func paletteColor(
-        _ rawValue: String,
-        fallback: ProviderQuotaWidgetArcColor
-    ) -> ProviderQuotaWidgetArcColor {
-        ProviderQuotaWidgetArcColor(rawValue: rawValue) ?? fallback
-    }
-
     private func colorBinding(_ hex: Binding<String>) -> Binding<Color> {
         Binding(
             get: { HeaderLogoColor.color(for: hex.wrappedValue) },
@@ -2116,6 +2149,141 @@ struct ProviderQuotaWidgetAppearanceView: View {
 
     private func reloadWidgets() {
         WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+    }
+
+}
+
+private struct ProviderQuotaWidgetProfilesView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var profiles = ProviderQuotaWidgetProfileStore.profiles()
+    @State private var selectedDefaultProfileID = ProviderQuotaWidgetProfileStore.selectedDefaultProfileID()
+    @State private var isNamingProfile = false
+    @State private var newProfileName = ""
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Label("App Default", systemImage: "slider.horizontal.3")
+                    Spacer()
+                    if selectedDefaultProfileID == nil {
+                        defaultCheckmark
+                    } else {
+                        Button {
+                            ProviderQuotaWidgetProfileStore.setDefault(id: nil)
+                            reload()
+                        } label: {
+                            Image(systemName: "circle").frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Set App Default as default widget profile")
+                    }
+                }
+
+                ForEach(profiles) { profile in
+                    HStack {
+                        Text(profile.name).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if selectedDefaultProfileID == profile.id { defaultCheckmark }
+                        profileMenu(profile)
+                    }
+                }
+
+                Button {
+                    newProfileName = ""
+                    isNamingProfile = true
+                } label: {
+                    Label("Save Current Settings", systemImage: "plus")
+                }
+            } footer: {
+                Text("Profiles are named snapshots of the current Widget Appearance settings. Load one to edit it, then update the snapshot.")
+            }
+        }
+        .navigationTitle("Widget Profiles")
+        .alert("Save Widget Profile", isPresented: $isNamingProfile) {
+            TextField("Profile Name", text: $newProfileName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                _ = ProviderQuotaWidgetProfileStore.saveCurrent(name: newProfileName)
+                reload()
+            }
+        } message: {
+            Text("Save the current appearance and behavior settings as a reusable widget profile.")
+        }
+    }
+
+    private var defaultCheckmark: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+            .accessibilityLabel("Default widget profile")
+    }
+
+    private func profileMenu(_ profile: ProviderQuotaWidgetSavedProfile) -> some View {
+        Menu {
+            if selectedDefaultProfileID != profile.id {
+                Button("Set as Default", systemImage: "checkmark.circle") {
+                    ProviderQuotaWidgetProfileStore.setDefault(id: profile.id)
+                    reload()
+                }
+            }
+            Button("Load into Editor", systemImage: "square.and.arrow.down") {
+                ProviderQuotaWidgetProfileStore.apply(profile)
+                WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+                dismiss()
+            }
+            Button("Update from Current", systemImage: "arrow.triangle.2.circlepath") {
+                _ = ProviderQuotaWidgetProfileStore.saveCurrent(name: profile.name, id: profile.id)
+                reload()
+            }
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                ProviderQuotaWidgetProfileStore.delete(id: profile.id)
+                reload()
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle").frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Manage \(profile.name) profile")
+    }
+
+    private func reload() {
+        profiles = ProviderQuotaWidgetProfileStore.profiles()
+        selectedDefaultProfileID = ProviderQuotaWidgetProfileStore.selectedDefaultProfileID()
+        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+    }
+}
+
+private struct ProviderQuotaSidebarDisplayView: View {
+    @AppStorage(ProviderQuotaSidebarSettings.detailKey)
+    private var detailRawValue = ProviderQuotaSidebarDetail.defaultValue.rawValue
+    @AppStorage(ProviderQuotaSidebarSettings.showsRailKey) private var showsRail = true
+    @AppStorage(ProviderQuotaSidebarSettings.showsMarkerKey) private var showsMarker = true
+    @AppStorage(ProviderQuotaSidebarSettings.showsIconKey) private var showsIcon = true
+    @AppStorage(ProviderQuotaSidebarSettings.colorsByStateKey) private var colorsByState = true
+
+    var body: some View {
+        Form {
+            Section("Content") {
+                Picker("Detail", selection: $detailRawValue) {
+                    ForEach(ProviderQuotaSidebarDetail.allCases) { detail in
+                        Text(detail.title).tag(detail.rawValue)
+                    }
+                }
+
+                Toggle("Provider Icon", isOn: $showsIcon)
+                Toggle("Quota Rail", isOn: $showsRail)
+                if showsRail {
+                    Toggle("Pace Marker", isOn: $showsMarker)
+                }
+            }
+
+            Section {
+                Toggle("Color by State", isOn: $colorsByState)
+            } footer: {
+                Text("Sidebar rows remain the same height. These controls only choose which compact presentation fields are shown.")
+            }
+        }
+        .navigationTitle("Sidebar Display")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -223,7 +223,9 @@ private struct ProviderRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                ProviderIconView(providerID: provider.id, label: displayName, size: 20)
+
                 Text(displayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)

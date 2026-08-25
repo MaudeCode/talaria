@@ -1458,10 +1458,12 @@ struct AppSidebarDrawer: View {
         ProviderQuotaDisplaySettings.aliasesKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var providerAliasesData = Data()
-    @AppStorage(
-        ProviderQuotaPercentageMode.storageKey,
-        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
-    ) private var quotaPercentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
+    @AppStorage(ProviderQuotaSidebarSettings.detailKey)
+    private var quotaDetailRawValue = ProviderQuotaSidebarDetail.defaultValue.rawValue
+    @AppStorage(ProviderQuotaSidebarSettings.showsRailKey) private var showsQuotaRail = true
+    @AppStorage(ProviderQuotaSidebarSettings.showsMarkerKey) private var showsQuotaMarker = true
+    @AppStorage(ProviderQuotaSidebarSettings.showsIconKey) private var showsQuotaIcon = true
+    @AppStorage(ProviderQuotaSidebarSettings.colorsByStateKey) private var colorsQuotaByState = true
 
     let isPresented: Bool
     let selection: AppSidebarDestination
@@ -1637,57 +1639,108 @@ struct AppSidebarDrawer: View {
     }
 
     private func quotaRow(_ source: ProviderQuotaWidgetSource) -> some View {
-        let destination = AppSidebarDestination.quota(source.sourceID)
-        let tint = selection == destination ? Color.accentColor : Color.primary
-        let detail = quotaDetail(source)
-
-        return Button {
-            select(destination)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "gauge.with.dots.needle.33percent")
-                    .font(.system(size: 16, weight: .medium))
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
-
-                Text(providerDisplayName(source))
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Text(detail)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(tint)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 44)
-            .background(
-                selection == destination ? Color.accentColor.opacity(0.14) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let state = ProviderQuotaPresentation.state(
+            for: source,
+            settings: ProviderQuotaEvaluationSettings.stored(),
+            at: Date()
+        )
+        let tint = colorsQuotaByState
+            ? ProviderQuotaWidgetPalette.arcColor(
+                urgency: state.urgency,
+                profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil)
             )
-            .contentShape(Rectangle())
+            : Color.accentColor
+        let detail = quotaDetail(source, state: state)
+
+        return HStack(spacing: 10) {
+            if showsQuotaIcon {
+                ProviderIconView(
+                    providerID: source.providerID,
+                    label: providerDisplayName(source),
+                    tint: tint,
+                    size: 20
+                )
+                    .frame(width: 24)
+            }
+
+            VStack(spacing: 4) {
+                HStack {
+                    Text(providerDisplayName(source))
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    if let detail {
+                        Text(detail)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                if showsQuotaRail, let percent = state.percent {
+                    quotaRail(
+                        percent: percent,
+                        expectedPercent: showsQuotaMarker ? state.expectedPercent : nil,
+                        tint: tint
+                    )
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 40)
         .accessibilityIdentifier("app-sidebar-quota-\(source.sourceID)")
-        .accessibilityLabel("\(providerDisplayName(source)), \(detail)")
-        .accessibilityAddTraits(selection == destination ? .isSelected : [])
+        .accessibilityLabel(
+            [providerDisplayName(source), detail, state.paceLabel].compactMap { $0 }.joined(separator: ", ")
+        )
     }
 
-    private func quotaDetail(_ source: ProviderQuotaWidgetSource) -> String {
-        guard let window = source.windows.first,
-              let percent = ProviderQuotaPresentation.percent(window, mode: quotaPercentageMode)
-        else {
-            return ProviderQuotaPresentation.statusLabel(source.status)
+    private func quotaRail(percent: Double, expectedPercent: Double?, tint: Color) -> some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(.secondary.opacity(0.18))
+                Capsule()
+                    .fill(tint)
+                    .frame(width: width * min(max(percent, 0), 100) / 100)
+                if let expectedPercent {
+                    Rectangle()
+                        .fill(Color.primary)
+                        .frame(width: 1.5, height: 3)
+                        .offset(
+                            x: min(
+                                max(width * min(max(expectedPercent, 0), 100) / 100 - 0.75, 0),
+                                max(width - 1.5, 0)
+                            )
+                        )
+                }
+            }
         }
-        let suffix = quotaPercentageMode == .used ? String(localized: "used") : String(localized: "remaining")
-        return "\(insightsFormattedPercent(percent)) \(suffix)"
+        .frame(height: 3)
     }
 
-    private var quotaPercentageMode: ProviderQuotaPercentageMode {
-        ProviderQuotaPercentageMode(rawValue: quotaPercentageModeRawValue) ?? .defaultValue
+    private func quotaDetail(
+        _ source: ProviderQuotaWidgetSource,
+        state: ProviderQuotaPresentationState
+    ) -> String? {
+        switch ProviderQuotaSidebarDetail(rawValue: quotaDetailRawValue) ?? .defaultValue {
+        case .hidden:
+            return nil
+        case .pace:
+            return state.paceLabel ?? ProviderQuotaPresentation.statusLabel(source.status)
+        case .reset:
+            guard let resetAt = state.resetAt else { return ProviderQuotaPresentation.statusLabel(source.status) }
+            return resetAt.formatted(.relative(presentation: .numeric))
+        case .freshness:
+            return state.freshnessDate.formatted(.relative(presentation: .numeric))
+        case .percentage:
+            guard let percent = state.percent else {
+                return ProviderQuotaPresentation.statusLabel(source.status)
+            }
+            return "\(insightsFormattedPercent(percent)) \(state.modeLabel)"
+        }
     }
 
     private func providerDisplayName(_ source: ProviderQuotaWidgetSource) -> String {
