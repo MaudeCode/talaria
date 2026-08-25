@@ -21,3 +21,11 @@ with the iOS app.
   See swift-cmark-COPYING.txt.
 - Lucide icons
   See LucideIcons-LICENSE.txt.
+- Dashboard Icons provider marks
+  See DashboardIcons-LICENSE.txt and DashboardIcons-ASSETS.md.
+- Lobe Icons provider marks
+  See LobeIcons-LICENSE.txt and ProviderIcons-ASSETS.md.
+- CodexBar provider marks
+  See CodexBarIcons-LICENSE.txt and ProviderIcons-ASSETS.md.
+- Official provider brand marks
+  See ProviderIcons-ASSETS.md for sources and usage notes.

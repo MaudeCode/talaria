@@ -114,6 +114,10 @@
 		A06100000000000000000005 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
 		A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
+		A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000011 /* ProviderIconRegistry.swift */; };
+		A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000011 /* ProviderIconRegistry.swift */; };
+		A06300000000000000000003 /* ProviderIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000012 /* ProviderIcons.xcassets */; };
+		A06300000000000000000004 /* ProviderIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000012 /* ProviderIcons.xcassets */; };
 		A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0610000000000000000000A /* ProviderQuotaWidget.swift */; };
 		A0610000000000000000000B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000301 /* PrivacyInfo.xcprivacy */; };
 		1A2B3C4D5E6F7000000000AF /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BF /* ChatView.swift */; };
@@ -468,6 +472,8 @@
 		1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCatalog.swift; sourceTree = "<group>"; };
 		A06100000000000000000002 /* ProviderQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuota.swift; sourceTree = "<group>"; };
 		A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSupport.swift; sourceTree = "<group>"; };
+		A06300000000000000000011 /* ProviderIconRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIconRegistry.swift; sourceTree = "<group>"; };
+		A06300000000000000000012 /* ProviderIcons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = ProviderIcons.xcassets; sourceTree = "<group>"; };
 		A0610000000000000000000A /* ProviderQuotaWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidget.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BF /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		C05100000000000000000011 /* ChatTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptView.swift; sourceTree = "<group>"; };
@@ -783,6 +789,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F700000000014 /* Assets.xcassets */,
+				A06300000000000000000012 /* ProviderIcons.xcassets */,
 				7A1350000000000000000002 /* Talaria.icon */,
 				10CA110C0DE000000000B002 /* Localizable.xcstrings */,
 				10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */,
@@ -943,6 +950,7 @@
 				1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */,
 				A06100000000000000000002 /* ProviderQuota.swift */,
 				A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */,
+				A06300000000000000000011 /* ProviderIconRegistry.swift */,
 				1A2B3C4D5E6F70000000142 /* ModelFavoritesStore.swift */,
 				1A2B3C4D5E6F700000000301 /* ServerAccount.swift */,
 				1A2B3C4D5E6F7000000000DF /* ToolCall.swift */,
@@ -1461,6 +1469,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */,
+				A06300000000000000000003 /* ProviderIcons.xcassets in Resources */,
 				7A1350000000000000000001 /* Talaria.icon in Resources */,
 				10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */,
 				10CA110C0DE000000000B004 /* AppShortcuts.xcstrings in Resources */,
@@ -1482,6 +1491,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				10CA110C0DE000000000B003 /* Localizable.xcstrings in Resources */,
+				A06300000000000000000004 /* ProviderIcons.xcassets in Resources */,
 				A0610000000000000000000B /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1561,6 +1571,7 @@
 				1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */,
 				A06100000000000000000001 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */,
 				1A2B3C4D5E6F70000000140 /* ModelFavoritesStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000DE /* ToolCall.swift in Sources */,
 				1A2B3C4D5E6F7000000000A9 /* JSONValue.swift in Sources */,
@@ -1817,6 +1828,7 @@
 				A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */,
 				A06100000000000000000005 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */,
 				A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
