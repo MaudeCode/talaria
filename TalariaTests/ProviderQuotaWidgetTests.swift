@@ -295,8 +295,34 @@ final class ProviderQuotaWidgetTests: XCTestCase {
 
         let entities = try await ProviderQuotaSourceEntityQuery().allEntities()
 
-        XCTAssertEqual(entities.map(\.id), ["qsrc_work", "qsrc_personal"])
-        XCTAssertEqual(entities.map(\.name), ["Codex", "Codex"])
+        XCTAssertEqual(
+            entities.map(\.id),
+            [ProviderQuotaSourceEntity.noneID, "qsrc_work", "qsrc_personal"]
+        )
+        XCTAssertEqual(entities.map(\.name), ["None", "Codex", "Codex"])
+        let primaryEntities = try await ProviderQuotaPrimarySourceEntityQuery().allEntities()
+        XCTAssertEqual(
+            primaryEntities.map(\.id),
+            ["qsrc_work", "qsrc_personal"]
+        )
+        let secondaryDefault = await ProviderQuotaSourceEntityQuery().defaultResult()
+        XCTAssertEqual(
+            secondaryDefault?.id,
+            ProviderQuotaSourceEntity.noneID
+        )
+    }
+
+    func testWidgetSecondaryNoneSelectionDoesNotProduceASourceID() {
+        var configuration = ProviderQuotaWidgetConfigurationIntent()
+        configuration.source1 = ProviderQuotaSourceEntity(
+            id: "qsrc_work",
+            name: "Codex",
+            scopeLabel: "Test server"
+        )
+        configuration.source2 = .none
+
+        XCTAssertEqual(configuration.sourceIDs[0], "qsrc_work")
+        XCTAssertNil(configuration.sourceIDs[1])
     }
 
     func testSameProviderAccountsRemainDistinctAcrossReorderAndRename() {

@@ -167,11 +167,7 @@ private struct ProviderQuotaWidgetView: View {
         } else if family == .systemSmall {
             sourceCell(at: 0)
         } else {
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible())],
-                alignment: .center,
-                spacing: family == .systemLarge ? 12 : 8
-            ) {
+            ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
                 ForEach(sourceIDs.indices, id: \.self) { index in
                     sourceCell(at: index)
                 }
@@ -183,13 +179,13 @@ private struct ProviderQuotaWidgetView: View {
     private var twoWindowGrid: some View {
         if let source = resolvedSources.first ?? nil,
            let url = destinationURL(for: source) {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
                 ForEach(Array(source.windows.prefix(2).enumerated()), id: \.offset) { _, window in
                     Link(destination: url) {
                         ProviderQuotaWidgetSourceView(
                             source: source,
                             configuration: entry.configuration,
-                            compact: true,
+                            compact: false,
                             referenceDate: Date(),
                             windowOverride: window
                         )
@@ -214,7 +210,7 @@ private struct ProviderQuotaWidgetView: View {
         if let source = resolvedSources.first ?? nil,
            let url = destinationURL(for: source) {
             Link(destination: url) {
-                HStack(spacing: family == .systemLarge ? 20 : 12) {
+                ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
                     ProviderQuotaWidgetSourceView(
                         source: source,
                         configuration: entry.configuration,
@@ -243,6 +239,10 @@ private struct ProviderQuotaWidgetView: View {
         (family == .systemMedium || family == .systemLarge) && sourceIDs.count == 1
     }
 
+    private var slotSpacing: CGFloat {
+        family == .systemLarge ? 20 : 12
+    }
+
     @ViewBuilder
     private var accessorySource: some View {
         if let source = resolvedSources.first ?? nil {
@@ -259,7 +259,7 @@ private struct ProviderQuotaWidgetView: View {
                 ProviderQuotaWidgetSourceView(
                     source: source,
                     configuration: entry.configuration,
-                    compact: family != .systemSmall,
+                    compact: false,
                     referenceDate: Date(),
                     windowOverride: nil
                 )

@@ -1717,6 +1717,7 @@ private enum ProviderQuotaWidgetPreviewFamily: String, CaseIterable, Identifiabl
 struct ProviderQuotaWidgetAppearanceView: View {
     @State private var previewState = ProviderQuotaWidgetPreviewState.healthy
     @State private var previewFamily = ProviderQuotaWidgetPreviewFamily.small
+    @State private var previewSourceCount = 1
     @AppStorage(
         ProviderQuotaWidgetArcColor.storageKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
@@ -1949,6 +1950,22 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
             }
             .pickerStyle(.segmented)
+
+            if previewFamily != .small {
+                HStack(spacing: 8) {
+                    Text("Sources")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Sources", selection: $previewSourceCount) {
+                        ForEach(previewSourceCounts, id: \.self) { count in
+                            Text("\(count)").tag(count)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -1972,6 +1989,9 @@ struct ProviderQuotaWidgetAppearanceView: View {
             ForEach(ProviderQuotaWidgetPreviewFamily.allCases) { family in
                 Button {
                     previewFamily = family
+                    if !previewSourceCounts.contains(previewSourceCount) {
+                        previewSourceCount = previewSourceCounts.last ?? 1
+                    }
                 } label: {
                     Image(systemName: family.systemImage)
                         .font(.title3)
@@ -1996,38 +2016,59 @@ struct ProviderQuotaWidgetAppearanceView: View {
     @ViewBuilder
     private var previewContent: some View {
         if previewFamily == .small {
-            previewGauge(compact: false)
+            previewGauge(source: previewSource(at: 0))
+        } else if previewSourceCount > 1 {
+            ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
+                ForEach(0..<previewSourceCount, id: \.self) { index in
+                    previewGauge(source: previewSource(at: index))
+                }
+            }
         } else {
-            HStack(spacing: previewFamily == .large ? 20 : 12) {
-                previewGauge(compact: false)
-                    .frame(maxWidth: .infinity)
-                ProviderQuotaForecastView(plan: previewSource.plan, state: previewPresentation)
+            ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
+                previewGauge(source: previewSource(at: 0))
+                ProviderQuotaForecastView(
+                    plan: previewSource(at: 0).plan,
+                    state: previewPresentation(for: previewSource(at: 0))
+                )
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
-    private func previewGauge(compact: Bool) -> some View {
-        ProviderQuotaGaugeView(
-            providerID: previewSource.providerID,
-            displayName: "OpenAI Codex",
-            sourceStatus: previewSource.status,
-            state: previewPresentation,
+    private var previewSlotSpacing: CGFloat {
+        previewFamily == .large ? 20 : 12
+    }
+
+    private func previewGauge(source: ProviderQuotaWidgetSource) -> some View {
+        let presentation = previewPresentation(for: source)
+        return ProviderQuotaGaugeView(
+            providerID: source.providerID,
+            displayName: source.providerLabel,
+            sourceStatus: source.status,
+            state: presentation,
             statusText: ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue,
             resetDisplay: ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue,
             style: ProviderQuotaGaugeStyle(
                 arcColor: previewColor,
                 trackColor: previewTrackColor.opacity(Double(trackOpacityPercent) / 100),
-                lineWidth: previewLineWidth(compact: compact),
+                lineWidth: previewLineWidth(compact: false),
                 showsPaceMarker: arcColor == .automatic
-                    && previewPresentation.settings.colorBasis == .pace
+                    && presentation.settings.colorBasis == .pace
                     && showsPaceMarker,
                 showsProviderIcon: showsProviderIcon,
                 providerIconStyle: ProviderIconStyle(rawValue: providerIconStyleRawValue)
                     ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
             ),
-            compact: compact
+            compact: false
         )
+    }
+
+    private var previewSourceCounts: [Int] {
+        switch previewFamily {
+        case .small: [1]
+        case .medium: [1, 2]
+        case .large: [1, 2, 4]
+        }
     }
 
     private var arcColor: ProviderQuotaWidgetArcColor {
@@ -2062,7 +2103,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
             return ProviderQuotaWidgetColorResolver.color(arcColor, customHex: customArcColorHex)
         }
         return ProviderQuotaWidgetPalette.arcColor(
-            urgency: previewPresentation.urgency,
+            urgency: previewState.urgency,
             profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil, followsSelectedDefault: false)
         )
     }
@@ -2072,7 +2113,14 @@ struct ProviderQuotaWidgetAppearanceView: View {
         return ProviderQuotaWidgetColorResolver.color(trackColor, customHex: customTrackColorHex)
     }
 
-    private var previewSource: ProviderQuotaWidgetSource {
+    private func previewSource(at index: Int) -> ProviderQuotaWidgetSource {
+        let providers = [
+            ("openai-codex", "OpenAI Codex"),
+            ("gemini", "Gemini"),
+            ("anthropic", "Claude"),
+            ("qwen", "Qwen"),
+        ]
+        let provider = providers[min(max(index, 0), providers.count - 1)]
         let usedPercent: Double = switch previewState {
         case .healthy, .stale: 13
         case .warning: 40
@@ -2081,12 +2129,12 @@ struct ProviderQuotaWidgetAppearanceView: View {
         }
         let now = Date()
         return ProviderQuotaWidgetSource(
-            sourceID: "preview-codex",
+            sourceID: "preview-\(provider.0)",
             cachedAt: previewState == .stale ? now.addingTimeInterval(-30 * 60) : now,
-            providerID: "openai-codex",
-            providerLabel: "OpenAI Codex",
-            accountLabel: "OpenAI Codex",
-            isActiveProvider: true,
+            providerID: provider.0,
+            providerLabel: provider.1,
+            accountLabel: provider.1,
+            isActiveProvider: index == 0,
             status: previewState == .unavailable ? "unavailable" : "available",
             plan: "Pro",
             windows: previewState == .unavailable ? [] : [
@@ -2105,9 +2153,11 @@ struct ProviderQuotaWidgetAppearanceView: View {
         )
     }
 
-    private var previewPresentation: ProviderQuotaPresentationState {
+    private func previewPresentation(
+        for source: ProviderQuotaWidgetSource
+    ) -> ProviderQuotaPresentationState {
         ProviderQuotaPresentation.state(
-            for: previewSource,
+            for: source,
             settings: ProviderQuotaEvaluationSettings.stored(followsSelectedDefault: false),
             at: Date()
         ).withUrgency(previewState.urgency)

@@ -965,6 +965,45 @@ struct ProviderQuotaGaugeStyle {
     let providerIconStyle: ProviderIconStyle
 }
 
+struct ProviderQuotaWidgetSlotLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        guard !subviews.isEmpty else { return }
+        let columnCount = min(2, subviews.count)
+        let rowCount = Int(ceil(Double(subviews.count) / Double(columnCount)))
+        let cellWidth = max(0, (bounds.width - spacing * CGFloat(columnCount - 1)) / CGFloat(columnCount))
+        let cellHeight = max(0, (bounds.height - spacing * CGFloat(rowCount - 1)) / CGFloat(rowCount))
+
+        for (index, subview) in subviews.enumerated() {
+            let column = index % columnCount
+            let row = index / columnCount
+            let origin = CGPoint(
+                x: bounds.minX + CGFloat(column) * (cellWidth + spacing),
+                y: bounds.minY + CGFloat(row) * (cellHeight + spacing)
+            )
+            subview.place(
+                at: CGPoint(x: origin.x + cellWidth / 2, y: origin.y + cellHeight / 2),
+                anchor: .center,
+                proposal: ProposedViewSize(width: cellWidth, height: cellHeight)
+            )
+        }
+    }
+}
+
 enum ProviderQuotaWidgetColorResolver {
     static func color(
         _ value: ProviderQuotaWidgetArcColor,
@@ -1808,6 +1847,14 @@ struct ProviderQuotaWidgetProfileEntityQuery: EnumerableEntityQuery {
 struct ProviderQuotaSourceEntity: AppEntity, Identifiable {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota source")
     static var defaultQuery = ProviderQuotaSourceEntityQuery()
+    static let noneID = "talaria:none"
+    static var none: ProviderQuotaSourceEntity {
+        ProviderQuotaSourceEntity(
+            id: noneID,
+            name: String(localized: "None"),
+            scopeLabel: String(localized: "Leave this slot empty")
+        )
+    }
 
     let id: String
     let name: String
@@ -1815,6 +1862,12 @@ struct ProviderQuotaSourceEntity: AppEntity, Identifiable {
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(name)", subtitle: "\(scopeLabel)")
+    }
+
+    init(id: String, name: String, scopeLabel: String) {
+        self.id = id
+        self.name = name
+        self.scopeLabel = scopeLabel
     }
 
     init(source: ProviderQuotaWidgetSource, aliasesData: Data = Data()) {
@@ -1831,12 +1884,15 @@ struct ProviderQuotaSourceEntity: AppEntity, Identifiable {
 struct ProviderQuotaSourceEntityQuery: EnumerableEntityQuery {
     func entities(for identifiers: [ProviderQuotaSourceEntity.ID]) async throws -> [ProviderQuotaSourceEntity] {
         let wanted = Set(identifiers)
-        return Self.currentEntities(includeRemoved: true).filter { wanted.contains($0.id) }
+        return ([ProviderQuotaSourceEntity.none] + Self.currentEntities(includeRemoved: true))
+            .filter { wanted.contains($0.id) }
     }
 
     func allEntities() async throws -> [ProviderQuotaSourceEntity] {
-        Self.currentEntities(includeRemoved: false)
+        [ProviderQuotaSourceEntity.none] + Self.currentEntities(includeRemoved: false)
     }
+
+    func defaultResult() async -> ProviderQuotaSourceEntity? { ProviderQuotaSourceEntity.none }
 
     fileprivate static func currentEntities(includeRemoved: Bool) -> [ProviderQuotaSourceEntity] {
         let aliasesData = ProviderQuotaWidgetSnapshotStore.appGroupDefaults.data(
@@ -1909,6 +1965,9 @@ struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
     }
 
     var sourceIDs: [String?] {
-        [source1?.id, source2?.id, source3?.id, source4?.id]
+        [source1, source2, source3, source4].map { source in
+            guard source?.id != ProviderQuotaSourceEntity.noneID else { return nil }
+            return source?.id
+        }
     }
 }
