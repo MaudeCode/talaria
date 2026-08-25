@@ -58,9 +58,17 @@ struct ProviderQuotaTimelineProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: ProviderQuotaWidgetConfigurationIntent, in context: Context) async -> Timeline<ProviderQuotaTimelineEntry> {
         let now = Date()
+        let credentials = ProviderQuotaWidgetRefreshCredentialStore.load()
+        if !context.isPreview, let credentials {
+            _ = await ProviderQuotaWidgetRefreshClient.refresh(credentials: credentials)
+        }
+        let requestedInterval = max(
+            credentials?.refreshIntervalSeconds ?? ProviderQuotaRefreshInterval.defaultValue.rawValue,
+            ProviderQuotaRefreshInterval.fiveMinutes.rawValue
+        )
         return Timeline(
             entries: [.init(date: now, configuration: configuration, snapshot: ProviderQuotaWidgetSnapshotStore().load())],
-            policy: .after(now.addingTimeInterval(15 * 60))
+            policy: .after(now.addingTimeInterval(TimeInterval(requestedInterval)))
         )
     }
 }
@@ -194,7 +202,7 @@ private struct ProviderQuotaWidgetView: View {
 
     private var usesTwoWindowLayout: Bool {
         guard family == .systemMedium || family == .systemLarge,
-              entry.configuration.windowSelection == .automatic,
+              evaluationSettings.windowSelection == .automatic,
               sourceIDs.count == 1,
               let source = resolvedSources.first ?? nil
         else { return false }
@@ -267,6 +275,11 @@ private struct ProviderQuotaWidgetView: View {
     }
 
     private var effectiveTapAction: ProviderQuotaWidgetTapAction {
+        if resolvedProfile.id != ProviderQuotaWidgetProfileStore.defaultProfileID {
+            return ProviderQuotaWidgetTapAction(
+                rawValue: resolvedProfile.string(ProviderQuotaWidgetTapAction.storageKey)
+            ) ?? .defaultValue
+        }
         if entry.configuration.tapAction != .appDefault { return entry.configuration.tapAction }
         return ProviderQuotaWidgetTapAction(rawValue: defaultTapActionRawValue) ?? .defaultValue
     }
@@ -288,8 +301,27 @@ private struct ProviderQuotaWidgetView: View {
     }
 
     private var effectiveBackground: ProviderQuotaWidgetBackground {
+        if resolvedProfile.id != ProviderQuotaWidgetProfileStore.defaultProfileID {
+            return ProviderQuotaWidgetBackground(
+                rawValue: resolvedProfile.string(ProviderQuotaWidgetBackground.storageKey)
+            ) ?? .defaultValue
+        }
         if entry.configuration.background != .appDefault { return entry.configuration.background }
         return ProviderQuotaWidgetBackground(rawValue: defaultBackgroundRawValue) ?? .defaultValue
+    }
+
+    private var resolvedProfile: ProviderQuotaWidgetResolvedProfile {
+        ProviderQuotaWidgetResolvedProfile.resolve(
+            id: isAccessoryFamily ? nil : entry.configuration.profile?.id
+        )
+    }
+
+    private var isAccessoryFamily: Bool {
+        family == .accessoryInline || family == .accessoryCircular || family == .accessoryRectangular
+    }
+
+    private var evaluationSettings: ProviderQuotaEvaluationSettings {
+        ProviderQuotaEvaluationSettings.stored(configuration: entry.configuration)
     }
 
     private var widgetBackground: Color {
@@ -301,10 +333,10 @@ private struct ProviderQuotaWidgetView: View {
         case .light: Color(white: 0.96)
         case .custom:
             ProviderQuotaWidgetColorResolver.color(
-                hex: customBackgroundColorHex,
+                hex: resolvedProfile.string(ProviderQuotaWidgetBackground.customColorHexKey),
                 fallback: Color(.secondarySystemBackground)
             )
-                .opacity(Double(min(max(backgroundOpacityPercent, 0), 100)) / 100)
+                .opacity(Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetBackground.opacityPercentKey), 0), 100)) / 100)
         }
     }
 }
@@ -314,48 +346,12 @@ private struct ProviderQuotaWidgetSourceView: View {
         ProviderQuotaDisplaySettings.aliasesKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var providerAliasesData = Data()
-    @AppStorage(
-        ProviderQuotaWidgetArcColor.storageKey,
-        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
-    ) private var arcColorRawValue = ProviderQuotaWidgetArcColor.defaultValue.rawValue
-    @AppStorage(
-        ProviderQuotaWidgetArcWeight.storageKey,
-        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
-    ) private var arcWeightRawValue = ProviderQuotaWidgetArcWeight.defaultValue.rawValue
     @AppStorage(ProviderQuotaWidgetStatusText.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var statusTextRawValue = ProviderQuotaWidgetStatusText.defaultValue.rawValue
     @AppStorage(ProviderQuotaWidgetResetDisplay.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var resetDisplayRawValue = ProviderQuotaWidgetResetDisplay.defaultValue.rawValue
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var defaultShowsPaceMarker = ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var trackColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultTrackColor.rawValue
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var trackOpacityPercent = ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customArcColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customArcColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomArcColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customTrackColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customTrackColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomTrackColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customHealthyColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customHealthyColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomHealthyColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customWarningColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customWarningColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomWarningColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customCriticalColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customCriticalColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomCriticalColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customStaleColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customStaleColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomStaleColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.customUnavailableColorHexKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var customUnavailableColorHex = ProviderQuotaWidgetAppearanceSettings.defaultCustomUnavailableColorHex
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.healthyColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var healthyColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultHealthyColor.rawValue
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.warningColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var warningColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultWarningColor.rawValue
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.criticalColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var criticalColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultCriticalColor.rawValue
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.staleColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var staleColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultStaleColor.rawValue
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.unavailableColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var unavailableColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultUnavailableColor.rawValue
 
     let source: ProviderQuotaWidgetSource
     let configuration: ProviderQuotaWidgetConfigurationIntent
@@ -372,7 +368,7 @@ private struct ProviderQuotaWidgetSourceView: View {
             resetDisplay: resetDisplay,
             style: ProviderQuotaGaugeStyle(
                 arcColor: arcColor,
-                trackColor: trackColor.opacity(Double(min(max(trackOpacityPercent, 0), 100)) / 100),
+                trackColor: trackColor.opacity(Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey), 0), 100)) / 100),
                 lineWidth: lineWidth,
                 showsPaceMarker: showsPaceMarker
             ),
@@ -400,54 +396,63 @@ private struct ProviderQuotaWidgetSourceView: View {
     }
 
     private var statusText: ProviderQuotaWidgetStatusText {
+        if resolvedProfile.id != ProviderQuotaWidgetProfileStore.defaultProfileID {
+            return ProviderQuotaWidgetStatusText(
+                rawValue: resolvedProfile.string(ProviderQuotaWidgetStatusText.storageKey)
+            ) ?? .defaultValue
+        }
         if configuration.statusText != .appDefault { return configuration.statusText }
         return ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue
     }
 
     private var resetDisplay: ProviderQuotaWidgetResetDisplay {
+        if resolvedProfile.id != ProviderQuotaWidgetProfileStore.defaultProfileID {
+            return ProviderQuotaWidgetResetDisplay(
+                rawValue: resolvedProfile.string(ProviderQuotaWidgetResetDisplay.storageKey)
+            ) ?? .defaultValue
+        }
         if configuration.resetDisplay != .appDefault { return configuration.resetDisplay }
         return ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue
+    }
+
+    private var resolvedProfile: ProviderQuotaWidgetResolvedProfile {
+        ProviderQuotaWidgetResolvedProfile.resolve(id: configuration.profile?.id)
     }
 
     private var arcColor: Color {
         guard configuredArcColor == .automatic else {
             return ProviderQuotaWidgetColorResolver.color(
                 configuredArcColor,
-                customHex: customArcColorHex
+                customHex: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.customArcColorHexKey)
             )
         }
-        let palette: (ProviderQuotaWidgetArcColor, String) = switch presentation.urgency {
-        case .healthy: (paletteColor(healthyColorRawValue, fallback: .accent), customHealthyColorHex)
-        case .warning: (paletteColor(warningColorRawValue, fallback: .orange), customWarningColorHex)
-        case .critical: (paletteColor(criticalColorRawValue, fallback: .red), customCriticalColorHex)
-        case .stale: (paletteColor(staleColorRawValue, fallback: .orange), customStaleColorHex)
-        case .unavailable: (paletteColor(unavailableColorRawValue, fallback: .orange), customUnavailableColorHex)
-        }
-        return ProviderQuotaWidgetColorResolver.color(
-            palette.0,
-            customHex: palette.1
+        return ProviderQuotaWidgetPalette.arcColor(
+            urgency: presentation.urgency,
+            profile: resolvedProfile
         )
     }
 
-    private func paletteColor(
-        _ rawValue: String,
-        fallback: ProviderQuotaWidgetArcColor
-    ) -> ProviderQuotaWidgetArcColor {
-        ProviderQuotaWidgetArcColor(rawValue: rawValue) ?? fallback
-    }
-
     private var trackColor: Color {
-        let appDefault = ProviderQuotaWidgetArcColor(rawValue: trackColorRawValue)
+        let appDefault = ProviderQuotaWidgetArcColor(
+            rawValue: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.trackColorKey)
+        )
             ?? ProviderQuotaWidgetAppearanceSettings.defaultTrackColor
-        let resolved = configuration.trackColor.resolved(default: appDefault)
+        let resolved = resolvedProfile.id == ProviderQuotaWidgetProfileStore.defaultProfileID
+            ? configuration.trackColor.resolved(default: appDefault)
+            : appDefault
         return resolved == .automatic
             ? .secondary
-            : ProviderQuotaWidgetColorResolver.color(resolved, customHex: customTrackColorHex)
+            : ProviderQuotaWidgetColorResolver.color(
+                resolved,
+                customHex: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.customTrackColorHexKey)
+            )
     }
 
     private var showsPaceMarker: Bool {
         presentation.settings.colorBasis == .pace
-            && configuration.paceMarker.resolved(default: defaultShowsPaceMarker)
+            && (resolvedProfile.id == ProviderQuotaWidgetProfileStore.defaultProfileID
+                ? configuration.paceMarker.resolved(default: defaultShowsPaceMarker)
+                : resolvedProfile.boolean(ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey))
     }
 
     private var lineWidth: Double {
@@ -461,15 +466,21 @@ private struct ProviderQuotaWidgetSourceView: View {
     }
 
     private var configuredArcColor: ProviderQuotaWidgetArcColor {
-        configuration.gaugeColor.resolved(
-            default: ProviderQuotaWidgetArcColor(rawValue: arcColorRawValue) ?? .defaultValue
-        )
+        let profileColor = ProviderQuotaWidgetArcColor(
+            rawValue: resolvedProfile.string(ProviderQuotaWidgetArcColor.storageKey)
+        ) ?? .defaultValue
+        return resolvedProfile.id == ProviderQuotaWidgetProfileStore.defaultProfileID
+            ? configuration.gaugeColor.resolved(default: profileColor)
+            : profileColor
     }
 
     private var configuredArcWeight: ProviderQuotaWidgetArcWeight {
-        configuration.gaugeWeight.resolved(
-            default: ProviderQuotaWidgetArcWeight(rawValue: arcWeightRawValue) ?? .defaultValue
-        )
+        let profileWeight = ProviderQuotaWidgetArcWeight(
+            rawValue: resolvedProfile.string(ProviderQuotaWidgetArcWeight.storageKey)
+        ) ?? .defaultValue
+        return resolvedProfile.id == ProviderQuotaWidgetProfileStore.defaultProfileID
+            ? configuration.gaugeWeight.resolved(default: profileWeight)
+            : profileWeight
     }
 
 }
@@ -523,7 +534,7 @@ private struct ProviderQuotaAccessoryView: View {
     private var state: ProviderQuotaPresentationState {
         ProviderQuotaPresentation.state(
             for: source,
-            settings: ProviderQuotaEvaluationSettings.stored(configuration: entry.configuration),
+            settings: ProviderQuotaEvaluationSettings.stored(),
             at: entry.date
         )
     }

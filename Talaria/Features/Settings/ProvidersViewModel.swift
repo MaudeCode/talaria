@@ -27,6 +27,7 @@ final class ProvidersViewModel {
     private let client: APIClient
     private let quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore?
     private let reloadQuotaWidgets: () -> Void
+    private let quotaServer: URL
     private let quotaServerLabel: String
 
     /// Monotonic token identifying the most recent `load()` call. `load()` has
@@ -47,6 +48,7 @@ final class ProvidersViewModel {
         self.client = client ?? APIClient(baseURL: server)
         self.quotaSnapshotStore = quotaSnapshotStore ?? (client == nil ? ProviderQuotaWidgetSnapshotStore() : nil)
         self.reloadQuotaWidgets = reloadQuotaWidgets
+        self.quotaServer = server
         let storedLabel = ServerRegistry.shared.servers
             .first(where: { $0.id == server.absoluteString })?
             .displayName
@@ -207,6 +209,7 @@ final class ProvidersViewModel {
     }
 
     private func persistQuotaWidgetSnapshot(updatedSourceIDs: Set<String>? = nil) {
+        persistWidgetRefreshCredentials()
         guard let quotaSnapshotStore, let quotaScopeID, let quotaProfileID else { return }
         let widgetSources = quotaSources.map {
             ProviderQuotaWidgetSource(
@@ -223,6 +226,31 @@ final class ProvidersViewModel {
         else { return }
         reloadQuotaWidgets()
         Task { await ProviderQuotaAlertService.evaluate(widgetSources) }
+    }
+
+    private func persistWidgetRefreshCredentials() {
+        guard quotaSnapshotStore != nil else { return }
+        let headers: [ProviderQuotaWidgetRefreshHeader] = CustomHeaderStore.shared.snapshot().compactMap { header in
+            guard header.isApplicable else { return nil }
+            return ProviderQuotaWidgetRefreshHeader(
+                name: header.sanitizedName,
+                value: header.sanitizedValue
+            )
+        }
+        let cookies = (HTTPCookieStorage.shared.cookies(for: quotaServer) ?? [])
+            .map(ProviderQuotaWidgetRefreshCookie.init)
+        let refreshInterval = UserDefaults.standard.object(
+            forKey: ProviderQuotaRefreshInterval.storageKey
+        ) as? Int ?? ProviderQuotaRefreshInterval.defaultValue.rawValue
+        _ = ProviderQuotaWidgetRefreshCredentialStore.save(
+            ProviderQuotaWidgetRefreshCredentials(
+                serverURLString: quotaServer.absoluteString,
+                serverLabel: quotaServerLabel,
+                refreshIntervalSeconds: refreshInterval,
+                headers: headers,
+                cookies: cookies
+            )
+        )
     }
 
     private func clearQuotaWidgetSnapshot() {

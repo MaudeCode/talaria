@@ -18,7 +18,9 @@ struct SessionListView: View {
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionListViewModel
+    @State private var quotaViewModel: ProvidersViewModel
     @State private var navigationState: SessionNavigationState
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
@@ -58,6 +60,8 @@ struct SessionListView: View {
     @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
+    @AppStorage(ProviderQuotaRefreshInterval.storageKey)
+    private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
     // Per-server key (#19): the CLI toggle mirrors the active server's
     // `show_cli_sessions`, so its cached value must not leak across servers.
     // Configured in `init`, where the server URL is known.
@@ -87,6 +91,7 @@ struct SessionListView: View {
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
         _viewModel = State(initialValue: SessionListViewModel(server: server))
+        _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _navigationState = State(
             initialValue: SessionNavigationState(
                 lastSelectedSessionID: SessionNavigationPersistence.load(for: server)
@@ -249,6 +254,13 @@ struct SessionListView: View {
             }
             .task(id: activeSessionMonitorTaskID) {
                 await monitorActiveSessionRows()
+            }
+            .task(id: providerQuotaRefreshTaskID) {
+                guard scenePhase == .active else { return }
+                await quotaViewModel.loadQuotas(refresh: true)
+                await quotaViewModel.refreshQuotasPeriodically(
+                    every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
+                )
             }
             .task(id: returnRefreshID) {
                 guard returnRefreshID != nil else { return }
@@ -433,6 +445,7 @@ struct SessionListView: View {
             case .providers(let sourceID):
                 InsightsView(
                     server: server,
+                    quotaViewModel: quotaViewModel,
                     initialQuotaSourceID: sourceID,
                     openProviderSettings: {
                         navigationState.select(.settings(.providerQuotas))
@@ -453,6 +466,7 @@ struct SessionListView: View {
             case .insights:
                 InsightsView(
                     server: server,
+                    quotaViewModel: quotaViewModel,
                     openProviderSettings: {
                         navigationState.select(.settings(.providerQuotas))
                     },
@@ -738,6 +752,10 @@ struct SessionListView: View {
                 guard let providerID = source.providerID?.lowercased() else { return true }
                 return !hiddenProviderIDs.contains(providerID)
             }
+    }
+
+    private var providerQuotaRefreshTaskID: String {
+        "\(server.absoluteString)|\(quotaRefreshIntervalSeconds)|\(scenePhase == .active)"
     }
 
     private var newSessionButton: some View {

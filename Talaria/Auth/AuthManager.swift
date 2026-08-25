@@ -389,6 +389,7 @@ final class AuthManager {
     }
 
     private func clearQuotaWidgetSnapshot() {
+        _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
         guard ProviderQuotaWidgetSnapshotStore().clear() else { return }
         WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
     }
@@ -431,6 +432,7 @@ final class AuthManager {
             // Keychain entry so re-login is a one-field affair, and clear only this
             // server's cookies so other configured servers stay signed in (#16).
             clearSessionCookies(for: server)
+            _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
             state = .loggedOut(server: server)
         case .unconfigured:
             clearLocalAuth(for: nil)
@@ -467,6 +469,7 @@ final class AuthManager {
         // Drop the App Intents profile picker cache (#339) so a signed-out user doesn't see
         // the previous server's profiles lingering in Shortcuts / Siri.
         profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
     }
 
     /// Mirrors the in-memory header snapshot to `server`'s scoped Keychain entry:

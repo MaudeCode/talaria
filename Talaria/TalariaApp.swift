@@ -1,3 +1,4 @@
+import BackgroundTasks
 import SwiftUI
 import SwiftData
 import WidgetKit
@@ -46,6 +47,11 @@ struct TalariaApp: App {
     @State private var authManager = AuthManager()
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
 
+    init() {
+        ProviderQuotaBackgroundRefresh.register()
+        ProviderQuotaBackgroundRefresh.schedule()
+    }
+
     var body: some Scene {
         WindowGroup {
             #if DEBUG
@@ -77,6 +83,48 @@ struct TalariaApp: App {
         .commands {
             TalariaCommands()
             SidebarCommands()
+        }
+    }
+}
+
+@MainActor
+enum ProviderQuotaBackgroundRefresh {
+    static var identifier: String {
+        "\(Bundle.main.bundleIdentifier ?? "dev.kil.talaria").provider-quota-refresh"
+    }
+
+    static func register() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+            Task { @MainActor in
+                guard let refreshTask = task as? BGAppRefreshTask else {
+                    task.setTaskCompleted(success: false)
+                    return
+                }
+                handle(refreshTask)
+            }
+        }
+    }
+
+    static func schedule() {
+        guard let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return }
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+        let request = BGAppRefreshTaskRequest(identifier: identifier)
+        request.earliestBeginDate = Date(
+            timeIntervalSinceNow: TimeInterval(max(credentials.refreshIntervalSeconds, 60))
+        )
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private static func handle(_ task: BGAppRefreshTask) {
+        schedule()
+        let operation = Task {
+            await ProviderQuotaWidgetRefreshClient.refreshFromSharedCredentials()
+        }
+        task.expirationHandler = {
+            operation.cancel()
+        }
+        Task {
+            task.setTaskCompleted(success: await operation.value)
         }
     }
 }

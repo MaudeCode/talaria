@@ -5,15 +5,13 @@ struct InsightsView: View {
     let onAPIError: (Error) -> Void
     let initialQuotaSourceID: String?
     let openProviderSettings: () -> Void
+    let quotaViewModel: ProvidersViewModel
 
     @State private var viewModel: InsightsViewModel
-    @State private var quotaViewModel: ProvidersViewModel
     @State private var quotaScrollPosition: String?
     @State private var isShowingQuotaNotice = false
     @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
     @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
-    @AppStorage(ProviderQuotaRefreshInterval.storageKey)
-    private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
     @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
     @AppStorage(
         ProviderQuotaDisplaySettings.aliasesKey,
@@ -26,16 +24,17 @@ struct InsightsView: View {
 
     init(
         server: URL,
+        quotaViewModel: ProvidersViewModel? = nil,
         initialQuotaSourceID: String? = nil,
         openProviderSettings: @escaping () -> Void = {},
         onAPIError: @escaping (Error) -> Void
     ) {
         self.server = server
+        self.quotaViewModel = quotaViewModel ?? ProvidersViewModel(server: server)
         self.initialQuotaSourceID = initialQuotaSourceID
         self.openProviderSettings = openProviderSettings
         self.onAPIError = onAPIError
         _viewModel = State(initialValue: InsightsViewModel(server: server))
-        _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
     }
 
     var body: some View {
@@ -59,17 +58,11 @@ struct InsightsView: View {
                 await loadInsights()
             }
             .task {
-                await loadQuotas()
+                if quotaViewModel.quotaSources.isEmpty, !quotaViewModel.isQuotaLoading {
+                    await loadQuotas()
+                }
                 quotaScrollPosition = initialQuotaSourceID
                 await refreshPendingWidgetSourceIfNeeded()
-            }
-            .task(id: quotaRefreshIntervalSeconds) {
-                await quotaViewModel.refreshQuotasPeriodically(
-                    every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
-                )
-            }
-            .onDisappear {
-                quotaViewModel.cancelLoads()
             }
     }
 
@@ -163,6 +156,7 @@ struct InsightsView: View {
                         .font(.footnote)
                         .padding(14)
                         .frame(idealWidth: 280, maxWidth: 320, alignment: .leading)
+                        .accessibilityIdentifier("provider-quota-warning-details")
                         .presentationCompactAdaptation(.popover)
                     }
                 }
@@ -531,9 +525,12 @@ private struct ProviderQuotaRow: View {
     }
 
     private var providerTitle: some View {
-        Text(displayName)
-            .font(.subheadline.weight(.semibold))
-            .lineLimit(2)
+        HStack(spacing: 7) {
+            ProviderIconView(providerID: source.providerID, label: displayName, size: 18)
+            Text(displayName)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+        }
     }
 
     private var actionButtons: some View {

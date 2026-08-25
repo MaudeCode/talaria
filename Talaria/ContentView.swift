@@ -35,6 +35,10 @@ struct ContentView: View {
                 await reconcileOrphanedLiveActivities(notifiesOnCompletion: true)
             }
             .onChange(of: scenePhase) {
+                if scenePhase == .background {
+                    ProviderQuotaBackgroundRefresh.schedule()
+                    return
+                }
                 guard scenePhase == .active else { return }
                 Task { await importPendingSharedDraftIfAvailable() }
                 // #248: the foreground pass stays silent — the in-session completion

@@ -327,6 +327,11 @@ enum SectionVisibilitySettings {
 enum ProviderQuotaSidebarSettings {
     static let firstSourceKey = "providerQuotaSidebar.source1"
     static let secondSourceKey = "providerQuotaSidebar.source2"
+    static let detailKey = "providerQuotaSidebar.detail"
+    static let showsRailKey = "providerQuotaSidebar.showsRail"
+    static let showsMarkerKey = "providerQuotaSidebar.showsMarker"
+    static let showsIconKey = "providerQuotaSidebar.showsIcon"
+    static let colorsByStateKey = "providerQuotaSidebar.colorsByState"
 
     static func sourceIDs(first: String, second: String) -> [String] {
         var seen = Set<String>()
@@ -334,6 +339,27 @@ enum ProviderQuotaSidebarSettings {
             let id = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty, seen.insert(id).inserted else { return nil }
             return id
+        }
+    }
+}
+
+enum ProviderQuotaSidebarDetail: String, CaseIterable, Identifiable {
+    case percentage
+    case pace
+    case reset
+    case freshness
+    case hidden
+
+    static let defaultValue = ProviderQuotaSidebarDetail.percentage
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .percentage: String(localized: "Percentage")
+        case .pace: String(localized: "Pace")
+        case .reset: String(localized: "Reset")
+        case .freshness: String(localized: "Updated")
+        case .hidden: String(localized: "None")
         }
     }
 }
@@ -364,32 +390,6 @@ enum ProviderQuotaVisibilitySettings {
     private static func normalizedProviderID(_ value: String) -> String? {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty ? nil : normalized
-    }
-}
-
-enum ProviderQuotaRefreshInterval: Int, CaseIterable, Identifiable {
-    case oneMinute = 60
-    case fiveMinutes = 300
-    case fifteenMinutes = 900
-    case thirtyMinutes = 1_800
-
-    static let storageKey = "providerQuota.refreshIntervalSeconds"
-    static let defaultValue = ProviderQuotaRefreshInterval.fiveMinutes
-
-    var id: Int { rawValue }
-    var duration: Duration { .seconds(rawValue) }
-
-    var title: String {
-        switch self {
-        case .oneMinute: String(localized: "Every minute")
-        case .fiveMinutes: String(localized: "Every 5 minutes")
-        case .fifteenMinutes: String(localized: "Every 15 minutes")
-        case .thirtyMinutes: String(localized: "Every 30 minutes")
-        }
-    }
-
-    static func storedValue(_ rawValue: Int) -> ProviderQuotaRefreshInterval {
-        ProviderQuotaRefreshInterval(rawValue: rawValue) ?? defaultValue
     }
 }
 

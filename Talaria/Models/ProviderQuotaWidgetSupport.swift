@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import Security
 import SwiftUI
 import WidgetKit
 
@@ -164,6 +165,277 @@ struct ProviderQuotaWidgetSnapshotStore {
     }
 }
 
+enum ProviderQuotaRefreshInterval: Int, CaseIterable, Identifiable {
+    case oneMinute = 60
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case thirtyMinutes = 1_800
+
+    static let storageKey = "providerQuota.refreshIntervalSeconds"
+    static let defaultValue = ProviderQuotaRefreshInterval.fiveMinutes
+
+    var id: Int { rawValue }
+    var duration: Duration { .seconds(rawValue) }
+
+    var title: String {
+        switch self {
+        case .oneMinute: String(localized: "Every minute")
+        case .fiveMinutes: String(localized: "Every 5 minutes")
+        case .fifteenMinutes: String(localized: "Every 15 minutes")
+        case .thirtyMinutes: String(localized: "Every 30 minutes")
+        }
+    }
+
+    static func storedValue(_ rawValue: Int) -> ProviderQuotaRefreshInterval {
+        ProviderQuotaRefreshInterval(rawValue: rawValue) ?? defaultValue
+    }
+}
+
+struct ProviderQuotaWidgetRefreshHeader: Codable, Equatable, Sendable {
+    let name: String
+    let value: String
+}
+
+struct ProviderQuotaWidgetRefreshCookie: Codable, Equatable, Sendable {
+    let name: String
+    let value: String
+    let domain: String
+    let path: String
+    let isSecure: Bool
+    let expiresDate: Date?
+
+    init(_ cookie: HTTPCookie) {
+        name = cookie.name
+        value = cookie.value
+        domain = cookie.domain
+        path = cookie.path
+        isSecure = cookie.isSecure
+        expiresDate = cookie.expiresDate
+    }
+
+    var httpCookie: HTTPCookie? {
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: name,
+            .value: value,
+            .domain: domain,
+            .path: path,
+            .secure: isSecure ? "TRUE" : "FALSE",
+        ]
+        if let expiresDate {
+            properties[.expires] = expiresDate
+        }
+        return HTTPCookie(properties: properties)
+    }
+
+    var identity: String { "\(name)|\(domain)|\(path)" }
+}
+
+struct ProviderQuotaWidgetRefreshCredentials: Codable, Equatable, Sendable {
+    let serverURLString: String
+    let serverLabel: String
+    let refreshIntervalSeconds: Int
+    let headers: [ProviderQuotaWidgetRefreshHeader]
+    let cookies: [ProviderQuotaWidgetRefreshCookie]
+
+    var serverURL: URL? { URL(string: serverURLString) }
+
+    func merging(responseCookies: [HTTPCookie]) -> ProviderQuotaWidgetRefreshCredentials {
+        guard !responseCookies.isEmpty else { return self }
+        var merged = Dictionary(uniqueKeysWithValues: cookies.map { ($0.identity, $0) })
+        for cookie in responseCookies {
+            let stored = ProviderQuotaWidgetRefreshCookie(cookie)
+            merged[stored.identity] = stored
+        }
+        return ProviderQuotaWidgetRefreshCredentials(
+            serverURLString: serverURLString,
+            serverLabel: serverLabel,
+            refreshIntervalSeconds: refreshIntervalSeconds,
+            headers: headers,
+            cookies: Array(merged.values)
+        )
+    }
+}
+
+enum ProviderQuotaWidgetRefreshCredentialStore {
+    private static let account = "active-provider-quota-refresh.v1"
+
+    static func load() -> ProviderQuotaWidgetRefreshCredentials? {
+        guard var query = baseQuery else { return nil }
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data
+        else { return nil }
+        return try? JSONDecoder().decode(ProviderQuotaWidgetRefreshCredentials.self, from: data)
+    }
+
+    @discardableResult
+    static func save(_ credentials: ProviderQuotaWidgetRefreshCredentials) -> Bool {
+        guard let data = try? JSONEncoder().encode(credentials), let baseQuery else { return false }
+        let attributes = [kSecValueData as String: data]
+        let status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
+        var item = baseQuery
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    @discardableResult
+    static func clear() -> Bool {
+        guard let baseQuery else { return false }
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private static var baseQuery: [String: Any]? {
+        guard let accessGroup = sharedAccessGroup else { return nil }
+        return [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: sharedService,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessGroup as String: accessGroup,
+        ]
+    }
+
+    private static var sharedService: String {
+        Bundle.main.object(forInfoDictionaryKey: "TalariaSharedKeychainService") as? String
+            ?? "dev.kil.talaria.providerQuotaRefresh"
+    }
+
+    private static var sharedAccessGroup: String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "TalariaSharedKeychainAccessGroup") as? String,
+              !value.isEmpty,
+              !value.contains("$(")
+        else { return nil }
+        return value
+    }
+}
+
+enum ProviderQuotaWidgetRefreshClient {
+    static func refreshFromSharedCredentials() async -> Bool {
+        guard let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return false }
+        return await refresh(credentials: credentials)
+    }
+
+    static func refresh(credentials: ProviderQuotaWidgetRefreshCredentials) async -> Bool {
+        guard let baseURL = credentials.serverURL,
+              let url = refreshURL(relativeTo: baseURL)
+        else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 20
+        for header in credentials.headers {
+            request.setValue(header.value, forHTTPHeaderField: header.name)
+        }
+        let liveCookies = credentials.cookies
+            .filter { $0.expiresDate.map { $0 > Date() } ?? true }
+            .compactMap(\.httpCookie)
+        if let cookie = HTTPCookie.requestHeaderFields(with: liveCookies)["Cookie"] {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let delegate = ProviderQuotaWidgetRedirectDelegate(baseURL: baseURL)
+        let session = URLSession(
+            configuration: .ephemeral,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+        defer { session.finishTasksAndInvalidate() }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode),
+                  let quotaResponse = try? JSONDecoder().decode(ProviderQuotasResponse.self, from: data),
+                  quotaResponse.version == 1,
+                  let scopeID = quotaResponse.scopeID,
+                  !scopeID.isEmpty
+            else { return false }
+
+            persistResponseCookies(from: httpResponse, url: url, credentials: credentials)
+            let profileID = quotaResponse.profileID ?? "default"
+            let sources = quotaResponse.sources.map {
+                ProviderQuotaWidgetSource(
+                    $0,
+                    scopeID: scopeID,
+                    scopeLabel: "\(credentials.serverLabel) · \(profileID)"
+                )
+            }
+            guard ProviderQuotaWidgetSnapshotStore().save(scopeID: scopeID, sources: sources) else {
+                return false
+            }
+            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func refreshURL(relativeTo baseURL: URL) -> URL? {
+        guard var components = URLComponents(
+            url: baseURL.appending(path: "/api/provider/quotas"),
+            resolvingAgainstBaseURL: false
+        ) else { return nil }
+        components.queryItems = [URLQueryItem(name: "refresh", value: "1")]
+        return components.url
+    }
+
+    private static func persistResponseCookies(
+        from response: HTTPURLResponse,
+        url: URL,
+        credentials: ProviderQuotaWidgetRefreshCredentials
+    ) {
+        let fields = response.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+            guard let key = entry.key as? String, let value = entry.value as? String else { return }
+            result[key] = value
+        }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+        guard !cookies.isEmpty else { return }
+        _ = ProviderQuotaWidgetRefreshCredentialStore.save(credentials.merging(responseCookies: cookies))
+    }
+}
+
+private final class ProviderQuotaWidgetRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let baseURL: URL
+
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let destination = request.url,
+              destination.scheme?.lowercased() == baseURL.scheme?.lowercased(),
+              destination.host?.lowercased() == baseURL.host?.lowercased(),
+              normalizedPort(for: destination) == normalizedPort(for: baseURL)
+        else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+
+    private func normalizedPort(for url: URL) -> Int? {
+        if let port = url.port { return port }
+        return switch url.scheme?.lowercased() {
+        case "http": 80
+        case "https": 443
+        default: nil
+        }
+    }
+}
+
 enum ProviderQuotaPercentageMode: String, CaseIterable, Identifiable {
     case used
     case remaining
@@ -262,6 +534,9 @@ enum ProviderQuotaWidgetWindowSelection: String, AppEnum {
     case automatic
     case session
     case weekly
+
+    static let storageKey = "providerQuota.widgetWindowSelection"
+    static let defaultValue = ProviderQuotaWidgetWindowSelection.automatic
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota Window")
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
@@ -581,29 +856,35 @@ struct ProviderQuotaEvaluationSettings: Equatable {
 
     static func stored(
         defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults,
-        configuration: ProviderQuotaWidgetConfigurationIntent? = nil
+        configuration: ProviderQuotaWidgetConfigurationIntent? = nil,
+        profileID: String? = nil,
+        followsSelectedDefault: Bool = true
     ) -> ProviderQuotaEvaluationSettings {
+        let profile = ProviderQuotaWidgetResolvedProfile.resolve(
+            id: profileID ?? configuration?.profile?.id,
+            followsSelectedDefault: followsSelectedDefault,
+            defaults: defaults
+        )
         let defaultPercentage = ProviderQuotaPercentageMode(
-            rawValue: defaults.string(forKey: ProviderQuotaPercentageMode.storageKey) ?? ""
+            rawValue: profile.string(ProviderQuotaPercentageMode.storageKey)
         ) ?? .defaultValue
         let defaultBasis = ProviderQuotaWidgetColorBasis(
-            rawValue: defaults.string(forKey: ProviderQuotaWidgetColorBasis.storageKey) ?? ""
+            rawValue: profile.string(ProviderQuotaWidgetColorBasis.storageKey)
         ) ?? .defaultValue
+        let usesSavedProfile = profile.id != ProviderQuotaWidgetProfileStore.defaultProfileID
         return ProviderQuotaEvaluationSettings(
-            percentageMode: configuration?.percentageMode.resolved(default: defaultPercentage) ?? defaultPercentage,
-            colorBasis: configuration?.colorBasis.resolved(default: defaultBasis) ?? defaultBasis,
-            windowSelection: configuration?.windowSelection ?? .automatic,
-            warningRemainingPercent: integer(defaults, ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey, ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent),
-            criticalRemainingPercent: integer(defaults, ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey, ProviderQuotaWidgetAppearanceSettings.defaultCriticalRemainingPercent),
-            paceTolerancePercent: integer(defaults, ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey, ProviderQuotaWidgetAppearanceSettings.defaultPaceTolerancePercent),
-            paceWarningBurnRatePercent: integer(defaults, ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey, ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent),
-            paceCriticalBurnRatePercent: integer(defaults, ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey, ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent),
-            paceMinimumElapsedHours: integer(defaults, ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey, ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours)
+            percentageMode: usesSavedProfile ? defaultPercentage : configuration?.percentageMode.resolved(default: defaultPercentage) ?? defaultPercentage,
+            colorBasis: usesSavedProfile ? defaultBasis : configuration?.colorBasis.resolved(default: defaultBasis) ?? defaultBasis,
+            windowSelection: usesSavedProfile
+                ? ProviderQuotaWidgetWindowSelection(rawValue: profile.string(ProviderQuotaWidgetWindowSelection.storageKey)) ?? .defaultValue
+                : configuration?.windowSelection ?? .defaultValue,
+            warningRemainingPercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey),
+            criticalRemainingPercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey),
+            paceTolerancePercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey),
+            paceWarningBurnRatePercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey),
+            paceCriticalBurnRatePercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey),
+            paceMinimumElapsedHours: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey)
         )
-    }
-
-    private static func integer(_ defaults: UserDefaults, _ key: String, _ fallback: Int) -> Int {
-        defaults.object(forKey: key) == nil ? fallback : defaults.integer(forKey: key)
     }
 }
 
@@ -693,7 +974,7 @@ enum ProviderQuotaWidgetColorResolver {
         case .indigo: .indigo
         case .mint: .mint
         case .orange: .orange
-        case .pink: .pink
+        case .pink: Color(red: 1.0, green: 0.40, blue: 0.72)
         case .purple: .purple
         case .red: .red
         case .teal: .teal
@@ -711,6 +992,54 @@ enum ProviderQuotaWidgetColorResolver {
             red: Double((rgb >> 16) & 0xFF) / 255,
             green: Double((rgb >> 8) & 0xFF) / 255,
             blue: Double(rgb & 0xFF) / 255
+        )
+    }
+}
+
+enum ProviderQuotaWidgetPalette {
+    static func arcColor(
+        urgency: ProviderQuotaUrgency,
+        profile: ProviderQuotaWidgetResolvedProfile
+    ) -> Color {
+        let configured = ProviderQuotaWidgetArcColor(
+            rawValue: profile.string(ProviderQuotaWidgetArcColor.storageKey)
+        ) ?? .defaultValue
+        guard configured == .automatic else {
+            return ProviderQuotaWidgetColorResolver.color(
+                configured,
+                customHex: profile.string(ProviderQuotaWidgetAppearanceSettings.customArcColorHexKey)
+            )
+        }
+        let role: (String, ProviderQuotaWidgetArcColor, String) = switch urgency {
+        case .healthy: (
+            ProviderQuotaWidgetAppearanceSettings.healthyColorKey,
+            .accent,
+            ProviderQuotaWidgetAppearanceSettings.customHealthyColorHexKey
+        )
+        case .warning: (
+            ProviderQuotaWidgetAppearanceSettings.warningColorKey,
+            .orange,
+            ProviderQuotaWidgetAppearanceSettings.customWarningColorHexKey
+        )
+        case .critical: (
+            ProviderQuotaWidgetAppearanceSettings.criticalColorKey,
+            .red,
+            ProviderQuotaWidgetAppearanceSettings.customCriticalColorHexKey
+        )
+        case .stale: (
+            ProviderQuotaWidgetAppearanceSettings.staleColorKey,
+            .orange,
+            ProviderQuotaWidgetAppearanceSettings.customStaleColorHexKey
+        )
+        case .unavailable: (
+            ProviderQuotaWidgetAppearanceSettings.unavailableColorKey,
+            .orange,
+            ProviderQuotaWidgetAppearanceSettings.customUnavailableColorHexKey
+        )
+        }
+        return ProviderQuotaWidgetColorResolver.color(
+            ProviderQuotaWidgetArcColor(rawValue: profile.string(role.0)) ?? role.1,
+            customHex: profile.string(role.2)
         )
     }
 }
@@ -1224,6 +1553,236 @@ enum ProviderQuotaPresentation {
     }
 }
 
+struct ProviderQuotaWidgetSavedProfile: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    var name: String
+    var values: [String: String]
+}
+
+enum ProviderQuotaWidgetProfileStore {
+    static let defaultProfileID = "default"
+    static let storageKey = "providerQuota.widgetProfiles.v1"
+    static let selectedDefaultProfileKey = "providerQuota.widgetDefaultProfileID"
+
+    static func profiles(
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) -> [ProviderQuotaWidgetSavedProfile] {
+        guard let data = defaults.data(forKey: storageKey) else { return [] }
+        return ((try? JSONDecoder().decode([ProviderQuotaWidgetSavedProfile].self, from: data)) ?? [])
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    @discardableResult
+    static func saveCurrent(
+        name: String,
+        id: String = UUID().uuidString,
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) -> ProviderQuotaWidgetSavedProfile? {
+        let name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(48))
+        guard !name.isEmpty else { return nil }
+        let profile = ProviderQuotaWidgetSavedProfile(id: id, name: name, values: currentValues(defaults: defaults))
+        var profiles = profiles(defaults: defaults).filter { $0.id != id }
+        profiles.append(profile)
+        guard let data = try? JSONEncoder().encode(profiles) else { return nil }
+        defaults.set(data, forKey: storageKey)
+        return profile
+    }
+
+    static func delete(
+        id: String,
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) {
+        guard id != defaultProfileID else { return }
+        let remaining = profiles(defaults: defaults).filter { $0.id != id }
+        defaults.set(try? JSONEncoder().encode(remaining), forKey: storageKey)
+        if selectedDefaultProfileID(defaults: defaults) == id {
+            defaults.removeObject(forKey: selectedDefaultProfileKey)
+        }
+    }
+
+    static func selectedDefaultProfileID(
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) -> String? {
+        guard let id = defaults.string(forKey: selectedDefaultProfileKey),
+              profiles(defaults: defaults).contains(where: { $0.id == id })
+        else { return nil }
+        return id
+    }
+
+    static func setDefault(
+        id: String?,
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) {
+        guard let id,
+              id != defaultProfileID,
+              profiles(defaults: defaults).contains(where: { $0.id == id })
+        else {
+            defaults.removeObject(forKey: selectedDefaultProfileKey)
+            return
+        }
+        defaults.set(id, forKey: selectedDefaultProfileKey)
+    }
+
+    static func apply(
+        _ profile: ProviderQuotaWidgetSavedProfile,
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) {
+        let booleanKeys: Set<String> = [ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey]
+        let integerKeys: Set<String> = [
+            ProviderQuotaWidgetBackground.opacityPercentKey,
+            ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey,
+            ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey,
+            ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey,
+            ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey,
+            ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey,
+            ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey,
+            ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey,
+        ]
+        for (key, value) in profile.values {
+            if booleanKeys.contains(key) {
+                defaults.set(["1", "true", "yes", "on"].contains(value.lowercased()), forKey: key)
+            } else if integerKeys.contains(key), let integer = Int(value) {
+                defaults.set(integer, forKey: key)
+            } else {
+                defaults.set(value, forKey: key)
+            }
+        }
+    }
+
+    static func profile(
+        id: String?,
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) -> ProviderQuotaWidgetSavedProfile? {
+        guard let id, id != defaultProfileID else { return nil }
+        return profiles(defaults: defaults).first { $0.id == id }
+    }
+
+    static func currentValues(
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) -> [String: String] {
+        var values = defaultValues
+        for key in defaultValues.keys {
+            guard let value = defaults.object(forKey: key) else { continue }
+            if let string = value as? String {
+                values[key] = string
+            } else if let number = value as? NSNumber {
+                values[key] = number.stringValue
+            }
+        }
+        return values
+    }
+
+    static var defaultValues: [String: String] {
+        [
+            ProviderQuotaPercentageMode.storageKey: ProviderQuotaPercentageMode.defaultValue.rawValue,
+            ProviderQuotaWidgetWindowSelection.storageKey: ProviderQuotaWidgetWindowSelection.defaultValue.rawValue,
+            ProviderQuotaWidgetArcColor.storageKey: ProviderQuotaWidgetArcColor.defaultValue.rawValue,
+            ProviderQuotaWidgetArcWeight.storageKey: ProviderQuotaWidgetArcWeight.defaultValue.rawValue,
+            ProviderQuotaWidgetColorBasis.storageKey: ProviderQuotaWidgetColorBasis.defaultValue.rawValue,
+            ProviderQuotaWidgetStatusText.storageKey: ProviderQuotaWidgetStatusText.defaultValue.rawValue,
+            ProviderQuotaWidgetResetDisplay.storageKey: ProviderQuotaWidgetResetDisplay.defaultValue.rawValue,
+            ProviderQuotaWidgetTapAction.storageKey: ProviderQuotaWidgetTapAction.defaultValue.rawValue,
+            ProviderQuotaWidgetBackground.storageKey: ProviderQuotaWidgetBackground.defaultValue.rawValue,
+            ProviderQuotaWidgetBackground.customColorHexKey: ProviderQuotaWidgetBackground.defaultCustomColorHex,
+            ProviderQuotaWidgetBackground.opacityPercentKey: String(ProviderQuotaWidgetBackground.defaultOpacityPercent),
+            ProviderQuotaWidgetAppearanceSettings.healthyColorKey: ProviderQuotaWidgetAppearanceSettings.defaultHealthyColor.rawValue,
+            ProviderQuotaWidgetAppearanceSettings.warningColorKey: ProviderQuotaWidgetAppearanceSettings.defaultWarningColor.rawValue,
+            ProviderQuotaWidgetAppearanceSettings.criticalColorKey: ProviderQuotaWidgetAppearanceSettings.defaultCriticalColor.rawValue,
+            ProviderQuotaWidgetAppearanceSettings.staleColorKey: ProviderQuotaWidgetAppearanceSettings.defaultStaleColor.rawValue,
+            ProviderQuotaWidgetAppearanceSettings.unavailableColorKey: ProviderQuotaWidgetAppearanceSettings.defaultUnavailableColor.rawValue,
+            ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent),
+            ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultCriticalRemainingPercent),
+            ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceTolerancePercent),
+            ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent),
+            ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent),
+            ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours),
+            ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey: String(ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker),
+            ProviderQuotaWidgetAppearanceSettings.trackColorKey: ProviderQuotaWidgetAppearanceSettings.defaultTrackColor.rawValue,
+            ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent),
+            ProviderQuotaWidgetAppearanceSettings.customArcColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomArcColorHex,
+            ProviderQuotaWidgetAppearanceSettings.customTrackColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomTrackColorHex,
+            ProviderQuotaWidgetAppearanceSettings.customHealthyColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomHealthyColorHex,
+            ProviderQuotaWidgetAppearanceSettings.customWarningColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomWarningColorHex,
+            ProviderQuotaWidgetAppearanceSettings.customCriticalColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomCriticalColorHex,
+            ProviderQuotaWidgetAppearanceSettings.customStaleColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomStaleColorHex,
+            ProviderQuotaWidgetAppearanceSettings.customUnavailableColorHexKey: ProviderQuotaWidgetAppearanceSettings.defaultCustomUnavailableColorHex,
+        ]
+    }
+}
+
+struct ProviderQuotaWidgetResolvedProfile {
+    let id: String
+    let name: String
+    let values: [String: String]
+
+    static func resolve(
+        id: String?,
+        followsSelectedDefault: Bool = true,
+        defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) -> ProviderQuotaWidgetResolvedProfile {
+        let resolvedID = if (id == nil || id == ProviderQuotaWidgetProfileStore.defaultProfileID),
+                            followsSelectedDefault {
+            ProviderQuotaWidgetProfileStore.selectedDefaultProfileID(defaults: defaults)
+        } else {
+            id
+        }
+        if let profile = ProviderQuotaWidgetProfileStore.profile(id: resolvedID, defaults: defaults) {
+            return ProviderQuotaWidgetResolvedProfile(id: profile.id, name: profile.name, values: profile.values)
+        }
+        return ProviderQuotaWidgetResolvedProfile(
+            id: ProviderQuotaWidgetProfileStore.defaultProfileID,
+            name: String(localized: "App Default"),
+            values: ProviderQuotaWidgetProfileStore.currentValues(defaults: defaults)
+        )
+    }
+
+    func string(_ key: String) -> String {
+        values[key] ?? ProviderQuotaWidgetProfileStore.defaultValues[key] ?? ""
+    }
+
+    func integer(_ key: String) -> Int {
+        Int(string(key)) ?? Int(ProviderQuotaWidgetProfileStore.defaultValues[key] ?? "") ?? 0
+    }
+
+    func boolean(_ key: String) -> Bool {
+        ["1", "true", "yes", "on"].contains(string(key).lowercased())
+    }
+}
+
+struct ProviderQuotaWidgetProfileEntity: AppEntity, Identifiable {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Widget Profile")
+    static var defaultQuery = ProviderQuotaWidgetProfileEntityQuery()
+
+    let id: String
+    let name: String
+
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
+}
+
+struct ProviderQuotaWidgetProfileEntityQuery: EnumerableEntityQuery {
+    func entities(for identifiers: [String]) async throws -> [ProviderQuotaWidgetProfileEntity] {
+        let wanted = Set(identifiers)
+        return allProfiles().filter { wanted.contains($0.id) }
+    }
+
+    func allEntities() async throws -> [ProviderQuotaWidgetProfileEntity] { allProfiles() }
+
+    func defaultResult() async -> ProviderQuotaWidgetProfileEntity? {
+        let profiles = allProfiles()
+        guard let selectedID = ProviderQuotaWidgetProfileStore.selectedDefaultProfileID() else {
+            return profiles.first
+        }
+        return profiles.first { $0.id == selectedID } ?? profiles.first
+    }
+
+    private func allProfiles() -> [ProviderQuotaWidgetProfileEntity] {
+        [ProviderQuotaWidgetProfileEntity(id: ProviderQuotaWidgetProfileStore.defaultProfileID, name: String(localized: "App Default"))]
+            + ProviderQuotaWidgetProfileStore.profiles().map {
+                ProviderQuotaWidgetProfileEntity(id: $0.id, name: $0.name)
+            }
+    }
+}
+
 struct ProviderQuotaSourceEntity: AppEntity, Identifiable {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota source")
     static var defaultQuery = ProviderQuotaSourceEntityQuery()
@@ -1250,14 +1809,14 @@ struct ProviderQuotaSourceEntity: AppEntity, Identifiable {
 struct ProviderQuotaSourceEntityQuery: EnumerableEntityQuery {
     func entities(for identifiers: [ProviderQuotaSourceEntity.ID]) async throws -> [ProviderQuotaSourceEntity] {
         let wanted = Set(identifiers)
-        return currentEntities(includeRemoved: true).filter { wanted.contains($0.id) }
+        return Self.currentEntities(includeRemoved: true).filter { wanted.contains($0.id) }
     }
 
     func allEntities() async throws -> [ProviderQuotaSourceEntity] {
-        currentEntities(includeRemoved: false)
+        Self.currentEntities(includeRemoved: false)
     }
 
-    private func currentEntities(includeRemoved: Bool) -> [ProviderQuotaSourceEntity] {
+    fileprivate static func currentEntities(includeRemoved: Bool) -> [ProviderQuotaSourceEntity] {
         let aliasesData = ProviderQuotaWidgetSnapshotStore.appGroupDefaults.data(
             forKey: ProviderQuotaDisplaySettings.aliasesKey
         ) ?? Data()
@@ -1267,14 +1826,31 @@ struct ProviderQuotaSourceEntityQuery: EnumerableEntityQuery {
     }
 }
 
+struct ProviderQuotaPrimarySourceEntityQuery: EnumerableEntityQuery {
+    func entities(for identifiers: [ProviderQuotaSourceEntity.ID]) async throws -> [ProviderQuotaSourceEntity] {
+        let wanted = Set(identifiers)
+        return ProviderQuotaSourceEntityQuery.currentEntities(includeRemoved: true)
+            .filter { wanted.contains($0.id) }
+    }
+
+    func allEntities() async throws -> [ProviderQuotaSourceEntity] {
+        ProviderQuotaSourceEntityQuery.currentEntities(includeRemoved: false)
+    }
+
+    func defaultResult() async -> ProviderQuotaSourceEntity? {
+        ProviderQuotaSourceEntityQuery.currentEntities(includeRemoved: false).first
+    }
+}
+
 struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Provider quotas"
     static var description = IntentDescription("Choose the provider accounts shown in this widget.")
 
-    @Parameter(title: "Source 1") var source1: ProviderQuotaSourceEntity?
-    @Parameter(title: "Source 2") var source2: ProviderQuotaSourceEntity?
-    @Parameter(title: "Source 3") var source3: ProviderQuotaSourceEntity?
-    @Parameter(title: "Source 4") var source4: ProviderQuotaSourceEntity?
+    @Parameter(title: "Source 1", query: ProviderQuotaPrimarySourceEntityQuery()) var source1: ProviderQuotaSourceEntity?
+    @Parameter(title: "Source 2", query: ProviderQuotaSourceEntityQuery()) var source2: ProviderQuotaSourceEntity?
+    @Parameter(title: "Source 3", query: ProviderQuotaSourceEntityQuery()) var source3: ProviderQuotaSourceEntity?
+    @Parameter(title: "Source 4", query: ProviderQuotaSourceEntityQuery()) var source4: ProviderQuotaSourceEntity?
+    @Parameter(title: "Profile", query: ProviderQuotaWidgetProfileEntityQuery()) var profile: ProviderQuotaWidgetProfileEntity?
     @Parameter(title: "Quota Window", default: .automatic) var windowSelection: ProviderQuotaWidgetWindowSelection
     @Parameter(title: "Percentage", default: .appDefault) var percentageMode: ProviderQuotaWidgetPercentageOverride
     @Parameter(title: "Status Text", default: .appDefault) var statusText: ProviderQuotaWidgetStatusText
@@ -1289,49 +1865,22 @@ struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
 
     static var parameterSummary: some ParameterSummary {
         Switch(.widgetFamily) {
-            Case([.systemSmall, .accessoryInline, .accessoryCircular, .accessoryRectangular]) {
+            Case(.systemSmall) {
                 Summary("Show \(\.$source1)") {
-                    \.$windowSelection
-                    \.$percentageMode
-                    \.$statusText
-                    \.$resetDisplay
-                    \.$colorBasis
-                    \.$gaugeColor
-                    \.$gaugeWeight
-                    \.$trackColor
-                    \.$paceMarker
-                    \.$background
-                    \.$tapAction
+                    \.$profile
                 }
+            }
+            Case([.accessoryInline, .accessoryCircular, .accessoryRectangular]) {
+                Summary("Show \(\.$source1)")
             }
             Case(.systemMedium) {
                 Summary("Show \(\.$source1) and \(\.$source2)") {
-                    \.$windowSelection
-                    \.$percentageMode
-                    \.$statusText
-                    \.$resetDisplay
-                    \.$colorBasis
-                    \.$gaugeColor
-                    \.$gaugeWeight
-                    \.$trackColor
-                    \.$paceMarker
-                    \.$background
-                    \.$tapAction
+                    \.$profile
                 }
             }
             DefaultCase {
                 Summary("Show \(\.$source1), \(\.$source2), \(\.$source3), and \(\.$source4)") {
-                    \.$windowSelection
-                    \.$percentageMode
-                    \.$statusText
-                    \.$resetDisplay
-                    \.$colorBasis
-                    \.$gaugeColor
-                    \.$gaugeWeight
-                    \.$trackColor
-                    \.$paceMarker
-                    \.$background
-                    \.$tapAction
+                    \.$profile
                 }
             }
         }
