@@ -793,6 +793,8 @@ enum ProviderQuotaWidgetPaceMarkerOverride: String, AppEnum {
 }
 
 enum ProviderQuotaWidgetAppearanceSettings {
+    static let showsProviderIconKey = "providerQuota.widgetShowsProviderIcon"
+    static let providerIconStyleKey = "providerQuota.widgetProviderIconStyle"
     static let healthyColorKey = "providerQuota.widgetHealthyColor"
     static let warningColorKey = "providerQuota.widgetWarningColor"
     static let criticalColorKey = "providerQuota.widgetCriticalColor"
@@ -815,6 +817,8 @@ enum ProviderQuotaWidgetAppearanceSettings {
     static let customStaleColorHexKey = "providerQuota.widgetCustomStaleColorHex"
     static let customUnavailableColorHexKey = "providerQuota.widgetCustomUnavailableColorHex"
 
+    static let defaultShowsProviderIcon = true
+    static let defaultProviderIconStyle = ProviderIconStyle.color
     static let defaultHealthyColor = ProviderQuotaWidgetArcColor.accent
     static let defaultWarningColor = ProviderQuotaWidgetArcColor.orange
     static let defaultCriticalColor = ProviderQuotaWidgetArcColor.red
@@ -957,6 +961,8 @@ struct ProviderQuotaGaugeStyle {
     let trackColor: Color
     let lineWidth: Double
     let showsPaceMarker: Bool
+    let showsProviderIcon: Bool
+    let providerIconStyle: ProviderIconStyle
 }
 
 enum ProviderQuotaWidgetColorResolver {
@@ -1045,6 +1051,7 @@ enum ProviderQuotaWidgetPalette {
 }
 
 struct ProviderQuotaGaugeView: View {
+    let providerID: String?
     let displayName: String
     let sourceStatus: String
     let state: ProviderQuotaPresentationState
@@ -1073,6 +1080,15 @@ struct ProviderQuotaGaugeView: View {
             }
 
             VStack(spacing: compact ? 1 : 3) {
+                if style.showsProviderIcon {
+                    ProviderIconView(
+                        providerID: providerID,
+                        label: displayName,
+                        size: compact ? 20 : 26,
+                        style: style.providerIconStyle
+                    )
+                }
+
                 Text(displayName)
                     .font(compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .lineLimit(2)
@@ -1101,6 +1117,7 @@ struct ProviderQuotaGaugeView: View {
                 }
             }
             .padding(compact ? 14 : 19)
+            .offset(y: style.showsProviderIcon ? (compact ? -10 : -14) : 0)
 
             if state.percent != nil, let resetLabel {
                 Text(resetLabel)
@@ -1627,7 +1644,10 @@ enum ProviderQuotaWidgetProfileStore {
         _ profile: ProviderQuotaWidgetSavedProfile,
         defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) {
-        let booleanKeys: Set<String> = [ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey]
+        let booleanKeys: Set<String> = [
+            ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey,
+            ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey,
+        ]
         let integerKeys: Set<String> = [
             ProviderQuotaWidgetBackground.opacityPercentKey,
             ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey,
@@ -1685,6 +1705,8 @@ enum ProviderQuotaWidgetProfileStore {
             ProviderQuotaWidgetBackground.storageKey: ProviderQuotaWidgetBackground.defaultValue.rawValue,
             ProviderQuotaWidgetBackground.customColorHexKey: ProviderQuotaWidgetBackground.defaultCustomColorHex,
             ProviderQuotaWidgetBackground.opacityPercentKey: String(ProviderQuotaWidgetBackground.defaultOpacityPercent),
+            ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey: String(ProviderQuotaWidgetAppearanceSettings.defaultShowsProviderIcon),
+            ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey: ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle.rawValue,
             ProviderQuotaWidgetAppearanceSettings.healthyColorKey: ProviderQuotaWidgetAppearanceSettings.defaultHealthyColor.rawValue,
             ProviderQuotaWidgetAppearanceSettings.warningColorKey: ProviderQuotaWidgetAppearanceSettings.defaultWarningColor.rawValue,
             ProviderQuotaWidgetAppearanceSettings.criticalColorKey: ProviderQuotaWidgetAppearanceSettings.defaultCriticalColor.rawValue,

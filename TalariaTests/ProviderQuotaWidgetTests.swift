@@ -131,6 +131,8 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(ProviderQuotaWidgetResetDisplay.defaultValue, .compact)
         XCTAssertEqual(ProviderQuotaWidgetBackground.defaultValue, .system)
         XCTAssertEqual(ProviderQuotaWidgetTapAction.defaultValue, .insights)
+        XCTAssertTrue(ProviderQuotaWidgetAppearanceSettings.defaultShowsProviderIcon)
+        XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle, .color)
         XCTAssertTrue(ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker)
         XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent, 18)
         XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent, 25)
@@ -139,6 +141,30 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent, 125)
         XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent, 175)
         XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours, 12)
+    }
+
+    func testWidgetProfilesCaptureProviderIconVisibilityAndStyle() throws {
+        let suite = "ProviderQuotaWidgetProfiles.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey)
+        defaults.set(
+            ProviderIconStyle.silhouette.rawValue,
+            forKey: ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey
+        )
+
+        let profile = try XCTUnwrap(
+            ProviderQuotaWidgetProfileStore.saveCurrent(name: "No icon", defaults: defaults)
+        )
+
+        XCTAssertEqual(
+            profile.values[ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey],
+            "0"
+        )
+        XCTAssertEqual(
+            profile.values[ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey],
+            ProviderIconStyle.silhouette.rawValue
+        )
     }
 
     func testAutomaticUrgencyDefaultsToWeeklyPaceAndCanUseOverallPercentage() {

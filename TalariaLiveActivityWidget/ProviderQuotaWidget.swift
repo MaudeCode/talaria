@@ -218,7 +218,7 @@ private struct ProviderQuotaWidgetView: View {
                     ProviderQuotaWidgetSourceView(
                         source: source,
                         configuration: entry.configuration,
-                        compact: family == .systemMedium,
+                        compact: false,
                         referenceDate: Date(),
                         windowOverride: nil
                     )
@@ -361,6 +361,7 @@ private struct ProviderQuotaWidgetSourceView: View {
 
     var body: some View {
         ProviderQuotaGaugeView(
+            providerID: source.providerID,
             displayName: displayName,
             sourceStatus: source.status,
             state: presentation,
@@ -370,7 +371,11 @@ private struct ProviderQuotaWidgetSourceView: View {
                 arcColor: arcColor,
                 trackColor: trackColor.opacity(Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey), 0), 100)) / 100),
                 lineWidth: lineWidth,
-                showsPaceMarker: showsPaceMarker
+                showsPaceMarker: showsPaceMarker,
+                showsProviderIcon: resolvedProfile.boolean(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey),
+                providerIconStyle: ProviderIconStyle(
+                    rawValue: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey)
+                ) ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
             ),
             compact: compact
         )

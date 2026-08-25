@@ -1735,6 +1735,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
     private var resetDisplayRawValue = ProviderQuotaWidgetResetDisplay.defaultValue.rawValue
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var showsPaceMarker = ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var showsProviderIcon = ProviderQuotaWidgetAppearanceSettings.defaultShowsProviderIcon
+    @AppStorage(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var providerIconStyleRawValue = ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle.rawValue
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackColorKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var trackColorRawValue = ProviderQuotaWidgetAppearanceSettings.defaultTrackColor.rawValue
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
@@ -1811,6 +1815,16 @@ struct ProviderQuotaWidgetAppearanceView: View {
             }
 
             Section("Labels") {
+                Toggle("Provider Icon", isOn: $showsProviderIcon)
+
+                if showsProviderIcon {
+                    Picker("Icon Style", selection: $providerIconStyleRawValue) {
+                        ForEach(ProviderIconStyle.allCases) { style in
+                            Text(style.title).tag(style.rawValue)
+                        }
+                    }
+                }
+
                 Picker("Status", selection: $statusTextRawValue) {
                     ForEach(ProviderQuotaWidgetStatusText.allCases.filter { $0 != .appDefault }) { value in
                         Text(value.title).tag(value.rawValue)
@@ -1899,6 +1913,8 @@ struct ProviderQuotaWidgetAppearanceView: View {
         .onChange(of: arcWeightRawValue) { reloadWidgets() }
         .onChange(of: colorBasisRawValue) { reloadWidgets() }
         .onChange(of: showsPaceMarker) { reloadWidgets() }
+        .onChange(of: showsProviderIcon) { reloadWidgets() }
+        .onChange(of: providerIconStyleRawValue) { reloadWidgets() }
         .onChange(of: statusTextRawValue) { reloadWidgets() }
         .onChange(of: resetDisplayRawValue) { reloadWidgets() }
         .onChange(of: trackColorRawValue) { reloadWidgets() }
@@ -1983,7 +1999,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
             previewGauge(compact: false)
         } else {
             HStack(spacing: previewFamily == .large ? 20 : 12) {
-                previewGauge(compact: true)
+                previewGauge(compact: false)
                     .frame(maxWidth: .infinity)
                 ProviderQuotaForecastView(plan: previewSource.plan, state: previewPresentation)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1993,6 +2009,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
 
     private func previewGauge(compact: Bool) -> some View {
         ProviderQuotaGaugeView(
+            providerID: previewSource.providerID,
             displayName: "OpenAI Codex",
             sourceStatus: previewSource.status,
             state: previewPresentation,
@@ -2004,7 +2021,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 lineWidth: previewLineWidth(compact: compact),
                 showsPaceMarker: arcColor == .automatic
                     && previewPresentation.settings.colorBasis == .pace
-                    && showsPaceMarker
+                    && showsPaceMarker,
+                showsProviderIcon: showsProviderIcon,
+                providerIconStyle: ProviderIconStyle(rawValue: providerIconStyleRawValue)
+                    ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
             ),
             compact: compact
         )
