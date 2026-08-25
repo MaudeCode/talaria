@@ -19,6 +19,15 @@ extension APIClient {
         )
     }
 
+    /// Requests the session kinds selected in this client without changing the
+    /// WebUI browser's saved visibility preferences.
+    func sessions(visibility: AutomatedSessionVisibility) async throws -> SessionsResponse {
+        try await send(
+            endpoint: .sessions(visibility: visibility),
+            method: "GET"
+        )
+    }
+
     func searchSessions(query: String, content: Bool = true, depth: Int = 5) async throws -> SessionSearchResponse {
         try await send(
             endpoint: .sessionsSearch(query: query, content: content, depth: depth),
@@ -231,4 +240,3 @@ private struct SessionYoloRequest: Encodable {
     let sessionId: String
     let enabled: Bool
 }
-

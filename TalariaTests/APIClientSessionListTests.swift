@@ -133,6 +133,42 @@ final class APIClientSessionListTests: APIClientTestCase {
         XCTAssertNil(response.archivedCount)
     }
 
+    func testSessionsVisibilityOverridesStayOnTheReadRequest() async throws {
+        let visibility = AutomatedSessionVisibility(
+            showsCron: true,
+            showsCli: false,
+            showsWebhook: true,
+            showsClaudeCode: false
+        )
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/sessions")
+
+            let components = URLComponents(
+                url: try XCTUnwrap(request.url),
+                resolvingAgainstBaseURL: false
+            )
+            let query = Dictionary(
+                uniqueKeysWithValues: (components?.queryItems ?? []).map {
+                    ($0.name, $0.value ?? "")
+                }
+            )
+            XCTAssertEqual(
+                query,
+                [
+                    "show_cli_sessions": "0",
+                    "show_claude_code_sessions": "0",
+                    "show_cron_sessions": "1",
+                    "show_webhook_sessions": "1"
+                ]
+            )
+
+            return apiTestJSONResponse(#"{"sessions":[]}"#, for: request)
+        }
+
+        _ = try await client.sessions(visibility: visibility)
+    }
+
     func testSessionSearchRequestBuildsExpectedQueryAndDecodesContentMatch() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.httpMethod, "GET")

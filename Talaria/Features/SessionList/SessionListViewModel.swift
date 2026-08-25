@@ -222,7 +222,10 @@ final class SessionListViewModel {
     }
 
     @discardableResult
-    func load(modelContext: ModelContext? = nil, animation: Animation? = nil) async -> Bool {
+    func load(
+        modelContext: ModelContext? = nil,
+        animation: Animation? = nil
+    ) async -> Bool {
         isLoading = true
         errorMessage = nil
         cacheErrorMessage = nil
@@ -231,7 +234,7 @@ final class SessionListViewModel {
         defer { isLoading = false }
 
         do {
-            let response = try await client.sessions()
+            let response = try await client.sessions(visibility: .showAll)
             let visibleSessions = (response.sessions ?? [])
                 .filter { $0.archived != true && $0.shouldAppearInSessionList }
             applySessions(visibleSessions, archivedCount: response.archivedCount, animation: animation)

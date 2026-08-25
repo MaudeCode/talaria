@@ -279,6 +279,24 @@ final class SessionRowDisplaySettingsTests: XCTestCase {
         defaults.set(true, forKey: SessionRowDisplaySettings.showWebhookSessionsKey)
         XCTAssertTrue(SessionRowDisplaySettings.showsWebhookSessions(in: defaults))
     }
+
+    func testCliAndClaudeCodeChoicesStayLocalToEachServer() throws {
+        let serverA = try XCTUnwrap(URL(string: "https://alpha.example.test"))
+        let serverB = try XCTUnwrap(URL(string: "https://beta.example.test"))
+
+        defaults.set(false, forKey: SessionRowDisplaySettings.showCliSessionsKey)
+        defaults.set(true, forKey: SessionRowDisplaySettings.showCliSessionsKey(for: serverA))
+        defaults.set(false, forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: serverA))
+
+        XCTAssertTrue(SessionRowDisplaySettings.showsCliSessions(for: serverA, in: defaults))
+        XCTAssertFalse(SessionRowDisplaySettings.showsCliSessions(for: serverB, in: defaults))
+        XCTAssertFalse(
+            SessionRowDisplaySettings.showsClaudeCodeSessions(for: serverA, in: defaults)
+        )
+        XCTAssertTrue(
+            SessionRowDisplaySettings.showsClaudeCodeSessions(for: serverB, in: defaults)
+        )
+    }
 }
 
 /// The avatar long-press server switcher's menu contents (#283). The switch

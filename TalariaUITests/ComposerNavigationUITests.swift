@@ -41,7 +41,7 @@ final class ComposerNavigationUITests: XCTestCase {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
 
-        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        tapFixtureSession(session)
         XCTAssertTrue(app.buttons["Message"].waitForExistence(timeout: 15))
     }
 
@@ -323,9 +323,39 @@ final class ComposerNavigationUITests: XCTestCase {
         guard session.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
-        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        tapFixtureSession(session)
         XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
         return idleComposer
+    }
+
+    private func tapFixtureSession(_ session: XCUIElement) {
+        let sessionList = app.collectionViews.firstMatch
+        let viewportTop = app.navigationBars["Chats"].frame.maxY
+        let viewportBottom = app.searchFields["Search sessions"].frame.minY
+
+        for _ in 0..<12 {
+            if session.exists,
+               session.frame.minY >= viewportTop,
+               session.frame.maxY <= viewportBottom {
+                break
+            }
+
+            let scrollingUp = session.exists && session.frame.maxY > viewportBottom
+            let startY = scrollingUp ? 0.65 : 0.55
+            let endY = scrollingUp ? 0.55 : 0.65
+            sessionList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: sessionList.coordinate(
+                        withNormalizedOffset: CGVector(dx: 0.5, dy: endY)
+                    )
+                )
+        }
+
+        XCTAssertTrue(session.exists)
+        XCTAssertGreaterThanOrEqual(session.frame.minY, viewportTop)
+        XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
+        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     private func brightness(
