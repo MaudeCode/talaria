@@ -62,13 +62,14 @@ struct ProviderQuotaTimelineProvider: AppIntentTimelineProvider {
         if !context.isPreview, let credentials {
             _ = await ProviderQuotaWidgetRefreshClient.refresh(credentials: credentials)
         }
-        let requestedInterval = max(
-            credentials?.refreshIntervalSeconds ?? ProviderQuotaRefreshInterval.defaultValue.rawValue,
-            ProviderQuotaRefreshInterval.fiveMinutes.rawValue
-        )
         return Timeline(
             entries: [.init(date: now, configuration: configuration, snapshot: ProviderQuotaWidgetSnapshotStore().load())],
-            policy: .after(now.addingTimeInterval(TimeInterval(requestedInterval)))
+            policy: .after(
+                ProviderQuotaWidgetTimelinePolicy.nextRefreshDate(
+                    credentials: credentials,
+                    now: now
+                )
+            )
         )
     }
 }

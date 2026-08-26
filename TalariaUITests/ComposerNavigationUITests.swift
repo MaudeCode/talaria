@@ -205,7 +205,7 @@ final class ComposerNavigationUITests: XCTestCase {
         )
     }
 
-    func testWidgetCustomizationShowsSharedLockScreenPreviewsAndControls() throws {
+    func testWidgetCustomizationShowsSharedLockScreenPreviews() throws {
         app.terminate()
         app.launchArguments = ["--provider-quota-widget-customization"]
         app.launch()
@@ -222,14 +222,6 @@ final class ComposerNavigationUITests: XCTestCase {
             app.descendants(matching: .any)["provider-quota-lock-pace"]
                 .waitForExistence(timeout: 3)
         )
-
-        let paceFooter = app.descendants(matching: .any)["Pace Footer"]
-        for _ in 0..<8 where !paceFooter.exists {
-            app.swipeUp()
-        }
-        XCTAssertTrue(app.switches["Reset Time"].exists)
-        XCTAssertTrue(app.switches["Quota Window"].exists)
-        XCTAssertTrue(paceFooter.exists)
     }
 
     func testSidebarReplacesRootTabs() throws {

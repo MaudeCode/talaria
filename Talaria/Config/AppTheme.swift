@@ -343,27 +343,6 @@ enum ProviderQuotaSidebarSettings {
     }
 }
 
-enum ProviderQuotaSidebarDetail: String, CaseIterable, Identifiable {
-    case percentage
-    case pace
-    case reset
-    case freshness
-    case hidden
-
-    static let defaultValue = ProviderQuotaSidebarDetail.percentage
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .percentage: String(localized: "Percentage")
-        case .pace: String(localized: "Pace")
-        case .reset: String(localized: "Reset")
-        case .freshness: String(localized: "Updated")
-        case .hidden: String(localized: "None")
-        }
-    }
-}
-
 enum ProviderQuotaVisibilitySettings {
     static let storageKey = "providerQuota.hiddenProviders"
 

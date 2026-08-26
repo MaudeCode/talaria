@@ -1639,21 +1639,32 @@ struct AppSidebarDrawer: View {
     }
 
     private func quotaRow(_ source: ProviderQuotaWidgetSource) -> some View {
+        let options = ProviderQuotaSidebarDisplayOptions(
+            detail: ProviderQuotaSidebarDetail(rawValue: quotaDetailRawValue) ?? .defaultValue,
+            showsRail: showsQuotaRail,
+            requestsPaceMarker: showsQuotaMarker,
+            showsIcon: showsQuotaIcon,
+            colorsByState: colorsQuotaByState
+        )
         let state = ProviderQuotaPresentation.state(
             for: source,
             settings: ProviderQuotaEvaluationSettings.stored(),
             at: Date()
         )
-        let tint = colorsQuotaByState
+        let tint = options.colorsByState
             ? ProviderQuotaWidgetPalette.arcColor(
                 urgency: state.urgency,
                 profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil)
             )
             : Color.accentColor
-        let detail = quotaDetail(source, state: state)
+        let detail = ProviderQuotaSidebarPresentation.detail(
+            mode: options.detail,
+            source: source,
+            state: state
+        )
 
         return HStack(spacing: 10) {
-            if showsQuotaIcon {
+            if options.showsIcon {
                 ProviderIconView(
                     providerID: source.providerID,
                     label: providerDisplayName(source),
@@ -1679,10 +1690,10 @@ struct AppSidebarDrawer: View {
                     }
                 }
 
-                if showsQuotaRail, let percent = state.percent {
+                if options.showsRail, let percent = state.percent {
                     quotaRail(
                         percent: percent,
-                        expectedPercent: showsQuotaMarker ? state.expectedPercent : nil,
+                        expectedPercent: options.showsPaceMarker ? state.expectedPercent : nil,
                         tint: tint
                     )
                 }
@@ -1719,28 +1730,6 @@ struct AppSidebarDrawer: View {
             }
         }
         .frame(height: 3)
-    }
-
-    private func quotaDetail(
-        _ source: ProviderQuotaWidgetSource,
-        state: ProviderQuotaPresentationState
-    ) -> String? {
-        switch ProviderQuotaSidebarDetail(rawValue: quotaDetailRawValue) ?? .defaultValue {
-        case .hidden:
-            return nil
-        case .pace:
-            return state.paceLabel ?? ProviderQuotaPresentation.statusLabel(source.status)
-        case .reset:
-            guard let resetAt = state.resetAt else { return ProviderQuotaPresentation.statusLabel(source.status) }
-            return resetAt.formatted(.relative(presentation: .numeric))
-        case .freshness:
-            return state.freshnessDate.formatted(.relative(presentation: .numeric))
-        case .percentage:
-            guard let percent = state.percent else {
-                return ProviderQuotaPresentation.statusLabel(source.status)
-            }
-            return "\(insightsFormattedPercent(percent)) \(state.modeLabel)"
-        }
     }
 
     private func providerDisplayName(_ source: ProviderQuotaWidgetSource) -> String {

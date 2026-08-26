@@ -111,11 +111,19 @@ enum ProviderQuotaBackgroundRefresh {
     static func schedule() {
         guard let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return }
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+        try? BGTaskScheduler.shared.submit(request(credentials: credentials, now: Date()))
+    }
+
+    static func request(
+        credentials: ProviderQuotaWidgetRefreshCredentials,
+        now: Date
+    ) -> BGAppRefreshTaskRequest {
         let request = BGAppRefreshTaskRequest(identifier: identifier)
         request.earliestBeginDate = Date(
-            timeIntervalSinceNow: TimeInterval(max(credentials.refreshIntervalSeconds, 60))
+            timeInterval: TimeInterval(max(credentials.refreshIntervalSeconds, 60)),
+            since: now
         )
-        try? BGTaskScheduler.shared.submit(request)
+        return request
     }
 
     private static func handle(_ task: BGAppRefreshTask) {

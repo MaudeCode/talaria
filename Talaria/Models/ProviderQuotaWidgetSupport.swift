@@ -197,6 +197,19 @@ enum ProviderQuotaRefreshInterval: Int, CaseIterable, Identifiable {
     }
 }
 
+enum ProviderQuotaWidgetTimelinePolicy {
+    static func nextRefreshDate(
+        credentials: ProviderQuotaWidgetRefreshCredentials?,
+        now: Date
+    ) -> Date {
+        let interval = max(
+            credentials?.refreshIntervalSeconds ?? ProviderQuotaRefreshInterval.defaultValue.rawValue,
+            ProviderQuotaRefreshInterval.fiveMinutes.rawValue
+        )
+        return now.addingTimeInterval(TimeInterval(interval))
+    }
+}
+
 struct ProviderQuotaWidgetRefreshHeader: Codable, Equatable, Sendable {
     let name: String
     let value: String
@@ -210,27 +223,50 @@ struct ProviderQuotaWidgetRefreshCookie: Codable, Equatable, Sendable {
     let isSecure: Bool
     let expiresDate: Date?
 
-    init(_ cookie: HTTPCookie) {
-        name = cookie.name
-        value = cookie.value
-        domain = cookie.domain
-        path = cookie.path
-        isSecure = cookie.isSecure
-        expiresDate = cookie.expiresDate
+    init(
+        name: String,
+        value: String,
+        domain: String,
+        path: String,
+        isSecure: Bool,
+        expiresDate: Date?
+    ) {
+        self.name = name
+        self.value = value
+        self.domain = domain
+        self.path = path
+        self.isSecure = isSecure
+        self.expiresDate = expiresDate
     }
 
-    var httpCookie: HTTPCookie? {
-        var properties: [HTTPCookiePropertyKey: Any] = [
-            .name: name,
-            .value: value,
-            .domain: domain,
-            .path: path,
-            .secure: isSecure ? "TRUE" : "FALSE",
-        ]
-        if let expiresDate {
-            properties[.expires] = expiresDate
-        }
-        return HTTPCookie(properties: properties)
+    init(_ cookie: HTTPCookie) {
+        self.init(
+            name: cookie.name,
+            value: cookie.value,
+            domain: cookie.domain,
+            path: cookie.path,
+            isSecure: cookie.isSecure,
+            expiresDate: cookie.expiresDate
+        )
+    }
+
+    func applies(to url: URL, at date: Date) -> Bool {
+        guard expiresDate.map({ $0 > date }) ?? true,
+              !isSecure || url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              !name.isEmpty,
+              name.rangeOfCharacter(from: CharacterSet(charactersIn: "=;\r\n")) == nil,
+              value.rangeOfCharacter(from: CharacterSet(charactersIn: ";\r\n")) == nil
+        else { return false }
+        let cookieDomain = domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !cookieDomain.isEmpty,
+              host == cookieDomain || host.hasSuffix(".\(cookieDomain)")
+        else { return false }
+        let cookiePath = path.isEmpty ? "/" : path
+        let requestPath = url.path.isEmpty ? "/" : url.path
+        return cookiePath == "/"
+            || requestPath == cookiePath
+            || requestPath.hasPrefix(cookiePath.hasSuffix("/") ? cookiePath : "\(cookiePath)/")
     }
 
     var identity: String { "\(name)|\(domain)|\(path)" }
@@ -266,7 +302,12 @@ enum ProviderQuotaWidgetRefreshCredentialStore {
     private static let account = "active-provider-quota-refresh.v1"
 
     static func load() -> ProviderQuotaWidgetRefreshCredentials? {
-        guard var query = baseQuery else { return nil }
+        guard let baseQuery else { return nil }
+        return load(query: baseQuery)
+    }
+
+    static func load(query baseQuery: [String: Any]) -> ProviderQuotaWidgetRefreshCredentials? {
+        var query = baseQuery
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -278,7 +319,16 @@ enum ProviderQuotaWidgetRefreshCredentialStore {
 
     @discardableResult
     static func save(_ credentials: ProviderQuotaWidgetRefreshCredentials) -> Bool {
-        guard let data = try? JSONEncoder().encode(credentials), let baseQuery else { return false }
+        guard let baseQuery else { return false }
+        return save(credentials, query: baseQuery)
+    }
+
+    @discardableResult
+    static func save(
+        _ credentials: ProviderQuotaWidgetRefreshCredentials,
+        query baseQuery: [String: Any]
+    ) -> Bool {
+        guard let data = try? JSONEncoder().encode(credentials) else { return false }
         let attributes = [kSecValueData as String: data]
         let status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
         if status == errSecSuccess { return true }
@@ -292,18 +342,30 @@ enum ProviderQuotaWidgetRefreshCredentialStore {
     @discardableResult
     static func clear() -> Bool {
         guard let baseQuery else { return false }
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        return clear(query: baseQuery)
+    }
+
+    @discardableResult
+    static func clear(query: [String: Any]) -> Bool {
+        let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    static func query(accessGroup: String?, service: String, account: String) -> [String: Any] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        return query
     }
 
     private static var baseQuery: [String: Any]? {
         guard let accessGroup = sharedAccessGroup else { return nil }
-        return [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: sharedService,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: accessGroup,
-        ]
+        return query(accessGroup: accessGroup, service: sharedService, account: account)
     }
 
     private static var sharedService: String {
@@ -326,7 +388,14 @@ enum ProviderQuotaWidgetRefreshClient {
         return await refresh(credentials: credentials)
     }
 
-    static func refresh(credentials: ProviderQuotaWidgetRefreshCredentials) async -> Bool {
+    static func refresh(
+        credentials: ProviderQuotaWidgetRefreshCredentials,
+        snapshotStore: ProviderQuotaWidgetSnapshotStore = ProviderQuotaWidgetSnapshotStore(),
+        now: Date = Date(),
+        saveCredentials: (ProviderQuotaWidgetRefreshCredentials) -> Bool = ProviderQuotaWidgetRefreshCredentialStore.save,
+        reloadTimelines: () -> Void = ProviderQuotaWidgetSnapshotStore.reloadTimelines,
+        performRequest: ((URLRequest) async throws -> (Data, URLResponse))? = nil
+    ) async -> Bool {
         guard let baseURL = credentials.serverURL,
               let url = refreshURL(relativeTo: baseURL)
         else { return false }
@@ -338,33 +407,53 @@ enum ProviderQuotaWidgetRefreshClient {
         for header in credentials.headers {
             request.setValue(header.value, forHTTPHeaderField: header.name)
         }
-        let liveCookies = credentials.cookies
-            .filter { $0.expiresDate.map { $0 > Date() } ?? true }
-            .compactMap(\.httpCookie)
-        if let cookie = HTTPCookie.requestHeaderFields(with: liveCookies)["Cookie"] {
-            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        let cookieHeader = credentials.cookies
+            .filter { $0.applies(to: url, at: now) }
+            .sorted { $0.identity < $1.identity }
+            .map { "\($0.name)=\($0.value)" }
+            .joined(separator: "; ")
+        if !cookieHeader.isEmpty {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let delegate = ProviderQuotaWidgetRedirectDelegate(baseURL: baseURL)
-        let session = URLSession(
-            configuration: .ephemeral,
-            delegate: delegate,
-            delegateQueue: nil
-        )
-        defer { session.finishTasksAndInvalidate() }
+        let session: URLSession?
+        if performRequest == nil {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.httpShouldSetCookies = false
+            session = URLSession(
+                configuration: configuration,
+                delegate: ProviderQuotaWidgetRedirectDelegate(baseURL: baseURL),
+                delegateQueue: nil
+            )
+        } else {
+            session = nil
+        }
+        defer { session?.finishTasksAndInvalidate() }
 
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response): (Data, URLResponse)
+            if let performRequest {
+                (data, response) = try await performRequest(request)
+            } else if let session {
+                (data, response) = try await session.data(for: request)
+            } else {
+                return false
+            }
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode),
-                  let quotaResponse = try? JSONDecoder().decode(ProviderQuotasResponse.self, from: data),
+                  let quotaResponse = decodeResponse(data),
                   quotaResponse.version == 1,
                   let scopeID = quotaResponse.scopeID,
                   !scopeID.isEmpty
             else { return false }
 
-            persistResponseCookies(from: httpResponse, url: url, credentials: credentials)
+            persistResponseCookies(
+                from: httpResponse,
+                url: url,
+                credentials: credentials,
+                saveCredentials: saveCredentials
+            )
             let profileID = quotaResponse.profileID ?? "default"
             let sources = quotaResponse.sources.map {
                 ProviderQuotaWidgetSource(
@@ -373,10 +462,10 @@ enum ProviderQuotaWidgetRefreshClient {
                     scopeLabel: "\(credentials.serverLabel) · \(profileID)"
                 )
             }
-            guard ProviderQuotaWidgetSnapshotStore().save(scopeID: scopeID, sources: sources) else {
+            guard snapshotStore.save(scopeID: scopeID, sources: sources) else {
                 return false
             }
-            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+            reloadTimelines()
             return true
         } catch {
             return false
@@ -392,10 +481,17 @@ enum ProviderQuotaWidgetRefreshClient {
         return components.url
     }
 
+    private static func decodeResponse(_ data: Data) -> ProviderQuotasResponse? {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try? decoder.decode(ProviderQuotasResponse.self, from: data)
+    }
+
     private static func persistResponseCookies(
         from response: HTTPURLResponse,
         url: URL,
-        credentials: ProviderQuotaWidgetRefreshCredentials
+        credentials: ProviderQuotaWidgetRefreshCredentials,
+        saveCredentials: (ProviderQuotaWidgetRefreshCredentials) -> Bool
     ) {
         let fields = response.allHeaderFields.reduce(into: [String: String]()) { result, entry in
             guard let key = entry.key as? String, let value = entry.value as? String else { return }
@@ -403,11 +499,11 @@ enum ProviderQuotaWidgetRefreshClient {
         }
         let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
         guard !cookies.isEmpty else { return }
-        _ = ProviderQuotaWidgetRefreshCredentialStore.save(credentials.merging(responseCookies: cookies))
+        _ = saveCredentials(credentials.merging(responseCookies: cookies))
     }
 }
 
-private final class ProviderQuotaWidgetRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class ProviderQuotaWidgetRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let baseURL: URL
 
     init(baseURL: URL) {
@@ -987,6 +1083,62 @@ struct ProviderQuotaPresentationState: Equatable {
             urgency: urgency,
             settings: settings
         )
+    }
+}
+
+enum ProviderQuotaSidebarDetail: String, CaseIterable, Identifiable {
+    case percentage
+    case pace
+    case reset
+    case freshness
+    case hidden
+
+    static let defaultValue = ProviderQuotaSidebarDetail.percentage
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .percentage: String(localized: "Percentage")
+        case .pace: String(localized: "Pace")
+        case .reset: String(localized: "Reset")
+        case .freshness: String(localized: "Updated")
+        case .hidden: String(localized: "None")
+        }
+    }
+}
+
+struct ProviderQuotaSidebarDisplayOptions: Equatable {
+    let detail: ProviderQuotaSidebarDetail
+    let showsRail: Bool
+    let requestsPaceMarker: Bool
+    let showsIcon: Bool
+    let colorsByState: Bool
+
+    var showsPaceMarker: Bool { showsRail && requestsPaceMarker }
+}
+
+enum ProviderQuotaSidebarPresentation {
+    static func detail(
+        mode: ProviderQuotaSidebarDetail,
+        source: ProviderQuotaWidgetSource,
+        state: ProviderQuotaPresentationState
+    ) -> String? {
+        switch mode {
+        case .hidden:
+            nil
+        case .pace:
+            state.paceLabel ?? ProviderQuotaPresentation.statusLabel(source.status)
+        case .reset:
+            state.resetAt?.formatted(.relative(presentation: .numeric))
+                ?? ProviderQuotaPresentation.statusLabel(source.status)
+        case .freshness:
+            state.freshnessDate.formatted(.relative(presentation: .numeric))
+        case .percentage:
+            state.percent.map {
+                "\(($0 / 100).formatted(.percent.precision(.fractionLength(0...1)))) \(state.modeLabel)"
+            }
+                ?? ProviderQuotaPresentation.statusLabel(source.status)
+        }
     }
 }
 

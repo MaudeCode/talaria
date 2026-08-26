@@ -1,4 +1,5 @@
 import XCTest
+import Security
 @testable import Talaria
 
 final class ProviderQuotaWidgetTests: XCTestCase {
@@ -156,6 +157,28 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             ProviderQuotaWidgetProfileStore.defaultValues[
                 ProviderQuotaLockScreenSettings.paceDetailKey
             ]
+        )
+    }
+
+    func testLockScreenSettingsPersistInAppGroupCompatibleDefaults() throws {
+        let suite = "ProviderQuotaLockScreenSettings.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(false, forKey: ProviderQuotaLockScreenSettings.showsProviderIconKey)
+        defaults.set(false, forKey: ProviderQuotaLockScreenSettings.showsResetKey)
+        defaults.set(false, forKey: ProviderQuotaLockScreenSettings.showsWindowKey)
+        defaults.set(
+            ProviderQuotaLockScreenPaceDetail.forecast.rawValue,
+            forKey: ProviderQuotaLockScreenSettings.paceDetailKey
+        )
+
+        XCTAssertFalse(defaults.bool(forKey: ProviderQuotaLockScreenSettings.showsProviderIconKey))
+        XCTAssertFalse(defaults.bool(forKey: ProviderQuotaLockScreenSettings.showsResetKey))
+        XCTAssertFalse(defaults.bool(forKey: ProviderQuotaLockScreenSettings.showsWindowKey))
+        XCTAssertEqual(
+            defaults.string(forKey: ProviderQuotaLockScreenSettings.paceDetailKey),
+            ProviderQuotaLockScreenPaceDetail.forecast.rawValue
         )
     }
 
@@ -500,6 +523,342 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             60
         )
     }
+
+    func testProviderIconRegistryResolvesAliasesStylesAndFallbacks() {
+        XCTAssertEqual(ProviderIconRegistry.assetName(providerID: "openai-codex"), "ProviderIconCodex")
+        XCTAssertEqual(ProviderIconRegistry.assetName(providerID: "qwen-oauth"), "ProviderIconQwen")
+        XCTAssertEqual(ProviderIconRegistry.assetName(providerID: "azure"), "ProviderIconAzureAI")
+        XCTAssertNil(ProviderIconRegistry.assetName(providerID: "custom:private"))
+
+        let huggingFace = ProviderIconRegistry.descriptor(providerID: "huggingface", label: "Hugging Face")
+        XCTAssertEqual(huggingFace.silhouetteAssetName, "ProviderIconHuggingFaceSilhouette")
+        XCTAssertTrue(huggingFace.hasOriginalColor)
+
+        let nous = ProviderIconRegistry.descriptor(providerID: "nous", label: "Nous Portal")
+        XCTAssertTrue(nous.alwaysUsesOriginalRendering)
+
+        let unknown = ProviderIconRegistry.descriptor(providerID: "custom:private", label: "Private Model")
+        XCTAssertNil(unknown.assetName)
+        XCTAssertEqual(unknown.fallbackInitials, "PM")
+    }
+
+    func testRefreshCredentialStoreRoundTripsThroughSimulatorKeychain() throws {
+        let service = "ProviderQuotaWidgetTests.\(UUID().uuidString)"
+        let query = ProviderQuotaWidgetRefreshCredentialStore.query(
+            accessGroup: nil,
+            service: service,
+            account: "refresh"
+        )
+        defer { ProviderQuotaWidgetRefreshCredentialStore.clear(query: query) }
+        let credentials = makeRefreshCredentials()
+
+        XCTAssertTrue(ProviderQuotaWidgetRefreshCredentialStore.save(credentials, query: query))
+        XCTAssertEqual(ProviderQuotaWidgetRefreshCredentialStore.load(query: query), credentials)
+        XCTAssertTrue(ProviderQuotaWidgetRefreshCredentialStore.clear(query: query))
+        XCTAssertNil(ProviderQuotaWidgetRefreshCredentialStore.load(query: query))
+    }
+
+    func testStoredCookieApplicabilityEnforcesExpiryOriginPathAndSecureScheme() throws {
+        let now = Date()
+        let cookie = ProviderQuotaWidgetRefreshCookie(
+            try XCTUnwrap(
+                HTTPCookie(properties: [
+                    .name: "session",
+                    .value: "value",
+                    .domain: ".example.test",
+                    .path: "/api/provider",
+                    .secure: "TRUE",
+                    .expires: now.addingTimeInterval(60),
+                ])
+            )
+        )
+
+        XCTAssertTrue(cookie.applies(to: URL(string: "https://example.test/api/provider/quotas")!, at: now))
+        XCTAssertTrue(cookie.applies(to: URL(string: "https://sub.example.test/api/provider/quotas")!, at: now))
+        XCTAssertFalse(cookie.applies(to: URL(string: "http://example.test/api/provider/quotas")!, at: now))
+        XCTAssertFalse(cookie.applies(to: URL(string: "https://other.test/api/provider/quotas")!, at: now))
+        XCTAssertFalse(cookie.applies(to: URL(string: "https://example.test/api/providers")!, at: now))
+        XCTAssertFalse(
+            cookie.applies(
+                to: URL(string: "https://example.test/api/provider/quotas")!,
+                at: now.addingTimeInterval(120)
+            )
+        )
+
+        let injected = ProviderQuotaWidgetRefreshCookie(
+            name: "session",
+            value: "value; injected=true",
+            domain: "example.test",
+            path: "/",
+            isSecure: false,
+            expiresDate: nil
+        )
+        XCTAssertFalse(
+            injected.applies(to: URL(string: "https://example.test/api/provider/quotas")!, at: now)
+        )
+    }
+
+    func testWidgetRefreshUsesHeadersLiveCookiesSnakeCaseAndPersistsResponseCookies() async throws {
+        let suite = "ProviderQuotaRefresh.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let snapshotStore = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        let now = Date()
+        let credentials = makeRefreshCredentials(now: now)
+        XCTAssertEqual(credentials.cookies.map(\.name), ["live", "expired"])
+        XCTAssertGreaterThan(try XCTUnwrap(credentials.cookies[0].expiresDate), now)
+        XCTAssertLessThan(try XCTUnwrap(credentials.cookies[1].expiresDate), now)
+        var savedCredentials: ProviderQuotaWidgetRefreshCredentials?
+        var reloadCount = 0
+        let performRequest: (URLRequest) async throws -> (Data, URLResponse) = { request in
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            XCTAssertEqual(
+                URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "refresh" })?.value,
+                "1"
+            )
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Test"), "widget")
+            let cookie = request.value(forHTTPHeaderField: "Cookie") ?? ""
+            XCTAssertTrue(
+                cookie.contains("live=value"),
+                "Expected live cookie in request headers: \(request.allHTTPHeaderFields ?? [:])"
+            )
+            XCTAssertFalse(cookie.contains("expired=value"))
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Set-Cookie": "rotated=fresh; Path=/; Secure"]
+                )
+            )
+            return (Data(Self.quotaResponseJSON.utf8), response)
+        }
+
+        let refreshed = await ProviderQuotaWidgetRefreshClient.refresh(
+            credentials: credentials,
+            snapshotStore: snapshotStore,
+            now: now,
+            saveCredentials: {
+                savedCredentials = $0
+                return true
+            },
+            reloadTimelines: { reloadCount += 1 },
+            performRequest: performRequest
+        )
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(snapshotStore.load()?.sources.map(\.sourceID), ["qsrc_work"])
+        XCTAssertEqual(snapshotStore.load()?.sources.first?.scopeID, "qscope_work")
+        XCTAssertEqual(savedCredentials?.cookies.first(where: { $0.name == "rotated" })?.value, "fresh")
+        XCTAssertEqual(reloadCount, 1)
+    }
+
+    func testWidgetRedirectDelegateAllowsOnlySameOrigin() throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://example.test"))
+        let delegate = ProviderQuotaWidgetRedirectDelegate(baseURL: baseURL)
+        let task = URLSession.shared.dataTask(with: baseURL)
+        let response = try XCTUnwrap(
+            HTTPURLResponse(url: baseURL, statusCode: 302, httpVersion: nil, headerFields: nil)
+        )
+
+        var sameOrigin: URLRequest?
+        delegate.urlSession(
+            .shared,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: URL(string: "https://example.test/next")!),
+            completionHandler: { sameOrigin = $0 }
+        )
+        XCTAssertEqual(sameOrigin?.url?.absoluteString, "https://example.test/next")
+
+        var crossOrigin: URLRequest?
+        delegate.urlSession(
+            .shared,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: URL(string: "https://other.test/next")!),
+            completionHandler: { crossOrigin = $0 }
+        )
+        XCTAssertNil(crossOrigin)
+    }
+
+    @MainActor
+    func testBackgroundAndTimelineRequestsHonorConfiguredIntervals() {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let oneMinute = makeRefreshCredentials(refreshIntervalSeconds: 60)
+        let backgroundRequest = ProviderQuotaBackgroundRefresh.request(credentials: oneMinute, now: now)
+        XCTAssertEqual(backgroundRequest.identifier, ProviderQuotaBackgroundRefresh.identifier)
+        XCTAssertEqual(backgroundRequest.earliestBeginDate, now.addingTimeInterval(60))
+
+        XCTAssertEqual(
+            ProviderQuotaWidgetTimelinePolicy.nextRefreshDate(credentials: oneMinute, now: now),
+            now.addingTimeInterval(300)
+        )
+        let thirtyMinutes = makeRefreshCredentials(refreshIntervalSeconds: 1_800)
+        XCTAssertEqual(
+            ProviderQuotaWidgetTimelinePolicy.nextRefreshDate(credentials: thirtyMinutes, now: now),
+            now.addingTimeInterval(1_800)
+        )
+    }
+
+    func testWidgetProfileCRUDDefaultApplyAndDelete() throws {
+        let suite = "ProviderQuotaProfiles.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(ProviderQuotaWidgetArcColor.blue.rawValue, forKey: ProviderQuotaWidgetArcColor.storageKey)
+        let profile = try XCTUnwrap(
+            ProviderQuotaWidgetProfileStore.saveCurrent(name: " Blue ", defaults: defaults)
+        )
+        XCTAssertEqual(profile.name, "Blue")
+        XCTAssertEqual(ProviderQuotaWidgetProfileStore.profiles(defaults: defaults), [profile])
+
+        ProviderQuotaWidgetProfileStore.setDefault(id: profile.id, defaults: defaults)
+        XCTAssertEqual(ProviderQuotaWidgetProfileStore.selectedDefaultProfileID(defaults: defaults), profile.id)
+        XCTAssertEqual(
+            ProviderQuotaWidgetResolvedProfile.resolve(id: nil, defaults: defaults).id,
+            profile.id
+        )
+
+        defaults.set(ProviderQuotaWidgetArcColor.red.rawValue, forKey: ProviderQuotaWidgetArcColor.storageKey)
+        ProviderQuotaWidgetProfileStore.apply(profile, defaults: defaults)
+        XCTAssertEqual(defaults.string(forKey: ProviderQuotaWidgetArcColor.storageKey), "blue")
+
+        _ = ProviderQuotaWidgetProfileStore.saveCurrent(name: "Updated", id: profile.id, defaults: defaults)
+        XCTAssertEqual(ProviderQuotaWidgetProfileStore.profiles(defaults: defaults).map(\.name), ["Updated"])
+        ProviderQuotaWidgetProfileStore.delete(id: profile.id, defaults: defaults)
+        XCTAssertTrue(ProviderQuotaWidgetProfileStore.profiles(defaults: defaults).isEmpty)
+        XCTAssertNil(ProviderQuotaWidgetProfileStore.selectedDefaultProfileID(defaults: defaults))
+    }
+
+    func testSidebarDetailModesUseSharedPresentationState() {
+        let source = makeSource(id: "qsrc_work", account: "Work")
+        let settings = ProviderQuotaEvaluationSettings(
+            percentageMode: .used,
+            colorBasis: .pace,
+            windowSelection: .automatic,
+            warningRemainingPercent: 25,
+            criticalRemainingPercent: 10,
+            paceTolerancePercent: 3,
+            paceWarningBurnRatePercent: 125,
+            paceCriticalBurnRatePercent: 175,
+            paceMinimumElapsedHours: 0
+        )
+        let state = ProviderQuotaPresentationState(
+            window: source.windows.first,
+            percent: 20,
+            remainingPercent: 80,
+            resetAt: nil,
+            referenceDate: Date(timeIntervalSince1970: 1_900_000_000),
+            freshnessDate: Date(timeIntervalSince1970: 1_899_999_900),
+            isStale: false,
+            pace: ProviderQuotaPace(
+                expectedRemainingPercent: 75,
+                paceDeltaPercent: 5,
+                burnRate: 0.8,
+                minutesToReset: 60,
+                projectedMinutesToEmpty: nil,
+                projectionEligible: false
+            ),
+            urgency: .healthy,
+            settings: settings
+        )
+
+        XCTAssertEqual(
+            ProviderQuotaSidebarPresentation.detail(mode: .percentage, source: source, state: state),
+            "20% used"
+        )
+        XCTAssertEqual(
+            ProviderQuotaSidebarPresentation.detail(mode: .pace, source: source, state: state),
+            "5% under pace"
+        )
+        XCTAssertNotNil(
+            ProviderQuotaSidebarPresentation.detail(mode: .freshness, source: source, state: state)
+        )
+        XCTAssertEqual(
+            ProviderQuotaSidebarPresentation.detail(mode: .reset, source: source, state: state),
+            "Available"
+        )
+        XCTAssertNil(
+            ProviderQuotaSidebarPresentation.detail(mode: .hidden, source: source, state: state)
+        )
+    }
+
+    func testSidebarDisplayOptionsCoverIconRailMarkerAndColorCombinations() {
+        let full = ProviderQuotaSidebarDisplayOptions(
+            detail: .percentage,
+            showsRail: true,
+            requestsPaceMarker: true,
+            showsIcon: true,
+            colorsByState: true
+        )
+        XCTAssertTrue(full.showsPaceMarker)
+
+        let noRail = ProviderQuotaSidebarDisplayOptions(
+            detail: .hidden,
+            showsRail: false,
+            requestsPaceMarker: true,
+            showsIcon: false,
+            colorsByState: false
+        )
+        XCTAssertFalse(noRail.showsPaceMarker)
+        XCTAssertFalse(noRail.showsIcon)
+        XCTAssertFalse(noRail.colorsByState)
+        XCTAssertEqual(noRail.detail, .hidden)
+    }
+
+    private func makeRefreshCredentials(
+        now: Date = Date(),
+        refreshIntervalSeconds: Int = 300
+    ) -> ProviderQuotaWidgetRefreshCredentials {
+        ProviderQuotaWidgetRefreshCredentials(
+            serverURLString: "https://example.test",
+            serverLabel: "Test server",
+            refreshIntervalSeconds: refreshIntervalSeconds,
+            headers: [ProviderQuotaWidgetRefreshHeader(name: "X-Test", value: "widget")],
+            cookies: [
+                ProviderQuotaWidgetRefreshCookie(
+                    HTTPCookie(properties: [
+                        .name: "live", .value: "value", .domain: "example.test", .path: "/",
+                        .secure: "TRUE", .expires: now.addingTimeInterval(60),
+                    ])!
+                ),
+                ProviderQuotaWidgetRefreshCookie(
+                    HTTPCookie(properties: [
+                        .name: "expired", .value: "value", .domain: "example.test", .path: "/",
+                        .secure: "TRUE", .expires: now.addingTimeInterval(-60),
+                    ])!
+                ),
+            ]
+        )
+    }
+
+    private static let quotaResponseJSON = """
+    {
+      "version": 1,
+      "scope_id": "qscope_work",
+      "profile_id": "work",
+      "sources": [{
+        "source_id": "qsrc_work",
+        "provider_id": "openai-codex",
+        "provider_label": "Codex",
+        "account_label": "Work",
+        "is_active_provider": true,
+        "supported": true,
+        "status": "available",
+        "plan": "Pro",
+        "windows": [{
+          "label": "Weekly",
+          "window_seconds": 604800,
+          "used_percent": 25,
+          "remaining_percent": 75,
+          "reset_at": "2030-03-24T12:30:00Z"
+        }],
+        "details": [],
+        "fetched_at": "2030-03-17T12:30:00Z"
+      }]
+    }
+    """
 
     private func makeSource(
         id: String,
