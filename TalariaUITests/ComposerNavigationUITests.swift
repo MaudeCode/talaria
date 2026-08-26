@@ -36,7 +36,12 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     func testChatSessionOpensFromList() throws {
-        try tapFixtureSession()
+        let session = fixtureSessionButton
+        guard session.waitForExistence(timeout: 15) else {
+            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
+        }
+
+        tapFixtureSession(session)
         XCTAssertTrue(app.buttons["Message"].waitForExistence(timeout: 15))
     }
 
@@ -379,44 +384,43 @@ final class ComposerNavigationUITests: XCTestCase {
             return idleComposer
         }
 
-        try tapFixtureSession()
-        XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
-        return idleComposer
-    }
-
-    private func tapFixtureSession() throws {
-        closeSidebarIfNeeded()
         let session = fixtureSessionButton
         guard session.waitForExistence(timeout: 15) else {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
-        if session.frame.maxY > app.frame.maxY - 80 {
-            let sessionList = app.collectionViews.firstMatch
-            sessionList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
-                .press(
-                    forDuration: 0.05,
-                    thenDragTo: sessionList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)),
-                    withVelocity: 600,
-                    thenHoldForDuration: 0
-                )
-            closeSidebarIfNeeded()
-        }
-        let appFrame = app.frame
-        let sessionFrame = session.frame
-        XCTAssertTrue(appFrame.intersects(sessionFrame), "Expected the fixture session to be visible")
-        app.coordinate(
-            withNormalizedOffset: CGVector(
-                dx: sessionFrame.midX / appFrame.width,
-                dy: sessionFrame.midY / appFrame.height
-            )
-        ).tap()
+        tapFixtureSession(session)
+        XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
+        return idleComposer
     }
 
-    private func closeSidebarIfNeeded() {
-        let closeNavigation = app.buttons["Close navigation"]
-        guard closeNavigation.isHittable else { return }
-        closeNavigation.tap()
-        XCTAssertTrue(closeNavigation.waitForNonExistence(timeout: 3))
+    private func tapFixtureSession(_ session: XCUIElement) {
+        let sessionList = app.collectionViews.firstMatch
+        let viewportTop = app.navigationBars["Chats"].frame.maxY
+        let viewportBottom = app.searchFields["Search sessions"].frame.minY
+
+        for _ in 0..<12 {
+            if session.exists,
+               session.frame.minY >= viewportTop,
+               session.frame.maxY <= viewportBottom {
+                break
+            }
+
+            let scrollingUp = session.exists && session.frame.maxY > viewportBottom
+            let startY = scrollingUp ? 0.65 : 0.55
+            let endY = scrollingUp ? 0.55 : 0.65
+            sessionList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: sessionList.coordinate(
+                        withNormalizedOffset: CGVector(dx: 0.5, dy: endY)
+                    )
+                )
+        }
+
+        XCTAssertTrue(session.exists)
+        XCTAssertGreaterThanOrEqual(session.frame.minY, viewportTop)
+        XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
+        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     private func brightness(

@@ -289,8 +289,6 @@ struct SettingsResponse: Decodable, Equatable {
     let agentVersion: String?
     let theme: String?
     let checkForUpdates: Bool?
-    let showCliSessions: Bool?
-    let showClaudeCodeSessions: Bool?
     let maxTokens: Int?
     let maxTokensEffective: Int?
     let authEnabled: Bool?
@@ -304,8 +302,6 @@ struct SettingsResponse: Decodable, Equatable {
         case agentVersion
         case theme
         case checkForUpdates
-        case showCliSessions
-        case showClaudeCodeSessions
         case maxTokens
         case maxTokensEffective
         case authEnabled
@@ -321,8 +317,6 @@ struct SettingsResponse: Decodable, Equatable {
         agentVersion = container.decodeLossyStringIfPresent(forKey: .agentVersion)
         theme = container.decodeLossyStringIfPresent(forKey: .theme)
         checkForUpdates = container.decodeLossyBoolIfPresent(forKey: .checkForUpdates)
-        showCliSessions = container.decodeLossyBoolIfPresent(forKey: .showCliSessions)
-        showClaudeCodeSessions = container.decodeLossyBoolIfPresent(forKey: .showClaudeCodeSessions)
         maxTokens = container.decodeLossyIntIfPresent(forKey: .maxTokens)
         maxTokensEffective = container.decodeLossyIntIfPresent(forKey: .maxTokensEffective)
         authEnabled = container.decodeLossyBoolIfPresent(forKey: .authEnabled)

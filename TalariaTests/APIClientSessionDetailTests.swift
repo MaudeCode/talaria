@@ -1879,9 +1879,9 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             AssistantActivitySummary.title(for: runningTools),
             "Loaded a tool, read a file, ran commands, editing a file"
         )
-        XCTAssertEqual(AssistantWorkSummary.title(duration: nil), "Worked")
-        XCTAssertEqual(AssistantWorkSummary.title(duration: 12.4), "Worked for 12s")
-        XCTAssertEqual(AssistantWorkSummary.title(duration: 83), "Worked for 1m 23s")
+        XCTAssertEqual(AssistantTurnSummary.title(duration: nil), "Worked")
+        XCTAssertEqual(AssistantTurnSummary.title(duration: 12.4), "Worked for 12s")
+        XCTAssertEqual(AssistantTurnSummary.title(duration: 83), "Worked for 1m 23s")
     }
 
     func testAssistantActivitySummaryUsesSafeSpecificCollapsedLabels() {
@@ -2026,5 +2026,26 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             AssistantActivityHeaderSummary.title(for: completedRows, isActive: false),
             "Ran a command"
         )
+    }
+
+    func testActivityDisclosureGroupingOnlyWrapsMultipleItems() {
+        let reasoning = AssistantActivityRow(
+            id: "reasoning",
+            content: .reasoning(.init(text: "Inspecting the repository."))
+        )
+        let firstTool = ToolCall(name: "terminal", preview: nil, args: nil, isCompleted: true)
+        let secondTool = ToolCall(name: "read_file", preview: nil, args: nil, isCompleted: true)
+
+        XCTAssertFalse(AssistantActivityGroupPolicy.requiresGroup(for: [reasoning]))
+        XCTAssertFalse(AssistantActivityGroupPolicy.requiresGroup(for: [
+            AssistantActivityRow(id: "one-tool", content: .tools([firstTool]))
+        ]))
+        XCTAssertTrue(AssistantActivityGroupPolicy.requiresGroup(for: [
+            reasoning,
+            AssistantActivityRow(id: "one-tool", content: .tools([firstTool]))
+        ]))
+        XCTAssertTrue(AssistantActivityGroupPolicy.requiresGroup(for: [
+            AssistantActivityRow(id: "two-tools", content: .tools([firstTool, secondTool]))
+        ]))
     }
 }

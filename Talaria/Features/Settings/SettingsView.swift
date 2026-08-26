@@ -21,16 +21,14 @@ struct SettingsView: View {
         self.authManager = authManager
         self.server = server
         self.initialScrollTarget = initialScrollTarget
-        // The CLI-sessions toggle is server-synced (#19): loads adopt the
-        // server's `show_cli_sessions`, toggles POST it back, failures revert.
-        // Stored per-server so one server's value never leaks into another.
-        _cliSessionsSync = State(initialValue: CliSessionsSyncModel(server: server) { value in
-            let client = APIClient(baseURL: server)
-            _ = try await client.updateSettings(showCliSessions: value)
-        } writeClaudeCodeToServer: { value in
-            let client = APIClient(baseURL: server)
-            _ = try await client.updateSettings(showClaudeCodeSessions: value)
-        })
+        _showsCliSessions = AppStorage(
+            wrappedValue: SessionRowDisplaySettings.showsCliSessions(for: server),
+            SessionRowDisplaySettings.showCliSessionsKey(for: server)
+        )
+        _showsClaudeCodeSessions = AppStorage(
+            wrappedValue: SessionRowDisplaySettings.showsClaudeCodeSessions(for: server),
+            SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: server)
+        )
     }
 
     @ScaledMetric(relativeTo: .body) private var settingsCardSpacing: CGFloat = 18
@@ -70,9 +68,10 @@ struct SettingsView: View {
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
     @AppStorage(SessionRowDisplaySettings.showWebhookSessionsKey)
     private var showsWebhookSessions = SessionRowDisplaySettings.showsWebhookSessions()
+    @AppStorage private var showsCliSessions: Bool
+    @AppStorage private var showsClaudeCodeSessions: Bool
     @AppStorage(SessionRowDisplaySettings.showSubagentSessionsKey)
     private var showsSubagentSessions = SessionRowDisplaySettings.defaultShowsSubagentSessions
-    @State private var cliSessionsSync: CliSessionsSyncModel
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
     @AppStorage(ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey) private var showsThinkingAndToolCards = true
@@ -409,10 +408,7 @@ struct SettingsView: View {
                     SettingsToggleRow(
                         title: String(localized: "CLI Sessions"),
                         systemImage: "terminal",
-                        isOn: Binding(
-                            get: { cliSessionsSync.showsCliSessions },
-                            set: { cliSessionsSync.setShowsCliSessions($0) }
-                        )
+                        isOn: $showsCliSessions
                     )
 
                     SettingsDivider()
@@ -420,12 +416,9 @@ struct SettingsView: View {
                     SettingsToggleRow(
                         title: String(localized: "Claude Code Sessions"),
                         systemImage: "chevron.left.forwardslash.chevron.right",
-                        isOn: Binding(
-                            get: { cliSessionsSync.showsClaudeCodeSessions },
-                            set: { cliSessionsSync.setShowsClaudeCodeSessions($0) }
-                        )
+                        isOn: $showsClaudeCodeSessions
                     )
-                    .disabled(!cliSessionsSync.showsCliSessions)
+                    .disabled(!showsCliSessions)
 
                     SettingsDivider()
 
@@ -435,13 +428,6 @@ struct SettingsView: View {
                         isOn: $showsSubagentSessions
                     )
 
-                    if let syncError = cliSessionsSync.syncErrorMessage
-                        ?? cliSessionsSync.claudeCodeSyncErrorMessage {
-                        SettingsErrorFootnote(syncError)
-                    } else if cliSessionsSync.serverSyncsCliSessions
-                        || cliSessionsSync.serverSyncsClaudeCodeSessions {
-                        SettingsFootnote(String(localized: "Session visibility is synced with this server, so the WebUI follows it too."))
-                    }
                 }
 
                 SettingsCard(title: String(localized: "Siri & Shortcuts")) {
@@ -1140,10 +1126,6 @@ struct SettingsView: View {
         do {
             let settings = try await client.settings()
             serverVersion = settings.webuiVersion
-            // Server wins on conflict: `show_cli_sessions` is the cross-device
-            // truth, the local value is just its offline cache (#19).
-            cliSessionsSync.adopt(serverValue: settings.showCliSessions)
-            cliSessionsSync.adoptClaudeCode(serverValue: settings.showClaudeCodeSessions)
             if serverVersion == nil {
                 serverSettingsError = String(localized: "Unknown")
             }

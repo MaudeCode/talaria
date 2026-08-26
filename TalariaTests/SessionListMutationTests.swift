@@ -86,6 +86,62 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testHiddenSessionKindsStayCachedAndCanAppearOffline() async throws {
+        let context = try makeContext()
+        var requestCount = 0
+        let viewModel = try makeViewModel { request in
+            requestCount += 1
+            if requestCount > 1 {
+                throw URLError(.notConnectedToInternet)
+            }
+
+            let components = URLComponents(
+                url: try XCTUnwrap(request.url),
+                resolvingAgainstBaseURL: false
+            )
+            let query = Dictionary(
+                uniqueKeysWithValues: (components?.queryItems ?? []).map {
+                    ($0.name, $0.value ?? "")
+                }
+            )
+            let webhookRow = query["show_webhook_sessions"] == "1"
+                ? #",{"session_id":"webhook-1","title":"Webhook","source_tag":"webhook"}"#
+                : ""
+            return apiTestJSONResponse(
+                #"{"sessions":[{"session_id":"ordinary","title":"Ordinary"}\#(webhookRow)]}"#,
+                for: request
+            )
+        }
+        let hidesWebhook = AutomatedSessionVisibility(
+            showsCron: true,
+            showsCli: true,
+            showsWebhook: false
+        )
+
+        await viewModel.load(modelContext: context)
+        XCTAssertEqual(
+            viewModel.visibleSessions(
+                searchText: "",
+                selectedProjectID: nil,
+                automatedVisibility: hidesWebhook
+            ).compactMap(\.sessionId),
+            ["ordinary"]
+        )
+
+        await viewModel.load(modelContext: context)
+
+        XCTAssertTrue(viewModel.isViewingCachedData)
+        XCTAssertEqual(
+            Set(viewModel.visibleSessions(
+                searchText: "",
+                selectedProjectID: nil,
+                automatedVisibility: .showAll
+            ).compactMap(\.sessionId)),
+            Set(["ordinary", "webhook-1"])
+        )
+    }
+
+    @MainActor
     func testLoadSurfacesNetworkTimeoutWhenCacheIsEmpty() async throws {
         let context = try makeContext()
         let viewModel = try makeViewModel { request in
@@ -1937,7 +1993,6 @@ final class SessionListMutationTests: XCTestCase {
     func testLoadStoresArchivedCountFromResponseForArchivedEntry() async throws {
         let viewModel = try makeViewModel { request in
             XCTAssertEqual(request.url?.path, "/api/sessions")
-            XCTAssertNil(request.url?.query)
             return apiTestJSONResponse("""
             {
               "sessions": [
@@ -2406,6 +2461,30 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1")))
         XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
+    }
+
+    @MainActor
+    func testLoadRequestsAllSessionKindsForTheCompleteLocalCache() async throws {
+        let viewModel = try makeViewModel { request in
+            let components = URLComponents(
+                url: try XCTUnwrap(request.url),
+                resolvingAgainstBaseURL: false
+            )
+            let query = Dictionary(
+                uniqueKeysWithValues: (components?.queryItems ?? []).map {
+                    ($0.name, $0.value ?? "")
+                }
+            )
+            XCTAssertEqual(query["show_cli_sessions"], "1")
+            XCTAssertEqual(query["show_claude_code_sessions"], "1")
+            XCTAssertEqual(query["show_cron_sessions"], "1")
+            XCTAssertEqual(query["show_webhook_sessions"], "1")
+            return apiTestJSONResponse(#"{"sessions":[]}"#, for: request)
+        }
+
+        await viewModel.load()
+
+        XCTAssertNil(viewModel.errorMessage)
     }
 
     @MainActor
