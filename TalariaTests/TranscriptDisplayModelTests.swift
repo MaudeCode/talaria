@@ -2,6 +2,7 @@ import XCTest
 import AVFoundation
 import ImageIO
 import SwiftData
+import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 @testable import Talaria
@@ -578,7 +579,31 @@ final class ResponseSpeedFormatterTests: XCTestCase {
     }
 }
 
-final class ReasoningTitleRotationTests: XCTestCase {
+final class ReasoningBlockViewTests: XCTestCase {
+    @MainActor
+    func testExpandedReasoningParsesMarkdownEmphasis() throws {
+        let key = ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey
+        let previousValue = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(true, forKey: key)
+        defer {
+            if let previousValue {
+                UserDefaults.standard.set(previousValue, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        let plain = try renderedSize(of: "One two three four")
+        let markdown = try renderedSize(of: "**One** **two** **three** **four**")
+
+        XCTAssertGreaterThan(markdown.height, 44)
+        XCTAssertLessThan(
+            markdown.width - plain.width,
+            24,
+            "Markdown delimiters should not render as literal text."
+        )
+    }
+
     func testStartsAtFirstTitleAndStopsForReduceMotion() {
         let titles = ["Plan", "Inspect", "Test"]
 
@@ -592,5 +617,15 @@ final class ReasoningTitleRotationTests: XCTestCase {
             ReasoningTitleRotation.displayedTitle(titles: titles, index: 2, isActive: false),
             "Test"
         )
+    }
+
+    @MainActor
+    private func renderedSize(of text: String) throws -> CGSize {
+        let renderer = ImageRenderer(
+            content: ReasoningBlockView(text: text)
+                .fixedSize()
+                .environment(\.colorScheme, .light)
+        )
+        return try XCTUnwrap(renderer.uiImage).size
     }
 }

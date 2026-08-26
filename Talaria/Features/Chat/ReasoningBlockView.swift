@@ -61,7 +61,7 @@ struct ReasoningBlockView: View {
                 .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
                 if isExpanded {
-                    Text(trimmedText)
+                    MarkdownRenderer(content: trimmedText)
                         .font(AppFont.caption())
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
