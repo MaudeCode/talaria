@@ -51,9 +51,8 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private var markdownContent: some View {
-        let segments = MarkdownMathSegmenter.segments(in: content)
-
-        if segments.containsMath {
+        switch MarkdownMathLayoutCache.layout(for: content) {
+        case .segmented(let segments):
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     switch segment {
@@ -71,9 +70,9 @@ struct MarkdownRenderer: View {
                 }
             }
             .textSelection(.enabled)
-        } else {
+        case .plain(let markdown):
             ChatMarkdownView(
-                content: MarkdownMathFormatter.replacingInlineMath(in: content),
+                content: markdown,
                 colorScheme: colorScheme,
                 isStreaming: isStreaming
             )
@@ -116,9 +115,11 @@ struct StreamingMarkdownRenderer: View {
 
     @ViewBuilder
     private var streamingMarkdownContent: some View {
-        let segments = MarkdownMathSegmenter.segments(in: displayedContent)
-
-        if segments.containsMath {
+        // Streaming text changes on nearly every token, so this deliberately
+        // does not memoize; it only avoids the redundant second full-string
+        // `replacingInlineMath` pass the no-math branch used to run.
+        switch MarkdownMathLayoutCache.uncachedLayout(for: displayedContent) {
+        case .segmented(let segments):
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     switch segment {
@@ -134,9 +135,9 @@ struct StreamingMarkdownRenderer: View {
                     }
                 }
             }
-        } else {
+        case .plain(let markdown):
             StreamingMarkdownChunkedView(
-                content: MarkdownMathFormatter.replacingInlineMath(in: displayedContent),
+                content: markdown,
                 colorScheme: colorScheme
             )
         }

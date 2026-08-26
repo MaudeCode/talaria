@@ -19,6 +19,9 @@ enum Endpoint {
     case pinSession
     case archiveSession
     case branchSession
+    /// A real copy: independent messages, tool calls and usage counters, and no
+    /// fork lineage. `branchSession` means "fork a child from here".
+    case duplicateSession
     case compressSession
     case undoSession
     case retrySession
@@ -159,6 +162,8 @@ enum Endpoint {
             return "/api/session/archive"
         case .branchSession:
             return "/api/session/branch"
+        case .duplicateSession:
+            return "/api/session/duplicate"
         case .compressSession:
             return "/api/session/compress"
         case .undoSession:

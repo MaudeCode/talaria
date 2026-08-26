@@ -4,7 +4,9 @@ struct ContentView: View {
     @Bindable var authManager: AuthManager
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
-    @State private var pendingSharedImport: SharedImport?
+    @State private var pendingSharedImport: SharedImportReservation?
+    @State private var hasWaitingSharedImport = false
+    @State private var hasRoutedSharedImport = false
     @State private var pendingDeepLinkedSessionID: String?
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
@@ -62,6 +64,9 @@ struct ContentView: View {
                 authManager: authManager,
                 server: server,
                 pendingSharedImport: $pendingSharedImport,
+                didRoutePendingSharedImport: consumePendingSharedImport,
+                hasWaitingSharedImport: hasWaitingSharedImport,
+                openNextSharedImport: openNextSharedImport,
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
                 requestedNewChat: $pendingNewChatRequest
             )
@@ -118,15 +123,56 @@ struct ContentView: View {
     }
 
     private func importPendingSharedDraftIfAvailable() async {
+        guard pendingSharedImport == nil else {
+            return
+        }
+
         guard let directory = TalariaShareDraft.containerURL() else {
             return
         }
 
+        guard !hasRoutedSharedImport else {
+            await refreshWaitingSharedImport(in: directory)
+            return
+        }
+
         do {
-            if let sharedImport = try await TalariaShareDraft.loadPendingImportOffMainActor(from: directory) {
-                pendingSharedImport = sharedImport
+            pendingSharedImport = try await TalariaShareDraft.reserveNextPendingImportOffMainActor(from: directory)
+            await refreshWaitingSharedImport(in: directory)
+        } catch {
+            pendingSharedImport = nil
+            hasWaitingSharedImport = false
+        }
+    }
+
+    private func consumePendingSharedImport(_ reservation: SharedImportReservation) {
+        hasRoutedSharedImport = true
+
+        Task {
+            guard let directory = TalariaShareDraft.containerURL() else {
+                return
             }
-        } catch {}
+
+            do {
+                try await TalariaShareDraft.consumeOffMainActor(reservation, from: directory)
+            } catch {
+                try? await TalariaShareDraft.releaseOffMainActor(reservation, in: directory)
+            }
+            if pendingSharedImport?.reservationID == reservation.reservationID {
+                pendingSharedImport = nil
+            }
+            await refreshWaitingSharedImport(in: directory)
+        }
+    }
+
+    private func openNextSharedImport() {
+        hasWaitingSharedImport = false
+        hasRoutedSharedImport = false
+        Task { await importPendingSharedDraftIfAvailable() }
+    }
+
+    private func refreshWaitingSharedImport(in directory: URL) async {
+        hasWaitingSharedImport = (try? await TalariaShareDraft.hasPendingImportOffMainActor(in: directory)) ?? false
     }
 }
 

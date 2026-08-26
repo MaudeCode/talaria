@@ -54,6 +54,10 @@ enum SessionRowActionPolicy {
         !session.isSessionReadOnly
     }
 
+    static func canDuplicate(_ session: SessionSummary) -> Bool {
+        offersMutationActions(for: session) && !isExternalSession(session)
+    }
+
     static func canExport(_ session: SessionSummary, isViewingCachedData: Bool) -> Bool {
         !isViewingCachedData && hasServerSessionID(session)
     }
@@ -71,6 +75,27 @@ enum SessionRowActionPolicy {
         }
 
         return TalariaDeepLink.sessionURL(sessionID: sessionID)
+    }
+
+    private static func isExternalSession(_ session: SessionSummary) -> Bool {
+        let sessionSource = normalizedSource(session.sessionSource)
+        let rawSource = normalizedSource(session.rawSource) ?? normalizedSource(session.sourceTag)
+        let source = sessionSource ?? rawSource
+
+        if source == "webui" { return false }
+        if sessionSource == "messaging" { return true }
+
+        switch rawSource {
+        case "weixin", "telegram", "discord", "slack", "email", "wecom", "wecom_callback", "matrix":
+            return true
+        default:
+            return session.isCliSession == true
+        }
+    }
+
+    private static func normalizedSource(_ source: String?) -> String? {
+        let normalized = source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized?.isEmpty == false ? normalized : nil
     }
 }
 
@@ -943,12 +968,14 @@ struct SessionRowContextMenu: View {
             }
             .disabled(isViewingCachedData || isRenamingSession || !hasServerSessionID(session))
 
-            Button {
-                actions.duplicate(session)
-            } label: {
-                Label("Duplicate", systemImage: "doc.on.doc")
+            if SessionRowActionPolicy.canDuplicate(session) {
+                Button {
+                    actions.duplicate(session)
+                } label: {
+                    Label("Duplicate", systemImage: "doc.on.doc")
+                }
+                .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
             }
-            .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
 
             Menu {
                 SessionProjectMoveMenu(

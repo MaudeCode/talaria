@@ -285,8 +285,18 @@ struct ChatView: View {
     /// When true, the composer auto-starts voice dictation on appear — set by the
     /// "New Chat with Voice" App Intent (#338). Defaults to false for normal opens.
     let autoStartsVoiceInput: Bool
+    let draftStore: ChatDraftStore
+    /// Store holding the durable app-owned copies of staged attachments.
+    let draftAttachmentStore: any ChatDraftAttachmentStoring
+    /// True only for the pending-new-chat flow: after the composer configuration
+    /// loads, the restored draft's settings snapshot is applied (each value
+    /// revalidated against the live server configuration). Existing sessions
+    /// load their configuration from the server and never re-apply a snapshot.
+    let restoresDraftSettings: Bool
+    let onConversationStarted: () -> Void
 
     @State private var draftMessage = ""
+    @State private var draftRevision = 0
     @State private var isScrolledNearBottom = true
     @State private var isReadingOlderTranscript = false
     @State private var shouldFollowLatestMessage = true
@@ -319,6 +329,21 @@ struct ChatView: View {
     @State private var composerHeight: CGFloat = 52
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
+    @State private var didHydrateDraft = false
+    /// True from the moment hydration finds persisted attachment records until
+    /// their restore pass finishes. It gates `syncDraftAttachments` across the
+    /// whole window, so the not-yet-rebuilt composer strip can never overwrite
+    /// the persisted set.
+    @State private var isRestoringDraftAttachments = false
+    /// Records hydration found, handed to the restore pass that runs alongside
+    /// the transcript load rather than in front of it.
+    @State private var draftAttachmentsAwaitingRestore: [ChatDraftAttachment] = []
+    /// Restored attachment records whose re-upload failed; they stay in the
+    /// draft for a later retry and are unioned into every attachment sync.
+    @State private var draftAttachmentsPendingRetry: [ChatDraftAttachment] = []
+    @State private var lastSyncedDraftAttachments: [ChatDraftAttachment] = []
+    @State private var restoredDraftSettings: ChatDraftSettings?
+    @State private var didApplyRestoredDraftSettings = false
     @State private var didCompleteInitialAppearance = false
     @State private var isInitialComposerFocusContentReady = false
     @State private var didApplyInitialComposerFocusPolicy = false
@@ -336,13 +361,22 @@ struct ChatView: View {
         initialDraft: String = "",
         initialAttachments: [SharedAttachmentImport] = [],
         loadsInitialMessages: Bool = true,
-        autoStartsVoiceInput: Bool = false
+        autoStartsVoiceInput: Bool = false,
+        draftStore: ChatDraftStore? = nil,
+        draftAttachmentStore: (any ChatDraftAttachmentStoring)? = nil,
+        restoresDraftSettings: Bool = false,
+        onConversationStarted: @escaping () -> Void = {}
     ) {
         self.session = session
         self.server = server
         self.onAPIError = onAPIError
         self.loadsInitialMessages = loadsInitialMessages
         self.autoStartsVoiceInput = autoStartsVoiceInput
+        self.draftStore = draftStore ?? .shared
+        let resolvedDraftAttachmentStore = draftAttachmentStore ?? ChatDraftAttachmentStore.shared
+        self.draftAttachmentStore = resolvedDraftAttachmentStore
+        self.restoresDraftSettings = restoresDraftSettings
+        self.onConversationStarted = onConversationStarted
         _draftMessage = State(initialValue: initialDraft)
         _initialAttachments = State(initialValue: initialAttachments)
         _viewModel = State(initialValue: ChatViewModel(
@@ -350,7 +384,8 @@ struct ChatView: View {
             server: server,
             showsLiveActivityResponseExcerpts: UserDefaults.standard.bool(
                 forKey: AgentRunLiveActivityPrivacy.showsResponseExcerptsKey
-            )
+            ),
+            draftAttachmentStore: resolvedDraftAttachmentStore
         ))
         _gitAvailabilityViewModel = State(initialValue: GitWorkspaceAvailabilityViewModel(
             session: session,
@@ -363,7 +398,7 @@ struct ChatView: View {
     // "unable to type-check in reasonable time" limit).
     private var messageComposer: some View {
         MessageComposerView(
-            draftMessage: $draftMessage,
+            draftMessage: persistedDraftBinding,
             isFocused: $composerIsFocused,
             isSending: viewModel.isStartingChat || viewModel.isSendingVoiceNote,
             isCompressingSession: viewModel.isCompressingSession,
@@ -398,7 +433,10 @@ struct ChatView: View {
             showsReasoningControl: viewModel.showsReasoningEffortControl,
             isUpdatingConfiguration: viewModel.isUpdatingComposerConfiguration,
             pendingAttachments: viewModel.pendingAttachments,
-            isUploadingAttachment: viewModel.isUploadingAttachment,
+            // An in-flight draft restore counts as an upload in progress: until
+            // it finishes, the composer does not yet hold the attachments the
+            // user expects this message to carry.
+            isUploadingAttachment: viewModel.isUploadingAttachment || isRestoringDraftAttachments,
             attachmentUploadCount: viewModel.attachmentUploadCount,
             attachmentUploadGeneration: viewModel.attachmentUploadGeneration,
             isSendingVoiceNote: viewModel.isSendingVoiceNote,
@@ -477,7 +515,13 @@ struct ChatView: View {
                 Task { await handlePastedImages(images) }
             },
             onRemoveAttachment: { id in
+                let removedAttachment = viewModel.pendingAttachments.first(where: { $0.id == id })
                 viewModel.removePendingAttachment(id: id)
+                // Explicit discard: the record drops out of the draft via the
+                // observation sync; delete its now-unreferenced local copy.
+                if let file = removedAttachment?.draftFileName {
+                    Task { await draftAttachmentStore.delete(named: file) }
+                }
             },
             onPreviewAttachment: { attachment in
                 presentPreviewRestoringComposerFocusIfNeeded {
@@ -610,10 +654,19 @@ struct ChatView: View {
                     applyInitialComposerFocusPolicyIfNeeded()
                 }
             }
+            .modifier(
+                ChatDraftSyncModifier(
+                    pendingAttachments: viewModel.pendingAttachments,
+                    composerSettings: currentComposerSettings,
+                    onAttachmentsChange: syncDraftAttachments,
+                    onSettingsChange: syncDraftSettings
+                )
+            )
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
             .onDisappear {
+                flushDraftsBestEffort()
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
                 viewModel.stopListening()
@@ -1393,6 +1446,7 @@ struct ChatView: View {
     }
 
     private func handleInitialAppearanceTask() async {
+        await hydrateDraftIfNeeded()
         prepareInitialAppearance()
 
         guard ChatInitialAppearancePolicy.shouldBeginAsyncWork(
@@ -1403,11 +1457,13 @@ struct ChatView: View {
 
         async let chatStartup: Void = performInitialAsyncWork()
         async let gitAvailability: Void = loadInitialGitAvailability()
-        _ = await (chatStartup, gitAvailability)
+        async let draftAttachments: Void = restoreDraftAttachmentsIfNeeded()
+        _ = await (chatStartup, gitAvailability, draftAttachments)
     }
 
     private func performInitialAsyncWork() async {
         guard !Task.isCancelled else { return }
+        let draftSettingsInteractionGeneration = viewModel.composerConfigurationInteractionGeneration
 
         if loadsInitialMessages {
             await loadMessages(appliesInitialFocus: false)
@@ -1418,6 +1474,11 @@ struct ChatView: View {
             applyInitialComposerFocusPolicyIfNeeded()
         }
         await viewModel.loadComposerConfiguration()
+        guard !Task.isCancelled else { return }
+
+        await applyRestoredDraftSettingsIfNeeded(
+            expectedInteractionGeneration: draftSettingsInteractionGeneration
+        )
         guard !Task.isCancelled else { return }
 
         await viewModel.refreshApprovalBypassState()
@@ -1508,12 +1569,18 @@ struct ChatView: View {
 
     private func sendDraftMessage() async {
         let submittedDraft = draftMessage
+        let submittedDraftRevision = draftRevision
         let shouldRestoreFocusAfterSend = composerIsFocused
 
         if submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
             let parsedCommand = SlashCommandExecutor.parse(submittedDraft)?.command
             let result = await SlashCommandExecutor.execute(text: submittedDraft, viewModel: viewModel)
-            handleSlashExecutionResult(result, parsedCommand: parsedCommand)
+            handleSlashExecutionResult(
+                result,
+                parsedCommand: parsedCommand,
+                submittedDraft: submittedDraft,
+                submittedDraftRevision: submittedDraftRevision
+            )
 
             if result != .sendAsMessage {
                 if let lastError = viewModel.lastError {
@@ -1530,10 +1597,19 @@ struct ChatView: View {
                 submittedDraft,
                 behavior: StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue)
             )
-            handleSlashExecutionResult(result, parsedCommand: SlashCommandCatalog.command(named: streamingSendBehaviorCommandName))
+            handleSlashExecutionResult(
+                result,
+                parsedCommand: SlashCommandCatalog.command(named: streamingSendBehaviorCommandName),
+                submittedDraft: submittedDraft,
+                submittedDraftRevision: submittedDraftRevision,
+                consumesDraft: result.isSuccessfulSubmission
+            )
             didStart = result.isSuccessfulSubmission
         } else {
-            didStart = await sendStandardMessage(submittedDraft)
+            didStart = await sendStandardMessage(
+                submittedDraft,
+                submittedDraftRevision: submittedDraftRevision
+            )
         }
 
         if didStart {
@@ -1560,6 +1636,7 @@ struct ChatView: View {
         )
 
         if didSend {
+            onConversationStarted()
             ChatHaptics.messageSent(isEnabled: isHapticsEnabled)
         }
 
@@ -1568,18 +1645,45 @@ struct ChatView: View {
         }
     }
 
-    private func sendStandardMessage(_ submittedDraft: String) async -> Bool {
+    private func sendStandardMessage(
+        _ submittedDraft: String,
+        submittedDraftRevision: Int
+    ) async -> Bool {
         guard !submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
 
         prepareTranscriptForExplicitSend()
 
+        // Reconcile against what the composer actually staged, not against the
+        // draft's whole record set. A record that is not staged — awaiting a
+        // re-upload retry, or not yet reached by an in-flight restore — was
+        // never carried by this send, so its durable copy must survive.
+        let sendReconciliation = ChatDraftSendReconciliation.outcome(
+            draftRecords: lastSyncedDraftAttachments,
+            stagedAttachmentIDs: Set(viewModel.pendingAttachments.map(\.id))
+        )
+        draftStore.setDraft(submittedDraft, for: draftKey)
         draftMessage = ""
 
         let didStart = await viewModel.sendMessage(submittedDraft, modelContext: modelContext)
-        if !didStart, draftMessage.isEmpty {
-            draftMessage = submittedDraft
+        if didStart {
+            onConversationStarted()
+            draftAttachmentsPendingRetry = sendReconciliation.retained
+        }
+        draftMessage = draftStore.resolveSubmission(
+            submittedText: submittedDraft,
+            currentText: draftMessage,
+            didStart: didStart,
+            draftWasEdited: draftRevision != submittedDraftRevision,
+            for: draftKey
+        )
+        if didStart {
+            // `resolveSubmission` cleared the draft's attachment records; put
+            // back the ones the send never carried so they retry on a later
+            // open. Deterministic here rather than waiting on the observation
+            // sync that the emptied composer strip will also trigger.
+            syncDraftAttachments()
         }
 
         return didStart
@@ -1587,7 +1691,10 @@ struct ChatView: View {
 
     private func handleSlashExecutionResult(
         _ result: SlashCommandExecutionResult,
-        parsedCommand: SlashCommand?
+        parsedCommand: SlashCommand?,
+        submittedDraft: String,
+        submittedDraftRevision: Int,
+        consumesDraft: Bool = true
     ) {
         switch result {
         case .executed(let message):
@@ -1602,13 +1709,28 @@ struct ChatView: View {
                     viewModel.appendLocalAssistantMessage(message)
                 }
             }
-            draftMessage = ""
+            if consumesDraft {
+                reconcileConsumedDraft(
+                    submittedDraft,
+                    submittedDraftRevision: submittedDraftRevision
+                )
+            }
         case .openedSession(let session):
             forkedSession = session
-            draftMessage = ""
+            if consumesDraft {
+                reconcileConsumedDraft(
+                    submittedDraft,
+                    submittedDraftRevision: submittedDraftRevision
+                )
+            }
         case .unsupported(let friendlyMessage):
             viewModel.setSendErrorMessage(friendlyMessage)
-            draftMessage = ""
+            if consumesDraft {
+                reconcileConsumedDraft(
+                    submittedDraft,
+                    submittedDraftRevision: submittedDraftRevision
+                )
+            }
         case .needsSubArg:
             viewModel.setSendErrorMessage(String(localized: "Choose a slash command or continue typing."))
         case .sendAsMessage:
@@ -1632,6 +1754,214 @@ struct ChatView: View {
             "interrupt"
         case .queue:
             "queue"
+        }
+    }
+
+    private var draftKey: ChatDraftKey {
+        let normalizedSessionID = session.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sessionID = normalizedSessionID.flatMap { $0.isEmpty ? nil : $0 } ?? session.id
+        return .session(
+            server: server,
+            sessionID: sessionID
+        )
+    }
+
+    private var persistedDraftBinding: Binding<String> {
+        Binding(
+            get: { draftMessage },
+            set: { newValue in
+                draftMessage = newValue
+                draftRevision &+= 1
+                draftStore.setDraft(newValue, for: draftKey)
+            }
+        )
+    }
+
+    private func hydrateDraftIfNeeded() async {
+        guard !didHydrateDraft else { return }
+        let textBeforeHydration = draftMessage
+        let persistedDraft = await draftStore.draft(for: draftKey)
+        guard !Task.isCancelled, draftMessage == textBeforeHydration else { return }
+
+        if textBeforeHydration.isEmpty {
+            if let persistedDraft, !persistedDraft.text.isEmpty {
+                draftMessage = persistedDraft.text
+            }
+        } else {
+            draftStore.setDraft(textBeforeHydration, for: draftKey)
+        }
+        didHydrateDraft = true
+
+        restoredDraftSettings = persistedDraft?.settings
+        lastSyncedDraftAttachments = persistedDraft?.attachments ?? []
+        if let persistedDraft, !persistedDraft.attachments.isEmpty {
+            // Hold the sync gate now and restore later: re-uploading staged
+            // files is network work and must not delay the transcript.
+            isRestoringDraftAttachments = true
+            draftAttachmentsAwaitingRestore = persistedDraft.attachments
+        }
+    }
+
+    private func restoreDraftAttachmentsIfNeeded() async {
+        let records = draftAttachmentsAwaitingRestore
+        guard !records.isEmpty else { return }
+        draftAttachmentsAwaitingRestore = []
+        await restoreDraftAttachments(records)
+    }
+
+    /// Rebuilds the composer's staged attachments from a persisted draft by
+    /// re-uploading each record's durable local copy against this session. The
+    /// persisted server path is never trusted: uploads live in a per-session
+    /// inbox the server deletes with the session, so only the app-owned copy
+    /// is a sound restore source. Records whose copy is missing are dropped
+    /// (with a notice); records whose re-upload fails stay in the draft and
+    /// retry on a later open. The rest of the draft loads either way.
+    private func restoreDraftAttachments(_ records: [ChatDraftAttachment]) async {
+        var pendingRetry: [ChatDraftAttachment] = []
+        var unrecoverableCount = 0
+        var wasCancelled = false
+
+        for (offset, record) in records.enumerated() {
+            if Task.isCancelled {
+                // Leaving the chat mid-restore is not a restore failure. Every
+                // record from here on is untried, so carry the whole remainder
+                // into the retry set: the sync below is authoritative, and
+                // anything missing from it would be dropped from the draft and
+                // later swept from disk.
+                wasCancelled = true
+                pendingRetry.append(contentsOf: records[offset...])
+                break
+            }
+            guard let fileName = record.file else {
+                // Tolerate an older or partially corrupt record that predates
+                // the durable-staging invariant.
+                unrecoverableCount += 1
+                continue
+            }
+
+            let data: Data
+            do {
+                data = try await draftAttachmentStore.data(named: fileName)
+            } catch {
+                // Only a copy that is genuinely gone is dropped. Any other
+                // read failure keeps the record so a later open can retry it.
+                switch ChatDraftAttachmentReadFailure.classify(error) {
+                case .unrecoverable:
+                    unrecoverableCount += 1
+                case .transient:
+                    pendingRetry.append(record)
+                }
+                continue
+            }
+
+            if await viewModel.reuploadDraftAttachment(record, data: data) == nil {
+                pendingRetry.append(record)
+            }
+        }
+
+        isRestoringDraftAttachments = false
+        draftAttachmentsPendingRetry = pendingRetry
+        // Authoritative sync after restore: persists the restored set plus the
+        // retry union, and drops unrecoverable records from the draft.
+        syncDraftAttachments()
+
+        // Report only a real restore outcome. A cancelled pass has nothing to
+        // say, and its view is going away regardless.
+        guard !wasCancelled else { return }
+        if !pendingRetry.isEmpty || unrecoverableCount > 0 {
+            viewModel.setUploadAttachmentError(
+                draftRestoreFailureMessage(retryCount: pendingRetry.count, droppedCount: unrecoverableCount)
+            )
+        }
+    }
+
+    /// Copy uses catalog plural variations rather than a hand-branched
+    /// singular/plural, so languages whose plural rules differ from English
+    /// still read correctly. The mixed case avoids a two-number sentence.
+    private func draftRestoreFailureMessage(retryCount: Int, droppedCount: Int) -> String {
+        switch (retryCount > 0, droppedCount > 0) {
+        case (true, false):
+            return String(localized: "Couldn't restore \(retryCount) saved attachments yet. They're still saved in this draft.")
+        case (false, true):
+            return String(localized: "\(droppedCount) saved attachments are no longer available and were removed from this draft.")
+        default:
+            return String(localized: "Some saved attachments couldn't be restored. Check this draft's attachments before sending.")
+        }
+    }
+
+    /// Mirrors the composer's staged attachments into the persisted draft.
+    /// Restored records whose re-upload failed are unioned back in so a
+    /// mid-restore or post-restore sync can't silently drop them. Gated during
+    /// hydration/restore so an empty or partial composer never overwrites the
+    /// persisted set.
+    private func syncDraftAttachments() {
+        guard didHydrateDraft, !isRestoringDraftAttachments else { return }
+        // Only records backed by a durable copy are persisted. Without one the
+        // record could never be restored, and keeping it would hold the draft
+        // alive just to report the attachment as lost on the next open.
+        let pendingRecords = viewModel.pendingAttachments
+            .map(ChatDraftAttachment.init(pending:))
+            .filter { $0.file != nil }
+        let retryRecords = draftAttachmentsPendingRetry.filter { retry in
+            !pendingRecords.contains(where: { $0.id == retry.id })
+        }
+        let records = pendingRecords + retryRecords
+        lastSyncedDraftAttachments = records
+        draftStore.setAttachments(records, for: draftKey)
+    }
+
+    /// Snapshots the effective composer settings into the draft whenever they
+    /// change. Only new-chat contexts snapshot: an existing session's
+    /// configuration is owned by the server and is never re-applied from a
+    /// draft, so persisting it would just store choices at rest that nothing
+    /// reads. Snapshotting here is what lets an abandoned new chat carry its
+    /// model/workspace/profile/reasoning picks to the next new chat.
+    private func syncDraftSettings(_ settings: ChatDraftSettings) {
+        guard didHydrateDraft, restoresDraftSettings else { return }
+        draftStore.setSettings(settings, for: draftKey)
+    }
+
+    /// The composer choices that make up a draft's settings snapshot, as one
+    /// Equatable value so a single `onChange` covers all five.
+    private var currentComposerSettings: ChatDraftSettings {
+        ChatDraftSettings(
+            modelID: viewModel.selectedModelID,
+            modelProviderID: viewModel.selectedModelProviderID,
+            reasoningEffort: viewModel.selectedReasoningEffort,
+            profileName: viewModel.selectedProfileName,
+            workspacePath: viewModel.selectedWorkspacePath
+        )
+    }
+
+    /// New-chat only. The view owns the one-shot restore trigger while the
+    /// model owns validation, interaction fencing, and profile ordering.
+    private func applyRestoredDraftSettingsIfNeeded(
+        expectedInteractionGeneration: Int
+    ) async {
+        guard restoresDraftSettings, !didApplyRestoredDraftSettings else { return }
+        didApplyRestoredDraftSettings = true
+        guard let settings = restoredDraftSettings, !Task.isCancelled else { return }
+        await viewModel.restoreDraftSettings(
+            settings,
+            expectedInteractionGeneration: expectedInteractionGeneration
+        )
+    }
+
+    private func reconcileConsumedDraft(
+        _ submittedDraft: String,
+        submittedDraftRevision: Int
+    ) {
+        draftMessage = draftStore.resolveConsumedInput(
+            submittedText: submittedDraft,
+            currentText: draftMessage,
+            draftWasEdited: draftRevision != submittedDraftRevision,
+            for: draftKey
+        )
+    }
+
+    private func flushDraftsBestEffort() {
+        Task {
+            try? await draftStore.flush()
         }
     }
 
@@ -1659,6 +1989,7 @@ struct ChatView: View {
     }
 
     private func handleProfileSelection(_ profile: ProfileSummary) {
+        viewModel.markComposerConfigurationInteraction()
         if viewModel.isSelectedProfile(profile) {
             return
         }
@@ -1672,7 +2003,11 @@ struct ChatView: View {
     }
 
     private func switchProfile(_ profile: ProfileSummary, startNewSession: Bool) async {
-        let outcome = await viewModel.switchProfile(profile, startNewSession: startNewSession)
+        let outcome = await viewModel.switchProfile(
+            profile,
+            startNewSession: startNewSession,
+            recordsInteraction: false
+        )
         pendingProfileSelection = nil
 
         if let lastError = viewModel.lastError {
@@ -1934,6 +2269,10 @@ struct ChatView: View {
     }
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
+        if phase != .active {
+            flushDraftsBestEffort()
+        }
+
         switch phase {
         case .background:
             if viewModel.activeStreamID != nil {
@@ -2486,5 +2825,25 @@ private extension SlashCommandExecutionResult {
         case .sendAsMessage, .unsupported, .needsSubArg:
             false
         }
+    }
+}
+
+/// Mirrors composer state into the persisted draft. Extracted from `ChatView`'s
+/// modifier chain: folding these two observers into one modifier keeps the
+/// chain within the Swift type-checker's budget.
+private struct ChatDraftSyncModifier: ViewModifier {
+    let pendingAttachments: [PendingAttachment]
+    let composerSettings: ChatDraftSettings
+    let onAttachmentsChange: () -> Void
+    let onSettingsChange: (ChatDraftSettings) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: pendingAttachments) { _, _ in
+                onAttachmentsChange()
+            }
+            .onChange(of: composerSettings) { _, newSettings in
+                onSettingsChange(newSettings)
+            }
     }
 }
