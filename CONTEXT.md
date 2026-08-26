@@ -2,6 +2,20 @@
 
 Canonical language for Talaria concepts that need consistent names across the product, planning, and support.
 
+## Assistant activity
+
+**Turn Summary**:
+The outer disclosure for all activity in a completed assistant turn. Its visible label uses "Worked" or "Worked for".
+_Avoid_: Worked For tier, Tier 1
+
+**Activity Group**:
+A disclosure containing two or more contiguous Activity Items. A single Activity Item does not create an Activity Group.
+_Avoid_: Sequence dropdown, group of blocks, Tier 2
+
+**Activity Item**:
+An individual thinking block or tool call. It owns its own disclosure when detail is available.
+_Avoid_: Activity row, block, Tier 3
+
 ## Kanban
 
 **Kanban**:

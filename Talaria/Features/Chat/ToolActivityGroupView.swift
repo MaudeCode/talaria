@@ -14,7 +14,7 @@ struct ToolActivityGroupView: View {
     }
 }
 
-enum AssistantWorkSummary {
+enum AssistantTurnSummary {
     static func title(duration: Double?) -> String {
         guard let duration, duration.isFinite, duration >= 0 else {
             return String(localized: "Worked")
@@ -55,7 +55,7 @@ enum AssistantActivityHeaderSummary {
     }
 }
 
-enum AssistantActivityDisclosureGrouping {
+enum AssistantActivityGroupPolicy {
     static func requiresGroup(for rows: [AssistantActivityRow]) -> Bool {
         rows.reduce(into: 0) { count, row in
             switch row.content {

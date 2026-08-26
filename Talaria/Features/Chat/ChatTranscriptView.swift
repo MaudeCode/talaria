@@ -511,13 +511,13 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if liveActivityRows.isEmpty {
-                        completedRun(turn)
+                        completedTurn(turn)
                     } else {
                         activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
                     }
                 } else {
                     ForEach(Array(activityRows.enumerated()), id: \.element.id) { index, row in
-                        activityRow(row, at: index)
+                        activityItem(row, at: index)
                     }
                 }
             } else {
@@ -547,10 +547,10 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     }
 
     @ViewBuilder
-    private func completedRun(_ turn: CompletedAssistantTurn) -> some View {
+    private func completedTurn(_ turn: CompletedAssistantTurn) -> some View {
         let disclosureID = "worked:\(transcriptMessage.anchorID)"
         let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
-        let title = AssistantWorkSummary.title(duration: transcriptMessage.message.turnDuration)
+        let title = AssistantTurnSummary.title(duration: transcriptMessage.message.turnDuration)
 
         Button {
             withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
@@ -615,7 +615,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                     let visibleRows = rows.filter(isVisibleWorkRow)
                     if !visibleRows.isEmpty {
                         let isActive = activeSegmentID == segment.id
-                        if AssistantActivityDisclosureGrouping.requiresGroup(for: visibleRows) {
+                        if AssistantActivityGroupPolicy.requiresGroup(for: visibleRows) {
                             let disclosureID = "\(activeSegmentID == nil ? "completed" : "live"):\(segment.id)"
                             let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
                             let title = AssistantActivityHeaderSummary.title(for: visibleRows, isActive: isActive)
@@ -662,7 +662,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
 
                                 if isExpanded {
                                     ForEach(Array(visibleRows.enumerated()), id: \.element.id) { index, row in
-                                        activityRow(
+                                        activityItem(
                                             row,
                                             at: index,
                                             includesAttachments: false,
@@ -675,7 +675,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         } else if let row = visibleRows.first {
-                            activityRow(
+                            activityItem(
                                 row,
                                 at: 0,
                                 includesAttachments: false,
@@ -700,7 +700,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     }
 
     @ViewBuilder
-    private func activityRow(
+    private func activityItem(
         _ row: AssistantActivityRow,
         at index: Int,
         includesAttachments: Bool? = nil,
