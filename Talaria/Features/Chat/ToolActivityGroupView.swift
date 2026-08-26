@@ -55,6 +55,21 @@ enum AssistantActivityHeaderSummary {
     }
 }
 
+enum AssistantActivityDisclosureGrouping {
+    static func requiresGroup(for rows: [AssistantActivityRow]) -> Bool {
+        rows.reduce(into: 0) { count, row in
+            switch row.content {
+            case .reasoning:
+                count += 1
+            case .tools(let toolCalls):
+                count += toolCalls.count
+            case .prose:
+                break
+            }
+        } > 1
+    }
+}
+
 enum AssistantActivitySummary {
     private enum CollapsedAction: Equatable {
         case shell

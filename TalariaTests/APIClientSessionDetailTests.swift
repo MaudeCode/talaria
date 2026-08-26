@@ -2027,4 +2027,25 @@ final class APIClientSessionDetailTests: APIClientTestCase {
             "Ran a command"
         )
     }
+
+    func testActivityDisclosureGroupingOnlyWrapsMultipleItems() {
+        let reasoning = AssistantActivityRow(
+            id: "reasoning",
+            content: .reasoning(.init(text: "Inspecting the repository."))
+        )
+        let firstTool = ToolCall(name: "terminal", preview: nil, args: nil, isCompleted: true)
+        let secondTool = ToolCall(name: "read_file", preview: nil, args: nil, isCompleted: true)
+
+        XCTAssertFalse(AssistantActivityDisclosureGrouping.requiresGroup(for: [reasoning]))
+        XCTAssertFalse(AssistantActivityDisclosureGrouping.requiresGroup(for: [
+            AssistantActivityRow(id: "one-tool", content: .tools([firstTool]))
+        ]))
+        XCTAssertTrue(AssistantActivityDisclosureGrouping.requiresGroup(for: [
+            reasoning,
+            AssistantActivityRow(id: "one-tool", content: .tools([firstTool]))
+        ]))
+        XCTAssertTrue(AssistantActivityDisclosureGrouping.requiresGroup(for: [
+            AssistantActivityRow(id: "two-tools", content: .tools([firstTool, secondTool]))
+        ]))
+    }
 }
