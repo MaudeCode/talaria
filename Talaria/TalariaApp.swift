@@ -1,7 +1,6 @@
 import BackgroundTasks
 import SwiftUI
 import SwiftData
-import WidgetKit
 
 struct TalariaSceneActions {
     let canCreateNewChat: Bool
@@ -61,6 +60,10 @@ struct TalariaApp: App {
             if ProcessInfo.processInfo.arguments.contains("--streaming-lab") {
                 NavigationStack {
                     StreamingLabView()
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("--provider-quota-widget-customization") {
+                NavigationStack {
+                    ProviderQuotaWidgetAppearanceView()
                 }
             } else if ProcessInfo.processInfo.arguments.contains("--provider-quota-widget-fixture") {
                 ProviderQuotaWidgetDebugFixtureView()
@@ -150,7 +153,7 @@ private struct ProviderQuotaWidgetDebugFixtureView: View {
                 scopeID: "qscope_fixture",
                 sources: sources
             )
-            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
         }
     }
 

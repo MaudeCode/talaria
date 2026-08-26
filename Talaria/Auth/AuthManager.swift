@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import WidgetKit
 
 @MainActor
 @Observable
@@ -391,7 +390,7 @@ final class AuthManager {
     private func clearQuotaWidgetSnapshot() {
         _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
         guard ProviderQuotaWidgetSnapshotStore().clear() else { return }
-        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
     }
 
     /// Tells the server to end the session, but never lets an unreachable or

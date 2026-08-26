@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import UserNotifications
-import WidgetKit
 
 /// Backs the read-only Providers status screen and Insights quota section.
 /// Provider-key writes remain server-side; the only client persistence here is
@@ -42,7 +41,7 @@ final class ProvidersViewModel {
         client: APIClient? = nil,
         quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore? = nil,
         reloadQuotaWidgets: @escaping () -> Void = {
-            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
         }
     ) {
         self.client = client ?? APIClient(baseURL: server)

@@ -95,6 +95,47 @@ struct ProviderQuotaWidget: Widget {
     }
 }
 
+struct ProviderQuotaPaceWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: ProviderQuotaWidgetSnapshotStore.paceWidgetKind,
+            intent: ProviderQuotaWidgetConfigurationIntent.self,
+            provider: ProviderQuotaTimelineProvider()
+        ) { entry in
+            ProviderQuotaPaceWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Provider quota pace")
+        .description("Track pace, burn rate, and depletion forecasts for a provider quota.")
+        .supportedFamilies([.accessoryRectangular])
+    }
+}
+
+private struct ProviderQuotaPaceWidgetView: View {
+    let entry: ProviderQuotaTimelineEntry
+
+    var body: some View {
+        Group {
+            if let source {
+                ProviderQuotaLockScreenPaceView(source: source, referenceDate: entry.date)
+            } else {
+                Label("Configure quota pace", systemImage: "gauge.with.dots.needle.33percent")
+                    .font(.caption)
+            }
+        }
+        .widgetURL(source.flatMap { TalariaDeepLink.quotaSourceURL(sourceID: $0.sourceID) })
+        .containerBackground(.clear, for: .widget)
+    }
+
+    private var source: ProviderQuotaWidgetSource? {
+        let sourceIDs = ProviderQuotaWidgetSelection.sourceIDs(
+            slotIDs: entry.configuration.sourceIDs,
+            capacity: 1
+        )
+        return ProviderQuotaWidgetSelection.resolve(sourceIDs: sourceIDs, snapshot: entry.snapshot)
+            .first ?? nil
+    }
+}
+
 private struct ProviderQuotaWidgetView: View {
     @Environment(\.widgetFamily) private var family
     @AppStorage(
@@ -514,23 +555,7 @@ private struct ProviderQuotaAccessoryView: View {
             }
             .gaugeStyle(.accessoryCircularCapacity)
         case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(displayName)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(formattedPercent)
-                        .font(.headline.monospacedDigit())
-                }
-                ProgressView(value: percent ?? 0, total: 100)
-                if let resetAt {
-                    Text("Resets \(resetAt, style: .relative)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
+            ProviderQuotaLockScreenPercentageView(source: source, referenceDate: entry.date)
         default:
             EmptyView()
         }
@@ -551,10 +576,6 @@ private struct ProviderQuotaAccessoryView: View {
     private var formattedPercent: String {
         guard let percent else { return ProviderQuotaPresentation.statusLabel(source.status) }
         return percent.formatted(.percent.scale(1).precision(.fractionLength(0)))
-    }
-
-    private var resetAt: Date? {
-        state.resetAt
     }
 
     private var displayName: String {

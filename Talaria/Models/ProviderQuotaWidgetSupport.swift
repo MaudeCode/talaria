@@ -106,6 +106,7 @@ struct ProviderQuotaWidgetSnapshot: Codable, Equatable, Sendable {
 
 struct ProviderQuotaWidgetSnapshotStore {
     static let widgetKind = "ProviderQuotaWidget"
+    static let paceWidgetKind = "ProviderQuotaPaceWidget"
     static let storageKey = "providerQuotaWidgetSnapshot.v1"
 
     private let defaults: UserDefaults?
@@ -162,6 +163,11 @@ struct ProviderQuotaWidgetSnapshotStore {
 
     static var appGroupDefaults: UserDefaults {
         UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+    }
+
+    static func reloadTimelines() {
+        WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
+        WidgetCenter.shared.reloadTimelines(ofKind: paceWidgetKind)
     }
 }
 
@@ -370,7 +376,7 @@ enum ProviderQuotaWidgetRefreshClient {
             guard ProviderQuotaWidgetSnapshotStore().save(scopeID: scopeID, sources: sources) else {
                 return false
             }
-            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
             return true
         } catch {
             return false
@@ -842,6 +848,34 @@ enum ProviderQuotaWidgetAppearanceSettings {
     static let defaultCustomUnavailableColorHex = "#8E8E93"
 }
 
+enum ProviderQuotaLockScreenPaceDetail: String, CaseIterable, Identifiable {
+    case burnAndForecast
+    case burn
+    case forecast
+
+    static let defaultValue = ProviderQuotaLockScreenPaceDetail.burnAndForecast
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .burnAndForecast: String(localized: "Burn + Forecast")
+        case .burn: String(localized: "Burn Rate")
+        case .forecast: String(localized: "Forecast")
+        }
+    }
+}
+
+enum ProviderQuotaLockScreenSettings {
+    static let showsProviderIconKey = "providerQuota.lockScreenShowsProviderIcon"
+    static let showsResetKey = "providerQuota.lockScreenShowsReset"
+    static let showsWindowKey = "providerQuota.lockScreenShowsWindow"
+    static let paceDetailKey = "providerQuota.lockScreenPaceDetail"
+
+    static let defaultShowsProviderIcon = true
+    static let defaultShowsReset = true
+    static let defaultShowsWindow = true
+}
+
 enum ProviderQuotaAlertSettings {
     static let isEnabledKey = "providerQuota.alertsEnabled"
     static let stateKey = "providerQuota.alertStates"
@@ -982,23 +1016,36 @@ struct ProviderQuotaWidgetSlotLayout: Layout {
         subviews: Subviews,
         cache: inout ()
     ) {
-        guard !subviews.isEmpty else { return }
-        let columnCount = min(2, subviews.count)
-        let rowCount = Int(ceil(Double(subviews.count) / Double(columnCount)))
+        let frames = ProviderQuotaWidgetSlotGeometry.frames(
+            count: subviews.count,
+            in: bounds,
+            spacing: spacing
+        )
+        for (subview, frame) in zip(subviews, frames) {
+            subview.place(
+                at: CGPoint(x: frame.midX, y: frame.midY),
+                anchor: .center,
+                proposal: ProposedViewSize(width: frame.width, height: frame.height)
+            )
+        }
+    }
+}
+
+enum ProviderQuotaWidgetSlotGeometry {
+    static func frames(count: Int, in bounds: CGRect, spacing: CGFloat) -> [CGRect] {
+        guard count > 0 else { return [] }
+        let columnCount = min(2, count)
+        let rowCount = Int(ceil(Double(count) / Double(columnCount)))
         let cellWidth = max(0, (bounds.width - spacing * CGFloat(columnCount - 1)) / CGFloat(columnCount))
         let cellHeight = max(0, (bounds.height - spacing * CGFloat(rowCount - 1)) / CGFloat(rowCount))
-
-        for (index, subview) in subviews.enumerated() {
+        return (0..<count).map { index in
             let column = index % columnCount
             let row = index / columnCount
-            let origin = CGPoint(
+            return CGRect(
                 x: bounds.minX + CGFloat(column) * (cellWidth + spacing),
-                y: bounds.minY + CGFloat(row) * (cellHeight + spacing)
-            )
-            subview.place(
-                at: CGPoint(x: origin.x + cellWidth / 2, y: origin.y + cellHeight / 2),
-                anchor: .center,
-                proposal: ProposedViewSize(width: cellWidth, height: cellHeight)
+                y: bounds.minY + CGFloat(row) * (cellHeight + spacing),
+                width: cellWidth,
+                height: cellHeight
             )
         }
     }
@@ -1222,6 +1269,263 @@ struct ProviderQuotaGaugeView: View {
     }
 }
 
+enum ProviderQuotaForecastOutcome: Equatable {
+    case unavailable
+    case safe
+    case warning
+}
+
+struct ProviderQuotaForecastSummary {
+    let burnRateLabel: String
+    let budgetTitle: String
+    let budgetLabel: String
+    let forecastLabel: String
+    let systemImage: String
+    let outcome: ProviderQuotaForecastOutcome
+
+    init(state: ProviderQuotaPresentationState) {
+        guard let pace = state.pace else {
+            burnRateLabel = "—"
+            budgetTitle = String(localized: "Budget / hr")
+            budgetLabel = "—"
+            forecastLabel = String(localized: "Forecast unavailable")
+            systemImage = "questionmark.circle"
+            outcome = .unavailable
+            return
+        }
+
+        burnRateLabel = "\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))×"
+        let usesDailyBudget = pace.minutesToReset >= 24 * 60
+        budgetTitle = usesDailyBudget
+            ? String(localized: "Budget / day")
+            : String(localized: "Budget / hr")
+        if let remaining = state.remainingPercent, pace.minutesToReset > 0 {
+            let divisor = usesDailyBudget
+                ? pace.minutesToReset / (24 * 60)
+                : pace.minutesToReset / 60
+            budgetLabel = (remaining / divisor)
+                .formatted(.percent.scale(1).precision(.fractionLength(0...1)))
+        } else {
+            budgetLabel = "—"
+        }
+
+        guard let projected = pace.projectedMinutesToEmpty else {
+            forecastLabel = String(localized: "No depletion projected")
+            systemImage = "checkmark.circle"
+            outcome = .safe
+            return
+        }
+        let margin = projected - pace.minutesToReset
+        if margin >= 0 {
+            forecastLabel = String(localized: "Lasts through reset")
+            systemImage = "checkmark.circle"
+            outcome = .safe
+        } else {
+            forecastLabel = String(localized: "Empty \(Self.durationLabel(abs(margin))) early")
+            systemImage = "exclamationmark.triangle"
+            outcome = .warning
+        }
+    }
+
+    private static func durationLabel(_ minutes: Double) -> String {
+        let totalMinutes = max(0, Int(minutes.rounded()))
+        let days = totalMinutes / (24 * 60)
+        let hours = totalMinutes % (24 * 60) / 60
+        if days > 0 { return String(localized: "\(days)d \(hours)h") }
+        if hours > 0 { return String(localized: "\(hours)h") }
+        return String(localized: "\(totalMinutes)m")
+    }
+}
+
+struct ProviderQuotaLockScreenPercentageView: View {
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @AppStorage(
+        ProviderQuotaLockScreenSettings.showsProviderIconKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var showsProviderIcon = ProviderQuotaLockScreenSettings.defaultShowsProviderIcon
+    @AppStorage(
+        ProviderQuotaLockScreenSettings.showsResetKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var showsReset = ProviderQuotaLockScreenSettings.defaultShowsReset
+
+    let source: ProviderQuotaWidgetSource
+    let referenceDate: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                providerIdentity
+                Spacer(minLength: 4)
+                Text(formattedPercent)
+                    .font(.headline.monospacedDigit())
+            }
+            ProgressView(value: state.percent ?? 0, total: 100)
+            if showsReset, let resetAt = state.resetAt {
+                Text("Resets \(resetAt, style: .relative)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityIdentifier("provider-quota-lock-percentage")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private var providerIdentity: some View {
+        if showsProviderIcon {
+            ProviderIconView(
+                providerID: source.providerID,
+                label: displayName,
+                size: 18,
+                style: .silhouette
+            )
+        } else {
+            Text(displayName)
+                .font(.headline)
+                .lineLimit(1)
+        }
+    }
+
+    private var state: ProviderQuotaPresentationState {
+        ProviderQuotaPresentation.state(
+            for: source,
+            settings: ProviderQuotaEvaluationSettings.stored(),
+            at: referenceDate
+        )
+    }
+
+    private var formattedPercent: String {
+        guard let percent = state.percent else {
+            return ProviderQuotaPresentation.statusLabel(source.status)
+        }
+        return percent.formatted(.percent.scale(1).precision(.fractionLength(0)))
+    }
+
+    private var displayName: String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: providerAliasesData
+        )
+    }
+
+    private var accessibilityLabel: String {
+        guard showsReset, let resetAt = state.resetAt else {
+            return "\(displayName), \(formattedPercent)"
+        }
+        return "\(displayName), \(formattedPercent), resets \(resetAt.formatted(.relative(presentation: .numeric)))"
+    }
+}
+
+struct ProviderQuotaLockScreenPaceView: View {
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @AppStorage(
+        ProviderQuotaLockScreenSettings.showsProviderIconKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var showsProviderIcon = ProviderQuotaLockScreenSettings.defaultShowsProviderIcon
+    @AppStorage(
+        ProviderQuotaLockScreenSettings.showsWindowKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var showsWindow = ProviderQuotaLockScreenSettings.defaultShowsWindow
+    @AppStorage(
+        ProviderQuotaLockScreenSettings.paceDetailKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var paceDetailRawValue = ProviderQuotaLockScreenPaceDetail.defaultValue.rawValue
+
+    let source: ProviderQuotaWidgetSource
+    let referenceDate: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                providerIdentity
+                Spacer(minLength: 4)
+                if showsWindow {
+                    Text(state.window?.label ?? "Quota")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Text(paceLabel)
+                .font(.headline.monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(detailLabel)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+        }
+        .accessibilityIdentifier("provider-quota-lock-pace")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(displayName), \(state.window?.label ?? String(localized: "Quota")), "
+                + "\(paceLabel), Burn \(forecast.burnRateLabel), \(forecast.forecastLabel)"
+        )
+    }
+
+    @ViewBuilder
+    private var providerIdentity: some View {
+        if showsProviderIcon {
+            ProviderIconView(
+                providerID: source.providerID,
+                label: displayName,
+                size: 18,
+                style: .silhouette
+            )
+        } else {
+            Text(displayName)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+    }
+
+    private var state: ProviderQuotaPresentationState {
+        ProviderQuotaPresentation.state(
+            for: source,
+            settings: ProviderQuotaEvaluationSettings.stored(),
+            at: referenceDate
+        )
+    }
+
+    private var forecast: ProviderQuotaForecastSummary {
+        ProviderQuotaForecastSummary(state: state)
+    }
+
+    private var paceLabel: String {
+        state.paceLabel ?? String(localized: "Pace unavailable")
+    }
+
+    private var paceDetail: ProviderQuotaLockScreenPaceDetail {
+        ProviderQuotaLockScreenPaceDetail(rawValue: paceDetailRawValue) ?? .defaultValue
+    }
+
+    private var detailLabel: String {
+        switch paceDetail {
+        case .burnAndForecast: "Burn \(forecast.burnRateLabel) · \(forecast.forecastLabel)"
+        case .burn: String(localized: "Burn \(forecast.burnRateLabel)")
+        case .forecast: forecast.forecastLabel
+        }
+    }
+
+    private var displayName: String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: providerAliasesData
+        )
+    }
+}
+
 struct ProviderQuotaForecastView: View {
     let plan: String?
     let state: ProviderQuotaPresentationState
@@ -1276,7 +1580,7 @@ struct ProviderQuotaForecastView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func metric(title: LocalizedStringKey, value: String) -> some View {
+    private func metric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
             Text(value)
@@ -1289,55 +1593,36 @@ struct ProviderQuotaForecastView: View {
         .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private var burnRateLabel: String {
-        guard let pace = state.pace else { return "—" }
-        return "\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))×"
+    private var forecast: ProviderQuotaForecastSummary {
+        ProviderQuotaForecastSummary(state: state)
     }
 
-    private var budgetTitle: LocalizedStringKey {
-        (state.pace?.minutesToReset ?? 0) >= 24 * 60 ? "Budget / day" : "Budget / hr"
+    private var burnRateLabel: String {
+        forecast.burnRateLabel
+    }
+
+    private var budgetTitle: String {
+        forecast.budgetTitle
     }
 
     private var budgetLabel: String {
-        guard let pace = state.pace,
-              let remaining = state.remainingPercent,
-              pace.minutesToReset > 0
-        else { return "—" }
-        let divisor = pace.minutesToReset >= 24 * 60
-            ? pace.minutesToReset / (24 * 60)
-            : pace.minutesToReset / 60
-        return (remaining / divisor).formatted(.percent.scale(1).precision(.fractionLength(0...1)))
+        forecast.budgetLabel
     }
 
     private var forecastLabel: String {
-        guard let pace = state.pace else { return String(localized: "Forecast unavailable") }
-        guard let projected = pace.projectedMinutesToEmpty else {
-            return String(localized: "No depletion projected")
-        }
-        let margin = projected - pace.minutesToReset
-        if margin >= 0 { return String(localized: "Lasts through reset") }
-        return String(localized: "Empty \(durationLabel(abs(margin))) early")
+        forecast.forecastLabel
     }
 
     private var forecastSystemImage: String {
-        guard let pace = state.pace, let projected = pace.projectedMinutesToEmpty else {
-            return "checkmark.circle"
-        }
-        return projected >= pace.minutesToReset ? "checkmark.circle" : "exclamationmark.triangle"
+        forecast.systemImage
     }
 
     private var forecastTint: Color {
-        guard let pace = state.pace, let projected = pace.projectedMinutesToEmpty else { return .secondary }
-        return projected >= pace.minutesToReset ? .green : .orange
-    }
-
-    private func durationLabel(_ minutes: Double) -> String {
-        let totalMinutes = max(0, Int(minutes.rounded()))
-        let days = totalMinutes / (24 * 60)
-        let hours = totalMinutes % (24 * 60) / 60
-        if days > 0 { return String(localized: "\(days)d \(hours)h") }
-        if hours > 0 { return String(localized: "\(hours)h") }
-        return String(localized: "\(totalMinutes)m")
+        switch forecast.outcome {
+        case .unavailable: .secondary
+        case .safe: .green
+        case .warning: .orange
+        }
     }
 }
 

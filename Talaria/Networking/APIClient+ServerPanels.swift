@@ -1,5 +1,4 @@
 import Foundation
-import WidgetKit
 
 extension APIClient {
     func models() async throws -> ModelsResponse {
@@ -72,7 +71,7 @@ extension APIClient {
             body: ProfileSwitchRequest(name: name)
         )
         if response.error == nil, ProviderQuotaWidgetSnapshotStore().clear() {
-            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
         }
         return response
     }

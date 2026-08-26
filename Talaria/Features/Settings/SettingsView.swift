@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftData
 import UIKit
 import UserNotifications
-import WidgetKit
 
 /// A Settings section a deep link can scroll to when the screen opens — the
 /// avatar long-press "Manage Servers" shortcut lands on the Servers card (#283).
@@ -731,7 +730,7 @@ struct SettingsView: View {
         .onChange(of: identityInitials) { syncActiveServerIdentity() }
         .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
         .onChange(of: providerQuotaPercentageMode) {
-            WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
         }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
@@ -1696,10 +1695,26 @@ private enum ProviderQuotaWidgetPreviewFamily: String, CaseIterable, Identifiabl
     }
 }
 
+private enum ProviderQuotaWidgetPreviewSurface: String, CaseIterable, Identifiable {
+    case home
+    case lockPercentage
+    case lockPace
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .home: String(localized: "Home")
+        case .lockPercentage: String(localized: "Lock %")
+        case .lockPace: String(localized: "Lock Pace")
+        }
+    }
+}
+
 struct ProviderQuotaWidgetAppearanceView: View {
     @State private var previewState = ProviderQuotaWidgetPreviewState.healthy
     @State private var previewFamily = ProviderQuotaWidgetPreviewFamily.small
     @State private var previewSourceCount = 1
+    @State private var previewSurface = ProviderQuotaWidgetPreviewSurface.home
     @AppStorage(
         ProviderQuotaWidgetArcColor.storageKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
@@ -1718,6 +1733,14 @@ struct ProviderQuotaWidgetAppearanceView: View {
     private var resetDisplayRawValue = ProviderQuotaWidgetResetDisplay.defaultValue.rawValue
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var showsPaceMarker = ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker
+    @AppStorage(ProviderQuotaLockScreenSettings.showsProviderIconKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var lockScreenShowsProviderIcon = ProviderQuotaLockScreenSettings.defaultShowsProviderIcon
+    @AppStorage(ProviderQuotaLockScreenSettings.showsResetKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var lockScreenShowsReset = ProviderQuotaLockScreenSettings.defaultShowsReset
+    @AppStorage(ProviderQuotaLockScreenSettings.showsWindowKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var lockScreenShowsWindow = ProviderQuotaLockScreenSettings.defaultShowsWindow
+    @AppStorage(ProviderQuotaLockScreenSettings.paceDetailKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+    private var lockScreenPaceDetailRawValue = ProviderQuotaLockScreenPaceDetail.defaultValue.rawValue
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
     private var showsProviderIcon = ProviderQuotaWidgetAppearanceSettings.defaultShowsProviderIcon
     @AppStorage(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
@@ -1821,6 +1844,17 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
             }
 
+            Section("Lock Screen") {
+                Toggle("Provider Icon", isOn: $lockScreenShowsProviderIcon)
+                Toggle("Reset Time", isOn: $lockScreenShowsReset)
+                Toggle("Quota Window", isOn: $lockScreenShowsWindow)
+                Picker("Pace Footer", selection: $lockScreenPaceDetailRawValue) {
+                    ForEach(ProviderQuotaLockScreenPaceDetail.allCases) { detail in
+                        Text(detail.title).tag(detail.rawValue)
+                    }
+                }
+            }
+
             Section("Surface") {
                 Picker("Track Color", selection: $trackColorRawValue) {
                     ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
@@ -1898,6 +1932,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
         .onChange(of: showsPaceMarker) { reloadWidgets() }
         .onChange(of: showsProviderIcon) { reloadWidgets() }
         .onChange(of: providerIconStyleRawValue) { reloadWidgets() }
+        .onChange(of: lockScreenShowsProviderIcon) { reloadWidgets() }
+        .onChange(of: lockScreenShowsReset) { reloadWidgets() }
+        .onChange(of: lockScreenShowsWindow) { reloadWidgets() }
+        .onChange(of: lockScreenPaceDetailRawValue) { reloadWidgets() }
         .onChange(of: statusTextRawValue) { reloadWidgets() }
         .onChange(of: resetDisplayRawValue) { reloadWidgets() }
         .onChange(of: trackColorRawValue) { reloadWidgets() }
@@ -1912,6 +1950,13 @@ struct ProviderQuotaWidgetAppearanceView: View {
 
     private var pinnedPreviewPanel: some View {
         VStack(spacing: 8) {
+            Picker("Preview", selection: $previewSurface) {
+                ForEach(ProviderQuotaWidgetPreviewSurface.allCases) { surface in
+                    Text(surface.title).tag(surface)
+                }
+            }
+            .pickerStyle(.segmented)
+
             VStack(spacing: 3) {
                 Text(previewState.title)
                     .font(.caption2)
@@ -1920,7 +1965,9 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 preview
                     .frame(maxWidth: .infinity, minHeight: max(previewSize.height, 140))
                     .overlay(alignment: .topTrailing) {
-                        sizeSelector
+                        if previewSurface == .home {
+                            sizeSelector
+                        }
                     }
             }
 
@@ -1933,7 +1980,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
             }
             .pickerStyle(.segmented)
 
-            if previewFamily != .small {
+            if previewSurface == .home, previewFamily != .small {
                 HStack(spacing: 8) {
                     Text("Sources")
                         .font(.caption2)
@@ -1956,9 +2003,12 @@ struct ProviderQuotaWidgetAppearanceView: View {
 
     private var preview: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
+            RoundedRectangle(
+                cornerRadius: previewSurface == .home ? 34 : 18,
+                style: .continuous
+            )
                 .fill(previewBackground)
-            previewContent.padding(previewFamily == .small ? 22 : 16)
+            previewContent.padding(previewContentPadding)
         }
         .frame(width: previewBaseSize.width, height: previewBaseSize.height)
         .scaleEffect(previewScale)
@@ -1997,7 +2047,17 @@ struct ProviderQuotaWidgetAppearanceView: View {
 
     @ViewBuilder
     private var previewContent: some View {
-        if previewFamily == .small {
+        if previewSurface == .lockPercentage {
+            ProviderQuotaLockScreenPercentageView(
+                source: previewSource(at: 0),
+                referenceDate: Date()
+            )
+        } else if previewSurface == .lockPace {
+            ProviderQuotaLockScreenPaceView(
+                source: previewSource(at: 0),
+                referenceDate: Date()
+            )
+        } else if previewFamily == .small {
             previewGauge(source: previewSource(at: 0))
         } else if previewSourceCount > 1 {
             ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
@@ -2015,6 +2075,11 @@ struct ProviderQuotaWidgetAppearanceView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    private var previewContentPadding: CGFloat {
+        guard previewSurface == .home else { return 10 }
+        return previewFamily == .small ? 22 : 16
     }
 
     private var previewSlotSpacing: CGFloat {
@@ -2153,7 +2218,8 @@ struct ProviderQuotaWidgetAppearanceView: View {
     }
 
     private var previewBaseSize: CGSize {
-        switch previewFamily {
+        guard previewSurface == .home else { return CGSize(width: 170, height: 72) }
+        return switch previewFamily {
         case .small: CGSize(width: 170, height: 170)
         case .medium: CGSize(width: 338, height: 158)
         case .large: CGSize(width: 338, height: 338)
@@ -2161,7 +2227,8 @@ struct ProviderQuotaWidgetAppearanceView: View {
     }
 
     private var previewTargetWidth: CGFloat {
-        switch previewFamily {
+        guard previewSurface == .home else { return 270 }
+        return switch previewFamily {
         case .small: 210
         case .medium: 275
         case .large: 270
@@ -2173,7 +2240,8 @@ struct ProviderQuotaWidgetAppearanceView: View {
     }
 
     private var previewBackground: Color {
-        switch background {
+        guard previewSurface == .home else { return Color(.secondarySystemGroupedBackground) }
+        return switch background {
         case .appDefault, .system: Color(.secondarySystemBackground)
         case .clear: .clear
         case .tinted: .accentColor.opacity(0.16)
@@ -2200,7 +2268,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
     }
 
     private func reloadWidgets() {
-        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
     }
 
 }
@@ -2280,7 +2348,7 @@ private struct ProviderQuotaWidgetProfilesView: View {
             }
             Button("Load into Editor", systemImage: "square.and.arrow.down") {
                 ProviderQuotaWidgetProfileStore.apply(profile)
-                WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+                ProviderQuotaWidgetSnapshotStore.reloadTimelines()
                 dismiss()
             }
             Button("Update from Current", systemImage: "arrow.triangle.2.circlepath") {
@@ -2300,7 +2368,7 @@ private struct ProviderQuotaWidgetProfilesView: View {
     private func reload() {
         profiles = ProviderQuotaWidgetProfileStore.profiles()
         selectedDefaultProfileID = ProviderQuotaWidgetProfileStore.selectedDefaultProfileID()
-        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
     }
 }
 
@@ -2483,7 +2551,7 @@ private struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     }
 
     private func reloadWidgets() {
-        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
     }
 }
 

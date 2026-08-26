@@ -7,6 +7,7 @@ struct TalariaLiveActivityWidgetBundle: WidgetBundle {
     var body: some Widget {
         AgentRunLiveActivityWidget()
         ProviderQuotaWidget()
+        ProviderQuotaPaceWidget()
     }
 }
 

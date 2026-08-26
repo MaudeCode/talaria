@@ -205,6 +205,33 @@ final class ComposerNavigationUITests: XCTestCase {
         )
     }
 
+    func testWidgetCustomizationShowsSharedLockScreenPreviewsAndControls() throws {
+        app.terminate()
+        app.launchArguments = ["--provider-quota-widget-customization"]
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
+        app.buttons["Lock %"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["provider-quota-lock-percentage"]
+                .waitForExistence(timeout: 3)
+        )
+
+        app.buttons["Lock Pace"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["provider-quota-lock-pace"]
+                .waitForExistence(timeout: 3)
+        )
+
+        let paceFooter = app.descendants(matching: .any)["Pace Footer"]
+        for _ in 0..<8 where !paceFooter.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.switches["Reset Time"].exists)
+        XCTAssertTrue(app.switches["Quota Window"].exists)
+        XCTAssertTrue(paceFooter.exists)
+    }
+
     func testSidebarReplacesRootTabs() throws {
         let openNavigation = app.buttons["Open navigation"]
         guard openNavigation.waitForExistence(timeout: 15) else {

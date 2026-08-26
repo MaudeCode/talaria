@@ -1,5 +1,4 @@
 import SwiftUI
-import WidgetKit
 
 /// Read-only provider status screen (#26): which providers the server knows
 /// about, whether each has a credential (and where it came from), which one is
@@ -206,7 +205,7 @@ struct ProvidersView: View {
             in: providerAliasesData
         )
         self.providerPendingRenameID = nil
-        WidgetCenter.shared.reloadTimelines(ofKind: ProviderQuotaWidgetSnapshotStore.widgetKind)
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
     }
 }
 

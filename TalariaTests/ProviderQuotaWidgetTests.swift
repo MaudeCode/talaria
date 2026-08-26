@@ -143,6 +143,107 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours, 12)
     }
 
+    func testLockScreenWidgetKindsAndSettingsRemainIndependentFromProfiles() {
+        XCTAssertNotEqual(
+            ProviderQuotaWidgetSnapshotStore.widgetKind,
+            ProviderQuotaWidgetSnapshotStore.paceWidgetKind
+        )
+        XCTAssertTrue(ProviderQuotaLockScreenSettings.defaultShowsProviderIcon)
+        XCTAssertTrue(ProviderQuotaLockScreenSettings.defaultShowsReset)
+        XCTAssertTrue(ProviderQuotaLockScreenSettings.defaultShowsWindow)
+        XCTAssertEqual(ProviderQuotaLockScreenPaceDetail.defaultValue, .burnAndForecast)
+        XCTAssertNil(
+            ProviderQuotaWidgetProfileStore.defaultValues[
+                ProviderQuotaLockScreenSettings.paceDetailKey
+            ]
+        )
+    }
+
+    func testSharedSlotGeometryKeepsSingleAndDualPrimaryGaugeBoundsIdentical() {
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 140)
+        let singleWithForecast = ProviderQuotaWidgetSlotGeometry.frames(
+            count: 2,
+            in: bounds,
+            spacing: 12
+        )
+        let dualProvider = ProviderQuotaWidgetSlotGeometry.frames(
+            count: 2,
+            in: bounds,
+            spacing: 12
+        )
+
+        XCTAssertEqual(singleWithForecast[0], dualProvider[0])
+        XCTAssertEqual(singleWithForecast[0], CGRect(x: 0, y: 0, width: 144, height: 140))
+
+        let fourProvider = ProviderQuotaWidgetSlotGeometry.frames(
+            count: 4,
+            in: CGRect(x: 0, y: 0, width: 300, height: 300),
+            spacing: 12
+        )
+        XCTAssertEqual(fourProvider.count, 4)
+        XCTAssertEqual(fourProvider[3], CGRect(x: 156, y: 156, width: 144, height: 144))
+    }
+
+    func testForecastSummarySharesBurnBudgetAndDepletionFormatting() {
+        let settings = ProviderQuotaEvaluationSettings(
+            percentageMode: .used,
+            colorBasis: .pace,
+            windowSelection: .automatic,
+            warningRemainingPercent: 25,
+            criticalRemainingPercent: 10,
+            paceTolerancePercent: 3,
+            paceWarningBurnRatePercent: 125,
+            paceCriticalBurnRatePercent: 175,
+            paceMinimumElapsedHours: 0
+        )
+        let pace = ProviderQuotaPace(
+            expectedRemainingPercent: 50,
+            paceDeltaPercent: -3.8,
+            burnRate: 1.18,
+            minutesToReset: 3 * 24 * 60,
+            projectedMinutesToEmpty: 1.5 * 24 * 60,
+            projectionEligible: true
+        )
+        let state = ProviderQuotaPresentationState(
+            window: ProviderQuotaWindow(label: "Weekly", usedPercent: 25, remainingPercent: 75),
+            percent: 25,
+            remainingPercent: 75,
+            resetAt: Date(timeIntervalSince1970: 1_900_000_000),
+            referenceDate: Date(timeIntervalSince1970: 1_899_740_800),
+            freshnessDate: Date(timeIntervalSince1970: 1_899_999_900),
+            isStale: false,
+            pace: pace,
+            urgency: .warning,
+            settings: settings
+        )
+
+        let forecast = ProviderQuotaForecastSummary(state: state)
+
+        XCTAssertEqual(forecast.burnRateLabel, "1.18×")
+        XCTAssertEqual(forecast.budgetTitle, "Budget / day")
+        XCTAssertEqual(forecast.budgetLabel, "25%")
+        XCTAssertEqual(forecast.forecastLabel, "Empty 1d 12h early")
+        XCTAssertEqual(forecast.systemImage, "exclamationmark.triangle")
+        XCTAssertEqual(forecast.outcome, .warning)
+
+        let unavailable = ProviderQuotaForecastSummary(
+            state: ProviderQuotaPresentationState(
+                window: nil,
+                percent: nil,
+                remainingPercent: nil,
+                resetAt: nil,
+                referenceDate: state.referenceDate,
+                freshnessDate: state.freshnessDate,
+                isStale: false,
+                pace: nil,
+                urgency: .unavailable,
+                settings: settings
+            )
+        )
+        XCTAssertEqual(unavailable.forecastLabel, "Forecast unavailable")
+        XCTAssertEqual(unavailable.outcome, .unavailable)
+    }
+
     func testWidgetProfilesCaptureProviderIconVisibilityAndStyle() throws {
         let suite = "ProviderQuotaWidgetProfiles.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -313,13 +414,13 @@ final class ProviderQuotaWidgetTests: XCTestCase {
     }
 
     func testWidgetSecondaryNoneSelectionDoesNotProduceASourceID() {
-        var configuration = ProviderQuotaWidgetConfigurationIntent()
+        let configuration = ProviderQuotaWidgetConfigurationIntent()
         configuration.source1 = ProviderQuotaSourceEntity(
             id: "qsrc_work",
             name: "Codex",
             scopeLabel: "Test server"
         )
-        configuration.source2 = .none
+        configuration.source2 = ProviderQuotaSourceEntity.none
 
         XCTAssertEqual(configuration.sourceIDs[0], "qsrc_work")
         XCTAssertNil(configuration.sourceIDs[1])
