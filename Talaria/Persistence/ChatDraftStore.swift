@@ -144,6 +144,14 @@ struct ChatDraftKey: Hashable, Sendable {
         Self(serverID: server.absoluteString, context: .session(sessionID))
     }
 
+    static func session(server: URL, session: SessionSummary) -> Self {
+        let sessionID = session.sessionId
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? session.id
+        return .session(server: server, sessionID: sessionID)
+    }
+
     static func newChat(server: URL) -> Self {
         Self(serverID: server.absoluteString, context: .newChat)
     }

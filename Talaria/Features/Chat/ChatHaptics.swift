@@ -50,8 +50,12 @@ enum ChatHaptics {
     }
 
     private static func emit(_ feedback: ChatHapticFeedback, isEnabled: Bool, performer: Performer?) {
-        guard isEnabled else { return }
-        (performer ?? Self.perform)(feedback)
+        HapticEmitter.emit(
+            feedback,
+            isEnabled: isEnabled,
+            performer: performer,
+            defaultPerformer: perform
+        )
     }
 
     private static func perform(_ feedback: ChatHapticFeedback) {

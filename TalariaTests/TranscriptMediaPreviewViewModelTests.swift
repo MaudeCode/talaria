@@ -255,11 +255,11 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
     }
 
     func testSaveVideoFileToPhotoLibraryIntegration() async throws {
-        guard ProcessInfo.processInfo.environment["HERMEX_RUN_PHOTOS_INTEGRATION"] == "1" else {
-            throw XCTSkip("Set HERMEX_RUN_PHOTOS_INTEGRATION=1 to modify the simulator photo library.")
+        guard ProcessInfo.processInfo.environment["TALARIA_RUN_PHOTOS_INTEGRATION"] == "1" else {
+            throw XCTSkip("Set TALARIA_RUN_PHOTOS_INTEGRATION=1 to modify the simulator photo library.")
         }
 
-        let suppliedPath = ProcessInfo.processInfo.environment["HERMEX_PHOTOS_TEST_VIDEO_PATH"]
+        let suppliedPath = ProcessInfo.processInfo.environment["TALARIA_PHOTOS_TEST_VIDEO_PATH"]
         let fileURL: URL
         if let suppliedPath {
             fileURL = URL(fileURLWithPath: suppliedPath)
@@ -276,8 +276,8 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
     }
 
     func testInvalidVideoIsRejectedByPhotoLibraryIntegration() async throws {
-        guard ProcessInfo.processInfo.environment["HERMEX_RUN_PHOTOS_INTEGRATION"] == "1" else {
-            throw XCTSkip("Set HERMEX_RUN_PHOTOS_INTEGRATION=1 to modify the simulator photo library.")
+        guard ProcessInfo.processInfo.environment["TALARIA_RUN_PHOTOS_INTEGRATION"] == "1" else {
+            throw XCTSkip("Set TALARIA_RUN_PHOTOS_INTEGRATION=1 to modify the simulator photo library.")
         }
 
         let fileURL = FileManager.default.temporaryDirectory

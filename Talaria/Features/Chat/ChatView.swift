@@ -1758,12 +1758,7 @@ struct ChatView: View {
     }
 
     private var draftKey: ChatDraftKey {
-        let normalizedSessionID = session.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sessionID = normalizedSessionID.flatMap { $0.isEmpty ? nil : $0 } ?? session.id
-        return .session(
-            server: server,
-            sessionID: sessionID
-        )
+        .session(server: server, session: session)
     }
 
     private var persistedDraftBinding: Binding<String> {

@@ -322,8 +322,9 @@ final class ModelCatalogTests: XCTestCase {
     /// on either side must still agree.
     func testModelSelectionHandlesColonBearingModelIDs() {
         // A bare id's trailing colons belong to the model: nothing to strip.
-        XCTAssertEqual("deepseek/deepseek-chat-v3:free".bareModelID, "deepseek/deepseek-chat-v3:free")
-        XCTAssertNil("deepseek/deepseek-chat-v3:free".modelIDProviderPrefix)
+        let bareID = ProviderQualifiedModelID("deepseek/deepseek-chat-v3:free")
+        XCTAssertEqual(bareID.bareValue, "deepseek/deepseek-chat-v3:free")
+        XCTAssertNil(bareID.providerPrefix)
 
         let ollama = ModelCatalogOption(id: "@ollama:qwen3:32b", displayName: "Qwen3 32B", providerID: "ollama")
         XCTAssertTrue(ollama.matchesSelection(modelID: "@ollama:qwen3:32b", providerID: nil))
@@ -554,8 +555,9 @@ final class ModelCatalogTests: XCTestCase {
             providerID: "custom:gamma"
         )
 
-        XCTAssertEqual("@custom:beta:model-a".bareModelID, "model-a")
-        XCTAssertEqual("@custom:beta:model-a".modelIDProviderPrefix, "custom:beta")
+        let customID = ProviderQualifiedModelID("@custom:beta:model-a")
+        XCTAssertEqual(customID.bareValue, "model-a")
+        XCTAssertEqual(customID.providerPrefix, "custom:beta")
         XCTAssertTrue(beta.matchesSelection(modelID: "@custom:beta:model-a", providerID: nil))
         XCTAssertTrue(beta.matchesSelection(modelID: "model-a", providerID: "custom:beta"))
         XCTAssertFalse(gamma.matchesSelection(modelID: "@custom:beta:model-a", providerID: nil))

@@ -4,6 +4,21 @@ import XCTest
 
 @MainActor
 final class ChatDraftStoreTests: XCTestCase {
+    func testSessionDraftKeyUsesServerIdentityOrStableFallback() {
+        let server = URL(string: "https://example.com")!
+        let identifiedSession = SessionSummary(sessionId: "  session-1  ")
+        let fallbackSession = SessionSummary(sessionId: "   ")
+
+        XCTAssertEqual(
+            ChatDraftKey.session(server: server, session: identifiedSession),
+            .session(server: server, sessionID: "session-1")
+        )
+        XCTAssertEqual(
+            ChatDraftKey.session(server: server, session: fallbackSession),
+            .session(server: server, sessionID: fallbackSession.id)
+        )
+    }
+
     func testDraftsAreIsolatedByServerAndContext() async throws {
         let persistence = RecordingChatDraftPersistence()
         let store = ChatDraftStore(persistence: persistence, debounceDuration: .seconds(10))

@@ -1106,9 +1106,7 @@ struct SessionListView: View {
     }
 
     private func draftKey(for session: SessionSummary) -> ChatDraftKey {
-        let normalizedSessionID = session.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sessionID = normalizedSessionID.flatMap { $0.isEmpty ? nil : $0 } ?? session.id
-        return .session(server: server, sessionID: sessionID)
+        .session(server: server, session: session)
     }
 
     private func rename(_ session: SessionSummary, to title: String) async -> Bool {
@@ -1592,9 +1590,7 @@ private struct PendingNewChatView: View {
     }
 
     private func draftKey(for session: SessionSummary) -> ChatDraftKey {
-        let normalizedSessionID = session.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sessionID = normalizedSessionID.flatMap { $0.isEmpty ? nil : $0 } ?? session.id
-        return .session(server: server, sessionID: sessionID)
+        .session(server: server, session: session)
     }
 
     private var persistedDraftBinding: Binding<String> {

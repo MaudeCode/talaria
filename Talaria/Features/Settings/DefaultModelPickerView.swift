@@ -248,7 +248,7 @@ struct DefaultModelPickerView: View {
         // lets `matchesSelection` use the row's own `providerID` as the
         // prefix key.
         let defaultProvider: String?
-        if defaultModel?.modelIDProviderPrefix != nil {
+        if defaultModel.map(ProviderQualifiedModelID.init)?.providerPrefix != nil {
             defaultProvider = nil
         } else {
             defaultProvider = activeProvider
