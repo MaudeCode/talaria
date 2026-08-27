@@ -7,17 +7,33 @@ enum HapticButtonFeedbackStyle: Equatable {
 }
 
 @MainActor
+enum HapticEmitter {
+    static func emit<Feedback>(
+        _ feedback: Feedback,
+        isEnabled: Bool,
+        performer: (@MainActor (Feedback) -> Void)?,
+        defaultPerformer: @escaping @MainActor (Feedback) -> Void
+    ) {
+        guard isEnabled else { return }
+        (performer ?? defaultPerformer)(feedback)
+    }
+}
+
+@MainActor
 enum HapticButtonHaptics {
     typealias Performer = @MainActor (HapticButtonFeedbackStyle) -> Void
 
     static func tap(
         style: HapticButtonFeedbackStyle = .light,
         isEnabled: Bool,
-        performer: Performer = perform
+        performer: Performer? = nil
     ) {
-        guard isEnabled else { return }
-
-        performer(style)
+        HapticEmitter.emit(
+            style,
+            isEnabled: isEnabled,
+            performer: performer,
+            defaultPerformer: perform
+        )
     }
 
     static func perform(_ style: HapticButtonFeedbackStyle) {

@@ -1,6 +1,8 @@
-import XCTest
+import AVFoundation
+import Photos
 import UIKit
 import UniformTypeIdentifiers
+import XCTest
 @testable import Talaria
 
 @MainActor
@@ -252,6 +254,46 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.canSaveMediaToPhotos)
     }
 
+    func testSaveVideoFileToPhotoLibraryIntegration() async throws {
+        guard ProcessInfo.processInfo.environment["TALARIA_RUN_PHOTOS_INTEGRATION"] == "1" else {
+            throw XCTSkip("Set TALARIA_RUN_PHOTOS_INTEGRATION=1 to modify the simulator photo library.")
+        }
+
+        let suppliedPath = ProcessInfo.processInfo.environment["TALARIA_PHOTOS_TEST_VIDEO_PATH"]
+        let fileURL: URL
+        if let suppliedPath {
+            fileURL = URL(fileURLWithPath: suppliedPath)
+        } else {
+            fileURL = try await Self.makeTestVideo()
+        }
+        defer {
+            if suppliedPath == nil {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+
+        try await PhotoLibrarySaver.saveVideoFile(at: fileURL)
+    }
+
+    func testInvalidVideoIsRejectedByPhotoLibraryIntegration() async throws {
+        guard ProcessInfo.processInfo.environment["TALARIA_RUN_PHOTOS_INTEGRATION"] == "1" else {
+            throw XCTSkip("Set TALARIA_RUN_PHOTOS_INTEGRATION=1 to modify the simulator photo library.")
+        }
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invalid-video-\(UUID().uuidString).mp4")
+        try Data("not a movie".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        do {
+            try await PhotoLibrarySaver.saveVideoFile(at: fileURL)
+            XCTFail("PhotoKit accepted an invalid video")
+        } catch {
+            XCTAssertEqual((error as NSError).domain, PHPhotosErrorDomain)
+            XCTAssertEqual((error as NSError).code, PHPhotosError.Code.invalidResource.rawValue)
+        }
+    }
+
     func testLoadLocalVideoWithoutSessionIDDoesNotRequestMediaEndpoint() async {
         let recorder = TranscriptMediaPreviewRequestRecorder()
         let client = makeClient { request in
@@ -382,6 +424,61 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
 
     private static let baseURL = URL(string: "https://example.test")!
 
+    private static func makeTestVideo() async throws -> URL {
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("valid-video-\(UUID().uuidString).mp4")
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        let input = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: 64,
+                AVVideoHeightKey: 64,
+            ]
+        )
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: 64,
+                kCVPixelBufferHeightKey as String: 64,
+            ]
+        )
+        guard writer.canAdd(input) else {
+            throw PhotoLibraryTestVideoError.cannotConfigureWriter
+        }
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw writer.error ?? PhotoLibraryTestVideoError.cannotStartWriter
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        guard let pool = adaptor.pixelBufferPool else {
+            throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
+        }
+        var pixelBuffer: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess,
+              let pixelBuffer
+        else {
+            throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
+        }
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        if let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) {
+            memset(baseAddress, 0x30, CVPixelBufferGetDataSize(pixelBuffer))
+        }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+
+        guard adaptor.append(pixelBuffer, withPresentationTime: .zero) else {
+            throw writer.error ?? PhotoLibraryTestVideoError.cannotAppendFrame
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+        guard writer.status == .completed else {
+            throw writer.error ?? PhotoLibraryTestVideoError.cannotFinishWriter
+        }
+        return outputURL
+    }
+
     private func makeClient(
         cookieStorage: HTTPCookieStorage = HTTPCookieStorage(),
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
@@ -470,6 +567,14 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
             .secure: "TRUE"
         ])
     }
+}
+
+private enum PhotoLibraryTestVideoError: Error {
+    case cannotConfigureWriter
+    case cannotStartWriter
+    case cannotCreatePixelBuffer
+    case cannotAppendFrame
+    case cannotFinishWriter
 }
 
 private final class TranscriptMediaPreviewRequestRecorder {

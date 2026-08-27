@@ -6,7 +6,11 @@ import UIKit
 struct SessionListView: View {
     @Bindable var authManager: AuthManager
     let server: URL
-    @Binding private var pendingSharedImport: SharedImport?
+    private let draftStore: ChatDraftStore
+    @Binding private var pendingSharedImport: SharedImportReservation?
+    private let didRoutePendingSharedImport: (SharedImportReservation) -> Void
+    private let hasWaitingSharedImport: Bool
+    private let openNextSharedImport: () -> Void
     @Binding private var pendingDeepLinkedSessionID: String?
     @Binding private var pendingQuotaSourceID: String?
     @Binding private var opensProviderQuotaWidgetSettings: Bool
@@ -77,15 +81,23 @@ struct SessionListView: View {
     init(
         authManager: AuthManager,
         server: URL,
-        pendingSharedImport: Binding<SharedImport?> = .constant(nil),
+        pendingSharedImport: Binding<SharedImportReservation?> = .constant(nil),
+        didRoutePendingSharedImport: @escaping (SharedImportReservation) -> Void = { _ in },
+        hasWaitingSharedImport: Bool = false,
+        openNextSharedImport: @escaping () -> Void = {},
         pendingDeepLinkedSessionID: Binding<String?> = .constant(nil),
         pendingQuotaSourceID: Binding<String?> = .constant(nil),
         opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
-        requestedNewChat: Binding<NewChatRequest?> = .constant(nil)
+        requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
+        draftStore: ChatDraftStore? = nil
     ) {
         self.authManager = authManager
         self.server = server
         _pendingSharedImport = pendingSharedImport
+        self.didRoutePendingSharedImport = didRoutePendingSharedImport
+        self.hasWaitingSharedImport = hasWaitingSharedImport
+        self.openNextSharedImport = openNextSharedImport
+        self.draftStore = draftStore ?? .shared
         _pendingDeepLinkedSessionID = pendingDeepLinkedSessionID
         _pendingQuotaSourceID = pendingQuotaSourceID
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
@@ -127,6 +139,11 @@ struct SessionListView: View {
             ZStack {
                 Color(.systemBackground)
                 navigationContainer
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if hasWaitingSharedImport {
+                waitingSharedImportBanner
             }
         }
             .sheet(item: $sessionExportShareItem) { item in
@@ -330,6 +347,34 @@ struct SessionListView: View {
             .focusedSceneValue(\.talariaSceneActions, sceneActions)
     }
 
+    private var waitingSharedImportBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "square.and.arrow.down")
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Another shared item is waiting")
+                    .font(.subheadline.weight(.semibold))
+                Text("Open it when you are done with this draft.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button("Open Next", action: openNextSharedImport)
+                .font(.subheadline.weight(.semibold))
+                .buttonStyle(.bordered)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemBackground))
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+        .accessibilityElement(children: .contain)
+    }
+
     @ViewBuilder
     private var navigationContainer: some View {
         if horizontalSizeClass == .regular {
@@ -416,7 +461,12 @@ struct SessionListView: View {
     private func navigationDestination(_ destination: SessionNavigationDestination) -> some View {
         switch destination {
         case .session(let session):
-            ChatView(session: session, server: server, onAPIError: authManager.handleAPIError)
+            ChatView(
+                session: session,
+                server: server,
+                onAPIError: authManager.handleAPIError,
+                draftStore: draftStore
+            )
                 .id(session.id)
         case .newChat(let route):
             PendingNewChatView(
@@ -428,7 +478,8 @@ struct SessionListView: View {
                 server: server,
                 viewModel: viewModel,
                 onAPIError: authManager.handleAPIError,
-                onSessionCreated: rememberCreatedSession
+                onSessionCreated: rememberCreatedSession,
+                draftStore: draftStore
             )
             .id(route.id)
         case .utility(let destination):
@@ -1127,9 +1178,14 @@ struct SessionListView: View {
         handleLastError()
 
         if didDelete {
+            await draftStore.discardDraft(for: draftKey(for: session))
             removeSessionFromNavigation(session)
             SessionHaptics.sessionDeleted(isEnabled: isHapticsEnabled)
         }
+    }
+
+    private func draftKey(for session: SessionSummary) -> ChatDraftKey {
+        .session(server: server, session: session)
     }
 
     private func rename(_ session: SessionSummary, to title: String) async -> Bool {
@@ -1190,13 +1246,14 @@ struct SessionListView: View {
     }
 
     private func openPendingSharedImportIfNeeded() {
-        guard let sharedImport = pendingSharedImport else {
+        guard let reservation = pendingSharedImport else {
             return
         }
 
-        pendingSharedImport = nil
+        let sharedImport = reservation.sharedImport
         let draft = TalariaShareDraft.composerDraft(from: sharedImport.draft)
         guard !draft.isEmpty || !sharedImport.attachments.isEmpty else {
+            didRoutePendingSharedImport(reservation)
             return
         }
 
@@ -1206,6 +1263,7 @@ struct SessionListView: View {
                 initialAttachments: sharedImport.attachments
             )
         )
+        didRoutePendingSharedImport(reservation)
     }
 
     /// Awaited (not fire-and-forget) so the cold-start `.task` can resolve it before
@@ -1432,6 +1490,7 @@ private struct ActiveSessionMonitorTaskID: Hashable {
 
 private struct PendingNewChatView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     let server: URL
@@ -1442,10 +1501,12 @@ private struct PendingNewChatView: View {
     let autoStartsVoiceInput: Bool
     let profileName: String?
     let providerID: String?
+    let draftStore: ChatDraftStore
 
     @State private var createdSession: SessionSummary?
     @State private var draftMessage = ""
     @State private var didStartCreation = false
+    @State private var didStartConversation = false
     @State private var didRequestComposerFocus = false
     @State private var creationErrorMessage: String?
     @FocusState private var composerIsFocused: Bool
@@ -1459,7 +1520,8 @@ private struct PendingNewChatView: View {
         server: URL,
         viewModel: SessionListViewModel,
         onAPIError: @escaping (Error) -> Void,
-        onSessionCreated: @escaping (SessionSummary) -> Void = { _ in }
+        onSessionCreated: @escaping (SessionSummary) -> Void = { _ in },
+        draftStore: ChatDraftStore? = nil
     ) {
         self.server = server
         self.viewModel = viewModel
@@ -1469,6 +1531,7 @@ private struct PendingNewChatView: View {
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
         self.providerID = providerID
+        self.draftStore = draftStore ?? .shared
         _draftMessage = State(initialValue: initialDraft)
     }
 
@@ -1482,7 +1545,10 @@ private struct PendingNewChatView: View {
                     initialDraft: draftMessage,
                     initialAttachments: initialAttachments,
                     loadsInitialMessages: false,
-                    autoStartsVoiceInput: autoStartsVoiceInput
+                    autoStartsVoiceInput: autoStartsVoiceInput,
+                    draftStore: draftStore,
+                    restoresDraftSettings: true,
+                    onConversationStarted: markConversationStarted
                 )
             } else {
                 pendingContent
@@ -1494,7 +1560,16 @@ private struct PendingNewChatView: View {
                 .accessibilityHidden(true)
         )
         .task {
-            await createSessionIfNeeded()
+            await prepareNewChat()
+        }
+        .onChange(of: scenePhase) {
+            if scenePhase != .active {
+                flushDraftsBestEffort()
+            }
+        }
+        .onDisappear {
+            restoreAbandonedDraftIfNeeded()
+            flushDraftsBestEffort()
         }
     }
 
@@ -1529,7 +1604,7 @@ private struct PendingNewChatView: View {
 
     private var pendingComposer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message Talaria", text: $draftMessage, axis: .vertical)
+            TextField("Message Talaria", text: persistedDraftBinding, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($composerIsFocused)
@@ -1594,6 +1669,9 @@ private struct PendingNewChatView: View {
         }
 
         if let session {
+            let sessionKey = draftKey(for: session)
+            draftStore.setDraft(draftMessage, for: draftKey)
+            draftMessage = draftStore.moveDraft(from: draftKey, to: sessionKey).text
             SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
             onSessionCreated(session)
             createdSession = session
@@ -1611,6 +1689,63 @@ private struct PendingNewChatView: View {
         creationErrorMessage = nil
         viewModel.clearActionError()
         await createSessionIfNeeded()
+    }
+
+    private var draftKey: ChatDraftKey {
+        .newChat(server: server)
+    }
+
+    private func draftKey(for session: SessionSummary) -> ChatDraftKey {
+        .session(server: server, session: session)
+    }
+
+    private var persistedDraftBinding: Binding<String> {
+        Binding(
+            get: { draftMessage },
+            set: { newValue in
+                draftMessage = newValue
+                draftStore.setDraft(newValue, for: draftKey)
+            }
+        )
+    }
+
+    private func prepareNewChat() async {
+        await hydrateDraft()
+        guard !Task.isCancelled else { return }
+        await createSessionIfNeeded()
+    }
+
+    private func hydrateDraft() async {
+        let textBeforeHydration = draftMessage
+        let persistedDraft = await draftStore.draft(for: draftKey)
+        guard !Task.isCancelled, draftMessage == textBeforeHydration else { return }
+
+        if textBeforeHydration.isEmpty {
+            if let persistedDraft, !persistedDraft.text.isEmpty {
+                draftMessage = persistedDraft.text
+            }
+        } else {
+            draftStore.setDraft(textBeforeHydration, for: draftKey)
+        }
+    }
+
+    private func flushDraftsBestEffort() {
+        Task {
+            try? await draftStore.flush()
+        }
+    }
+
+    private func markConversationStarted() {
+        didStartConversation = true
+    }
+
+    private func restoreAbandonedDraftIfNeeded() {
+        guard let createdSession else { return }
+        draftMessage = draftStore.restoreAbandonedNewChatDraft(
+            from: draftKey(for: createdSession),
+            to: draftKey,
+            didStartConversation: didStartConversation
+        )?.text ?? draftMessage
     }
 
     private func requestPendingComposerFocus() {

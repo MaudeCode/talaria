@@ -132,3 +132,80 @@ final class ChatVerticalScrollAxisGuardTests: XCTestCase {
         return guardView
     }
 }
+
+@MainActor
+final class ChatPrependScrollPositionControllerTests: XCTestCase {
+    func testPrependCompensatesByExactContentHeightGrowth() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatPrependScrollPositionController()
+        controller.attach(to: scrollView)
+
+        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.restoreAfterPrepend())
+
+        scrollView.contentSize.height += 640
+
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+    }
+
+    func testCancelledPrependDoesNotMoveScrollPosition() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatPrependScrollPositionController()
+        controller.attach(to: scrollView)
+
+        XCTAssertTrue(controller.capture())
+        controller.cancelPreservation()
+        scrollView.contentSize.height += 640
+
+        XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001)
+    }
+
+    func testPrependDoesNotOverrideMovementWhileRequestIsInFlight() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatPrependScrollPositionController()
+        controller.attach(to: scrollView)
+
+        XCTAssertTrue(controller.capture())
+        scrollView.contentOffset.y = 300
+
+        XCTAssertFalse(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 300, accuracy: 0.001)
+    }
+
+    func testCompensatedOffsetClampsToScrollableBounds() {
+        let inset = UIEdgeInsets(top: 12, left: 0, bottom: 20, right: 0)
+
+        XCTAssertEqual(
+            ChatPrependScrollPositionController.compensatedOffsetY(
+                baselineOffsetY: -12,
+                contentHeightDelta: -100,
+                adjustedInset: inset,
+                contentSizeHeight: 1_200,
+                boundsHeight: 480
+            ),
+            -12,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ChatPrependScrollPositionController.compensatedOffsetY(
+                baselineOffsetY: 700,
+                contentHeightDelta: 500,
+                adjustedInset: inset,
+                contentSizeHeight: 1_200,
+                boundsHeight: 480
+            ),
+            740,
+            accuracy: 0.001
+        )
+    }
+
+    private func makeScrollView() -> UIScrollView {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        scrollView.contentSize = CGSize(width: 320, height: 1_200)
+        return scrollView
+    }
+}

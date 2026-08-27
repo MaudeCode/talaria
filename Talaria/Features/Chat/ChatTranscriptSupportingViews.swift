@@ -8,14 +8,29 @@ struct ChatScrollMetrics: Equatable {
 
 struct ChatScrollObserver: UIViewRepresentable {
     let isStreaming: Bool
+    let prependScrollPositionController: ChatPrependScrollPositionController?
     let onMetrics: @MainActor (ChatScrollMetrics) -> Void
+
+    init(
+        isStreaming: Bool,
+        prependScrollPositionController: ChatPrependScrollPositionController? = nil,
+        onMetrics: @escaping @MainActor (ChatScrollMetrics) -> Void
+    ) {
+        self.isStreaming = isStreaming
+        self.prependScrollPositionController = prependScrollPositionController
+        self.onMetrics = onMetrics
+    }
 
     private var metricContext: MetricContext {
         MetricContext(isStreaming: isStreaming)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(metricContext: metricContext, onMetrics: onMetrics)
+        Coordinator(
+            metricContext: metricContext,
+            prependScrollPositionController: prependScrollPositionController,
+            onMetrics: onMetrics
+        )
     }
 
     func makeUIView(context: Context) -> ObserverView {
@@ -24,6 +39,7 @@ struct ChatScrollObserver: UIViewRepresentable {
 
     func updateUIView(_ uiView: ObserverView, context: Context) {
         context.coordinator.onMetrics = onMetrics
+        context.coordinator.prependScrollPositionController = prependScrollPositionController
         uiView.coordinator = context.coordinator
         context.coordinator.updateMetricContext(metricContext)
 
@@ -86,12 +102,23 @@ struct ChatScrollObserver: UIViewRepresentable {
         private var lastMetrics: ChatScrollMetrics?
         private var pendingMetrics: ChatScrollMetrics?
         private var hasScheduledMetricDelivery = false
+        var prependScrollPositionController: ChatPrependScrollPositionController? {
+            didSet {
+                guard oldValue !== prependScrollPositionController else { return }
+                oldValue?.detach()
+                if let scrollView {
+                    prependScrollPositionController?.attach(to: scrollView)
+                }
+            }
+        }
 
         init(
             metricContext: MetricContext,
+            prependScrollPositionController: ChatPrependScrollPositionController?,
             onMetrics: @escaping @MainActor (ChatScrollMetrics) -> Void
         ) {
             self.metricContext = metricContext
+            self.prependScrollPositionController = prependScrollPositionController
             self.onMetrics = onMetrics
         }
 
@@ -106,6 +133,7 @@ struct ChatScrollObserver: UIViewRepresentable {
             guard let scrollView = enclosingScrollView(for: view) else { return }
 
             guard scrollView !== self.scrollView else {
+                prependScrollPositionController?.attach(to: scrollView)
                 reportMetrics(delivery: delivery)
                 return
             }
@@ -113,6 +141,7 @@ struct ChatScrollObserver: UIViewRepresentable {
             observations.removeAll()
             lastMetrics = nil
             self.scrollView = scrollView
+            prependScrollPositionController?.attach(to: scrollView)
 
             observations = [
                 scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
@@ -128,6 +157,7 @@ struct ChatScrollObserver: UIViewRepresentable {
 
         func detach() {
             observations.removeAll()
+            prependScrollPositionController?.detach()
             lastMetrics = nil
             pendingMetrics = nil
             hasScheduledMetricDelivery = false
@@ -201,6 +231,175 @@ struct ChatScrollObserver: UIViewRepresentable {
 
             return nil
         }
+    }
+}
+
+/// Keeps the reader's exact vertical position while older transcript rows are
+/// inserted above it. `ScrollViewProxy.scrollTo(_:anchor:)` can only align a row
+/// to a coarse anchor; aligning the previous first row to `.top` loses the gap
+/// formerly occupied by the Load Older button and causes a visible hop.
+///
+/// This controller snapshots the UIKit scroll geometry before the request, then
+/// offsets by the net content-height growth during the following layout pass.
+/// The correction is deliberately non-animated: it preserves an existing
+/// position rather than navigating to a new one.
+@MainActor
+final class ChatPrependScrollPositionController {
+    private weak var scrollView: UIScrollView?
+    private var baselineContentHeight: CGFloat?
+    private var baselineOffsetY: CGFloat?
+    private var contentSizeObservation: NSKeyValueObservation?
+    private var contentOffsetObservation: NSKeyValueObservation?
+    private var completionTask: Task<Void, Never>?
+    private var isApplyingCompensation = false
+
+    func attach(to scrollView: UIScrollView) {
+        guard scrollView !== self.scrollView else { return }
+        cancelPreservation()
+        self.scrollView = scrollView
+    }
+
+    func detach() {
+        cancelPreservation()
+        scrollView = nil
+    }
+
+    @discardableResult
+    func capture() -> Bool {
+        cancelPreservation()
+        guard let scrollView else { return false }
+
+        baselineContentHeight = scrollView.contentSize.height
+        baselineOffsetY = scrollView.contentOffset.y
+        return true
+    }
+
+    /// Arms compensation before SwiftUI performs the prepend layout. Returns
+    /// false when the user moved the scroll view while the request was in flight,
+    /// leaving the caller free to use its coarse fallback instead of overriding
+    /// user-owned movement.
+    @discardableResult
+    func restoreAfterPrepend() -> Bool {
+        guard let scrollView,
+              let baselineOffsetY,
+              baselineContentHeight != nil,
+              !scrollView.isDragging,
+              !scrollView.isTracking,
+              !scrollView.isDecelerating,
+              abs(scrollView.contentOffset.y - baselineOffsetY) <= 1
+        else {
+            cancelPreservation()
+            return false
+        }
+
+        contentSizeObservation = scrollView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            Self.handleObservedContentSizeChange(for: self)
+        }
+        contentOffsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+            Self.handleObservedUserMovement(for: self, scrollView: scrollView)
+        }
+
+        // Text and attachment layout can settle over several run-loop passes.
+        // Keep applying the same net-height correction for a short bounded
+        // window, then release ownership back to normal scrolling.
+        completionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            self.applyCompensation()
+            self.cancelPreservation()
+        }
+        return true
+    }
+
+    func cancelPreservation() {
+        contentSizeObservation = nil
+        contentOffsetObservation = nil
+        completionTask?.cancel()
+        completionTask = nil
+        baselineContentHeight = nil
+        baselineOffsetY = nil
+        isApplyingCompensation = false
+    }
+
+    nonisolated private static func handleObservedContentSizeChange(
+        for controller: ChatPrependScrollPositionController?
+    ) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak controller] in
+                MainActor.assumeIsolated {
+                    controller?.applyCompensation()
+                }
+            }
+            return
+        }
+
+        MainActor.assumeIsolated {
+            controller?.applyCompensation()
+        }
+    }
+
+    nonisolated private static func handleObservedUserMovement(
+        for controller: ChatPrependScrollPositionController?,
+        scrollView: UIScrollView
+    ) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak controller, weak scrollView] in
+                MainActor.assumeIsolated {
+                    guard let scrollView else { return }
+                    controller?.cancelIfUserIsMoving(scrollView)
+                }
+            }
+            return
+        }
+
+        MainActor.assumeIsolated {
+            controller?.cancelIfUserIsMoving(scrollView)
+        }
+    }
+
+    private func cancelIfUserIsMoving(_ scrollView: UIScrollView) {
+        guard !isApplyingCompensation,
+              scrollView.isDragging || scrollView.isTracking || scrollView.isDecelerating
+        else { return }
+
+        cancelPreservation()
+    }
+
+    private func applyCompensation() {
+        guard let scrollView,
+              let baselineContentHeight,
+              let baselineOffsetY
+        else { return }
+
+        let targetY = Self.compensatedOffsetY(
+            baselineOffsetY: baselineOffsetY,
+            contentHeightDelta: scrollView.contentSize.height - baselineContentHeight,
+            adjustedInset: scrollView.adjustedContentInset,
+            contentSizeHeight: scrollView.contentSize.height,
+            boundsHeight: scrollView.bounds.height
+        )
+        guard abs(scrollView.contentOffset.y - targetY) > 0.5 else { return }
+
+        isApplyingCompensation = true
+        var offset = scrollView.contentOffset
+        offset.y = targetY
+        scrollView.setContentOffset(offset, animated: false)
+        isApplyingCompensation = false
+    }
+
+    nonisolated static func compensatedOffsetY(
+        baselineOffsetY: CGFloat,
+        contentHeightDelta: CGFloat,
+        adjustedInset: UIEdgeInsets,
+        contentSizeHeight: CGFloat,
+        boundsHeight: CGFloat
+    ) -> CGFloat {
+        let minimumY = -adjustedInset.top
+        let maximumY = max(
+            minimumY,
+            contentSizeHeight - boundsHeight + adjustedInset.bottom
+        )
+        return min(max(baselineOffsetY + contentHeightDelta, minimumY), maximumY)
     }
 }
 
