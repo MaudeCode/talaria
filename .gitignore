@@ -1,0 +1,5 @@
+node_modules/
+.convex/
+.env.local
+.env.*.local
+*.log
