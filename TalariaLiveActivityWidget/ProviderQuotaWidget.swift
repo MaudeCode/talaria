@@ -240,6 +240,7 @@ private struct ProviderQuotaWidgetView: View {
 
     private var usesTwoWindowLayout: Bool {
         guard family == .systemMedium || family == .systemLarge,
+              gaugeLayout == .classic,
               evaluationSettings.windowSelection == .automatic,
               sourceIDs.count == 1,
               let source = resolvedSources.first ?? nil
@@ -366,6 +367,13 @@ private struct ProviderQuotaWidgetView: View {
         ProviderQuotaEvaluationSettings.stored(configuration: entry.configuration)
     }
 
+    private var gaugeLayout: ProviderQuotaWidgetGaugeLayout {
+        ProviderQuotaWidgetGaugeLayout.resolved(
+            override: entry.configuration.gaugeLayout,
+            profile: resolvedProfile
+        )
+    }
+
     private var widgetBackground: Color {
         switch effectiveBackground {
         case .appDefault, .system: Color(.secondarySystemBackground)
@@ -401,26 +409,48 @@ private struct ProviderQuotaWidgetSourceView: View {
     let referenceDate: Date
     let windowOverride: ProviderQuotaWindow?
 
+    @ViewBuilder
     var body: some View {
-        ProviderQuotaGaugeView(
-            providerID: source.providerID,
-            displayName: displayName,
-            sourceStatus: source.status,
-            state: presentation,
-            statusText: statusText,
-            resetDisplay: resetDisplay,
-            style: ProviderQuotaGaugeStyle(
-                arcColor: arcColor,
-                trackColor: trackColor.opacity(Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey), 0), 100)) / 100),
-                lineWidth: lineWidth,
+        if periods.isEmpty || gaugeLayout == .classic || windowOverride != nil {
+            ProviderQuotaGaugeView(
+                providerID: source.providerID,
+                displayName: displayName,
+                sourceStatus: source.status,
+                state: presentation,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                style: gaugeStyle,
+                compact: compact
+            )
+        } else if gaugeLayout == .concentric {
+            ProviderQuotaConcentricGaugeView(
+                providerID: source.providerID,
+                displayName: displayName,
+                periods: periods,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                trackColor: trackWithOpacity,
+                requestedLineWidth: lineWidth,
                 showsPaceMarker: showsPaceMarker,
-                showsProviderIcon: resolvedProfile.boolean(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey),
-                providerIconStyle: ProviderIconStyle(
-                    rawValue: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey)
-                ) ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
-            ),
-            compact: compact
-        )
+                showsProviderIcon: showsProviderIcon,
+                providerIconStyle: providerIconStyle,
+                arcColor: arcColor(for:)
+            )
+        } else {
+            ProviderQuotaBarsView(
+                providerID: source.providerID,
+                displayName: displayName,
+                periods: periods,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                trackColor: trackWithOpacity,
+                requestedLineWidth: lineWidth,
+                showsPaceMarker: showsPaceMarker,
+                showsProviderIcon: showsProviderIcon,
+                providerIconStyle: providerIconStyle,
+                arcColor: arcColor(for:)
+            )
+        }
     }
 
     private var displayName: String {
@@ -439,6 +469,14 @@ private struct ProviderQuotaWidgetSourceView: View {
             settings: ProviderQuotaEvaluationSettings.stored(configuration: configuration),
             at: referenceDate,
             windowOverride: windowOverride
+        )
+    }
+
+    private var periods: [ProviderQuotaPeriodPresentation] {
+        ProviderQuotaPresentation.periods(
+            for: source,
+            settings: presentation.settings,
+            at: referenceDate
         )
     }
 
@@ -466,7 +504,18 @@ private struct ProviderQuotaWidgetSourceView: View {
         ProviderQuotaWidgetResolvedProfile.resolve(id: configuration.profile?.id)
     }
 
+    private var gaugeLayout: ProviderQuotaWidgetGaugeLayout {
+        ProviderQuotaWidgetGaugeLayout.resolved(
+            override: configuration.gaugeLayout,
+            profile: resolvedProfile
+        )
+    }
+
     private var arcColor: Color {
+        arcColor(for: presentation)
+    }
+
+    private func arcColor(for state: ProviderQuotaPresentationState) -> Color {
         guard configuredArcColor == .automatic else {
             return ProviderQuotaWidgetColorResolver.color(
                 configuredArcColor,
@@ -474,9 +523,36 @@ private struct ProviderQuotaWidgetSourceView: View {
             )
         }
         return ProviderQuotaWidgetPalette.arcColor(
-            urgency: presentation.urgency,
+            urgency: state.urgency,
             profile: resolvedProfile
         )
+    }
+
+    private var gaugeStyle: ProviderQuotaGaugeStyle {
+        ProviderQuotaGaugeStyle(
+            arcColor: arcColor,
+            trackColor: trackWithOpacity,
+            lineWidth: lineWidth,
+            showsPaceMarker: showsPaceMarker,
+            showsProviderIcon: showsProviderIcon,
+            providerIconStyle: providerIconStyle
+        )
+    }
+
+    private var trackWithOpacity: Color {
+        trackColor.opacity(
+            Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey), 0), 100)) / 100
+        )
+    }
+
+    private var showsProviderIcon: Bool {
+        resolvedProfile.boolean(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey)
+    }
+
+    private var providerIconStyle: ProviderIconStyle {
+        ProviderIconStyle(
+            rawValue: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey)
+        ) ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
     }
 
     private var trackColor: Color {
@@ -622,8 +698,9 @@ private extension ProviderQuotaWidgetSnapshot {
                     status: "available",
                     plan: "Pro",
                     windows: [
-                        ProviderQuotaWindow(label: "Session", usedPercent: 24, remainingPercent: 76),
-                        ProviderQuotaWindow(label: "Weekly", usedPercent: 51, remainingPercent: 49),
+                        ProviderQuotaWindow(label: "Session", windowSeconds: 18_000, usedPercent: 24, remainingPercent: 76),
+                        ProviderQuotaWindow(label: "Weekly", windowSeconds: 604_800, usedPercent: 51, remainingPercent: 49),
+                        ProviderQuotaWindow(label: "Monthly", windowSeconds: 2_592_000, usedPercent: 37, remainingPercent: 63),
                     ],
                     retryAfter: nil,
                     fetchedAt: nil

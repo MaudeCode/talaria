@@ -125,6 +125,7 @@ final class ProviderQuotaWidgetTests: XCTestCase {
     }
 
     func testWidgetAppearanceDefaultsStayMinimal() {
+        XCTAssertEqual(ProviderQuotaWidgetGaugeLayout.defaultValue, .classic)
         XCTAssertEqual(ProviderQuotaWidgetArcColor.defaultValue, .automatic)
         XCTAssertEqual(ProviderQuotaWidgetArcWeight.defaultValue, .regular)
         XCTAssertEqual(ProviderQuotaWidgetColorBasis.defaultValue, .pace)
@@ -207,6 +208,76 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(fourProvider[3], CGRect(x: 156, y: 156, width: 144, height: 144))
     }
 
+    func testThreePeriodPresentationOrdersCompleteDurationsAndPreservesIncompleteOrder() {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let settings = ProviderQuotaEvaluationSettings(
+            percentageMode: .used,
+            colorBasis: .overall,
+            windowSelection: .automatic,
+            warningRemainingPercent: 25,
+            criticalRemainingPercent: 10,
+            paceTolerancePercent: 3,
+            paceWarningBurnRatePercent: 125,
+            paceCriticalBurnRatePercent: 175,
+            paceMinimumElapsedHours: 12
+        )
+        func source(_ windows: [ProviderQuotaWindow]) -> ProviderQuotaWidgetSource {
+            ProviderQuotaWidgetSource(
+                sourceID: "qsrc_periods",
+                scopeID: "qscope_default",
+                scopeLabel: "Test server · default",
+                cachedAt: now,
+                providerID: "opencode-go",
+                providerLabel: "OpenCode Go",
+                accountLabel: "OpenCode Go",
+                isActiveProvider: true,
+                status: "available",
+                plan: "Go",
+                windows: windows,
+                retryAfter: nil,
+                fetchedAt: nil
+            )
+        }
+
+        let complete = ProviderQuotaPresentation.periods(
+            for: source([
+                ProviderQuotaWindow(label: "Monthly", windowSeconds: 2_592_000, usedPercent: 30),
+                ProviderQuotaWindow(label: "Weekly", windowSeconds: 604_800, usedPercent: 20),
+                ProviderQuotaWindow(label: "Session", windowSeconds: 18_000, usedPercent: 10),
+            ]),
+            settings: settings,
+            at: now
+        )
+        XCTAssertEqual(complete.map(\.shortLabel), ["5h", "Week", "Month"])
+        XCTAssertEqual(complete.map(\.state.percent), [10, 20, 30])
+
+        let incomplete = ProviderQuotaPresentation.periods(
+            for: source([
+                ProviderQuotaWindow(label: "Monthly", usedPercent: 30),
+                ProviderQuotaWindow(label: "Session", windowSeconds: 18_000, usedPercent: 10),
+                ProviderQuotaWindow(label: "Weekly", windowSeconds: 604_800, usedPercent: 20),
+            ]),
+            settings: settings,
+            at: now
+        )
+        XCTAssertEqual(incomplete.map(\.shortLabel), ["Month", "5h", "Week"])
+    }
+
+    func testConcentricGeometryKeepsBoldInnerArcOutsideCenterText() {
+        let geometry = ProviderQuotaConcentricGeometry(
+            diameter: 97,
+            requestedLineWidth: 14,
+            ringCount: 3
+        )
+
+        XCTAssertLessThan(geometry.lineWidth, 14)
+        XCTAssertGreaterThanOrEqual(
+            geometry.innerRingInnerRadius,
+            geometry.centerDiameter / 2 - 0.001
+        )
+        XCTAssertEqual(geometry.ringInsets.count, 3)
+    }
+
     func testForecastSummarySharesBurnBudgetAndDepletionFormatting() {
         let settings = ProviderQuotaEvaluationSettings(
             percentageMode: .used,
@@ -276,6 +347,10 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             ProviderIconStyle.silhouette.rawValue,
             forKey: ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey
         )
+        defaults.set(
+            ProviderQuotaWidgetGaugeLayout.concentric.rawValue,
+            forKey: ProviderQuotaWidgetGaugeLayout.storageKey
+        )
 
         let profile = try XCTUnwrap(
             ProviderQuotaWidgetProfileStore.saveCurrent(name: "No icon", defaults: defaults)
@@ -288,6 +363,10 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(
             profile.values[ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey],
             ProviderIconStyle.silhouette.rawValue
+        )
+        XCTAssertEqual(
+            profile.values[ProviderQuotaWidgetGaugeLayout.storageKey],
+            ProviderQuotaWidgetGaugeLayout.concentric.rawValue
         )
     }
 

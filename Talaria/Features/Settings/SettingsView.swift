@@ -1716,6 +1716,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
     @State private var previewSourceCount = 1
     @State private var previewSurface = ProviderQuotaWidgetPreviewSurface.home
     @AppStorage(
+        ProviderQuotaWidgetGaugeLayout.storageKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var gaugeLayoutRawValue = ProviderQuotaWidgetGaugeLayout.defaultValue.rawValue
+    @AppStorage(
         ProviderQuotaWidgetArcColor.storageKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var arcColorRawValue = ProviderQuotaWidgetArcColor.defaultValue.rawValue
@@ -1792,7 +1796,15 @@ struct ProviderQuotaWidgetAppearanceView: View {
             Divider()
 
             Form {
-                Section("Arc") {
+                Section("Layout") {
+                    Picker("Gauge Layout", selection: $gaugeLayoutRawValue) {
+                        ForEach(ProviderQuotaWidgetGaugeLayout.allCases.filter { $0 != .appDefault }) { layout in
+                            Text(layout.title).tag(layout.rawValue)
+                        }
+                    }
+                }
+
+                Section("Gauge") {
                 Picker("Color", selection: $arcColorRawValue) {
                     ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
                         Text(color.title).tag(color.rawValue)
@@ -1926,6 +1938,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 .accessibilityLabel("Widget Profiles")
             }
         }
+        .onChange(of: gaugeLayoutRawValue) { reloadWidgets() }
         .onChange(of: arcColorRawValue) { reloadWidgets() }
         .onChange(of: arcWeightRawValue) { reloadWidgets() }
         .onChange(of: colorBasisRawValue) { reloadWidgets() }
@@ -2086,36 +2099,88 @@ struct ProviderQuotaWidgetAppearanceView: View {
         previewFamily == .large ? 20 : 12
     }
 
+    @ViewBuilder
     private func previewGauge(source: ProviderQuotaWidgetSource) -> some View {
         let presentation = previewPresentation(for: source)
-        return ProviderQuotaGaugeView(
-            providerID: source.providerID,
-            displayName: source.providerLabel,
-            sourceStatus: source.status,
-            state: presentation,
-            statusText: ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue,
-            resetDisplay: ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue,
-            style: ProviderQuotaGaugeStyle(
-                arcColor: previewColor,
-                trackColor: previewTrackColor.opacity(Double(trackOpacityPercent) / 100),
-                lineWidth: previewLineWidth(compact: false),
-                showsPaceMarker: arcColor == .automatic
-                    && presentation.settings.colorBasis == .pace
-                    && showsPaceMarker,
+        let periods = ProviderQuotaPresentation.periods(
+            for: source,
+            settings: presentation.settings,
+            at: Date()
+        ).map {
+            ProviderQuotaPeriodPresentation(
+                id: $0.id,
+                shortLabel: $0.shortLabel,
+                state: $0.state.withUrgency(previewState.urgency)
+            )
+        }
+        let statusText = ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue
+        let resetDisplay = ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue
+        let track = previewTrackColor.opacity(Double(trackOpacityPercent) / 100)
+        let iconStyle = ProviderIconStyle(rawValue: providerIconStyleRawValue)
+            ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
+        let marker = arcColor == .automatic
+            && presentation.settings.colorBasis == .pace
+            && showsPaceMarker
+
+        if periods.isEmpty || gaugeLayout == .classic || gaugeLayout == .appDefault {
+            ProviderQuotaGaugeView(
+                providerID: source.providerID,
+                displayName: source.providerLabel,
+                sourceStatus: source.status,
+                state: presentation,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                style: ProviderQuotaGaugeStyle(
+                    arcColor: previewColor,
+                    trackColor: track,
+                    lineWidth: previewLineWidth(compact: false),
+                    showsPaceMarker: marker,
+                    showsProviderIcon: showsProviderIcon,
+                    providerIconStyle: iconStyle
+                ),
+                compact: false
+            )
+        } else if gaugeLayout == .concentric {
+            ProviderQuotaConcentricGaugeView(
+                providerID: source.providerID,
+                displayName: source.providerLabel,
+                periods: periods,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                trackColor: track,
+                requestedLineWidth: previewLineWidth(compact: false),
+                showsPaceMarker: marker,
                 showsProviderIcon: showsProviderIcon,
-                providerIconStyle: ProviderIconStyle(rawValue: providerIconStyleRawValue)
-                    ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
-            ),
-            compact: false
-        )
+                providerIconStyle: iconStyle,
+                arcColor: { _ in previewColor }
+            )
+        } else {
+            ProviderQuotaBarsView(
+                providerID: source.providerID,
+                displayName: source.providerLabel,
+                periods: periods,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                trackColor: track,
+                requestedLineWidth: previewLineWidth(compact: false),
+                showsPaceMarker: marker,
+                showsProviderIcon: showsProviderIcon,
+                providerIconStyle: iconStyle,
+                arcColor: { _ in previewColor }
+            )
+        }
     }
 
     private var previewSourceCounts: [Int] {
         switch previewFamily {
         case .small: [1]
         case .medium: [1, 2]
-        case .large: [1, 2, 4]
+        case .large: [1, 2, 3, 4]
         }
+    }
+
+    private var gaugeLayout: ProviderQuotaWidgetGaugeLayout {
+        ProviderQuotaWidgetGaugeLayout(rawValue: gaugeLayoutRawValue) ?? .defaultValue
     }
 
     private var arcColor: ProviderQuotaWidgetArcColor {
@@ -2186,12 +2251,30 @@ struct ProviderQuotaWidgetAppearanceView: View {
             plan: "Pro",
             windows: previewState == .unavailable ? [] : [
                 ProviderQuotaWindow(
+                    label: "Session",
+                    windowSeconds: 18_000,
+                    usedPercent: min(100, usedPercent + 12),
+                    remainingPercent: max(0, 88 - usedPercent),
+                    resetAt: ISO8601DateFormatter().string(
+                        from: now.addingTimeInterval(4 * 60 * 60)
+                    )
+                ),
+                ProviderQuotaWindow(
                     label: "Weekly",
                     windowSeconds: 604_800,
                     usedPercent: usedPercent,
                     remainingPercent: 100 - usedPercent,
                     resetAt: ISO8601DateFormatter().string(
                         from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
+                    )
+                ),
+                ProviderQuotaWindow(
+                    label: "Monthly",
+                    windowSeconds: 2_592_000,
+                    usedPercent: max(0, usedPercent - 7),
+                    remainingPercent: min(100, 107 - usedPercent),
+                    resetAt: ISO8601DateFormatter().string(
+                        from: now.addingTimeInterval(25 * 24 * 60 * 60)
                     )
                 )
             ],
