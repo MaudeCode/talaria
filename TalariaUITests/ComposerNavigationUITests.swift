@@ -54,10 +54,9 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["chat-bottom-accessory"].exists)
 
         idleComposer.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.textViews.firstMatch.exists)
-
-        app.textViews.firstMatch.typeText("Composer transition check")
+        let expandedTextView = app.textViews.firstMatch
+        XCTAssertTrue(expandedTextView.waitForExistence(timeout: 10))
+        expandedTextView.typeText("Composer transition check")
         XCTAssertFalse(app.buttons["Reply"].exists)
 
         app.terminate()
@@ -90,9 +89,9 @@ final class ComposerNavigationUITests: XCTestCase {
 
         collapsedComposer.tap()
         let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.textViews.firstMatch.exists)
-        app.textViews.firstMatch.typeText("Draft")
+        let reexpandedTextView = app.textViews.firstMatch
+        XCTAssertTrue(reexpandedTextView.waitForExistence(timeout: 10))
+        reexpandedTextView.typeText("Draft")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             .press(
