@@ -42,6 +42,7 @@ export const healthSummary = internalQuery({
 import { apnsPool } from "./workpool";
 
 const MAX_STATE_ROWS = 500;
+const PUSH_TO_START_LEASE_MS = 15 * 60_000;
 
 function asSessionState(state: DataModel["sessionStates"]["document"]): SessionState {
   return {
@@ -225,13 +226,7 @@ export const recompute = internalMutation({
     const changedState = changed[0]?.state ?? null;
     const alertedDevices = new Set<string>();
 
-    if (aggregate === null) {
-      for (const device of devices) {
-        if (device.pushToStartIssuedAt !== undefined) {
-          await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: now });
-        }
-      }
-    } else {
+    if (aggregate !== null) {
       const activeAggregateDevices = new Set(activities.map((activity) => activity.deviceId));
       for (const device of devices) {
         if (
@@ -242,7 +237,7 @@ export const recompute = internalMutation({
           !device.apsEnvironment ||
           !device.preferences.liveActivitiesEnabled ||
           !device.pushToStartToken ||
-          device.pushToStartIssuedAt !== undefined
+          (device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS
         ) {
           continue;
         }

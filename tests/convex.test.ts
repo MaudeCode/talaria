@@ -1026,6 +1026,44 @@ describe("Convex relay state", () => {
       kind: "live_activity_start",
       request: { token: "push-to-start-token", pushType: "liveactivity" },
     });
+    await backend.mutation(internal.delivery.markDelivered, {
+      jobId: enabledJob!._id,
+      apnsStatus: 200,
+      now: now + 6,
+    });
+
+    const startsBeforeGap = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").collect(),
+    );
+    await backend.run(async (ctx) => {
+      const states = await ctx.db.query("sessionStates").collect();
+      for (const session of states) await ctx.db.delete(session._id);
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const outstandingDevice = await backend.run(async (ctx) => ctx.db.get(disabledDevice!._id));
+    expect(outstandingDevice?.pushToStartIssuedAt).toBeDefined();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-2",
+        eventId: "event-2",
+        revision: 1,
+        title: "More work",
+        phase: "running",
+        updatedAt: now + 7,
+        deepLink: "/sessions/session-2",
+        expiresAt: now + 60_000,
+        receivedAt: now + 7,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const startsAfterGap = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").collect(),
+    );
+    expect(startsAfterGap).toHaveLength(startsBeforeGap.length);
 
     await backend.mutation(internal.devices.registerActivity, {
       userId: "user-1",
@@ -1035,7 +1073,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "activity-token",
-      now: now + 6,
+      now: now + 8,
     });
     const registeredDevice = await backend.run(async (ctx) =>
       ctx.db
