@@ -202,7 +202,7 @@ struct SettingsView: View {
 
                         SettingsFootnote(
                             relayStatusMessage
-                                ?? String(localized: "Sign in with Apple once, then Talaria securely pairs this Hermes server with your Live Activities.")
+                                ?? String(localized: "Sign in with Apple, then Talaria securely pairs this Hermes server with your Live Activities.")
                         )
 
                         if isRelayConfigured {
@@ -632,9 +632,15 @@ struct SettingsView: View {
         .task {
             await loadServerSettings()
             await refreshNotificationPermissionStatus()
-            if TalariaRelayConfigurationStore.load() != nil {
-                relayStatusMessage = String(localized: "Connected")
-                isRelayConfigured = true
+            if let credentials = TalariaRelayConfigurationStore.load() {
+                let appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(
+                    userID: credentials.appleUserID
+                )
+                let authorized = !credentials.isExpired && appleAuthorized
+                isRelayConfigured = authorized
+                relayStatusMessage = authorized
+                    ? String(localized: "Connected")
+                    : String(localized: "Sign in with Apple again to restore remote Live Activities.")
             }
         }
         .alert("Clear this server's cache?", isPresented: $isConfirmingClearCache) {
@@ -822,13 +828,19 @@ struct SettingsView: View {
         isConnectingRelay = true
         defer { isConnectingRelay = false }
         do {
-            let credentials = try await TalariaRelayClient.signIn(
+            var credentials = try await TalariaRelayClient.signIn(
                 identityToken: identityToken,
                 nonce: nonce,
                 appleUserID: appleUserID,
                 deviceID: TalariaRelayConfigurationStore.load()?.deviceID
             )
+            let pendingRevocation = TalariaRelayConfigurationStore.load()?.pendingRevocation == true
+            credentials.pendingRevocation = pendingRevocation
             try TalariaRelayConfigurationStore.save(credentials)
+            if pendingRevocation {
+                await disconnectRelay()
+                return
+            }
             isRelayConfigured = true
             try await pairCurrentServer(using: credentials)
             try await TalariaAggregateLiveActivityManager.shared.refresh()
@@ -888,16 +900,17 @@ struct SettingsView: View {
 
     @MainActor
     private func disconnectRelay() async {
-        let credentials = TalariaRelayConfigurationStore.load()
-        try? await TalariaAggregateLiveActivityManager.shared.disconnect()
-        if let credentials {
-            try? await TalariaRelayClient(credentials: credentials).revokeSession()
-        }
+        guard var credentials = TalariaRelayConfigurationStore.load() else { return }
         do {
+            try await TalariaAggregateLiveActivityManager.shared.disconnect()
+            try await TalariaRelayClient(credentials: credentials).revokeSession()
             try TalariaRelayConfigurationStore.clear()
             isRelayConfigured = false
             relayStatusMessage = String(localized: "Disconnected")
         } catch {
+            credentials.pendingRevocation = true
+            try? TalariaRelayConfigurationStore.save(credentials)
+            isRelayConfigured = false
             relayStatusMessage = error.localizedDescription
         }
     }

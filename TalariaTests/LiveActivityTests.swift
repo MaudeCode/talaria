@@ -15,13 +15,25 @@ final class LiveActivityTests: XCTestCase {
             deviceID: "device-1",
             userID: "user-1",
             appleUserID: "apple-user-1",
-            sessionToken: "secret"
+            sessionToken: "secret",
+            expiresAt: Date(timeIntervalSince1970: 1_800_000_000)
         )
 
         try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
         XCTAssertEqual(TalariaRelayConfigurationStore.load(keychain: keychain), credentials)
         try TalariaRelayConfigurationStore.clear(keychain: keychain)
         XCTAssertNil(TalariaRelayConfigurationStore.load(keychain: keychain))
+    }
+
+    func testRelayPublisherOriginCanonicalizesDefaultPorts() throws {
+        XCTAssertEqual(
+            TalariaRelayClient.originURL(try XCTUnwrap(URL(string: "https://Example.COM:443/path")))?.absoluteString,
+            "https://example.com"
+        )
+        XCTAssertEqual(
+            TalariaRelayClient.originURL(try XCTUnwrap(URL(string: "http://Example.COM:80/path")))?.absoluteString,
+            "http://example.com"
+        )
     }
 
     func testRelayAppleSignInPairingAndAggregateSnapshotContract() async throws {
@@ -34,7 +46,7 @@ final class LiveActivityTests: XCTestCase {
             let body: String
             switch request.url?.path {
             case "/v1/auth/apple":
-                body = #"{"userId":"user-1","sessionToken":"secret","expiresAt":1787845600000}"#
+                body = #"{"userId":"user-1","sessionToken":"secret","expiresAt":1900000000000}"#
             case "/v1/pairings/publisher":
                 body = #"{"invitation":"invite-once","expiresAt":1787845600000}"#
             case "/api/talaria/relay/pair":
@@ -111,6 +123,8 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(credentials.baseURL.absoluteString, "https://relay.example.com")
         XCTAssertEqual(credentials.userID, "user-1")
         XCTAssertEqual(credentials.appleUserID, "apple-user-1")
+        XCTAssertEqual(credentials.expiresAt, Date(timeIntervalSince1970: 1_900_000_000))
+        XCTAssertFalse(credentials.isExpired)
         XCTAssertEqual(aggregate?.activeCount, 2)
         XCTAssertEqual(aggregate?.rows.first?.sessionId, "session-1")
         XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer secret")
