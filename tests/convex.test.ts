@@ -923,9 +923,45 @@ describe("Convex relay state", () => {
     expect(state.jobs).toHaveLength(1);
     expect(state.jobs[0]?.kind).toBe("live_activity_start");
 
-    const claimed = await backend.mutation(internal.delivery.claimJob, {
+    await backend.run(async (ctx) => {
+      const session = await ctx.db
+        .query("sessionStates")
+        .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+          query
+            .eq("userId", "user-1")
+            .eq("publisherId", "https://hermes.example")
+            .eq("sessionId", "session-1"),
+        )
+        .unique();
+      await ctx.db.patch(session!._id, { title: "Updated work", updatedAt: now + 1 });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    await expect(backend.mutation(internal.delivery.claimJob, {
       jobId: state.jobs[0]!._id,
-      now: now + 1,
+      now: now + 2,
+    })).resolves.toEqual({ status: "stale" });
+    const invalidated = await backend.run(async (ctx) => ({
+      device: await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(invalidated.device?.pushToStartIssuedAt).toBeUndefined();
+    expect(invalidated.scheduled.some((job) => job.name === "delivery:recompute")).toBe(true);
+
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const replacement = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    const claimed = await backend.mutation(internal.delivery.claimJob, {
+      jobId: replacement!._id,
+      now: now + 3,
     });
     expect(claimed).toMatchObject({
       status: "ready",
@@ -941,7 +977,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "activity-token",
-      now: now + 2,
+      now: now + 4,
     });
     const registeredDevice = await backend.run(async (ctx) =>
       ctx.db

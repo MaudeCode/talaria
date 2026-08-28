@@ -530,6 +530,7 @@ export const claimJob = internalMutation({
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           if (device.pushToStartToken === job.expectedToken) {
             await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
+            await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: job.userId });
           }
           return { status: "stale" as const };
         }
@@ -672,17 +673,5 @@ export const completeJob = apnsPool.defineOnComplete<
       lastError: result.kind === "failed" ? result.error : "canceled",
       updatedAt: Date.now(),
     });
-    if (job.kind === "live_activity_start") {
-      const device = await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", job.userId).eq("deviceId", job.deviceId),
-        )
-        .unique();
-      if (device?.pushToStartToken === job.expectedToken) {
-        await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: Date.now() });
-        await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: job.userId });
-      }
-    }
   },
 });
