@@ -5,6 +5,7 @@ import XCTest
 final class SSEClientTests: XCTestCase {
     override func tearDown() {
         DelayedSSEURLProtocol.reset()
+        RedirectingMockURLProtocol.reset()
         super.tearDown()
     }
 
@@ -111,6 +112,89 @@ final class SSEClientTests: XCTestCase {
 
         await fulfillment(of: [heartbeat], timeout: 5)
         client.stop()
+    }
+
+    func testSSEClientProtectsHeadersOnCrossOriginRedirect() async throws {
+        RedirectingMockURLProtocol.redirect = .init(
+            fromPath: "/api/chat/stream",
+            to: URL(string: "https://third-party.example/final")!
+        )
+        RedirectingMockURLProtocol.responseData = Data("event: stream_end\ndata: {}\n\n".utf8)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectingMockURLProtocol.self]
+        let client = SSEClient(
+            urlSessionConfiguration: configuration,
+            customHeaderProvider: {
+                [
+                    CustomHeader(name: "Accept", value: "application/json"),
+                    CustomHeader(name: "X-Api-Key", value: "secret"),
+                    CustomHeader(name: "X-Talaria-Redirect-Policy", value: "user-value")
+                ]
+            }
+        )
+        let received = expectation(description: "received redirected stream")
+
+        client.start(url: URL(string: "https://example.test/api/chat/stream")!) { event in
+            if event == .streamEnd { received.fulfill() }
+        }
+
+        await fulfillment(of: [received], timeout: 5)
+        client.stop()
+
+        let firstHop = try XCTUnwrap(RedirectingMockURLProtocol.firstHopRequest)
+        XCTAssertEqual(firstHop.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+        XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Api-Key"), "secret")
+        XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Talaria-Redirect-Policy"), "user-value")
+        XCTAssertFalse(firstHop.hasInternalRedirectPolicyHeader)
+
+        let secondHop = try XCTUnwrap(RedirectingMockURLProtocol.secondHopRequest)
+        XCTAssertEqual(secondHop.url?.host, "third-party.example")
+        XCTAssertEqual(secondHop.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+        XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Api-Key"))
+        XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Talaria-Redirect-Policy"))
+        XCTAssertFalse(secondHop.hasInternalRedirectPolicyHeader)
+    }
+
+    func testSSEClientKeepsCustomHeaderOnSameOriginRedirect() async throws {
+        RedirectingMockURLProtocol.redirect = .init(
+            fromPath: "/api/chat/stream",
+            to: URL(string: "https://example.test/final")!
+        )
+        RedirectingMockURLProtocol.responseData = Data("event: stream_end\ndata: {}\n\n".utf8)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectingMockURLProtocol.self]
+        let client = SSEClient(
+            urlSessionConfiguration: configuration,
+            customHeaderProvider: { [CustomHeader(name: "X-Api-Key", value: "secret")] }
+        )
+        let received = expectation(description: "received same-origin redirected stream")
+
+        client.start(url: URL(string: "https://example.test/api/chat/stream")!) { event in
+            if event == .streamEnd { received.fulfill() }
+        }
+
+        await fulfillment(of: [received], timeout: 5)
+        client.stop()
+
+        let firstHop = try XCTUnwrap(RedirectingMockURLProtocol.firstHopRequest)
+        XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Api-Key"), "secret")
+        XCTAssertFalse(firstHop.hasInternalRedirectPolicyHeader)
+        let secondHop = try XCTUnwrap(RedirectingMockURLProtocol.secondHopRequest)
+        XCTAssertEqual(secondHop.value(forHTTPHeaderField: "X-Api-Key"), "secret")
+        XCTAssertFalse(secondHop.hasInternalRedirectPolicyHeader)
+    }
+
+    func testSSEClientDeinitUnregistersRedirectPolicy() {
+        let initialCount = CrossOriginRedirectGuardURLProtocol.registeredPolicyCount
+        var client: SSEClient? = SSEClient(urlSessionConfiguration: .ephemeral)
+        weak let weakClient = client
+
+        client?.start(url: URL(string: "https://example.test/api/chat/stream")!) { _ in }
+        XCTAssertEqual(CrossOriginRedirectGuardURLProtocol.registeredPolicyCount, initialCount + 1)
+        client = nil
+
+        XCTAssertNil(weakClient)
+        XCTAssertEqual(CrossOriginRedirectGuardURLProtocol.registeredPolicyCount, initialCount)
     }
 
     func testDecodesToolStartedEventFromUpstreamPayload() {
@@ -693,6 +777,14 @@ final class SSEClientTests: XCTestCase {
         )
 
         XCTAssertEqual(event, .ignored)
+    }
+}
+
+extension URLRequest {
+    var hasInternalRedirectPolicyHeader: Bool {
+        allHTTPHeaderFields?.keys.contains {
+            $0.lowercased().hasPrefix("x-talaria-redirect-policy-")
+        } == true
     }
 }
 

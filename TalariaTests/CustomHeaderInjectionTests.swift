@@ -634,12 +634,17 @@ final class RedirectingMockURLProtocol: URLProtocol {
     }
 
     static var redirect: Redirect?
+    /// The request seen by the mocked origin before it emits the redirect.
+    static var firstHopRequest: URLRequest?
     /// The request `URLSession` issued for the hop after the redirect.
     static var secondHopRequest: URLRequest?
+    static var responseData = Data("{}".utf8)
 
     static func reset() {
         redirect = nil
+        firstHopRequest = nil
         secondHopRequest = nil
+        responseData = Data("{}".utf8)
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -647,6 +652,7 @@ final class RedirectingMockURLProtocol: URLProtocol {
 
     override func startLoading() {
         if let redirect = Self.redirect, request.url?.path == redirect.fromPath {
+            Self.firstHopRequest = request
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: 302,
@@ -668,7 +674,7 @@ final class RedirectingMockURLProtocol: URLProtocol {
             headerFields: nil
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{}".utf8))
+        client?.urlProtocol(self, didLoad: Self.responseData)
         client?.urlProtocolDidFinishLoading(self)
     }
 
