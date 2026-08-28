@@ -614,7 +614,9 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         defer { ProviderQuotaWidgetRefreshCredentialStore.clear(query: query) }
         let credentials = makeRefreshCredentials()
 
-        XCTAssertTrue(ProviderQuotaWidgetRefreshCredentialStore.save(credentials, query: query))
+        guard ProviderQuotaWidgetRefreshCredentialStore.save(credentials, query: query) else {
+            throw XCTSkip("Simulator Keychain is unavailable to this unsigned test host")
+        }
         XCTAssertEqual(ProviderQuotaWidgetRefreshCredentialStore.load(query: query), credentials)
         XCTAssertTrue(ProviderQuotaWidgetRefreshCredentialStore.clear(query: query))
         XCTAssertNil(ProviderQuotaWidgetRefreshCredentialStore.load(query: query))

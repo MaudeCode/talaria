@@ -803,7 +803,7 @@ The app is "v1 done" when:
 These are useful directions, not approved v1 scope. Before implementing any item here, confirm the owner wants it, check whether it changes App Store/privacy/security posture, and verify any required upstream API behavior instead of guessing.
 
 - **Share extension:** Accept URLs/text from Safari, Notes, Mail, Files, Photos, and similar apps, then open Talaria with a draft or import screen. Start with URL/text before richer files/images/PDFs.
-- **Live Activities:** Show glanceable status for long-running Hermes responses on the Lock Screen / Dynamic Island. Do not stream every token; show coarse status, elapsed time, and completion.
+- **Live Activities (approved in TAL-88/TAL-93/TAL-94):** Keep the existing local per-session mode and add an optional relay-backed all-running mode. Hermes WebUI publishes bounded semantic state to a separate Convex relay; the relay, not Hermes, owns APNs credentials, device enrollment, ActivityKit tokens, aggregation, expiry, and delivery. Do not send transcripts, commands, tool arguments, file paths, provider credentials, or WebUI sign-in material through the relay.
 - **Session search:** Add fast local search across loaded/cached sessions by title, preview, workspace/project, and date grouping. Use server-backed full-text search only if upstream exposes it.
 - **Mobile command launcher:** Provide quick saved commands/templates for repeated owner workflows, reusing the existing chat send/start path.
 - **Voice-first workflow:** Expand voice input beyond dictation into hold-to-talk, optional auto-send, and possibly spoken summaries, with explicit safeguards against accidental sends.

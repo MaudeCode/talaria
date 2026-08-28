@@ -183,6 +183,8 @@ struct SettingsView: View {
                     }
                 }
 
+                RelayLiveActivitySettingsCard(server: server)
+
                 SettingsCard(title: String(localized: "Composer")) {
                     SettingsPickerRow(
                         title: String(localized: "Send While Responding"),
@@ -907,6 +909,7 @@ struct SettingsView: View {
                     isResponseCompletionNotificationsEnabled = false
                     Task {
                         await refreshNotificationPermissionStatus()
+                        try? await TalariaAggregateLiveActivityManager.shared.refresh()
                     }
                 }
             }
@@ -1335,6 +1338,10 @@ struct SettingsView: View {
 
     private func enableResponseCompletionNotifications() async {
         isResponseCompletionNotificationsEnabled = await requestNotificationAccessIfAvailable()
+        if isResponseCompletionNotificationsEnabled {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
     }
 
     private func enableProviderQuotaAlerts() async {
@@ -1581,7 +1588,7 @@ private struct HeaderLogoColorPresetButton: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @ScaledMetric(relativeTo: .body) private var contentSpacing: CGFloat = 12
@@ -1927,26 +1934,32 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 .accessibilityLabel("Widget Profiles")
             }
         }
-        .onChange(of: arcColorRawValue) { reloadWidgets() }
-        .onChange(of: arcWeightRawValue) { reloadWidgets() }
-        .onChange(of: colorBasisRawValue) { reloadWidgets() }
-        .onChange(of: showsPaceMarker) { reloadWidgets() }
-        .onChange(of: showsProviderIcon) { reloadWidgets() }
-        .onChange(of: providerIconStyleRawValue) { reloadWidgets() }
-        .onChange(of: lockScreenShowsProviderIcon) { reloadWidgets() }
-        .onChange(of: lockScreenShowsReset) { reloadWidgets() }
-        .onChange(of: lockScreenShowsWindow) { reloadWidgets() }
-        .onChange(of: lockScreenPaceDetailRawValue) { reloadWidgets() }
-        .onChange(of: statusTextRawValue) { reloadWidgets() }
-        .onChange(of: resetDisplayRawValue) { reloadWidgets() }
-        .onChange(of: trackColorRawValue) { reloadWidgets() }
-        .onChange(of: trackOpacityPercent) { reloadWidgets() }
-        .onChange(of: backgroundRawValue) { reloadWidgets() }
-        .onChange(of: tapActionRawValue) { reloadWidgets() }
-        .onChange(of: customArcColorHex) { reloadWidgets() }
-        .onChange(of: customTrackColorHex) { reloadWidgets() }
-        .onChange(of: customBackgroundColorHex) { reloadWidgets() }
-        .onChange(of: backgroundOpacityPercent) { reloadWidgets() }
+        .onChange(of: reloadFingerprint) { reloadWidgets() }
+    }
+
+    private var reloadFingerprint: String {
+        [
+            arcColorRawValue,
+            arcWeightRawValue,
+            colorBasisRawValue,
+            String(showsPaceMarker),
+            String(showsProviderIcon),
+            providerIconStyleRawValue,
+            String(lockScreenShowsProviderIcon),
+            String(lockScreenShowsReset),
+            String(lockScreenShowsWindow),
+            lockScreenPaceDetailRawValue,
+            statusTextRawValue,
+            resetDisplayRawValue,
+            trackColorRawValue,
+            String(trackOpacityPercent),
+            backgroundRawValue,
+            tapActionRawValue,
+            customArcColorHex,
+            customTrackColorHex,
+            customBackgroundColorHex,
+            String(backgroundOpacityPercent)
+        ].joined(separator: "|")
     }
 
     private var pinnedPreviewPanel: some View {
@@ -2622,32 +2635,36 @@ private struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                 }
             }
         }
-        .onChange(of: warningRemainingPercent) {
+        .onChange(of: reloadFingerprint) {
             if criticalRemainingPercent > warningRemainingPercent {
                 criticalRemainingPercent = warningRemainingPercent
             }
-            reloadWidgets()
-        }
-        .onChange(of: criticalRemainingPercent) { reloadWidgets() }
-        .onChange(of: paceTolerancePercent) { reloadWidgets() }
-        .onChange(of: paceWarningBurnRatePercent) {
             if paceCriticalBurnRatePercent < paceWarningBurnRatePercent {
                 paceCriticalBurnRatePercent = paceWarningBurnRatePercent
             }
             reloadWidgets()
         }
-        .onChange(of: paceCriticalBurnRatePercent) { reloadWidgets() }
-        .onChange(of: paceMinimumElapsedHours) { reloadWidgets() }
-        .onChange(of: healthyColor) { reloadWidgets() }
-        .onChange(of: warningColor) { reloadWidgets() }
-        .onChange(of: criticalColor) { reloadWidgets() }
-        .onChange(of: staleColor) { reloadWidgets() }
-        .onChange(of: unavailableColor) { reloadWidgets() }
-        .onChange(of: customHealthyColorHex) { reloadWidgets() }
-        .onChange(of: customWarningColorHex) { reloadWidgets() }
-        .onChange(of: customCriticalColorHex) { reloadWidgets() }
-        .onChange(of: customStaleColorHex) { reloadWidgets() }
-        .onChange(of: customUnavailableColorHex) { reloadWidgets() }
+    }
+
+    private var reloadFingerprint: String {
+        [
+            String(warningRemainingPercent),
+            String(criticalRemainingPercent),
+            String(paceTolerancePercent),
+            String(paceWarningBurnRatePercent),
+            String(paceCriticalBurnRatePercent),
+            String(paceMinimumElapsedHours),
+            healthyColor,
+            warningColor,
+            criticalColor,
+            staleColor,
+            unavailableColor,
+            customHealthyColorHex,
+            customWarningColorHex,
+            customCriticalColorHex,
+            customStaleColorHex,
+            customUnavailableColorHex
+        ].joined(separator: "|")
     }
 
     @ViewBuilder
@@ -2686,7 +2703,7 @@ private struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     }
 }
 
-private struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
+struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     let title: String
     let systemImage: String
     @Binding var selection: SelectionValue
@@ -2760,7 +2777,7 @@ private struct SettingsRowLabel: View {
     }
 }
 
-private struct SettingsFootnote: View {
+struct SettingsFootnote: View {
     let text: String
 
     init(_ text: String) {
@@ -2973,7 +2990,7 @@ private struct CustomHeadersSettingsView: View {
     }
 }
 
-private struct SettingsToggleRow: View {
+struct SettingsToggleRow: View {
     let title: String
     let systemImage: String
     @Binding var isOn: Bool
@@ -2987,7 +3004,7 @@ private struct SettingsToggleRow: View {
     }
 }
 
-private struct SettingsButton: View {
+struct SettingsButton: View {
     let title: String
     var role: ButtonRole?
     var isLoading = false
@@ -3058,7 +3075,7 @@ private struct SettingsStatusPill: View {
     }
 }
 
-private struct SettingsDivider: View {
+struct SettingsDivider: View {
     var body: some View {
         Divider()
             .padding(.leading, 2)

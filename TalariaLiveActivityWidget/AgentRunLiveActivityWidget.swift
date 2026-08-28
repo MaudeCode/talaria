@@ -6,8 +6,75 @@ import WidgetKit
 struct TalariaLiveActivityWidgetBundle: WidgetBundle {
     var body: some Widget {
         AgentRunLiveActivityWidget()
+        TalariaAggregateLiveActivityWidget()
         ProviderQuotaWidget()
         ProviderQuotaPaceWidget()
+    }
+}
+
+struct TalariaAggregateLiveActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: TalariaAggregateActivityAttributes.self) { context in
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(context.state.subtitle)
+                        .font(.headline)
+                    Spacer()
+                    Text("\(context.state.activeCount) active")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(context.state.rows.prefix(3)) { row in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(row.phase.hasPrefix("waiting_for_") ? Color.orange : Color.green)
+                            .frame(width: 7, height: 7)
+                        Text(row.title)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(row.status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(16)
+            .activityBackgroundTint(AgentRunLiveActivityTheme.background)
+            .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
+            .widgetURL(context.state.rows.first.flatMap {
+                TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
+            })
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Text("Talaria").font(.caption.weight(.semibold))
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text("\(context.state.activeCount) active").font(.caption)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(context.state.rows.prefix(2)) { row in
+                            HStack {
+                                Text(row.title).lineLimit(1)
+                                Spacer()
+                                Text(row.status).foregroundStyle(.secondary)
+                            }
+                            .font(.caption2)
+                        }
+                    }
+                }
+            } compactLeading: {
+                Image(systemName: "bolt.horizontal.circle")
+            } compactTrailing: {
+                Text("\(context.state.activeCount)")
+            } minimal: {
+                Text("\(context.state.activeCount)")
+            }
+            .widgetURL(context.state.rows.first.flatMap {
+                TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
+            })
+        }
     }
 }
 

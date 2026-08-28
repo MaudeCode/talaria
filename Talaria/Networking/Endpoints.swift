@@ -89,6 +89,7 @@ enum Endpoint {
     case providerQuotas(sourceID: String? = nil, refresh: Bool = false)
     case providerQuota(refresh: Bool = false)
     case settings
+    case talariaRelayPair
     case updatesCheck
     case updatesApply
     case insights(days: Int)
@@ -300,6 +301,8 @@ enum Endpoint {
             return "/api/provider/quota"
         case .settings:
             return "/api/settings"
+        case .talariaRelayPair:
+            return "/api/talaria/relay/pair"
         case .updatesCheck:
             return "/api/updates/check"
         case .updatesApply:

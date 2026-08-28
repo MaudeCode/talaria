@@ -25,6 +25,9 @@ struct KeychainStore: KeychainStoring {
         // URL is treated as a credential (PROJECT_SPEC Phase 1), so the registry
         // lives in the Keychain, not UserDefaults (#15).
         case servers = "servers"
+        // Relay URL plus the one-time device id and bearer credential returned
+        // by Talaria Relay enrollment.
+        case talariaRelay = "talaria_relay"
     }
 
     private let keychain: Keychain

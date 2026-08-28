@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct ContentView: View {
@@ -33,6 +34,7 @@ struct ContentView: View {
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
                 drainPendingIntentDeepLink()
+                await refreshRelayIdentityAndActivity()
             }
             .onChange(of: intentRouter.pendingDeepLink) {
                 // Warm launch: the intent set the deep link after the view appeared.
@@ -55,7 +57,51 @@ struct ContentView: View {
                 // #248: the foreground pass stays silent — the in-session completion
                 // paths own notifications while the app is alive.
                 Task { await reconcileOrphanedLiveActivities(notifiesOnCompletion: false) }
+                Task { await refreshRelayIdentityAndActivity() }
             }
+            .onReceive(NotificationCenter.default.publisher(
+                for: ASAuthorizationAppleIDProvider.credentialRevokedNotification
+            )) { _ in
+                Task { await invalidateRelayIdentity() }
+            }
+    }
+
+    private func refreshRelayIdentityAndActivity() async {
+        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        if credentials.pendingRevocation == true {
+            do {
+                try await TalariaAggregateLiveActivityManager.shared.disconnect()
+                try await TalariaRelayClient(credentials: credentials).revokeSession()
+                try TalariaRelayConfigurationStore.clear()
+            } catch {
+                return
+            }
+            return
+        }
+        let appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(
+            userID: credentials.appleUserID
+        )
+        if credentials.isExpired {
+            try? await TalariaAggregateLiveActivityManager.shared.disconnect()
+            return
+        }
+        guard appleAuthorized else {
+            await invalidateRelayIdentity()
+            return
+        }
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
+    }
+
+    private func invalidateRelayIdentity() async {
+        guard var credentials = TalariaRelayConfigurationStore.load() else { return }
+        do {
+            try await TalariaAggregateLiveActivityManager.shared.disconnect()
+            try await TalariaRelayClient(credentials: credentials).revokeSession()
+            try TalariaRelayConfigurationStore.clear()
+        } catch {
+            credentials.pendingRevocation = true
+            try? TalariaRelayConfigurationStore.save(credentials)
+        }
     }
 
     private func reconcileOrphanedLiveActivities(notifiesOnCompletion: Bool) async {
@@ -64,6 +110,7 @@ struct ContentView: View {
             server: server,
             notifiesOnCompletion: notifiesOnCompletion,
             preferenceEnabled: isResponseCompletionNotificationsEnabled
+                && !TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server)
         )
     }
 
@@ -143,6 +190,13 @@ struct ContentView: View {
         }
 
         if let sessionID = TalariaDeepLink.sessionID(from: url) {
+            if let publisherID = TalariaDeepLink.publisherID(from: url),
+               let canonicalPublisherID = TalariaRelayClient.originIdentifier(publisherID),
+               let account = authManager.servers.first(where: {
+                   TalariaRelayClient.originIdentifier($0.urlString) == canonicalPublisherID
+               }) {
+                authManager.switchActiveServer(to: account)
+            }
             pendingDeepLinkedSessionID = sessionID
             return
         }

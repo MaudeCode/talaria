@@ -1,4 +1,6 @@
 import ActivityKit
+import AuthenticationServices
+import CryptoKit
 import Foundation
 import OSLog
 
@@ -125,6 +127,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         let lifecycle = nextLifecycleGeneration()
         _ = nextUpdateGeneration()
 
+        guard TalariaLiveActivityMode.current == .perSession else {
+            activity = nil
+            return
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             activity = nil
             return
@@ -134,6 +140,33 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             await self?.requestOrUpdateActivity(
                 sessionID: normalizedSessionID,
                 streamID: normalizedStreamID,
+                sessionTitle: state.sessionTitle,
+                state: state,
+                lifecycle: lifecycle
+            )
+        }
+    }
+
+    func refreshForCurrentMode() async {
+        switch TalariaLiveActivityMode.current {
+        case .allRunning:
+            pendingUpdateTask?.cancel()
+            pendingUpdateTask = nil
+            _ = nextLifecycleGeneration()
+            _ = nextUpdateGeneration()
+            let endingActivity = activity
+            activity = nil
+            if let endingActivity {
+                await endingActivity.end(nil, dismissalPolicy: .immediate)
+            }
+        case .perSession:
+            guard let state = currentState,
+                  !state.isFinal,
+                  let currentSessionID else { return }
+            let lifecycle = nextLifecycleGeneration()
+            await requestOrUpdateActivity(
+                sessionID: currentSessionID,
+                streamID: currentStreamID,
                 sessionTitle: state.sessionTitle,
                 state: state,
                 lifecycle: lifecycle
@@ -509,6 +542,546 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
 
         reset()
+    }
+}
+
+struct TalariaRelayCredentials: Codable, Equatable {
+    var baseURL: URL
+    var deviceID: String
+    var userID: String
+    var appleUserID: String
+    var sessionToken: String
+    var expiresAt: Date?
+    var pendingRevocation: Bool?
+    var pairedPublisherIDs: [String]? = nil
+
+    var isExpired: Bool { expiresAt.map { $0 <= Date() } ?? true }
+}
+
+enum TalariaRelayConfigurationStore {
+    static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
+        guard let encoded = try? keychain.load(.talariaRelay),
+              let data = encoded.data(using: .utf8)
+        else { return nil }
+        return try? JSONDecoder().decode(TalariaRelayCredentials.self, from: data)
+    }
+
+    static func save(_ credentials: TalariaRelayCredentials, keychain: any KeychainStoring = KeychainStore()) throws {
+        let data = try JSONEncoder().encode(credentials)
+        guard let encoded = String(data: data, encoding: .utf8) else { return }
+        try keychain.save(encoded, forKey: .talariaRelay)
+    }
+
+    static func clear(keychain: any KeychainStoring = KeychainStore()) throws {
+        try keychain.delete(.talariaRelay)
+    }
+
+    static func recordPairedPublisher(
+        _ publisherURL: URL,
+        keychain: any KeychainStoring = KeychainStore()
+    ) throws {
+        guard var credentials = load(keychain: keychain),
+              let publisherID = TalariaRelayClient.originURL(publisherURL)?.absoluteString else { return }
+        var publisherIDs = Set(credentials.pairedPublisherIDs ?? [])
+        publisherIDs.insert(publisherID)
+        credentials.pairedPublisherIDs = publisherIDs.sorted()
+        try save(credentials, keychain: keychain)
+    }
+
+    static func ownsCompletionAlerts(
+        for server: URL,
+        keychain: any KeychainStoring = KeychainStore()
+    ) -> Bool {
+        guard TalariaLiveActivityMode.current == .allRunning,
+              let credentials = load(keychain: keychain),
+              !credentials.isExpired,
+              credentials.pendingRevocation != true,
+              let publisherID = TalariaRelayClient.originURL(server)?.absoluteString else { return false }
+        return credentials.pairedPublisherIDs?.contains(publisherID) == true
+    }
+}
+
+struct TalariaRelayClient {
+    struct AppleAuthResponse: Decodable {
+        var userId: String
+        var sessionToken: String
+        var expiresAt: Double
+    }
+
+    struct PublisherInvitationResponse: Decodable {
+        var invitation: String
+    }
+
+    struct SnapshotResponse: Decodable {
+        var aggregate: TalariaAggregateActivityAttributes.ContentState?
+    }
+
+    enum ClientError: LocalizedError {
+        case invalidURL
+        case invalidResponse(Int, String?)
+
+        var isRetryable: Bool {
+            guard case .invalidResponse(let status, _) = self else { return false }
+            return status == 408 || status == 425 || status == 429 || status >= 500
+        }
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidURL: "Enter the HTTPS origin for the Talaria relay."
+            case .invalidResponse(let status, let body): body ?? "Relay returned HTTP \(status)."
+            }
+        }
+    }
+
+    let credentials: TalariaRelayCredentials
+    var session: URLSession = .shared
+
+    static func makeAppleNonce() -> String {
+        UUID().uuidString.lowercased()
+    }
+
+    static func hashedAppleNonce(_ nonce: String) -> String {
+        SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func signIn(
+        identityToken: Data,
+        nonce: String,
+        appleUserID: String,
+        deviceID: String? = nil,
+        baseURL: URL = defaultBaseURL,
+        session: URLSession = .shared
+    ) async throws -> TalariaRelayCredentials {
+        guard let identityToken = String(data: identityToken, encoding: .utf8) else {
+            throw ClientError.invalidResponse(-1, "Apple did not return a valid identity token.")
+        }
+        let body = try JSONEncoder().encode(["identityToken": identityToken, "nonce": nonce])
+        var request = URLRequest(url: endpoint(baseURL, "v1/auth/apple"))
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await responseData(for: request, session: session)
+        let response = try JSONDecoder().decode(AppleAuthResponse.self, from: data)
+        return TalariaRelayCredentials(
+            baseURL: baseURL,
+            deviceID: deviceID ?? "dev_\(UUID().uuidString.lowercased())",
+            userID: response.userId,
+            appleUserID: appleUserID,
+            sessionToken: response.sessionToken,
+            expiresAt: Date(timeIntervalSince1970: response.expiresAt / 1_000)
+        )
+    }
+
+    func createPublisherInvitation() async throws -> String {
+        var request = authenticatedRequest(
+            url: Self.endpoint(credentials.baseURL, "v1/pairings/publisher"),
+            method: "POST"
+        )
+        request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await Self.responseData(for: request, session: session)
+        return try JSONDecoder().decode(PublisherInvitationResponse.self, from: data).invitation
+    }
+
+    func configureDevice(liveActivitiesEnabled: Bool = true) async throws {
+        let pushToken = UserDefaults.standard.string(forKey: TalariaRelayNotifications.pushTokenKey)
+        let pushToStartToken = UserDefaults.standard.string(
+            forKey: TalariaRelayNotifications.pushToStartTokenKey
+        )
+        let approvalInputAlertsEnabled = UserDefaults.standard.bool(
+            forKey: TalariaRelayNotifications.isEnabledKey
+        )
+        let completionAlertsEnabled = UserDefaults.standard.bool(
+            forKey: ResponseCompletionNotifications.isEnabledKey
+        )
+        let notificationsEnabled = liveActivitiesEnabled
+            && (approvalInputAlertsEnabled || completionAlertsEnabled)
+            && pushToken != nil
+        let preferences: [String: Bool] = [
+            "liveActivitiesEnabled": liveActivitiesEnabled,
+            "notificationsEnabled": notificationsEnabled,
+            "notifyOnApproval": approvalInputAlertsEnabled,
+            "notifyOnInput": approvalInputAlertsEnabled,
+            "notifyOnCompletion": completionAlertsEnabled,
+            "notifyOnFailure": completionAlertsEnabled
+        ]
+        var body: [String: Any] = [
+            "label": "Talaria iPhone",
+            "bundleId": Bundle.main.bundleIdentifier ?? "dev.kil.talaria",
+            "apsEnvironment": Self.apsEnvironment,
+            "preferences": preferences
+        ]
+        if let pushToken {
+            body["pushToken"] = pushToken
+        }
+        if liveActivitiesEnabled, let pushToStartToken {
+            body["pushToStartToken"] = pushToStartToken
+        } else if !liveActivitiesEnabled {
+            body["pushToStartToken"] = NSNull()
+        }
+        try await send(
+            path: "v1/devices/\(credentials.deviceID)",
+            method: "PUT",
+            body: try JSONSerialization.data(withJSONObject: body)
+        )
+    }
+
+    func snapshot() async throws -> TalariaAggregateActivityAttributes.ContentState? {
+        var components = URLComponents(
+            url: Self.endpoint(credentials.baseURL, "v1/activity-snapshot"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "mode", value: "all_running")]
+        guard let url = components?.url else { throw ClientError.invalidURL }
+        var request = authenticatedRequest(url: url, method: "GET")
+        request.setValue(credentials.deviceID, forHTTPHeaderField: "X-Talaria-Device-Id")
+        let data = try await Self.responseData(for: request, session: session)
+        return try JSONDecoder().decode(SnapshotResponse.self, from: data).aggregate
+    }
+
+    func register(activityID: String, pushToken: String) async throws {
+        let body: [String: Any] = [
+            "mode": "all_running",
+            "attributesType": "TalariaAggregateActivityAttributes",
+            "schemaVersion": 1,
+            "activityPushToken": pushToken
+        ]
+        try await send(
+            path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)",
+            method: "PUT",
+            body: try JSONSerialization.data(withJSONObject: body)
+        )
+    }
+
+    func unregister(activityID: String) async throws {
+        try await send(path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)", method: "DELETE")
+    }
+
+    func revokeDevice() async throws {
+        do {
+            try await send(path: "v1/devices/\(credentials.deviceID)", method: "DELETE")
+        } catch ClientError.invalidResponse(404, _) {
+            return
+        }
+    }
+
+    func revokeSession() async throws {
+        do {
+            try await send(path: "v1/auth/session", method: "DELETE")
+        } catch ClientError.invalidResponse(404, _) {
+            return
+        }
+    }
+
+    private func send(path: String, method: String, body: Data) async throws {
+        var request = authenticatedRequest(url: Self.endpoint(credentials.baseURL, path), method: method)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await Self.responseData(for: request, session: session)
+    }
+
+    private func send(path: String, method: String) async throws {
+        let request = authenticatedRequest(url: Self.endpoint(credentials.baseURL, path), method: method)
+        _ = try await Self.responseData(for: request, session: session)
+    }
+
+    private func authenticatedRequest(url: URL, method: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(credentials.sessionToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    private static func endpoint(_ baseURL: URL, _ path: String) -> URL {
+        path.split(separator: "/").reduce(baseURL) { $0.appendingPathComponent(String($1)) }
+    }
+
+    static var defaultBaseURL: URL {
+        if let configured = Bundle.main.object(forInfoDictionaryKey: "TalariaRelayURL") as? String,
+           let url = URL(string: configured) {
+            return url
+        }
+        return URL(string: "https://relay.talaria.kil.dev")!
+    }
+
+    static func originURL(_ url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              components.host != nil,
+              components.user == nil,
+              components.password == nil else { return nil }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        components.host = components.host?.lowercased()
+        if (components.scheme?.lowercased() == "https" && components.port == 443)
+            || (components.scheme?.lowercased() == "http" && components.port == 80) {
+            components.port = nil
+        }
+        return components.url
+    }
+
+    static func originIdentifier(_ value: String) -> String? {
+        URL(string: value).flatMap(originURL)?.absoluteString
+    }
+
+    private static func responseData(for request: URLRequest, session: URLSession) async throws -> Data {
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw ClientError.invalidResponse(-1, nil)
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw ClientError.invalidResponse(response.statusCode, String(data: data, encoding: .utf8))
+        }
+        return data
+    }
+
+    private static var apsEnvironment: String {
+        #if DEBUG
+        "sandbox"
+        #else
+        "production"
+        #endif
+    }
+}
+
+enum TalariaRelayAppleCredentialState {
+    static func isAuthorized(userID: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
+                continuation.resume(returning: error != nil || state == .authorized)
+            }
+        }
+    }
+}
+
+private struct TalariaRelayPairRequest: Encodable {
+    var relayURL: String
+    var publisherID: String
+    var publisherInvitation: String
+    var label: String
+}
+
+private struct TalariaRelayPairResponse: Decodable {
+    var ok: Bool
+}
+
+extension APIClient {
+    func pairTalariaRelay(invitation: String, relayURL: URL, publisherID: URL) async throws {
+        let response: TalariaRelayPairResponse = try await send(
+            endpoint: .talariaRelayPair,
+            method: "POST",
+            body: TalariaRelayPairRequest(
+                relayURL: relayURL.absoluteString,
+                publisherID: publisherID.absoluteString,
+                publisherInvitation: invitation,
+                label: publisherID.host() ?? "Hermes WebUI"
+            )
+        )
+        guard response.ok else { throw TalariaRelayClient.ClientError.invalidResponse(500, nil) }
+    }
+}
+
+@MainActor
+final class TalariaAggregateLiveActivityManager {
+    static let shared = TalariaAggregateLiveActivityManager()
+    private var tokenTasks: [String: Task<Void, Never>] = [:]
+    private var pushToStartTask: Task<Void, Never>?
+    private var activityUpdatesTask: Task<Void, Never>?
+    private var observedSessionToken: String?
+    private var isRefreshing = false
+    private var refreshRequested = false
+    private var operationGeneration = 0
+    private var activeDisconnectCount = 0
+
+    func refresh() async throws {
+        guard activeDisconnectCount == 0 else { return }
+        refreshRequested = true
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        var firstError: (any Error)?
+        repeat {
+            refreshRequested = false
+            do {
+                try await performRefresh()
+            } catch {
+                firstError = firstError ?? error
+            }
+        } while refreshRequested
+        if let firstError { throw firstError }
+    }
+
+    private func performRefresh() async throws {
+        let generation = operationGeneration
+        let credentials = TalariaRelayConfigurationStore.load()
+        guard TalariaLiveActivityMode.current == .allRunning, let credentials else {
+            stopObservers()
+            let client = credentials.map { TalariaRelayClient(credentials: $0) }
+            if let client {
+                try? await client.configureDevice(liveActivitiesEnabled: false)
+            }
+            await endAggregateActivities(client: client)
+            return
+        }
+
+        let client = TalariaRelayClient(credentials: credentials)
+        if observedSessionToken != credentials.sessionToken {
+            stopObservers()
+            observedSessionToken = credentials.sessionToken
+        }
+        if let token = Activity<TalariaAggregateActivityAttributes>.pushToStartToken {
+            UserDefaults.standard.set(
+                token.map { String(format: "%02x", $0) }.joined(),
+                forKey: TalariaRelayNotifications.pushToStartTokenKey
+            )
+        }
+        startObservers(client: client)
+        try await client.configureDevice()
+        guard let aggregate = try await client.snapshot() else {
+            guard generation == operationGeneration else { return }
+            await endAggregateActivities(client: client)
+            return
+        }
+        guard operationIsCurrent(generation, credentials: credentials) else {
+            await endAggregateActivities(client: client)
+            return
+        }
+
+        for perSession in Activity<AgentRunActivityAttributes>.activities {
+            await perSession.end(nil, dismissalPolicy: .immediate)
+        }
+        guard operationIsCurrent(generation, credentials: credentials) else { return }
+
+        let activities = Activity<TalariaAggregateActivityAttributes>.activities
+        let activity: Activity<TalariaAggregateActivityAttributes>
+        if let existing = activities.first {
+            activity = existing
+            await activity.update(ActivityContent(state: aggregate, staleDate: Date().addingTimeInterval(600)))
+            for duplicate in activities.dropFirst() {
+                await duplicate.end(nil, dismissalPolicy: .immediate)
+            }
+        } else {
+            guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+            activity = try Activity.request(
+                attributes: TalariaAggregateActivityAttributes(),
+                content: ActivityContent(state: aggregate, staleDate: Date().addingTimeInterval(600)),
+                pushType: .token
+            )
+        }
+        observePushToken(for: activity, client: client)
+    }
+
+    func disconnect() async throws {
+        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        activeDisconnectCount += 1
+        defer { activeDisconnectCount -= 1 }
+        operationGeneration += 1
+        refreshRequested = false
+        let client = TalariaRelayClient(credentials: credentials)
+        stopObservers()
+        await endAggregateActivities(client: client)
+        try await client.revokeDevice()
+    }
+
+    private func startObservers(client: TalariaRelayClient) {
+        for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+            observePushToken(for: activity, client: client)
+        }
+        if activityUpdatesTask == nil {
+            activityUpdatesTask = Task { [weak self] in
+                for await activity in Activity<TalariaAggregateActivityAttributes>.activityUpdates {
+                    guard !Task.isCancelled else { return }
+                    self?.observePushToken(for: activity, client: client)
+                }
+            }
+        }
+        if pushToStartTask == nil {
+            pushToStartTask = Task {
+                for await token in Activity<TalariaAggregateActivityAttributes>.pushToStartTokenUpdates {
+                    guard !Task.isCancelled else { return }
+                    let tokenString = token.map { String(format: "%02x", $0) }.joined()
+                    UserDefaults.standard.set(
+                        tokenString,
+                        forKey: TalariaRelayNotifications.pushToStartTokenKey
+                    )
+                    var retryDelay: Duration = .seconds(5)
+                    while !Task.isCancelled, TalariaLiveActivityMode.current == .allRunning {
+                        do {
+                            try await client.configureDevice()
+                            break
+                        } catch {
+                            if let error = error as? TalariaRelayClient.ClientError,
+                               !error.isRetryable {
+                                break
+                            }
+                            try? await Task.sleep(for: retryDelay)
+                            retryDelay = min(retryDelay * 2, .seconds(300))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func observePushToken(
+        for activity: Activity<TalariaAggregateActivityAttributes>,
+        client: TalariaRelayClient
+    ) {
+        guard tokenTasks[activity.id] == nil else { return }
+        tokenTasks[activity.id] = Task {
+            for await token in activity.pushTokenUpdates {
+                let tokenString = token.map { String(format: "%02x", $0) }.joined()
+                var retryDelay: Duration = .seconds(5)
+                while !Task.isCancelled {
+                    do {
+                        try await client.register(activityID: activity.id, pushToken: tokenString)
+                        break
+                    } catch {
+                        if let error = error as? TalariaRelayClient.ClientError,
+                           !error.isRetryable {
+                            break
+                        }
+                        try? await Task.sleep(for: retryDelay)
+                        retryDelay = min(retryDelay * 2, .seconds(300))
+                    }
+                }
+            }
+        }
+    }
+
+    private func endAggregateActivities(client: TalariaRelayClient? = nil) async {
+        tokenTasks.values.forEach { $0.cancel() }
+        tokenTasks.removeAll()
+        for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+            if let client {
+                try? await client.unregister(activityID: activity.id)
+            }
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    private func stopObservers() {
+        tokenTasks.values.forEach { $0.cancel() }
+        tokenTasks.removeAll()
+        pushToStartTask?.cancel()
+        pushToStartTask = nil
+        activityUpdatesTask?.cancel()
+        activityUpdatesTask = nil
+        observedSessionToken = nil
+    }
+
+    private func operationIsCurrent(
+        _ generation: Int,
+        credentials: TalariaRelayCredentials
+    ) -> Bool {
+        generation == operationGeneration
+            && activeDisconnectCount == 0
+            && TalariaLiveActivityMode.current == .allRunning
+            && TalariaRelayConfigurationStore.load()?.sessionToken == credentials.sessionToken
     }
 }
 
