@@ -37,6 +37,10 @@ final class LiveActivityTests: XCTestCase {
             TalariaRelayClient.originURL(try XCTUnwrap(URL(string: "http://Example.COM:80/path")))?.absoluteString,
             "http://example.com"
         )
+        XCTAssertEqual(
+            TalariaRelayClient.originIdentifier("https://Example.COM:443/path"),
+            "https://example.com"
+        )
     }
 
     func testRelayAppleSignInPairingAndAggregateSnapshotContract() async throws {
@@ -82,7 +86,7 @@ final class LiveActivityTests: XCTestCase {
             baseURL: try XCTUnwrap(URL(string: "https://hermes.example.com")),
             session: session,
             publicMediaSession: session,
-            customHeaderProvider: { [] }
+            customHeaderProvider: { [CustomHeader(name: "X-Relay-Test", value: "server-a")] }
         ).pairTalariaRelay(
             invitation: "invite-once",
             relayURL: credentials.baseURL,
@@ -101,18 +105,42 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(pairingBody["relay_url"], "https://relay.example.com")
         XCTAssertEqual(pairingBody["publisher_id"], "https://hermes.example.com")
         XCTAssertEqual(pairingBody["publisher_invitation"], "invite-once")
+        XCTAssertEqual(pairingRequest.value(forHTTPHeaderField: "X-Relay-Test"), "server-a")
         UserDefaults.standard.set(true, forKey: TalariaRelayNotifications.isEnabledKey)
+        UserDefaults.standard.set(false, forKey: ResponseCompletionNotifications.isEnabledKey)
         UserDefaults.standard.set("ordinary-push-token", forKey: TalariaRelayNotifications.pushTokenKey)
+        UserDefaults.standard.set("push-to-start-token", forKey: TalariaRelayNotifications.pushToStartTokenKey)
         defer {
             UserDefaults.standard.removeObject(forKey: TalariaRelayNotifications.isEnabledKey)
+            UserDefaults.standard.removeObject(forKey: ResponseCompletionNotifications.isEnabledKey)
             UserDefaults.standard.removeObject(forKey: TalariaRelayNotifications.pushTokenKey)
+            UserDefaults.standard.removeObject(forKey: TalariaRelayNotifications.pushToStartTokenKey)
         }
         try await client.configureDevice()
         let registrationBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
         let registration = try XCTUnwrap(JSONSerialization.jsonObject(with: registrationBody) as? [String: Any])
         let preferences = try XCTUnwrap(registration["preferences"] as? [String: Bool])
         XCTAssertEqual(registration["pushToken"] as? String, "ordinary-push-token")
+        XCTAssertEqual(registration["pushToStartToken"] as? String, "push-to-start-token")
         XCTAssertEqual(preferences["notificationsEnabled"], true)
+        XCTAssertEqual(preferences["notifyOnApproval"], true)
+        XCTAssertEqual(preferences["notifyOnInput"], true)
+        XCTAssertEqual(preferences["notifyOnCompletion"], false)
+        XCTAssertEqual(preferences["notifyOnFailure"], false)
+
+        UserDefaults.standard.set(false, forKey: TalariaRelayNotifications.isEnabledKey)
+        UserDefaults.standard.set(true, forKey: ResponseCompletionNotifications.isEnabledKey)
+        try await client.configureDevice()
+        let completionBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let completionRegistration = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: completionBody) as? [String: Any]
+        )
+        let completionPreferences = try XCTUnwrap(completionRegistration["preferences"] as? [String: Bool])
+        XCTAssertEqual(completionPreferences["notificationsEnabled"], true)
+        XCTAssertEqual(completionPreferences["notifyOnApproval"], false)
+        XCTAssertEqual(completionPreferences["notifyOnInput"], false)
+        XCTAssertEqual(completionPreferences["notifyOnCompletion"], true)
+        XCTAssertEqual(completionPreferences["notifyOnFailure"], true)
 
         try await client.configureDevice(liveActivitiesEnabled: false)
         let disabledBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
@@ -120,6 +148,7 @@ final class LiveActivityTests: XCTestCase {
         let disabledPreferences = try XCTUnwrap(disabledRegistration["preferences"] as? [String: Bool])
         XCTAssertEqual(disabledPreferences["liveActivitiesEnabled"], false)
         XCTAssertEqual(disabledPreferences["notificationsEnabled"], false)
+        XCTAssertTrue(disabledRegistration["pushToStartToken"] is NSNull)
 
         let aggregate = try await client.snapshot()
 
@@ -1321,6 +1350,29 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(manager.activeConnectedStreamID, "stream-abc")
 
         // Finalizing the run releases the claim.
+        manager.end(status: .complete, activity: "Response complete")
+        XCTAssertNil(manager.activeConnectedStreamID)
+    }
+
+    func testAggregateModeStillTracksTheCurrentStreamForModeChanges() {
+        let previous = UserDefaults.standard.string(forKey: TalariaLiveActivityMode.storageKey)
+        UserDefaults.standard.set(
+            TalariaLiveActivityMode.allRunning.rawValue,
+            forKey: TalariaLiveActivityMode.storageKey
+        )
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: TalariaLiveActivityMode.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: TalariaLiveActivityMode.storageKey)
+            }
+        }
+
+        let manager = AgentLiveActivityManager()
+        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1")
+        manager.update(.reasoning("Still tracked while aggregate mode renders"))
+
+        XCTAssertEqual(manager.activeConnectedStreamID, "stream-1")
         manager.end(status: .complete, activity: "Response complete")
         XCTAssertNil(manager.activeConnectedStreamID)
     }

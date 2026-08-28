@@ -909,6 +909,7 @@ struct SettingsView: View {
                     isResponseCompletionNotificationsEnabled = false
                     Task {
                         await refreshNotificationPermissionStatus()
+                        try? await TalariaAggregateLiveActivityManager.shared.refresh()
                     }
                 }
             }
@@ -1337,6 +1338,10 @@ struct SettingsView: View {
 
     private func enableResponseCompletionNotifications() async {
         isResponseCompletionNotificationsEnabled = await requestNotificationAccessIfAvailable()
+        if isResponseCompletionNotificationsEnabled {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
     }
 
     private func enableProviderQuotaAlerts() async {

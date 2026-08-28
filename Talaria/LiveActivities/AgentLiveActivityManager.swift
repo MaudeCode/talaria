@@ -85,7 +85,6 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     }
 
     func start(sessionID: String, sessionTitle: String, streamID: String?) {
-        guard TalariaLiveActivityMode.current == .perSession else { return }
         let normalizedSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedSessionID.isEmpty else { return }
         let normalizedStreamID = AgentLiveActivityReusePolicy.normalizedStreamID(streamID)
@@ -128,6 +127,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         let lifecycle = nextLifecycleGeneration()
         _ = nextUpdateGeneration()
 
+        guard TalariaLiveActivityMode.current == .perSession else {
+            activity = nil
+            return
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             activity = nil
             return
@@ -137,6 +140,33 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             await self?.requestOrUpdateActivity(
                 sessionID: normalizedSessionID,
                 streamID: normalizedStreamID,
+                sessionTitle: state.sessionTitle,
+                state: state,
+                lifecycle: lifecycle
+            )
+        }
+    }
+
+    func refreshForCurrentMode() async {
+        switch TalariaLiveActivityMode.current {
+        case .allRunning:
+            pendingUpdateTask?.cancel()
+            pendingUpdateTask = nil
+            _ = nextLifecycleGeneration()
+            _ = nextUpdateGeneration()
+            let endingActivity = activity
+            activity = nil
+            if let endingActivity {
+                await endingActivity.end(nil, dismissalPolicy: .immediate)
+            }
+        case .perSession:
+            guard let state = currentState,
+                  !state.isFinal,
+                  let currentSessionID else { return }
+            let lifecycle = nextLifecycleGeneration()
+            await requestOrUpdateActivity(
+                sessionID: currentSessionID,
+                streamID: currentStreamID,
                 sessionTitle: state.sessionTitle,
                 state: state,
                 lifecycle: lifecycle
@@ -630,16 +660,25 @@ struct TalariaRelayClient {
 
     func configureDevice(liveActivitiesEnabled: Bool = true) async throws {
         let pushToken = UserDefaults.standard.string(forKey: TalariaRelayNotifications.pushTokenKey)
+        let pushToStartToken = UserDefaults.standard.string(
+            forKey: TalariaRelayNotifications.pushToStartTokenKey
+        )
+        let approvalInputAlertsEnabled = UserDefaults.standard.bool(
+            forKey: TalariaRelayNotifications.isEnabledKey
+        )
+        let completionAlertsEnabled = UserDefaults.standard.bool(
+            forKey: ResponseCompletionNotifications.isEnabledKey
+        )
         let notificationsEnabled = liveActivitiesEnabled
-            && UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
+            && (approvalInputAlertsEnabled || completionAlertsEnabled)
             && pushToken != nil
         let preferences: [String: Bool] = [
             "liveActivitiesEnabled": liveActivitiesEnabled,
             "notificationsEnabled": notificationsEnabled,
-            "notifyOnApproval": true,
-            "notifyOnInput": true,
-            "notifyOnCompletion": true,
-            "notifyOnFailure": true
+            "notifyOnApproval": approvalInputAlertsEnabled,
+            "notifyOnInput": approvalInputAlertsEnabled,
+            "notifyOnCompletion": completionAlertsEnabled,
+            "notifyOnFailure": completionAlertsEnabled
         ]
         var body: [String: Any] = [
             "label": "Talaria iPhone",
@@ -649,6 +688,11 @@ struct TalariaRelayClient {
         ]
         if let pushToken {
             body["pushToken"] = pushToken
+        }
+        if liveActivitiesEnabled, let pushToStartToken {
+            body["pushToStartToken"] = pushToStartToken
+        } else if !liveActivitiesEnabled {
+            body["pushToStartToken"] = NSNull()
         }
         try await send(
             path: "v1/devices/\(credentials.deviceID)",
@@ -754,6 +798,10 @@ struct TalariaRelayClient {
         return components.url
     }
 
+    static func originIdentifier(_ value: String) -> String? {
+        URL(string: value).flatMap(originURL)?.absoluteString
+    }
+
     private static func responseData(for request: URLRequest, session: URLSession) async throws -> Data {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else {
@@ -815,16 +863,34 @@ extension APIClient {
 final class TalariaAggregateLiveActivityManager {
     static let shared = TalariaAggregateLiveActivityManager()
     private var tokenTasks: [String: Task<Void, Never>] = [:]
+    private var pushToStartTask: Task<Void, Never>?
+    private var activityUpdatesTask: Task<Void, Never>?
     private var observedSessionToken: String?
     private var isRefreshing = false
+    private var refreshRequested = false
 
     func refresh() async throws {
+        refreshRequested = true
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
+        var firstError: (any Error)?
+        repeat {
+            refreshRequested = false
+            do {
+                try await performRefresh()
+            } catch {
+                firstError = firstError ?? error
+            }
+        } while refreshRequested
+        if let firstError { throw firstError }
+    }
+
+    private func performRefresh() async throws {
         let credentials = TalariaRelayConfigurationStore.load()
         guard TalariaLiveActivityMode.current == .allRunning, let credentials else {
+            stopObservers()
             let client = credentials.map { TalariaRelayClient(credentials: $0) }
             if let client {
                 try? await client.configureDevice(liveActivitiesEnabled: false)
@@ -835,10 +901,16 @@ final class TalariaAggregateLiveActivityManager {
 
         let client = TalariaRelayClient(credentials: credentials)
         if observedSessionToken != credentials.sessionToken {
-            tokenTasks.values.forEach { $0.cancel() }
-            tokenTasks.removeAll()
+            stopObservers()
             observedSessionToken = credentials.sessionToken
         }
+        if let token = Activity<TalariaAggregateActivityAttributes>.pushToStartToken {
+            UserDefaults.standard.set(
+                token.map { String(format: "%02x", $0) }.joined(),
+                forKey: TalariaRelayNotifications.pushToStartTokenKey
+            )
+        }
+        startObservers(client: client)
         try await client.configureDevice()
         guard let aggregate = try await client.snapshot() else {
             await endAggregateActivities(client: client)
@@ -875,8 +947,49 @@ final class TalariaAggregateLiveActivityManager {
     func disconnect() async throws {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
         let client = TalariaRelayClient(credentials: credentials)
+        stopObservers()
         await endAggregateActivities(client: client)
         try await client.revokeDevice()
+    }
+
+    private func startObservers(client: TalariaRelayClient) {
+        for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+            observePushToken(for: activity, client: client)
+        }
+        if activityUpdatesTask == nil {
+            activityUpdatesTask = Task { [weak self] in
+                for await activity in Activity<TalariaAggregateActivityAttributes>.activityUpdates {
+                    guard !Task.isCancelled else { return }
+                    self?.observePushToken(for: activity, client: client)
+                }
+            }
+        }
+        if pushToStartTask == nil {
+            pushToStartTask = Task {
+                for await token in Activity<TalariaAggregateActivityAttributes>.pushToStartTokenUpdates {
+                    guard !Task.isCancelled else { return }
+                    let tokenString = token.map { String(format: "%02x", $0) }.joined()
+                    UserDefaults.standard.set(
+                        tokenString,
+                        forKey: TalariaRelayNotifications.pushToStartTokenKey
+                    )
+                    var retryDelay: Duration = .seconds(5)
+                    while !Task.isCancelled, TalariaLiveActivityMode.current == .allRunning {
+                        do {
+                            try await client.configureDevice()
+                            break
+                        } catch {
+                            if let error = error as? TalariaRelayClient.ClientError,
+                               !error.isRetryable {
+                                break
+                            }
+                            try? await Task.sleep(for: retryDelay)
+                            retryDelay = min(retryDelay * 2, .seconds(300))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func observePushToken(
@@ -908,13 +1021,22 @@ final class TalariaAggregateLiveActivityManager {
     private func endAggregateActivities(client: TalariaRelayClient? = nil) async {
         tokenTasks.values.forEach { $0.cancel() }
         tokenTasks.removeAll()
-        observedSessionToken = nil
         for activity in Activity<TalariaAggregateActivityAttributes>.activities {
             if let client {
                 try? await client.unregister(activityID: activity.id)
             }
             await activity.end(nil, dismissalPolicy: .immediate)
         }
+    }
+
+    private func stopObservers() {
+        tokenTasks.values.forEach { $0.cancel() }
+        tokenTasks.removeAll()
+        pushToStartTask?.cancel()
+        pushToStartTask = nil
+        activityUpdatesTask?.cancel()
+        activityUpdatesTask = nil
+        observedSessionToken = nil
     }
 }
 

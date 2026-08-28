@@ -97,6 +97,7 @@ enum TalariaLiveActivityMode: String, CaseIterable, Identifiable {
 enum TalariaRelayNotifications {
     static let isEnabledKey = "talariaRelay.notificationsEnabled"
     static let pushTokenKey = "talariaRelay.pushToken"
+    static let pushToStartTokenKey = "talariaRelay.pushToStartToken"
 }
 
 enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable {

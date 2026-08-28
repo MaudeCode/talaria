@@ -110,6 +110,7 @@ struct ContentView: View {
             server: server,
             notifiesOnCompletion: notifiesOnCompletion,
             preferenceEnabled: isResponseCompletionNotificationsEnabled
+                && TalariaLiveActivityMode.current == .perSession
         )
     }
 
@@ -190,7 +191,10 @@ struct ContentView: View {
 
         if let sessionID = TalariaDeepLink.sessionID(from: url) {
             if let publisherID = TalariaDeepLink.publisherID(from: url),
-               let account = authManager.servers.first(where: { $0.id == publisherID }) {
+               let canonicalPublisherID = TalariaRelayClient.originIdentifier(publisherID),
+               let account = authManager.servers.first(where: {
+                   TalariaRelayClient.originIdentifier($0.urlString) == canonicalPublisherID
+               }) {
                 authManager.switchActiveServer(to: account)
             }
             pendingDeepLinkedSessionID = sessionID

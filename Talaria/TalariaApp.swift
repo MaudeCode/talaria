@@ -10,7 +10,8 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey) {
+        if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
+            || UserDefaults.standard.bool(forKey: ResponseCompletionNotifications.isEnabledKey) {
             application.registerForRemoteNotifications()
         }
         return true
