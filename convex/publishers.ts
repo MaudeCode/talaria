@@ -219,7 +219,14 @@ export const acceptSnapshot = internalMutation({
     }[] = [];
     for (const state of args.states) {
       const current = bySessionId.get(state.sessionId);
-      if (current && state.revision <= current.revision) continue;
+      if (current && state.revision < current.revision) continue;
+      if (current && state.revision === current.revision) {
+        await ctx.db.patch(current._id, {
+          ...expiryForPhase(current.phase, args.receivedAt),
+          receivedAt: args.receivedAt,
+        });
+        continue;
+      }
       const next = {
         deleted: false,
         userId: args.userId,

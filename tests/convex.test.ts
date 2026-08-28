@@ -398,6 +398,30 @@ describe("Convex relay state", () => {
         },
       }],
     }]);
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-heartbeat",
+      nonceExpiresAt: now + 120_000,
+      receivedAt: now + 60_000,
+      snapshotId: "snapshot-heartbeat",
+      states: [{
+        sessionId: "session-1",
+        eventId: "event-2",
+        revision: 2,
+        title: "Needs approval",
+        phase: "waiting_for_approval",
+        updatedAt: now + 1,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    const refreshed = await backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    });
+    expect(refreshed?.expiresAt).toBe(now + 60_000 + 3 * 60_000);
   });
 
   it("retires devices and activities when cleanup expires their relay session", async () => {
