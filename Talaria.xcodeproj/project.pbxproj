@@ -25,6 +25,7 @@
 		1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */; };
 		1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */; };
 		1A2B3C4D5E6F700000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000014 /* Assets.xcassets */; };
+		A09400000000000000000102 /* BrandAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A09400000000000000000101 /* BrandAssets.xcassets */; };
 		7A1350000000000000000001 /* Talaria.icon in Resources */ = {isa = PBXBuildFile; fileRef = 7A1350000000000000000002 /* Talaria.icon */; };
 		10CA110C0DE000000000B001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
 		10CA110C0DE000000000B003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 10CA110C0DE000000000B002 /* Localizable.xcstrings */; };
@@ -394,6 +395,7 @@
 		1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentNewChatInProfileTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A09400000000000000000101 /* BrandAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = BrandAssets.xcassets; sourceTree = "<group>"; };
 		7A1350000000000000000002 /* Talaria.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Talaria.icon; sourceTree = "<group>"; };
 		10CA110C0DE000000000B002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
@@ -1254,6 +1256,7 @@
 			isa = PBXGroup;
 			children = (
 				A04500000000000000000014 /* Info.plist */,
+				A09400000000000000000101 /* BrandAssets.xcassets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1505,6 +1508,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A09400000000000000000102 /* BrandAssets.xcassets in Resources */,
 				10CA110C0DE000000000B003 /* Localizable.xcstrings in Resources */,
 				A06300000000000000000004 /* ProviderIcons.xcassets in Resources */,
 				A0610000000000000000000B /* PrivacyInfo.xcprivacy in Resources */,

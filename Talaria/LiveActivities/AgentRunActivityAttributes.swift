@@ -76,6 +76,63 @@ struct TalariaAggregateActivityAttributes: ActivityAttributes {
     }
 }
 
+enum TalariaAggregateLiveActivityPresentation {
+    static let lockScreenRowLimit = 5
+    static let expandedIslandRowLimit = 3
+
+    static func headerText(
+        state: TalariaAggregateActivityAttributes.ContentState,
+        isStale: Bool
+    ) -> String {
+        isStale ? String(localized: "Waiting for server") : state.subtitle
+    }
+
+    static func statusText(_ status: String, isStale: Bool) -> String {
+        isStale ? String(localized: "Waiting") : status
+    }
+
+    static func signalPhase(
+        state: TalariaAggregateActivityAttributes.ContentState,
+        isStale: Bool
+    ) -> String? {
+        if isStale { return "stale" }
+        return state.rows.first(where: {
+            $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
+        })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
+    }
+
+    static func colorHex(for phase: String) -> UInt32? {
+        switch phase {
+        case "waiting_for_approval": 0xD97706
+        case "waiting_for_input": 0x4F46E5
+        case "failed": 0xDC2626
+        case "completed": 0x059669
+        case "starting", "running": 0x0284C7
+        default: nil
+        }
+    }
+
+    static func signalSymbol(for phase: String) -> String {
+        switch phase {
+        case "waiting_for_approval": "exclamationmark.circle.fill"
+        case "waiting_for_input": "questionmark.circle.fill"
+        case "failed": "xmark.octagon.fill"
+        case "stale": "clock.arrow.circlepath"
+        default: "circle.fill"
+        }
+    }
+
+    static func accessibilityLabel(for phase: String) -> String {
+        switch phase {
+        case "waiting_for_approval": String(localized: "Approval needed")
+        case "waiting_for_input": String(localized: "Input needed")
+        case "failed": String(localized: "Agent work failed")
+        case "stale": String(localized: "Waiting for server")
+        default: String(localized: "Agent status")
+        }
+    }
+}
+
 enum TalariaLiveActivityMode: String, CaseIterable, Identifiable {
     case perSession
     case allRunning

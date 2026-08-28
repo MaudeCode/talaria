@@ -15,30 +15,24 @@ struct TalariaLiveActivityWidgetBundle: WidgetBundle {
 struct TalariaAggregateLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TalariaAggregateActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(context.state.subtitle)
-                        .font(.headline)
-                    Spacer()
-                    Text("\(context.state.activeCount) active")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(context.state.rows.prefix(3)) { row in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(row.phase.hasPrefix("waiting_for_") ? Color.orange : Color.green)
-                            .frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 6) {
+                TalariaAggregateHeader(state: context.state, isStale: context.isStale)
+                ForEach(context.state.rows.prefix(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit)) { row in
+                    HStack(spacing: 7) {
                         Text(row.title)
+                            .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
-                        Spacer()
-                        Text(row.status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        AggregateStatusLabel(
+                            status: row.status,
+                            phase: row.phase,
+                            isStale: context.isStale
+                        )
+                            .layoutPriority(1)
                     }
                 }
             }
-            .padding(16)
+            .padding(14)
             .activityBackgroundTint(AgentRunLiveActivityTheme.background)
             .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
             .widgetURL(context.state.rows.first.flatMap {
@@ -47,34 +41,177 @@ struct TalariaAggregateLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text("Talaria").font(.caption.weight(.semibold))
+                    SandalMark(height: 15)
+                    .padding(.leading, 4)
+                    .padding(.vertical, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text("\(context.state.activeCount) active").font(.caption)
+                    Text(context.isStale
+                        ? String(localized: "Waiting")
+                        : "\(context.state.activeCount) active")
+                        .font(.caption)
+                        .lineLimit(1)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(context.state.rows.prefix(2)) { row in
-                            HStack {
-                                Text(row.title).lineLimit(1)
-                                Spacer()
-                                Text(row.status).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(context.state.rows.prefix(
+                            TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit
+                        )) { row in
+                            HStack(spacing: 7) {
+                                Text(row.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .lineLimit(1)
+                                Spacer(minLength: 8)
+                                AggregateStatusLabel(
+                                    status: row.status,
+                                    phase: row.phase,
+                                    isStale: context.isStale
+                                )
+                                    .layoutPriority(1)
                             }
-                            .font(.caption2)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
                 }
             } compactLeading: {
-                Image(systemName: "bolt.horizontal.circle")
+                SandalMark(height: 16)
             } compactTrailing: {
-                Text("\(context.state.activeCount)")
+                AggregateCompactTrailing(state: context.state, isStale: context.isStale)
             } minimal: {
-                Text("\(context.state.activeCount)")
+                SandalMark(height: 13)
             }
             .widgetURL(context.state.rows.first.flatMap {
                 TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
             })
         }
+    }
+}
+
+private struct TalariaAggregateHeader: View {
+    let state: TalariaAggregateActivityAttributes.ContentState
+    let isStale: Bool
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        ZStack {
+            HStack {
+                SandalMark(height: 13)
+                Spacer()
+            }
+
+            Text(TalariaAggregateLiveActivityPresentation.headerText(
+                state: state,
+                isStale: isStale
+            ))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isStale
+                    ? AgentRunLiveActivityTheme.secondaryText
+                    : AggregatePhaseStyle.headerColor(
+                        for: state,
+                        isLuminanceReduced: isLuminanceReduced
+                    ))
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct AggregateCompactTrailing: View {
+    let state: TalariaAggregateActivityAttributes.ContentState
+    let isStale: Bool
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        if let phase = TalariaAggregateLiveActivityPresentation.signalPhase(
+            state: state,
+            isStale: isStale
+        ) {
+            Image(systemName: AggregatePhaseStyle.symbol(for: phase))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AggregatePhaseStyle.color(
+                    for: phase,
+                    isLuminanceReduced: isLuminanceReduced
+                ))
+                .accessibilityLabel(
+                    TalariaAggregateLiveActivityPresentation.accessibilityLabel(for: phase)
+                )
+        } else {
+            Text("\(state.activeCount)")
+                .font(.system(size: 11, weight: .semibold))
+        }
+    }
+
+}
+
+private struct AggregateStatusLabel: View {
+    let status: String
+    let phase: String
+    let isStale: Bool
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        Text(TalariaAggregateLiveActivityPresentation.statusText(status, isStale: isStale))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AggregatePhaseStyle.color(
+                for: isStale ? "stale" : phase,
+                isLuminanceReduced: isLuminanceReduced
+            ))
+            .lineLimit(1)
+    }
+}
+
+private enum AggregatePhaseStyle {
+    static func color(
+        for phase: String,
+        isLuminanceReduced: Bool
+    ) -> Color {
+        if isLuminanceReduced {
+            return AgentRunLiveActivityTheme.secondaryText
+        }
+        guard let hex = TalariaAggregateLiveActivityPresentation.colorHex(for: phase) else {
+            return AgentRunLiveActivityTheme.secondaryText
+        }
+        return Color(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+
+    static func headerColor(
+        for state: TalariaAggregateActivityAttributes.ContentState,
+        isLuminanceReduced: Bool
+    ) -> Color {
+        let hero = state.rows.first(where: {
+            $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
+        }) ?? state.rows.first(where: { $0.phase == "failed" }) ?? state.rows.first
+        return hero.map {
+            color(
+                for: $0.phase,
+                isLuminanceReduced: isLuminanceReduced
+            )
+        } ?? AgentRunLiveActivityTheme.primaryText
+    }
+
+    static func symbol(for phase: String) -> String {
+        TalariaAggregateLiveActivityPresentation.signalSymbol(for: phase)
+    }
+}
+
+private struct SandalMark: View {
+    let height: CGFloat
+
+    var body: some View {
+        Image("Sandal")
+            .resizable()
+            .renderingMode(.template)
+            .scaledToFit()
+            .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
+            .frame(width: height * 0.93, height: height)
+            .accessibilityHidden(true)
     }
 }
 

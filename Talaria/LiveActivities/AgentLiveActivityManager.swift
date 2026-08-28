@@ -33,6 +33,7 @@ struct OrphanedLiveActivity: Equatable {
 
 @MainActor
 protocol AgentLiveActivityManaging: AnyObject {
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String)
     func start(sessionID: String, sessionTitle: String, streamID: String?)
     func update(_ event: AgentLiveActivityEvent)
     func markStale()
@@ -50,6 +51,7 @@ protocol AgentLiveActivityManaging: AnyObject {
 }
 
 extension AgentLiveActivityManaging {
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String) {}
     // Defaults so test spies and non-ActivityKit conformers don't have to care
     // about reconciliation; the real manager overrides both.
     func orphanedActivities() -> [OrphanedLiveActivity] { [] }
@@ -82,6 +84,13 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
     init(minimumUpdateInterval: TimeInterval = 1.5) {
         self.minimumUpdateInterval = minimumUpdateInterval
+    }
+
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String) {
+        TalariaAggregateLiveActivityManager.shared.armForLocalWork(
+            sessionID: sessionID,
+            sessionTitle: sessionTitle
+        )
     }
 
     func start(sessionID: String, sessionTitle: String, streamID: String?) {
@@ -739,12 +748,17 @@ struct TalariaRelayClient {
         return try JSONDecoder().decode(SnapshotResponse.self, from: data).aggregate
     }
 
-    func register(activityID: String, pushToken: String) async throws {
+    func register(
+        activityID: String,
+        pushToken: String,
+        seededLocally: Bool = false
+    ) async throws {
         let body: [String: Any] = [
             "mode": "all_running",
             "attributesType": "TalariaAggregateActivityAttributes",
             "schemaVersion": 1,
-            "activityPushToken": pushToken
+            "activityPushToken": pushToken,
+            "seededLocally": seededLocally
         ]
         try await send(
             path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)",
@@ -887,6 +901,7 @@ extension APIClient {
 @MainActor
 final class TalariaAggregateLiveActivityManager {
     static let shared = TalariaAggregateLiveActivityManager()
+    private static let staleInterval: TimeInterval = 150
     private var tokenTasks: [String: Task<Void, Never>] = [:]
     private var pushToStartTask: Task<Void, Never>?
     private var activityUpdatesTask: Task<Void, Never>?
@@ -895,6 +910,65 @@ final class TalariaAggregateLiveActivityManager {
     private var refreshRequested = false
     private var operationGeneration = 0
     private var activeDisconnectCount = 0
+
+    func armForLocalWork(sessionID: String, sessionTitle: String) {
+        guard TalariaLiveActivityMode.current == .allRunning,
+              ActivityAuthorizationInfo().areActivitiesEnabled,
+              let account = ServerRegistry.shared.activeServer,
+              let server = URL(string: account.urlString),
+              TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server),
+              let credentials = TalariaRelayConfigurationStore.load(),
+              let state = TalariaAggregateActivitySeed.make(
+                  sessionID: sessionID,
+                  sessionTitle: sessionTitle,
+                  publisherURL: server
+              ) else { return }
+
+        let activities = Activity<TalariaAggregateActivityAttributes>.activities
+        if let activity = activities.first {
+            let merged = TalariaAggregateActivitySeed.merging(state, into: activity.content.state)
+            let client = TalariaRelayClient(credentials: credentials)
+            if observedSessionToken != credentials.sessionToken {
+                stopObservers()
+                observedSessionToken = credentials.sessionToken
+            }
+            startObservers(client: client)
+            Task {
+                await activity.update(ActivityContent(
+                    state: merged,
+                    staleDate: Date().addingTimeInterval(Self.staleInterval)
+                ))
+                if let token = activity.pushToken {
+                    try? await client.register(
+                        activityID: activity.id,
+                        pushToken: token.map { String(format: "%02x", $0) }.joined(),
+                        seededLocally: true
+                    )
+                }
+            }
+            return
+        }
+
+        do {
+            let activity = try Activity.request(
+                attributes: TalariaAggregateActivityAttributes(),
+                content: ActivityContent(
+                    state: state,
+                    staleDate: Date().addingTimeInterval(Self.staleInterval)
+                ),
+                pushType: .token
+            )
+            let client = TalariaRelayClient(credentials: credentials)
+            if observedSessionToken != credentials.sessionToken {
+                stopObservers()
+                observedSessionToken = credentials.sessionToken
+            }
+            observePushToken(for: activity, client: client, seededLocally: true)
+            startObservers(client: client)
+        } catch {
+            return
+        }
+    }
 
     func refresh() async throws {
         guard activeDisconnectCount == 0 else { return }
@@ -960,7 +1034,10 @@ final class TalariaAggregateLiveActivityManager {
         let activity: Activity<TalariaAggregateActivityAttributes>
         if let existing = activities.first {
             activity = existing
-            await activity.update(ActivityContent(state: aggregate, staleDate: Date().addingTimeInterval(600)))
+            await activity.update(ActivityContent(
+                state: aggregate,
+                staleDate: Date().addingTimeInterval(Self.staleInterval)
+            ))
             for duplicate in activities.dropFirst() {
                 await duplicate.end(nil, dismissalPolicy: .immediate)
             }
@@ -968,7 +1045,10 @@ final class TalariaAggregateLiveActivityManager {
             guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
             activity = try Activity.request(
                 attributes: TalariaAggregateActivityAttributes(),
-                content: ActivityContent(state: aggregate, staleDate: Date().addingTimeInterval(600)),
+                content: ActivityContent(
+                    state: aggregate,
+                    staleDate: Date().addingTimeInterval(Self.staleInterval)
+                ),
                 pushType: .token
             )
         }
@@ -1029,16 +1109,23 @@ final class TalariaAggregateLiveActivityManager {
 
     private func observePushToken(
         for activity: Activity<TalariaAggregateActivityAttributes>,
-        client: TalariaRelayClient
+        client: TalariaRelayClient,
+        seededLocally: Bool = false
     ) {
         guard tokenTasks[activity.id] == nil else { return }
         tokenTasks[activity.id] = Task {
+            var shouldSeedEmptyState = seededLocally
             for await token in activity.pushTokenUpdates {
                 let tokenString = token.map { String(format: "%02x", $0) }.joined()
                 var retryDelay: Duration = .seconds(5)
                 while !Task.isCancelled {
                     do {
-                        try await client.register(activityID: activity.id, pushToken: tokenString)
+                        try await client.register(
+                            activityID: activity.id,
+                            pushToken: tokenString,
+                            seededLocally: shouldSeedEmptyState
+                        )
+                        shouldSeedEmptyState = false
                         break
                     } catch {
                         if let error = error as? TalariaRelayClient.ClientError,
@@ -1082,6 +1169,89 @@ final class TalariaAggregateLiveActivityManager {
             && activeDisconnectCount == 0
             && TalariaLiveActivityMode.current == .allRunning
             && TalariaRelayConfigurationStore.load()?.sessionToken == credentials.sessionToken
+    }
+}
+
+enum TalariaAggregateActivitySeed {
+    static func make(
+        sessionID: String,
+        sessionTitle: String,
+        publisherURL: URL,
+        now: Date = Date()
+    ) -> TalariaAggregateActivityAttributes.ContentState? {
+        let normalizedSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSessionID.isEmpty,
+              let publisherID = TalariaRelayClient.originURL(publisherURL)?.absoluteString else {
+            return nil
+        }
+        let timestamp = now.timeIntervalSince1970 * 1_000
+        return TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1,
+            activeCount: 1,
+            title: "Talaria",
+            subtitle: String(localized: "1 active session"),
+            updatedAt: timestamp,
+            rows: [
+                .init(
+                    publisherId: publisherID,
+                    publisherLabel: URL(string: publisherID)?.host() ?? "Hermes WebUI",
+                    sessionId: normalizedSessionID,
+                    title: AgentRunActivitySanitizer.sessionTitle(sessionTitle),
+                    phase: "starting",
+                    status: String(localized: "Connecting"),
+                    updatedAt: timestamp,
+                    deepLink: "/sessions/\(normalizedSessionID)"
+                )
+            ]
+        )
+    }
+
+    static func merging(
+        _ seed: TalariaAggregateActivityAttributes.ContentState,
+        into existing: TalariaAggregateActivityAttributes.ContentState
+    ) -> TalariaAggregateActivityAttributes.ContentState {
+        guard let seedRow = seed.rows.first else { return existing }
+        let matchingRow = existing.rows.first { $0.id == seedRow.id }
+        let wasActive = matchingRow.map { activePhases.contains($0.phase) } ?? false
+        let activeCount = max(1, existing.activeCount + (wasActive ? 0 : 1))
+        let rows = ([seedRow] + existing.rows.filter { $0.id != seedRow.id })
+            .sorted {
+                let lhsPriority = displayPriority($0.phase)
+                let rhsPriority = displayPriority($1.phase)
+                return lhsPriority == rhsPriority
+                    ? $0.updatedAt > $1.updatedAt
+                    : lhsPriority < rhsPriority
+            }
+            .prefix(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit)
+
+        var merged = existing
+        merged.activeCount = activeCount
+        if !rows.contains(where: {
+            $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
+        }) {
+            merged.subtitle = activeCount == 1
+                ? String(localized: "1 active session")
+                : String.localizedStringWithFormat(
+                    String(localized: "%lld active sessions"),
+                    activeCount
+                )
+        }
+        merged.updatedAt = max(existing.updatedAt, seed.updatedAt)
+        merged.rows = Array(rows)
+        return merged
+    }
+
+    private static let activePhases: Set<String> = [
+        "starting", "running", "waiting_for_approval", "waiting_for_input"
+    ]
+
+    private static func displayPriority(_ phase: String) -> Int {
+        switch phase {
+        case "waiting_for_approval", "waiting_for_input": 0
+        case "failed": 1
+        case "starting", "running": 2
+        default: 3
+        }
     }
 }
 

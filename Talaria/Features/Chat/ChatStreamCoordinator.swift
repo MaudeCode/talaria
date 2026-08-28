@@ -139,7 +139,8 @@ final class ChatStreamCoordinator {
     func start(
         streamID: String,
         replayAfterSeq: Int? = nil,
-        recoveryState: ActiveStreamRecoveryState = .idle
+        recoveryState: ActiveStreamRecoveryState = .idle,
+        armsAggregateForLocalWork: Bool = false
     ) {
         hasCompletedCurrentResponse = false
         liveTokensPerSecond = nil
@@ -154,7 +155,10 @@ final class ChatStreamCoordinator {
             isReplay: replayAfterSeq != nil,
             recoveryState: recoveryState
         )
-        startLiveActivity(streamID: streamID)
+        startLiveActivity(
+            streamID: streamID,
+            armsAggregateForLocalWork: armsAggregateForLocalWork
+        )
         streamClient.start(
             url: client.chatStreamURL(
                 streamID: streamID,
@@ -727,12 +731,23 @@ final class ChatStreamCoordinator {
         delegate?.streamCoordinatorDidResetRecoveryState()
     }
 
-    private func startLiveActivity(streamID: String) {
+    private func startLiveActivity(
+        streamID: String,
+        armsAggregateForLocalWork: Bool
+    ) {
         guard let sessionID = delegate?.streamCoordinatorSessionID else { return }
+        let sessionTitle = delegate?.streamCoordinatorDisplayTitle ?? String(localized: "Untitled Session")
+
+        if armsAggregateForLocalWork {
+            liveActivityManager.armAggregateForLocalWork(
+                sessionID: sessionID,
+                sessionTitle: sessionTitle
+            )
+        }
 
         liveActivityManager.start(
             sessionID: sessionID,
-            sessionTitle: delegate?.streamCoordinatorDisplayTitle ?? String(localized: "Untitled Session"),
+            sessionTitle: sessionTitle,
             streamID: streamID
         )
     }

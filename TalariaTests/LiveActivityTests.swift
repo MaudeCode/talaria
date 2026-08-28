@@ -207,6 +207,19 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "X-Talaria-Device-Id"), credentials.deviceID)
         XCTAssertEqual(URLComponents(url: requests.last!.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "all_running")
 
+        try await client.register(
+            activityID: "activity-1",
+            pushToken: "activity-token",
+            seededLocally: true
+        )
+        let seededRegistrationBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let seededRegistration = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: seededRegistrationBody) as? [String: Any]
+        )
+        XCTAssertEqual(seededRegistration["mode"] as? String, "all_running")
+        XCTAssertEqual(seededRegistration["activityPushToken"] as? String, "activity-token")
+        XCTAssertEqual(seededRegistration["seededLocally"] as? Bool, true)
+
         try await client.unregister(activityID: "activity-1")
         try await client.revokeDevice()
         XCTAssertEqual(
@@ -228,6 +241,132 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(activity.contains("\n"))
         XCTAssertLessThanOrEqual(activity.count, AgentRunActivitySanitizer.maximumActivityCharacters)
         XCTAssertLessThanOrEqual(excerpt.count, AgentRunActivitySanitizer.maximumExcerptCharacters)
+    }
+
+    func testBuildsImmediateAggregateSeedForLocalWork() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let state = try XCTUnwrap(TalariaAggregateActivitySeed.make(
+            sessionID: " session-abc ",
+            sessionTitle: " Local work ",
+            publisherURL: try XCTUnwrap(URL(string: "https://Hermes.Example:443/path")),
+            now: now
+        ))
+
+        XCTAssertEqual(state.activeCount, 1)
+        XCTAssertEqual(state.subtitle, "1 active session")
+        XCTAssertEqual(state.updatedAt, 1_800_000_000_000)
+        XCTAssertEqual(state.rows.count, 1)
+        XCTAssertEqual(state.rows[0].publisherId, "https://hermes.example")
+        XCTAssertEqual(state.rows[0].publisherLabel, "hermes.example")
+        XCTAssertEqual(state.rows[0].sessionId, "session-abc")
+        XCTAssertEqual(state.rows[0].title, "Local work")
+        XCTAssertEqual(state.rows[0].phase, "starting")
+        XCTAssertEqual(state.rows[0].status, "Connecting")
+    }
+
+    func testMergesImmediateSeedIntoExistingAggregate() throws {
+        let existing = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1,
+            activeCount: 2,
+            title: "Talaria",
+            subtitle: "1 needs attention",
+            updatedAt: 100,
+            rows: [
+                aggregateRow(sessionID: "approval", phase: "waiting_for_approval", updatedAt: 90),
+                aggregateRow(sessionID: "running", phase: "running", updatedAt: 80),
+                aggregateRow(sessionID: "done", phase: "completed", updatedAt: 70),
+                aggregateRow(sessionID: "cancelled", phase: "cancelled", updatedAt: 60),
+                aggregateRow(sessionID: "stale", phase: "stale", updatedAt: 50)
+            ]
+        )
+        let seed = try XCTUnwrap(TalariaAggregateActivitySeed.make(
+            sessionID: "new-session",
+            sessionTitle: "New work",
+            publisherURL: try XCTUnwrap(URL(string: "https://hermes.example")),
+            now: Date(timeIntervalSince1970: 1)
+        ))
+
+        let merged = TalariaAggregateActivitySeed.merging(seed, into: existing)
+
+        XCTAssertEqual(merged.activeCount, 3)
+        XCTAssertEqual(merged.subtitle, "1 needs attention")
+        XCTAssertEqual(
+            merged.rows.map(\.sessionId),
+            ["approval", "new-session", "running", "done", "cancelled"]
+        )
+    }
+
+    func testMergingImmediateSeedReplacesActiveSessionWithoutDoubleCounting() throws {
+        let existing = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1,
+            activeCount: 1,
+            title: "Talaria",
+            subtitle: "1 active session",
+            updatedAt: 100,
+            rows: [aggregateRow(sessionID: "same", phase: "running", updatedAt: 100)]
+        )
+        let seed = try XCTUnwrap(TalariaAggregateActivitySeed.make(
+            sessionID: "same",
+            sessionTitle: "Restarted work",
+            publisherURL: try XCTUnwrap(URL(string: "https://hermes.example")),
+            now: Date(timeIntervalSince1970: 1)
+        ))
+
+        let merged = TalariaAggregateActivitySeed.merging(seed, into: existing)
+
+        XCTAssertEqual(merged.activeCount, 1)
+        XCTAssertEqual(merged.rows.count, 1)
+        XCTAssertEqual(merged.rows[0].phase, "starting")
+        XCTAssertEqual(merged.rows[0].status, "Connecting")
+    }
+
+    func testAggregatePresentationPolicyHandlesStaleAndAttentionStates() {
+        let state = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1,
+            activeCount: 2,
+            title: "Talaria",
+            subtitle: "2 active sessions",
+            updatedAt: 100,
+            rows: [aggregateRow(sessionID: "approval", phase: "waiting_for_approval", updatedAt: 100)]
+        )
+
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, 5)
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit, 3)
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: false),
+            "waiting_for_approval"
+        )
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true),
+            "stale"
+        )
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: true),
+            "Waiting for server"
+        )
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.statusText("Working", isStale: true),
+            "Waiting"
+        )
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.colorHex(for: "completed"), 0x059669)
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.colorHex(for: "running"), 0x0284C7)
+    }
+
+    private func aggregateRow(
+        sessionID: String,
+        phase: String,
+        updatedAt: Double
+    ) -> TalariaAggregateActivityAttributes.ContentState.Row {
+        .init(
+            publisherId: "https://hermes.example",
+            publisherLabel: "Hermes",
+            sessionId: sessionID,
+            title: sessionID,
+            phase: phase,
+            status: phase,
+            updatedAt: updatedAt,
+            deepLink: "/sessions/\(sessionID)"
+        )
     }
 
     func testMapsToolNamesToSafeStatuses() {
