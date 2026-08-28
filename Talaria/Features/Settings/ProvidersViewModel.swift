@@ -191,14 +191,15 @@ final class ProvidersViewModel {
 
     private func applyStableQuotaResponse(_ response: ProviderQuotasResponse) {
         let sameProfile = quotaProfileID == nil || quotaProfileID == response.profileID
+        let sameScope = quotaScopeID != nil && quotaScopeID == response.scopeID
         let incomingIDs = Set(response.sources.map(\.id))
-        let removed = sameProfile && hasStableQuotaSources
+        let removed = sameProfile && sameScope && hasStableQuotaSources
             ? quotaSources.filter { !incomingIDs.contains($0.id) }.map { $0.removed() }
             : []
         quotaSources = response.sources + removed
         hasStableQuotaSources = response.version == 1
         quotaProfileID = response.profileID
-        quotaScopeID = response.scopeID ?? quotaScopeID
+        quotaScopeID = response.scopeID
         quotaCapabilityMessage = hasStableQuotaSources
             ? nil
             : String(localized: "This server returned quota data without stable source identity.")
