@@ -76,7 +76,7 @@ export async function verifyAppleIdentityToken(input: {
   if (!claims) return null;
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (!audiences.some((audience) => input.audiences.includes(audience))) return null;
-  if (claims.exp <= input.nowSeconds || claims.exp > input.nowSeconds + 15 * 60) return null;
+  if (claims.exp <= input.nowSeconds) return null;
   if (claims.iat !== undefined && claims.iat > input.nowSeconds + 5 * 60) return null;
   if (!timingSafeEqual(claims.nonce, input.nonce)) return null;
 
