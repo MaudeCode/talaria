@@ -49,6 +49,18 @@ struct TalariaApp: App {
     init() {
         ProviderQuotaBackgroundRefresh.register()
         ProviderQuotaBackgroundRefresh.schedule()
+
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-reset-chat-drafts"),
+           let applicationSupport = FileManager.default.urls(
+               for: .applicationSupportDirectory,
+               in: .userDomainMask
+           ).first {
+            try? FileManager.default.removeItem(
+                at: applicationSupport.appendingPathComponent("ChatDrafts", isDirectory: true)
+            )
+        }
+        #endif
     }
 
     var body: some Scene {

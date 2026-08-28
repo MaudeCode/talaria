@@ -4,6 +4,7 @@ import UIKit
 struct ChatTranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var prependScrollPositionController = ChatPrependScrollPositionController()
 
     let isLoading: Bool
     let errorMessage: String?
@@ -286,7 +287,10 @@ struct ChatTranscriptView: View {
         .clipped()
         .background {
             ZStack {
-                ChatScrollObserver(isStreaming: activeStreamID != nil) { metrics in
+                ChatScrollObserver(
+                    isStreaming: activeStreamID != nil,
+                    prependScrollPositionController: prependScrollPositionController
+                ) { metrics in
                     onUpdateScrollMetrics(metrics)
                 }
 
@@ -318,18 +322,23 @@ struct ChatTranscriptView: View {
     }
 
     private func loadOlderMessagesPreservingPosition(proxy: ScrollViewProxy) async {
+        let capturedExactPosition = prependScrollPositionController.capture()
         let renderID = displayedTranscriptMessages.first?.renderID
         let didLoad = await onLoadOlderMessages()
-        guard didLoad, let renderID else { return }
+        guard didLoad else {
+            prependScrollPositionController.cancelPreservation()
+            return
+        }
+
+        if capturedExactPosition,
+           prependScrollPositionController.restoreAfterPrepend() {
+            return
+        }
+
+        guard let renderID else { return }
 
         await Task.yield()
-        if reduceMotion {
-            proxy.scrollTo(renderID, anchor: .top)
-        } else {
-            withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
-                proxy.scrollTo(renderID, anchor: .top)
-            }
-        }
+        proxy.scrollTo(renderID, anchor: .top)
     }
 
     @ViewBuilder

@@ -12,6 +12,7 @@ final class ComposerNavigationUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        app.launchArguments = ["--ui-test-reset-chat-drafts"]
         app.launch()
     }
 
@@ -42,7 +43,7 @@ final class ComposerNavigationUITests: XCTestCase {
         }
 
         tapFixtureSession(session)
-        XCTAssertTrue(app.buttons["Message"].waitForExistence(timeout: 15))
+        XCTAssertTrue(waitForComposer(timeout: 15) != nil)
     }
 
     func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
@@ -434,9 +435,8 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     private func openFixtureSession() throws -> XCUIElement {
-        let idleComposer = app.buttons["Message"]
-        if idleComposer.waitForExistence(timeout: 3) {
-            return idleComposer
+        if let composer = waitForComposer(timeout: 3) {
+            return composer
         }
 
         let session = fixtureSessionButton
@@ -444,8 +444,23 @@ final class ComposerNavigationUITests: XCTestCase {
             throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
         }
         tapFixtureSession(session)
-        XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
-        return idleComposer
+        let composer = waitForComposer(timeout: 15)
+        XCTAssertNotNil(composer)
+        return try XCTUnwrap(composer)
+    }
+
+    private func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
+        let idleComposer = app.buttons["Message"]
+        let expandedComposer = app.textViews.firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if idleComposer.exists { return idleComposer }
+            if expandedComposer.exists { return expandedComposer }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < deadline
+
+        return nil
     }
 
     private func tapFixtureSession(_ session: XCUIElement) {

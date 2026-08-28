@@ -65,6 +65,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
                 return apiTestJSONResponse("""
                 {
                   "version": 1,
+                  "scope_id": "qscope_default",
                   "profile_id": "default",
                   "sources": [
                     { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [] },
@@ -76,6 +77,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
             return apiTestJSONResponse("""
             {
               "version": 1,
+              "scope_id": "qscope_default",
               "profile_id": "default",
               "sources": [
                 { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B renamed", "status": "available", "supported": true, "windows": [] }
@@ -91,6 +93,126 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_b", "qsrc_a"])
         XCTAssertEqual(model.quotaSources[0].accountLabel, "B renamed")
         XCTAssertEqual(model.quotaSources[1].status, "removed")
+    }
+
+    @MainActor
+    func testQuotaReloadDiscardsRemovedSourcesWhenScopeChanges() async throws {
+        let suite = "ProvidersViewModelScopeChange.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        var load = 0
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            load += 1
+            if load == 1 {
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "scope_id": "qscope_old",
+                  "profile_id": "default",
+                  "sources": [
+                    { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] }
+                  ]
+                }
+                """, for: request)
+            }
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_new",
+              "profile_id": "default",
+              "sources": [
+                { "source_id": "qsrc_new", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(
+            server: Self.serverURL,
+            client: client,
+            quotaSnapshotStore: store,
+            reloadQuotaWidgets: {}
+        )
+
+        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"])
+        XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_new"])
+        XCTAssertEqual(store.load()?.sources.map(\.scopeID), ["qscope_new"])
+    }
+
+    @MainActor
+    func testQuotaReloadDiscardsUnscopedSourcesWhenScopeBecomesKnown() async throws {
+        var load = 0
+        let client = makeClient { request in
+            load += 1
+            if load == 1 {
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "profile_id": "default",
+                  "sources": [
+                    { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Old", "status": "available", "supported": true, "windows": [] }
+                  ]
+                }
+                """, for: request)
+            }
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_new",
+              "profile_id": "default",
+              "sources": [
+                { "source_id": "qsrc_new", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "New", "status": "available", "supported": true, "windows": [] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"])
+        XCTAssertEqual(model.quotaScopeID, "qscope_new")
+    }
+
+    @MainActor
+    func testQuotaReloadDiscardsScopedSourcesWhenScopeBecomesMissing() async throws {
+        var load = 0
+        let client = makeClient { request in
+            load += 1
+            if load == 1 {
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "scope_id": "qscope_old",
+                  "profile_id": "default",
+                  "sources": [
+                    { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Old", "status": "available", "supported": true, "windows": [] }
+                  ]
+                }
+                """, for: request)
+            }
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "profile_id": "default",
+              "sources": [
+                { "source_id": "qsrc_new", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "New", "status": "available", "supported": true, "windows": [] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"])
+        XCTAssertNil(model.quotaScopeID)
     }
 
     @MainActor
