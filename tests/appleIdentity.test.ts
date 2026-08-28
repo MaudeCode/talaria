@@ -28,7 +28,7 @@ describe("Apple identity verification", () => {
       iss: "https://appleid.apple.com",
       aud: "dev.kil.talaria",
       sub: "apple-user",
-      exp: 1_800_000_600,
+      exp: 1_800_086_400,
       iat: 1_800_000_000,
       nonce: "nonce-1",
     })));
@@ -49,6 +49,6 @@ describe("Apple identity verification", () => {
     await expect(verifyAppleIdentityToken(input)).resolves.toMatchObject({ sub: "apple-user" });
     await expect(verifyAppleIdentityToken({ ...input, nonce: "wrong" })).resolves.toBeNull();
     await expect(verifyAppleIdentityToken({ ...input, audiences: ["other.app"] })).resolves.toBeNull();
-    await expect(verifyAppleIdentityToken({ ...input, nowSeconds: 1_800_000_601 })).resolves.toBeNull();
+    await expect(verifyAppleIdentityToken({ ...input, nowSeconds: 1_800_086_401 })).resolves.toBeNull();
   });
 });
