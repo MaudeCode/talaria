@@ -565,9 +565,9 @@ struct TalariaRelayClient {
         case invalidURL
         case invalidResponse(Int, String?)
 
-        var isUnauthorized: Bool {
-            if case .invalidResponse(401, _) = self { return true }
-            return false
+        var isRetryable: Bool {
+            guard case .invalidResponse(let status, _) = self else { return false }
+            return status == 408 || status == 425 || status == 429 || status >= 500
         }
 
         var errorDescription: String? {
@@ -887,16 +887,18 @@ final class TalariaAggregateLiveActivityManager {
         tokenTasks[activity.id] = Task {
             for await token in activity.pushTokenUpdates {
                 let tokenString = token.map { String(format: "%02x", $0) }.joined()
+                var retryDelay: Duration = .seconds(5)
                 while !Task.isCancelled {
                     do {
                         try await client.register(activityID: activity.id, pushToken: tokenString)
                         break
                     } catch {
                         if let error = error as? TalariaRelayClient.ClientError,
-                           error.isUnauthorized {
+                           !error.isRetryable {
                             break
                         }
-                        try? await Task.sleep(for: .seconds(5))
+                        try? await Task.sleep(for: retryDelay)
+                        retryDelay = min(retryDelay * 2, .seconds(300))
                     }
                 }
             }

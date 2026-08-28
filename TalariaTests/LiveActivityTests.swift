@@ -21,6 +21,9 @@ final class LiveActivityTests: XCTestCase {
 
         try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
         XCTAssertEqual(TalariaRelayConfigurationStore.load(keychain: keychain), credentials)
+        var expired = credentials
+        expired.expiresAt = .distantPast
+        XCTAssertTrue(expired.isExpired)
         try TalariaRelayConfigurationStore.clear(keychain: keychain)
         XCTAssertNil(TalariaRelayConfigurationStore.load(keychain: keychain))
     }
