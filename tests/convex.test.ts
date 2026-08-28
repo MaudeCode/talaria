@@ -990,6 +990,27 @@ describe("Convex relay state", () => {
       });
     });
     await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const expiringJob = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    await backend.run(async (ctx) => {
+      const device = await ctx.db.get(disabledDevice!._id);
+      await ctx.db.patch(device!._id, { sessionExpiresAt: now + 3 });
+    });
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: expiringJob!._id,
+      now: now + 4,
+    })).resolves.toEqual({ status: "stale" });
+    const expiredDevice = await backend.run(async (ctx) => ctx.db.get(disabledDevice!._id));
+    expect(expiredDevice?.pushToStartIssuedAt).toBeUndefined();
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(disabledDevice!._id, { sessionExpiresAt: now + 60_000 });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
     const enabledJob = await backend.run(async (ctx) =>
       ctx.db
         .query("deliveryJobs")
@@ -998,7 +1019,7 @@ describe("Convex relay state", () => {
     );
     const claimed = await backend.mutation(internal.delivery.claimJob, {
       jobId: enabledJob!._id,
-      now: now + 4,
+      now: now + 5,
     });
     expect(claimed).toMatchObject({
       status: "ready",
@@ -1014,7 +1035,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "activity-token",
-      now: now + 5,
+      now: now + 6,
     });
     const registeredDevice = await backend.run(async (ctx) =>
       ctx.db
@@ -1025,5 +1046,21 @@ describe("Convex relay state", () => {
         .unique(),
     );
     expect(registeredDevice?.pushToStartIssuedAt).toBeUndefined();
+
+    await backend.run(async (ctx) => {
+      const states = await ctx.db.query("sessionStates").collect();
+      for (const session of states) await ctx.db.delete(session._id);
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const endJob = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    expect(endJob).toMatchObject({
+      kind: "live_activity_end",
+      activityId: "activity-from-apns",
+    });
   });
 });

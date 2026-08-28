@@ -312,12 +312,11 @@ export const recompute = internalMutation({
       })[0] ?? null;
 
       if (nextAggregate === null) {
-        if (!activity.lastAggregate) continue;
         const request = makeLiveActivityEnd({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
           environment: device.apsEnvironment,
-          aggregate: activity.lastAggregate,
+          aggregate: activity.lastAggregate ?? null,
           nowEpochSeconds: Math.floor(now / 1_000),
           alert,
         });
@@ -512,7 +511,7 @@ export const claimJob = internalMutation({
         liveActivitiesDisabled
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
-        if (liveActivitiesDisabled && device?.pushToStartToken === job.expectedToken) {
+        if (job.kind === "live_activity_start" && device?.pushToStartToken === job.expectedToken) {
           await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
         }
         return { status: "stale" as const };
