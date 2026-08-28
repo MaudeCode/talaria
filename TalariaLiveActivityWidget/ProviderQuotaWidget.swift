@@ -200,7 +200,15 @@ private struct ProviderQuotaWidgetView: View {
 
     @ViewBuilder
     private var sourceGrid: some View {
-        if usesTwoWindowLayout {
+        if usesTwoSourceLargeLayout {
+            twoSourceLargeGrid
+        } else if usesThreeWindowLargeLayout {
+            threeWindowLargeGrid
+        } else if usesTwoWindowLargeLayout {
+            twoWindowLargeGrid
+        } else if usesSingleWindowLargeLayout {
+            singleWindowLargeGrid
+        } else if usesTwoWindowLayout {
             twoWindowGrid
         } else if usesSingleSourceExpandedLayout {
             singleSourceExpandedLayout
@@ -215,6 +223,138 @@ private struct ProviderQuotaWidgetView: View {
                 }
             }
         }
+    }
+
+    private var twoSourceLargeGrid: some View {
+        ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
+            sourceCell(at: 0)
+            sourceInfoCell(at: 0)
+            sourceCell(at: 1)
+            sourceInfoCell(at: 1)
+        }
+    }
+
+    private var usesTwoSourceLargeLayout: Bool {
+        family == .systemLarge && sourceIDs.count == 2
+    }
+
+    @ViewBuilder
+    private var threeWindowLargeGrid: some View {
+        if let source = resolvedSources.first ?? nil,
+           let url = destinationURL(for: source) {
+            Link(destination: url) {
+                ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
+                    ForEach(
+                        Array(ProviderQuotaPresentation.displayWindows(from: source.windows).enumerated()),
+                        id: \.offset
+                    ) { _, window in
+                        ProviderQuotaWidgetSourceView(
+                            source: source,
+                            configuration: entry.configuration,
+                            compact: false,
+                            referenceDate: Date(),
+                            windowOverride: window
+                        )
+                    }
+
+                    ProviderQuotaForecastView(
+                        plan: source.plan,
+                        state: ProviderQuotaPresentation.state(
+                            for: source,
+                            settings: evaluationSettings,
+                            at: Date()
+                        )
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var usesThreeWindowLargeLayout: Bool {
+        guard family == .systemLarge,
+              sourceIDs.count == 1,
+              let source = resolvedSources.first ?? nil
+        else { return false }
+        return source.windows.count == 3
+    }
+
+    @ViewBuilder
+    private var twoWindowLargeGrid: some View {
+        if let source = resolvedSources.first ?? nil,
+           let url = destinationURL(for: source) {
+            let windows = ProviderQuotaPresentation.displayWindows(from: source.windows)
+            Link(destination: url) {
+                ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
+                    ProviderQuotaWidgetSourceView(
+                        source: source,
+                        configuration: entry.configuration,
+                        compact: false,
+                        referenceDate: Date(),
+                        windowOverride: windows[0]
+                    )
+                    ProviderQuotaForecastView(
+                        plan: source.plan,
+                        state: presentation(for: source, windowOverride: windows[0])
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    ProviderQuotaWidgetSourceView(
+                        source: source,
+                        configuration: entry.configuration,
+                        compact: false,
+                        referenceDate: Date(),
+                        windowOverride: windows[1]
+                    )
+                    ProviderQuotaForecastView(
+                        plan: source.plan,
+                        state: presentation(for: source, windowOverride: windows[1])
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var usesTwoWindowLargeLayout: Bool {
+        guard family == .systemLarge,
+              sourceIDs.count == 1,
+              let source = resolvedSources.first ?? nil
+        else { return false }
+        return source.windows.count == 2
+    }
+
+    @ViewBuilder
+    private var singleWindowLargeGrid: some View {
+        if let source = resolvedSources.first ?? nil,
+           let url = destinationURL(for: source) {
+            Link(destination: url) {
+                ProviderQuotaWidgetPrimaryDetailLayout(spacing: slotSpacing) {
+                    ProviderQuotaWidgetSourceView(
+                        source: source,
+                        configuration: entry.configuration,
+                        compact: false,
+                        referenceDate: Date(),
+                        windowOverride: nil
+                    )
+                    ProviderQuotaForecastView(
+                        plan: source.plan,
+                        state: presentation(for: source)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var usesSingleWindowLargeLayout: Bool {
+        guard family == .systemLarge,
+              sourceIDs.count == 1,
+              let source = resolvedSources.first ?? nil
+        else { return false }
+        return source.windows.count <= 1
     }
 
     @ViewBuilder
@@ -244,7 +384,7 @@ private struct ProviderQuotaWidgetView: View {
               sourceIDs.count == 1,
               let source = resolvedSources.first ?? nil
         else { return false }
-        return source.windows.count >= 2
+        return source.windows.count == 2
     }
 
     @ViewBuilder
@@ -314,6 +454,38 @@ private struct ProviderQuotaWidgetView: View {
                 systemImage: "person.crop.circle.badge.xmark"
             )
         }
+    }
+
+    @ViewBuilder
+    private func sourceInfoCell(at index: Int) -> some View {
+        if let source = resolvedSources[index], let url = destinationURL(for: source) {
+            Link(destination: url) {
+                ProviderQuotaForecastView(
+                    plan: source.plan,
+                    state: presentation(for: source)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+        } else {
+            ProviderQuotaWidgetPrompt(
+                title: "Account removed",
+                detail: "Edit this widget to choose another source.",
+                systemImage: "person.crop.circle.badge.xmark"
+            )
+        }
+    }
+
+    private func presentation(
+        for source: ProviderQuotaWidgetSource,
+        windowOverride: ProviderQuotaWindow? = nil
+    ) -> ProviderQuotaPresentationState {
+        ProviderQuotaPresentation.state(
+            for: source,
+            settings: evaluationSettings,
+            at: Date(),
+            windowOverride: windowOverride
+        )
     }
 
     private var effectiveTapAction: ProviderQuotaWidgetTapAction {
@@ -401,26 +573,34 @@ private struct ProviderQuotaWidgetSourceView: View {
     let referenceDate: Date
     let windowOverride: ProviderQuotaWindow?
 
+    @ViewBuilder
     var body: some View {
-        ProviderQuotaGaugeView(
-            providerID: source.providerID,
-            displayName: displayName,
-            sourceStatus: source.status,
-            state: presentation,
-            statusText: statusText,
-            resetDisplay: resetDisplay,
-            style: ProviderQuotaGaugeStyle(
-                arcColor: arcColor,
-                trackColor: trackColor.opacity(Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey), 0), 100)) / 100),
-                lineWidth: lineWidth,
+        if source.windows.count == 3, windowOverride == nil {
+            ProviderQuotaBarsView(
+                providerID: source.providerID,
+                displayName: displayName,
+                periods: periods,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                trackColor: trackWithOpacity,
+                requestedLineWidth: lineWidth,
                 showsPaceMarker: showsPaceMarker,
-                showsProviderIcon: resolvedProfile.boolean(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey),
-                providerIconStyle: ProviderIconStyle(
-                    rawValue: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey)
-                ) ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
-            ),
-            compact: compact
-        )
+                showsProviderIcon: showsProviderIcon,
+                providerIconStyle: providerIconStyle,
+                arcColor: arcColor(for:)
+            )
+        } else {
+            ProviderQuotaGaugeView(
+                providerID: source.providerID,
+                displayName: displayName,
+                sourceStatus: source.status,
+                state: presentation,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                style: gaugeStyle,
+                compact: compact
+            )
+        }
     }
 
     private var displayName: String {
@@ -439,6 +619,14 @@ private struct ProviderQuotaWidgetSourceView: View {
             settings: ProviderQuotaEvaluationSettings.stored(configuration: configuration),
             at: referenceDate,
             windowOverride: windowOverride
+        )
+    }
+
+    private var periods: [ProviderQuotaPeriodPresentation] {
+        ProviderQuotaPresentation.periods(
+            for: source,
+            settings: presentation.settings,
+            at: referenceDate
         )
     }
 
@@ -467,6 +655,10 @@ private struct ProviderQuotaWidgetSourceView: View {
     }
 
     private var arcColor: Color {
+        arcColor(for: presentation)
+    }
+
+    private func arcColor(for state: ProviderQuotaPresentationState) -> Color {
         guard configuredArcColor == .automatic else {
             return ProviderQuotaWidgetColorResolver.color(
                 configuredArcColor,
@@ -474,9 +666,36 @@ private struct ProviderQuotaWidgetSourceView: View {
             )
         }
         return ProviderQuotaWidgetPalette.arcColor(
-            urgency: presentation.urgency,
+            urgency: state.urgency,
             profile: resolvedProfile
         )
+    }
+
+    private var gaugeStyle: ProviderQuotaGaugeStyle {
+        ProviderQuotaGaugeStyle(
+            arcColor: arcColor,
+            trackColor: trackWithOpacity,
+            lineWidth: lineWidth,
+            showsPaceMarker: showsPaceMarker,
+            showsProviderIcon: showsProviderIcon,
+            providerIconStyle: providerIconStyle
+        )
+    }
+
+    private var trackWithOpacity: Color {
+        trackColor.opacity(
+            Double(min(max(resolvedProfile.integer(ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey), 0), 100)) / 100
+        )
+    }
+
+    private var showsProviderIcon: Bool {
+        resolvedProfile.boolean(ProviderQuotaWidgetAppearanceSettings.showsProviderIconKey)
+    }
+
+    private var providerIconStyle: ProviderIconStyle {
+        ProviderIconStyle(
+            rawValue: resolvedProfile.string(ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey)
+        ) ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
     }
 
     private var trackColor: Color {
@@ -622,8 +841,9 @@ private extension ProviderQuotaWidgetSnapshot {
                     status: "available",
                     plan: "Pro",
                     windows: [
-                        ProviderQuotaWindow(label: "Session", usedPercent: 24, remainingPercent: 76),
-                        ProviderQuotaWindow(label: "Weekly", usedPercent: 51, remainingPercent: 49),
+                        ProviderQuotaWindow(label: "Session", windowSeconds: 18_000, usedPercent: 24, remainingPercent: 76),
+                        ProviderQuotaWindow(label: "Weekly", windowSeconds: 604_800, usedPercent: 51, remainingPercent: 49),
+                        ProviderQuotaWindow(label: "Monthly", windowSeconds: 2_592_000, usedPercent: 37, remainingPercent: 63),
                     ],
                     retryAfter: nil,
                     fetchedAt: nil

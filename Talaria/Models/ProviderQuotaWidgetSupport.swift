@@ -1142,6 +1142,46 @@ enum ProviderQuotaSidebarPresentation {
     }
 }
 
+struct ProviderQuotaPeriodPresentation: Equatable, Identifiable {
+    let id: Int
+    let shortLabel: String
+    let state: ProviderQuotaPresentationState
+
+    func valueLabel(statusText: ProviderQuotaWidgetStatusText) -> String? {
+        switch statusText {
+        case .hidden:
+            nil
+        case .pace:
+            state.paceLabel
+                ?? state.percent?.formatted(.percent.scale(1).precision(.fractionLength(0)))
+        case .appDefault, .percentage:
+            state.percent?.formatted(.percent.scale(1).precision(.fractionLength(0)))
+                ?? "—"
+        }
+    }
+
+    func resetLabel(display: ProviderQuotaWidgetResetDisplay) -> String? {
+        guard display != .hidden, let resetAt = state.resetAt else { return nil }
+        if display == .exact {
+            return resetAt.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        }
+        let minutes = max(0, Int(resetAt.timeIntervalSince(state.referenceDate) / 60))
+        let days = minutes / (24 * 60)
+        let hours = minutes % (24 * 60) / 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(minutes % 60)m" }
+        return "\(minutes)m"
+    }
+
+    func accessibilityDescription(resetDisplay: ProviderQuotaWidgetResetDisplay) -> String {
+        let value = state.percent?.formatted(
+            .percent.scale(1).precision(.fractionLength(0...1))
+        ) ?? String(localized: "unavailable")
+        let reset = resetLabel(display: resetDisplay).map { ", resets in \($0)" } ?? ""
+        return "\(shortLabel), \(value) \(state.modeLabel)\(reset)"
+    }
+}
+
 struct ProviderQuotaGaugeStyle {
     let arcColor: Color
     let trackColor: Color
@@ -1149,6 +1189,99 @@ struct ProviderQuotaGaugeStyle {
     let showsPaceMarker: Bool
     let showsProviderIcon: Bool
     let providerIconStyle: ProviderIconStyle
+}
+
+struct ProviderQuotaBarsView: View {
+    let providerID: String?
+    let displayName: String
+    let periods: [ProviderQuotaPeriodPresentation]
+    let statusText: ProviderQuotaWidgetStatusText
+    let resetDisplay: ProviderQuotaWidgetResetDisplay
+    let trackColor: Color
+    let requestedLineWidth: Double
+    let showsPaceMarker: Bool
+    let showsProviderIcon: Bool
+    let providerIconStyle: ProviderIconStyle
+    let arcColor: (ProviderQuotaPresentationState) -> Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if showsProviderIcon {
+                    ProviderIconView(
+                        providerID: providerID,
+                        label: displayName,
+                        size: 18,
+                        style: providerIconStyle
+                    )
+                }
+                Text(displayName)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+
+            ForEach(periods) { period in
+                VStack(spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(period.shortLabel)
+                            .font(.caption2.weight(.semibold))
+                        if let reset = period.resetLabel(display: resetDisplay) {
+                            Text(reset)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.5)
+                        }
+                        Spacer(minLength: 2)
+                        if let value = period.valueLabel(statusText: statusText) {
+                            Text(value)
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.55)
+                        }
+                    }
+
+                    bar(period)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .accessibilityIdentifier("provider-quota-widget-bars")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func bar(_ period: ProviderQuotaPeriodPresentation) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(trackColor)
+                if let percent = period.state.percent {
+                    Capsule()
+                        .fill(arcColor(period.state))
+                        .frame(width: proxy.size.width * min(max(percent, 0), 100) / 100)
+                        .widgetAccentable()
+                }
+                if showsPaceMarker, let expected = period.state.expectedPercent {
+                    Rectangle()
+                        .fill(Color.primary)
+                        .frame(width: 1.5)
+                        .offset(
+                            x: min(
+                                max(proxy.size.width * min(max(expected, 0), 100) / 100 - 0.75, 0),
+                                max(proxy.size.width - 1.5, 0)
+                            )
+                        )
+                }
+            }
+        }
+        .frame(height: min(max(requestedLineWidth * 0.6, 3), 8))
+    }
+
+    private var accessibilityLabel: String {
+        ([displayName] + periods.map { $0.accessibilityDescription(resetDisplay: resetDisplay) })
+            .joined(separator: ", ")
+    }
 }
 
 struct ProviderQuotaWidgetSlotLayout: Layout {
@@ -1180,6 +1313,52 @@ struct ProviderQuotaWidgetSlotLayout: Layout {
                 proposal: ProposedViewSize(width: frame.width, height: frame.height)
             )
         }
+    }
+}
+
+struct ProviderQuotaWidgetPrimaryDetailLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        for (subview, frame) in zip(
+            subviews,
+            ProviderQuotaWidgetPrimaryDetailGeometry.frames(in: bounds, spacing: spacing)
+        ) {
+            subview.place(
+                at: CGPoint(x: frame.midX, y: frame.midY),
+                anchor: .center,
+                proposal: ProposedViewSize(width: frame.width, height: frame.height)
+            )
+        }
+    }
+}
+
+enum ProviderQuotaWidgetPrimaryDetailGeometry {
+    static func frames(in bounds: CGRect, spacing: CGFloat) -> [CGRect] {
+        let availableHeight = max(0, bounds.height - spacing)
+        let primaryHeight = min(bounds.width, availableHeight * 0.6)
+        return [
+            CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: primaryHeight),
+            CGRect(
+                x: bounds.minX,
+                y: bounds.minY + primaryHeight + spacing,
+                width: bounds.width,
+                height: max(0, availableHeight - primaryHeight)
+            ),
+        ]
     }
 }
 
@@ -1368,6 +1547,7 @@ struct ProviderQuotaGaugeView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
+        .accessibilityIdentifier("provider-quota-widget-classic")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -1729,6 +1909,7 @@ struct ProviderQuotaForecastView: View {
             .foregroundStyle(state.isStale ? .orange : .secondary)
         }
         .minimumScaleFactor(0.7)
+        .accessibilityIdentifier("provider-quota-widget-forecast")
         .accessibilityElement(children: .combine)
     }
 
@@ -2020,6 +2201,52 @@ enum ProviderQuotaPresentation {
             urgency: urgency,
             settings: settings
         )
+    }
+
+    static func periods(
+        for source: ProviderQuotaWidgetSource,
+        settings: ProviderQuotaEvaluationSettings,
+        at referenceDate: Date
+    ) -> [ProviderQuotaPeriodPresentation] {
+        displayWindows(from: source.windows).enumerated().map { index, window in
+            ProviderQuotaPeriodPresentation(
+                id: index,
+                shortLabel: shortLabel(for: window),
+                state: state(
+                    for: source,
+                    settings: settings,
+                    at: referenceDate,
+                    windowOverride: window
+                )
+            )
+        }
+    }
+
+    static func displayWindows(from windows: [ProviderQuotaWindow]) -> [ProviderQuotaWindow] {
+        let indexed = Array(windows.enumerated())
+        let ordered = indexed.allSatisfy { $0.element.windowSeconds != nil }
+            ? indexed.sorted {
+                let lhs = $0.element.windowSeconds ?? 0
+                let rhs = $1.element.windowSeconds ?? 0
+                return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+            }
+            : indexed
+        return ordered.prefix(3).map(\.element)
+    }
+
+    static func shortLabel(for window: ProviderQuotaWindow) -> String {
+        if window.windowSeconds == 18_000 { return "5h" }
+        if window.windowSeconds == 604_800 { return String(localized: "Week") }
+        if window.label.localizedCaseInsensitiveContains("month") {
+            return String(localized: "Month")
+        }
+        if window.label.localizedCaseInsensitiveContains("week") {
+            return String(localized: "Week")
+        }
+        if window.label.localizedCaseInsensitiveContains("5h") {
+            return "5h"
+        }
+        return String(window.label.prefix(8))
     }
 
     static func usedPercent(_ window: ProviderQuotaWindow) -> Double? {

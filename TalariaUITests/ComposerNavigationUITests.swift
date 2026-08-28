@@ -224,6 +224,64 @@ final class ComposerNavigationUITests: XCTestCase {
         )
     }
 
+    func testWidgetCustomizationShowsDenseLargeQuotaLayouts() throws {
+        app.terminate()
+        app.launchArguments = ["--provider-quota-widget-customization"]
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+
+        app.buttons["Medium"].tap()
+        app.buttons["2"].tap()
+        XCTAssertTrue(app.buttons["2"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+
+        app.buttons["Large"].tap()
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let twoProviders = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        twoProviders.name = "Detailed two-provider large quota widget preview"
+        twoProviders.lifetime = .keepAlways
+        add(twoProviders)
+
+        app.buttons["1"].tap()
+        XCTAssertTrue(app.buttons["1"].isSelected)
+        app.buttons["1W"].tap()
+        XCTAssertTrue(app.buttons["1W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let oneWindow = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        oneWindow.name = "Expanded one-window large quota widget preview"
+        oneWindow.lifetime = .keepAlways
+        add(oneWindow)
+
+        app.buttons["2W"].tap()
+        XCTAssertTrue(app.buttons["2W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let twoWindows = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        twoWindows.name = "Detailed two-window large quota widget preview"
+        twoWindows.lifetime = .keepAlways
+        add(twoWindows)
+
+        app.buttons["3W"].tap()
+        XCTAssertTrue(app.buttons["3W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+
+        app.buttons["3"].tap()
+        XCTAssertTrue(app.buttons["3"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+
+        app.buttons["4"].tap()
+        XCTAssertTrue(app.buttons["4"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+        let bars = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        bars.name = "Bar four-source large quota widget preview"
+        bars.lifetime = .keepAlways
+        add(bars)
+    }
+
     func testSidebarReplacesRootTabs() throws {
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
@@ -438,6 +496,12 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(session.frame.minY, viewportTop)
         XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func assertPreviewVisible(identifier: String) {
+        XCTAssertTrue(
+            app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3)
+        )
     }
 
     private func brightness(

@@ -205,6 +205,68 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         )
         XCTAssertEqual(fourProvider.count, 4)
         XCTAssertEqual(fourProvider[3], CGRect(x: 156, y: 156, width: 144, height: 144))
+
+        let expanded = ProviderQuotaWidgetPrimaryDetailGeometry.frames(
+            in: CGRect(x: 0, y: 0, width: 300, height: 300),
+            spacing: 20
+        )
+        XCTAssertEqual(expanded[0], CGRect(x: 0, y: 0, width: 300, height: 168))
+        XCTAssertEqual(expanded[1], CGRect(x: 0, y: 188, width: 300, height: 112))
+    }
+
+    func testThreePeriodPresentationOrdersCompleteDurationsAndPreservesIncompleteOrder() {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let settings = ProviderQuotaEvaluationSettings(
+            percentageMode: .used,
+            colorBasis: .overall,
+            windowSelection: .automatic,
+            warningRemainingPercent: 25,
+            criticalRemainingPercent: 10,
+            paceTolerancePercent: 3,
+            paceWarningBurnRatePercent: 125,
+            paceCriticalBurnRatePercent: 175,
+            paceMinimumElapsedHours: 12
+        )
+        func source(_ windows: [ProviderQuotaWindow]) -> ProviderQuotaWidgetSource {
+            ProviderQuotaWidgetSource(
+                sourceID: "qsrc_periods",
+                scopeID: "qscope_default",
+                scopeLabel: "Test server · default",
+                cachedAt: now,
+                providerID: "opencode-go",
+                providerLabel: "OpenCode Go",
+                accountLabel: "OpenCode Go",
+                isActiveProvider: true,
+                status: "available",
+                plan: "Go",
+                windows: windows,
+                retryAfter: nil,
+                fetchedAt: nil
+            )
+        }
+
+        let complete = ProviderQuotaPresentation.periods(
+            for: source([
+                ProviderQuotaWindow(label: "Monthly", windowSeconds: 2_592_000, usedPercent: 30),
+                ProviderQuotaWindow(label: "Weekly", windowSeconds: 604_800, usedPercent: 20),
+                ProviderQuotaWindow(label: "Session", windowSeconds: 18_000, usedPercent: 10),
+            ]),
+            settings: settings,
+            at: now
+        )
+        XCTAssertEqual(complete.map(\.shortLabel), ["5h", "Week", "Month"])
+        XCTAssertEqual(complete.map(\.state.percent), [10, 20, 30])
+
+        let incomplete = ProviderQuotaPresentation.periods(
+            for: source([
+                ProviderQuotaWindow(label: "Monthly", usedPercent: 30),
+                ProviderQuotaWindow(label: "Session", windowSeconds: 18_000, usedPercent: 10),
+                ProviderQuotaWindow(label: "Weekly", windowSeconds: 604_800, usedPercent: 20),
+            ]),
+            settings: settings,
+            at: now
+        )
+        XCTAssertEqual(incomplete.map(\.shortLabel), ["Month", "5h", "Week"])
     }
 
     func testForecastSummarySharesBurnBudgetAndDepletionFormatting() {

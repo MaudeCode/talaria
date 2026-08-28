@@ -1714,6 +1714,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
     @State private var previewState = ProviderQuotaWidgetPreviewState.healthy
     @State private var previewFamily = ProviderQuotaWidgetPreviewFamily.small
     @State private var previewSourceCount = 1
+    @State private var previewWindowCount = 3
     @State private var previewSurface = ProviderQuotaWidgetPreviewSurface.home
     @AppStorage(
         ProviderQuotaWidgetArcColor.storageKey,
@@ -1792,7 +1793,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
             Divider()
 
             Form {
-                Section("Arc") {
+                Section("Gauge") {
                 Picker("Color", selection: $arcColorRawValue) {
                     ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
                         Text(color.title).tag(color.rawValue)
@@ -1995,6 +1996,22 @@ struct ProviderQuotaWidgetAppearanceView: View {
                     .labelsHidden()
                 }
             }
+
+            if previewSurface == .home, previewFamily == .large, previewSourceCount == 1 {
+                HStack(spacing: 8) {
+                    Text("Windows")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Windows", selection: $previewWindowCount) {
+                        ForEach(1...3, id: \.self) { count in
+                            Text("\(count)W").tag(count)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -2057,6 +2074,49 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 source: previewSource(at: 0),
                 referenceDate: Date()
             )
+        } else if previewFamily == .large, previewSourceCount == 2 {
+            let first = previewSource(at: 0)
+            let second = previewSource(at: 1)
+            ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
+                previewGauge(source: first)
+                previewInfo(source: first)
+                previewGauge(source: second)
+                previewInfo(source: second)
+            }
+        } else if previewFamily == .large,
+                  previewSourceCount == 1,
+                  previewSource(at: 0).windows.count == 3 {
+            let source = previewSource(at: 0)
+            ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
+                ForEach(
+                    Array(ProviderQuotaPresentation.displayWindows(from: source.windows).enumerated()),
+                    id: \.offset
+                ) { _, window in
+                    previewGauge(source: source, windowOverride: window)
+                }
+                ProviderQuotaForecastView(
+                    plan: source.plan,
+                    state: previewPresentation(for: source)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if previewFamily == .large,
+                  previewSourceCount == 1,
+                  previewSource(at: 0).windows.count == 2 {
+            let source = previewSource(at: 0)
+            let windows = ProviderQuotaPresentation.displayWindows(from: source.windows)
+            ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
+                previewGauge(source: source, windowOverride: windows[0])
+                previewInfo(source: source, windowOverride: windows[0])
+                previewGauge(source: source, windowOverride: windows[1])
+                previewInfo(source: source, windowOverride: windows[1])
+            }
+        } else if previewFamily == .large, previewSourceCount == 1 {
+            let source = previewSource(at: 0)
+            ProviderQuotaWidgetPrimaryDetailLayout(spacing: previewSlotSpacing) {
+                previewGauge(source: source)
+                previewInfo(source: source)
+            }
         } else if previewFamily == .small {
             previewGauge(source: previewSource(at: 0))
         } else if previewSourceCount > 1 {
@@ -2077,6 +2137,17 @@ struct ProviderQuotaWidgetAppearanceView: View {
         }
     }
 
+    private func previewInfo(
+        source: ProviderQuotaWidgetSource,
+        windowOverride: ProviderQuotaWindow? = nil
+    ) -> some View {
+        ProviderQuotaForecastView(
+            plan: source.plan,
+            state: previewPresentation(for: source, windowOverride: windowOverride)
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
     private var previewContentPadding: CGFloat {
         guard previewSurface == .home else { return 10 }
         return previewFamily == .small ? 22 : 16
@@ -2086,35 +2157,73 @@ struct ProviderQuotaWidgetAppearanceView: View {
         previewFamily == .large ? 20 : 12
     }
 
-    private func previewGauge(source: ProviderQuotaWidgetSource) -> some View {
-        let presentation = previewPresentation(for: source)
-        return ProviderQuotaGaugeView(
-            providerID: source.providerID,
-            displayName: source.providerLabel,
-            sourceStatus: source.status,
-            state: presentation,
-            statusText: ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue,
-            resetDisplay: ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue,
-            style: ProviderQuotaGaugeStyle(
-                arcColor: previewColor,
-                trackColor: previewTrackColor.opacity(Double(trackOpacityPercent) / 100),
-                lineWidth: previewLineWidth(compact: false),
-                showsPaceMarker: arcColor == .automatic
-                    && presentation.settings.colorBasis == .pace
-                    && showsPaceMarker,
+    @ViewBuilder
+    private func previewGauge(
+        source: ProviderQuotaWidgetSource,
+        windowOverride: ProviderQuotaWindow? = nil
+    ) -> some View {
+        let presentation = previewPresentation(for: source, windowOverride: windowOverride)
+        let periods = ProviderQuotaPresentation.periods(
+            for: source,
+            settings: presentation.settings,
+            at: Date()
+        ).map {
+            ProviderQuotaPeriodPresentation(
+                id: $0.id,
+                shortLabel: $0.shortLabel,
+                state: $0.state.withUrgency(previewState.urgency)
+            )
+        }
+        let statusText = ProviderQuotaWidgetStatusText(rawValue: statusTextRawValue) ?? .defaultValue
+        let resetDisplay = ProviderQuotaWidgetResetDisplay(rawValue: resetDisplayRawValue) ?? .defaultValue
+        let track = previewTrackColor.opacity(Double(trackOpacityPercent) / 100)
+        let iconStyle = ProviderIconStyle(rawValue: providerIconStyleRawValue)
+            ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
+        let marker = arcColor == .automatic
+            && presentation.settings.colorBasis == .pace
+            && showsPaceMarker
+
+        if source.windows.count != 3 || windowOverride != nil {
+            ProviderQuotaGaugeView(
+                providerID: source.providerID,
+                displayName: windowOverride.map { "\(source.providerLabel) · \($0.label)" }
+                    ?? source.providerLabel,
+                sourceStatus: source.status,
+                state: presentation,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                style: ProviderQuotaGaugeStyle(
+                    arcColor: previewColor,
+                    trackColor: track,
+                    lineWidth: previewLineWidth(compact: false),
+                    showsPaceMarker: marker,
+                    showsProviderIcon: showsProviderIcon,
+                    providerIconStyle: iconStyle
+                ),
+                compact: false
+            )
+        } else {
+            ProviderQuotaBarsView(
+                providerID: source.providerID,
+                displayName: source.providerLabel,
+                periods: periods,
+                statusText: statusText,
+                resetDisplay: resetDisplay,
+                trackColor: track,
+                requestedLineWidth: previewLineWidth(compact: false),
+                showsPaceMarker: marker,
                 showsProviderIcon: showsProviderIcon,
-                providerIconStyle: ProviderIconStyle(rawValue: providerIconStyleRawValue)
-                    ?? ProviderQuotaWidgetAppearanceSettings.defaultProviderIconStyle
-            ),
-            compact: false
-        )
+                providerIconStyle: iconStyle,
+                arcColor: { _ in previewColor }
+            )
+        }
     }
 
     private var previewSourceCounts: [Int] {
         switch previewFamily {
         case .small: [1]
         case .medium: [1, 2]
-        case .large: [1, 2, 4]
+        case .large: [1, 2, 3, 4]
         }
     }
 
@@ -2175,6 +2284,36 @@ struct ProviderQuotaWidgetAppearanceView: View {
         case .unavailable: 0
         }
         let now = Date()
+        let windows = [
+            ProviderQuotaWindow(
+                label: "Session",
+                windowSeconds: 18_000,
+                usedPercent: min(100, usedPercent + 12),
+                remainingPercent: max(0, 88 - usedPercent),
+                resetAt: ISO8601DateFormatter().string(
+                    from: now.addingTimeInterval(4 * 60 * 60)
+                )
+            ),
+            ProviderQuotaWindow(
+                label: "Weekly",
+                windowSeconds: 604_800,
+                usedPercent: usedPercent,
+                remainingPercent: 100 - usedPercent,
+                resetAt: ISO8601DateFormatter().string(
+                    from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
+                )
+            ),
+            ProviderQuotaWindow(
+                label: "Monthly",
+                windowSeconds: 2_592_000,
+                usedPercent: max(0, usedPercent - 7),
+                remainingPercent: min(100, 107 - usedPercent),
+                resetAt: ISO8601DateFormatter().string(
+                    from: now.addingTimeInterval(25 * 24 * 60 * 60)
+                )
+            ),
+        ]
+        let windowCount = previewSourceCount > 1 ? 3 : previewWindowCount
         return ProviderQuotaWidgetSource(
             sourceID: "preview-\(provider.0)",
             cachedAt: previewState == .stale ? now.addingTimeInterval(-30 * 60) : now,
@@ -2184,29 +2323,21 @@ struct ProviderQuotaWidgetAppearanceView: View {
             isActiveProvider: index == 0,
             status: previewState == .unavailable ? "unavailable" : "available",
             plan: "Pro",
-            windows: previewState == .unavailable ? [] : [
-                ProviderQuotaWindow(
-                    label: "Weekly",
-                    windowSeconds: 604_800,
-                    usedPercent: usedPercent,
-                    remainingPercent: 100 - usedPercent,
-                    resetAt: ISO8601DateFormatter().string(
-                        from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
-                    )
-                )
-            ],
+            windows: previewState == .unavailable ? [] : Array(windows.prefix(windowCount)),
             retryAfter: nil,
             fetchedAt: nil
         )
     }
 
     private func previewPresentation(
-        for source: ProviderQuotaWidgetSource
+        for source: ProviderQuotaWidgetSource,
+        windowOverride: ProviderQuotaWindow? = nil
     ) -> ProviderQuotaPresentationState {
         ProviderQuotaPresentation.state(
             for: source,
             settings: ProviderQuotaEvaluationSettings.stored(followsSelectedDefault: false),
-            at: Date()
+            at: Date(),
+            windowOverride: windowOverride
         ).withUrgency(previewState.urgency)
     }
 
