@@ -15,7 +15,13 @@ export async function revokeDevicesForSession(
     )
     .collect();
   for (const device of devices) {
-    await ctx.db.patch(device._id, { revokedAt: now, pushToken: undefined, updatedAt: now });
+    await ctx.db.patch(device._id, {
+      revokedAt: now,
+      pushToken: undefined,
+      pushToStartToken: undefined,
+      pushToStartIssuedAt: undefined,
+      updatedAt: now,
+    });
     const activities = await ctx.db
       .query("liveActivities")
       .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>

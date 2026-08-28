@@ -84,7 +84,13 @@ export const prune = internalMutation({
         .collect();
       for (const device of ownedDevices) {
         revokedDevices += 1;
-        await ctx.db.patch(device._id, { revokedAt: now, pushToken: undefined, updatedAt: now });
+        await ctx.db.patch(device._id, {
+          revokedAt: now,
+          pushToken: undefined,
+          pushToStartToken: undefined,
+          pushToStartIssuedAt: undefined,
+          updatedAt: now,
+        });
         const ownedActivities = await ctx.db
           .query("liveActivities")
           .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>

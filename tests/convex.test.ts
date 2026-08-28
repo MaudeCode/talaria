@@ -874,4 +874,83 @@ describe("Convex relay state", () => {
       }),
     ).resolves.toEqual({ status: "stale" });
   });
+
+  it("starts an aggregate activity once when work begins on an idle device", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "production",
+        pushToStartToken: "push-to-start-token",
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-1",
+        revision: 1,
+        title: "Build relay",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+    });
+
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+
+    const state = await backend.run(async (ctx) => ({
+      device: await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+      jobs: await ctx.db.query("deliveryJobs").collect(),
+    }));
+    expect(state.device?.pushToStartIssuedAt).toBeDefined();
+    expect(state.jobs).toHaveLength(1);
+    expect(state.jobs[0]?.kind).toBe("live_activity_start");
+
+    const claimed = await backend.mutation(internal.delivery.claimJob, {
+      jobId: state.jobs[0]!._id,
+      now: now + 1,
+    });
+    expect(claimed).toMatchObject({
+      status: "ready",
+      kind: "live_activity_start",
+      request: { token: "push-to-start-token", pushType: "liveactivity" },
+    });
+
+    await backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1",
+      deviceId: "device-1",
+      activityId: "activity-from-apns",
+      mode: "all_running",
+      attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1,
+      activityPushToken: "activity-token",
+      now: now + 2,
+    });
+    const registeredDevice = await backend.run(async (ctx) =>
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+    );
+    expect(registeredDevice?.pushToStartIssuedAt).toBeUndefined();
+  });
 });

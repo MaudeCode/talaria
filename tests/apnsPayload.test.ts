@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   fitActivityAggregate,
   makeLiveActivityEnd,
+  makeLiveActivityStart,
   makeLiveActivityUpdate,
   makeNotification,
 } from "../convex/lib/apnsPayload";
@@ -29,6 +30,33 @@ const aggregate: ActivityAggregate = {
 };
 
 describe("ActivityKit payloads", () => {
+  it("starts an aggregate activity with a new update token", () => {
+    const request = makeLiveActivityStart({
+      token: "push-to-start-token",
+      bundleId: "dev.kil.talaria",
+      environment: "production",
+      aggregate,
+      nowEpochSeconds: 100,
+      alert: { title: "Talaria", body: "1 active session" },
+    });
+
+    expect(request).toMatchObject({
+      token: "push-to-start-token",
+      pushType: "liveactivity",
+      priority: "10",
+      payload: {
+        aps: {
+          event: "start",
+          "attributes-type": "TalariaAggregateActivityAttributes",
+          attributes: {},
+          "input-push-token": 1,
+          "content-state": aggregate,
+          alert: { title: "Talaria", body: "1 active session", sound: "default" },
+        },
+      },
+    });
+  });
+
   it("uses low priority for routine updates and advances stale-date", () => {
     const request = makeLiveActivityUpdate({
       token: "activity-token",

@@ -12,6 +12,7 @@ import {
 } from "./lib/aggregate";
 import {
   makeLiveActivityEnd,
+  makeLiveActivityStart,
   makeLiveActivityUpdate,
   makeNotification,
   type ApnsRequest,
@@ -124,7 +125,7 @@ async function enqueueJob(
     activityId?: string;
     sourcePublisherId?: string;
     sourceSessionId?: string;
-    kind: "live_activity_update" | "live_activity_end" | "notification";
+    kind: "live_activity_update" | "live_activity_end" | "live_activity_start" | "notification";
     request: ApnsRequest;
     aggregate?: ActivityAggregate;
     stateFingerprint: string;
@@ -223,6 +224,57 @@ export const recompute = internalMutation({
     });
     const changedState = changed[0]?.state ?? null;
     const alertedDevices = new Set<string>();
+
+    if (aggregate === null) {
+      for (const device of devices) {
+        if (device.pushToStartIssuedAt !== undefined) {
+          await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: now });
+        }
+      }
+    } else {
+      const activeAggregateDevices = new Set(activities.map((activity) => activity.deviceId));
+      for (const device of devices) {
+        if (
+          activeAggregateDevices.has(device.deviceId) ||
+          device.revokedAt !== undefined ||
+          (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
+          !device.bundleId ||
+          !device.apsEnvironment ||
+          !device.preferences.liveActivitiesEnabled ||
+          !device.pushToStartToken ||
+          device.pushToStartIssuedAt !== undefined
+        ) {
+          continue;
+        }
+        const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
+          const value = alertForTransition(
+            { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+            state,
+            device.preferences,
+          );
+          return value ? [value] : [];
+        })[0] ?? null;
+        const request = makeLiveActivityStart({
+          token: device.pushToStartToken,
+          bundleId: device.bundleId,
+          environment: device.apsEnvironment,
+          aggregate,
+          nowEpochSeconds: Math.floor(now / 1_000),
+          alert: transitionAlert ?? { title: "Talaria", body: aggregate.subtitle },
+        });
+        await enqueueJob(ctx, {
+          userId: args.userId,
+          deviceId: device.deviceId,
+          kind: "live_activity_start",
+          request,
+          aggregate,
+          stateFingerprint: `start:${aggregateFingerprint(aggregate)}`,
+          now,
+        });
+        await ctx.db.patch(device._id, { pushToStartIssuedAt: now, updatedAt: now });
+        if (transitionAlert) alertedDevices.add(device.deviceId);
+      }
+    }
 
     for (const activity of allActivities) {
       const device = devicesById.get(activity.deviceId);
@@ -383,6 +435,7 @@ export const claimJob = internalMutation({
       kind: v.union(
         v.literal("live_activity_update"),
         v.literal("live_activity_end"),
+        v.literal("live_activity_start"),
         v.literal("notification"),
       ),
       request: apnsRequestValidator,
@@ -446,14 +499,40 @@ export const claimJob = internalMutation({
           query.eq("userId", job.userId).eq("deviceId", job.deviceId),
         )
         .unique();
+      const expectedDeviceToken = job.kind === "live_activity_start"
+        ? device?.pushToStartToken
+        : device?.pushToken;
       if (
         !device ||
         device.revokedAt !== undefined ||
         (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now) ||
-        device.pushToken !== job.expectedToken
+        expectedDeviceToken !== job.expectedToken
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
+      }
+      if (job.kind === "live_activity_start") {
+        const [states, activeActivity] = await Promise.all([
+          currentStates(ctx, job.userId, args.now),
+          ctx.db
+            .query("liveActivities")
+            .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
+              query
+                .eq("userId", job.userId)
+                .eq("deviceId", job.deviceId)
+                .eq("mode", "all_running")
+                .eq("endedAt", undefined),
+            )
+            .first(),
+        ]);
+        const fingerprint = `start:${aggregateFingerprint(makeAggregate(states, args.now))}`;
+        if (activeActivity || fingerprint !== job.stateFingerprint) {
+          await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
+          if (device.pushToStartToken === job.expectedToken) {
+            await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
+          }
+          return { status: "stale" as const };
+        }
       }
       if (job.sourcePublisherId && job.sourceSessionId) {
         const state = await ctx.db
@@ -561,7 +640,13 @@ export const markPermanentFailure = internalMutation({
           query.eq("userId", job.userId).eq("deviceId", job.deviceId),
         )
         .unique();
-      if (device?.pushToken === job.expectedToken) {
+      if (job.kind === "live_activity_start" && device?.pushToStartToken === job.expectedToken) {
+        await ctx.db.patch(device._id, {
+          pushToStartToken: undefined,
+          pushToStartIssuedAt: undefined,
+          updatedAt: args.now,
+        });
+      } else if (device?.pushToken === job.expectedToken) {
         await ctx.db.patch(device._id, { pushToken: undefined, updatedAt: args.now });
       }
     }
@@ -587,5 +672,17 @@ export const completeJob = apnsPool.defineOnComplete<
       lastError: result.kind === "failed" ? result.error : "canceled",
       updatedAt: Date.now(),
     });
+    if (job.kind === "live_activity_start") {
+      const device = await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId),
+        )
+        .unique();
+      if (device?.pushToStartToken === job.expectedToken) {
+        await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: Date.now() });
+        await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: job.userId });
+      }
+    }
   },
 });

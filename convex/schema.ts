@@ -106,6 +106,8 @@ export default defineSchema({
     bundleId: v.optional(v.string()),
     apsEnvironment: v.optional(apsEnvironmentValidator),
     pushToken: v.optional(v.string()),
+    pushToStartToken: v.optional(v.string()),
+    pushToStartIssuedAt: v.optional(v.number()),
     preferences: preferencesValidator,
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -114,6 +116,7 @@ export default defineSchema({
     .index("by_user_id_and_device_id", ["userId", "deviceId"])
     .index("by_user_id_and_session_id", ["userId", "sessionId"])
     .index("by_push_token", ["pushToken"])
+    .index("by_push_to_start_token", ["pushToStartToken"])
     .index("by_revoked_at", ["revokedAt"])
     .index("by_user_id_and_updated_at", ["userId", "updatedAt"]),
 
@@ -169,6 +172,7 @@ export default defineSchema({
     kind: v.union(
       v.literal("live_activity_update"),
       v.literal("live_activity_end"),
+      v.literal("live_activity_start"),
       v.literal("notification"),
     ),
     expectedToken: v.string(),

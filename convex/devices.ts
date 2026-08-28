@@ -19,6 +19,8 @@ export const upsertDevice = internalMutation({
     apsEnvironment: apsEnvironmentValidator,
     pushToken: v.optional(v.string()),
     clearPushToken: v.boolean(),
+    pushToStartToken: v.optional(v.string()),
+    clearPushToStartToken: v.boolean(),
     preferences: preferencesValidator,
     now: v.number(),
   },
@@ -43,6 +45,24 @@ export const upsertDevice = internalMutation({
         await ctx.db.patch(owner._id, { pushToken: undefined, updatedAt: args.now });
       }
     }
+    if (args.pushToStartToken) {
+      const owner = await ctx.db
+        .query("devices")
+        .withIndex("by_push_to_start_token", (query) =>
+          query.eq("pushToStartToken", args.pushToStartToken),
+        )
+        .unique();
+      if (owner && (!device || owner._id !== device._id)) {
+        if (owner.userId !== args.userId) return { ok: false };
+        await ctx.db.patch(owner._id, {
+          pushToStartToken: undefined,
+          pushToStartIssuedAt: undefined,
+          updatedAt: args.now,
+        });
+      }
+    }
+    const pushToStartToken = args.pushToStartToken
+      ?? (args.clearPushToStartToken ? undefined : device?.pushToStartToken);
     const value = {
       userId: args.userId,
       sessionId: args.sessionId,
@@ -56,6 +76,10 @@ export const upsertDevice = internalMutation({
         : args.clearPushToken
           ? { pushToken: undefined }
           : {}),
+      pushToStartToken,
+      pushToStartIssuedAt: pushToStartToken === device?.pushToStartToken
+        ? device?.pushToStartIssuedAt
+        : undefined,
       preferences: args.preferences,
       revokedAt: undefined,
       createdAt: device?.createdAt ?? args.now,
@@ -150,6 +174,9 @@ export const registerActivity = internalMutation({
       publisherId: args.publisherId,
       sessionId: args.sessionId,
     });
+    if (args.mode === "all_running") {
+      await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
+    }
     return { ok: true };
   },
 });
@@ -197,6 +224,8 @@ export const revokeDevice = internalMutation({
     await ctx.db.patch(device._id, {
       revokedAt: args.now,
       pushToken: undefined,
+      pushToStartToken: undefined,
+      pushToStartIssuedAt: undefined,
       updatedAt: args.now,
     });
     const activities = await ctx.db
