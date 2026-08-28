@@ -47,6 +47,26 @@ trap 'exit 130' INT TERM
 preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
     "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
 devices=$(xcrun simctl list devices available)
+source_metadata=$(
+    xcrun simctl list devices available --json |
+        /usr/bin/jq -c --arg name "$preferred_simulator" '
+            first(
+                .devices | to_entries[] |
+                .key as $runtime |
+                .value[] |
+                select(.name == $name) |
+                { runtime: $runtime, deviceType: .deviceTypeIdentifier }
+            )
+        '
+)
+
+if [[ -z "$source_metadata" || "$source_metadata" == null ]]; then
+    print -u2 "Configured simulator '$preferred_simulator' is not available."
+    exit 69
+fi
+
+runtime_id=$(print -r -- "$source_metadata" | /usr/bin/jq -r .runtime)
+device_type_id=$(print -r -- "$source_metadata" | /usr/bin/jq -r .deviceType)
 
 device_line_named() {
     print -r -- "$devices" | awk -v wanted="$1" '
@@ -62,21 +82,6 @@ device_line_named() {
         }
     '
 }
-
-source_line=$(device_line_named "$preferred_simulator")
-
-if [[ -z "$source_line" ]]; then
-    print -u2 "Configured simulator '$preferred_simulator' is not available."
-    exit 69
-fi
-
-if [[ "$source_line" != *"(Shutdown)"* ]]; then
-    print -u2 "Configured simulator '$preferred_simulator' is in use."
-    print -u2 "This command will not stop it. Retry after the current session shuts it down."
-    exit 75
-fi
-
-source_id=$(print -r -- "$source_line" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
 
 if [[ "$refresh" == true ]]; then
     typeset -a refresh_ids=()
@@ -97,14 +102,6 @@ if [[ "$refresh" == true ]]; then
     done
 
     devices=$(xcrun simctl list devices available)
-    source_line=$(device_line_named "$preferred_simulator")
-    current_source_id=$(print -r -- "$source_line" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
-
-    if [[ -z "$source_line" || "$current_source_id" != "$source_id" || "$source_line" != *"(Shutdown)"* ]]; then
-        print -u2 "Configured simulator '$preferred_simulator' changed while the refresh was being prepared. No devices were removed."
-        exit 75
-    fi
-
     for (( slot = 1; slot <= pool_size; slot++ )); do
         simulator_name="Talaria Test $slot"
         existing=$(device_line_named "$simulator_name")
@@ -150,6 +147,10 @@ for (( slot = 1; slot <= pool_size; slot++ )); do
         print "Removed stale $simulator_name ($existing_id)"
     fi
 
-    simulator_id=$(xcrun simctl clone "$source_id" "$simulator_name")
+    simulator_id=$(xcrun simctl create "$simulator_name" "$device_type_id" "$runtime_id")
     print "Created $simulator_name ($simulator_id)"
+    xcrun simctl boot "$simulator_id"
+    xcrun simctl bootstatus "$simulator_id" -b >/dev/null
+    xcrun simctl shutdown "$simulator_id"
+    print "Warmed $simulator_name"
 done

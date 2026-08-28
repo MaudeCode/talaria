@@ -282,6 +282,9 @@ actor APIClient {
 private extension APIClient {
     static func makeDefaultSession(delegate: URLSessionDelegate?) -> URLSession {
         let configuration = URLSessionConfiguration.default
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = .shared
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
@@ -290,6 +293,9 @@ private extension APIClient {
 
     static func makeDefaultPublicMediaSession(delegate: URLSessionDelegate?) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = nil
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
