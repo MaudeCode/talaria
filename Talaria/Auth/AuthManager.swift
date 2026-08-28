@@ -24,6 +24,35 @@ final class AuthManager {
     nonisolated static let passkeyOnlyMessage =
         String(localized: "This server signs in with passkeys, which Talaria doesn't support yet.")
 
+    /// Single sign-on. Talaria cannot run the OIDC redirect flow yet, and an
+    /// external browser's session is not shared with the app.
+    nonisolated static let oidcOnlyMessage =
+        String(localized: "This server signs in with single sign-on, which Talaria doesn't support yet.")
+
+    /// Trusted-header mode where the proxy did *not* authenticate this request,
+    /// so the server reports the mode but not a session.
+    nonisolated static let trustedAuthNotSignedInMessage =
+        String(localized: "This server signs in through an identity proxy, which didn't authorize this request. Open the server in a browser, or check the custom headers.")
+
+    /// Why the app can't complete sign-in on its own, or nil when it can —
+    /// either there's no auth, the server already signed this client in, or a
+    /// password login is available.
+    ///
+    /// Replaces the "auth on and password auth off ⇒ passkeys" inference that
+    /// used to live in three places. `is_auth_enabled()` upstream
+    /// (`api/auth.py:563`) also covers OIDC and trusted-header, so that
+    /// inference locked out working deployments and told them the wrong reason.
+    nonisolated static func unsupportedSignInMessage(for status: AuthStatusResponse) -> String? {
+        guard status.authEnabled == true, !status.isAlreadySignedIn else { return nil }
+        // A missing value means an older server that doesn't report it; fall
+        // through to the password path rather than block a working user.
+        guard status.passwordAuthEnabled == false else { return nil }
+
+        if status.oidcEnabled == true { return oidcOnlyMessage }
+        if status.trustedAuthEnabled == true { return trustedAuthNotSignedInMessage }
+        return passkeyOnlyMessage
+    }
+
     private(set) var state: State = .unconfigured
     private(set) var lastErrorMessage: String?
 
@@ -117,6 +146,7 @@ final class AuthManager {
         customHeaders: [CustomHeader]? = nil
     ) async {
         lastErrorMessage = nil
+        let previousServerID = state.server?.absoluteString
 
         if let customHeaders {
             headerStore.replace(with: customHeaders.sanitizedForStorage())
@@ -127,16 +157,15 @@ final class AuthManager {
             let client = clientFactory(serverURL)
             let authStatus = try await testConnection(client: client)
 
-            // Passkey-only: auth is on but the server explicitly reports password
-            // auth off. Only an explicit false counts — a missing field means an
-            // older server that doesn't report it, so we must fall through to the
-            // password path and never block a working password user (#255).
-            if authStatus.authEnabled == true, authStatus.passwordAuthEnabled == false {
-                lastErrorMessage = Self.passkeyOnlyMessage
+            if let message = Self.unsupportedSignInMessage(for: authStatus) {
+                lastErrorMessage = message
                 return
             }
 
-            if authStatus.authEnabled == true {
+            // `logged_in` means the server already authenticated this client —
+            // trusted-header mode does it at the proxy — so there is nothing to
+            // log in with and the server is saved as signed in.
+            if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
                     lastErrorMessage = String(localized: "Enter the server password.")
                     return
@@ -160,6 +189,9 @@ final class AuthManager {
             // so they never apply to a different server (#16).
             persistCustomHeaders(for: serverURL)
             refreshServers()
+            if previousServerID != serverURL.absoluteString {
+                clearQuotaWidgetSnapshot()
+            }
             state = .loggedIn(server: serverURL)
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -214,12 +246,12 @@ final class AuthManager {
         do {
             let authStatus = try await testConnection(client: client)
 
-            if authStatus.authEnabled == true, authStatus.passwordAuthEnabled == false {
-                lastErrorMessage = Self.passkeyOnlyMessage
+            if let message = Self.unsupportedSignInMessage(for: authStatus) {
+                lastErrorMessage = message
                 return .failed
             }
 
-            if authStatus.authEnabled == true {
+            if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
                     // Not an error — the UI reveals the password field and retries.
                     return .needsPassword
@@ -244,6 +276,7 @@ final class AuthManager {
             serverRegistry.activate(url: serverURL)
             persistCustomHeaders(for: serverURL)
             refreshServers()
+            clearQuotaWidgetSnapshot()
             state = .loggedIn(server: serverURL)
             return .added(serverURL)
         } catch {
@@ -324,6 +357,7 @@ final class AuthManager {
         // profiles, which would leak into Shortcuts / Siri if the new server's fetch is
         // delayed or fails. The new server's profiles reload on the next foreground fetch.
         profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
         lastErrorMessage = nil
         state = .loggedIn(server: serverURL)
     }
@@ -357,6 +391,7 @@ final class AuthManager {
         // server being removed, so they're stale whether we switch to another server (its
         // profiles reload on the next foreground fetch) or return to onboarding.
         profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
 
         let nextActive = serverRegistry.remove(id: server.absoluteString)
         refreshServers()
@@ -378,6 +413,12 @@ final class AuthManager {
     private func clearLocalArtifacts(for server: URL) {
         try? keychain.delete(.customHeaders, scope: server.absoluteString)
         clearSessionCookies(for: server)
+    }
+
+    private func clearQuotaWidgetSnapshot() {
+        _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
+        guard ProviderQuotaWidgetSnapshotStore().clear() else { return }
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
     }
 
     /// Tells the server to end the session, but never lets an unreachable or
@@ -418,6 +459,7 @@ final class AuthManager {
             // Keychain entry so re-login is a one-field affair, and clear only this
             // server's cookies so other configured servers stay signed in (#16).
             clearSessionCookies(for: server)
+            _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
             state = .loggedOut(server: server)
         case .unconfigured:
             clearLocalAuth(for: nil)
@@ -454,6 +496,7 @@ final class AuthManager {
         // Drop the App Intents profile picker cache (#339) so a signed-out user doesn't see
         // the previous server's profiles lingering in Shortcuts / Siri.
         profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
     }
 
     /// Mirrors the in-memory header snapshot to `server`'s scoped Keychain entry:

@@ -198,7 +198,8 @@ These are the endpoints we know we need. Verify each one against your running se
 | POST | `/api/session/pin` | `{session_id, pinned: bool}` |
 | POST | `/api/session/archive` | `{session_id, archived: bool}` |
 | POST | `/api/session/move` | `{session_id, project_id?}` for moving a session into or out of a project |
-| POST | `/api/session/branch` | `{session_id, keep_count?, title?}` for forking from a message or duplicating a full conversation |
+| POST | `/api/session/duplicate` | `{session_id}` for a full independent copy, including messages, tool calls, and usage totals |
+| POST | `/api/session/branch` | `{session_id, keep_count?, title?}` for forking a child session from a message |
 | POST | `/api/session/truncate` | `{session_id, keep_count}` for edit/regenerate flows that discard later history after confirmation |
 | GET | `/api/session/usage?session_id=...` | Per-session token/cost snapshot for limited analytics and diagnostics |
 | GET | `/api/projects` | List projects for "Move to project" |
@@ -259,6 +260,8 @@ The server keeps connections alive for ~30s with `: heartbeat` comments. **Cloud
 |---|---|---|
 | GET | `/api/models` | Populate model picker |
 | GET | `/api/providers` | Show which providers are configured |
+| GET | `/api/provider/quotas?source=...&refresh=...` | Read sanitized quota for all configured provider accounts, or refresh one stable source |
+| GET | `/api/provider/quota` | Capability-limited active-provider fallback for older servers |
 | GET | `/api/settings` | Bot name, theme hints, version |
 | POST | `/api/default-model` | Save global default model from Settings |
 | GET | `/api/reasoning` | Read current reasoning display/effort |
@@ -341,7 +344,7 @@ Talaria/
 │   ├── Memory/
 │   │   └── MemoryView.swift            # read-only notes + user profile
 │   ├── Insights/
-│   │   └── InsightsView.swift          # limited session-based usage analytics
+│   │   └── InsightsView.swift          # session analytics + provider-account quotas
 │   └── Settings/
 │       ├── SettingsView.swift
 │       └── ServerHealthCheckView.swift
@@ -445,13 +448,13 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 
 #### 8.1 Session long-press options
 - **User-facing goal:** Press and hold a session row to open native options: pin/unpin, move to project, archive/restore, duplicate, delete.
-- **Upstream API/server contract to verify:** `POST /api/session/pin`, `POST /api/session/move`, `GET /api/projects`, optional `POST /api/projects/create`, `POST /api/session/archive`, `POST /api/session/branch`, `POST /api/session/delete`.
+- **Upstream API/server contract to verify:** `POST /api/session/pin`, `POST /api/session/move`, `GET /api/projects`, optional `POST /api/projects/create`, `POST /api/session/archive`, `POST /api/session/duplicate`, `POST /api/session/delete`.
 - **iOS UI changes:** Replace or supplement swipe-only row actions with a long-press context menu. "Move to project" opens a project picker with "No project" and existing projects. Delete stays behind confirmation.
-- **Model/networking changes:** Add tolerant `Project` model and API client methods for project list, session move, branch, and existing mutations. Duplicate should call `/api/session/branch` with no `keep_count` and a custom title like `<title> (copy)`, then load/navigate to the returned session.
-- **Persistence/cache impact:** On mutation success, update or remove cached session rows. For duplicate, insert the newly loaded session after fetching it.
-- **Tests:** Request construction for move/project list/branch/delete; view model tests for cache updates and local filtering after archive/delete.
+- **Model/networking changes:** Add tolerant `Project` model and API client methods for project list, session move, duplicate, and existing mutations. Duplicate calls `/api/session/duplicate`; the server names and returns the full copied session.
+- **Persistence/cache impact:** On mutation success, update or remove cached session rows. For duplicate, insert the session returned by the mutation response.
+- **Tests:** Request construction for move/project list/duplicate/delete; view model tests for cache updates and local filtering after archive/delete.
 - **Manual simulator test plan:** Long-press a safe session, pin/unpin it, move it to a project and back to No project, archive/restore it, duplicate it and confirm transcript is copied, delete only a disposable session.
-- **Risks/open questions:** Moving to a project needs a clear "No project" state. Duplicate is intentionally a full transcript copy, not the current WebUI empty-copy shortcut.
+- **Risks/open questions:** Moving to a project needs a clear "No project" state. Duplicate is unavailable for state.db-only CLI/external sessions because they have no sidecar session document to copy.
 
 #### 8.2 User message long-press menu
 - **User-facing goal:** Press and hold the user's own message to show Edit Message, Fork From Here, and Copy.
@@ -499,7 +502,7 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 
 #### 9.3 Settings default model picker ✅
 - **User-facing goal:** In Settings, select the default model from the server model picker.
-- **Upstream API/server contract to verify:** `GET /api/models` for grouped models and current `default_model`; `POST /api/default-model` with `{model}` to save.
+- **Upstream API/server contract to verify:** `GET /api/models` for grouped models, current `default_model`, and `active_provider`; `POST /api/default-model` with `{model}` to save. Verified in upstream source: the pin (`f1d399b4`, `api/routes.py:4475`) reads only `{model}`; `set_hermes_default_model` accepts `{model, provider, advanced}` from upstream HEAD `a00b02f` (`api/config.py:4780`). The client additionally sends the catalog row's `provider` when known — ignored by pinned servers, honored by current ones.
 - **iOS UI changes:** Add a Settings row/sheet for Default Model grouped by provider.
 - **Model/networking changes:** Preserve exact model IDs including provider-prefixed forms; do not normalize on the client.
 - **Persistence/cache impact:** No durable local cache beyond UI state. New sessions should use the updated server default.
@@ -616,9 +619,9 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 ### Phase 11 — Limited usage analytics (1–2 days)
 **Classification:** required before polish/TestFlight, but limited scope.
 
-- **User-facing goal:** Add an Insights row/button on the Sessions screen that opens a usage analytics dashboard with a timeframe picker.
+- **User-facing goal:** Add an Insights row/button on the Sessions screen that opens session analytics plus provider-account quotas, with up to two opt-in quota shortcuts above Settings in the app sidebar.
 - **Upstream API/server contract to verify:** No full `/insights` REST endpoint is available in the pinned upstream source. Use `/api/sessions` token/cost fields and optional `/api/session/usage` per-session refresh.
-- **iOS UI changes:** Timeframe dropdown/segmented control; dashboard cards for total input tokens, output tokens, total tokens, estimated cost, sessions touched, and top recent costly sessions. Clearly label it as session-based analytics.
+- **iOS UI changes:** Compact provider quota rows with aliases, hide/show controls, Used/Remaining presentation, visible-only configurable refresh (five-minute default), and one-line sidebar pins; timeframe dropdown/segmented control; dashboard cards for total input tokens, output tokens, total tokens, estimated cost, sessions touched, and top recent costly sessions. Keep provider quota and session analytics visibly separated.
 - **Model/networking changes:** Add local aggregation over session metadata plus optional per-session usage fetch on demand.
 - **Persistence/cache impact:** Can use cached sessions for offline/stale display if available; clearly mark cached/stale analytics.
 - **Tests:** Timeframe filtering, aggregate math, missing token/cost tolerance.
@@ -804,7 +807,7 @@ These are useful directions, not approved v1 scope. Before implementing any item
 - **Session search:** Add fast local search across loaded/cached sessions by title, preview, workspace/project, and date grouping. Use server-backed full-text search only if upstream exposes it.
 - **Mobile command launcher:** Provide quick saved commands/templates for repeated owner workflows, reusing the existing chat send/start path.
 - **Voice-first workflow:** Expand voice input beyond dictation into hold-to-talk, optional auto-send, and possibly spoken summaries, with explicit safeguards against accidental sends.
-- **Home Screen widgets / App Shortcuts / Siri shortcuts:** Add quick entry points such as "Ask Hermes" or "Run Hermes command" after the core app is stable.
+- **Home Screen widgets / App Shortcuts / Siri shortcuts:** Provider quota widgets now use explicit stable account selections, sanitized app-group snapshots, configurable pace/appearance/tap behavior, and Home Screen plus accessory families. Additional quick actions such as "Ask Hermes" or "Run Hermes command" remain future work.
 - **Offline/cache strategy:** Decide how much transcript/workspace context should live on-device, whether extra encryption is needed beyond iOS defaults, and whether Settings needs "Clear local cache" or sensitive-session exclusions.
 - **Chat maintainability:** Continue optional focused extraction slices for `ChatView`, `ChatViewModel`, and composer/services after behavior is locked down. Keep these refactors small, test-backed, and behavior-preserving.
 - **Cloudflare Access login flow:** If the owner later puts Cloudflare Access in front of the server, design an iOS authentication flow deliberately instead of bolting it onto password auth.

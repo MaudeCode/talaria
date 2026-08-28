@@ -69,6 +69,7 @@ final class KanbanEventStreamClient: KanbanEventStreamingClient {
     private let baseConfiguration: URLSessionConfiguration
     private let customHeaderProvider: @MainActor () -> [CustomHeader]
     private var eventSource: EventSource?
+    private var redirectPolicyHeader: String?
 
     init(
         urlSessionConfiguration: URLSessionConfiguration = .default,
@@ -85,19 +86,34 @@ final class KanbanEventStreamClient: KanbanEventStreamingClient {
     ) {
         stop()
         let handler = Handler(onFrame: onFrame, onFailure: onFailure)
+        let customHeaders = customHeaderProvider()
         var config = EventSource.Config(handler: handler, url: url)
         config.connectionErrorHandler = { _ in .shutdown }
-        config.headers = customHeaderProvider().merged(under: [
+        let builtInHeaders = [
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
             "Accept-Encoding": "identity"
-        ])
+        ]
+        config.headers = customHeaders.merged(under: builtInHeaders)
 
         let configuration = baseConfiguration.copy() as? URLSessionConfiguration ?? .default
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = .shared
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let policyHeader = CrossOriginRedirectGuardURLProtocol.register(
+            configuration: configuration,
+            baseURL: url,
+            customHeaders: customHeaders,
+            builtInHeaders: builtInHeaders
+        )
+        redirectPolicyHeader = policyHeader
+        configuration.protocolClasses = [CrossOriginRedirectGuardURLProtocol.self]
+            + (configuration.protocolClasses ?? []).filter { $0 != CrossOriginRedirectGuardURLProtocol.self }
+        config.headers[policyHeader] = "1"
         config.urlSessionConfiguration = configuration
 
         let source = EventSource(config: config)
@@ -108,6 +124,13 @@ final class KanbanEventStreamClient: KanbanEventStreamingClient {
     func stop() {
         eventSource?.stop()
         eventSource = nil
+        CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
+        redirectPolicyHeader = nil
+    }
+
+    deinit {
+        eventSource?.stop()
+        CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
     }
 
     private final class Handler: EventHandler {

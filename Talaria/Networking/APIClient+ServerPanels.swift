@@ -16,11 +16,16 @@ extension APIClient {
         try await send(endpoint: .commands, method: "GET")
     }
 
-    func saveDefaultModel(model: String) async throws -> DefaultModelResponse {
+    /// Saves the default model. Pass `provider` whenever the row names its
+    /// provider (`provider_id` from the catalog group): Core persists
+    /// `{model, provider}` atomically and resolves slash-qualified ids like
+    /// `anthropic/...` through the named provider's route. Without it such an
+    /// id can be persisted through the wrong provider.
+    func saveDefaultModel(model: String, provider: String? = nil) async throws -> DefaultModelResponse {
         try await send(
             endpoint: .defaultModel,
             method: "POST",
-            body: DefaultModelRequest(model: model)
+            body: DefaultModelRequest(model: model, provider: provider)
         )
     }
 
@@ -65,11 +70,15 @@ extension APIClient {
     }
 
     func switchProfile(name: String) async throws -> ProfileSwitchResponse {
-        try await send(
+        let response: ProfileSwitchResponse = try await send(
             endpoint: .switchProfile,
             method: "POST",
             body: ProfileSwitchRequest(name: name)
         )
+        if response.error == nil, ProviderQuotaWidgetSnapshotStore().clear() {
+            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+        }
+        return response
     }
 
     /// Creates a new profile (`POST /api/profile/create`), mirroring the webui's
@@ -100,6 +109,17 @@ extension APIClient {
 
     func providers() async throws -> ProvidersResponse {
         try await send(endpoint: .providers, method: "GET")
+    }
+
+    func providerQuotas(sourceID: String? = nil, refresh: Bool = false) async throws -> ProviderQuotasResponse {
+        try await send(
+            endpoint: .providerQuotas(sourceID: sourceID, refresh: refresh),
+            method: "GET"
+        )
+    }
+
+    func activeProviderQuota(refresh: Bool = false) async throws -> LegacyProviderQuotaResponse {
+        try await send(endpoint: .providerQuota(refresh: refresh), method: "GET")
     }
 
     func settings() async throws -> SettingsResponse {
@@ -141,6 +161,15 @@ extension APIClient {
 
 private struct DefaultModelRequest: Encodable {
     let model: String
+    /// The catalog row's provider, so the server persists `{model, provider}`
+    /// atomically and resolves slash-qualified ids through the right route.
+    /// Surface split, verified in source: the compatibility pin
+    /// (`f1d399b4`, `routes.py:4475`) reads only `body.get("model")` and
+    /// silently ignores the extra key; `set_hermes_default_model` accepts
+    /// `provider` from upstream HEAD `a00b02f` (`api/config.py:4780`).
+    /// Optional so a providerless custom-model save still sends the bare
+    /// `{model}` body; synthesized Encodable omits nil keys.
+    let provider: String?
 }
 
 private struct ReasoningEffortRequest: Encodable {

@@ -19,6 +19,9 @@ enum Endpoint {
     case pinSession
     case archiveSession
     case branchSession
+    /// A real copy: independent messages, tool calls and usage counters, and no
+    /// fork lineage. `branchSession` means "fork a child from here".
+    case duplicateSession
     case compressSession
     case undoSession
     case retrySession
@@ -83,6 +86,8 @@ enum Endpoint {
     case switchProfile
     case createProfile
     case providers
+    case providerQuotas(sourceID: String? = nil, refresh: Bool = false)
+    case providerQuota(refresh: Bool = false)
     case settings
     case talariaRelayPair
     case updatesCheck
@@ -160,6 +165,8 @@ enum Endpoint {
             return "/api/session/archive"
         case .branchSession:
             return "/api/session/branch"
+        case .duplicateSession:
+            return "/api/session/duplicate"
         case .compressSession:
             return "/api/session/compress"
         case .undoSession:
@@ -288,6 +295,10 @@ enum Endpoint {
             return "/api/profile/create"
         case .providers:
             return "/api/providers"
+        case .providerQuotas:
+            return "/api/provider/quotas"
+        case .providerQuota:
+            return "/api/provider/quota"
         case .settings:
             return "/api/settings"
         case .talariaRelayPair:
@@ -528,6 +539,17 @@ enum Endpoint {
                 items.append(URLQueryItem(name: "provider", value: provider))
             }
             return items
+        case let .providerQuotas(sourceID, refresh):
+            var items: [URLQueryItem] = []
+            if let sourceID, !sourceID.isEmpty {
+                items.append(URLQueryItem(name: "source", value: sourceID))
+            }
+            if refresh {
+                items.append(URLQueryItem(name: "refresh", value: "1"))
+            }
+            return items
+        case let .providerQuota(refresh):
+            return refresh ? [URLQueryItem(name: "refresh", value: "1")] : []
         case let .insights(days):
             return [URLQueryItem(name: "days", value: "\(days)")]
         case let .skillContent(name, file):

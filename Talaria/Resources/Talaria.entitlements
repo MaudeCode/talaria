@@ -12,5 +12,9 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
+	</array>
 </dict>
 </plist>

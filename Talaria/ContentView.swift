@@ -3,13 +3,26 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var authManager: AuthManager
+    private let draftStore: ChatDraftStore
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
-    @State private var pendingSharedImport: SharedImport?
+    @State private var pendingSharedImport: SharedImportReservation?
+    @State private var hasWaitingSharedImport = false
+    @State private var hasRoutedSharedImport = false
     @State private var pendingDeepLinkedSessionID: String?
+    @State private var pendingQuotaSourceID: String?
+    @State private var opensProviderQuotaWidgetSettings = false
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
+
+    init(
+        authManager: AuthManager,
+        draftStore: ChatDraftStore? = nil
+    ) {
+        self.authManager = authManager
+        self.draftStore = draftStore ?? .shared
+    }
 
     var body: some View {
         content
@@ -35,6 +48,10 @@ struct ContentView: View {
                 await reconcileOrphanedLiveActivities(notifiesOnCompletion: true)
             }
             .onChange(of: scenePhase) {
+                if scenePhase == .background {
+                    ProviderQuotaBackgroundRefresh.schedule()
+                    return
+                }
                 guard scenePhase == .active else { return }
                 Task { await importPendingSharedDraftIfAvailable() }
                 // #248: the foreground pass stays silent — the in-session completion
@@ -108,8 +125,14 @@ struct ContentView: View {
                 authManager: authManager,
                 server: server,
                 pendingSharedImport: $pendingSharedImport,
+                didRoutePendingSharedImport: consumePendingSharedImport,
+                hasWaitingSharedImport: hasWaitingSharedImport,
+                openNextSharedImport: openNextSharedImport,
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
-                requestedNewChat: $pendingNewChatRequest
+                pendingQuotaSourceID: $pendingQuotaSourceID,
+                opensProviderQuotaWidgetSettings: $opensProviderQuotaWidgetSettings,
+                requestedNewChat: $pendingNewChatRequest,
+                draftStore: draftStore
             )
             // Switching the active server keeps us in `.loggedIn`, so without a
             // per-server identity SwiftUI would reuse server-bound content.
@@ -120,6 +143,28 @@ struct ContentView: View {
     }
 
     private func handleOpenURL(_ url: URL) {
+        if TalariaDeepLink.isOpenAppURL(url) {
+            return
+        }
+
+        if let providerID = TalariaDeepLink.providerID(fromNewChatWithProvider: url) {
+            pendingNewChatRequest = NewChatRequest(providerID: providerID)
+            return
+        }
+
+        if TalariaDeepLink.isProviderQuotaWidgetSettingsURL(url) {
+            opensProviderQuotaWidgetSettings = true
+            return
+        }
+
+        if let sourceID = TalariaDeepLink.quotaSourceID(from: url) {
+            if TalariaDeepLink.requestsQuotaRefresh(url) {
+                UserDefaults.standard.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)
+            }
+            pendingQuotaSourceID = sourceID
+            return
+        }
+
         // A fresh request each time (new `id`) so a repeat invocation re-triggers navigation
         // even if the previous one's value still lingers downstream. The voice variant carries
         // `autoStartsVoiceInput` so the composer begins dictation once it appears (#338).
@@ -168,15 +213,56 @@ struct ContentView: View {
     }
 
     private func importPendingSharedDraftIfAvailable() async {
+        guard pendingSharedImport == nil else {
+            return
+        }
+
         guard let directory = TalariaShareDraft.containerURL() else {
             return
         }
 
+        guard !hasRoutedSharedImport else {
+            await refreshWaitingSharedImport(in: directory)
+            return
+        }
+
         do {
-            if let sharedImport = try await TalariaShareDraft.loadPendingImportOffMainActor(from: directory) {
-                pendingSharedImport = sharedImport
+            pendingSharedImport = try await TalariaShareDraft.reserveNextPendingImportOffMainActor(from: directory)
+            await refreshWaitingSharedImport(in: directory)
+        } catch {
+            pendingSharedImport = nil
+            hasWaitingSharedImport = false
+        }
+    }
+
+    private func consumePendingSharedImport(_ reservation: SharedImportReservation) {
+        hasRoutedSharedImport = true
+
+        Task {
+            guard let directory = TalariaShareDraft.containerURL() else {
+                return
             }
-        } catch {}
+
+            do {
+                try await TalariaShareDraft.consumeOffMainActor(reservation, from: directory)
+            } catch {
+                try? await TalariaShareDraft.releaseOffMainActor(reservation, in: directory)
+            }
+            if pendingSharedImport?.reservationID == reservation.reservationID {
+                pendingSharedImport = nil
+            }
+            await refreshWaitingSharedImport(in: directory)
+        }
+    }
+
+    private func openNextSharedImport() {
+        hasWaitingSharedImport = false
+        hasRoutedSharedImport = false
+        Task { await importPendingSharedDraftIfAvailable() }
+    }
+
+    private func refreshWaitingSharedImport(in directory: URL) async {
+        hasWaitingSharedImport = (try? await TalariaShareDraft.hasPendingImportOffMainActor(in: directory)) ?? false
     }
 }
 

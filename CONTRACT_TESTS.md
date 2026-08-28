@@ -79,6 +79,8 @@ Read-only checks, safe for live contract smoke tests:
 - `GET /api/file/raw?session_id=...&path=...`
 - `GET /api/models`
 - `GET /api/providers`
+- `GET /api/provider/quotas`
+- `GET /api/provider/quota` (older active-provider fallback)
 - `GET /api/settings`
 - `GET /api/reasoning`
 - `GET /api/profiles`
@@ -91,6 +93,41 @@ Read-only checks, safe for live contract smoke tests:
 - `GET /api/skills/content?name=...`
 - `GET /api/memory`
 
+`GET /api/provider/quotas` is a Talaria-adopted server extension beyond the
+current pinned tag. It returns sanitized, stable multi-provider/account quota
+sources for the active server profile and accepts optional `source` and
+`refresh=1` query parameters. Talaria falls back to the older singular endpoint
+without treating its active-only rows as stable configurable sources.
+Codex windows may include `window_seconds`; WebUI classifies the raw OpenAI
+windows by that duration (`18000` session, `604800` weekly) rather than assuming
+primary/secondary order. Talaria prefers the explicit duration and retains a
+reset-time inference only for older servers.
+
+The main app alone performs authenticated quota refresh. It persists only
+allowlisted display snapshots to the configured app group and reloads the
+`ProviderQuotaWidget` timeline. The widget extension reads those snapshots and
+never reads cookies, Keychain values, server URLs, or provider credentials.
+Insights refreshes quota on appearance, on the Settings-selected interval while
+visible (five minutes by default), and on manual refresh. Up to two explicitly
+pinned stable sources may also appear above Settings in the app sidebar; the
+default is none. Provider aliases and the Used/Remaining display preference are
+stored in the app group so Insights, sidebar shortcuts, widgets, and WidgetKit
+pickers share the same presentation. Hidden provider IDs are a local display
+preference applied to Insights and sidebar shortcuts only.
+Widget automatic colors default to weekly pace: remaining quota is compared with
+the share of the seven-day reset window remaining, using the same three-point
+buffer and projected-burn thresholds as Codex Meter. Users may instead select
+overall remaining-percentage colors; unknown or incomplete pace windows fall
+back to those overall thresholds.
+Each widget may override its quota window, percentage mode, pace/overall basis,
+status and reset labels, gauge/track appearance, background, and tap action.
+Small/medium/large widgets retain explicit 1/2/4 source slots; Lock Screen and
+StandBy accessory families use one explicit source. A tap-to-refresh action opens
+Talaria and refreshes through the authenticated main app—the widget extension
+still never receives credentials. Optional quota alerts are evaluated only after
+a successful main-app refresh and fire on warning/critical transitions rather
+than every poll.
+
 State-changing checks, only safe against disposable test data:
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
@@ -100,6 +137,7 @@ State-changing checks, only safe against disposable test data:
 - `POST /api/session/pin`
 - `POST /api/session/archive`
 - `POST /api/session/move`
+- `POST /api/session/duplicate`
 - `POST /api/session/branch`
 - `POST /api/session/truncate`
 - `POST /api/session/update`

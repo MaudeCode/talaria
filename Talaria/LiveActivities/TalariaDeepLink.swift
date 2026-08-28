@@ -1,5 +1,9 @@
 import Foundation
 
+enum ProviderQuotaWidgetLaunchAction {
+    static let pendingRefreshSourceKey = "providerQuota.pendingRefreshSource"
+}
+
 enum TalariaDeepLink {
     static var scheme: String {
         Bundle.main.object(forInfoDictionaryKey: "TalariaURLScheme") as? String
@@ -7,6 +11,95 @@ enum TalariaDeepLink {
     }
 
     static let sessionHost = "session"
+    static let quotaSourceHost = "quota-source"
+    static let quotaSourceQueryItem = "source"
+    static let quotaRefreshQueryItem = "refresh"
+    static let providerQuotaWidgetSettingsHost = "provider-quota-widget-settings"
+    static let openAppHost = "open"
+    static let newChatProviderHost = "new-chat-provider"
+    static let providerQueryItem = "provider"
+
+    static func quotaSourceURL(sourceID: String, refresh: Bool = false) -> URL? {
+        let trimmed = sourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = quotaSourceHost
+        components.queryItems = [URLQueryItem(name: quotaSourceQueryItem, value: trimmed)]
+        if refresh {
+            components.queryItems?.append(URLQueryItem(name: quotaRefreshQueryItem, value: "1"))
+        }
+        return components.url
+    }
+
+    static var providerQuotaWidgetSettingsURL: URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = providerQuotaWidgetSettingsHost
+        return components.url
+    }
+
+    static func isProviderQuotaWidgetSettingsURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == scheme
+            && url.host?.lowercased() == providerQuotaWidgetSettingsHost
+    }
+
+    static func requestsQuotaRefresh(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == scheme,
+              url.host?.lowercased() == quotaSourceHost
+        else { return false }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .contains(where: { $0.name == quotaRefreshQueryItem && $0.value == "1" }) == true
+    }
+
+    static var openAppURL: URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = openAppHost
+        return components.url
+    }
+
+    static func isOpenAppURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == scheme && url.host?.lowercased() == openAppHost
+    }
+
+    static func newChatWithProviderURL(providerID: String) -> URL? {
+        let providerID = providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !providerID.isEmpty else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = newChatProviderHost
+        components.queryItems = [URLQueryItem(name: providerQueryItem, value: providerID)]
+        return components.url
+    }
+
+    static func providerID(fromNewChatWithProvider url: URL) -> String? {
+        guard url.scheme?.lowercased() == scheme,
+              url.host?.lowercased() == newChatProviderHost
+        else { return nil }
+        let providerID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == providerQueryItem })?
+            .value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return providerID?.isEmpty == false ? providerID : nil
+    }
+
+    static func quotaSourceID(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == scheme,
+              url.host?.lowercased() == quotaSourceHost,
+              let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == quotaSourceQueryItem })?
+                .value
+        else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     /// Host for the parameter-less "open the New Chat composer" deep link used by the
     /// New Chat App Intent (issue #337). Mirrors the share extension's host-based routing

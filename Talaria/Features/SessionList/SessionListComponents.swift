@@ -54,6 +54,10 @@ enum SessionRowActionPolicy {
         !session.isSessionReadOnly
     }
 
+    static func canDuplicate(_ session: SessionSummary) -> Bool {
+        offersMutationActions(for: session) && !isExternalSession(session)
+    }
+
     static func canExport(_ session: SessionSummary, isViewingCachedData: Bool) -> Bool {
         !isViewingCachedData && hasServerSessionID(session)
     }
@@ -71,6 +75,27 @@ enum SessionRowActionPolicy {
         }
 
         return TalariaDeepLink.sessionURL(sessionID: sessionID)
+    }
+
+    private static func isExternalSession(_ session: SessionSummary) -> Bool {
+        let sessionSource = normalizedSource(session.sessionSource)
+        let rawSource = normalizedSource(session.rawSource) ?? normalizedSource(session.sourceTag)
+        let source = sessionSource ?? rawSource
+
+        if source == "webui" { return false }
+        if sessionSource == "messaging" { return true }
+
+        switch rawSource {
+        case "weixin", "telegram", "discord", "slack", "email", "wecom", "wecom_callback", "matrix":
+            return true
+        default:
+            return session.isCliSession == true
+        }
+    }
+
+    private static func normalizedSource(_ source: String?) -> String? {
+        let normalized = source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized?.isEmpty == false ? normalized : nil
     }
 }
 
@@ -943,12 +968,14 @@ struct SessionRowContextMenu: View {
             }
             .disabled(isViewingCachedData || isRenamingSession || !hasServerSessionID(session))
 
-            Button {
-                actions.duplicate(session)
-            } label: {
-                Label("Duplicate", systemImage: "doc.on.doc")
+            if SessionRowActionPolicy.canDuplicate(session) {
+                Button {
+                    actions.duplicate(session)
+                } label: {
+                    Label("Duplicate", systemImage: "doc.on.doc")
+                }
+                .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
             }
-            .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
 
             Menu {
                 SessionProjectMoveMenu(
@@ -1417,6 +1444,7 @@ enum AppSidebarDestination: Hashable {
     case skills
     case memory
     case insights
+    case quota(String)
     case settings
 }
 
@@ -1453,12 +1481,23 @@ enum AppSidebarGesturePolicy {
 
 struct AppSidebarDrawer: View {
     @AccessibilityFocusState private var closeNavigationIsFocused: Bool
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @AppStorage(ProviderQuotaSidebarSettings.detailKey)
+    private var quotaDetailRawValue = ProviderQuotaSidebarDetail.defaultValue.rawValue
+    @AppStorage(ProviderQuotaSidebarSettings.showsRailKey) private var showsQuotaRail = true
+    @AppStorage(ProviderQuotaSidebarSettings.showsMarkerKey) private var showsQuotaMarker = true
+    @AppStorage(ProviderQuotaSidebarSettings.showsIconKey) private var showsQuotaIcon = true
+    @AppStorage(ProviderQuotaSidebarSettings.colorsByStateKey) private var colorsQuotaByState = true
 
     let isPresented: Bool
     let selection: AppSidebarDestination
     let sectionVisibility: SidebarSectionVisibility
     let serverName: String
     let activeProfileName: String?
+    let quotaSources: [ProviderQuotaWidgetSource]
     let newChat: () -> Void
     let select: (AppSidebarDestination) -> Void
     let close: () -> Void
@@ -1543,6 +1582,17 @@ struct AppSidebarDrawer: View {
             }
             .scrollBounceBehavior(.basedOnSize)
 
+            if !quotaSources.isEmpty {
+                Divider().padding(.horizontal, 12)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(quotaSources) { source in
+                        quotaRow(source)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+
             Divider().padding(.horizontal, 12)
             row("Settings", icon: .system("gearshape"), destination: .settings)
                 .padding(12)
@@ -1613,6 +1663,108 @@ struct AppSidebarDrawer: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selection == destination ? .isSelected : [])
+    }
+
+    private func quotaRow(_ source: ProviderQuotaWidgetSource) -> some View {
+        let options = ProviderQuotaSidebarDisplayOptions(
+            detail: ProviderQuotaSidebarDetail(rawValue: quotaDetailRawValue) ?? .defaultValue,
+            showsRail: showsQuotaRail,
+            requestsPaceMarker: showsQuotaMarker,
+            showsIcon: showsQuotaIcon,
+            colorsByState: colorsQuotaByState
+        )
+        let state = ProviderQuotaPresentation.state(
+            for: source,
+            settings: ProviderQuotaEvaluationSettings.stored(),
+            at: Date()
+        )
+        let tint = options.colorsByState
+            ? ProviderQuotaWidgetPalette.arcColor(
+                urgency: state.urgency,
+                profile: ProviderQuotaWidgetResolvedProfile.resolve(id: nil)
+            )
+            : Color.accentColor
+        let detail = ProviderQuotaSidebarPresentation.detail(
+            mode: options.detail,
+            source: source,
+            state: state
+        )
+
+        return HStack(spacing: 10) {
+            if options.showsIcon {
+                ProviderIconView(
+                    providerID: source.providerID,
+                    label: providerDisplayName(source),
+                    tint: tint,
+                    size: 20
+                )
+                    .frame(width: 24)
+            }
+
+            VStack(spacing: 4) {
+                HStack {
+                    Text(providerDisplayName(source))
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    if let detail {
+                        Text(detail)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                if options.showsRail, let percent = state.percent {
+                    quotaRail(
+                        percent: percent,
+                        expectedPercent: options.showsPaceMarker ? state.expectedPercent : nil,
+                        tint: tint
+                    )
+                }
+            }
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 40)
+        .accessibilityIdentifier("app-sidebar-quota-\(source.sourceID)")
+        .accessibilityLabel(
+            [providerDisplayName(source), detail, state.paceLabel].compactMap { $0 }.joined(separator: ", ")
+        )
+    }
+
+    private func quotaRail(percent: Double, expectedPercent: Double?, tint: Color) -> some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(.secondary.opacity(0.18))
+                Capsule()
+                    .fill(tint)
+                    .frame(width: width * min(max(percent, 0), 100) / 100)
+                if let expectedPercent {
+                    Rectangle()
+                        .fill(Color.primary)
+                        .frame(width: 1.5, height: 3)
+                        .offset(
+                            x: min(
+                                max(width * min(max(expectedPercent, 0), 100) / 100 - 0.75, 0),
+                                max(width - 1.5, 0)
+                            )
+                        )
+                }
+            }
+        }
+        .frame(height: 3)
+    }
+
+    private func providerDisplayName(_ source: ProviderQuotaWidgetSource) -> String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: source.providerID,
+            fallback: source.providerLabel,
+            aliasesData: providerAliasesData
+        )
     }
 
     @ViewBuilder

@@ -14,6 +14,7 @@ protocol SSEStreamingClient: AnyObject {
 final class SSEClient: SSEStreamingClient {
     private let baseConfiguration: URLSessionConfiguration
     private var eventSource: EventSource?
+    private var redirectPolicyHeader: String?
     private(set) var lastEventID: String?
     /// Read at stream start so a new stream picks up the latest headers (#255).
     private let customHeaderProvider: @MainActor () -> [CustomHeader]
@@ -29,6 +30,7 @@ final class SSEClient: SSEStreamingClient {
     func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
         stop()
         lastEventID = nil
+        let customHeaders = customHeaderProvider()
 
         let handler = SSEEventHandler(
             onEventID: { [weak self] eventID in
@@ -40,17 +42,31 @@ final class SSEClient: SSEStreamingClient {
         config.connectionErrorHandler = { _ in .shutdown }
         // Custom headers merged underneath the built-ins so the built-ins win on
         // collision; an empty list leaves the built-in three unchanged (#255).
-        config.headers = customHeaderProvider().merged(under: [
+        let builtInHeaders = [
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
             "Accept-Encoding": "identity"
-        ])
+        ]
+        config.headers = customHeaders.merged(under: builtInHeaders)
 
         let configuration = baseConfiguration.copy() as? URLSessionConfiguration ?? .default
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = .shared
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let policyHeader = CrossOriginRedirectGuardURLProtocol.register(
+            configuration: configuration,
+            baseURL: url,
+            customHeaders: customHeaders,
+            builtInHeaders: builtInHeaders
+        )
+        redirectPolicyHeader = policyHeader
+        configuration.protocolClasses = [CrossOriginRedirectGuardURLProtocol.self]
+            + (configuration.protocolClasses ?? []).filter { $0 != CrossOriginRedirectGuardURLProtocol.self }
+        config.headers[policyHeader] = "1"
         config.urlSessionConfiguration = configuration
 
         let source = EventSource(config: config)
@@ -61,6 +77,13 @@ final class SSEClient: SSEStreamingClient {
     func stop() {
         eventSource?.stop()
         eventSource = nil
+        CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
+        redirectPolicyHeader = nil
+    }
+
+    deinit {
+        eventSource?.stop()
+        CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
     }
 }
 

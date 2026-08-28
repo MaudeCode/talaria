@@ -41,6 +41,10 @@ explicitly adopted it.
 - For API requests, JSON decoding, SSE or streaming, and server-version
   compatibility, use `$talaria-upstream-contract`.
 - Do not add a third-party package without approval.
+- Automated tests must run from deterministic, isolated, test-owned state in a
+  clean environment. Fixture identifiers must be synthetic, and the harness must
+  create every dependency it uses. Treat reliance on pre-existing accounts,
+  credentials, services, or application data as a failing test design.
 - Do not commit a build or test failure caused by the change. Diagnose and report
   unrelated failures without expanding the task.
 

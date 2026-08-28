@@ -52,7 +52,7 @@ device_id=${TALARIA_DEVICE_ID:-}
 if [[ -z "$device_id" ]]; then
     device_json="$build_dir/connected-devices.json"
     if ! xcrun devicectl list devices \
-        --filter 'State == "connected" AND Reality == "physical" AND Model CONTAINS "iPhone"' \
+        --filter '(State == "connected" OR State == "available") AND Reality == "physical" AND Model CONTAINS "iPhone"' \
         --json-output "$device_json" \
         --omit-deprecated-fields-in-json >/dev/null; then
         print -u2 "Could not list connected physical iPhones."

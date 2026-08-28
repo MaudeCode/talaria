@@ -315,6 +315,10 @@ final class AuthManagerStateTests: XCTestCase {
     }
 
     func testConfiguringASecondServerAddsItAndMakesItActive() async throws {
+        let widgetDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
+        )
+        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry.inMemory(keychain: keychain)
         let manager = AuthManager(
@@ -325,11 +329,13 @@ final class AuthManagerStateTests: XCTestCase {
         )
 
         await manager.configure(serverURLString: "https://a.test", password: "")
+        widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         await manager.configure(serverURLString: "https://b.test", password: "")
 
         XCTAssertEqual(Set(manager.servers.map(\.id)), ["https://a.test", "https://b.test"])
         XCTAssertEqual(manager.activeServerID, "https://b.test")
         XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://b.test"))))
+        XCTAssertNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 
     func testAddServerNeedsPasswordWhenAuthEnabledAndNoPassword() async {
@@ -367,6 +373,10 @@ final class AuthManagerStateTests: XCTestCase {
     }
 
     func testAddServerSucceedsAndSwitchesActive() async throws {
+        let widgetDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
+        )
+        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry.inMemory(keychain: keychain)
         let manager = AuthManager(
@@ -377,6 +387,7 @@ final class AuthManagerStateTests: XCTestCase {
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")
+        widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
 
         let outcome = await manager.addServer(serverURLString: "https://b.test", password: "")
 
@@ -384,6 +395,7 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://b.test"))))
         XCTAssertEqual(Set(manager.servers.map(\.id)), ["https://a.test", "https://b.test"])
         XCTAssertEqual(keychain.savedValues[.serverURL], "https://b.test")
+        XCTAssertNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 
     func testAddServerFailureKeepsActiveServerAndItsHeaders() async throws {

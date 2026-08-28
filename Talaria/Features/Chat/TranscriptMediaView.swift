@@ -923,7 +923,10 @@ struct TranscriptMediaPreviewView: View {
                 }
                 try await PhotoLibrarySaver.saveImageData(payload.data)
             } else if payload.isVideo {
-                try await PhotoLibrarySaver.saveVideoData(payload.data, contentType: payload.contentType)
+                guard let videoFileURL = viewModel.videoFileURL else {
+                    throw PhotoLibrarySaveError.videoFileUnavailable
+                }
+                try await PhotoLibrarySaver.saveVideoFile(at: videoFileURL)
             } else {
                 throw PhotoLibrarySaveError.notPhotosMedia
             }

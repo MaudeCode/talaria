@@ -2,8 +2,12 @@ import XCTest
 import UIKit
 
 final class ComposerNavigationUITests: XCTestCase {
-    private let fixtureSessionTitle = "Workstream L Kopiur"
+    private let fixtureSessionTitle = "UI Fixture Session"
     private var app: XCUIApplication!
+
+    private var fixtureLaunchArguments: [String] {
+        ["--ui-test-fixture"]
+    }
 
     private var fixtureSessionButton: XCUIElement {
         app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
@@ -12,6 +16,7 @@ final class ComposerNavigationUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        app.launchArguments = fixtureLaunchArguments
         app.launch()
     }
 
@@ -22,9 +27,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testChatListScrolls() throws {
         let session = fixtureSessionButton
-        guard session.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
 
         let initialY = session.frame.minY
         let sessionList = app.collectionViews.firstMatch
@@ -37,12 +40,10 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testChatSessionOpensFromList() throws {
         let session = fixtureSessionButton
-        guard session.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
 
         tapFixtureSession(session)
-        XCTAssertTrue(app.buttons["Message"].waitForExistence(timeout: 15))
+        XCTAssertTrue(waitForComposer(timeout: 15) != nil)
     }
 
     func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
@@ -60,6 +61,7 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Reply"].exists)
 
         app.terminate()
+        app.launchArguments = fixtureLaunchArguments
         app.launch()
         _ = try openFixtureSession()
 
@@ -106,9 +108,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testComposerSettingsAreGroupedAndConfigurable() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         openNavigation.tap()
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
@@ -137,14 +137,154 @@ final class ComposerNavigationUITests: XCTestCase {
             }
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
         }
+
+        let percentage = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Percentage"))
+            .firstMatch
+        for _ in 0..<12 where !percentage.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(percentage.exists)
+        XCTAssertTrue(app.staticTexts["Used"].exists)
+
+        let quotaRefresh = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Refresh"))
+            .firstMatch
+        for _ in 0..<6 where !quotaRefresh.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(quotaRefresh.exists)
+        XCTAssertTrue(app.staticTexts["Every 5 minutes"].exists)
+
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
+    }
+
+    func testInsightsShowsQuotaSurface() throws {
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments + ["--provider-quotas"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Provider quotas"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Refresh all provider quotas"].exists)
+        XCTAssertTrue(app.buttons["Open provider quota settings"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["provider-quota-section"].exists)
+        let quotaSource = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "provider-quota-source-"))
+            .firstMatch
+        XCTAssertTrue(quotaSource.waitForExistence(timeout: 10), "Expected at least one rendered quota source")
+        XCTAssertTrue(app.staticTexts["Fixture Provider"].exists)
+        XCTAssertFalse(app.staticTexts["device_code"].exists)
+        XCTAssertTrue(app.images["Active provider"].exists)
+
+        let warning = app.buttons["Provider quota warning"]
+        XCTAssertFalse(app.staticTexts["This server supports active-provider quota only. Multi-account sources require the companion server update."].exists)
+
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Insights provider quota surface"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        if warning.exists {
+            warning.tap()
+            XCTAssertTrue(
+                app.descendants(matching: .any)["provider-quota-warning-details"]
+                    .waitForExistence(timeout: 3),
+                "Expected warning details after tapping the warning button"
+            )
+        }
+    }
+
+    func testProviderQuotaWidgetFixturePreparesPreview() throws {
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments + ["--provider-quota-widget-fixture"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Widget fixture ready"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.staticTexts["Add or edit the Talaria Provider quotas widget to inspect its configured states."].exists
+        )
+    }
+
+    func testWidgetCustomizationShowsSharedLockScreenPreviews() throws {
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments + ["--provider-quota-widget-customization"]
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
+        app.buttons["Lock %"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["provider-quota-lock-percentage"]
+                .waitForExistence(timeout: 3)
+        )
+
+        app.buttons["Lock Pace"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["provider-quota-lock-pace"]
+                .waitForExistence(timeout: 3)
+        )
+    }
+
+    func testWidgetCustomizationShowsDenseLargeQuotaLayouts() throws {
+        app.terminate()
+        app.launchArguments = ["--provider-quota-widget-customization"]
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+
+        app.buttons["Medium"].tap()
+        app.buttons["2"].tap()
+        XCTAssertTrue(app.buttons["2"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+
+        app.buttons["Large"].tap()
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let twoProviders = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        twoProviders.name = "Detailed two-provider large quota widget preview"
+        twoProviders.lifetime = .keepAlways
+        add(twoProviders)
+
+        app.buttons["1"].tap()
+        XCTAssertTrue(app.buttons["1"].isSelected)
+        app.buttons["1W"].tap()
+        XCTAssertTrue(app.buttons["1W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let oneWindow = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        oneWindow.name = "Expanded one-window large quota widget preview"
+        oneWindow.lifetime = .keepAlways
+        add(oneWindow)
+
+        app.buttons["2W"].tap()
+        XCTAssertTrue(app.buttons["2W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let twoWindows = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        twoWindows.name = "Detailed two-window large quota widget preview"
+        twoWindows.lifetime = .keepAlways
+        add(twoWindows)
+
+        app.buttons["3W"].tap()
+        XCTAssertTrue(app.buttons["3W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+
+        app.buttons["3"].tap()
+        XCTAssertTrue(app.buttons["3"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+
+        app.buttons["4"].tap()
+        XCTAssertTrue(app.buttons["4"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
+        let bars = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        bars.name = "Bar four-source large quota widget preview"
+        bars.lifetime = .keepAlways
+        add(bars)
     }
 
     func testSidebarReplacesRootTabs() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         let navigationBar = app.navigationBars.firstMatch
@@ -182,9 +322,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testSidebarSurfaceExtendsThroughSafeAreas() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         openNavigation.tap()
         XCTAssertTrue(app.buttons["Close navigation"].waitForExistence(timeout: 3))
@@ -204,9 +342,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testSidebarIsAccessibilityModalUntilClosed() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
         XCTAssertTrue(mainSurface.exists)
@@ -225,9 +361,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testSidebarHeaderRespectsTopSafeArea() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         openNavigation.tap()
         let closeNavigation = app.buttons["Close navigation"]
@@ -241,9 +375,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testSidebarNewChatOpensExistingComposer() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         openNavigation.tap()
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
@@ -257,9 +389,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testFullyOpenSidebarClosesWithSlowDiagonalSwipe() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         openNavigation.tap()
         let closeNavigation = app.buttons["Close navigation"]
@@ -280,9 +410,7 @@ final class ComposerNavigationUITests: XCTestCase {
     @available(iOS 26.0, *)
     func testSidebarCloseHitchPerformance() throws {
         let openNavigation = app.buttons["Open navigation"]
-        guard openNavigation.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
         let closeNavigation = app.buttons["Close navigation"]
@@ -314,18 +442,30 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     private func openFixtureSession() throws -> XCUIElement {
-        let idleComposer = app.buttons["Message"]
-        if idleComposer.waitForExistence(timeout: 3) {
-            return idleComposer
+        if let composer = waitForComposer(timeout: 3) {
+            return composer
         }
 
         let session = fixtureSessionButton
-        guard session.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Requires the maintainer's onboarded simulator fixture")
-        }
+        XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
         tapFixtureSession(session)
-        XCTAssertTrue(idleComposer.waitForExistence(timeout: 15))
-        return idleComposer
+        let composer = waitForComposer(timeout: 15)
+        XCTAssertNotNil(composer)
+        return try XCTUnwrap(composer)
+    }
+
+    private func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
+        let idleComposer = app.buttons["Message"]
+        let expandedComposer = app.textViews.firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if idleComposer.exists { return idleComposer }
+            if expandedComposer.exists { return expandedComposer }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < deadline
+
+        return nil
     }
 
     private func tapFixtureSession(_ session: XCUIElement) {
@@ -358,6 +498,12 @@ final class ComposerNavigationUITests: XCTestCase {
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
+    private func assertPreviewVisible(identifier: String) {
+        XCTAssertTrue(
+            app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3)
+        )
+    }
+
     private func brightness(
         in screenshot: XCUIScreenshot,
         x normalizedX: CGFloat,
@@ -367,7 +513,7 @@ final class ComposerNavigationUITests: XCTestCase {
         let pixelX = min(image.size.width - 1, image.size.width * normalizedX)
         let pixelY = min(image.size.height - 1, image.size.height * normalizedY)
         var pixel = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(
+        let context = try XCTUnwrap(CGContext(
             data: &pixel,
             width: 1,
             height: 1,
@@ -375,9 +521,8 @@ final class ComposerNavigationUITests: XCTestCase {
             bytesPerRow: 4,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        ), let cgImage = image.cgImage else {
-            throw XCTSkip("Could not read simulator screenshot pixels")
-        }
+        ), "Could not create screenshot pixel context")
+        let cgImage = try XCTUnwrap(image.cgImage, "Could not read simulator screenshot pixels")
 
         context.translateBy(x: -pixelX, y: pixelY - image.size.height + 1)
         context.draw(cgImage, in: CGRect(origin: .zero, size: image.size))

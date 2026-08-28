@@ -324,6 +324,54 @@ enum SectionVisibilitySettings {
     }
 }
 
+enum ProviderQuotaSidebarSettings {
+    static let firstSourceKey = "providerQuotaSidebar.source1"
+    static let secondSourceKey = "providerQuotaSidebar.source2"
+    static let detailKey = "providerQuotaSidebar.detail"
+    static let showsRailKey = "providerQuotaSidebar.showsRail"
+    static let showsMarkerKey = "providerQuotaSidebar.showsMarker"
+    static let showsIconKey = "providerQuotaSidebar.showsIcon"
+    static let colorsByStateKey = "providerQuotaSidebar.colorsByState"
+
+    static func sourceIDs(first: String, second: String) -> [String] {
+        var seen = Set<String>()
+        return [first, second].compactMap { value in
+            let id = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, seen.insert(id).inserted else { return nil }
+            return id
+        }
+    }
+}
+
+enum ProviderQuotaVisibilitySettings {
+    static let storageKey = "providerQuota.hiddenProviders"
+
+    static func hiddenProviderIDs(from data: Data) -> Set<String> {
+        guard let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(values.compactMap(normalizedProviderID))
+    }
+
+    static func data(
+        bySetting providerID: String,
+        hidden: Bool,
+        in data: Data
+    ) -> Data {
+        guard let providerID = normalizedProviderID(providerID) else { return data }
+        var hiddenIDs = hiddenProviderIDs(from: data)
+        if hidden {
+            hiddenIDs.insert(providerID)
+        } else {
+            hiddenIDs.remove(providerID)
+        }
+        return (try? JSONEncoder().encode(hiddenIDs.sorted())) ?? data
+    }
+
+    private static func normalizedProviderID(_ value: String) -> String? {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
 /// Optional session controls shown with the message composer. Core actions such
 /// as attachments, model, reasoning, dictation, and send remain available.
 enum ComposerVisibilitySettings {

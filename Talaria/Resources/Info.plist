@@ -31,12 +31,20 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>TalariaAppGroupIdentifier</key>
 	<string>$(APP_GROUP_IDENTIFIER)</string>
 	<key>TalariaKeychainService</key>
 	<string>$(KEYCHAIN_SERVICE)</string>
+	<key>TalariaSharedKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
+	<key>TalariaSharedKeychainService</key>
+	<string>$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
 	<key>TalariaURLScheme</key>
 	<string>$(TALARIA_URL_SCHEME)</string>
 	<key>NSAppTransportSecurity</key>
@@ -70,6 +78,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>fetch</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

@@ -6,8 +6,14 @@ import UIKit
 struct SessionListView: View {
     @Bindable var authManager: AuthManager
     let server: URL
-    @Binding private var pendingSharedImport: SharedImport?
+    private let draftStore: ChatDraftStore
+    @Binding private var pendingSharedImport: SharedImportReservation?
+    private let didRoutePendingSharedImport: (SharedImportReservation) -> Void
+    private let hasWaitingSharedImport: Bool
+    private let openNextSharedImport: () -> Void
     @Binding private var pendingDeepLinkedSessionID: String?
+    @Binding private var pendingQuotaSourceID: String?
+    @Binding private var opensProviderQuotaWidgetSettings: Bool
     @Binding private var requestedNewChat: NewChatRequest?
 
     @Environment(\.modelContext) private var modelContext
@@ -16,7 +22,9 @@ struct SessionListView: View {
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionListViewModel
+    @State private var quotaViewModel: ProvidersViewModel
     @State private var navigationState: SessionNavigationState
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
@@ -34,6 +42,7 @@ struct SessionListView: View {
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
+    @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
     @AppStorage(SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
@@ -52,6 +61,11 @@ struct SessionListView: View {
     @AppStorage(SectionVisibilitySettings.skillsKey) private var showsSkillsSection = true
     @AppStorage(SectionVisibilitySettings.memoryKey) private var showsMemorySection = true
     @AppStorage(SectionVisibilitySettings.insightsKey) private var showsInsightsSection = true
+    @AppStorage(ProviderQuotaSidebarSettings.firstSourceKey) private var firstSidebarQuotaSourceID = ""
+    @AppStorage(ProviderQuotaSidebarSettings.secondSourceKey) private var secondSidebarQuotaSourceID = ""
+    @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
+    @AppStorage(ProviderQuotaRefreshInterval.storageKey)
+    private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
     // Per-server key (#19): the CLI toggle mirrors the active server's
     // `show_cli_sessions`, so its cached value must not leak across servers.
     // Configured in `init`, where the server URL is known.
@@ -67,16 +81,29 @@ struct SessionListView: View {
     init(
         authManager: AuthManager,
         server: URL,
-        pendingSharedImport: Binding<SharedImport?> = .constant(nil),
+        pendingSharedImport: Binding<SharedImportReservation?> = .constant(nil),
+        didRoutePendingSharedImport: @escaping (SharedImportReservation) -> Void = { _ in },
+        hasWaitingSharedImport: Bool = false,
+        openNextSharedImport: @escaping () -> Void = {},
         pendingDeepLinkedSessionID: Binding<String?> = .constant(nil),
-        requestedNewChat: Binding<NewChatRequest?> = .constant(nil)
+        pendingQuotaSourceID: Binding<String?> = .constant(nil),
+        opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
+        requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
+        draftStore: ChatDraftStore? = nil
     ) {
         self.authManager = authManager
         self.server = server
         _pendingSharedImport = pendingSharedImport
+        self.didRoutePendingSharedImport = didRoutePendingSharedImport
+        self.hasWaitingSharedImport = hasWaitingSharedImport
+        self.openNextSharedImport = openNextSharedImport
+        self.draftStore = draftStore ?? .shared
         _pendingDeepLinkedSessionID = pendingDeepLinkedSessionID
+        _pendingQuotaSourceID = pendingQuotaSourceID
+        _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
         _viewModel = State(initialValue: SessionListViewModel(server: server))
+        _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _navigationState = State(
             initialValue: SessionNavigationState(
                 lastSelectedSessionID: SessionNavigationPersistence.load(for: server)
@@ -100,6 +127,7 @@ struct SessionListView: View {
                 sectionVisibility: appSidebarSectionVisibility,
                 serverName: appSidebarServerName,
                 activeProfileName: appSidebarProfileName,
+                quotaSources: appSidebarQuotaSources,
                 newChat: {
                     isAppSidebarPresented = false
                     openNewChat()
@@ -111,6 +139,11 @@ struct SessionListView: View {
             ZStack {
                 Color(.systemBackground)
                 navigationContainer
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if hasWaitingSharedImport {
+                waitingSharedImportBanner
             }
         }
             .sheet(item: $sessionExportShareItem) { item in
@@ -239,12 +272,21 @@ struct SessionListView: View {
             .task(id: activeSessionMonitorTaskID) {
                 await monitorActiveSessionRows()
             }
+            .task(id: providerQuotaRefreshTaskID) {
+                guard scenePhase == .active else { return }
+                await quotaViewModel.loadQuotas(refresh: true)
+                await quotaViewModel.refreshQuotasPeriodically(
+                    every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
+                )
+            }
             .task(id: returnRefreshID) {
                 guard returnRefreshID != nil else { return }
                 await refreshSessionsAndActiveProfile()
             }
             .onAppear {
                 openPendingSharedImportIfNeeded()
+                openPendingQuotaSourceIfNeeded()
+                openProviderQuotaWidgetSettingsIfNeeded()
                 openRequestedNewChatIfNeeded()
                 refreshAfterReturningIfNeeded()
             }
@@ -254,11 +296,20 @@ struct SessionListView: View {
             .onChange(of: pendingDeepLinkedSessionID) {
                 Task { await openPendingDeepLinkedSessionIfNeeded() }
             }
+            .onChange(of: pendingQuotaSourceID) {
+                openPendingQuotaSourceIfNeeded()
+            }
+            .onChange(of: opensProviderQuotaWidgetSettings) {
+                openProviderQuotaWidgetSettingsIfNeeded()
+            }
             .onChange(of: requestedNewChat) {
                 openRequestedNewChatIfNeeded()
             }
             .onChange(of: isAppSidebarPresented) { _, isPresented in
-                guard !isPresented else { return }
+                if isPresented {
+                    reloadAppSidebarQuotaSources()
+                    return
+                }
                 Task { @MainActor in
                     await Task.yield()
                     guard !isAppSidebarPresented else { return }
@@ -294,6 +345,34 @@ struct SessionListView: View {
                 )
             )
             .focusedSceneValue(\.talariaSceneActions, sceneActions)
+    }
+
+    private var waitingSharedImportBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "square.and.arrow.down")
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Another shared item is waiting")
+                    .font(.subheadline.weight(.semibold))
+                Text("Open it when you are done with this draft.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button("Open Next", action: openNextSharedImport)
+                .font(.subheadline.weight(.semibold))
+                .buttonStyle(.bordered)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemBackground))
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -382,7 +461,12 @@ struct SessionListView: View {
     private func navigationDestination(_ destination: SessionNavigationDestination) -> some View {
         switch destination {
         case .session(let session):
-            ChatView(session: session, server: server, onAPIError: authManager.handleAPIError)
+            ChatView(
+                session: session,
+                server: server,
+                onAPIError: authManager.handleAPIError,
+                draftStore: draftStore
+            )
                 .id(session.id)
         case .newChat(let route):
             PendingNewChatView(
@@ -390,10 +474,12 @@ struct SessionListView: View {
                 initialAttachments: route.initialAttachments,
                 autoStartsVoiceInput: route.autoStartsVoiceInput,
                 profileName: route.profileName,
+                providerID: route.providerID,
                 server: server,
                 viewModel: viewModel,
                 onAPIError: authManager.handleAPIError,
-                onSessionCreated: rememberCreatedSession
+                onSessionCreated: rememberCreatedSession,
+                draftStore: draftStore
             )
             .id(route.id)
         case .utility(let destination):
@@ -407,6 +493,19 @@ struct SessionListView: View {
             switch destination {
             case .settings(let scrollTo):
                 SettingsView(authManager: authManager, server: server, initialScrollTarget: scrollTo)
+            case .providers(let sourceID):
+                InsightsView(
+                    server: server,
+                    quotaViewModel: quotaViewModel,
+                    initialQuotaSourceID: sourceID,
+                    openProviderSettings: {
+                        navigationState.select(.settings(.providerQuotas))
+                    },
+                    onAPIError: authManager.handleAPIError
+                )
+                    .id(viewModel.activeProfileName)
+            case .providerQuotaWidgetSettings:
+                ProviderQuotaWidgetAppearanceView()
             case .tasks:
                 TasksView(server: server, onAPIError: authManager.handleAPIError)
             case .kanban:
@@ -416,7 +515,15 @@ struct SessionListView: View {
             case .memory:
                 MemoryView(server: server, onAPIError: authManager.handleAPIError)
             case .insights:
-                InsightsView(server: server, onAPIError: authManager.handleAPIError)
+                InsightsView(
+                    server: server,
+                    quotaViewModel: quotaViewModel,
+                    openProviderSettings: {
+                        navigationState.select(.settings(.providerQuotas))
+                    },
+                    onAPIError: authManager.handleAPIError
+                )
+                    .id(viewModel.activeProfileName)
             case .archived:
                 ArchivedSessionsView(server: server, onAPIError: authManager.handleAPIError)
             case .scheduled:
@@ -622,7 +729,8 @@ struct SessionListView: View {
         case .skills: return .skills
         case .memory: return .memory
         case .insights: return .insights
-        case .settings: return .settings
+        case .settings, .providerQuotaWidgetSettings: return .settings
+        case .providers(let sourceID): return sourceID.map(AppSidebarDestination.quota) ?? .insights
         case .archived, .scheduled, .webhook: return .chats
         }
     }
@@ -672,11 +780,33 @@ struct SessionListView: View {
             navigationState.select(.memory)
         case .insights:
             navigationState.select(.insights)
+        case .quota(let sourceID):
+            navigationState.select(.providers(sourceID))
         case .settings:
             navigationState.select(.settings(nil))
         }
 
         isAppSidebarPresented = false
+    }
+
+    private func reloadAppSidebarQuotaSources() {
+        let selectedIDs = ProviderQuotaSidebarSettings.sourceIDs(
+            first: firstSidebarQuotaSourceID,
+            second: secondSidebarQuotaSourceID
+        )
+        let sources = ProviderQuotaWidgetSnapshotStore().load()?.sources ?? []
+        let hiddenProviderIDs = ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: hiddenProviderData)
+        let byID = Dictionary(uniqueKeysWithValues: sources.map { ($0.sourceID, $0) })
+        appSidebarQuotaSources = selectedIDs
+            .compactMap { byID[$0] }
+            .filter { source in
+                guard let providerID = source.providerID?.lowercased() else { return true }
+                return !hiddenProviderIDs.contains(providerID)
+            }
+    }
+
+    private var providerQuotaRefreshTaskID: String {
+        "\(server.absoluteString)|\(quotaRefreshIntervalSeconds)|\(scenePhase == .active)"
     }
 
     private var newSessionButton: some View {
@@ -1048,9 +1178,14 @@ struct SessionListView: View {
         handleLastError()
 
         if didDelete {
+            await draftStore.discardDraft(for: draftKey(for: session))
             removeSessionFromNavigation(session)
             SessionHaptics.sessionDeleted(isEnabled: isHapticsEnabled)
         }
+    }
+
+    private func draftKey(for session: SessionSummary) -> ChatDraftKey {
+        .session(server: server, session: session)
     }
 
     private func rename(_ session: SessionSummary, to title: String) async -> Bool {
@@ -1111,13 +1246,14 @@ struct SessionListView: View {
     }
 
     private func openPendingSharedImportIfNeeded() {
-        guard let sharedImport = pendingSharedImport else {
+        guard let reservation = pendingSharedImport else {
             return
         }
 
-        pendingSharedImport = nil
+        let sharedImport = reservation.sharedImport
         let draft = TalariaShareDraft.composerDraft(from: sharedImport.draft)
         guard !draft.isEmpty || !sharedImport.attachments.isEmpty else {
+            didRoutePendingSharedImport(reservation)
             return
         }
 
@@ -1127,6 +1263,7 @@ struct SessionListView: View {
                 initialAttachments: sharedImport.attachments
             )
         )
+        didRoutePendingSharedImport(reservation)
     }
 
     /// Awaited (not fire-and-forget) so the cold-start `.task` can resolve it before
@@ -1173,9 +1310,22 @@ struct SessionListView: View {
         navigationState.select(
             PendingNewChatRoute(
                 autoStartsVoiceInput: request.autoStartsVoiceInput,
-                profileName: request.profileName
+                profileName: request.profileName,
+                providerID: request.providerID
             )
         )
+    }
+
+    private func openPendingQuotaSourceIfNeeded() {
+        guard let sourceID = pendingQuotaSourceID else { return }
+        pendingQuotaSourceID = nil
+        navigationState.select(.providers(sourceID))
+    }
+
+    private func openProviderQuotaWidgetSettingsIfNeeded() {
+        guard opensProviderQuotaWidgetSettings else { return }
+        opensProviderQuotaWidgetSettings = false
+        navigationState.select(.providerQuotaWidgetSettings)
     }
 
     private func openNewChat() {
@@ -1265,11 +1415,13 @@ struct NewChatRequest: Equatable {
     /// When set, the new session is created pinned to this profile; nil uses the server's
     /// active profile (the plain "+" / "New Chat" behavior).
     let profileName: String?
+    let providerID: String?
 
-    init(autoStartsVoiceInput: Bool = false, profileName: String? = nil) {
+    init(autoStartsVoiceInput: Bool = false, profileName: String? = nil, providerID: String? = nil) {
         self.id = UUID()
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
+        self.providerID = providerID
     }
 }
 
@@ -1281,17 +1433,20 @@ struct PendingNewChatRoute: Identifiable, Hashable {
     let autoStartsVoiceInput: Bool
     /// When set, the new session is created pinned to this profile (#339).
     let profileName: String?
+    let providerID: String?
 
     init(
         initialDraft: String = "",
         initialAttachments: [SharedAttachmentImport] = [],
         autoStartsVoiceInput: Bool = false,
-        profileName: String? = nil
+        profileName: String? = nil,
+        providerID: String? = nil
     ) {
         self.initialDraft = initialDraft
         self.initialAttachments = initialAttachments
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
+        self.providerID = providerID
     }
 
     static func == (lhs: PendingNewChatRoute, rhs: PendingNewChatRoute) -> Bool {
@@ -1307,6 +1462,8 @@ enum SessionListUtilityDestination: Hashable, Identifiable {
     /// Optional section to scroll to when Settings opens — "Manage Servers"
     /// passes `.servers`, a plain avatar tap passes `nil` (#283).
     case settings(SettingsScrollAnchor?)
+    case providers(String?)
+    case providerQuotaWidgetSettings
     case tasks
     case kanban
     case skills
@@ -1333,6 +1490,7 @@ private struct ActiveSessionMonitorTaskID: Hashable {
 
 private struct PendingNewChatView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     let server: URL
@@ -1342,10 +1500,13 @@ private struct PendingNewChatView: View {
     let initialAttachments: [SharedAttachmentImport]
     let autoStartsVoiceInput: Bool
     let profileName: String?
+    let providerID: String?
+    let draftStore: ChatDraftStore
 
     @State private var createdSession: SessionSummary?
     @State private var draftMessage = ""
     @State private var didStartCreation = false
+    @State private var didStartConversation = false
     @State private var didRequestComposerFocus = false
     @State private var creationErrorMessage: String?
     @FocusState private var composerIsFocused: Bool
@@ -1355,10 +1516,12 @@ private struct PendingNewChatView: View {
         initialAttachments: [SharedAttachmentImport] = [],
         autoStartsVoiceInput: Bool = false,
         profileName: String? = nil,
+        providerID: String? = nil,
         server: URL,
         viewModel: SessionListViewModel,
         onAPIError: @escaping (Error) -> Void,
-        onSessionCreated: @escaping (SessionSummary) -> Void = { _ in }
+        onSessionCreated: @escaping (SessionSummary) -> Void = { _ in },
+        draftStore: ChatDraftStore? = nil
     ) {
         self.server = server
         self.viewModel = viewModel
@@ -1367,6 +1530,8 @@ private struct PendingNewChatView: View {
         self.initialAttachments = initialAttachments
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
+        self.providerID = providerID
+        self.draftStore = draftStore ?? .shared
         _draftMessage = State(initialValue: initialDraft)
     }
 
@@ -1380,7 +1545,10 @@ private struct PendingNewChatView: View {
                     initialDraft: draftMessage,
                     initialAttachments: initialAttachments,
                     loadsInitialMessages: false,
-                    autoStartsVoiceInput: autoStartsVoiceInput
+                    autoStartsVoiceInput: autoStartsVoiceInput,
+                    draftStore: draftStore,
+                    restoresDraftSettings: true,
+                    onConversationStarted: markConversationStarted
                 )
             } else {
                 pendingContent
@@ -1392,7 +1560,16 @@ private struct PendingNewChatView: View {
                 .accessibilityHidden(true)
         )
         .task {
-            await createSessionIfNeeded()
+            await prepareNewChat()
+        }
+        .onChange(of: scenePhase) {
+            if scenePhase != .active {
+                flushDraftsBestEffort()
+            }
+        }
+        .onDisappear {
+            restoreAbandonedDraftIfNeeded()
+            flushDraftsBestEffort()
         }
     }
 
@@ -1427,7 +1604,7 @@ private struct PendingNewChatView: View {
 
     private var pendingComposer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message Talaria", text: $draftMessage, axis: .vertical)
+            TextField("Message Talaria", text: persistedDraftBinding, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($composerIsFocused)
@@ -1481,13 +1658,20 @@ private struct PendingNewChatView: View {
 
         didStartCreation = true
         creationErrorMessage = nil
-        let session = await viewModel.createSession(modelContext: modelContext, profile: profileName)
+        let session = await viewModel.createSession(
+            modelContext: modelContext,
+            profile: profileName,
+            provider: providerID
+        )
         guard !Task.isCancelled else { return }
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
 
         if let session {
+            let sessionKey = draftKey(for: session)
+            draftStore.setDraft(draftMessage, for: draftKey)
+            draftMessage = draftStore.moveDraft(from: draftKey, to: sessionKey).text
             SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
             onSessionCreated(session)
             createdSession = session
@@ -1505,6 +1689,63 @@ private struct PendingNewChatView: View {
         creationErrorMessage = nil
         viewModel.clearActionError()
         await createSessionIfNeeded()
+    }
+
+    private var draftKey: ChatDraftKey {
+        .newChat(server: server)
+    }
+
+    private func draftKey(for session: SessionSummary) -> ChatDraftKey {
+        .session(server: server, session: session)
+    }
+
+    private var persistedDraftBinding: Binding<String> {
+        Binding(
+            get: { draftMessage },
+            set: { newValue in
+                draftMessage = newValue
+                draftStore.setDraft(newValue, for: draftKey)
+            }
+        )
+    }
+
+    private func prepareNewChat() async {
+        await hydrateDraft()
+        guard !Task.isCancelled else { return }
+        await createSessionIfNeeded()
+    }
+
+    private func hydrateDraft() async {
+        let textBeforeHydration = draftMessage
+        let persistedDraft = await draftStore.draft(for: draftKey)
+        guard !Task.isCancelled, draftMessage == textBeforeHydration else { return }
+
+        if textBeforeHydration.isEmpty {
+            if let persistedDraft, !persistedDraft.text.isEmpty {
+                draftMessage = persistedDraft.text
+            }
+        } else {
+            draftStore.setDraft(textBeforeHydration, for: draftKey)
+        }
+    }
+
+    private func flushDraftsBestEffort() {
+        Task {
+            try? await draftStore.flush()
+        }
+    }
+
+    private func markConversationStarted() {
+        didStartConversation = true
+    }
+
+    private func restoreAbandonedDraftIfNeeded() {
+        guard let createdSession else { return }
+        draftMessage = draftStore.restoreAbandonedNewChatDraft(
+            from: draftKey(for: createdSession),
+            to: draftKey,
+            didStartConversation: didStartConversation
+        )?.text ?? draftMessage
     }
 
     private func requestPendingComposerFocus() {

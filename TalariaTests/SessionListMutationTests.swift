@@ -250,6 +250,17 @@ final class SessionListMutationTests: XCTestCase {
             {
               "sessions": [
                 {
+                  "title": "Missing identity",
+                  "message_count": 2,
+                  "archived": false
+                },
+                {
+                  "session_id": "   ",
+                  "title": "Blank identity",
+                  "message_count": 2,
+                  "archived": false
+                },
+                {
                   "session_id": "empty-placeholder",
                   "title": "Untitled Session",
                   "message_count": 0,
@@ -409,6 +420,93 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(viewModel.isCreatingSession)
         XCTAssertNil(viewModel.actionErrorMessage)
         XCTAssertNil(viewModel.lastError)
+    }
+
+    @MainActor
+    func testCreateSessionWithProviderUsesThatProvidersFirstCatalogModel() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path
+            requestedPaths.append(path ?? "nil")
+
+            switch path {
+            case "/api/workspaces":
+                return apiTestJSONResponse(
+                    #"{"workspaces":[{"path":"/tmp/workspace"}],"last":"/tmp/workspace"}"#,
+                    for: request
+                )
+            case "/api/models":
+                return apiTestJSONResponse("""
+                {
+                  "groups": [
+                    {
+                      "provider_id": "openai-codex",
+                      "models": [{"id": "gpt-5.6-sol", "name": "GPT 5.6 SOL"}]
+                    },
+                    {
+                      "provider_id": "opencode-go",
+                      "models": [{"id": "@opencode-go:kimi-k2.7-code", "name": "Kimi K2.7 Code"}]
+                    }
+                  ]
+                }
+                """, for: request)
+            case "/api/session/new":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertEqual(body["model"] as? String, "@opencode-go:kimi-k2.7-code")
+                XCTAssertEqual(body["model_provider"] as? String, "opencode-go")
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"provider-session","model":"@opencode-go:kimi-k2.7-code","model_provider":"opencode-go"}}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let created = await viewModel.createSession(provider: "opencode-go")
+
+        XCTAssertEqual(created?.sessionId, "provider-session")
+        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
+    }
+
+    @MainActor
+    func testCreateSessionWithUnknownProviderFallsBackToServerDefault() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path
+            requestedPaths.append(path ?? "nil")
+
+            switch path {
+            case "/api/workspaces":
+                return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+            case "/api/models":
+                return apiTestJSONResponse("""
+                {
+                  "groups": [{
+                    "provider_id": "openai-codex",
+                    "models": [{"id": "gpt-5.6-sol"}]
+                  }]
+                }
+                """, for: request)
+            case "/api/session/new":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertNil(body["model"])
+                XCTAssertNil(body["model_provider"])
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"default-session","model":"gpt-5.6-sol","model_provider":"openai-codex"}}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let created = await viewModel.createSession(provider: "missing-provider")
+
+        XCTAssertEqual(created?.sessionId, "default-session")
+        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
     }
 
     @MainActor
@@ -883,20 +981,22 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertNil(viewModel.lastError)
     }
 
-    func testSessionMutatorDuplicateBranchesThenLoadsReturnedSession() async throws {
+    /// Duplicate goes to `/api/session/duplicate`, not `/api/session/branch`.
+    /// Branch means "fork a child from here": it dropped `tool_calls` and the
+    /// token totals, and filed the copy under the original in the lineage tree,
+    /// three wrong outcomes for a menu item labelled Duplicate. The
+    /// duplicate endpoint also returns the whole session, so the follow-up fetch
+    /// the branch flow needed is gone.
+    func testSessionMutatorDuplicateUsesTheDuplicateEndpointAndNeedsNoSecondFetch() async throws {
         var requestedPaths: [String] = []
         let client = try makeClient { request in
             let path = request.url?.path ?? "nil"
             requestedPaths.append(path)
 
             switch path {
-            case "/api/session/branch":
+            case "/api/session/duplicate":
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["session_id"] as? String, "session-abc")
-                XCTAssertEqual(body["title"] as? String, "Planning (copy)")
-                return apiTestJSONResponse(#"{"session_id":"copy-123"}"#, for: request)
-            case "/api/session":
-                XCTAssertEqual(request.url?.query?.contains("session_id=copy-123"), true)
                 return apiTestJSONResponse(
                     """
                     {
@@ -915,12 +1015,9 @@ final class SessionListMutationTests: XCTestCase {
             }
         }
 
-        let result = try await SessionMutator(client: client).duplicate(
-            sessionID: "session-abc",
-            title: "Planning (copy)"
-        )
+        let result = try await SessionMutator(client: client).duplicate(sessionID: "session-abc")
 
-        XCTAssertEqual(requestedPaths, ["/api/session/branch", "/api/session"])
+        XCTAssertEqual(requestedPaths, ["/api/session/duplicate"])
         XCTAssertEqual(result.session?.sessionId, "copy-123")
         XCTAssertEqual(result.session?.title, "Planning (copy)")
         XCTAssertNil(result.errorMessage)
@@ -2015,10 +2112,13 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["session-abc"])
     }
 
+    /// The copy is inserted from the duplicate response itself and survives a
+    /// list reload that hasn't caught up yet. The endpoint changed from
+    /// `/api/session/branch` to `/api/session/duplicate`, which also
+    /// removed the follow-up detail fetch and the client-side title.
     @MainActor
-    func testDuplicateBranchesWithCopyTitleLoadsDetailAndInsertsWhenReloadOmitsCopy() async throws {
+    func testDuplicateInsertsTheCopyWhenTheReloadOmitsIt() async throws {
         var branchCount = 0
-        var didRequestDuplicatedDetail = false
         let source = try makeSessionSummary(
             id: "session-abc",
             title: "Planning",
@@ -2027,37 +2127,25 @@ final class SessionListMutationTests: XCTestCase {
         )
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
-            case "/api/session/branch":
+            case "/api/session/duplicate":
                 branchCount += 1
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["session_id"] as? String, "session-abc")
-                XCTAssertEqual(body["title"] as? String, "Planning (copy)")
+                XCTAssertNil(body["title"], "The server names the copy itself.")
 
                 if branchCount == 1 {
                     return apiTestJSONResponse("""
                     {
-                      "session_id": "copy-123",
-                      "parent_session_id": "session-abc"
+                      "session": {
+                        "session_id": "copy-123",
+                        "title": "Planning (copy)",
+                        "archived": false
+                      }
                     }
                     """, for: request)
                 }
 
-                return apiTestJSONResponse("""
-                {
-                  "error": "copy failed"
-                }
-                """, for: request)
-            case "/api/session":
-                didRequestDuplicatedDetail = true
-                return apiTestJSONResponse("""
-                {
-                  "session": {
-                    "session_id": "copy-123",
-                    "title": "Planning (copy)",
-                    "archived": false
-                  }
-                }
-                """, for: request)
+                return apiTestJSONResponse(#"{"error": "copy failed"}"#, for: request)
             case "/api/sessions":
                 return apiTestJSONResponse("""
                 {
@@ -2079,11 +2167,10 @@ final class SessionListMutationTests: XCTestCase {
         let duplicated = await viewModel.duplicate(source)
         let missingID = await viewModel.duplicate(source)
 
-        XCTAssertTrue(didRequestDuplicatedDetail)
         XCTAssertEqual(duplicated?.sessionId, "copy-123")
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["copy-123", "session-abc"])
         XCTAssertNil(missingID)
-        XCTAssertEqual(viewModel.actionErrorMessage, "copy failed")
+        XCTAssertNotNil(viewModel.actionErrorMessage)
     }
 
     @MainActor
@@ -2351,6 +2438,38 @@ final class SessionListMutationTests: XCTestCase {
                 isViewingCachedData: false
             )
         )
+    }
+
+    @MainActor
+    func testDuplicatePolicyRejectsExternalSessionsBeforeAnyRequest() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            requestedPaths.append(request.url?.path ?? "nil")
+            XCTFail("External sessions must not reach the duplicate endpoint.")
+            throw URLError(.badURL)
+        }
+        let cliSession = SessionSummary(sessionId: "cli", isCliSession: true)
+        let messagingSession = SessionSummary(
+            sessionId: "telegram",
+            rawSource: "telegram",
+            sessionSource: "messaging"
+        )
+
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(cliSession))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(messagingSession))
+        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(SessionSummary(sessionId: "webui")))
+        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(SessionSummary(
+            sessionId: "webui-override",
+            isCliSession: true,
+            sessionSource: "webui"
+        )))
+        let duplicatedCLI = await viewModel.duplicate(cliSession)
+        let duplicatedMessaging = await viewModel.duplicate(messagingSession)
+
+        XCTAssertNil(duplicatedCLI)
+        XCTAssertNil(duplicatedMessaging)
+        XCTAssertEqual(viewModel.actionErrorMessage, "This command is not available in the mobile app.")
+        XCTAssertTrue(requestedPaths.isEmpty)
     }
 
     func testCopyDeepLinkUsesExportAvailabilityRules() throws {
@@ -3014,6 +3133,15 @@ final class SessionListMutationTests: XCTestCase {
         """
         {
           "sessions": [
+            {
+              "title": "Missing archived identity",
+              "archived": true
+            },
+            {
+              "session_id": "   ",
+              "title": "Blank archived identity",
+              "archived": true
+            },
             {
               "session_id": "session-abc",
               "title": "Planning",

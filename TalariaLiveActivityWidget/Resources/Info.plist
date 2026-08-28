@@ -22,6 +22,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>TalariaURLScheme</key>
 	<string>$(TALARIA_URL_SCHEME)</string>
+	<key>TalariaAppGroupIdentifier</key>
+	<string>$(APP_GROUP_IDENTIFIER)</string>
+	<key>TalariaSharedKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
+	<key>TalariaSharedKeychainService</key>
+	<string>$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

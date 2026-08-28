@@ -9,6 +9,13 @@ struct ProvidersView: View {
 
     @State private var viewModel: ProvidersViewModel
     @State private var expandedProviderKeys: Set<String> = []
+    @AppStorage(ProviderQuotaVisibilitySettings.storageKey) private var hiddenProviderData = Data()
+    @AppStorage(
+        ProviderQuotaDisplaySettings.aliasesKey,
+        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+    ) private var providerAliasesData = Data()
+    @State private var providerPendingRenameID: String?
+    @State private var providerRenameText = ""
 
     init(server: URL) {
         self.server = server
@@ -25,61 +32,90 @@ struct ProvidersView: View {
             .refreshable {
                 await viewModel.load()
             }
+            .onDisappear {
+                viewModel.cancelLoads()
+            }
+            .alert("Rename Provider", isPresented: renameAlertIsPresented) {
+                TextField("Provider name", text: $providerRenameText)
+                Button("Cancel", role: .cancel) {
+                    providerPendingRenameID = nil
+                }
+                Button("Save") {
+                    saveProviderRename()
+                }
+            } message: {
+                Text("Leave the name empty to restore the server-provided name.")
+            }
     }
 
     @ViewBuilder
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if viewModel.isLoading && viewModel.providers.isEmpty {
-                    ProvidersStatusRow(title: String(localized: "Loading providers…"), systemImage: "key.horizontal")
-                        .padding(.horizontal, 24)
-                } else if let errorMessage = viewModel.errorMessage, viewModel.providers.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ProvidersStatusRow(title: String(localized: "Could not load providers"), systemImage: "exclamationmark.triangle")
-
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-
-                        Button("Try Again") {
-                            Task { await viewModel.load() }
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    }
-                    .padding(.horizontal, 24)
-                } else if viewModel.providers.isEmpty {
-                    ProvidersStatusRow(title: String(localized: "No providers reported by this server."), systemImage: "key.horizontal")
-                        .padding(.horizontal, 24)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let errorMessage = viewModel.errorMessage {
-                            refreshFailureBanner(detail: errorMessage)
-                        }
-
-                        ForEach(Array(viewModel.providers.enumerated()), id: \.offset) { index, provider in
-                            let key = Self.expansionKey(for: provider, at: index)
-                            ProviderRow(
-                                provider: provider,
-                                isActive: viewModel.isActive(provider),
-                                isExpanded: expandedProviderKeys.contains(key),
-                                toggleExpanded: { toggleExpanded(key) }
-                            )
-                        }
-
-                        Text("Provider keys are managed on the server. This screen is read-only.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 6)
-                            .padding(.horizontal, 4)
-                    }
-                    .padding(.horizontal, 16)
-                }
+            LazyVStack(alignment: .leading, spacing: 24) {
+                providersSection
             }
             .padding(.top, 20)
             .padding(.bottom, 44)
+        }
+    }
+
+    @ViewBuilder
+    private var providersSection: some View {
+        if viewModel.isLoading && viewModel.providers.isEmpty {
+            ProvidersStatusRow(title: String(localized: "Loading providers…"), systemImage: "key.horizontal")
+                .padding(.horizontal, 24)
+        } else if let errorMessage = viewModel.errorMessage, viewModel.providers.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                ProvidersStatusRow(title: String(localized: "Could not load providers"), systemImage: "exclamationmark.triangle")
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                Button("Try Again") {
+                    Task { await viewModel.load() }
+                }
+                .font(.subheadline.weight(.medium))
+            }
+            .padding(.horizontal, 24)
+        } else if viewModel.providers.isEmpty {
+            ProvidersStatusRow(title: String(localized: "No providers reported by this server."), systemImage: "key.horizontal")
+                .padding(.horizontal, 24)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                if let errorMessage = viewModel.errorMessage {
+                    refreshFailureBanner(detail: errorMessage)
+                }
+
+                ForEach(Array(viewModel.providers.enumerated()), id: \.offset) { index, provider in
+                    let key = Self.expansionKey(for: provider, at: index)
+                    let providerID = ProvidersViewModel.normalizedProviderID(provider.id)
+                    ProviderRow(
+                        provider: provider,
+                        displayName: providerDisplayName(provider),
+                        isActive: viewModel.isActive(provider),
+                        isHiddenFromInsights: providerID.map { hiddenProviderIDs.contains($0) } ?? false,
+                        canChangeInsightsVisibility: providerID != nil,
+                        isExpanded: expandedProviderKeys.contains(key),
+                        toggleExpanded: { toggleExpanded(key) },
+                        toggleInsightsVisibility: {
+                            guard let providerID else { return }
+                            toggleInsightsVisibility(providerID)
+                        },
+                        rename: {
+                            guard let providerID else { return }
+                            providerPendingRenameID = providerID
+                            providerRenameText = providerDisplayName(provider)
+                        }
+                    )
+                }
+
+                Text("Provider keys are managed on the server. Use the eye controls to choose which quotas appear in Insights.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 6)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.horizontal, 16)
         }
     }
 
@@ -133,18 +169,63 @@ struct ProvidersView: View {
             }
         }
     }
+
+    private var hiddenProviderIDs: Set<String> {
+        ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: hiddenProviderData)
+    }
+
+    private func toggleInsightsVisibility(_ providerID: String) {
+        hiddenProviderData = ProviderQuotaVisibilitySettings.data(
+            bySetting: providerID,
+            hidden: !hiddenProviderIDs.contains(providerID),
+            in: hiddenProviderData
+        )
+    }
+
+    private var renameAlertIsPresented: Binding<Bool> {
+        Binding(
+            get: { providerPendingRenameID != nil },
+            set: { if !$0 { providerPendingRenameID = nil } }
+        )
+    }
+
+    private func providerDisplayName(_ provider: ProviderSummary) -> String {
+        ProviderQuotaDisplaySettings.displayName(
+            providerID: ProvidersViewModel.normalizedProviderID(provider.id),
+            fallback: ProvidersViewModel.displayName(for: provider),
+            aliasesData: providerAliasesData
+        )
+    }
+
+    private func saveProviderRename() {
+        guard let providerPendingRenameID else { return }
+        providerAliasesData = ProviderQuotaDisplaySettings.data(
+            byRenaming: providerPendingRenameID,
+            to: providerRenameText,
+            in: providerAliasesData
+        )
+        self.providerPendingRenameID = nil
+        ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+    }
 }
 
 private struct ProviderRow: View {
     let provider: ProviderSummary
+    let displayName: String
     let isActive: Bool
+    let isHiddenFromInsights: Bool
+    let canChangeInsightsVisibility: Bool
     let isExpanded: Bool
     let toggleExpanded: () -> Void
+    let toggleInsightsVisibility: () -> Void
+    let rename: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(ProvidersViewModel.displayName(for: provider))
+            HStack(alignment: .center, spacing: 8) {
+                ProviderIconView(providerID: provider.id, label: displayName, size: 20)
+
+                Text(displayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -170,6 +251,30 @@ private struct ProviderRow: View {
                         .background(Capsule().fill(Color(.tertiarySystemFill)))
                         .foregroundStyle(.secondary)
                 }
+
+                Button(action: toggleInsightsVisibility) {
+                    Image(systemName: isHiddenFromInsights ? "eye" : "eye.slash")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .disabled(!canChangeInsightsVisibility)
+                .accessibilityLabel(
+                    isHiddenFromInsights
+                        ? "Show \(displayName) in Insights"
+                        : "Hide \(displayName) from Insights"
+                )
+
+                Button(action: rename) {
+                    Image(systemName: "pencil")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .disabled(!canChangeInsightsVisibility)
+                .accessibilityLabel("Rename \(displayName)")
             }
 
             keyStatusLine

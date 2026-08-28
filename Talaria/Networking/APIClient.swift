@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 actor APIClient {
     let baseURL: URL
@@ -281,6 +282,9 @@ actor APIClient {
 private extension APIClient {
     static func makeDefaultSession(delegate: URLSessionDelegate?) -> URLSession {
         let configuration = URLSessionConfiguration.default
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = .shared
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
@@ -289,6 +293,9 @@ private extension APIClient {
 
     static func makeDefaultPublicMediaSession(delegate: URLSessionDelegate?) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = nil
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
@@ -375,5 +382,170 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
             sanitized.setValue(nil, forHTTPHeaderField: name)
         }
         completionHandler(sanitized)
+    }
+}
+
+/// Adapts clients that expose only `URLSessionConfiguration` (not a session
+/// delegate) so they still use Talaria's cross-origin redirect guard.
+final class CrossOriginRedirectGuardURLProtocol: URLProtocol, URLSessionDataDelegate, @unchecked Sendable {
+    private struct Policy: @unchecked Sendable {
+        let configuration: URLSessionConfiguration
+        let stripper: CrossOriginHeaderStripper
+    }
+
+    private struct Lifecycle {
+        var session: URLSession?
+        var dataTask: URLSessionDataTask?
+        var stripper: CrossOriginHeaderStripper?
+        var isStopped = false
+    }
+
+    private static let policies = OSAllocatedUnfairLock(initialState: [String: Policy]())
+    static var registeredPolicyCount: Int { policies.withLock { $0.count } }
+
+    static func register(
+        configuration: URLSessionConfiguration,
+        baseURL: URL,
+        customHeaders: [CustomHeader],
+        builtInHeaders: [String: String]
+    ) -> String {
+        let policyHeader = "X-Talaria-Redirect-Policy-\(UUID().uuidString)"
+        let protectedNames = Set(builtInHeaders.keys.map { $0.lowercased() })
+        let effectiveCustomHeaders = customHeaders.filter {
+            $0.isApplicable && !protectedNames.contains($0.sanitizedName.lowercased())
+        }
+        let innerConfiguration = configuration.copy() as? URLSessionConfiguration ?? .default
+        innerConfiguration.protocolClasses = (innerConfiguration.protocolClasses ?? []).filter { $0 != Self.self }
+        let policy = Policy(
+            configuration: innerConfiguration,
+            stripper: CrossOriginHeaderStripper(
+                baseURL: baseURL,
+                customHeaderProvider: { effectiveCustomHeaders }
+            )
+        )
+        policies.withLock { $0[policyHeader.lowercased()] = policy }
+        return policyHeader
+    }
+
+    static func unregister(_ policyHeader: String?) {
+        guard let policyHeader else { return }
+        _ = policies.withLock { $0.removeValue(forKey: policyHeader.lowercased()) }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        policy(for: request) != nil
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    private static func policy(for request: URLRequest) -> (header: String, policy: Policy)? {
+        guard let headerNames = request.allHTTPHeaderFields?.keys else { return nil }
+        return policies.withLock { policies in
+            for header in headerNames {
+                if let policy = policies[header.lowercased()] {
+                    return (header, policy)
+                }
+            }
+            return nil
+        }
+    }
+
+    private let lifecycleLock = NSRecursiveLock()
+    private var lifecycle = Lifecycle()
+
+    override func startLoading() {
+        guard let match = Self.policy(for: request) else {
+            lifecycleLock.withLock {
+                guard !lifecycle.isStopped else { return }
+                client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            }
+            return
+        }
+
+        var forwarded = request
+        forwarded.setValue(nil, forHTTPHeaderField: match.header)
+        let task = lifecycleLock.withLock { () -> URLSessionDataTask? in
+            guard !lifecycle.isStopped else { return nil }
+            lifecycle.stripper = match.policy.stripper
+            let session = URLSession(configuration: match.policy.configuration, delegate: self, delegateQueue: nil)
+            lifecycle.session = session
+            let task = session.dataTask(with: forwarded)
+            lifecycle.dataTask = task
+            return task
+        }
+        task?.resume()
+    }
+
+    override func stopLoading() {
+        let resources = lifecycleLock.withLock { () -> (URLSessionDataTask?, URLSession?) in
+            lifecycle.isStopped = true
+            let resources = (lifecycle.dataTask, lifecycle.session)
+            lifecycle.dataTask = nil
+            lifecycle.session = nil
+            lifecycle.stripper = nil
+            return resources
+        }
+        resources.0?.cancel()
+        resources.1?.invalidateAndCancel()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        lifecycleLock.withLock {
+            guard !lifecycle.isStopped, let stripper = lifecycle.stripper else {
+                completionHandler(nil)
+                return
+            }
+            stripper.urlSession(
+                session,
+                task: task,
+                willPerformHTTPRedirection: response,
+                newRequest: request,
+                completionHandler: completionHandler
+            )
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let disposition = lifecycleLock.withLock { () -> URLSession.ResponseDisposition in
+            guard !lifecycle.isStopped else { return .cancel }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            return lifecycle.isStopped ? .cancel : .allow
+        }
+        completionHandler(disposition)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        lifecycleLock.withLock {
+            guard !lifecycle.isStopped else { return }
+            client?.urlProtocol(self, didLoad: data)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let shouldInvalidate = lifecycleLock.withLock { () -> Bool in
+            guard !lifecycle.isStopped else { return false }
+            lifecycle.isStopped = true
+            lifecycle.dataTask = nil
+            lifecycle.session = nil
+            lifecycle.stripper = nil
+            if let error {
+                client?.urlProtocol(self, didFailWithError: error)
+            } else {
+                client?.urlProtocolDidFinishLoading(self)
+            }
+            return true
+        }
+        if shouldInvalidate { session.finishTasksAndInvalidate() }
     }
 }

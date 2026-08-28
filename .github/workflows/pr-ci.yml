@@ -113,6 +113,7 @@ jobs:
             -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
             -derivedDataPath "${DERIVED_DATA_PATH}" \
             -showBuildTimingSummary \
+            APP_IDENTIFIER_SUFFIX=.xctest \
             CODE_SIGNING_ALLOWED=NO
           duration_seconds=$((SECONDS - start_seconds))
           echo "Build-for-testing duration: ${duration_seconds}s"
@@ -133,6 +134,7 @@ jobs:
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
             -parallel-testing-enabled YES \
             -parallel-testing-worker-count "${TEST_WORKER_COUNT}" \
+            APP_IDENTIFIER_SUFFIX=.xctest \
             CODE_SIGNING_ALLOWED=NO
           duration_seconds=$((SECONDS - start_seconds))
           echo "Test-without-building duration: ${duration_seconds}s"
@@ -185,6 +187,9 @@ jobs:
             cat slowest-tests.txt
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Reject skipped UI tests
+        run: scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"
 
       - name: Upload test results on failure
         if: failure()
