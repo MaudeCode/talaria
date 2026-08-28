@@ -6,11 +6,16 @@ import { dirname, resolve } from "node:path";
 const siteUrl = (process.env.CONVEX_SITE_URL ?? "").replace(/\/$/u, "");
 const code = process.env.PUBLISHER_ENROLLMENT_CODE ?? "";
 const label = process.env.PUBLISHER_LABEL ?? "Hermes WebUI";
+const publisherId = process.env.PUBLISHER_ID ?? "";
 const keyPath = resolve(
   process.env.PUBLISHER_KEY_PATH ?? `${homedir()}/.config/hermes-webui/talaria-publisher.pem`,
 );
-if (!siteUrl || !code) {
-  throw new Error("CONVEX_SITE_URL and PUBLISHER_ENROLLMENT_CODE are required");
+if (!siteUrl || !code || !publisherId) {
+  throw new Error("CONVEX_SITE_URL, PUBLISHER_ENROLLMENT_CODE, and PUBLISHER_ID are required");
+}
+const publisherUrl = new URL(publisherId);
+if (!["http:", "https:"].includes(publisherUrl.protocol) || publisherUrl.origin !== publisherId) {
+  throw new Error("PUBLISHER_ID must be the exact Hermes server origin configured in Talaria");
 }
 
 let privateKey;
@@ -40,7 +45,7 @@ try {
 const response = await fetch(`${siteUrl}/v1/enrollments/publisher/redeem`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ code, label, publicKey }),
+  body: JSON.stringify({ code, label, publicKey, publisherId }),
 });
 const result = await response.json();
 if (!response.ok) throw new Error(`publisher enrollment failed: ${JSON.stringify(result)}`);

@@ -53,11 +53,18 @@ pnpm convex run admin:createEnrollmentCode '{"kind":"device"}'
 Enroll a WebUI publisher and create its local Ed25519 private key:
 
 ```sh
-PUBLISHER_ENROLLMENT_CODE=... pnpm enroll:publisher
+pnpm convex run admin:createEnrollmentCode \
+  '{"kind":"publisher","publisherId":"https://hermes.example.com"}'
+
+PUBLISHER_ENROLLMENT_CODE=... \
+PUBLISHER_ID=https://hermes.example.com \
+pnpm enroll:publisher
 ```
 
 The command prints the four `HERMES_WEBUI_TALARIA_*` settings to copy into the
 WebUI `.env`; it writes the private key with mode `0600` and never prints it.
+`PUBLISHER_ID` must exactly match that Hermes server's URL in Talaria so a tap
+from a cross-publisher aggregate can switch to the correct configured server.
 
 Exercise publisher enrollment, device enrollment, signed state publication, duplicate/stale revision handling, and aggregate snapshot retrieval:
 
