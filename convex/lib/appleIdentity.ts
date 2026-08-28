@@ -69,7 +69,7 @@ export async function verifyAppleIdentityToken(input: {
   const [encodedHeader, encodedClaims, encodedSignature] = parts as [string, string, string];
   const header = parseJsonSegment(encodedHeader);
   const rawClaims = parseJsonSegment(encodedClaims);
-  if (!header || !rawClaims || header.alg !== "ES256" || typeof header.kid !== "string") {
+  if (!header || !rawClaims || header.alg !== "RS256" || typeof header.kid !== "string") {
     return null;
   }
   const claims = parseClaims(rawClaims);
@@ -81,19 +81,19 @@ export async function verifyAppleIdentityToken(input: {
   if (!timingSafeEqual(claims.nonce, input.nonce)) return null;
 
   const jwk = input.keys.find(
-    (key) => key.kid === header.kid && key.kty === "EC" && key.crv === "P-256",
+    (key) => key.kid === header.kid && key.kty === "RSA" && key.alg === "RS256",
   );
   if (!jwk) return null;
   try {
     const key = await crypto.subtle.importKey(
       "jwk",
       jwk,
-      { name: "ECDSA", namedCurve: "P-256" },
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
       ["verify"],
     );
     const valid = await crypto.subtle.verify(
-      { name: "ECDSA", hash: "SHA-256" },
+      "RSASSA-PKCS1-v1_5",
       key,
       decodeSegment(encodedSignature).buffer as ArrayBuffer,
       new TextEncoder().encode(`${encodedHeader}.${encodedClaims}`),
@@ -102,6 +102,13 @@ export async function verifyAppleIdentityToken(input: {
   } catch {
     return null;
   }
+}
+
+export function appleIdentityKeyId(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((part) => part.length === 0)) return null;
+  const header = parseJsonSegment(parts[0]!);
+  return header?.alg === "RS256" && typeof header.kid === "string" ? header.kid : null;
 }
 
 export async function subjectHash(secret: string, subject: string): Promise<string> {

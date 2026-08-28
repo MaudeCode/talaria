@@ -9,7 +9,6 @@
  */
 
 import type * as apns from "../apns.js";
-import type * as apnsState from "../apnsState.js";
 import type * as auth from "../auth.js";
 import type * as cleanup from "../cleanup.js";
 import type * as crons from "../crons.js";
@@ -34,7 +33,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   apns: typeof apns;
-  apnsState: typeof apnsState;
   auth: typeof auth;
   cleanup: typeof cleanup;
   crons: typeof crons;

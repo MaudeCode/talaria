@@ -12,6 +12,25 @@ import {
   sendWithTransport,
 } from "./lib/apnsTransport.node";
 
+let cachedProviderToken: { cacheKey: string; token: string; issuedAt: number } | undefined;
+
+export const preflight = internalAction({
+  args: {},
+  returns: v.object({ ok: v.boolean() }),
+  handler: async () => {
+    const teamId = process.env.APNS_TEAM_ID?.trim();
+    const keyId = process.env.APNS_KEY_ID?.trim();
+    const privateKey = process.env.APNS_PRIVATE_KEY?.trim();
+    if (!teamId || !keyId || !privateKey) return { ok: false };
+    try {
+      makeProviderToken({ teamId, keyId, privateKey, issuedAt: Math.floor(Date.now() / 1_000) });
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  },
+});
+
 export const sendJob = internalAction({
   args: { jobId: v.id("deliveryJobs") },
   returns: apnsDeliveryResultValidator,
@@ -29,16 +48,12 @@ export const sendJob = internalAction({
 
     const cacheKey = `${teamId}:${keyId}`;
     const nowSeconds = Math.floor(now / 1_000);
-    const cached = await ctx.runQuery(internal.apnsState.getProviderToken, { cacheKey });
-    let providerToken = cached?.token;
-    if (!providerToken || nowSeconds - cached!.issuedAt >= 45 * 60) {
+    let providerToken = cachedProviderToken?.cacheKey === cacheKey
+      ? cachedProviderToken.token
+      : undefined;
+    if (!providerToken || nowSeconds - cachedProviderToken!.issuedAt >= 45 * 60) {
       providerToken = makeProviderToken({ teamId, keyId, privateKey, issuedAt: nowSeconds });
-      await ctx.runMutation(internal.apnsState.saveProviderToken, {
-        cacheKey,
-        token: providerToken,
-        issuedAt: nowSeconds,
-        now,
-      });
+      cachedProviderToken = { cacheKey, token: providerToken, issuedAt: nowSeconds };
     }
 
     const response = await sendWithTransport(claimed.request, providerToken);

@@ -11,13 +11,18 @@ beforeAll(() => {
 describe("Apple identity verification", () => {
   it("verifies signature, issuer, audience, expiry, and nonce", async () => {
     const keys = await webcrypto.subtle.generateKey(
-      { name: "ECDSA", namedCurve: "P-256" },
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
       true,
       ["sign", "verify"],
     ) as CryptoKeyPair;
     const publicKey = await webcrypto.subtle.exportKey("jwk", keys.publicKey);
     const header = bytesToBase64Url(
-      new TextEncoder().encode(JSON.stringify({ alg: "ES256", kid: "apple-key" })),
+      new TextEncoder().encode(JSON.stringify({ alg: "RS256", kid: "apple-key" })),
     );
     const claims = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({
       iss: "https://appleid.apple.com",
@@ -28,7 +33,7 @@ describe("Apple identity verification", () => {
       nonce: "nonce-1",
     })));
     const signature = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
+      "RSASSA-PKCS1-v1_5",
       keys.privateKey,
       new TextEncoder().encode(`${header}.${claims}`),
     )));
@@ -38,7 +43,7 @@ describe("Apple identity verification", () => {
       nonce: "nonce-1",
       audiences: ["dev.kil.talaria"],
       nowSeconds: 1_800_000_000,
-      keys: [{ ...publicKey, kid: "apple-key", alg: "ES256" }],
+      keys: [{ ...publicKey, kid: "apple-key", alg: "RS256" }],
     };
 
     await expect(verifyAppleIdentityToken(input)).resolves.toMatchObject({ sub: "apple-user" });

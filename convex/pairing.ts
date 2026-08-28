@@ -78,15 +78,6 @@ export const redeemPublisherInvitation = internalMutation({
         updatedAt: args.now,
       });
     }
-    const existingKeys = await ctx.db
-      .query("publisherKeys")
-      .withIndex("by_user_id_and_publisher_id", (query) =>
-        query.eq("userId", invitation.userId).eq("publisherId", args.publisherId),
-      )
-      .collect();
-    for (const key of existingKeys) {
-      if (key.revokedAt === undefined) await ctx.db.patch(key._id, { revokedAt: args.now });
-    }
     await ctx.db.insert("publisherKeys", {
       userId: invitation.userId,
       publisherId: args.publisherId,

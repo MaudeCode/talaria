@@ -1,10 +1,12 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { webcrypto } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
-import schema from "../convex/schema";
+import { sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
+import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 
@@ -15,6 +17,145 @@ function testBackend() {
 }
 
 describe("Convex relay state", () => {
+  it("accepts an Apple-shaped RS256 identity token through the HTTP router", async () => {
+    const backend = testBackend();
+    const keys = await webcrypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = await webcrypto.subtle.exportKey("jwk", keys.publicKey);
+    const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const now = Math.floor(Date.now() / 1_000);
+    const header = encode({ alg: "RS256", kid: "apple-live-shaped" });
+    const claims = encode({
+      iss: "https://appleid.apple.com",
+      aud: "dev.kil.talaria",
+      sub: "apple-user",
+      exp: now + 600,
+      iat: now,
+      nonce: "hashed-nonce",
+    });
+    const signature = Buffer.from(await webcrypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      keys.privateKey,
+      new TextEncoder().encode(`${header}.${claims}`),
+    )).toString("base64url");
+    const appleFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      keys: [{ ...publicKey, kid: "apple-live-shaped", alg: "RS256" }],
+    }), { status: 200 }));
+    process.env.APPLE_SUBJECT_HASH_KEY = "test-subject-hash-key-that-is-at-least-32-bytes";
+    process.env.APPLE_CLIENT_IDS = "dev.kil.talaria";
+    try {
+      const response = await backend.fetch("/v1/auth/apple", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          identityToken: `${header}.${claims}.${signature}`,
+          nonce: "hashed-nonce",
+        }),
+      });
+      expect(response.status).toBe(201);
+      await expect(response.json()).resolves.toMatchObject({ userId: expect.any(String) });
+      expect(appleFetch).toHaveBeenCalledTimes(1);
+    } finally {
+      appleFetch.mockRestore();
+      delete process.env.APPLE_SUBJECT_HASH_KEY;
+      delete process.env.APPLE_CLIENT_IDS;
+    }
+  });
+
+  it("canonicalizes publisher origins and rejects untrusted APNs topics at the HTTP boundary", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", {
+        userId: "user-1",
+        appleSubjectHash: "apple-user-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("userSessions", {
+        userId: "user-1",
+        sessionId: "session-1",
+        tokenHash: await sha256("session-token"),
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
+      await ctx.db.insert("publisherInvitations", {
+        userId: "user-1",
+        tokenHash: await sha256("publisher-invitation"),
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
+    });
+
+    const pairing = await backend.fetch("/v1/pairings/publisher/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        invitation: "publisher-invitation",
+        publisherId: "https://Hermes.Example:443",
+        label: "Home",
+        publicKey: Buffer.alloc(32).toString("base64url"),
+      }),
+    });
+    expect(pairing.status).toBe(201);
+    await expect(pairing.json()).resolves.toMatchObject({ publisherId: "https://hermes.example" });
+
+    const invalidOrigin = await backend.fetch("/v1/pairings/publisher/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        invitation: "publisher-invitation",
+        publisherId: "https://hermes.example/path",
+        label: "Home",
+        publicKey: Buffer.alloc(32).toString("base64url"),
+      }),
+    });
+    expect(invalidOrigin.status).toBe(400);
+
+    const deviceBody = {
+      label: "iPhone",
+      bundleId: "dev.kil.talaria",
+      apsEnvironment: "sandbox",
+      pushToken: "push-token",
+      preferences: defaultNotificationPreferences,
+    };
+    const putDevice = (body: unknown) =>
+      backend.fetch("/v1/devices/device-1", {
+        method: "PUT",
+        headers: {
+          authorization: "Bearer session-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    await expect(putDevice(deviceBody).then((response) => response.status)).resolves.toBe(200);
+    await expect(
+      putDevice({ ...deviceBody, bundleId: "dev.attacker.app" }).then(
+        (response) => response.status,
+      ),
+    ).resolves.toBe(400);
+    await expect(
+      putDevice({ ...deviceBody, bundleId: "dev.kil.talaria.branch" }).then(
+        (response) => response.status,
+      ),
+    ).resolves.toBe(200);
+    await expect(
+      putDevice({
+        ...deviceBody,
+        bundleId: "dev.kil.talaria.branch",
+        apsEnvironment: "production",
+      }).then((response) => response.status),
+    ).resolves.toBe(200);
+  });
+
   it("creates one Apple user session and consumes publisher invitations exactly once", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
@@ -81,15 +222,105 @@ describe("Convex relay state", () => {
       keyId: "key-2",
       now: now + 1,
     });
+    const stillActive = await backend.query(internal.pairing.getPublisherKey, {
+      publisherId: redemption.publisherId,
+      keyId: "key-1",
+    });
+    expect(stillActive).not.toHaveProperty("revokedAt");
+    await backend.mutation(internal.publishers.acceptState, {
+      userId: "user-1",
+      publisherId: redemption.publisherId,
+      keyId: "key-2",
+      nonce: "activate-key-2",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 2,
+      sessionId: "session-1",
+      eventId: "event-1",
+      revision: 1,
+      state: {
+        sessionId: "session-1",
+        title: "Activate replacement",
+        phase: "running",
+        updatedAt: now + 2,
+        deepLink: "/sessions/session-1",
+      },
+    });
     await expect(backend.query(internal.pairing.getPublisherKey, {
       publisherId: redemption.publisherId,
       keyId: "key-1",
-    })).resolves.toMatchObject({ revokedAt: now + 1 });
+    })).resolves.toMatchObject({ revokedAt: now + 2 });
     const replacementKey = await backend.query(internal.pairing.getPublisherKey, {
       publisherId: redemption.publisherId,
       keyId: "key-2",
     });
     expect(replacementKey).not.toHaveProperty("revokedAt");
+  });
+
+  it("preserves snapshot phase transitions for alert delivery", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publishers", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        label: "Home",
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherKeys", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        keyId: "key-1",
+        publicKey: "public-key",
+        activatedAt: now,
+        createdAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-1",
+        revision: 1,
+        title: "Needs approval",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+    });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-snapshot",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 1,
+      snapshotId: "snapshot-1",
+      states: [{
+        sessionId: "session-1",
+        eventId: "event-2",
+        revision: 2,
+        title: "Needs approval",
+        phase: "waiting_for_approval",
+        updatedAt: now + 1,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    const scheduled = await backend.run(async (ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(scheduled.at(-1)?.args).toEqual([{
+      userId: "user-1",
+      transitions: [{
+        publisherId: "https://hermes.example",
+        sessionId: "session-1",
+        previousPhase: "running",
+      }],
+    }]);
   });
 
   it("rejects stale publisher revisions and duplicate nonces", async () => {
@@ -307,5 +538,167 @@ describe("Convex relay state", () => {
     });
     expect(registered).toEqual({ ok: true });
     expect(stolen).toEqual({ ok: false, reason: "token_owned" });
+  });
+
+  it("isolates delivery lifecycles and does not deliver or reopen revoked activities", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      for (const userId of ["user-1", "user-2"]) {
+        await ctx.db.insert("devices", {
+          userId,
+          deviceId: `device-${userId}`,
+          label: userId,
+          bundleId: "dev.kil.talaria",
+          apsEnvironment: "production",
+          pushToken: `push-${userId}`,
+          preferences: { ...defaultNotificationPreferences, notificationsEnabled: false },
+          createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.insert("sessionStates", {
+          userId,
+          deleted: false,
+          publisherId: "https://hermes.example",
+          publisherLabel: userId,
+          sessionId: "session-1",
+          eventId: `event-${userId}-1`,
+          revision: 1,
+          title: userId,
+          phase: "running",
+          updatedAt: now,
+          deepLink: "/sessions/session-1",
+          expiresAt: now + 60_000,
+          receivedAt: now,
+        });
+        await ctx.db.insert("liveActivities", {
+          userId,
+          deviceId: `device-${userId}`,
+          activityId: `activity-${userId}`,
+          mode: "all_running",
+          attributesType: "TalariaAggregateActivityAttributes",
+          schemaVersion: 1,
+          activityPushToken: `activity-token-${userId}`,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    for (const userId of ["user-1", "user-2"]) {
+      await backend.mutation(internal.delivery.recompute, { userId });
+    }
+    const initialJobs = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").collect(),
+    );
+    expect(initialJobs).toHaveLength(2);
+    for (const job of initialJobs) {
+      const claimed = await backend.mutation(internal.delivery.claimJob, {
+        jobId: job._id,
+        now: now + 1,
+      });
+      expect(claimed).toMatchObject({
+        status: "ready",
+        request: { token: `activity-token-${job.userId}` },
+      });
+      await backend.mutation(internal.delivery.markDelivered, {
+        jobId: job._id,
+        apnsStatus: 200,
+        now: now + 2,
+      });
+    }
+    const deliveredActivities = await backend.run(async (ctx) =>
+      ctx.db.query("liveActivities").collect(),
+    );
+    for (const activity of deliveredActivities) {
+      expect(activity.lastAggregate?.rows.map((row) => row.publisherLabel)).toEqual([
+        activity.userId,
+      ]);
+    }
+
+    await backend.run(async (ctx) => {
+      const state = await ctx.db
+        .query("sessionStates")
+        .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+          query
+            .eq("userId", "user-1")
+            .eq("publisherId", "https://hermes.example")
+            .eq("sessionId", "session-1"),
+        )
+        .unique();
+      await ctx.db.patch(state!._id, { title: "routine update", revision: 2 });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const scheduledRetry = await backend.run(async (ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(scheduledRetry.some(
+      (job) => job.name === "delivery:recompute" && job.scheduledTime > Date.now(),
+    )).toBe(true);
+
+    await backend.run(async (ctx) => {
+      const states = await ctx.db.query("sessionStates").collect();
+      for (const state of states) {
+        await ctx.db.patch(state._id, {
+          eventId: `event-${state.userId}-2`,
+          revision: 2,
+          title: `${state.userId}-updated`,
+          phase: "waiting_for_input",
+          updatedAt: now + 3,
+        });
+      }
+    });
+    for (const userId of ["user-1", "user-2"]) {
+      await backend.mutation(internal.delivery.recompute, { userId });
+    }
+    const queuedJobs = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").withIndex("by_status_and_updated_at", (query) =>
+        query.eq("status", "queued"),
+      ).collect(),
+    );
+    expect(queuedJobs).toHaveLength(2);
+    const inFlight = queuedJobs.find((job) => job.userId === "user-1")!;
+    await expect(
+      backend.mutation(internal.delivery.claimJob, {
+        jobId: inFlight._id,
+        now: now + 4,
+      }),
+    ).resolves.toMatchObject({ status: "ready" });
+    await backend.mutation(internal.devices.endActivity, {
+      userId: "user-1",
+      deviceId: "device-user-1",
+      activityId: "activity-user-1",
+      now: now + 5,
+    });
+    await backend.mutation(internal.delivery.markDelivered, {
+      jobId: inFlight._id,
+      apnsStatus: 200,
+      now: now + 6,
+    });
+    const ended = await backend.run(async (ctx) =>
+      ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query
+            .eq("userId", "user-1")
+            .eq("deviceId", "device-user-1")
+            .eq("activityId", "activity-user-1"),
+        )
+        .unique(),
+    );
+    expect(ended?.endedAt).toBe(now + 5);
+
+    const revokedJob = queuedJobs.find((job) => job.userId === "user-2")!;
+    await backend.mutation(internal.devices.revokeDevice, {
+      userId: "user-2",
+      deviceId: "device-user-2",
+      now: now + 5,
+    });
+    await expect(
+      backend.mutation(internal.delivery.claimJob, {
+        jobId: revokedJob._id,
+        now: now + 6,
+      }),
+    ).resolves.toEqual({ status: "stale" });
   });
 });

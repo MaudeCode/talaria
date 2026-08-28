@@ -2,7 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { internalMutation, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import {
   aggregateFingerprint,
   alertForTransition,
@@ -23,6 +23,20 @@ import {
   apnsRequestValidator,
   sessionPhaseValidator,
 } from "./lib/validators";
+
+export const healthSummary = internalQuery({
+  args: { since: v.number() },
+  returns: v.object({ recentPermanentFailure: v.boolean() }),
+  handler: async (ctx, args) => {
+    const failure = await ctx.db
+      .query("deliveryJobs")
+      .withIndex("by_status_and_updated_at", (query) =>
+        query.eq("status", "dead").gt("updatedAt", args.since),
+      )
+      .first();
+    return { recentPermanentFailure: failure !== null };
+  },
+});
 import { apnsPool } from "./workpool";
 
 const MAX_STATE_ROWS = 500;
@@ -156,6 +170,11 @@ export const recompute = internalMutation({
     publisherId: v.optional(v.string()),
     sessionId: v.optional(v.string()),
     previousPhase: v.optional(sessionPhaseValidator),
+    transitions: v.optional(v.array(v.object({
+      publisherId: v.string(),
+      sessionId: v.string(),
+      previousPhase: sessionPhaseValidator,
+    }))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -183,13 +202,24 @@ export const recompute = internalMutation({
       .take(100);
     const allActivities = [...activities, ...perSessionActivities];
     const devicesById = new Map(devices.map((device) => [device.deviceId, device]));
-    const changedState =
-      args.publisherId && args.sessionId
-        ? states.find(
-            (state) =>
-              state.publisherId === args.publisherId && state.sessionId === args.sessionId,
-          ) ?? null
-        : null;
+    const transitions = args.transitions ?? (
+      args.publisherId && args.sessionId && args.previousPhase
+        ? [{
+            publisherId: args.publisherId,
+            sessionId: args.sessionId,
+            previousPhase: args.previousPhase,
+          }]
+        : []
+    );
+    const changed = transitions.flatMap((transition) => {
+      const state = states.find(
+        (candidate) =>
+          candidate.publisherId === transition.publisherId &&
+          candidate.sessionId === transition.sessionId,
+      );
+      return state ? [{ state, previousPhase: transition.previousPhase }] : [];
+    });
+    const changedState = changed[0]?.state ?? null;
     const alertedDevices = new Set<string>();
 
     for (const activity of allActivities) {
@@ -213,19 +243,18 @@ export const recompute = internalMutation({
               ),
               now,
             );
-      const alert =
-        changedState &&
-        (activity.mode === "all_running" ||
-          (activity.publisherId === changedState.publisherId &&
-            activity.sessionId === changedState.sessionId))
-          ? alertForTransition(
-              args.previousPhase
-                ? ({ ...changedState, phase: args.previousPhase as SessionPhase } satisfies SessionState)
-                : null,
-              changedState,
-              device.preferences,
-            )
-          : null;
+      const alert = changed.flatMap(({ state, previousPhase }) => {
+        if (
+          activity.mode !== "all_running" &&
+          (activity.publisherId !== state.publisherId || activity.sessionId !== state.sessionId)
+        ) return [];
+        const value = alertForTransition(
+          { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+          state,
+          device.preferences,
+        );
+        return value ? [value] : [];
+      })[0] ?? null;
 
       if (nextAggregate === null) {
         if (!activity.lastAggregate) continue;
@@ -260,6 +289,17 @@ export const recompute = internalMutation({
           now,
         )
       ) {
+        if (
+          activity.lastAggregate &&
+          activity.lastDeliveryAt !== undefined &&
+          aggregateFingerprint(activity.lastAggregate) !== aggregateFingerprint(nextAggregate)
+        ) {
+          await ctx.scheduler.runAfter(
+            Math.max(0, activity.lastDeliveryAt + 15_000 - now),
+            internal.delivery.recompute,
+            args,
+          );
+        }
         continue;
       }
       const request = makeLiveActivityUpdate({
@@ -286,7 +326,6 @@ export const recompute = internalMutation({
     }
 
     if (changedState && aggregate) {
-      const row = rowForState(changedState);
       for (const device of devices) {
           if (
             alertedDevices.has(device.deviceId) ||
@@ -298,28 +337,31 @@ export const recompute = internalMutation({
           ) {
             continue;
           }
-          const alert: ActivityAlert | null = alertForTransition(
-            args.previousPhase
-              ? ({ ...changedState, phase: args.previousPhase as SessionPhase } satisfies SessionState)
-              : null,
-            changedState,
-            device.preferences,
-          );
+          const changedAlert = changed.flatMap(({ state, previousPhase }) => {
+            const value = alertForTransition(
+              { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+              state,
+              device.preferences,
+            );
+            return value ? [{ alert: value, state }] : [];
+          })[0];
+          const alert: ActivityAlert | null = changedAlert?.alert ?? null;
           if (!alert) continue;
+          const notificationState = changedAlert?.state ?? changedState;
           await enqueueJob(ctx, {
             userId: args.userId,
             deviceId: device.deviceId,
             kind: "notification",
-            sourcePublisherId: changedState.publisherId,
-            sourceSessionId: changedState.sessionId,
+            sourcePublisherId: notificationState.publisherId,
+            sourceSessionId: notificationState.sessionId,
             request: makeNotification({
               token: device.pushToken,
               bundleId: device.bundleId,
               environment: device.apsEnvironment,
               alert,
-              row,
+              row: rowForState(notificationState),
             }),
-            stateFingerprint: `notification:${changedState.eventId}:${device.deviceId}`,
+            stateFingerprint: `notification:${notificationState.eventId}:${device.deviceId}`,
             now,
           });
       }
@@ -349,13 +391,27 @@ export const claimJob = internalMutation({
     }
     if (job.activityId) {
       const activityId = job.activityId;
-      const activity = await ctx.db
-        .query("liveActivities")
-        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
-          query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
-        )
-        .unique();
-      if (!activity || activity.activityPushToken !== job.expectedToken) {
+      const [activity, device] = await Promise.all([
+        ctx.db
+          .query("liveActivities")
+          .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+            query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
+          )
+          .unique(),
+        ctx.db
+          .query("devices")
+          .withIndex("by_user_id_and_device_id", (query) =>
+            query.eq("userId", job.userId).eq("deviceId", job.deviceId),
+          )
+          .unique(),
+      ]);
+      if (
+        !activity ||
+        activity.endedAt !== undefined ||
+        activity.activityPushToken !== job.expectedToken ||
+        !device ||
+        device.revokedAt !== undefined
+      ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
       }
@@ -385,7 +441,7 @@ export const claimJob = internalMutation({
           query.eq("userId", job.userId).eq("deviceId", job.deviceId),
         )
         .unique();
-      if (!device || device.pushToken !== job.expectedToken) {
+      if (!device || device.revokedAt !== undefined || device.pushToken !== job.expectedToken) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
       }
@@ -447,7 +503,9 @@ export const markDelivered = internalMutation({
         await ctx.db.patch(activity._id, {
           lastAggregate: job.aggregate,
           lastDeliveryAt: args.now,
-          endedAt: job.kind === "live_activity_end" ? args.now : undefined,
+          ...(job.kind === "live_activity_end" && activity.endedAt === undefined
+            ? { endedAt: args.now }
+            : {}),
           updatedAt: args.now,
         });
       }

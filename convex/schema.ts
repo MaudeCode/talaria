@@ -65,11 +65,14 @@ export default defineSchema({
     publisherId: v.string(),
     keyId: v.string(),
     publicKey: v.string(),
+    activatedAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_publisher_id_and_key_id", ["publisherId", "keyId"])
     .index("by_user_id_and_publisher_id", ["userId", "publisherId"])
+    .index("by_activated_at_and_created_at", ["activatedAt", "createdAt"])
+    .index("by_revoked_at", ["revokedAt"])
     .index("by_key_id", ["keyId"]),
 
   publisherNonces: defineTable({
@@ -110,6 +113,7 @@ export default defineSchema({
     .index("by_device_id", ["deviceId"])
     .index("by_user_id_and_device_id", ["userId", "deviceId"])
     .index("by_push_token", ["pushToken"])
+    .index("by_revoked_at", ["revokedAt"])
     .index("by_updated_at", ["updatedAt"])
     .index("by_user_id_and_updated_at", ["userId", "updatedAt"]),
 
@@ -157,7 +161,8 @@ export default defineSchema({
     .index("by_device_id_and_mode_and_ended_at", ["deviceId", "mode", "endedAt"])
     .index("by_user_id_and_device_id_and_mode_and_ended_at", ["userId", "deviceId", "mode", "endedAt"])
     .index("by_user_id_and_mode_and_ended_at", ["userId", "mode", "endedAt"])
-    .index("by_mode_and_ended_at", ["mode", "endedAt"]),
+    .index("by_mode_and_ended_at", ["mode", "endedAt"])
+    .index("by_ended_at", ["endedAt"]),
 
   deliveryJobs: defineTable({
     userId: v.optional(v.string()),
@@ -201,10 +206,4 @@ export default defineSchema({
     .index("by_user_id_and_device_id_and_status", ["userId", "deviceId", "status"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
-  apnsProviderTokens: defineTable({
-    cacheKey: v.string(),
-    token: v.string(),
-    issuedAt: v.number(),
-    updatedAt: v.number(),
-  }).index("by_cache_key", ["cacheKey"]),
 });

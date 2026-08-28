@@ -3,7 +3,11 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { makeAggregate } from "./lib/aggregate";
-import { subjectHash, verifyAppleIdentityToken } from "./lib/appleIdentity";
+import {
+  appleIdentityKeyId,
+  subjectHash,
+  verifyAppleIdentityToken,
+} from "./lib/appleIdentity";
 import {
   base64UrlToBytes,
   randomToken,
@@ -22,6 +26,60 @@ import {
 const http = httpRouter();
 const jsonHeaders = { "content-type": "application/json" };
 const maximumBodyCharacters = 512 * 1_024;
+let appleKeyCache: { keys: JsonWebKey[]; expiresAt: number } | undefined;
+let appleAuthWindow = { startedAt: 0, attempts: 0 };
+
+function allowAppleAuthAttempt(now: number): boolean {
+  if (now - appleAuthWindow.startedAt >= 60_000) {
+    appleAuthWindow = { startedAt: now, attempts: 0 };
+  }
+  appleAuthWindow.attempts += 1;
+  return appleAuthWindow.attempts <= 60;
+}
+
+async function appleKeys(now: number): Promise<JsonWebKey[] | null> {
+  if (appleKeyCache && appleKeyCache.expiresAt > now) return appleKeyCache.keys;
+  const response = await fetch("https://appleid.apple.com/auth/keys");
+  if (!response.ok) return null;
+  const keySet = await response.json() as { keys?: unknown };
+  if (!Array.isArray(keySet.keys)) return null;
+  const keys = keySet.keys.filter(
+    (key): key is JsonWebKey =>
+      typeof key === "object" && key !== null && (key as JsonWebKey).kty === "RSA",
+  );
+  if (keys.length === 0) return null;
+  appleKeyCache = { keys, expiresAt: now + 60 * 60 * 1_000 };
+  return keys;
+}
+
+http.route({
+  path: "/v1/health",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    const now = Date.now();
+    const [keys, apns, delivery] = await Promise.all([
+      appleKeys(now),
+      ctx.runAction(internal.apns.preflight, {}),
+      ctx.runQuery(internal.delivery.healthSummary, { since: now - 24 * 60 * 60 * 1_000 }),
+    ]);
+    const authConfigured = (process.env.APPLE_SUBJECT_HASH_KEY?.trim().length ?? 0) >= 32;
+    const audiences = (process.env.APPLE_CLIENT_IDS ?? "dev.kil.talaria,dev.kil.talaria.branch")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const ok = Boolean(keys?.some((key) => key.kty === "RSA" && key.alg === "RS256"))
+      && authConfigured
+      && audiences.length > 0
+      && apns.ok;
+    return json(ok ? 200 : 503, {
+      ok,
+      appleKeys: Boolean(keys?.length),
+      appleAuth: authConfigured && audiences.length > 0,
+      apns: apns.ok,
+      recentPermanentDeliveryFailure: delivery.recentPermanentFailure,
+    });
+  }),
+});
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
@@ -71,13 +129,33 @@ function safePath(value: string): boolean {
   return value.startsWith("/") && !value.startsWith("//") && value.length <= 512;
 }
 
-function httpOrigin(value: string): boolean {
+function canonicalHttpOrigin(value: string): string | null {
   try {
     const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value;
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      return null;
+    }
+    return url.origin;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function talariaBundleId(bundleId: string, environment: unknown): string | null {
+  if (
+    (bundleId === "dev.kil.talaria" || bundleId === "dev.kil.talaria.branch") &&
+    (environment === "sandbox" || environment === "production")
+  ) {
+    return bundleId;
+  }
+  return null;
 }
 
 function bearer(request: Request): string | null {
@@ -209,22 +287,25 @@ http.route({
     const subjectSecret = process.env.APPLE_SUBJECT_HASH_KEY?.trim();
     if (!identityToken || !nonce) return json(400, { error: "invalid_apple_credential" });
     if (!subjectSecret) return json(503, { error: "apple_auth_not_configured" });
+    if (!appleIdentityKeyId(identityToken)) {
+      return json(401, { error: "invalid_apple_credential" });
+    }
+    if (!allowAppleAuthAttempt(Date.now())) return json(429, { error: "rate_limited" });
 
     try {
-      const response = await fetch("https://appleid.apple.com/auth/keys");
-      if (!response.ok) return json(503, { error: "apple_keys_unavailable" });
-      const keySet = await response.json() as { keys?: JsonWebKey[] };
       const audiences = (process.env.APPLE_CLIENT_IDS ?? "dev.kil.talaria,dev.kil.talaria.branch")
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean);
       const now = Date.now();
+      const keys = await appleKeys(now);
+      if (!keys) return json(503, { error: "apple_keys_unavailable" });
       const claims = await verifyAppleIdentityToken({
         token: identityToken,
         nonce,
         audiences,
         nowSeconds: Math.floor(now / 1_000),
-        keys: keySet.keys ?? [],
+        keys,
       });
       if (!claims) return json(401, { error: "invalid_apple_credential" });
 
@@ -275,10 +356,10 @@ http.route({
     const body = await readJson(request);
     if (!body) return json(400, { error: "invalid_json" });
     const invitation = stringField(body, "invitation", 256);
-    const publisherId = stringField(body, "publisherId", 191);
+    const publisherId = canonicalHttpOrigin(stringField(body, "publisherId", 191) ?? "");
     const label = stringField(body, "label", 80);
     const publicKey = stringField(body, "publicKey", 128);
-    if (!invitation || !publisherId || !httpOrigin(publisherId) || !label || !publicKey) {
+    if (!invitation || !publisherId || !label || !publicKey) {
       return json(400, { error: "invalid_pairing" });
     }
     try {
@@ -305,7 +386,7 @@ http.route({
   method: "PUT",
   handler: httpAction(async (ctx, request) => {
     const parts = pathParts(request);
-    const publisherId = parts[2];
+    const publisherId = canonicalHttpOrigin(parts[2] ?? "");
     if (!publisherId) return json(404, { error: "not_found" });
     const rawBody = await request.text();
     if (rawBody.length > maximumBodyCharacters) return json(413, { error: "body_too_large" });
@@ -403,8 +484,8 @@ http.route({
 
     if (parts.length === 3) {
       const label = stringField(body, "label", 80);
-      const bundleId = stringField(body, "bundleId", 255);
       const apsEnvironment = body.apsEnvironment;
+      const bundleId = talariaBundleId(stringField(body, "bundleId", 255) ?? "", apsEnvironment);
       const pushToken = body.pushToken === null
         ? undefined
         : optionalStringField(body, "pushToken", 512);
@@ -413,7 +494,6 @@ http.route({
       if (
         !label ||
         !bundleId ||
-        !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(bundleId) ||
         (apsEnvironment !== "sandbox" && apsEnvironment !== "production") ||
         pushToken === null ||
         !preferences
@@ -437,7 +517,8 @@ http.route({
     if (parts.length === 5 && parts[3] === "live-activities") {
       const activityId = parts[4];
       const mode = body.mode;
-      const publisherId = optionalStringField(body, "publisherId", 191);
+      const rawPublisherId = optionalStringField(body, "publisherId", 191);
+      const publisherId = rawPublisherId ? canonicalHttpOrigin(rawPublisherId) : rawPublisherId;
       const sessionId = optionalStringField(body, "sessionId", 191);
       const attributesType = stringField(body, "attributesType", 120);
       const schemaVersion = numberField(body, "schemaVersion");
@@ -523,7 +604,7 @@ http.route({
       return json(200, { aggregate: makeAggregate(states, now) });
     }
     if (mode === "per_session") {
-      const publisherId = url.searchParams.get("publisherId");
+      const publisherId = canonicalHttpOrigin(url.searchParams.get("publisherId") ?? "");
       const sessionId = url.searchParams.get("sessionId");
       if (!publisherId || !sessionId) return json(400, { error: "session_required" });
       const state = await ctx.runQuery(internal.publishers.getState, {

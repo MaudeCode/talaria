@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import type { SessionPhase } from "./lib/model";
 import {
   sessionStateContentValidator,
   sessionStateInputValidator,
@@ -98,6 +99,21 @@ async function authorizePublisherMutation(
     key.revokedAt !== undefined
   ) return null;
   if (nonce) return "replay";
+  if (key.activatedAt === undefined) {
+    const keys = await ctx.db
+      .query("publisherKeys")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId),
+      )
+      .collect();
+    for (const candidate of keys) {
+      if (candidate._id === key._id) {
+        await ctx.db.patch(candidate._id, { activatedAt: args.receivedAt });
+      } else if (candidate.revokedAt === undefined) {
+        await ctx.db.patch(candidate._id, { revokedAt: args.receivedAt });
+      }
+    }
+  }
   await ctx.db.insert("publisherNonces", {
     userId: args.userId,
     publisherId: args.publisherId,
@@ -195,11 +211,17 @@ export const acceptSnapshot = internalMutation({
       )
       .take(500);
     const bySessionId = new Map(existing.map((state) => [state.sessionId, state]));
-    const present = new Set<string>();
+    const transitions: { publisherId: string; sessionId: string; previousPhase: SessionPhase }[] = [];
     for (const state of args.states) {
-      present.add(state.sessionId);
       const current = bySessionId.get(state.sessionId);
       if (current && state.revision <= current.revision) continue;
+      if (current && current.phase !== state.phase) {
+        transitions.push({
+          publisherId: args.publisherId,
+          sessionId: state.sessionId,
+          previousPhase: current.phase,
+        });
+      }
       const next = {
         deleted: false,
         userId: args.userId,
@@ -212,18 +234,10 @@ export const acceptSnapshot = internalMutation({
       if (current) await ctx.db.replace(current._id, next);
       else await ctx.db.insert("sessionStates", next);
     }
-    for (const state of existing) {
-      if (state.deleted || present.has(state.sessionId)) continue;
-      await ctx.db.patch(state._id, {
-        deleted: true,
-        eventId: `snapshot:${args.snapshotId}`,
-        updatedAt: args.receivedAt,
-        expiresAt: args.receivedAt,
-        receivedAt: args.receivedAt,
-      });
-    }
-
-    await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: args.userId });
+    await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
+      userId: args.userId,
+      transitions,
+    });
     return { status: "accepted" as const };
   },
 });
