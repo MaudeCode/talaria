@@ -13,7 +13,9 @@ final class LiveActivityTests: XCTestCase {
         let credentials = TalariaRelayCredentials(
             baseURL: try XCTUnwrap(URL(string: "https://relay.example.com")),
             deviceID: "device-1",
-            credential: "secret"
+            userID: "user-1",
+            appleUserID: "apple-user-1",
+            sessionToken: "secret"
         )
 
         try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
@@ -22,7 +24,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(TalariaRelayConfigurationStore.load(keychain: keychain))
     }
 
-    func testRelayEnrollmentAndAggregateSnapshotContract() async throws {
+    func testRelayAppleSignInPairingAndAggregateSnapshotContract() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -31,8 +33,12 @@ final class LiveActivityTests: XCTestCase {
             requests.append(request)
             let body: String
             switch request.url?.path {
-            case "/v1/enrollments/device/redeem":
-                body = #"{"deviceId":"device-1","credential":"secret"}"#
+            case "/v1/auth/apple":
+                body = #"{"userId":"user-1","sessionToken":"secret","expiresAt":1787845600000}"#
+            case "/v1/pairings/publisher":
+                body = #"{"invitation":"invite-once","expiresAt":1787845600000}"#
+            case "/api/talaria/relay/pair":
+                body = #"{"ok":true,"publisher_id":"https://hermes.example.com"}"#
             case "/v1/activity-snapshot":
                 body = #"{"aggregate":{"schemaVersion":1,"activeCount":2,"title":"Talaria","subtitle":"2 active sessions","updatedAt":1787845600000,"rows":[{"publisherId":"pub-1","publisherLabel":"Home","sessionId":"session-1","title":"Build app","phase":"running","status":"Working","updatedAt":1787845600000,"deepLink":"/sessions/session-1"}]}}"#
             default:
@@ -47,13 +53,39 @@ final class LiveActivityTests: XCTestCase {
             return (response, Data(body.utf8))
         }
 
-        let credentials = try await TalariaRelayClient.enroll(
-            baseURLString: "https://relay.example.com/path-is-ignored",
-            code: "one-time",
-            label: "Test Phone",
+        let credentials = try await TalariaRelayClient.signIn(
+            identityToken: Data("apple-jwt".utf8),
+            nonce: "hashed-nonce",
+            appleUserID: "apple-user-1",
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example.com")),
             session: session
         )
         let client = TalariaRelayClient(credentials: credentials, session: session)
+        let invitation = try await client.createPublisherInvitation()
+        XCTAssertEqual(invitation, "invite-once")
+        try await APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://hermes.example.com")),
+            session: session,
+            publicMediaSession: session,
+            customHeaderProvider: { [] }
+        ).pairTalariaRelay(
+            invitation: "invite-once",
+            relayURL: credentials.baseURL,
+            publisherID: try XCTUnwrap(URL(string: "https://hermes.example.com"))
+        )
+        let appleRequest = try XCTUnwrap(requests.first { $0.url?.path == "/v1/auth/apple" })
+        let appleBody = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try XCTUnwrap(apiTestBodyData(from: appleRequest))
+        ) as? [String: String])
+        XCTAssertEqual(appleBody["identityToken"], "apple-jwt")
+        XCTAssertEqual(appleBody["nonce"], "hashed-nonce")
+        let pairingRequest = try XCTUnwrap(requests.first { $0.url?.path == "/api/talaria/relay/pair" })
+        let pairingBody = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try XCTUnwrap(apiTestBodyData(from: pairingRequest))
+        ) as? [String: String])
+        XCTAssertEqual(pairingBody["relay_url"], "https://relay.example.com")
+        XCTAssertEqual(pairingBody["publisher_id"], "https://hermes.example.com")
+        XCTAssertEqual(pairingBody["publisher_invitation"], "invite-once")
         UserDefaults.standard.set(true, forKey: TalariaRelayNotifications.isEnabledKey)
         UserDefaults.standard.set("ordinary-push-token", forKey: TalariaRelayNotifications.pushTokenKey)
         defer {
@@ -77,17 +109,22 @@ final class LiveActivityTests: XCTestCase {
         let aggregate = try await client.snapshot()
 
         XCTAssertEqual(credentials.baseURL.absoluteString, "https://relay.example.com")
+        XCTAssertEqual(credentials.userID, "user-1")
+        XCTAssertEqual(credentials.appleUserID, "apple-user-1")
         XCTAssertEqual(aggregate?.activeCount, 2)
         XCTAssertEqual(aggregate?.rows.first?.sessionId, "session-1")
         XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer secret")
-        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "X-Talaria-Device-Id"), "device-1")
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "X-Talaria-Device-Id"), credentials.deviceID)
         XCTAssertEqual(URLComponents(url: requests.last!.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "all_running")
 
         try await client.unregister(activityID: "activity-1")
         try await client.revokeDevice()
         XCTAssertEqual(
             requests.suffix(2).map { ($0.httpMethod ?? "") + " " + ($0.url?.path ?? "") },
-            ["DELETE /v1/devices/device-1/live-activities/activity-1", "DELETE /v1/devices/device-1"]
+            [
+                "DELETE /v1/devices/\(credentials.deviceID)/live-activities/activity-1",
+                "DELETE /v1/devices/\(credentials.deviceID)"
+            ]
         )
     }
 

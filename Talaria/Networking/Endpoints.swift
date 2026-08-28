@@ -84,6 +84,7 @@ enum Endpoint {
     case createProfile
     case providers
     case settings
+    case talariaRelayPair
     case updatesCheck
     case updatesApply
     case insights(days: Int)
@@ -289,6 +290,8 @@ enum Endpoint {
             return "/api/providers"
         case .settings:
             return "/api/settings"
+        case .talariaRelayPair:
+            return "/api/talaria/relay/pair"
         case .updatesCheck:
             return "/api/updates/check"
         case .updatesApply:

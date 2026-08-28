@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import SwiftData
 import UIKit
@@ -55,8 +56,7 @@ struct SettingsView: View {
     @State private var showDefaultProfilePicker = false
     @State private var notificationPermissionStatus: UNAuthorizationStatus?
     @State private var notificationStatusMessage: String?
-    @State private var relayURL = ""
-    @State private var relayEnrollmentCode = ""
+    @State private var relayAppleNonce = TalariaRelayClient.makeAppleNonce()
     @State private var relayStatusMessage: String?
     @State private var isConnectingRelay = false
     @State private var isRelayConfigured = false
@@ -200,38 +200,27 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        SettingsTextFieldRow(
-                            title: String(localized: "Relay URL"),
-                            text: $relayURL,
-                            placeholder: "https://relay.example.com",
-                            keyboardType: .URL,
-                            autocapitalization: .never
-                        )
-
-                        SettingsDivider()
-
-                        SettingsTextFieldRow(
-                            title: String(localized: "Enrollment Code"),
-                            text: $relayEnrollmentCode,
-                            placeholder: String(localized: "One-time code"),
-                            autocapitalization: .never,
-                            isSecure: true
-                        )
-
                         SettingsFootnote(
                             relayStatusMessage
-                                ?? String(localized: "The relay credential stays in this device's Keychain. The code is used once and is not saved.")
+                                ?? String(localized: "Sign in with Apple once, then Talaria securely pairs this Hermes server with your Live Activities.")
                         )
 
-                        SettingsButton(
-                            isRelayConfigured == false
-                                ? String(localized: "Connect Relay")
-                                : String(localized: "Reconnect Relay"),
-                            isLoading: isConnectingRelay
-                        ) {
-                            Task { await connectRelay() }
+                        if isRelayConfigured {
+                            SettingsButton(String(localized: "Connect This Server"), isLoading: isConnectingRelay) {
+                                Task { await pairCurrentServer() }
+                            }
+                            .disabled(isConnectingRelay)
+                        } else {
+                            SignInWithAppleButton(.continue) { request in
+                                request.nonce = TalariaRelayClient.hashedAppleNonce(relayAppleNonce)
+                            } onCompletion: { result in
+                                handleRelayAppleSignIn(result)
+                            }
+                            .signInWithAppleButtonStyle(.black)
+                            .frame(height: 50)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .disabled(isConnectingRelay)
                         }
-                        .disabled(isConnectingRelay || relayURL.isEmpty || relayEnrollmentCode.isEmpty)
 
                         if isRelayConfigured {
                             SettingsButton(String(localized: "Disconnect Relay"), role: .destructive) {
@@ -643,8 +632,7 @@ struct SettingsView: View {
         .task {
             await loadServerSettings()
             await refreshNotificationPermissionStatus()
-            if let credentials = TalariaRelayConfigurationStore.load() {
-                relayURL = credentials.baseURL.absoluteString
+            if TalariaRelayConfigurationStore.load() != nil {
                 relayStatusMessage = String(localized: "Connected")
                 isRelayConfigured = true
             }
@@ -807,24 +795,82 @@ struct SettingsView: View {
     }
 
     @MainActor
-    private func connectRelay() async {
+    private func handleRelayAppleSignIn(_ result: Result<ASAuthorization, any Error>) {
+        let nonce = TalariaRelayClient.hashedAppleNonce(relayAppleNonce)
+        relayAppleNonce = TalariaRelayClient.makeAppleNonce()
+        switch result {
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let identityToken = credential.identityToken else {
+                relayStatusMessage = String(localized: "Apple did not return an identity token.")
+                return
+            }
+            Task {
+                await connectRelay(
+                    identityToken: identityToken,
+                    appleUserID: credential.user,
+                    nonce: nonce
+                )
+            }
+        case .failure(let error):
+            relayStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func connectRelay(identityToken: Data, appleUserID: String, nonce: String) async {
         isConnectingRelay = true
         defer { isConnectingRelay = false }
         do {
-            let credentials = try await TalariaRelayClient.enroll(
-                baseURLString: relayURL,
-                code: relayEnrollmentCode,
-                label: UIDevice.current.name
+            let credentials = try await TalariaRelayClient.signIn(
+                identityToken: identityToken,
+                nonce: nonce,
+                appleUserID: appleUserID,
+                deviceID: TalariaRelayConfigurationStore.load()?.deviceID
             )
             try TalariaRelayConfigurationStore.save(credentials)
             isRelayConfigured = true
-            relayEnrollmentCode = ""
-            relayURL = credentials.baseURL.absoluteString
+            try await pairCurrentServer(using: credentials)
             try await TalariaAggregateLiveActivityManager.shared.refresh()
             relayStatusMessage = String(localized: "Connected")
         } catch {
+            if case TalariaRelayClient.ClientError.invalidResponse(401, _) = error {
+                isRelayConfigured = false
+            }
             relayStatusMessage = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func pairCurrentServer() async {
+        isConnectingRelay = true
+        defer { isConnectingRelay = false }
+        do {
+            guard let credentials = TalariaRelayConfigurationStore.load() else {
+                isRelayConfigured = false
+                return
+            }
+            try await pairCurrentServer(using: credentials)
+            try await TalariaAggregateLiveActivityManager.shared.refresh()
+            relayStatusMessage = String(localized: "Connected")
+        } catch {
+            if case TalariaRelayClient.ClientError.invalidResponse(401, _) = error {
+                isRelayConfigured = false
+            }
+            relayStatusMessage = error.localizedDescription
+        }
+    }
+
+    private func pairCurrentServer(using credentials: TalariaRelayCredentials) async throws {
+        guard let publisherID = TalariaRelayClient.originURL(server) else {
+            throw TalariaRelayClient.ClientError.invalidURL
+        }
+        let invitation = try await TalariaRelayClient(credentials: credentials).createPublisherInvitation()
+        try await APIClient(baseURL: server).pairTalariaRelay(
+            invitation: invitation,
+            relayURL: credentials.baseURL,
+            publisherID: publisherID
+        )
     }
 
     @MainActor
@@ -842,11 +888,14 @@ struct SettingsView: View {
 
     @MainActor
     private func disconnectRelay() async {
+        let credentials = TalariaRelayConfigurationStore.load()
+        try? await TalariaAggregateLiveActivityManager.shared.disconnect()
+        if let credentials {
+            try? await TalariaRelayClient(credentials: credentials).revokeSession()
+        }
         do {
-            try await TalariaAggregateLiveActivityManager.shared.disconnect()
             try TalariaRelayConfigurationStore.clear()
             isRelayConfigured = false
-            relayEnrollmentCode = ""
             relayStatusMessage = String(localized: "Disconnected")
         } catch {
             relayStatusMessage = error.localizedDescription

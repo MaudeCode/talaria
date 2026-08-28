@@ -1,4 +1,5 @@
 import ActivityKit
+import CryptoKit
 import Foundation
 import OSLog
 
@@ -516,7 +517,9 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 struct TalariaRelayCredentials: Codable, Equatable {
     var baseURL: URL
     var deviceID: String
-    var credential: String
+    var userID: String
+    var appleUserID: String
+    var sessionToken: String
 }
 
 enum TalariaRelayConfigurationStore {
@@ -539,9 +542,13 @@ enum TalariaRelayConfigurationStore {
 }
 
 struct TalariaRelayClient {
-    struct EnrollmentResponse: Decodable {
-        var deviceId: String
-        var credential: String
+    struct AppleAuthResponse: Decodable {
+        var userId: String
+        var sessionToken: String
+    }
+
+    struct PublisherInvitationResponse: Decodable {
+        var invitation: String
     }
 
     struct SnapshotResponse: Decodable {
@@ -563,21 +570,50 @@ struct TalariaRelayClient {
     let credentials: TalariaRelayCredentials
     var session: URLSession = .shared
 
-    static func enroll(
-        baseURLString: String,
-        code: String,
-        label: String,
+    static func makeAppleNonce() -> String {
+        UUID().uuidString.lowercased()
+    }
+
+    static func hashedAppleNonce(_ nonce: String) -> String {
+        SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func signIn(
+        identityToken: Data,
+        nonce: String,
+        appleUserID: String,
+        deviceID: String? = nil,
+        baseURL: URL = defaultBaseURL,
         session: URLSession = .shared
     ) async throws -> TalariaRelayCredentials {
-        guard let baseURL = normalizedBaseURL(baseURLString) else { throw ClientError.invalidURL }
-        let body = try JSONEncoder().encode(["code": code, "label": label])
-        var request = URLRequest(url: endpoint(baseURL, "v1/enrollments/device/redeem"))
+        guard let identityToken = String(data: identityToken, encoding: .utf8) else {
+            throw ClientError.invalidResponse(-1, "Apple did not return a valid identity token.")
+        }
+        let body = try JSONEncoder().encode(["identityToken": identityToken, "nonce": nonce])
+        var request = URLRequest(url: endpoint(baseURL, "v1/auth/apple"))
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let data = try await responseData(for: request, session: session)
-        let response = try JSONDecoder().decode(EnrollmentResponse.self, from: data)
-        return TalariaRelayCredentials(baseURL: baseURL, deviceID: response.deviceId, credential: response.credential)
+        let response = try JSONDecoder().decode(AppleAuthResponse.self, from: data)
+        return TalariaRelayCredentials(
+            baseURL: baseURL,
+            deviceID: deviceID ?? "dev_\(UUID().uuidString.lowercased())",
+            userID: response.userId,
+            appleUserID: appleUserID,
+            sessionToken: response.sessionToken
+        )
+    }
+
+    func createPublisherInvitation() async throws -> String {
+        var request = authenticatedRequest(
+            url: Self.endpoint(credentials.baseURL, "v1/pairings/publisher"),
+            method: "POST"
+        )
+        request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await Self.responseData(for: request, session: session)
+        return try JSONDecoder().decode(PublisherInvitationResponse.self, from: data).invitation
     }
 
     func configureDevice(liveActivitiesEnabled: Bool = true) async throws {
@@ -644,6 +680,10 @@ struct TalariaRelayClient {
         try await send(path: "v1/devices/\(credentials.deviceID)", method: "DELETE")
     }
 
+    func revokeSession() async throws {
+        try await send(path: "v1/auth/session", method: "DELETE")
+    }
+
     private func send(path: String, method: String, body: Data) async throws {
         var request = authenticatedRequest(url: Self.endpoint(credentials.baseURL, path), method: method)
         request.httpBody = body
@@ -660,26 +700,33 @@ struct TalariaRelayClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Bearer \(credentials.credential)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(credentials.sessionToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request
     }
 
-    private static func normalizedBaseURL(_ value: String) -> URL? {
-        guard var components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-              components.scheme == "https",
+    private static func endpoint(_ baseURL: URL, _ path: String) -> URL {
+        path.split(separator: "/").reduce(baseURL) { $0.appendingPathComponent(String($1)) }
+    }
+
+    static var defaultBaseURL: URL {
+        if let configured = Bundle.main.object(forInfoDictionaryKey: "TalariaRelayURL") as? String,
+           let url = URL(string: configured) {
+            return url
+        }
+        return URL(string: "https://relay.talaria.kil.dev")!
+    }
+
+    static func originURL(_ url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
               components.host != nil,
               components.user == nil,
-              components.password == nil
-        else { return nil }
+              components.password == nil else { return nil }
         components.path = ""
         components.query = nil
         components.fragment = nil
         return components.url
-    }
-
-    private static func endpoint(_ baseURL: URL, _ path: String) -> URL {
-        path.split(separator: "/").reduce(baseURL) { $0.appendingPathComponent(String($1)) }
     }
 
     private static func responseData(for request: URLRequest, session: URLSession) async throws -> Data {
@@ -699,6 +746,33 @@ struct TalariaRelayClient {
         #else
         "production"
         #endif
+    }
+}
+
+private struct TalariaRelayPairRequest: Encodable {
+    var relayURL: String
+    var publisherID: String
+    var publisherInvitation: String
+    var label: String
+}
+
+private struct TalariaRelayPairResponse: Decodable {
+    var ok: Bool
+}
+
+extension APIClient {
+    func pairTalariaRelay(invitation: String, relayURL: URL, publisherID: URL) async throws {
+        let response: TalariaRelayPairResponse = try await send(
+            endpoint: .talariaRelayPair,
+            method: "POST",
+            body: TalariaRelayPairRequest(
+                relayURL: relayURL.absoluteString,
+                publisherID: publisherID.absoluteString,
+                publisherInvitation: invitation,
+                label: publisherID.host() ?? "Hermes WebUI"
+            )
+        )
+        guard response.ok else { throw TalariaRelayClient.ClientError.invalidResponse(500, nil) }
     }
 }
 
