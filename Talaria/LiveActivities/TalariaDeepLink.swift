@@ -88,7 +88,7 @@ enum TalariaDeepLink {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    static func sessionURL(sessionID: String) -> URL? {
+    static func sessionURL(sessionID: String, publisherID: String? = nil) -> URL? {
         guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
@@ -96,10 +96,24 @@ enum TalariaDeepLink {
         var components = URLComponents()
         components.scheme = scheme
         components.host = sessionHost
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "id", value: sessionID)
         ]
+        if let publisherID = normalizedPublisherID(publisherID) {
+            queryItems.append(URLQueryItem(name: "publisher", value: publisherID))
+        }
+        components.queryItems = queryItems
         return components.url
+    }
+
+    static func publisherID(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == scheme,
+              url.host?.lowercased() == sessionHost
+        else { return nil }
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        return normalizedPublisherID(
+            components?.queryItems?.first(where: { $0.name == "publisher" })?.value
+        )
     }
 
     static func sessionID(from url: URL) -> String? {
@@ -123,6 +137,11 @@ enum TalariaDeepLink {
     }
 
     private static func normalizedSessionID(_ rawValue: String?) -> String? {
+        let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func normalizedPublisherID(_ rawValue: String?) -> String? {
         let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }

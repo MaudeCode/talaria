@@ -39,7 +39,9 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             .padding(16)
             .activityBackgroundTint(AgentRunLiveActivityTheme.background)
             .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
-            .widgetURL(context.state.rows.first.flatMap { TalariaDeepLink.sessionURL(sessionID: $0.sessionId) })
+            .widgetURL(context.state.rows.first.flatMap {
+                TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
+            })
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -67,7 +69,9 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             } minimal: {
                 Text("\(context.state.activeCount)")
             }
-            .widgetURL(context.state.rows.first.flatMap { TalariaDeepLink.sessionURL(sessionID: $0.sessionId) })
+            .widgetURL(context.state.rows.first.flatMap {
+                TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
+            })
         }
     }
 }

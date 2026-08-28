@@ -34,8 +34,12 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard let sessionID = response.notification.request.content.userInfo["sessionId"] as? String,
-              let url = TalariaDeepLink.sessionURL(sessionID: sessionID)
+        let userInfo = response.notification.request.content.userInfo
+        guard let sessionID = userInfo["sessionId"] as? String,
+              let url = TalariaDeepLink.sessionURL(
+                sessionID: sessionID,
+                publisherID: userInfo["publisherId"] as? String
+              )
         else { return }
         await UIApplication.shared.open(url)
     }

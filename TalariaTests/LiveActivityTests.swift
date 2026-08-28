@@ -298,6 +298,16 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains(sessionID))
     }
 
+    func testAggregateDeepLinkCarriesPublisherForServerRouting() throws {
+        let publisherID = "https://hermes.example.com"
+        let url = try XCTUnwrap(
+            TalariaDeepLink.sessionURL(sessionID: "session-abc", publisherID: publisherID)
+        )
+
+        XCTAssertEqual(TalariaDeepLink.sessionID(from: url), "session-abc")
+        XCTAssertEqual(TalariaDeepLink.publisherID(from: url), publisherID)
+    }
+
     func testChatViewModelLiveActivityLifecycleUsesInjectedManager() async throws {
         let baseURL = URL(string: "https://example.test")!
         let configuration = URLSessionConfiguration.ephemeral

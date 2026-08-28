@@ -100,6 +100,10 @@ struct ContentView: View {
         }
 
         if let sessionID = TalariaDeepLink.sessionID(from: url) {
+            if let publisherID = TalariaDeepLink.publisherID(from: url),
+               let account = authManager.servers.first(where: { $0.id == publisherID }) {
+                authManager.switchActiveServer(to: account)
+            }
             pendingDeepLinkedSessionID = sessionID
             return
         }
