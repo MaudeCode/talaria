@@ -894,8 +894,10 @@ final class TalariaAggregateLiveActivityManager {
     private var isRefreshing = false
     private var refreshRequested = false
     private var operationGeneration = 0
+    private var activeDisconnectCount = 0
 
     func refresh() async throws {
+        guard activeDisconnectCount == 0 else { return }
         refreshRequested = true
         guard !isRefreshing else { return }
         isRefreshing = true
@@ -975,6 +977,8 @@ final class TalariaAggregateLiveActivityManager {
 
     func disconnect() async throws {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        activeDisconnectCount += 1
+        defer { activeDisconnectCount -= 1 }
         operationGeneration += 1
         refreshRequested = false
         let client = TalariaRelayClient(credentials: credentials)
@@ -1075,6 +1079,7 @@ final class TalariaAggregateLiveActivityManager {
         credentials: TalariaRelayCredentials
     ) -> Bool {
         generation == operationGeneration
+            && activeDisconnectCount == 0
             && TalariaLiveActivityMode.current == .allRunning
             && TalariaRelayConfigurationStore.load()?.sessionToken == credentials.sessionToken
     }
