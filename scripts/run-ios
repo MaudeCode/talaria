@@ -86,11 +86,12 @@ xcodebuild build -quiet \
     -scheme Talaria \
     -configuration Debug \
     -destination "$destination" \
-    -derivedDataPath "$runtime_dir/derived-data"
+    -derivedDataPath "$runtime_dir/derived-data" \
+    APP_IDENTIFIER_SUFFIX=.xctest
 
 bundle_identifier=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app_path/Info.plist")
-if [[ "$bundle_identifier" != dev.kil.talaria ]]; then
-    print -u2 "The authenticated simulator pool requires dev.kil.talaria, but the built app uses $bundle_identifier."
+if [[ "$bundle_identifier" != dev.kil.talaria.xctest ]]; then
+    print -u2 "The isolated simulator pool requires dev.kil.talaria.xctest, but the built app uses $bundle_identifier."
     exit 78
 fi
 
@@ -101,9 +102,9 @@ developer_dir=$(xcode-select -p)
 simulator_app="$developer_dir/Applications/Simulator.app"
 [[ -d "$simulator_app" ]] || simulator_app="$developer_dir/../Applications/DeviceHub.app"
 open "$simulator_app" --args -CurrentDeviceUDID "$simulator_id"
-xcrun simctl launch "$simulator_id" "$bundle_identifier"
+xcrun simctl launch "$simulator_id" "$bundle_identifier" --ui-test-fixture
 
-print "Talaria is running on $simulator_id. Press Control-C to end the session and release it."
+print "Talaria's deterministic fixture is running on $simulator_id. Press Control-C to end the session and release it."
 while true; do
     sleep 30
 done

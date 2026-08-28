@@ -117,9 +117,9 @@ Agent/MCP flow:
 
 - Call `session_show_defaults` before the first local build/run/test.
 - If defaults are missing, copy them from `.xcodebuildmcp/config.yaml`.
-- Configure the source simulator for manual local testing when needed. Shut it
-  down, then run `scripts/setup-ios-test-pool --refresh`. The command replaces the
-  four disposable test simulators with clones for concurrent worktree use. Plain
+- Run `scripts/setup-ios-test-pool --refresh` to replace the four disposable test
+  simulators with clean devices matching the configured simulator's model and
+  runtime. Setup warms each new device once; no application data is copied. Plain
   `scripts/setup-ios-test-pool` keeps an existing pool and fills missing slots.
   Refresh aborts instead of replacing a simulator leased by another worktree.
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
@@ -129,9 +129,9 @@ Agent/MCP flow:
   login state or contact an external server. A skipped `TalariaUITests` test fails
   the run.
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
-  builds and verifies the signed app, installs and launches it, and opens Simulator.
-  Keep the command running for the manual session, then press Control-C to shut down
-  the simulator and release its lease.
+  builds the isolated `.xctest` app, launches the deterministic fixture, and opens
+  Simulator. Keep the command running for the manual session, then press Control-C
+  to shut down the simulator and release its lease.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 
 Human/CLI equivalents:
