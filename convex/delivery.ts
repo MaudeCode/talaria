@@ -263,7 +263,7 @@ export const recompute = internalMutation({
           kind: "live_activity_start",
           request,
           aggregate,
-          stateFingerprint: `start:${aggregateFingerprint(aggregate)}`,
+          stateFingerprint: `start:${device.pushToStartToken}:${aggregateFingerprint(aggregate)}`,
           now,
         });
         await ctx.db.patch(device._id, { pushToStartIssuedAt: now, updatedAt: now });
@@ -525,7 +525,7 @@ export const claimJob = internalMutation({
             )
             .first(),
         ]);
-        const fingerprint = `start:${aggregateFingerprint(makeAggregate(states, args.now))}`;
+        const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(states, args.now))}`;
         if (activeActivity || fingerprint !== job.stateFingerprint) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           if (device.pushToStartToken === job.expectedToken) {

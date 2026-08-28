@@ -924,6 +924,32 @@ describe("Convex relay state", () => {
     expect(state.jobs[0]?.kind).toBe("live_activity_start");
 
     await backend.run(async (ctx) => {
+      await ctx.db.patch(state.device!._id, {
+        pushToStartToken: "rotated-push-to-start-token",
+        pushToStartIssuedAt: undefined,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const rotated = await backend.run(async (ctx) => ({
+      device: await ctx.db.get(state.device!._id),
+      jobs: await ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .collect(),
+    }));
+    expect(rotated.jobs).toHaveLength(2);
+    const rotatedJob = rotated.jobs.find(
+      (job) => job.expectedToken === "rotated-push-to-start-token",
+    );
+    expect(rotatedJob).toBeDefined();
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: state.jobs[0]!._id,
+      now: now + 1,
+    })).resolves.toEqual({ status: "stale" });
+    const rotatedDevice = await backend.run(async (ctx) => ctx.db.get(state.device!._id));
+    expect(rotatedDevice?.pushToStartIssuedAt).toBeDefined();
+
+    await backend.run(async (ctx) => {
       const session = await ctx.db
         .query("sessionStates")
         .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
@@ -937,7 +963,7 @@ describe("Convex relay state", () => {
     });
     await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
     await expect(backend.mutation(internal.delivery.claimJob, {
-      jobId: state.jobs[0]!._id,
+      jobId: rotatedJob!._id,
       now: now + 2,
     })).resolves.toEqual({ status: "stale" });
     const invalidated = await backend.run(async (ctx) => ({
@@ -1024,7 +1050,7 @@ describe("Convex relay state", () => {
     expect(claimed).toMatchObject({
       status: "ready",
       kind: "live_activity_start",
-      request: { token: "push-to-start-token", pushType: "liveactivity" },
+      request: { token: "rotated-push-to-start-token", pushType: "liveactivity" },
     });
     await backend.mutation(internal.delivery.markDelivered, {
       jobId: enabledJob!._id,
