@@ -17,6 +17,30 @@ function testBackend() {
 }
 
 describe("Convex relay state", () => {
+  it("coordinates Apple JWKS refreshes through durable relay state", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await expect(backend.mutation(internal.auth.claimAppleJwks, { now })).resolves.toEqual({
+      status: "refresh",
+    });
+    await expect(backend.mutation(internal.auth.claimAppleJwks, { now: now + 1 })).resolves.toEqual({
+      status: "wait",
+    });
+    await backend.mutation(internal.auth.saveAppleJwks, {
+      keysJson: "[{\"kty\":\"RSA\"}]",
+      expiresAt: now + 60_000,
+      now: now + 2,
+    });
+    await expect(backend.mutation(internal.auth.claimAppleJwks, { now: now + 3 })).resolves.toEqual({
+      status: "cached",
+      keysJson: "[{\"kty\":\"RSA\"}]",
+      expiresAt: now + 60_000,
+    });
+    await expect(
+      backend.mutation(internal.auth.claimAppleJwks, { now: now + 60_001 }),
+    ).resolves.toEqual({ status: "refresh" });
+  });
+
   it("accepts an Apple-shaped RS256 identity token through the HTTP router", async () => {
     const backend = testBackend();
     const keys = await webcrypto.subtle.generateKey(
@@ -181,6 +205,54 @@ describe("Convex relay state", () => {
       }),
     ).resolves.toEqual({ ok: false, reason: "replay" });
 
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        sessionId: "session-1",
+        sessionExpiresAt: signIn.sessionExpiresAt,
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        pushToken: "push-token",
+        preferences: defaultNotificationPreferences,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "device-1",
+        activityId: "activity-1",
+        mode: "all_running",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "activity-token",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await backend.mutation(internal.auth.revokeSession, {
+      tokenHash: signIn.sessionTokenHash,
+      now: now + 1,
+    });
+    const revokedOwnership = await backend.run(async (ctx) => ({
+      device: await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+      activity: await ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+        )
+        .unique(),
+    }));
+    expect(revokedOwnership.device?.revokedAt).toBe(now + 1);
+    expect(revokedOwnership.device?.pushToken).toBeUndefined();
+    expect(revokedOwnership.activity?.endedAt).toBe(now + 1);
+
     await backend.mutation(internal.pairing.createPublisherInvitation, {
       userId: "user-1",
       tokenHash: "invitation-hash",
@@ -313,14 +385,91 @@ describe("Convex relay state", () => {
     const scheduled = await backend.run(async (ctx) =>
       ctx.db.system.query("_scheduled_functions").collect(),
     );
-    expect(scheduled.at(-1)?.args).toEqual([{
+    expect(scheduled.at(-1)?.args).toMatchObject([{
       userId: "user-1",
       transitions: [{
         publisherId: "https://hermes.example",
         sessionId: "session-1",
         previousPhase: "running",
+        state: {
+          eventId: "event-2",
+          phase: "waiting_for_approval",
+          revision: 2,
+        },
       }],
     }]);
+  });
+
+  it("retires devices and activities when cleanup expires their relay session", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("userSessions", {
+        userId: "user-1",
+        sessionId: "expired-session",
+        tokenHash: "expired-token",
+        expiresAt: 1,
+        createdAt: now - 100,
+      });
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        sessionId: "expired-session",
+        sessionExpiresAt: 1,
+        deviceId: "expired-device",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        pushToken: "expired-push",
+        preferences: defaultNotificationPreferences,
+        createdAt: now - 100,
+        updatedAt: now - 100,
+      });
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "expired-device",
+        activityId: "expired-activity",
+        mode: "all_running",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "expired-activity-token",
+        createdAt: now - 100,
+        updatedAt: now - 100,
+      });
+    });
+    const ownedBeforeCleanup = await backend.run(async (ctx) =>
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_session_id", (query) =>
+          query.eq("userId", "user-1").eq("sessionId", "expired-session"),
+        )
+        .collect(),
+    );
+    expect(ownedBeforeCleanup).toHaveLength(1);
+    await expect(backend.mutation(internal.cleanup.prune, {})).resolves.toMatchObject({
+      revokedDevices: 1,
+    });
+    const state = await backend.run(async (ctx) => ({
+      sessions: await ctx.db.query("userSessions").collect(),
+      device: await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "expired-device"),
+        )
+        .unique(),
+      activity: await ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query
+            .eq("userId", "user-1")
+            .eq("deviceId", "expired-device")
+            .eq("activityId", "expired-activity"),
+        )
+        .unique(),
+    }));
+    expect(state.sessions).toHaveLength(0);
+    expect(state.device?.revokedAt).toEqual(expect.any(Number));
+    expect(state.device?.pushToken).toBeUndefined();
+    expect(state.activity?.endedAt).toBe(state.device?.revokedAt);
   });
 
   it("rejects stale publisher revisions and duplicate nonces", async () => {

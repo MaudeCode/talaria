@@ -37,8 +37,32 @@ function allowAppleAuthAttempt(now: number): boolean {
   return appleAuthWindow.attempts <= 60;
 }
 
-async function appleKeys(now: number): Promise<JsonWebKey[] | null> {
+type HttpActionCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
+
+function parsedAppleKeys(value: string): JsonWebKey[] | null {
+  try {
+    const keys = JSON.parse(value) as unknown;
+    if (!Array.isArray(keys)) return null;
+    const rsa = keys.filter(
+      (key): key is JsonWebKey =>
+        typeof key === "object" && key !== null && (key as JsonWebKey).kty === "RSA",
+    );
+    return rsa.length > 0 ? rsa : null;
+  } catch {
+    return null;
+  }
+}
+
+async function appleKeys(ctx: HttpActionCtx, now: number): Promise<JsonWebKey[] | null> {
   if (appleKeyCache && appleKeyCache.expiresAt > now) return appleKeyCache.keys;
+  const claim = await ctx.runMutation(internal.auth.claimAppleJwks, { now });
+  if (claim.status === "cached") {
+    const keys = parsedAppleKeys(claim.keysJson);
+    if (!keys) return null;
+    appleKeyCache = { keys, expiresAt: claim.expiresAt };
+    return keys;
+  }
+  if (claim.status === "wait") return null;
   const response = await fetch("https://appleid.apple.com/auth/keys");
   if (!response.ok) return null;
   const keySet = await response.json() as { keys?: unknown };
@@ -48,7 +72,13 @@ async function appleKeys(now: number): Promise<JsonWebKey[] | null> {
       typeof key === "object" && key !== null && (key as JsonWebKey).kty === "RSA",
   );
   if (keys.length === 0) return null;
-  appleKeyCache = { keys, expiresAt: now + 60 * 60 * 1_000 };
+  const expiresAt = now + 60 * 60 * 1_000;
+  await ctx.runMutation(internal.auth.saveAppleJwks, {
+    keysJson: JSON.stringify(keys),
+    expiresAt,
+    now,
+  });
+  appleKeyCache = { keys, expiresAt };
   return keys;
 }
 
@@ -58,7 +88,7 @@ http.route({
   handler: httpAction(async (ctx) => {
     const now = Date.now();
     const [keys, apns, delivery] = await Promise.all([
-      appleKeys(now),
+      appleKeys(ctx, now),
       ctx.runAction(internal.apns.preflight, {}),
       ctx.runQuery(internal.delivery.healthSummary, { since: now - 24 * 60 * 60 * 1_000 }),
     ]);
@@ -188,7 +218,7 @@ function parsePreferences(value: unknown): NotificationPreferences | null {
 async function authenticateUser(
   ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
   request: Request,
-): Promise<{ userId: string; sessionId: string } | null> {
+): Promise<{ userId: string; sessionId: string; expiresAt: number } | null> {
   const credential = bearer(request);
   if (!credential) return null;
   return await ctx.runQuery(internal.auth.getSession, {
@@ -291,6 +321,8 @@ http.route({
       return json(401, { error: "invalid_apple_credential" });
     }
     if (!allowAppleAuthAttempt(Date.now())) return json(429, { error: "rate_limited" });
+    const budget = await ctx.runMutation(internal.auth.consumeAppleAuthBudget, { now: Date.now() });
+    if (!budget.ok) return json(429, { error: "rate_limited" });
 
     try {
       const audiences = (process.env.APPLE_CLIENT_IDS ?? "dev.kil.talaria,dev.kil.talaria.branch")
@@ -298,7 +330,7 @@ http.route({
         .map((value) => value.trim())
         .filter(Boolean);
       const now = Date.now();
-      const keys = await appleKeys(now);
+      const keys = await appleKeys(ctx, now);
       if (!keys) return json(503, { error: "apple_keys_unavailable" });
       const claims = await verifyAppleIdentityToken({
         token: identityToken,
@@ -502,6 +534,8 @@ http.route({
       }
       const result = await ctx.runMutation(internal.devices.upsertDevice, {
         userId: auth.userId,
+        sessionId: auth.sessionId,
+        sessionExpiresAt: auth.expiresAt,
         deviceId,
         label,
         bundleId,

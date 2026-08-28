@@ -11,6 +11,8 @@ import {
 export const upsertDevice = internalMutation({
   args: {
     userId: v.string(),
+    sessionId: v.string(),
+    sessionExpiresAt: v.number(),
     deviceId: v.string(),
     label: v.string(),
     bundleId: v.string(),
@@ -28,7 +30,7 @@ export const upsertDevice = internalMutation({
         query.eq("userId", args.userId).eq("deviceId", args.deviceId),
       )
       .unique();
-    if (device?.revokedAt !== undefined) {
+    if (device?.revokedAt !== undefined && device.sessionId === args.sessionId) {
       return { ok: false };
     }
     if (args.pushToken) {
@@ -43,6 +45,8 @@ export const upsertDevice = internalMutation({
     }
     const value = {
       userId: args.userId,
+      sessionId: args.sessionId,
+      sessionExpiresAt: args.sessionExpiresAt,
       deviceId: args.deviceId,
       label: args.label,
       bundleId: args.bundleId,
@@ -53,6 +57,7 @@ export const upsertDevice = internalMutation({
           ? { pushToken: undefined }
           : {}),
       preferences: args.preferences,
+      revokedAt: undefined,
       createdAt: device?.createdAt ?? args.now,
       updatedAt: args.now,
     };

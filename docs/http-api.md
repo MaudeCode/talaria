@@ -77,7 +77,7 @@ BASE64URL_SHA256_OF_EXACT_BODY
 }
 ```
 
-Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Missing rows expire on their existing relay deadline, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
+Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Non-terminal rows are three-minute leases refreshed by the WebUI heartbeat. Missing rows expire instead of being immediately tombstoned, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
 
 The per-session route remains available at `PUT /v1/publishers/{publisherId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
 

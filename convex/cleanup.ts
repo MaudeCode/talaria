@@ -5,18 +5,14 @@ import { internalMutation } from "./_generated/server";
 
 export const prune = internalMutation({
   args: {},
-  returns: v.object({ deleted: v.number() }),
+  returns: v.object({ deleted: v.number(), revokedDevices: v.number() }),
   handler: async (ctx) => {
     const now = Date.now();
     const oldJobCutoff = now - 7 * 24 * 60 * 60 * 1_000;
     const retiredCutoff = now - 30 * 24 * 60 * 60 * 1_000;
-    const [nonces, enrollments, userSessions, appleTokens, invitations, sessions, doneJobs, deadJobs, staleJobs, keys, pendingKeys, devices, activities] = await Promise.all([
+    const [nonces, userSessions, appleTokens, invitations, sessions, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs] = await Promise.all([
       ctx.db
         .query("publisherNonces")
-        .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
-        .take(100),
-      ctx.db
-        .query("enrollmentCodes")
         .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
         .take(100),
       ctx.db
@@ -43,7 +39,9 @@ export const prune = internalMutation({
         .take(100),
       ctx.db
         .query("publisherKeys")
-        .withIndex("by_revoked_at", (query) => query.lt("revokedAt", retiredCutoff))
+        .withIndex("by_revoked_at", (query) =>
+          query.gt("revokedAt", 0).lt("revokedAt", retiredCutoff),
+        )
         .take(100),
       ctx.db
         .query("publisherKeys")
@@ -53,11 +51,15 @@ export const prune = internalMutation({
         .take(100),
       ctx.db
         .query("devices")
-        .withIndex("by_revoked_at", (query) => query.lt("revokedAt", retiredCutoff))
+        .withIndex("by_revoked_at", (query) =>
+          query.gt("revokedAt", 0).lt("revokedAt", retiredCutoff),
+        )
         .take(100),
       ctx.db
         .query("liveActivities")
-        .withIndex("by_ended_at", (query) => query.lt("endedAt", oldJobCutoff))
+        .withIndex("by_ended_at", (query) =>
+          query.gt("endedAt", 0).lt("endedAt", oldJobCutoff),
+        )
         .take(100),
       ctx.db
         .query("deliveryJobs")
@@ -72,9 +74,32 @@ export const prune = internalMutation({
         )
         .take(100),
     ]);
+    let revokedDevices = 0;
+    for (const session of userSessions) {
+      const ownedDevices = await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_session_id", (query) =>
+          query.eq("userId", session.userId).eq("sessionId", session.sessionId),
+        )
+        .collect();
+      for (const device of ownedDevices) {
+        revokedDevices += 1;
+        await ctx.db.patch(device._id, { revokedAt: now, pushToken: undefined, updatedAt: now });
+        const ownedActivities = await ctx.db
+          .query("liveActivities")
+          .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
+            query.eq("userId", session.userId).eq("deviceId", device.deviceId),
+          )
+          .collect();
+        for (const activity of ownedActivities) {
+          if (activity.endedAt === undefined) {
+            await ctx.db.patch(activity._id, { endedAt: now, updatedAt: now });
+          }
+        }
+      }
+    }
     const documents = [
       ...nonces,
-      ...enrollments,
       ...userSessions,
       ...appleTokens,
       ...invitations,
@@ -95,6 +120,6 @@ export const prune = internalMutation({
     for (const userId of affectedUsers) {
       await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId });
     }
-    return { deleted: uniqueDocuments.length };
+    return { deleted: uniqueDocuments.length, revokedDevices };
   },
 });

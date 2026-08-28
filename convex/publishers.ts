@@ -38,9 +38,9 @@ function expiryForPhase(
     return { expiresAt: terminalExpiresAt, terminalExpiresAt };
   }
   if (phase === "waiting_for_approval" || phase === "waiting_for_input") {
-    return { expiresAt: now + 24 * 60 * 60 * 1_000 };
+    return { expiresAt: now + 3 * 60 * 1_000 };
   }
-  return { expiresAt: now + 2 * 60 * 60 * 1_000 };
+  return { expiresAt: now + 3 * 60 * 1_000 };
 }
 
 function exposedState(state: Doc<"sessionStates">) {
@@ -211,17 +211,15 @@ export const acceptSnapshot = internalMutation({
       )
       .take(500);
     const bySessionId = new Map(existing.map((state) => [state.sessionId, state]));
-    const transitions: { publisherId: string; sessionId: string; previousPhase: SessionPhase }[] = [];
+    const transitions: {
+      publisherId: string;
+      sessionId: string;
+      previousPhase: SessionPhase;
+      state: ReturnType<typeof exposedState>;
+    }[] = [];
     for (const state of args.states) {
       const current = bySessionId.get(state.sessionId);
       if (current && state.revision <= current.revision) continue;
-      if (current && current.phase !== state.phase) {
-        transitions.push({
-          publisherId: args.publisherId,
-          sessionId: state.sessionId,
-          previousPhase: current.phase,
-        });
-      }
       const next = {
         deleted: false,
         userId: args.userId,
@@ -231,6 +229,29 @@ export const acceptSnapshot = internalMutation({
         ...expiryForPhase(state.phase, args.receivedAt),
         receivedAt: args.receivedAt,
       };
+      if (current && current.phase !== state.phase) {
+        transitions.push({
+          publisherId: args.publisherId,
+          sessionId: state.sessionId,
+          previousPhase: current.phase,
+          state: {
+            deleted: next.deleted,
+            publisherId: next.publisherId,
+            publisherLabel: next.publisherLabel,
+            sessionId: next.sessionId,
+            streamId: next.streamId,
+            eventId: next.eventId,
+            revision: next.revision,
+            title: next.title,
+            phase: next.phase,
+            updatedAt: next.updatedAt,
+            deepLink: next.deepLink,
+            expiresAt: next.expiresAt,
+            terminalExpiresAt: next.terminalExpiresAt,
+            receivedAt: next.receivedAt,
+          },
+        });
+      }
       if (current) await ctx.db.replace(current._id, next);
       else await ctx.db.insert("sessionStates", next);
     }

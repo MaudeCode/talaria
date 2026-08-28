@@ -22,6 +22,7 @@ import {
   apnsDeliveryResultValidator,
   apnsRequestValidator,
   sessionPhaseValidator,
+  storedSessionStateValidator,
 } from "./lib/validators";
 
 export const healthSummary = internalQuery({
@@ -174,6 +175,7 @@ export const recompute = internalMutation({
       publisherId: v.string(),
       sessionId: v.string(),
       previousPhase: sessionPhaseValidator,
+      state: v.optional(storedSessionStateValidator),
     }))),
   },
   returns: v.null(),
@@ -212,7 +214,7 @@ export const recompute = internalMutation({
         : []
     );
     const changed = transitions.flatMap((transition) => {
-      const state = states.find(
+      const state = transition.state ?? states.find(
         (candidate) =>
           candidate.publisherId === transition.publisherId &&
           candidate.sessionId === transition.sessionId,
@@ -227,6 +229,7 @@ export const recompute = internalMutation({
       if (
         !device ||
         device.revokedAt !== undefined ||
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
         !device.bundleId ||
         !device.apsEnvironment ||
         !device.preferences.liveActivitiesEnabled
@@ -330,6 +333,7 @@ export const recompute = internalMutation({
           if (
             alertedDevices.has(device.deviceId) ||
             device.revokedAt !== undefined ||
+            (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
             !device.preferences.notificationsEnabled ||
             !device.pushToken ||
             !device.bundleId ||
@@ -410,7 +414,8 @@ export const claimJob = internalMutation({
         activity.endedAt !== undefined ||
         activity.activityPushToken !== job.expectedToken ||
         !device ||
-        device.revokedAt !== undefined
+        device.revokedAt !== undefined ||
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now)
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
@@ -441,7 +446,12 @@ export const claimJob = internalMutation({
           query.eq("userId", job.userId).eq("deviceId", job.deviceId),
         )
         .unique();
-      if (!device || device.revokedAt !== undefined || device.pushToken !== job.expectedToken) {
+      if (
+        !device ||
+        device.revokedAt !== undefined ||
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now) ||
+        device.pushToken !== job.expectedToken
+      ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
       }
