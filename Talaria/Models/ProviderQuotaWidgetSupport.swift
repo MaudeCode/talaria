@@ -1348,15 +1348,15 @@ struct ProviderQuotaWidgetPrimaryDetailLayout: Layout {
 
 enum ProviderQuotaWidgetPrimaryDetailGeometry {
     static func frames(in bounds: CGRect, spacing: CGFloat) -> [CGRect] {
-        let availableWidth = max(0, bounds.width - spacing)
-        let primaryWidth = min(bounds.height, availableWidth * 0.6)
+        let availableHeight = max(0, bounds.height - spacing)
+        let primaryHeight = min(bounds.width, availableHeight * 0.6)
         return [
-            CGRect(x: bounds.minX, y: bounds.minY, width: primaryWidth, height: bounds.height),
+            CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: primaryHeight),
             CGRect(
-                x: bounds.minX + primaryWidth + spacing,
-                y: bounds.minY,
-                width: max(0, availableWidth - primaryWidth),
-                height: bounds.height
+                x: bounds.minX,
+                y: bounds.minY + primaryHeight + spacing,
+                width: bounds.width,
+                height: max(0, availableHeight - primaryHeight)
             ),
         ]
     }

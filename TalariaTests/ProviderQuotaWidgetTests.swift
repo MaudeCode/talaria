@@ -210,8 +210,8 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             in: CGRect(x: 0, y: 0, width: 300, height: 300),
             spacing: 20
         )
-        XCTAssertEqual(expanded[0], CGRect(x: 0, y: 0, width: 168, height: 300))
-        XCTAssertEqual(expanded[1], CGRect(x: 188, y: 0, width: 112, height: 300))
+        XCTAssertEqual(expanded[0], CGRect(x: 0, y: 0, width: 300, height: 168))
+        XCTAssertEqual(expanded[1], CGRect(x: 0, y: 188, width: 300, height: 112))
     }
 
     func testThreePeriodPresentationOrdersCompleteDurationsAndPreservesIncompleteOrder() {
