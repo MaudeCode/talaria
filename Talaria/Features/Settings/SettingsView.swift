@@ -1,4 +1,3 @@
-import AuthenticationServices
 import SwiftUI
 import SwiftData
 import UIKit
@@ -57,18 +56,12 @@ struct SettingsView: View {
     @State private var showDefaultProfilePicker = false
     @State private var notificationPermissionStatus: UNAuthorizationStatus?
     @State private var notificationStatusMessage: String?
-    @State private var relayAppleNonce = TalariaRelayClient.makeAppleNonce()
-    @State private var relayStatusMessage: String?
-    @State private var isConnectingRelay = false
-    @State private var isRelayConfigured = false
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @AppStorage(ResponseCompletionNotifications.hasRequestedPermissionKey) private var hasRequestedResponseCompletionNotificationPermission = false
     @AppStorage(ProviderQuotaAlertSettings.isEnabledKey) private var isProviderQuotaAlertsEnabled = false
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
-    @AppStorage(TalariaLiveActivityMode.storageKey) private var liveActivityModeRawValue = TalariaLiveActivityMode.perSession.rawValue
-    @AppStorage(TalariaRelayNotifications.isEnabledKey) private var relayNotificationsEnabled = false
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
@@ -190,57 +183,7 @@ struct SettingsView: View {
                     }
                 }
 
-                SettingsCard(title: String(localized: "Live Activities")) {
-                    SettingsPickerRow(
-                        title: String(localized: "Display"),
-                        systemImage: "bolt.horizontal.circle",
-                        selection: $liveActivityModeRawValue
-                    ) {
-                        ForEach(TalariaLiveActivityMode.allCases) { mode in
-                            Text(mode.title).tag(mode.rawValue)
-                        }
-                    }
-
-                    if liveActivityModeRawValue == TalariaLiveActivityMode.allRunning.rawValue {
-                        SettingsDivider()
-
-                        SettingsToggleRow(
-                            title: String(localized: "Approval & Input Alerts"),
-                            systemImage: "bell.badge",
-                            isOn: relayNotificationBinding
-                        )
-
-                        SettingsDivider()
-
-                        SettingsFootnote(
-                            relayStatusMessage
-                                ?? String(localized: "Sign in with Apple, then Talaria securely pairs this Hermes server with your Live Activities.")
-                        )
-
-                        if isRelayConfigured {
-                            SettingsButton(String(localized: "Connect This Server"), isLoading: isConnectingRelay) {
-                                Task { await pairCurrentServer() }
-                            }
-                            .disabled(isConnectingRelay)
-                        } else {
-                            SignInWithAppleButton(.continue) { request in
-                                request.nonce = TalariaRelayClient.hashedAppleNonce(relayAppleNonce)
-                            } onCompletion: { result in
-                                handleRelayAppleSignIn(result)
-                            }
-                            .signInWithAppleButtonStyle(.black)
-                            .frame(height: 50)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .disabled(isConnectingRelay)
-                        }
-
-                        if isRelayConfigured {
-                            SettingsButton(String(localized: "Disconnect Relay"), role: .destructive) {
-                                Task { await disconnectRelay() }
-                            }
-                        }
-                    }
-                }
+                RelayLiveActivitySettingsCard(server: server)
 
                 SettingsCard(title: String(localized: "Composer")) {
                     SettingsPickerRow(
@@ -720,16 +663,6 @@ struct SettingsView: View {
         .task {
             await loadServerSettings()
             await refreshNotificationPermissionStatus()
-            if let credentials = TalariaRelayConfigurationStore.load() {
-                let appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(
-                    userID: credentials.appleUserID
-                )
-                let authorized = !credentials.isExpired && appleAuthorized
-                isRelayConfigured = authorized
-                relayStatusMessage = authorized
-                    ? String(localized: "Connected")
-                    : String(localized: "Sign in with Apple again to restore remote Live Activities.")
-            }
         }
         .alert("Clear this server's cache?", isPresented: $isConfirmingClearCache) {
             Button("Cancel", role: .cancel) {}
@@ -798,9 +731,6 @@ struct SettingsView: View {
         .onChange(of: identityDisplayName) { syncActiveServerIdentity() }
         .onChange(of: identityInitials) { syncActiveServerIdentity() }
         .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
-        .onChange(of: liveActivityModeRawValue) {
-            Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
-        }
         .onChange(of: providerQuotaPercentageMode) {
             ProviderQuotaWidgetSnapshotStore.reloadTimelines()
         }
@@ -889,121 +819,6 @@ struct SettingsView: View {
             initials: identityInitials,
             headerLogoColorHex: headerLogoColorHex
         )
-    }
-
-    @MainActor
-    private func handleRelayAppleSignIn(_ result: Result<ASAuthorization, any Error>) {
-        let nonce = TalariaRelayClient.hashedAppleNonce(relayAppleNonce)
-        relayAppleNonce = TalariaRelayClient.makeAppleNonce()
-        switch result {
-        case .success(let authorization):
-            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                  let identityToken = credential.identityToken else {
-                relayStatusMessage = String(localized: "Apple did not return an identity token.")
-                return
-            }
-            Task {
-                await connectRelay(
-                    identityToken: identityToken,
-                    appleUserID: credential.user,
-                    nonce: nonce
-                )
-            }
-        case .failure(let error):
-            relayStatusMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func connectRelay(identityToken: Data, appleUserID: String, nonce: String) async {
-        isConnectingRelay = true
-        defer { isConnectingRelay = false }
-        do {
-            var credentials = try await TalariaRelayClient.signIn(
-                identityToken: identityToken,
-                nonce: nonce,
-                appleUserID: appleUserID,
-                deviceID: TalariaRelayConfigurationStore.load()?.deviceID
-            )
-            let pendingRevocation = TalariaRelayConfigurationStore.load()?.pendingRevocation == true
-            credentials.pendingRevocation = pendingRevocation
-            try TalariaRelayConfigurationStore.save(credentials)
-            if pendingRevocation {
-                await disconnectRelay()
-                return
-            }
-            isRelayConfigured = true
-            try await pairCurrentServer(using: credentials)
-            try await TalariaAggregateLiveActivityManager.shared.refresh()
-            relayStatusMessage = String(localized: "Connected")
-        } catch {
-            if case TalariaRelayClient.ClientError.invalidResponse(401, _) = error {
-                isRelayConfigured = false
-            }
-            relayStatusMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func pairCurrentServer() async {
-        isConnectingRelay = true
-        defer { isConnectingRelay = false }
-        do {
-            guard let credentials = TalariaRelayConfigurationStore.load() else {
-                isRelayConfigured = false
-                return
-            }
-            try await pairCurrentServer(using: credentials)
-            try await TalariaAggregateLiveActivityManager.shared.refresh()
-            relayStatusMessage = String(localized: "Connected")
-        } catch {
-            if case TalariaRelayClient.ClientError.invalidResponse(401, _) = error {
-                isRelayConfigured = false
-            }
-            relayStatusMessage = error.localizedDescription
-        }
-    }
-
-    private func pairCurrentServer(using credentials: TalariaRelayCredentials) async throws {
-        guard let publisherID = TalariaRelayClient.originURL(server) else {
-            throw TalariaRelayClient.ClientError.invalidURL
-        }
-        let invitation = try await TalariaRelayClient(credentials: credentials).createPublisherInvitation()
-        try await APIClient(baseURL: server).pairTalariaRelay(
-            invitation: invitation,
-            relayURL: credentials.baseURL,
-            publisherID: publisherID
-        )
-    }
-
-    @MainActor
-    private func enableRelayNotifications() async {
-        let granted = await ResponseCompletionNotificationService.requestAuthorization()
-        relayNotificationsEnabled = granted
-        if granted {
-            UIApplication.shared.registerForRemoteNotifications()
-            relayStatusMessage = nil
-        } else {
-            relayStatusMessage = String(localized: "Notification permission is required for relay alerts.")
-        }
-        try? await TalariaAggregateLiveActivityManager.shared.refresh()
-    }
-
-    @MainActor
-    private func disconnectRelay() async {
-        guard var credentials = TalariaRelayConfigurationStore.load() else { return }
-        do {
-            try await TalariaAggregateLiveActivityManager.shared.disconnect()
-            try await TalariaRelayClient(credentials: credentials).revokeSession()
-            try TalariaRelayConfigurationStore.clear()
-            isRelayConfigured = false
-            relayStatusMessage = String(localized: "Disconnected")
-        } catch {
-            credentials.pendingRevocation = true
-            try? TalariaRelayConfigurationStore.save(credentials)
-            isRelayConfigured = false
-            relayStatusMessage = error.localizedDescription
-        }
     }
 
     private var signOutFootnote: String {
@@ -1095,20 +910,6 @@ struct SettingsView: View {
                     Task {
                         await refreshNotificationPermissionStatus()
                     }
-                }
-            }
-        )
-    }
-
-    private var relayNotificationBinding: Binding<Bool> {
-        Binding(
-            get: { relayNotificationsEnabled },
-            set: { enabled in
-                if enabled {
-                    Task { await enableRelayNotifications() }
-                } else {
-                    relayNotificationsEnabled = false
-                    Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
                 }
             }
         )
@@ -1782,7 +1583,7 @@ private struct HeaderLogoColorPresetButton: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @ScaledMetric(relativeTo: .body) private var contentSpacing: CGFloat = 12
@@ -2887,7 +2688,7 @@ private struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     }
 }
 
-private struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
+struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     let title: String
     let systemImage: String
     @Binding var selection: SelectionValue
@@ -2961,7 +2762,7 @@ private struct SettingsRowLabel: View {
     }
 }
 
-private struct SettingsFootnote: View {
+struct SettingsFootnote: View {
     let text: String
 
     init(_ text: String) {
@@ -3174,7 +2975,7 @@ private struct CustomHeadersSettingsView: View {
     }
 }
 
-private struct SettingsToggleRow: View {
+struct SettingsToggleRow: View {
     let title: String
     let systemImage: String
     @Binding var isOn: Bool
@@ -3188,7 +2989,7 @@ private struct SettingsToggleRow: View {
     }
 }
 
-private struct SettingsButton: View {
+struct SettingsButton: View {
     let title: String
     var role: ButtonRole?
     var isLoading = false
@@ -3259,7 +3060,7 @@ private struct SettingsStatusPill: View {
     }
 }
 
-private struct SettingsDivider: View {
+struct SettingsDivider: View {
     var body: some View {
         Divider()
             .padding(.leading, 2)
