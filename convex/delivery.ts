@@ -502,13 +502,19 @@ export const claimJob = internalMutation({
       const expectedDeviceToken = job.kind === "live_activity_start"
         ? device?.pushToStartToken
         : device?.pushToken;
+      const liveActivitiesDisabled = job.kind === "live_activity_start"
+        && device?.preferences.liveActivitiesEnabled !== true;
       if (
         !device ||
         device.revokedAt !== undefined ||
         (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= args.now) ||
-        expectedDeviceToken !== job.expectedToken
+        expectedDeviceToken !== job.expectedToken ||
+        liveActivitiesDisabled
       ) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
+        if (liveActivitiesDisabled && device?.pushToStartToken === job.expectedToken) {
+          await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
+        }
         return { status: "stale" as const };
       }
       if (job.kind === "live_activity_start") {

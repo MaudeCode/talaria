@@ -959,9 +959,46 @@ describe("Convex relay state", () => {
         .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
         .first(),
     );
-    const claimed = await backend.mutation(internal.delivery.claimJob, {
+    await backend.run(async (ctx) => {
+      const device = await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique();
+      await ctx.db.patch(device!._id, {
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: false },
+      });
+    });
+    await expect(backend.mutation(internal.delivery.claimJob, {
       jobId: replacement!._id,
       now: now + 3,
+    })).resolves.toEqual({ status: "stale" });
+    const disabledDevice = await backend.run(async (ctx) =>
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+    );
+    expect(disabledDevice?.pushToStartIssuedAt).toBeUndefined();
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(disabledDevice!._id, {
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const enabledJob = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    const claimed = await backend.mutation(internal.delivery.claimJob, {
+      jobId: enabledJob!._id,
+      now: now + 4,
     });
     expect(claimed).toMatchObject({
       status: "ready",
@@ -977,7 +1014,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "activity-token",
-      now: now + 4,
+      now: now + 5,
     });
     const registeredDevice = await backend.run(async (ctx) =>
       ctx.db
