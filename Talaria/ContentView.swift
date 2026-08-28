@@ -110,7 +110,7 @@ struct ContentView: View {
             server: server,
             notifiesOnCompletion: notifiesOnCompletion,
             preferenceEnabled: isResponseCompletionNotificationsEnabled
-                && TalariaLiveActivityMode.current == .perSession
+                && !TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server)
         )
     }
 

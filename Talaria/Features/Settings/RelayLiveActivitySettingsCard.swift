@@ -134,18 +134,20 @@ struct RelayLiveActivitySettingsCard: View {
             if let previousCredentials, previousCredentials.pendingRevocation == true {
                 if previousCredentials.isExpired {
                     try? await TalariaAggregateLiveActivityManager.shared.disconnect()
+                    try TalariaRelayConfigurationStore.clear()
                 } else {
-                    try await TalariaAggregateLiveActivityManager.shared.disconnect()
-                    try await TalariaRelayClient(credentials: previousCredentials).revokeSession()
+                    try await revoke(previousCredentials)
                 }
-                try TalariaRelayConfigurationStore.clear()
             }
-            let credentials = try await TalariaRelayClient.signIn(
+            var credentials = try await TalariaRelayClient.signIn(
                 identityToken: identityToken,
                 nonce: nonce,
                 appleUserID: appleUserID,
                 deviceID: previousCredentials?.deviceID
             )
+            if previousCredentials?.appleUserID == appleUserID {
+                credentials.pairedPublisherIDs = previousCredentials?.pairedPublisherIDs
+            }
             try TalariaRelayConfigurationStore.save(credentials)
             isConfigured = true
             try await pair(using: credentials)
@@ -190,6 +192,7 @@ struct RelayLiveActivitySettingsCard: View {
             relayURL: credentials.baseURL,
             publisherID: publisherID
         )
+        try TalariaRelayConfigurationStore.recordPairedPublisher(publisherID)
     }
 
     @MainActor
@@ -212,9 +215,7 @@ struct RelayLiveActivitySettingsCard: View {
         defer { isConnecting = false }
         guard var credentials = TalariaRelayConfigurationStore.load() else { return }
         do {
-            try await TalariaAggregateLiveActivityManager.shared.disconnect()
-            try await TalariaRelayClient(credentials: credentials).revokeSession()
-            try TalariaRelayConfigurationStore.clear()
+            try await revoke(credentials)
             isConfigured = false
             statusMessage = String(localized: "Disconnected")
         } catch {
@@ -222,6 +223,19 @@ struct RelayLiveActivitySettingsCard: View {
             try? TalariaRelayConfigurationStore.save(credentials)
             isConfigured = false
             statusMessage = error.localizedDescription
+        }
+    }
+
+    private func revoke(_ credentials: TalariaRelayCredentials) async throws {
+        try await TalariaAggregateLiveActivityManager.shared.disconnect()
+        try TalariaRelayConfigurationStore.clear()
+        do {
+            try await TalariaRelayClient(credentials: credentials).revokeSession()
+        } catch {
+            var pendingCredentials = credentials
+            pendingCredentials.pendingRevocation = true
+            try? TalariaRelayConfigurationStore.save(pendingCredentials)
+            throw error
         }
     }
 }

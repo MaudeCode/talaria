@@ -2356,7 +2356,7 @@ struct ChatView: View {
             await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
                 sessionID: session.sessionId,
                 preferenceEnabled: isResponseCompletionNotificationsEnabled
-                    && TalariaLiveActivityMode.current == .perSession,
+                    && !TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server),
                 completedNormally: true,
                 sceneIsActive: completionContext.sceneIsActive
             )

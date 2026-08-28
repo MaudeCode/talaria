@@ -28,6 +28,50 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(TalariaRelayConfigurationStore.load(keychain: keychain))
     }
 
+    func testRelayOwnsCompletionAlertsOnlyForPairedOperationalServer() throws {
+        let keychain = InMemoryKeychainStore()
+        let previousMode = UserDefaults.standard.string(forKey: TalariaLiveActivityMode.storageKey)
+        UserDefaults.standard.set(
+            TalariaLiveActivityMode.allRunning.rawValue,
+            forKey: TalariaLiveActivityMode.storageKey
+        )
+        defer {
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: TalariaLiveActivityMode.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: TalariaLiveActivityMode.storageKey)
+            }
+        }
+        var credentials = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example.com")),
+            deviceID: "device-1",
+            userID: "user-1",
+            appleUserID: "apple-user-1",
+            sessionToken: "secret",
+            expiresAt: .distantFuture
+        )
+        try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
+        let pairedServer = try XCTUnwrap(URL(string: "https://Hermes.Example:443/path"))
+        try TalariaRelayConfigurationStore.recordPairedPublisher(pairedServer, keychain: keychain)
+
+        XCTAssertTrue(TalariaRelayConfigurationStore.ownsCompletionAlerts(
+            for: pairedServer,
+            keychain: keychain
+        ))
+        XCTAssertFalse(TalariaRelayConfigurationStore.ownsCompletionAlerts(
+            for: try XCTUnwrap(URL(string: "https://other.example")),
+            keychain: keychain
+        ))
+
+        credentials = try XCTUnwrap(TalariaRelayConfigurationStore.load(keychain: keychain))
+        credentials.pendingRevocation = true
+        try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
+        XCTAssertFalse(TalariaRelayConfigurationStore.ownsCompletionAlerts(
+            for: pairedServer,
+            keychain: keychain
+        ))
+    }
+
     func testRelayPublisherOriginCanonicalizesDefaultPorts() throws {
         XCTAssertEqual(
             TalariaRelayClient.originURL(try XCTUnwrap(URL(string: "https://Example.COM:443/path")))?.absoluteString,

@@ -553,6 +553,7 @@ struct TalariaRelayCredentials: Codable, Equatable {
     var sessionToken: String
     var expiresAt: Date?
     var pendingRevocation: Bool?
+    var pairedPublisherIDs: [String]? = nil
 
     var isExpired: Bool { expiresAt.map { $0 <= Date() } ?? true }
 }
@@ -573,6 +574,30 @@ enum TalariaRelayConfigurationStore {
 
     static func clear(keychain: any KeychainStoring = KeychainStore()) throws {
         try keychain.delete(.talariaRelay)
+    }
+
+    static func recordPairedPublisher(
+        _ publisherURL: URL,
+        keychain: any KeychainStoring = KeychainStore()
+    ) throws {
+        guard var credentials = load(keychain: keychain),
+              let publisherID = TalariaRelayClient.originURL(publisherURL)?.absoluteString else { return }
+        var publisherIDs = Set(credentials.pairedPublisherIDs ?? [])
+        publisherIDs.insert(publisherID)
+        credentials.pairedPublisherIDs = publisherIDs.sorted()
+        try save(credentials, keychain: keychain)
+    }
+
+    static func ownsCompletionAlerts(
+        for server: URL,
+        keychain: any KeychainStoring = KeychainStore()
+    ) -> Bool {
+        guard TalariaLiveActivityMode.current == .allRunning,
+              let credentials = load(keychain: keychain),
+              !credentials.isExpired,
+              credentials.pendingRevocation != true,
+              let publisherID = TalariaRelayClient.originURL(server)?.absoluteString else { return false }
+        return credentials.pairedPublisherIDs?.contains(publisherID) == true
     }
 }
 
@@ -868,6 +893,7 @@ final class TalariaAggregateLiveActivityManager {
     private var observedSessionToken: String?
     private var isRefreshing = false
     private var refreshRequested = false
+    private var operationGeneration = 0
 
     func refresh() async throws {
         refreshRequested = true
@@ -888,6 +914,7 @@ final class TalariaAggregateLiveActivityManager {
     }
 
     private func performRefresh() async throws {
+        let generation = operationGeneration
         let credentials = TalariaRelayConfigurationStore.load()
         guard TalariaLiveActivityMode.current == .allRunning, let credentials else {
             stopObservers()
@@ -913,10 +940,11 @@ final class TalariaAggregateLiveActivityManager {
         startObservers(client: client)
         try await client.configureDevice()
         guard let aggregate = try await client.snapshot() else {
+            guard generation == operationGeneration else { return }
             await endAggregateActivities(client: client)
             return
         }
-        guard TalariaLiveActivityMode.current == .allRunning else {
+        guard operationIsCurrent(generation, credentials: credentials) else {
             await endAggregateActivities(client: client)
             return
         }
@@ -924,6 +952,7 @@ final class TalariaAggregateLiveActivityManager {
         for perSession in Activity<AgentRunActivityAttributes>.activities {
             await perSession.end(nil, dismissalPolicy: .immediate)
         }
+        guard operationIsCurrent(generation, credentials: credentials) else { return }
 
         let activities = Activity<TalariaAggregateActivityAttributes>.activities
         let activity: Activity<TalariaAggregateActivityAttributes>
@@ -946,6 +975,8 @@ final class TalariaAggregateLiveActivityManager {
 
     func disconnect() async throws {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        operationGeneration += 1
+        refreshRequested = false
         let client = TalariaRelayClient(credentials: credentials)
         stopObservers()
         await endAggregateActivities(client: client)
@@ -1037,6 +1068,15 @@ final class TalariaAggregateLiveActivityManager {
         activityUpdatesTask?.cancel()
         activityUpdatesTask = nil
         observedSessionToken = nil
+    }
+
+    private func operationIsCurrent(
+        _ generation: Int,
+        credentials: TalariaRelayCredentials
+    ) -> Bool {
+        generation == operationGeneration
+            && TalariaLiveActivityMode.current == .allRunning
+            && TalariaRelayConfigurationStore.load()?.sessionToken == credentials.sessionToken
     }
 }
 
