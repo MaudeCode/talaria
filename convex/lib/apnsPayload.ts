@@ -51,6 +51,36 @@ export function makeLiveActivityUpdate(input: {
   };
 }
 
+export function makeLiveActivityStart(input: {
+  token: string;
+  bundleId: string;
+  environment: ApsEnvironment;
+  aggregate: ActivityAggregate;
+  nowEpochSeconds: number;
+  alert: ActivityAlert;
+}): ApnsRequest {
+  const aggregate = fitActivityAggregate(input.aggregate);
+  return {
+    token: input.token,
+    topic: `${input.bundleId}.push-type.liveactivity`,
+    environment: input.environment,
+    pushType: "liveactivity",
+    priority: "10",
+    payload: {
+      aps: {
+        timestamp: input.nowEpochSeconds,
+        event: "start",
+        "content-state": aggregate,
+        "stale-date": input.nowEpochSeconds + 10 * 60,
+        "attributes-type": "TalariaAggregateActivityAttributes",
+        attributes: {},
+        "input-push-token": 1,
+        alert: { title: input.alert.title, body: input.alert.body, sound: "default" },
+      },
+    },
+  };
+}
+
 export function makeLiveActivityEnd(input: {
   token: string;
   bundleId: string;

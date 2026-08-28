@@ -522,12 +522,17 @@ http.route({
         ? undefined
         : optionalStringField(body, "pushToken", 512);
       const clearPushToken = body.pushToken === null;
+      const pushToStartToken = body.pushToStartToken === null
+        ? undefined
+        : optionalStringField(body, "pushToStartToken", 512);
+      const clearPushToStartToken = body.pushToStartToken === null;
       const preferences = parsePreferences(body.preferences);
       if (
         !label ||
         !bundleId ||
         (apsEnvironment !== "sandbox" && apsEnvironment !== "production") ||
         pushToken === null ||
+        pushToStartToken === null ||
         !preferences
       ) {
         return json(400, { error: "invalid_device" });
@@ -542,6 +547,8 @@ http.route({
         apsEnvironment: apsEnvironment as ApsEnvironment,
         pushToken,
         clearPushToken,
+        pushToStartToken,
+        clearPushToStartToken,
         preferences,
         now: Date.now(),
       });

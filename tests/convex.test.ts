@@ -874,4 +874,257 @@ describe("Convex relay state", () => {
       }),
     ).resolves.toEqual({ status: "stale" });
   });
+
+  it("starts an aggregate activity once when work begins on an idle device", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "production",
+        pushToStartToken: "push-to-start-token",
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-1",
+        revision: 1,
+        title: "Build relay",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+    });
+
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+
+    const state = await backend.run(async (ctx) => ({
+      device: await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+      jobs: await ctx.db.query("deliveryJobs").collect(),
+    }));
+    expect(state.device?.pushToStartIssuedAt).toBeDefined();
+    expect(state.jobs).toHaveLength(1);
+    expect(state.jobs[0]?.kind).toBe("live_activity_start");
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(state.device!._id, {
+        pushToStartToken: "rotated-push-to-start-token",
+        pushToStartIssuedAt: undefined,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const rotated = await backend.run(async (ctx) => ({
+      device: await ctx.db.get(state.device!._id),
+      jobs: await ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .collect(),
+    }));
+    expect(rotated.jobs).toHaveLength(2);
+    const rotatedJob = rotated.jobs.find(
+      (job) => job.expectedToken === "rotated-push-to-start-token",
+    );
+    expect(rotatedJob).toBeDefined();
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: state.jobs[0]!._id,
+      now: now + 1,
+    })).resolves.toEqual({ status: "stale" });
+    const rotatedDevice = await backend.run(async (ctx) => ctx.db.get(state.device!._id));
+    expect(rotatedDevice?.pushToStartIssuedAt).toBeDefined();
+
+    await backend.run(async (ctx) => {
+      const session = await ctx.db
+        .query("sessionStates")
+        .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+          query
+            .eq("userId", "user-1")
+            .eq("publisherId", "https://hermes.example")
+            .eq("sessionId", "session-1"),
+        )
+        .unique();
+      await ctx.db.patch(session!._id, { title: "Updated work", updatedAt: now + 1 });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: rotatedJob!._id,
+      now: now + 2,
+    })).resolves.toEqual({ status: "stale" });
+    const invalidated = await backend.run(async (ctx) => ({
+      device: await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(invalidated.device?.pushToStartIssuedAt).toBeUndefined();
+    expect(invalidated.scheduled.some((job) => job.name === "delivery:recompute")).toBe(true);
+
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const replacement = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    await backend.run(async (ctx) => {
+      const device = await ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique();
+      await ctx.db.patch(device!._id, {
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: false },
+      });
+    });
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: replacement!._id,
+      now: now + 3,
+    })).resolves.toEqual({ status: "stale" });
+    const disabledDevice = await backend.run(async (ctx) =>
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+    );
+    expect(disabledDevice?.pushToStartIssuedAt).toBeUndefined();
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(disabledDevice!._id, {
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const expiringJob = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    await backend.run(async (ctx) => {
+      const device = await ctx.db.get(disabledDevice!._id);
+      await ctx.db.patch(device!._id, { sessionExpiresAt: now + 3 });
+    });
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: expiringJob!._id,
+      now: now + 4,
+    })).resolves.toEqual({ status: "stale" });
+    const expiredDevice = await backend.run(async (ctx) => ctx.db.get(disabledDevice!._id));
+    expect(expiredDevice?.pushToStartIssuedAt).toBeUndefined();
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(disabledDevice!._id, { sessionExpiresAt: now + 60_000 });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const enabledJob = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    const claimed = await backend.mutation(internal.delivery.claimJob, {
+      jobId: enabledJob!._id,
+      now: now + 5,
+    });
+    expect(claimed).toMatchObject({
+      status: "ready",
+      kind: "live_activity_start",
+      request: { token: "rotated-push-to-start-token", pushType: "liveactivity" },
+    });
+    await backend.mutation(internal.delivery.markDelivered, {
+      jobId: enabledJob!._id,
+      apnsStatus: 200,
+      now: now + 6,
+    });
+
+    const startsBeforeGap = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").collect(),
+    );
+    await backend.run(async (ctx) => {
+      const states = await ctx.db.query("sessionStates").collect();
+      for (const session of states) await ctx.db.delete(session._id);
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const outstandingDevice = await backend.run(async (ctx) => ctx.db.get(disabledDevice!._id));
+    expect(outstandingDevice?.pushToStartIssuedAt).toBeDefined();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-2",
+        eventId: "event-2",
+        revision: 1,
+        title: "More work",
+        phase: "running",
+        updatedAt: now + 7,
+        deepLink: "/sessions/session-2",
+        expiresAt: now + 60_000,
+        receivedAt: now + 7,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const startsAfterGap = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").collect(),
+    );
+    expect(startsAfterGap).toHaveLength(startsBeforeGap.length);
+
+    await backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1",
+      deviceId: "device-1",
+      activityId: "activity-from-apns",
+      mode: "all_running",
+      attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1,
+      activityPushToken: "activity-token",
+      now: now + 8,
+    });
+    const registeredDevice = await backend.run(async (ctx) =>
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1"),
+        )
+        .unique(),
+    );
+    expect(registeredDevice?.pushToStartIssuedAt).toBeUndefined();
+
+    await backend.run(async (ctx) => {
+      const states = await ctx.db.query("sessionStates").collect();
+      for (const session of states) await ctx.db.delete(session._id);
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const endJob = await backend.run(async (ctx) =>
+      ctx.db
+        .query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
+        .first(),
+    );
+    expect(endJob).toMatchObject({
+      kind: "live_activity_end",
+      activityId: "activity-from-apns",
+    });
+  });
 });

@@ -91,6 +91,7 @@ The per-session route remains available at `PUT /v1/publishers/{publisherId}/ses
   "bundleId": "dev.kil.talaria",
   "apsEnvironment": "sandbox",
   "pushToken": "optional ordinary APNs token",
+  "pushToStartToken": "optional ActivityKit push-to-start token",
   "preferences": {
     "liveActivitiesEnabled": true,
     "notificationsEnabled": false,
@@ -101,6 +102,8 @@ The per-session route remains available at `PUT /v1/publishers/{publisherId}/ses
   }
 }
 ```
+
+Send either token field as `null` to clear the stored token. The relay uses `pushToStartToken` to start the aggregate Live Activity when work begins while no aggregate activity is registered.
 
 Register an aggregate ActivityKit token with `PUT /v1/devices/{deviceId}/live-activities/{activityId}`:
 
