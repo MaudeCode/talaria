@@ -1,0 +1,33 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+if (( $# != 1 )); then
+    print -u2 "Usage: scripts/assert-no-skipped-ui-tests <result-bundle>"
+    exit 64
+fi
+
+result_bundle=$1
+if [[ ! -d "$result_bundle" ]]; then
+    print -u2 "XCTest result bundle not found: $result_bundle"
+    exit 66
+fi
+
+skipped_ui_tests=$(
+    xcrun xcresulttool get test-results tests --path "$result_bundle" --compact |
+        /usr/bin/jq -r '
+            .. | objects |
+            select(
+                .nodeType? == "Test Case" and
+                .result? == "Skipped" and
+                ((.nodeIdentifierURL? // "") | startswith("test://com.apple.xcode/Talaria/TalariaUITests/"))
+            ) |
+            .nodeIdentifierURL
+        '
+)
+
+if [[ -n "$skipped_ui_tests" ]]; then
+    print -u2 "TalariaUITests must not skip:"
+    print -u2 -r -- "$skipped_ui_tests"
+    exit 1
+fi

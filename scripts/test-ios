@@ -124,23 +124,7 @@ xcodebuild test -quiet \
     -parallel-testing-enabled NO \
     -enableCodeCoverage NO \
     -resultBundlePath "$result_bundle" \
+    APP_IDENTIFIER_SUFFIX=.xctest \
     "${test_filters[@]}"
 
-skipped_ui_tests=$(
-    xcrun xcresulttool get test-results tests --path "$result_bundle" --compact |
-        /usr/bin/jq -r '
-            .. | objects |
-            select(
-                .nodeType? == "Test Case" and
-                .result? == "Skipped" and
-                ((.nodeIdentifierURL? // "") | startswith("test://com.apple.xcode/Talaria/TalariaUITests/"))
-            ) |
-            .nodeIdentifierURL
-        '
-)
-
-if [[ -n "$skipped_ui_tests" ]]; then
-    print -u2 "TalariaUITests cannot skip on the authenticated simulator pool:"
-    print -u2 -r -- "$skipped_ui_tests"
-    exit 1
-fi
+scripts/assert-no-skipped-ui-tests "$result_bundle"

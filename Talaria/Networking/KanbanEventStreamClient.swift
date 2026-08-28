@@ -94,6 +94,9 @@ final class KanbanEventStreamClient: KanbanEventStreamingClient {
         ])
 
         let configuration = baseConfiguration.copy() as? URLSessionConfiguration ?? .default
+        #if DEBUG
+        UITestFixtureURLProtocol.configure(configuration)
+        #endif
         configuration.httpCookieStorage = .shared
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var authManager: AuthManager
+    private let draftStore: ChatDraftStore
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @State private var pendingSharedImport: SharedImportReservation?
@@ -13,6 +14,14 @@ struct ContentView: View {
     @State private var pendingNewChatRequest: NewChatRequest?
     @State private var didCheckInitialPendingShare = false
     @State private var intentRouter = AppIntentRouter.shared
+
+    init(
+        authManager: AuthManager,
+        draftStore: ChatDraftStore? = nil
+    ) {
+        self.authManager = authManager
+        self.draftStore = draftStore ?? .shared
+    }
 
     var body: some View {
         content
@@ -76,7 +85,8 @@ struct ContentView: View {
                 pendingDeepLinkedSessionID: $pendingDeepLinkedSessionID,
                 pendingQuotaSourceID: $pendingQuotaSourceID,
                 opensProviderQuotaWidgetSettings: $opensProviderQuotaWidgetSettings,
-                requestedNewChat: $pendingNewChatRequest
+                requestedNewChat: $pendingNewChatRequest,
+                draftStore: draftStore
             )
             // Switching the active server keeps us in `.loggedIn`, so without a
             // per-server identity SwiftUI would reuse server-bound content.

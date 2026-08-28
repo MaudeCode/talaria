@@ -43,24 +43,33 @@ struct TalariaCommands: Commands {
 
 @main
 struct TalariaApp: App {
-    @State private var authManager = AuthManager()
+    @State private var authManager: AuthManager
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
+    private let usesUITestFixture: Bool
+    #if DEBUG
+    private let uiTestFixture: UITestFixtureEnvironment?
+    #endif
 
     init() {
-        ProviderQuotaBackgroundRefresh.register()
-        ProviderQuotaBackgroundRefresh.schedule()
+        let arguments = ProcessInfo.processInfo.arguments
 
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-reset-chat-drafts"),
-           let applicationSupport = FileManager.default.urls(
-               for: .applicationSupportDirectory,
-               in: .userDomainMask
-           ).first {
-            try? FileManager.default.removeItem(
-                at: applicationSupport.appendingPathComponent("ChatDrafts", isDirectory: true)
-            )
-        }
+        let fixture = arguments.contains(UITestFixtureEnvironment.launchArgument)
+            ? UITestFixtureEnvironment.make()
+            : nil
+        uiTestFixture = fixture
+        usesUITestFixture = fixture != nil
+        _authManager = State(initialValue: fixture?.authManager ?? AuthManager())
+        #else
+        usesUITestFixture = false
+        _authManager = State(initialValue: AuthManager())
         #endif
+
+        if !usesUITestFixture {
+            ProviderQuotaBackgroundRefresh.register()
+            ProviderQuotaBackgroundRefresh.schedule()
+        }
+
     }
 
     var body: some Scene {
@@ -78,15 +87,30 @@ struct TalariaApp: App {
                     ProviderQuotaWidgetAppearanceView()
                 }
             } else if ProcessInfo.processInfo.arguments.contains("--provider-quota-widget-fixture") {
-                ProviderQuotaWidgetDebugFixtureView()
-            } else if ProcessInfo.processInfo.arguments.contains("--provider-quotas"),
-                      let rawServer = ServerRegistry.shared.activeServer?.urlString,
-                      let server = URL(string: rawServer) {
-                NavigationStack {
-                    InsightsView(server: server, onAPIError: { _ in })
+                ProviderQuotaWidgetDebugFixtureView(writesSharedSnapshot: !usesUITestFixture)
+            } else if ProcessInfo.processInfo.arguments.contains("--provider-quotas") {
+                if let uiTestFixture {
+                    NavigationStack {
+                        InsightsView(
+                            server: UITestFixtureEnvironment.serverURL,
+                            quotaViewModel: ProvidersViewModel(
+                                server: UITestFixtureEnvironment.serverURL,
+                                client: uiTestFixture.client
+                            ),
+                            onAPIError: { _ in }
+                        )
+                    }
+                } else if let rawServer = ServerRegistry.shared.activeServer?.urlString,
+                          let server = URL(string: rawServer) {
+                    NavigationStack {
+                        InsightsView(server: server, onAPIError: { _ in })
+                    }
                 }
             } else {
-                ContentView(authManager: authManager)
+                ContentView(
+                    authManager: authManager,
+                    draftStore: uiTestFixture?.draftStore
+                )
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             }
             #else
@@ -94,7 +118,10 @@ struct TalariaApp: App {
                 .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             #endif
         }
-        .modelContainer(for: [CachedSession.self, CachedMessage.self])
+        .modelContainer(
+            for: [CachedSession.self, CachedMessage.self],
+            inMemory: usesUITestFixture
+        )
         .commands {
             TalariaCommands()
             SidebarCommands()
@@ -154,6 +181,7 @@ enum ProviderQuotaBackgroundRefresh {
 
 #if DEBUG
 private struct ProviderQuotaWidgetDebugFixtureView: View {
+    let writesSharedSnapshot: Bool
     @State private var isReady = false
 
     var body: some View {
@@ -163,6 +191,10 @@ private struct ProviderQuotaWidgetDebugFixtureView: View {
             description: Text("Add or edit the Talaria Provider quotas widget to inspect its configured states.")
         )
         .task {
+            guard writesSharedSnapshot else {
+                isReady = true
+                return
+            }
             let sources = [
                 fixtureSource(id: "fixture-work", provider: "Codex", account: "Work", used: 24),
                 fixtureSource(id: "fixture-personal", provider: "Codex", account: "Personal", used: 61),

@@ -117,18 +117,17 @@ Agent/MCP flow:
 
 - Call `session_show_defaults` before the first local build/run/test.
 - If defaults are missing, copy them from `.xcodebuildmcp/config.yaml`.
-- Build and sign in to Talaria once on the configured fixture simulator. Shut it
+- Configure the source simulator for manual local testing when needed. Shut it
   down, then run `scripts/setup-ios-test-pool --refresh`. The command replaces the
-  four disposable test simulators with clones of that authenticated fixture, so
-  every worktree starts with the same Hermes login. Plain
+  four disposable test simulators with clones for concurrent worktree use. Plain
   `scripts/setup-ios-test-pool` keeps an existing pool and fills missing slots.
   Refresh aborts instead of replacing a simulator leased by another worktree.
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
-  each worktree and leases separate simulators across worktrees. XCTest and XCUI
-  use the normal authenticated Talaria app cloned from the fixture. Unit tests that
-  exercise cookie deletion inject a private cookie store, so they cannot alter the
-  simulator's Hermes session. A skipped `TalariaUITests` test fails the run,
-  since a skip usually means the fixture lost its login or expected UI data.
+  each worktree and leases separate simulators across worktrees. XCUI launches a
+  DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
+  with in-memory authentication, draft, and cache state. It does not read simulator
+  login state or contact an external server. A skipped `TalariaUITests` test fails
+  the run.
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
   builds and verifies the signed app, installs and launches it, and opens Simulator.
   Keep the command running for the manual session, then press Control-C to shut down
