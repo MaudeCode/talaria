@@ -112,9 +112,12 @@ Register an aggregate ActivityKit token with `PUT /v1/devices/{deviceId}/live-ac
   "mode": "all_running",
   "attributesType": "TalariaAggregateActivityAttributes",
   "schemaVersion": 1,
-  "activityPushToken": "activity-token"
+  "activityPushToken": "activity-token",
+  "seededLocally": false
 }
 ```
+
+Set `seededLocally` to `true` only when the foreground app created a short-lived placeholder before the publisher emitted its first state. The relay preserves that empty placeholder for 30 seconds so authoritative publisher state can repaint it.
 
 End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}` and revoke a device with `DELETE /v1/devices/{deviceId}`. A token cannot be claimed by another relay user.
 

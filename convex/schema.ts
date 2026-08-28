@@ -153,6 +153,7 @@ export default defineSchema({
     activityPushToken: v.string(),
     lastAggregate: v.optional(aggregateValidator),
     lastDeliveryAt: v.optional(v.number()),
+    emptyStateLeaseUntil: v.optional(v.number()),
     endedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
