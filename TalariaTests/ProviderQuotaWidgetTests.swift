@@ -205,6 +205,13 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         )
         XCTAssertEqual(fourProvider.count, 4)
         XCTAssertEqual(fourProvider[3], CGRect(x: 156, y: 156, width: 144, height: 144))
+
+        let expanded = ProviderQuotaWidgetPrimaryDetailGeometry.frames(
+            in: CGRect(x: 0, y: 0, width: 300, height: 300),
+            spacing: 20
+        )
+        XCTAssertEqual(expanded[0], CGRect(x: 0, y: 0, width: 168, height: 300))
+        XCTAssertEqual(expanded[1], CGRect(x: 188, y: 0, width: 112, height: 300))
     }
 
     func testThreePeriodPresentationOrdersCompleteDurationsAndPreservesIncompleteOrder() {

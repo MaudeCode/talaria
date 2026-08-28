@@ -1316,6 +1316,52 @@ struct ProviderQuotaWidgetSlotLayout: Layout {
     }
 }
 
+struct ProviderQuotaWidgetPrimaryDetailLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        for (subview, frame) in zip(
+            subviews,
+            ProviderQuotaWidgetPrimaryDetailGeometry.frames(in: bounds, spacing: spacing)
+        ) {
+            subview.place(
+                at: CGPoint(x: frame.midX, y: frame.midY),
+                anchor: .center,
+                proposal: ProposedViewSize(width: frame.width, height: frame.height)
+            )
+        }
+    }
+}
+
+enum ProviderQuotaWidgetPrimaryDetailGeometry {
+    static func frames(in bounds: CGRect, spacing: CGFloat) -> [CGRect] {
+        let availableWidth = max(0, bounds.width - spacing)
+        let primaryWidth = min(bounds.height, availableWidth * 0.6)
+        return [
+            CGRect(x: bounds.minX, y: bounds.minY, width: primaryWidth, height: bounds.height),
+            CGRect(
+                x: bounds.minX + primaryWidth + spacing,
+                y: bounds.minY,
+                width: max(0, availableWidth - primaryWidth),
+                height: bounds.height
+            ),
+        ]
+    }
+}
+
 enum ProviderQuotaWidgetSlotGeometry {
     static func frames(count: Int, in bounds: CGRect, spacing: CGFloat) -> [CGRect] {
         guard count > 0 else { return [] }

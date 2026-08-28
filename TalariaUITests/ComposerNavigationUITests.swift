@@ -225,7 +225,7 @@ final class ComposerNavigationUITests: XCTestCase {
         )
     }
 
-    func testWidgetCustomizationUsesAutomaticThreePeriodHomeLayouts() throws {
+    func testWidgetCustomizationShowsDenseLargeQuotaLayouts() throws {
         app.terminate()
         app.launchArguments = ["--provider-quota-widget-customization"]
         app.launch()
@@ -239,14 +239,36 @@ final class ComposerNavigationUITests: XCTestCase {
         assertPreviewVisible(identifier: "provider-quota-widget-bars")
 
         app.buttons["Large"].tap()
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let twoProviders = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        twoProviders.name = "Detailed two-provider large quota widget preview"
+        twoProviders.lifetime = .keepAlways
+        add(twoProviders)
+
         app.buttons["1"].tap()
         XCTAssertTrue(app.buttons["1"].isSelected)
+        app.buttons["1W"].tap()
+        XCTAssertTrue(app.buttons["1W"].isSelected)
         assertPreviewVisible(identifier: "provider-quota-widget-classic")
         assertPreviewVisible(identifier: "provider-quota-widget-forecast")
-        let expanded = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        expanded.name = "Three-gauge single-source large quota widget preview"
-        expanded.lifetime = .keepAlways
-        add(expanded)
+        let oneWindow = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        oneWindow.name = "Expanded one-window large quota widget preview"
+        oneWindow.lifetime = .keepAlways
+        add(oneWindow)
+
+        app.buttons["2W"].tap()
+        XCTAssertTrue(app.buttons["2W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let twoWindows = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        twoWindows.name = "Detailed two-window large quota widget preview"
+        twoWindows.lifetime = .keepAlways
+        add(twoWindows)
+
+        app.buttons["3W"].tap()
+        XCTAssertTrue(app.buttons["3W"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
 
         app.buttons["3"].tap()
         XCTAssertTrue(app.buttons["3"].isSelected)
