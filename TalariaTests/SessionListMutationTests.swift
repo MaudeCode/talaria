@@ -423,6 +423,93 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testCreateSessionWithProviderUsesThatProvidersFirstCatalogModel() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path
+            requestedPaths.append(path ?? "nil")
+
+            switch path {
+            case "/api/workspaces":
+                return apiTestJSONResponse(
+                    #"{"workspaces":[{"path":"/tmp/workspace"}],"last":"/tmp/workspace"}"#,
+                    for: request
+                )
+            case "/api/models":
+                return apiTestJSONResponse("""
+                {
+                  "groups": [
+                    {
+                      "provider_id": "openai-codex",
+                      "models": [{"id": "gpt-5.6-sol", "name": "GPT 5.6 SOL"}]
+                    },
+                    {
+                      "provider_id": "opencode-go",
+                      "models": [{"id": "@opencode-go:kimi-k2.7-code", "name": "Kimi K2.7 Code"}]
+                    }
+                  ]
+                }
+                """, for: request)
+            case "/api/session/new":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertEqual(body["model"] as? String, "@opencode-go:kimi-k2.7-code")
+                XCTAssertEqual(body["model_provider"] as? String, "opencode-go")
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"provider-session","model":"@opencode-go:kimi-k2.7-code","model_provider":"opencode-go"}}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let created = await viewModel.createSession(provider: "opencode-go")
+
+        XCTAssertEqual(created?.sessionId, "provider-session")
+        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
+    }
+
+    @MainActor
+    func testCreateSessionWithUnknownProviderFallsBackToServerDefault() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path
+            requestedPaths.append(path ?? "nil")
+
+            switch path {
+            case "/api/workspaces":
+                return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+            case "/api/models":
+                return apiTestJSONResponse("""
+                {
+                  "groups": [{
+                    "provider_id": "openai-codex",
+                    "models": [{"id": "gpt-5.6-sol"}]
+                  }]
+                }
+                """, for: request)
+            case "/api/session/new":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertNil(body["model"])
+                XCTAssertNil(body["model_provider"])
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"default-session","model":"gpt-5.6-sol","model_provider":"openai-codex"}}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let created = await viewModel.createSession(provider: "missing-provider")
+
+        XCTAssertEqual(created?.sessionId, "default-session")
+        XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
+    }
+
+    @MainActor
     func testCreateSessionKeepsWorktreeBackedUntitledSessionWithoutCounts() async throws {
         let context = try makeContext()
         let serverURL = try XCTUnwrap(URL(string: "https://example.test"))

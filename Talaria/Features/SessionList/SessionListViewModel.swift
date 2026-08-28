@@ -910,10 +910,20 @@ final class SessionListViewModel {
         do {
             let workspaces = try await client.workspaces()
             let workspace = workspaces.last ?? workspaces.workspaces?.compactMap(\.path).first
+            let requestedProvider = Self.nonEmpty(provider)
+            let requestedModel: ModelCatalogOption?
+            if let requestedProvider,
+               let models = try? await client.models() {
+                requestedModel = models.catalogGroups
+                    .first(where: { $0.providerID == requestedProvider })?
+                    .slashAutocompleteModels.first
+            } else {
+                requestedModel = nil
+            }
             let response = try await client.createSession(
                 workspace: workspace,
-                model: nil,
-                modelProvider: Self.nonEmpty(provider),
+                model: requestedModel?.id,
+                modelProvider: requestedModel?.providerID,
                 profile: Self.nonEmpty(profile)
             )
 
