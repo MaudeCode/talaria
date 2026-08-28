@@ -83,6 +83,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     }
 
     func start(sessionID: String, sessionTitle: String, streamID: String?) {
+        guard TalariaLiveActivityMode.current == .perSession else { return }
         let normalizedSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedSessionID.isEmpty else { return }
         let normalizedStreamID = AgentLiveActivityReusePolicy.normalizedStreamID(streamID)
@@ -509,6 +510,289 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
 
         reset()
+    }
+}
+
+struct TalariaRelayCredentials: Codable, Equatable {
+    var baseURL: URL
+    var deviceID: String
+    var credential: String
+}
+
+enum TalariaRelayConfigurationStore {
+    static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
+        guard let encoded = try? keychain.load(.talariaRelay),
+              let data = encoded.data(using: .utf8)
+        else { return nil }
+        return try? JSONDecoder().decode(TalariaRelayCredentials.self, from: data)
+    }
+
+    static func save(_ credentials: TalariaRelayCredentials, keychain: any KeychainStoring = KeychainStore()) throws {
+        let data = try JSONEncoder().encode(credentials)
+        guard let encoded = String(data: data, encoding: .utf8) else { return }
+        try keychain.save(encoded, forKey: .talariaRelay)
+    }
+
+    static func clear(keychain: any KeychainStoring = KeychainStore()) throws {
+        try keychain.delete(.talariaRelay)
+    }
+}
+
+struct TalariaRelayClient {
+    struct EnrollmentResponse: Decodable {
+        var deviceId: String
+        var credential: String
+    }
+
+    struct SnapshotResponse: Decodable {
+        var aggregate: TalariaAggregateActivityAttributes.ContentState?
+    }
+
+    enum ClientError: LocalizedError {
+        case invalidURL
+        case invalidResponse(Int, String?)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidURL: "Enter the HTTPS origin for the Talaria relay."
+            case .invalidResponse(let status, let body): body ?? "Relay returned HTTP \(status)."
+            }
+        }
+    }
+
+    let credentials: TalariaRelayCredentials
+    var session: URLSession = .shared
+
+    static func enroll(
+        baseURLString: String,
+        code: String,
+        label: String,
+        session: URLSession = .shared
+    ) async throws -> TalariaRelayCredentials {
+        guard let baseURL = normalizedBaseURL(baseURLString) else { throw ClientError.invalidURL }
+        let body = try JSONEncoder().encode(["code": code, "label": label])
+        var request = URLRequest(url: endpoint(baseURL, "v1/enrollments/device/redeem"))
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await responseData(for: request, session: session)
+        let response = try JSONDecoder().decode(EnrollmentResponse.self, from: data)
+        return TalariaRelayCredentials(baseURL: baseURL, deviceID: response.deviceId, credential: response.credential)
+    }
+
+    func configureDevice(liveActivitiesEnabled: Bool = true) async throws {
+        let pushToken = UserDefaults.standard.string(forKey: TalariaRelayNotifications.pushTokenKey)
+        let notificationsEnabled = liveActivitiesEnabled
+            && UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey)
+            && pushToken != nil
+        let preferences: [String: Bool] = [
+            "liveActivitiesEnabled": liveActivitiesEnabled,
+            "notificationsEnabled": notificationsEnabled,
+            "notifyOnApproval": true,
+            "notifyOnInput": true,
+            "notifyOnCompletion": true,
+            "notifyOnFailure": true
+        ]
+        var body: [String: Any] = [
+            "label": "Talaria iPhone",
+            "bundleId": Bundle.main.bundleIdentifier ?? "dev.kil.talaria",
+            "apsEnvironment": Self.apsEnvironment,
+            "preferences": preferences
+        ]
+        if let pushToken {
+            body["pushToken"] = pushToken
+        }
+        try await send(
+            path: "v1/devices/\(credentials.deviceID)",
+            method: "PUT",
+            body: try JSONSerialization.data(withJSONObject: body)
+        )
+    }
+
+    func snapshot() async throws -> TalariaAggregateActivityAttributes.ContentState? {
+        var components = URLComponents(
+            url: Self.endpoint(credentials.baseURL, "v1/activity-snapshot"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "mode", value: "all_running")]
+        guard let url = components?.url else { throw ClientError.invalidURL }
+        var request = authenticatedRequest(url: url, method: "GET")
+        request.setValue(credentials.deviceID, forHTTPHeaderField: "X-Talaria-Device-Id")
+        let data = try await Self.responseData(for: request, session: session)
+        return try JSONDecoder().decode(SnapshotResponse.self, from: data).aggregate
+    }
+
+    func register(activityID: String, pushToken: String) async throws {
+        let body: [String: Any] = [
+            "mode": "all_running",
+            "attributesType": "TalariaAggregateActivityAttributes",
+            "schemaVersion": 1,
+            "activityPushToken": pushToken
+        ]
+        try await send(
+            path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)",
+            method: "PUT",
+            body: try JSONSerialization.data(withJSONObject: body)
+        )
+    }
+
+    func unregister(activityID: String) async throws {
+        try await send(path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)", method: "DELETE")
+    }
+
+    func revokeDevice() async throws {
+        try await send(path: "v1/devices/\(credentials.deviceID)", method: "DELETE")
+    }
+
+    private func send(path: String, method: String, body: Data) async throws {
+        var request = authenticatedRequest(url: Self.endpoint(credentials.baseURL, path), method: method)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await Self.responseData(for: request, session: session)
+    }
+
+    private func send(path: String, method: String) async throws {
+        let request = authenticatedRequest(url: Self.endpoint(credentials.baseURL, path), method: method)
+        _ = try await Self.responseData(for: request, session: session)
+    }
+
+    private func authenticatedRequest(url: URL, method: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(credentials.credential)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    private static func normalizedBaseURL(_ value: String) -> URL? {
+        guard var components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              components.scheme == "https",
+              components.host != nil,
+              components.user == nil,
+              components.password == nil
+        else { return nil }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.url
+    }
+
+    private static func endpoint(_ baseURL: URL, _ path: String) -> URL {
+        path.split(separator: "/").reduce(baseURL) { $0.appendingPathComponent(String($1)) }
+    }
+
+    private static func responseData(for request: URLRequest, session: URLSession) async throws -> Data {
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw ClientError.invalidResponse(-1, nil)
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw ClientError.invalidResponse(response.statusCode, String(data: data, encoding: .utf8))
+        }
+        return data
+    }
+
+    private static var apsEnvironment: String {
+        #if DEBUG
+        "sandbox"
+        #else
+        "production"
+        #endif
+    }
+}
+
+@MainActor
+final class TalariaAggregateLiveActivityManager {
+    static let shared = TalariaAggregateLiveActivityManager()
+    private var tokenTasks: [String: Task<Void, Never>] = [:]
+    private var isRefreshing = false
+
+    func refresh() async throws {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        let credentials = TalariaRelayConfigurationStore.load()
+        guard TalariaLiveActivityMode.current == .allRunning, let credentials else {
+            let client = credentials.map { TalariaRelayClient(credentials: $0) }
+            if let client {
+                try? await client.configureDevice(liveActivitiesEnabled: false)
+            }
+            await endAggregateActivities(client: client)
+            return
+        }
+
+        let client = TalariaRelayClient(credentials: credentials)
+        try await client.configureDevice()
+        guard let aggregate = try await client.snapshot() else {
+            await endAggregateActivities(client: client)
+            return
+        }
+        guard TalariaLiveActivityMode.current == .allRunning else {
+            await endAggregateActivities(client: client)
+            return
+        }
+
+        for perSession in Activity<AgentRunActivityAttributes>.activities {
+            await perSession.end(nil, dismissalPolicy: .immediate)
+        }
+
+        let activities = Activity<TalariaAggregateActivityAttributes>.activities
+        let activity: Activity<TalariaAggregateActivityAttributes>
+        if let existing = activities.first {
+            activity = existing
+            await activity.update(ActivityContent(state: aggregate, staleDate: Date().addingTimeInterval(600)))
+            for duplicate in activities.dropFirst() {
+                await duplicate.end(nil, dismissalPolicy: .immediate)
+            }
+        } else {
+            guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+            activity = try Activity.request(
+                attributes: TalariaAggregateActivityAttributes(),
+                content: ActivityContent(state: aggregate, staleDate: Date().addingTimeInterval(600)),
+                pushType: .token
+            )
+        }
+        observePushToken(for: activity, client: client)
+    }
+
+    func disconnect() async throws {
+        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        let client = TalariaRelayClient(credentials: credentials)
+        await endAggregateActivities(client: client)
+        try await client.revokeDevice()
+    }
+
+    private func observePushToken(
+        for activity: Activity<TalariaAggregateActivityAttributes>,
+        client: TalariaRelayClient
+    ) {
+        guard tokenTasks[activity.id] == nil else { return }
+        tokenTasks[activity.id] = Task {
+            for await token in activity.pushTokenUpdates {
+                let tokenString = token.map { String(format: "%02x", $0) }.joined()
+                while !Task.isCancelled {
+                    do {
+                        try await client.register(activityID: activity.id, pushToken: tokenString)
+                        break
+                    } catch {
+                        try? await Task.sleep(for: .seconds(5))
+                    }
+                }
+            }
+        }
+    }
+
+    private func endAggregateActivities(client: TalariaRelayClient? = nil) async {
+        tokenTasks.values.forEach { $0.cancel() }
+        tokenTasks.removeAll()
+        for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+            if let client {
+                try? await client.unregister(activityID: activity.id)
+            }
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
     }
 }
 

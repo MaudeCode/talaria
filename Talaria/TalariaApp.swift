@@ -1,5 +1,45 @@
 import SwiftUI
 import SwiftData
+import UIKit
+import UserNotifications
+
+final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        if UserDefaults.standard.bool(forKey: TalariaRelayNotifications.isEnabledKey) {
+            application.registerForRemoteNotifications()
+        }
+        return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(token, forKey: TalariaRelayNotifications.pushTokenKey)
+        Task { @MainActor in
+            try? await TalariaAggregateLiveActivityManager.shared.refresh()
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let sessionID = response.notification.request.content.userInfo["sessionId"] as? String,
+              let url = TalariaDeepLink.sessionURL(sessionID: sessionID)
+        else { return }
+        await UIApplication.shared.open(url)
+    }
+}
 
 struct TalariaSceneActions {
     let canCreateNewChat: Bool
@@ -42,6 +82,7 @@ struct TalariaCommands: Commands {
 
 @main
 struct TalariaApp: App {
+    @UIApplicationDelegateAdaptor(TalariaAppDelegate.self) private var appDelegate
     @State private var authManager = AuthManager()
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
 

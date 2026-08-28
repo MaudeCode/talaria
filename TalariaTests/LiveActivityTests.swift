@@ -8,6 +8,89 @@ final class LiveActivityTests: XCTestCase {
         super.tearDown()
     }
 
+    func testRelayCredentialsRoundTripThroughKeychain() throws {
+        let keychain = InMemoryKeychainStore()
+        let credentials = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example.com")),
+            deviceID: "device-1",
+            credential: "secret"
+        )
+
+        try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
+        XCTAssertEqual(TalariaRelayConfigurationStore.load(keychain: keychain), credentials)
+        try TalariaRelayConfigurationStore.clear(keychain: keychain)
+        XCTAssertNil(TalariaRelayConfigurationStore.load(keychain: keychain))
+    }
+
+    func testRelayEnrollmentAndAggregateSnapshotContract() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        var requests: [URLRequest] = []
+        LiveActivityURLProtocol.handler = { request in
+            requests.append(request)
+            let body: String
+            switch request.url?.path {
+            case "/v1/enrollments/device/redeem":
+                body = #"{"deviceId":"device-1","credential":"secret"}"#
+            case "/v1/activity-snapshot":
+                body = #"{"aggregate":{"schemaVersion":1,"activeCount":2,"title":"Talaria","subtitle":"2 active sessions","updatedAt":1787845600000,"rows":[{"publisherId":"pub-1","publisherLabel":"Home","sessionId":"session-1","title":"Build app","phase":"running","status":"Working","updatedAt":1787845600000,"deepLink":"/sessions/session-1"}]}}"#
+            default:
+                body = #"{"ok":true}"#
+            }
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (response, Data(body.utf8))
+        }
+
+        let credentials = try await TalariaRelayClient.enroll(
+            baseURLString: "https://relay.example.com/path-is-ignored",
+            code: "one-time",
+            label: "Test Phone",
+            session: session
+        )
+        let client = TalariaRelayClient(credentials: credentials, session: session)
+        UserDefaults.standard.set(true, forKey: TalariaRelayNotifications.isEnabledKey)
+        UserDefaults.standard.set("ordinary-push-token", forKey: TalariaRelayNotifications.pushTokenKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: TalariaRelayNotifications.isEnabledKey)
+            UserDefaults.standard.removeObject(forKey: TalariaRelayNotifications.pushTokenKey)
+        }
+        try await client.configureDevice()
+        let registrationBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let registration = try XCTUnwrap(JSONSerialization.jsonObject(with: registrationBody) as? [String: Any])
+        let preferences = try XCTUnwrap(registration["preferences"] as? [String: Bool])
+        XCTAssertEqual(registration["pushToken"] as? String, "ordinary-push-token")
+        XCTAssertEqual(preferences["notificationsEnabled"], true)
+
+        try await client.configureDevice(liveActivitiesEnabled: false)
+        let disabledBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let disabledRegistration = try XCTUnwrap(JSONSerialization.jsonObject(with: disabledBody) as? [String: Any])
+        let disabledPreferences = try XCTUnwrap(disabledRegistration["preferences"] as? [String: Bool])
+        XCTAssertEqual(disabledPreferences["liveActivitiesEnabled"], false)
+        XCTAssertEqual(disabledPreferences["notificationsEnabled"], false)
+
+        let aggregate = try await client.snapshot()
+
+        XCTAssertEqual(credentials.baseURL.absoluteString, "https://relay.example.com")
+        XCTAssertEqual(aggregate?.activeCount, 2)
+        XCTAssertEqual(aggregate?.rows.first?.sessionId, "session-1")
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer secret")
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "X-Talaria-Device-Id"), "device-1")
+        XCTAssertEqual(URLComponents(url: requests.last!.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "all_running")
+
+        try await client.unregister(activityID: "activity-1")
+        try await client.revokeDevice()
+        XCTAssertEqual(
+            requests.suffix(2).map { ($0.httpMethod ?? "") + " " + ($0.url?.path ?? "") },
+            ["DELETE /v1/devices/device-1/live-activities/activity-1", "DELETE /v1/devices/device-1"]
+        )
+    }
+
     func testSanitizesLiveActivityText() {
         let title = AgentRunActivitySanitizer.sessionTitle("  A very long Hermes session title with\nmultiple lines and extra words  ")
         let activity = AgentRunActivitySanitizer.activityLine("Reading /Users/example/project/Secrets.swift\nwith details")

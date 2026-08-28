@@ -20,6 +20,7 @@ struct ContentView: View {
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
                 drainPendingIntentDeepLink()
+                try? await TalariaAggregateLiveActivityManager.shared.refresh()
             }
             .onChange(of: intentRouter.pendingDeepLink) {
                 // Warm launch: the intent set the deep link after the view appeared.
@@ -38,6 +39,7 @@ struct ContentView: View {
                 // #248: the foreground pass stays silent — the in-session completion
                 // paths own notifications while the app is alive.
                 Task { await reconcileOrphanedLiveActivities(notifiesOnCompletion: false) }
+                Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
             }
     }
 

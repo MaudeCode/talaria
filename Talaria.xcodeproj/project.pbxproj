@@ -1821,6 +1821,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 351C0F1600000000000000A1 /* Shared.xcconfig */;
 			buildSettings = {
+				APS_ENVIRONMENT = development;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				APP_DISPLAY_NAME = Talaria;
 				APP_URL_SCHEME_SUFFIX = "";
@@ -1888,6 +1889,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 351C0F1600000000000000A1 /* Shared.xcconfig */;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				APP_DISPLAY_NAME = Talaria;
 				APP_URL_SCHEME_SUFFIX = "";

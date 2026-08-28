@@ -55,11 +55,18 @@ struct SettingsView: View {
     @State private var showDefaultProfilePicker = false
     @State private var notificationPermissionStatus: UNAuthorizationStatus?
     @State private var notificationStatusMessage: String?
+    @State private var relayURL = ""
+    @State private var relayEnrollmentCode = ""
+    @State private var relayStatusMessage: String?
+    @State private var isConnectingRelay = false
+    @State private var isRelayConfigured = false
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @AppStorage(ResponseCompletionNotifications.hasRequestedPermissionKey) private var hasRequestedResponseCompletionNotificationPermission = false
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
+    @AppStorage(TalariaLiveActivityMode.storageKey) private var liveActivityModeRawValue = TalariaLiveActivityMode.perSession.rawValue
+    @AppStorage(TalariaRelayNotifications.isEnabledKey) private var relayNotificationsEnabled = false
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(SessionRowDisplaySettings.showCronSessionsKey) private var showsCronSessions = true
@@ -168,6 +175,69 @@ struct SettingsView: View {
 
                     if let notificationStatusText {
                         SettingsFootnote(notificationStatusText)
+                    }
+                }
+
+                SettingsCard(title: String(localized: "Live Activities")) {
+                    SettingsPickerRow(
+                        title: String(localized: "Display"),
+                        systemImage: "bolt.horizontal.circle",
+                        selection: $liveActivityModeRawValue
+                    ) {
+                        ForEach(TalariaLiveActivityMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+
+                    if liveActivityModeRawValue == TalariaLiveActivityMode.allRunning.rawValue {
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            title: String(localized: "Approval & Input Alerts"),
+                            systemImage: "bell.badge",
+                            isOn: relayNotificationBinding
+                        )
+
+                        SettingsDivider()
+
+                        SettingsTextFieldRow(
+                            title: String(localized: "Relay URL"),
+                            text: $relayURL,
+                            placeholder: "https://relay.example.com",
+                            keyboardType: .URL,
+                            autocapitalization: .never
+                        )
+
+                        SettingsDivider()
+
+                        SettingsTextFieldRow(
+                            title: String(localized: "Enrollment Code"),
+                            text: $relayEnrollmentCode,
+                            placeholder: String(localized: "One-time code"),
+                            autocapitalization: .never,
+                            isSecure: true
+                        )
+
+                        SettingsFootnote(
+                            relayStatusMessage
+                                ?? String(localized: "The relay credential stays in this device's Keychain. The code is used once and is not saved.")
+                        )
+
+                        SettingsButton(
+                            isRelayConfigured == false
+                                ? String(localized: "Connect Relay")
+                                : String(localized: "Reconnect Relay"),
+                            isLoading: isConnectingRelay
+                        ) {
+                            Task { await connectRelay() }
+                        }
+                        .disabled(isConnectingRelay || relayURL.isEmpty || relayEnrollmentCode.isEmpty)
+
+                        if isRelayConfigured {
+                            SettingsButton(String(localized: "Disconnect Relay"), role: .destructive) {
+                                Task { await disconnectRelay() }
+                            }
+                        }
                     }
                 }
 
@@ -573,6 +643,11 @@ struct SettingsView: View {
         .task {
             await loadServerSettings()
             await refreshNotificationPermissionStatus()
+            if let credentials = TalariaRelayConfigurationStore.load() {
+                relayURL = credentials.baseURL.absoluteString
+                relayStatusMessage = String(localized: "Connected")
+                isRelayConfigured = true
+            }
         }
         .alert("Clear this server's cache?", isPresented: $isConfirmingClearCache) {
             Button("Cancel", role: .cancel) {}
@@ -641,6 +716,9 @@ struct SettingsView: View {
         .onChange(of: identityDisplayName) { syncActiveServerIdentity() }
         .onChange(of: identityInitials) { syncActiveServerIdentity() }
         .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
+        .onChange(of: liveActivityModeRawValue) {
+            Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
+        }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
         }
@@ -726,6 +804,53 @@ struct SettingsView: View {
             initials: identityInitials,
             headerLogoColorHex: headerLogoColorHex
         )
+    }
+
+    @MainActor
+    private func connectRelay() async {
+        isConnectingRelay = true
+        defer { isConnectingRelay = false }
+        do {
+            let credentials = try await TalariaRelayClient.enroll(
+                baseURLString: relayURL,
+                code: relayEnrollmentCode,
+                label: UIDevice.current.name
+            )
+            try TalariaRelayConfigurationStore.save(credentials)
+            isRelayConfigured = true
+            relayEnrollmentCode = ""
+            relayURL = credentials.baseURL.absoluteString
+            try await TalariaAggregateLiveActivityManager.shared.refresh()
+            relayStatusMessage = String(localized: "Connected")
+        } catch {
+            relayStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func enableRelayNotifications() async {
+        let granted = await ResponseCompletionNotificationService.requestAuthorization()
+        relayNotificationsEnabled = granted
+        if granted {
+            UIApplication.shared.registerForRemoteNotifications()
+            relayStatusMessage = nil
+        } else {
+            relayStatusMessage = String(localized: "Notification permission is required for relay alerts.")
+        }
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
+    }
+
+    @MainActor
+    private func disconnectRelay() async {
+        do {
+            try await TalariaAggregateLiveActivityManager.shared.disconnect()
+            try TalariaRelayConfigurationStore.clear()
+            isRelayConfigured = false
+            relayEnrollmentCode = ""
+            relayStatusMessage = String(localized: "Disconnected")
+        } catch {
+            relayStatusMessage = error.localizedDescription
+        }
     }
 
     private var signOutFootnote: String {
@@ -817,6 +942,20 @@ struct SettingsView: View {
                     Task {
                         await refreshNotificationPermissionStatus()
                     }
+                }
+            }
+        )
+    }
+
+    private var relayNotificationBinding: Binding<Bool> {
+        Binding(
+            get: { relayNotificationsEnabled },
+            set: { enabled in
+                if enabled {
+                    Task { await enableRelayNotifications() }
+                } else {
+                    relayNotificationsEnabled = false
+                    Task { try? await TalariaAggregateLiveActivityManager.shared.refresh() }
                 }
             }
         )

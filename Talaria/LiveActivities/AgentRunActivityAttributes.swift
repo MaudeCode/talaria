@@ -52,6 +52,53 @@ struct AgentRunActivityAttributes: ActivityAttributes {
     }
 }
 
+struct TalariaAggregateActivityAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        struct Row: Codable, Hashable, Identifiable {
+            var publisherId: String
+            var publisherLabel: String
+            var sessionId: String
+            var title: String
+            var phase: String
+            var status: String
+            var updatedAt: Double
+            var deepLink: String
+
+            var id: String { "\(publisherId):\(sessionId)" }
+        }
+
+        var schemaVersion: Int
+        var activeCount: Int
+        var title: String
+        var subtitle: String
+        var updatedAt: Double
+        var rows: [Row]
+    }
+}
+
+enum TalariaLiveActivityMode: String, CaseIterable, Identifiable {
+    case perSession
+    case allRunning
+
+    static let storageKey = "liveActivity.mode"
+    static var current: Self {
+        Self(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .perSession
+    }
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .perSession: String(localized: "Current session")
+        case .allRunning: String(localized: "All running sessions")
+        }
+    }
+}
+
+enum TalariaRelayNotifications {
+    static let isEnabledKey = "talariaRelay.notificationsEnabled"
+    static let pushTokenKey = "talariaRelay.pushToken"
+}
+
 enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable {
     case starting
     case thinking
