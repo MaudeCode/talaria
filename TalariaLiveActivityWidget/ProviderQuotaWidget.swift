@@ -200,7 +200,9 @@ private struct ProviderQuotaWidgetView: View {
 
     @ViewBuilder
     private var sourceGrid: some View {
-        if usesTwoWindowLayout {
+        if usesThreeWindowLargeLayout {
+            threeWindowLargeGrid
+        } else if usesTwoWindowLayout {
             twoWindowGrid
         } else if usesSingleSourceExpandedLayout {
             singleSourceExpandedLayout
@@ -215,6 +217,48 @@ private struct ProviderQuotaWidgetView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var threeWindowLargeGrid: some View {
+        if let source = resolvedSources.first ?? nil,
+           let url = destinationURL(for: source) {
+            Link(destination: url) {
+                ProviderQuotaWidgetSlotLayout(spacing: slotSpacing) {
+                    ForEach(
+                        Array(ProviderQuotaPresentation.displayWindows(from: source.windows).enumerated()),
+                        id: \.offset
+                    ) { _, window in
+                        ProviderQuotaWidgetSourceView(
+                            source: source,
+                            configuration: entry.configuration,
+                            compact: false,
+                            referenceDate: Date(),
+                            windowOverride: window
+                        )
+                    }
+
+                    ProviderQuotaForecastView(
+                        plan: source.plan,
+                        state: ProviderQuotaPresentation.state(
+                            for: source,
+                            settings: evaluationSettings,
+                            at: Date()
+                        )
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var usesThreeWindowLargeLayout: Bool {
+        guard family == .systemLarge,
+              sourceIDs.count == 1,
+              let source = resolvedSources.first ?? nil
+        else { return false }
+        return source.windows.count == 3
     }
 
     @ViewBuilder
@@ -240,12 +284,11 @@ private struct ProviderQuotaWidgetView: View {
 
     private var usesTwoWindowLayout: Bool {
         guard family == .systemMedium || family == .systemLarge,
-              gaugeLayout == .classic,
               evaluationSettings.windowSelection == .automatic,
               sourceIDs.count == 1,
               let source = resolvedSources.first ?? nil
         else { return false }
-        return source.windows.count >= 2
+        return source.windows.count == 2
     }
 
     @ViewBuilder
@@ -367,13 +410,6 @@ private struct ProviderQuotaWidgetView: View {
         ProviderQuotaEvaluationSettings.stored(configuration: entry.configuration)
     }
 
-    private var gaugeLayout: ProviderQuotaWidgetGaugeLayout {
-        ProviderQuotaWidgetGaugeLayout.resolved(
-            override: entry.configuration.gaugeLayout,
-            profile: resolvedProfile
-        )
-    }
-
     private var widgetBackground: Color {
         switch effectiveBackground {
         case .appDefault, .system: Color(.secondarySystemBackground)
@@ -411,19 +447,8 @@ private struct ProviderQuotaWidgetSourceView: View {
 
     @ViewBuilder
     var body: some View {
-        if periods.isEmpty || gaugeLayout == .classic || windowOverride != nil {
-            ProviderQuotaGaugeView(
-                providerID: source.providerID,
-                displayName: displayName,
-                sourceStatus: source.status,
-                state: presentation,
-                statusText: statusText,
-                resetDisplay: resetDisplay,
-                style: gaugeStyle,
-                compact: compact
-            )
-        } else if gaugeLayout == .concentric {
-            ProviderQuotaConcentricGaugeView(
+        if source.windows.count == 3, windowOverride == nil {
+            ProviderQuotaBarsView(
                 providerID: source.providerID,
                 displayName: displayName,
                 periods: periods,
@@ -437,18 +462,15 @@ private struct ProviderQuotaWidgetSourceView: View {
                 arcColor: arcColor(for:)
             )
         } else {
-            ProviderQuotaBarsView(
+            ProviderQuotaGaugeView(
                 providerID: source.providerID,
                 displayName: displayName,
-                periods: periods,
+                sourceStatus: source.status,
+                state: presentation,
                 statusText: statusText,
                 resetDisplay: resetDisplay,
-                trackColor: trackWithOpacity,
-                requestedLineWidth: lineWidth,
-                showsPaceMarker: showsPaceMarker,
-                showsProviderIcon: showsProviderIcon,
-                providerIconStyle: providerIconStyle,
-                arcColor: arcColor(for:)
+                style: gaugeStyle,
+                compact: compact
             )
         }
     }
@@ -502,13 +524,6 @@ private struct ProviderQuotaWidgetSourceView: View {
 
     private var resolvedProfile: ProviderQuotaWidgetResolvedProfile {
         ProviderQuotaWidgetResolvedProfile.resolve(id: configuration.profile?.id)
-    }
-
-    private var gaugeLayout: ProviderQuotaWidgetGaugeLayout {
-        ProviderQuotaWidgetGaugeLayout.resolved(
-            override: configuration.gaugeLayout,
-            profile: resolvedProfile
-        )
     }
 
     private var arcColor: Color {

@@ -632,46 +632,6 @@ enum ProviderQuotaWidgetColorBasis: String, CaseIterable, Identifiable {
     }
 }
 
-enum ProviderQuotaWidgetGaugeLayout: String, AppEnum, CaseIterable, Identifiable {
-    case appDefault
-    case classic
-    case concentric
-    case bars
-
-    static let storageKey = "providerQuota.widgetGaugeLayout"
-    static let defaultValue = ProviderQuotaWidgetGaugeLayout.classic
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Gauge Layout")
-    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-        .appDefault: "App Default",
-        .classic: "Classic Gauge",
-        .concentric: "Concentric Arcs",
-        .bars: "Three Bars",
-    ]
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .appDefault: String(localized: "App Default")
-        case .classic: String(localized: "Classic Gauge")
-        case .concentric: String(localized: "Concentric Arcs")
-        case .bars: String(localized: "Three Bars")
-        }
-    }
-
-    static func resolved(
-        override: ProviderQuotaWidgetGaugeLayout,
-        profile: ProviderQuotaWidgetResolvedProfile
-    ) -> ProviderQuotaWidgetGaugeLayout {
-        let profileValue = ProviderQuotaWidgetGaugeLayout(
-            rawValue: profile.string(storageKey)
-        ) ?? defaultValue
-        guard profile.id == ProviderQuotaWidgetProfileStore.defaultProfileID else {
-            return profileValue
-        }
-        return override == .appDefault ? profileValue : override
-    }
-}
-
 enum ProviderQuotaWidgetWindowSelection: String, AppEnum {
     case automatic
     case session
@@ -1222,34 +1182,6 @@ struct ProviderQuotaPeriodPresentation: Equatable, Identifiable {
     }
 }
 
-struct ProviderQuotaConcentricGeometry: Equatable {
-    let diameter: CGFloat
-    let lineWidth: CGFloat
-    let gap: CGFloat
-    let centerDiameter: CGFloat
-    let ringInsets: [CGFloat]
-
-    init(diameter: CGFloat, requestedLineWidth: CGFloat, ringCount: Int) {
-        self.diameter = max(0, diameter)
-        let count = max(1, min(ringCount, 3))
-        let radius = self.diameter / 2
-        let centerRadius = self.diameter * 0.22
-        let resolvedGap = max(2, self.diameter * 0.018)
-        let available = max(1, radius - centerRadius - resolvedGap * CGFloat(count - 1))
-        let resolvedLineWidth = max(1, min(requestedLineWidth, available / CGFloat(count)))
-        gap = resolvedGap
-        lineWidth = resolvedLineWidth
-        centerDiameter = centerRadius * 2
-        ringInsets = (0..<count).map {
-            resolvedLineWidth / 2 + CGFloat($0) * (resolvedLineWidth + resolvedGap)
-        }
-    }
-
-    var innerRingInnerRadius: CGFloat {
-        diameter / 2 - (ringInsets.last ?? 0) - lineWidth / 2
-    }
-}
-
 struct ProviderQuotaGaugeStyle {
     let arcColor: Color
     let trackColor: Color
@@ -1257,132 +1189,6 @@ struct ProviderQuotaGaugeStyle {
     let showsPaceMarker: Bool
     let showsProviderIcon: Bool
     let providerIconStyle: ProviderIconStyle
-}
-
-struct ProviderQuotaConcentricGaugeView: View {
-    let providerID: String?
-    let displayName: String
-    let periods: [ProviderQuotaPeriodPresentation]
-    let statusText: ProviderQuotaWidgetStatusText
-    let resetDisplay: ProviderQuotaWidgetResetDisplay
-    let trackColor: Color
-    let requestedLineWidth: Double
-    let showsPaceMarker: Bool
-    let showsProviderIcon: Bool
-    let providerIconStyle: ProviderIconStyle
-    let arcColor: (ProviderQuotaPresentationState) -> Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            let diameter = min(proxy.size.width, proxy.size.height)
-            let legendHeight = max(24, diameter * 0.23)
-            let arcDiameter = max(0, diameter - legendHeight)
-            let geometry = ProviderQuotaConcentricGeometry(
-                diameter: arcDiameter,
-                requestedLineWidth: requestedLineWidth,
-                ringCount: periods.count
-            )
-
-            VStack(spacing: 0) {
-                ZStack {
-                    ForEach(Array(periods.enumerated()), id: \.element.id) { index, period in
-                        let inset = geometry.ringInsets[index]
-                        let color = arcColor(period.state)
-                        Circle()
-                            .trim(from: 0.125, to: 0.875)
-                            .stroke(
-                                period.state.percent == nil ? color.opacity(0.55) : trackColor,
-                                style: StrokeStyle(lineWidth: geometry.lineWidth, lineCap: .round)
-                            )
-                            .rotationEffect(.degrees(90))
-                            .padding(inset)
-
-                        if let percent = period.state.percent {
-                            Circle()
-                                .trim(from: 0.125, to: 0.125 + 0.75 * percent / 100)
-                                .stroke(
-                                    color,
-                                    style: StrokeStyle(lineWidth: geometry.lineWidth, lineCap: .round)
-                                )
-                                .rotationEffect(.degrees(90))
-                                .padding(inset)
-                                .widgetAccentable()
-                        }
-
-                        if showsPaceMarker, let expected = period.state.expectedPercent {
-                            let position = 0.125 + 0.75 * min(max(expected, 0), 100) / 100
-                            Circle()
-                                .trim(from: position - 0.004, to: position + 0.004)
-                                .stroke(
-                                    Color.primary,
-                                    style: StrokeStyle(lineWidth: geometry.lineWidth + 1, lineCap: .butt)
-                                )
-                                .rotationEffect(.degrees(90))
-                                .padding(inset)
-                        }
-                    }
-
-                    providerIdentity(centerDiameter: geometry.centerDiameter)
-                }
-                .frame(width: arcDiameter, height: arcDiameter)
-
-                HStack(alignment: .bottom, spacing: 2) {
-                    ForEach(periods) { period in
-                        VStack(spacing: 0) {
-                            Text(period.shortLabel)
-                                .font(.system(size: max(7, diameter * 0.055), weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            if let value = period.valueLabel(statusText: statusText) {
-                                Text(value)
-                                    .font(.system(size: max(8, diameter * 0.065), weight: .semibold).monospacedDigit())
-                            }
-                            if let reset = period.resetLabel(display: resetDisplay) {
-                                Text(reset)
-                                    .font(.system(size: max(6, diameter * 0.045)).monospacedDigit())
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.45)
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.horizontal, 2)
-                .frame(height: legendHeight, alignment: .top)
-            }
-            .frame(width: diameter, height: diameter)
-            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityIdentifier("provider-quota-widget-concentric")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    @ViewBuilder
-    private func providerIdentity(centerDiameter: CGFloat) -> some View {
-        VStack(spacing: 1) {
-            if showsProviderIcon {
-                ProviderIconView(
-                    providerID: providerID,
-                    label: displayName,
-                    size: min(22, centerDiameter * 0.36),
-                    style: providerIconStyle
-                )
-            }
-            Text(displayName)
-                .font(.caption2.weight(.semibold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.5)
-                .multilineTextAlignment(.center)
-        }
-        .frame(width: centerDiameter, height: centerDiameter)
-    }
-
-    private var accessibilityLabel: String {
-        ([displayName] + periods.map { $0.accessibilityDescription(resetDisplay: resetDisplay) })
-            .joined(separator: ", ")
-    }
 }
 
 struct ProviderQuotaBarsView: View {
@@ -1695,6 +1501,7 @@ struct ProviderQuotaGaugeView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
+        .accessibilityIdentifier("provider-quota-widget-classic")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -2056,6 +1863,7 @@ struct ProviderQuotaForecastView: View {
             .foregroundStyle(state.isStale ? .orange : .secondary)
         }
         .minimumScaleFactor(0.7)
+        .accessibilityIdentifier("provider-quota-widget-forecast")
         .accessibilityElement(children: .combine)
     }
 
@@ -2354,15 +2162,7 @@ enum ProviderQuotaPresentation {
         settings: ProviderQuotaEvaluationSettings,
         at referenceDate: Date
     ) -> [ProviderQuotaPeriodPresentation] {
-        let indexed = Array(source.windows.enumerated())
-        let ordered = indexed.allSatisfy { $0.element.windowSeconds != nil }
-            ? indexed.sorted {
-                let lhs = $0.element.windowSeconds ?? 0
-                let rhs = $1.element.windowSeconds ?? 0
-                return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
-            }
-            : indexed
-        return ordered.prefix(3).map { index, window in
+        displayWindows(from: source.windows).enumerated().map { index, window in
             ProviderQuotaPeriodPresentation(
                 id: index,
                 shortLabel: shortLabel(for: window),
@@ -2374,6 +2174,18 @@ enum ProviderQuotaPresentation {
                 )
             )
         }
+    }
+
+    static func displayWindows(from windows: [ProviderQuotaWindow]) -> [ProviderQuotaWindow] {
+        let indexed = Array(windows.enumerated())
+        let ordered = indexed.allSatisfy { $0.element.windowSeconds != nil }
+            ? indexed.sorted {
+                let lhs = $0.element.windowSeconds ?? 0
+                let rhs = $1.element.windowSeconds ?? 0
+                return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+            }
+            : indexed
+        return ordered.prefix(3).map(\.element)
     }
 
     static func shortLabel(for window: ProviderQuotaWindow) -> String {
@@ -2541,7 +2353,6 @@ enum ProviderQuotaWidgetProfileStore {
         [
             ProviderQuotaPercentageMode.storageKey: ProviderQuotaPercentageMode.defaultValue.rawValue,
             ProviderQuotaWidgetWindowSelection.storageKey: ProviderQuotaWidgetWindowSelection.defaultValue.rawValue,
-            ProviderQuotaWidgetGaugeLayout.storageKey: ProviderQuotaWidgetGaugeLayout.defaultValue.rawValue,
             ProviderQuotaWidgetArcColor.storageKey: ProviderQuotaWidgetArcColor.defaultValue.rawValue,
             ProviderQuotaWidgetArcWeight.storageKey: ProviderQuotaWidgetArcWeight.defaultValue.rawValue,
             ProviderQuotaWidgetColorBasis.storageKey: ProviderQuotaWidgetColorBasis.defaultValue.rawValue,
@@ -2736,7 +2547,6 @@ struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
     @Parameter(title: "Source 3", query: ProviderQuotaSourceEntityQuery()) var source3: ProviderQuotaSourceEntity?
     @Parameter(title: "Source 4", query: ProviderQuotaSourceEntityQuery()) var source4: ProviderQuotaSourceEntity?
     @Parameter(title: "Profile", query: ProviderQuotaWidgetProfileEntityQuery()) var profile: ProviderQuotaWidgetProfileEntity?
-    @Parameter(title: "Gauge Layout", default: .appDefault) var gaugeLayout: ProviderQuotaWidgetGaugeLayout
     @Parameter(title: "Quota Window", default: .automatic) var windowSelection: ProviderQuotaWidgetWindowSelection
     @Parameter(title: "Percentage", default: .appDefault) var percentageMode: ProviderQuotaWidgetPercentageOverride
     @Parameter(title: "Status Text", default: .appDefault) var statusText: ProviderQuotaWidgetStatusText
@@ -2754,7 +2564,6 @@ struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
             Case(.systemSmall) {
                 Summary("Show \(\.$source1)") {
                     \.$profile
-                    \.$gaugeLayout
                 }
             }
             Case([.accessoryInline, .accessoryCircular, .accessoryRectangular]) {
@@ -2763,13 +2572,11 @@ struct ProviderQuotaWidgetConfigurationIntent: WidgetConfigurationIntent {
             Case(.systemMedium) {
                 Summary("Show \(\.$source1) and \(\.$source2)") {
                     \.$profile
-                    \.$gaugeLayout
                 }
             }
             DefaultCase {
                 Summary("Show \(\.$source1), \(\.$source2), \(\.$source3), and \(\.$source4)") {
                     \.$profile
-                    \.$gaugeLayout
                 }
             }
         }

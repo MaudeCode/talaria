@@ -225,31 +225,33 @@ final class ComposerNavigationUITests: XCTestCase {
         )
     }
 
-    func testWidgetCustomizationShowsAllPeriodHomeLayouts() throws {
+    func testWidgetCustomizationUsesAutomaticThreePeriodHomeLayouts() throws {
         app.terminate()
         app.launchArguments = ["--provider-quota-widget-customization"]
         app.launch()
 
         XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
-
-        chooseGaugeLayout("Concentric Arcs")
-        assertPreviewVisible(identifier: "provider-quota-widget-concentric")
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
 
         app.buttons["Medium"].tap()
         app.buttons["2"].tap()
         XCTAssertTrue(app.buttons["2"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-concentric")
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
 
         app.buttons["Large"].tap()
+        app.buttons["1"].tap()
+        XCTAssertTrue(app.buttons["1"].isSelected)
+        assertPreviewVisible(identifier: "provider-quota-widget-classic")
+        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
+        let expanded = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        expanded.name = "Three-gauge single-source large quota widget preview"
+        expanded.lifetime = .keepAlways
+        add(expanded)
+
         app.buttons["3"].tap()
         XCTAssertTrue(app.buttons["3"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-concentric")
-        let concentric = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        concentric.name = "Concentric three-source large quota widget preview"
-        concentric.lifetime = .keepAlways
-        add(concentric)
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
 
-        chooseGaugeLayout("Three Bars")
         app.buttons["4"].tap()
         XCTAssertTrue(app.buttons["4"].isSelected)
         assertPreviewVisible(identifier: "provider-quota-widget-bars")
@@ -257,8 +259,6 @@ final class ComposerNavigationUITests: XCTestCase {
         bars.name = "Bar four-source large quota widget preview"
         bars.lifetime = .keepAlways
         add(bars)
-
-        chooseGaugeLayout("Classic Gauge")
     }
 
     func testSidebarReplacesRootTabs() throws {
@@ -491,18 +491,6 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(session.frame.minY, viewportTop)
         XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-    }
-
-    private func chooseGaugeLayout(_ title: String) {
-        let picker = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS %@", "Gauge Layout")
-        ).firstMatch
-        XCTAssertTrue(picker.waitForExistence(timeout: 3))
-        picker.tap()
-
-        let option = app.buttons[title]
-        XCTAssertTrue(option.waitForExistence(timeout: 3))
-        option.tap()
     }
 
     private func assertPreviewVisible(identifier: String) {

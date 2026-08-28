@@ -125,7 +125,6 @@ final class ProviderQuotaWidgetTests: XCTestCase {
     }
 
     func testWidgetAppearanceDefaultsStayMinimal() {
-        XCTAssertEqual(ProviderQuotaWidgetGaugeLayout.defaultValue, .classic)
         XCTAssertEqual(ProviderQuotaWidgetArcColor.defaultValue, .automatic)
         XCTAssertEqual(ProviderQuotaWidgetArcWeight.defaultValue, .regular)
         XCTAssertEqual(ProviderQuotaWidgetColorBasis.defaultValue, .pace)
@@ -263,21 +262,6 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(incomplete.map(\.shortLabel), ["Month", "5h", "Week"])
     }
 
-    func testConcentricGeometryKeepsBoldInnerArcOutsideCenterText() {
-        let geometry = ProviderQuotaConcentricGeometry(
-            diameter: 97,
-            requestedLineWidth: 14,
-            ringCount: 3
-        )
-
-        XCTAssertLessThan(geometry.lineWidth, 14)
-        XCTAssertGreaterThanOrEqual(
-            geometry.innerRingInnerRadius,
-            geometry.centerDiameter / 2 - 0.001
-        )
-        XCTAssertEqual(geometry.ringInsets.count, 3)
-    }
-
     func testForecastSummarySharesBurnBudgetAndDepletionFormatting() {
         let settings = ProviderQuotaEvaluationSettings(
             percentageMode: .used,
@@ -347,10 +331,6 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             ProviderIconStyle.silhouette.rawValue,
             forKey: ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey
         )
-        defaults.set(
-            ProviderQuotaWidgetGaugeLayout.concentric.rawValue,
-            forKey: ProviderQuotaWidgetGaugeLayout.storageKey
-        )
 
         let profile = try XCTUnwrap(
             ProviderQuotaWidgetProfileStore.saveCurrent(name: "No icon", defaults: defaults)
@@ -363,10 +343,6 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(
             profile.values[ProviderQuotaWidgetAppearanceSettings.providerIconStyleKey],
             ProviderIconStyle.silhouette.rawValue
-        )
-        XCTAssertEqual(
-            profile.values[ProviderQuotaWidgetGaugeLayout.storageKey],
-            ProviderQuotaWidgetGaugeLayout.concentric.rawValue
         )
     }
 

@@ -1716,10 +1716,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
     @State private var previewSourceCount = 1
     @State private var previewSurface = ProviderQuotaWidgetPreviewSurface.home
     @AppStorage(
-        ProviderQuotaWidgetGaugeLayout.storageKey,
-        store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
-    ) private var gaugeLayoutRawValue = ProviderQuotaWidgetGaugeLayout.defaultValue.rawValue
-    @AppStorage(
         ProviderQuotaWidgetArcColor.storageKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var arcColorRawValue = ProviderQuotaWidgetArcColor.defaultValue.rawValue
@@ -1796,14 +1792,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
             Divider()
 
             Form {
-                Section("Layout") {
-                    Picker("Gauge Layout", selection: $gaugeLayoutRawValue) {
-                        ForEach(ProviderQuotaWidgetGaugeLayout.allCases.filter { $0 != .appDefault }) { layout in
-                            Text(layout.title).tag(layout.rawValue)
-                        }
-                    }
-                }
-
                 Section("Gauge") {
                 Picker("Color", selection: $arcColorRawValue) {
                     ForEach(ProviderQuotaWidgetArcColor.allCases) { color in
@@ -1938,7 +1926,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 .accessibilityLabel("Widget Profiles")
             }
         }
-        .onChange(of: gaugeLayoutRawValue) { reloadWidgets() }
         .onChange(of: arcColorRawValue) { reloadWidgets() }
         .onChange(of: arcWeightRawValue) { reloadWidgets() }
         .onChange(of: colorBasisRawValue) { reloadWidgets() }
@@ -2070,6 +2057,23 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 source: previewSource(at: 0),
                 referenceDate: Date()
             )
+        } else if previewFamily == .large,
+                  previewSourceCount == 1,
+                  previewSource(at: 0).windows.count == 3 {
+            let source = previewSource(at: 0)
+            ProviderQuotaWidgetSlotLayout(spacing: previewSlotSpacing) {
+                ForEach(
+                    Array(ProviderQuotaPresentation.displayWindows(from: source.windows).enumerated()),
+                    id: \.offset
+                ) { _, window in
+                    previewGauge(source: source, windowOverride: window)
+                }
+                ProviderQuotaForecastView(
+                    plan: source.plan,
+                    state: previewPresentation(for: source)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         } else if previewFamily == .small {
             previewGauge(source: previewSource(at: 0))
         } else if previewSourceCount > 1 {
@@ -2100,8 +2104,11 @@ struct ProviderQuotaWidgetAppearanceView: View {
     }
 
     @ViewBuilder
-    private func previewGauge(source: ProviderQuotaWidgetSource) -> some View {
-        let presentation = previewPresentation(for: source)
+    private func previewGauge(
+        source: ProviderQuotaWidgetSource,
+        windowOverride: ProviderQuotaWindow? = nil
+    ) -> some View {
+        let presentation = previewPresentation(for: source, windowOverride: windowOverride)
         let periods = ProviderQuotaPresentation.periods(
             for: source,
             settings: presentation.settings,
@@ -2122,10 +2129,11 @@ struct ProviderQuotaWidgetAppearanceView: View {
             && presentation.settings.colorBasis == .pace
             && showsPaceMarker
 
-        if periods.isEmpty || gaugeLayout == .classic || gaugeLayout == .appDefault {
+        if source.windows.count != 3 || windowOverride != nil {
             ProviderQuotaGaugeView(
                 providerID: source.providerID,
-                displayName: source.providerLabel,
+                displayName: windowOverride.map { "\(source.providerLabel) · \($0.label)" }
+                    ?? source.providerLabel,
                 sourceStatus: source.status,
                 state: presentation,
                 statusText: statusText,
@@ -2139,20 +2147,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
                     providerIconStyle: iconStyle
                 ),
                 compact: false
-            )
-        } else if gaugeLayout == .concentric {
-            ProviderQuotaConcentricGaugeView(
-                providerID: source.providerID,
-                displayName: source.providerLabel,
-                periods: periods,
-                statusText: statusText,
-                resetDisplay: resetDisplay,
-                trackColor: track,
-                requestedLineWidth: previewLineWidth(compact: false),
-                showsPaceMarker: marker,
-                showsProviderIcon: showsProviderIcon,
-                providerIconStyle: iconStyle,
-                arcColor: { _ in previewColor }
             )
         } else {
             ProviderQuotaBarsView(
@@ -2177,10 +2171,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
         case .medium: [1, 2]
         case .large: [1, 2, 3, 4]
         }
-    }
-
-    private var gaugeLayout: ProviderQuotaWidgetGaugeLayout {
-        ProviderQuotaWidgetGaugeLayout(rawValue: gaugeLayoutRawValue) ?? .defaultValue
     }
 
     private var arcColor: ProviderQuotaWidgetArcColor {
@@ -2284,12 +2274,14 @@ struct ProviderQuotaWidgetAppearanceView: View {
     }
 
     private func previewPresentation(
-        for source: ProviderQuotaWidgetSource
+        for source: ProviderQuotaWidgetSource,
+        windowOverride: ProviderQuotaWindow? = nil
     ) -> ProviderQuotaPresentationState {
         ProviderQuotaPresentation.state(
             for: source,
             settings: ProviderQuotaEvaluationSettings.stored(followsSelectedDefault: false),
-            at: Date()
+            at: Date(),
+            windowOverride: windowOverride
         ).withUrgency(previewState.urgency)
     }
 
