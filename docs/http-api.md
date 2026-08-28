@@ -1,37 +1,38 @@
 # Relay HTTP API v1
 
-All request and response bodies are JSON. The relay exposes HTTP actions from the Convex site URL or its future custom domain.
+All bodies are JSON. User-authenticated routes use `Authorization: Bearer <relay session token>`.
 
-## Enrollment
+## Apple sign-in
 
-An operator creates one-time codes through the internal `admin:createEnrollmentCode` action. Codes expire after 15 minutes by default and are stored only as SHA-256 hashes.
-
-### Enroll a publisher
-
-`POST /v1/enrollments/publisher/redeem`
+`POST /v1/auth/apple`
 
 ```json
 {
-  "code": "one-time-code",
+  "identityToken": "Apple identity JWT",
+  "nonce": "SHA-256 nonce sent in the Apple authorization request"
+}
+```
+
+The relay verifies the ES256 signature against Apple's JWKS plus issuer, audience, expiry, nonce, and token replay. It returns an opaque 30-day relay session token. End it with `DELETE /v1/auth/session`.
+
+## Automatic Hermes pairing
+
+Talaria creates a ten-minute invitation with authenticated `POST /v1/pairings/publisher` and passes it through the authenticated Hermes API.
+
+Hermes generates an Ed25519 key locally and redeems the invitation once:
+
+`POST /v1/pairings/publisher/redeem`
+
+```json
+{
+  "invitation": "one-time invitation",
+  "publisherId": "https://hermes.example.com",
   "label": "Home Hermes",
-  "publicKey": "base64url-encoded-raw-ed25519-public-key"
+  "publicKey": "base64url raw Ed25519 public key"
 }
 ```
 
-The response returns `publisherId` and `keyId`. The private key remains on the WebUI machine.
-
-### Enroll a device
-
-`POST /v1/enrollments/device/redeem`
-
-```json
-{
-  "code": "one-time-code",
-  "label": "Kilian's iPhone"
-}
-```
-
-The response returns `deviceId` and a random bearer credential once. Talaria stores the credential in Keychain; Convex stores only its hash.
+The private key never leaves the Hermes machine.
 
 ## Publisher authentication
 
@@ -40,11 +41,11 @@ Publisher requests include:
 ```text
 X-Talaria-Key-Id
 X-Talaria-Timestamp    Unix seconds, at most five minutes from relay time
-X-Talaria-Nonce        Unique per publisher request
+X-Talaria-Nonce        Unique per request
 X-Talaria-Signature    Base64url Ed25519 signature
 ```
 
-The signed bytes are UTF-8:
+The signed UTF-8 bytes are:
 
 ```text
 METHOD
@@ -54,42 +55,6 @@ NONCE
 BASE64URL_SHA256_OF_EXACT_BODY
 ```
 
-The relay rechecks the key inside the accepting mutation, stores the nonce atomically, and requires increasing revisions per publisher/session.
-
-## Publish one session
-
-`PUT /v1/publishers/{publisherId}/sessions/{sessionId}/activity`
-
-```json
-{
-  "eventId": "stable-event-id",
-  "revision": 42,
-  "state": {
-    "sessionId": "session-id",
-    "streamId": "optional-stream-id",
-    "title": "Bounded session title",
-    "phase": "running",
-    "updatedAt": 1787845600000,
-    "deepLink": "/sessions/session-id"
-  }
-}
-```
-
-Allowed phases:
-
-```text
-starting
-running
-waiting_for_approval
-waiting_for_input
-completed
-failed
-cancelled
-stale
-```
-
-Send `state: null` with a newer envelope revision to tombstone a session. Duplicate event IDs return success; stale revisions and replayed nonces return conflict. The relay owns state expiry: running states last two hours, waiting states 24 hours, and terminal rows 15 minutes.
-
 ## Publish a complete snapshot
 
 `PUT /v1/publishers/{publisherId}/snapshot`
@@ -97,29 +62,32 @@ Send `state: null` with a newer envelope revision to tombstone a session. Duplic
 ```json
 {
   "snapshotId": "stable-snapshot-id",
-  "states": []
+  "states": [
+    {
+      "sessionId": "session-id",
+      "streamId": "optional-stream-id",
+      "eventId": "stable-event-id",
+      "revision": 42,
+      "title": "Bounded session title",
+      "phase": "running",
+      "updatedAt": 1787845600000,
+      "deepLink": "/sessions/session-id"
+    }
+  ]
 }
 ```
 
-Each state has the same flat fields as the session `state` object, including `eventId` and `revision`. A complete snapshot may contain at most 500 states. Missing sessions are tombstoned only within that publisher; another publisher's rows are never affected.
+Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Missing sessions are tombstoned only for that tenant and publisher.
 
-## Device authentication
+The per-session route remains available at `PUT /v1/publishers/{publisherId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
 
-Device routes use:
+## Device and Live Activity routes
 
-```text
-Authorization: Bearer <device credential>
-```
-
-Snapshot requests also include `X-Talaria-Device-Id`.
-
-## Register device routing
-
-`PUT /v1/devices/{deviceId}`
+`PUT /v1/devices/{deviceId}` upserts the signed-in user's device:
 
 ```json
 {
-  "label": "Kilian's iPhone",
+  "label": "Talaria iPhone",
   "bundleId": "dev.kil.talaria",
   "apsEnvironment": "sandbox",
   "pushToken": "optional ordinary APNs token",
@@ -134,11 +102,7 @@ Snapshot requests also include `X-Talaria-Device-Id`.
 }
 ```
 
-Device and ActivityKit tokens are globally claimed. Registering a token on a new device/activity retires its previous owner. Omit `pushToken` to preserve it; send `null` to clear it.
-
-## Register a Live Activity
-
-`PUT /v1/devices/{deviceId}/live-activities/{activityId}`
+Register an aggregate ActivityKit token with `PUT /v1/devices/{deviceId}/live-activities/{activityId}`:
 
 ```json
 {
@@ -149,18 +113,8 @@ Device and ActivityKit tokens are globally claimed. Registering a token on a new
 }
 ```
 
-`per_session` mode also requires `publisherId` and `sessionId`. A device keeps at most one live registration per mode. Registration schedules an immediate state replay.
+End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}` and revoke a device with `DELETE /v1/devices/{deviceId}`. A token cannot be claimed by another relay user.
 
-End one activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}`. Revoke a device with `DELETE /v1/devices/{deviceId}`.
+## Foreground snapshot
 
-## Read a foreground snapshot
-
-Aggregate mode:
-
-`GET /v1/activity-snapshot?mode=all_running`
-
-Per-session mode:
-
-`GET /v1/activity-snapshot?mode=per_session&publisherId=...&sessionId=...`
-
-Talaria uses this only to decide whether to arm and seed an activity while foregrounded. APNs owns later updates after suspension.
+`GET /v1/activity-snapshot?mode=all_running` also requires `X-Talaria-Device-Id`. Talaria uses it only to seed or end an activity while foregrounded; APNs owns later updates while suspended.

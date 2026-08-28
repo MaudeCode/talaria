@@ -10,6 +10,7 @@ import {
 } from "./lib/validators";
 
 const publisherRequestArgs = {
+  userId: v.string(),
   publisherId: v.string(),
   keyId: v.string(),
   nonce: v.string(),
@@ -63,6 +64,7 @@ function exposedState(state: Doc<"sessionStates">) {
 async function authorizePublisherMutation(
   ctx: MutationCtx,
   args: {
+    userId: string;
     publisherId: string;
     keyId: string;
     nonce: string;
@@ -73,24 +75,31 @@ async function authorizePublisherMutation(
   const [publisher, key, nonce] = await Promise.all([
     ctx.db
       .query("publishers")
-      .withIndex("by_publisher_id", (query) => query.eq("publisherId", args.publisherId))
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId),
+      )
       .unique(),
     ctx.db
       .query("publisherKeys")
-      .withIndex("by_publisher_id_and_key_id", (query) =>
-        query.eq("publisherId", args.publisherId).eq("keyId", args.keyId),
-      )
+      .withIndex("by_key_id", (query) => query.eq("keyId", args.keyId))
       .unique(),
     ctx.db
       .query("publisherNonces")
-      .withIndex("by_publisher_id_and_nonce", (query) =>
-        query.eq("publisherId", args.publisherId).eq("nonce", args.nonce),
+      .withIndex("by_user_id_and_publisher_id_and_nonce", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId).eq("nonce", args.nonce),
       )
       .unique(),
   ]);
-  if (!publisher?.enabled || !key || key.revokedAt !== undefined) return null;
+  if (
+    !publisher?.enabled ||
+    !key ||
+    key.userId !== args.userId ||
+    key.publisherId !== args.publisherId ||
+    key.revokedAt !== undefined
+  ) return null;
   if (nonce) return "replay";
   await ctx.db.insert("publisherNonces", {
+    userId: args.userId,
     publisherId: args.publisherId,
     nonce: args.nonce,
     expiresAt: args.nonceExpiresAt,
@@ -115,8 +124,8 @@ export const acceptState = internalMutation({
 
     const existing = await ctx.db
       .query("sessionStates")
-      .withIndex("by_publisher_id_and_session_id", (query) =>
-        query.eq("publisherId", args.publisherId).eq("sessionId", args.sessionId),
+      .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId).eq("sessionId", args.sessionId),
       )
       .unique();
     if (existing?.eventId === args.eventId) return { status: "duplicate" as const };
@@ -126,6 +135,7 @@ export const acceptState = internalMutation({
     const next = args.state
       ? {
           deleted: false,
+          userId: args.userId,
           publisherId: args.publisherId,
           publisherLabel: authorization.label,
           eventId: args.eventId,
@@ -136,6 +146,7 @@ export const acceptState = internalMutation({
         }
       : {
           deleted: true,
+          userId: args.userId,
           publisherId: args.publisherId,
           publisherLabel: authorization.label,
           sessionId: args.sessionId,
@@ -152,6 +163,7 @@ export const acceptState = internalMutation({
     else await ctx.db.insert("sessionStates", next);
 
     await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
+      userId: args.userId,
       publisherId: args.publisherId,
       sessionId: args.sessionId,
       previousPhase,
@@ -178,8 +190,8 @@ export const acceptSnapshot = internalMutation({
 
     const existing = await ctx.db
       .query("sessionStates")
-      .withIndex("by_publisher_id_and_session_id", (query) =>
-        query.eq("publisherId", args.publisherId),
+      .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId),
       )
       .take(500);
     const bySessionId = new Map(existing.map((state) => [state.sessionId, state]));
@@ -190,6 +202,7 @@ export const acceptSnapshot = internalMutation({
       if (current && state.revision <= current.revision) continue;
       const next = {
         deleted: false,
+        userId: args.userId,
         publisherId: args.publisherId,
         publisherLabel: authorization.label,
         ...state,
@@ -210,31 +223,33 @@ export const acceptSnapshot = internalMutation({
       });
     }
 
-    await ctx.scheduler.runAfter(0, internal.delivery.recompute, {});
+    await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: args.userId });
     return { status: "accepted" as const };
   },
 });
 
 export const listCurrentStates = internalQuery({
-  args: { now: v.number() },
+  args: { userId: v.string(), now: v.number() },
   returns: v.array(storedSessionStateValidator),
   handler: async (ctx, args) => {
     const states = await ctx.db
       .query("sessionStates")
-      .withIndex("by_expires_at", (query) => query.gt("expiresAt", args.now))
+      .withIndex("by_user_id_and_expires_at", (query) =>
+        query.eq("userId", args.userId).gt("expiresAt", args.now),
+      )
       .take(500);
     return states.filter((state) => !state.deleted).map(exposedState);
   },
 });
 
 export const getState = internalQuery({
-  args: { publisherId: v.string(), sessionId: v.string() },
+  args: { userId: v.string(), publisherId: v.string(), sessionId: v.string() },
   returns: v.union(v.null(), storedSessionStateValidator),
   handler: async (ctx, args) => {
     const state = await ctx.db
       .query("sessionStates")
-      .withIndex("by_publisher_id_and_session_id", (query) =>
-        query.eq("publisherId", args.publisherId).eq("sessionId", args.sessionId),
+      .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId).eq("sessionId", args.sessionId),
       )
       .unique();
     return state && !state.deleted ? exposedState(state) : null;

@@ -6,8 +6,6 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "convex dev",
-    "smoke": "node --env-file=.env.local scripts/smoke.mjs",
-    "enroll:publisher": "node --env-file=.env.local scripts/enroll-publisher.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "pnpm typecheck && pnpm test"

@@ -10,29 +10,77 @@ import {
 } from "./lib/validators";
 
 export default defineSchema({
+  relayUsers: defineTable({
+    userId: v.string(),
+    appleSubjectHash: v.string(),
+    disabledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_apple_subject_hash", ["appleSubjectHash"]),
+
+  userSessions: defineTable({
+    userId: v.string(),
+    sessionId: v.string(),
+    tokenHash: v.string(),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  appleIdentityTokens: defineTable({
+    tokenHash: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  publisherInvitations: defineTable({
+    userId: v.string(),
+    tokenHash: v.string(),
+    expiresAt: v.number(),
+    consumedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_token_hash", ["tokenHash"])
+    .index("by_expires_at", ["expiresAt"]),
+
   publishers: defineTable({
+    userId: v.optional(v.string()),
     publisherId: v.string(),
     label: v.string(),
     enabled: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_publisher_id", ["publisherId"]),
+  })
+    .index("by_publisher_id", ["publisherId"])
+    .index("by_user_id_and_publisher_id", ["userId", "publisherId"]),
 
   publisherKeys: defineTable({
+    userId: v.optional(v.string()),
     publisherId: v.string(),
     keyId: v.string(),
     publicKey: v.string(),
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
-  }).index("by_publisher_id_and_key_id", ["publisherId", "keyId"]),
+  })
+    .index("by_publisher_id_and_key_id", ["publisherId", "keyId"])
+    .index("by_user_id_and_publisher_id", ["userId", "publisherId"])
+    .index("by_key_id", ["keyId"]),
 
   publisherNonces: defineTable({
+    userId: v.optional(v.string()),
     publisherId: v.string(),
     nonce: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),
   })
     .index("by_publisher_id_and_nonce", ["publisherId", "nonce"])
+    .index("by_user_id_and_publisher_id_and_nonce", ["userId", "publisherId", "nonce"])
     .index("by_expires_at", ["expiresAt"]),
 
   enrollmentCodes: defineTable({
@@ -47,8 +95,9 @@ export default defineSchema({
     .index("by_expires_at", ["expiresAt"]),
 
   devices: defineTable({
+    userId: v.optional(v.string()),
     deviceId: v.string(),
-    credentialHash: v.string(),
+    credentialHash: v.optional(v.string()),
     label: v.string(),
     bundleId: v.optional(v.string()),
     apsEnvironment: v.optional(apsEnvironmentValidator),
@@ -59,10 +108,13 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_device_id", ["deviceId"])
+    .index("by_user_id_and_device_id", ["userId", "deviceId"])
     .index("by_push_token", ["pushToken"])
-    .index("by_updated_at", ["updatedAt"]),
+    .index("by_updated_at", ["updatedAt"])
+    .index("by_user_id_and_updated_at", ["userId", "updatedAt"]),
 
   sessionStates: defineTable({
+    userId: v.optional(v.string()),
     deleted: v.boolean(),
     publisherId: v.string(),
     publisherLabel: v.string(),
@@ -79,9 +131,12 @@ export default defineSchema({
     receivedAt: v.number(),
   })
     .index("by_publisher_id_and_session_id", ["publisherId", "sessionId"])
+    .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])
+    .index("by_user_id_and_expires_at", ["userId", "expiresAt"])
     .index("by_expires_at", ["expiresAt"]),
 
   liveActivities: defineTable({
+    userId: v.optional(v.string()),
     deviceId: v.string(),
     activityId: v.string(),
     mode: activityModeValidator,
@@ -97,11 +152,15 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_device_id_and_activity_id", ["deviceId", "activityId"])
+    .index("by_user_id_and_device_id_and_activity_id", ["userId", "deviceId", "activityId"])
     .index("by_activity_push_token", ["activityPushToken"])
     .index("by_device_id_and_mode_and_ended_at", ["deviceId", "mode", "endedAt"])
+    .index("by_user_id_and_device_id_and_mode_and_ended_at", ["userId", "deviceId", "mode", "endedAt"])
+    .index("by_user_id_and_mode_and_ended_at", ["userId", "mode", "endedAt"])
     .index("by_mode_and_ended_at", ["mode", "endedAt"]),
 
   deliveryJobs: defineTable({
+    userId: v.optional(v.string()),
     deviceId: v.string(),
     activityId: v.optional(v.string()),
     sourcePublisherId: v.optional(v.string()),
@@ -137,7 +196,9 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_activity_id_and_status", ["activityId", "status"])
+    .index("by_user_id_and_activity_id_and_status", ["userId", "activityId", "status"])
     .index("by_device_id_and_status", ["deviceId", "status"])
+    .index("by_user_id_and_device_id_and_status", ["userId", "deviceId", "status"])
     .index("by_status_and_updated_at", ["status", "updatedAt"]),
 
   apnsProviderTokens: defineTable({

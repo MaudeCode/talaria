@@ -3,11 +3,11 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { makeAggregate } from "./lib/aggregate";
+import { subjectHash, verifyAppleIdentityToken } from "./lib/appleIdentity";
 import {
   base64UrlToBytes,
   randomToken,
   sha256,
-  timingSafeEqual,
   verifyPublisherSignature,
 } from "./lib/crypto";
 import {
@@ -71,6 +71,15 @@ function safePath(value: string): boolean {
   return value.startsWith("/") && !value.startsWith("//") && value.length <= 512;
 }
 
+function httpOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value;
+  } catch {
+    return false;
+  }
+}
+
 function bearer(request: Request): string | null {
   const value = request.headers.get("authorization") ?? "";
   return value.startsWith("Bearer ") ? value.slice(7).trim() || null : null;
@@ -98,17 +107,16 @@ function parsePreferences(value: unknown): NotificationPreferences | null {
   return Object.fromEntries(keys.map((key) => [key, value[key]])) as unknown as NotificationPreferences;
 }
 
-async function authenticateDevice(
+async function authenticateUser(
   ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
   request: Request,
-  deviceId: string,
-): Promise<string | null> {
+): Promise<{ userId: string; sessionId: string } | null> {
   const credential = bearer(request);
   if (!credential) return null;
-  const stored = await ctx.runQuery(internal.enrollment.getDeviceCredential, { deviceId });
-  if (!stored || stored.revokedAt !== undefined) return null;
-  const credentialHash = await sha256(credential);
-  return timingSafeEqual(stored.credentialHash, credentialHash) ? credentialHash : null;
+  return await ctx.runQuery(internal.auth.getSession, {
+    tokenHash: await sha256(credential),
+    now: Date.now(),
+  });
 }
 
 async function authenticatePublisher(
@@ -117,7 +125,7 @@ async function authenticatePublisher(
   rawBody: string,
   publisherId: string,
 ): Promise<
-  | { keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
+  | { userId: string; keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
   | null
 > {
   const keyId = request.headers.get("x-talaria-key-id")?.trim();
@@ -130,7 +138,7 @@ async function authenticatePublisher(
   if (!Number.isInteger(timestampSeconds) || Math.abs(receivedAt / 1_000 - timestampSeconds) > 5 * 60) {
     return null;
   }
-  const key = await ctx.runQuery(internal.enrollment.getPublisherKey, { publisherId, keyId });
+  const key = await ctx.runQuery(internal.pairing.getPublisherKey, { publisherId, keyId });
   if (!key?.enabled || key.revokedAt !== undefined) return null;
   try {
     const valid = await verifyPublisherSignature({
@@ -143,7 +151,7 @@ async function authenticatePublisher(
       body: rawBody,
     });
     return valid
-      ? { keyId, nonce, nonceExpiresAt: receivedAt + 10 * 60 * 1_000, receivedAt }
+      ? { userId: key.userId, keyId, nonce, nonceExpiresAt: receivedAt + 10 * 60 * 1_000, receivedAt }
       : null;
   } catch {
     return null;
@@ -191,17 +199,87 @@ function parseState(
 }
 
 http.route({
-  path: "/v1/enrollments/publisher/redeem",
+  path: "/v1/auth/apple",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const body = await readJson(request);
     if (!body) return json(400, { error: "invalid_json" });
-    const code = stringField(body, "code", 256);
+    const identityToken = stringField(body, "identityToken", 16_384);
+    const nonce = stringField(body, "nonce", 256);
+    const subjectSecret = process.env.APPLE_SUBJECT_HASH_KEY?.trim();
+    if (!identityToken || !nonce) return json(400, { error: "invalid_apple_credential" });
+    if (!subjectSecret) return json(503, { error: "apple_auth_not_configured" });
+
+    try {
+      const response = await fetch("https://appleid.apple.com/auth/keys");
+      if (!response.ok) return json(503, { error: "apple_keys_unavailable" });
+      const keySet = await response.json() as { keys?: JsonWebKey[] };
+      const audiences = (process.env.APPLE_CLIENT_IDS ?? "dev.kil.talaria,dev.kil.talaria.branch")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const now = Date.now();
+      const claims = await verifyAppleIdentityToken({
+        token: identityToken,
+        nonce,
+        audiences,
+        nowSeconds: Math.floor(now / 1_000),
+        keys: keySet.keys ?? [],
+      });
+      if (!claims) return json(401, { error: "invalid_apple_credential" });
+
+      const sessionToken = randomToken(32);
+      const sessionExpiresAt = now + 30 * 24 * 60 * 60 * 1_000;
+      const result = await ctx.runMutation(internal.auth.acceptAppleSignIn, {
+        appleSubjectHash: await subjectHash(subjectSecret, claims.sub),
+        appleTokenHash: await sha256(identityToken),
+        appleTokenExpiresAt: claims.exp * 1_000,
+        userId: `usr_${randomToken(12)}`,
+        sessionId: `ses_${randomToken(12)}`,
+        sessionTokenHash: await sha256(sessionToken),
+        sessionExpiresAt,
+        now,
+      });
+      return result.ok
+        ? json(201, { userId: result.userId, sessionToken, expiresAt: sessionExpiresAt })
+        : json(409, { error: result.reason });
+    } catch {
+      return json(503, { error: "apple_auth_unavailable" });
+    }
+  }),
+});
+
+http.route({
+  path: "/v1/pairings/publisher",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
+    const token = randomToken(32);
+    const now = Date.now();
+    const expiresAt = now + 10 * 60 * 1_000;
+    const result = await ctx.runMutation(internal.pairing.createPublisherInvitation, {
+      userId: auth.userId,
+      tokenHash: await sha256(token),
+      expiresAt,
+      now,
+    });
+    return result.ok ? json(201, { invitation: token, expiresAt }) : json(401, { error: "unauthorized" });
+  }),
+});
+
+http.route({
+  path: "/v1/pairings/publisher/redeem",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await readJson(request);
+    if (!body) return json(400, { error: "invalid_json" });
+    const invitation = stringField(body, "invitation", 256);
+    const publisherId = stringField(body, "publisherId", 191);
     const label = stringField(body, "label", 80);
     const publicKey = stringField(body, "publicKey", 128);
-    const requestedPublisherId = optionalStringField(body, "publisherId", 191);
-    if (!code || !label || !publicKey || requestedPublisherId === null) {
-      return json(400, { error: "invalid_enrollment" });
+    if (!invitation || !publisherId || !httpOrigin(publisherId) || !label || !publicKey) {
+      return json(400, { error: "invalid_pairing" });
     }
     try {
       if (base64UrlToBytes(publicKey).byteLength !== 32) {
@@ -210,38 +288,15 @@ http.route({
     } catch {
       return json(400, { error: "invalid_public_key" });
     }
-    const result = await ctx.runMutation(internal.enrollment.redeemPublisher, {
-      codeHash: await sha256(code),
-      publisherId: requestedPublisherId ?? `pub_${randomToken(12)}`,
+    const result = await ctx.runMutation(internal.pairing.redeemPublisherInvitation, {
+      tokenHash: await sha256(invitation),
+      publisherId,
       keyId: `key_${randomToken(8)}`,
       label,
       publicKey,
       now: Date.now(),
     });
     return result.ok ? json(201, result) : json(400, { error: result.reason });
-  }),
-});
-
-http.route({
-  path: "/v1/enrollments/device/redeem",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const body = await readJson(request);
-    if (!body) return json(400, { error: "invalid_json" });
-    const code = stringField(body, "code", 256);
-    const label = stringField(body, "label", 80);
-    if (!code || !label) return json(400, { error: "invalid_enrollment" });
-    const deviceId = `dev_${randomToken(12)}`;
-    const credential = randomToken(32);
-    const result = await ctx.runMutation(internal.enrollment.redeemDevice, {
-      codeHash: await sha256(code),
-      deviceId,
-      credentialHash: await sha256(credential),
-      label,
-      preferences: defaultNotificationPreferences,
-      now: Date.now(),
-    });
-    return result.ok ? json(201, { deviceId, credential }) : json(400, { error: result.reason });
   }),
 });
 
@@ -321,14 +376,28 @@ http.route({
 });
 
 http.route({
+  path: "/v1/auth/session",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const credential = bearer(request);
+    if (!credential) return json(401, { error: "unauthorized" });
+    const result = await ctx.runMutation(internal.auth.revokeSession, {
+      tokenHash: await sha256(credential),
+      now: Date.now(),
+    });
+    return json(result.ok ? 200 : 404, result);
+  }),
+});
+
+http.route({
   pathPrefix: "/v1/devices/",
   method: "PUT",
   handler: httpAction(async (ctx, request) => {
     const parts = pathParts(request);
     const deviceId = parts[2];
     if (!deviceId) return json(404, { error: "not_found" });
-    const credentialHash = await authenticateDevice(ctx, request, deviceId);
-    if (!credentialHash) return json(401, { error: "unauthorized" });
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
     const body = await readJson(request);
     if (!body) return json(400, { error: "invalid_json" });
 
@@ -352,8 +421,8 @@ http.route({
         return json(400, { error: "invalid_device" });
       }
       const result = await ctx.runMutation(internal.devices.upsertDevice, {
+        userId: auth.userId,
         deviceId,
-        credentialHash,
         label,
         bundleId,
         apsEnvironment: apsEnvironment as ApsEnvironment,
@@ -386,8 +455,8 @@ http.route({
         return json(400, { error: "invalid_activity" });
       }
       const result = await ctx.runMutation(internal.devices.registerActivity, {
+        userId: auth.userId,
         deviceId,
-        credentialHash,
         activityId,
         mode: mode as ActivityMode,
         publisherId,
@@ -411,20 +480,20 @@ http.route({
     const parts = pathParts(request);
     const deviceId = parts[2];
     if (!deviceId) return json(404, { error: "not_found" });
-    const credentialHash = await authenticateDevice(ctx, request, deviceId);
-    if (!credentialHash) return json(401, { error: "unauthorized" });
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
     if (parts.length === 3) {
       const result = await ctx.runMutation(internal.devices.revokeDevice, {
+        userId: auth.userId,
         deviceId,
-        credentialHash,
         now: Date.now(),
       });
       return json(result.ok ? 200 : 404, result);
     }
     if (parts.length === 5 && parts[3] === "live-activities") {
       const result = await ctx.runMutation(internal.devices.endActivity, {
+        userId: auth.userId,
         deviceId,
-        credentialHash,
         activityId: parts[4]!,
         now: Date.now(),
       });
@@ -440,20 +509,28 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const url = new URL(request.url);
     const deviceId = request.headers.get("x-talaria-device-id")?.trim();
-    if (!deviceId || !(await authenticateDevice(ctx, request, deviceId))) {
+    const auth = await authenticateUser(ctx, request);
+    if (!deviceId || !auth) {
       return json(401, { error: "unauthorized" });
     }
     const mode = url.searchParams.get("mode");
     const now = Date.now();
     if (mode === "all_running") {
-      const states = await ctx.runQuery(internal.publishers.listCurrentStates, { now });
+      const states = await ctx.runQuery(internal.publishers.listCurrentStates, {
+        userId: auth.userId,
+        now,
+      });
       return json(200, { aggregate: makeAggregate(states, now) });
     }
     if (mode === "per_session") {
       const publisherId = url.searchParams.get("publisherId");
       const sessionId = url.searchParams.get("sessionId");
       if (!publisherId || !sessionId) return json(400, { error: "session_required" });
-      const state = await ctx.runQuery(internal.publishers.getState, { publisherId, sessionId });
+      const state = await ctx.runQuery(internal.publishers.getState, {
+        userId: auth.userId,
+        publisherId,
+        sessionId,
+      });
       return json(200, { aggregate: state ? makeAggregate([state], now) : null });
     }
     return json(400, { error: "invalid_mode" });

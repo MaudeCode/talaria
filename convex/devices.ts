@@ -10,8 +10,8 @@ import {
 
 export const upsertDevice = internalMutation({
   args: {
+    userId: v.string(),
     deviceId: v.string(),
-    credentialHash: v.string(),
     label: v.string(),
     bundleId: v.string(),
     apsEnvironment: apsEnvironmentValidator,
@@ -24,9 +24,11 @@ export const upsertDevice = internalMutation({
   handler: async (ctx, args) => {
     const device = await ctx.db
       .query("devices")
-      .withIndex("by_device_id", (query) => query.eq("deviceId", args.deviceId))
+      .withIndex("by_user_id_and_device_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
+      )
       .unique();
-    if (!device || device.revokedAt !== undefined || device.credentialHash !== args.credentialHash) {
+    if (device?.revokedAt !== undefined) {
       return { ok: false };
     }
     if (args.pushToken) {
@@ -34,11 +36,14 @@ export const upsertDevice = internalMutation({
         .query("devices")
         .withIndex("by_push_token", (query) => query.eq("pushToken", args.pushToken))
         .unique();
-      if (owner && owner._id !== device._id) {
+      if (owner && (!device || owner._id !== device._id)) {
+        if (owner.userId !== args.userId) return { ok: false };
         await ctx.db.patch(owner._id, { pushToken: undefined, updatedAt: args.now });
       }
     }
-    await ctx.db.patch(device._id, {
+    const value = {
+      userId: args.userId,
+      deviceId: args.deviceId,
       label: args.label,
       bundleId: args.bundleId,
       apsEnvironment: args.apsEnvironment,
@@ -48,17 +53,20 @@ export const upsertDevice = internalMutation({
           ? { pushToken: undefined }
           : {}),
       preferences: args.preferences,
+      createdAt: device?.createdAt ?? args.now,
       updatedAt: args.now,
-    });
-    await ctx.scheduler.runAfter(0, internal.delivery.recompute, {});
+    };
+    if (device) await ctx.db.patch(device._id, value);
+    else await ctx.db.insert("devices", value);
+    await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: args.userId });
     return { ok: true };
   },
 });
 
 export const registerActivity = internalMutation({
   args: {
+    userId: v.string(),
     deviceId: v.string(),
-    credentialHash: v.string(),
     activityId: v.string(),
     mode: activityModeValidator,
     publisherId: v.optional(v.string()),
@@ -72,9 +80,11 @@ export const registerActivity = internalMutation({
   handler: async (ctx, args) => {
     const device = await ctx.db
       .query("devices")
-      .withIndex("by_device_id", (query) => query.eq("deviceId", args.deviceId))
+      .withIndex("by_user_id_and_device_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
+      )
       .unique();
-    if (!device || device.revokedAt !== undefined || device.credentialHash !== args.credentialHash) {
+    if (!device || device.revokedAt !== undefined) {
       return { ok: false, reason: "unauthorized" };
     }
     if (args.mode === "per_session" && (!args.publisherId || !args.sessionId)) {
@@ -88,13 +98,16 @@ export const registerActivity = internalMutation({
       )
       .unique();
     if (tokenOwner && (tokenOwner.deviceId !== args.deviceId || tokenOwner.activityId !== args.activityId)) {
+      if (tokenOwner.userId !== args.userId) {
+        return { ok: false, reason: "token_owned" };
+      }
       await ctx.db.delete(tokenOwner._id);
     }
 
     const sameMode = await ctx.db
       .query("liveActivities")
-      .withIndex("by_device_id_and_mode_and_ended_at", (query) =>
-        query.eq("deviceId", args.deviceId).eq("mode", args.mode).eq("endedAt", undefined),
+      .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("mode", args.mode).eq("endedAt", undefined),
       )
       .take(10);
     for (const activity of sameMode) {
@@ -105,11 +118,12 @@ export const registerActivity = internalMutation({
 
     const existing = await ctx.db
       .query("liveActivities")
-      .withIndex("by_device_id_and_activity_id", (query) =>
-        query.eq("deviceId", args.deviceId).eq("activityId", args.activityId),
+      .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
       )
       .unique();
     const value = {
+      userId: args.userId,
       deviceId: args.deviceId,
       activityId: args.activityId,
       mode: args.mode,
@@ -127,6 +141,7 @@ export const registerActivity = internalMutation({
     if (existing) await ctx.db.replace(existing._id, value);
     else await ctx.db.insert("liveActivities", value);
     await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
+      userId: args.userId,
       publisherId: args.publisherId,
       sessionId: args.sessionId,
     });
@@ -136,8 +151,8 @@ export const registerActivity = internalMutation({
 
 export const endActivity = internalMutation({
   args: {
+    userId: v.string(),
     deviceId: v.string(),
-    credentialHash: v.string(),
     activityId: v.string(),
     now: v.number(),
   },
@@ -146,30 +161,34 @@ export const endActivity = internalMutation({
     const [device, activity] = await Promise.all([
       ctx.db
         .query("devices")
-        .withIndex("by_device_id", (query) => query.eq("deviceId", args.deviceId))
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", args.userId).eq("deviceId", args.deviceId),
+        )
         .unique(),
       ctx.db
         .query("liveActivities")
-        .withIndex("by_device_id_and_activity_id", (query) =>
-          query.eq("deviceId", args.deviceId).eq("activityId", args.activityId),
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
         )
         .unique(),
     ]);
-    if (!device || device.credentialHash !== args.credentialHash || !activity) return { ok: false };
+    if (!device || !activity) return { ok: false };
     await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
     return { ok: true };
   },
 });
 
 export const revokeDevice = internalMutation({
-  args: { deviceId: v.string(), credentialHash: v.string(), now: v.number() },
+  args: { userId: v.string(), deviceId: v.string(), now: v.number() },
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
     const device = await ctx.db
       .query("devices")
-      .withIndex("by_device_id", (query) => query.eq("deviceId", args.deviceId))
+      .withIndex("by_user_id_and_device_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
+      )
       .unique();
-    if (!device || device.credentialHash !== args.credentialHash) return { ok: false };
+    if (!device) return { ok: false };
     await ctx.db.patch(device._id, {
       revokedAt: args.now,
       pushToken: undefined,
@@ -177,8 +196,8 @@ export const revokeDevice = internalMutation({
     });
     const activities = await ctx.db
       .query("liveActivities")
-      .withIndex("by_device_id_and_mode_and_ended_at", (query) =>
-        query.eq("deviceId", args.deviceId),
+      .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
       )
       .take(100);
     for (const activity of activities) {

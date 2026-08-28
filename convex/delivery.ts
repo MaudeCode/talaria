@@ -45,30 +45,33 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
   };
 }
 
-async function currentStates(ctx: MutationCtx, now: number): Promise<SessionState[]> {
+async function currentStates(ctx: MutationCtx, userId: string, now: number): Promise<SessionState[]> {
   const states = await ctx.db
     .query("sessionStates")
-    .withIndex("by_expires_at", (query) => query.gt("expiresAt", now))
+    .withIndex("by_user_id_and_expires_at", (query) =>
+      query.eq("userId", userId).gt("expiresAt", now),
+    )
     .take(MAX_STATE_ROWS);
   return states.map(asSessionState).filter((state) => !state.deleted);
 }
 
 async function hasPendingActivityJob(
   ctx: MutationCtx,
+  userId: string,
   activityId: string,
   fingerprint: string,
 ): Promise<boolean> {
   const [queued, running] = await Promise.all([
     ctx.db
       .query("deliveryJobs")
-      .withIndex("by_activity_id_and_status", (query) =>
-        query.eq("activityId", activityId).eq("status", "queued"),
+      .withIndex("by_user_id_and_activity_id_and_status", (query) =>
+        query.eq("userId", userId).eq("activityId", activityId).eq("status", "queued"),
       )
       .take(20),
     ctx.db
       .query("deliveryJobs")
-      .withIndex("by_activity_id_and_status", (query) =>
-        query.eq("activityId", activityId).eq("status", "running"),
+      .withIndex("by_user_id_and_activity_id_and_status", (query) =>
+        query.eq("userId", userId).eq("activityId", activityId).eq("status", "running"),
       )
       .take(20),
   ]);
@@ -77,20 +80,21 @@ async function hasPendingActivityJob(
 
 async function hasPendingDeviceJob(
   ctx: MutationCtx,
+  userId: string,
   deviceId: string,
   fingerprint: string,
 ): Promise<boolean> {
   const [queued, running] = await Promise.all([
     ctx.db
       .query("deliveryJobs")
-      .withIndex("by_device_id_and_status", (query) =>
-        query.eq("deviceId", deviceId).eq("status", "queued"),
+      .withIndex("by_user_id_and_device_id_and_status", (query) =>
+        query.eq("userId", userId).eq("deviceId", deviceId).eq("status", "queued"),
       )
       .take(20),
     ctx.db
       .query("deliveryJobs")
-      .withIndex("by_device_id_and_status", (query) =>
-        query.eq("deviceId", deviceId).eq("status", "running"),
+      .withIndex("by_user_id_and_device_id_and_status", (query) =>
+        query.eq("userId", userId).eq("deviceId", deviceId).eq("status", "running"),
       )
       .take(20),
   ]);
@@ -100,6 +104,7 @@ async function hasPendingDeviceJob(
 async function enqueueJob(
   ctx: MutationCtx,
   input: {
+    userId: string;
     deviceId: string;
     activityId?: string;
     sourcePublisherId?: string;
@@ -112,11 +117,12 @@ async function enqueueJob(
   },
 ): Promise<void> {
   const duplicate = input.activityId
-    ? await hasPendingActivityJob(ctx, input.activityId, input.stateFingerprint)
-    : await hasPendingDeviceJob(ctx, input.deviceId, input.stateFingerprint);
+    ? await hasPendingActivityJob(ctx, input.userId, input.activityId, input.stateFingerprint)
+    : await hasPendingDeviceJob(ctx, input.userId, input.deviceId, input.stateFingerprint);
   if (duplicate) return;
 
   const jobId = await ctx.db.insert("deliveryJobs", {
+    userId: input.userId,
     deviceId: input.deviceId,
     activityId: input.activityId,
     sourcePublisherId: input.sourcePublisherId,
@@ -146,6 +152,7 @@ async function enqueueJob(
 
 export const recompute = internalMutation({
   args: {
+    userId: v.string(),
     publisherId: v.optional(v.string()),
     sessionId: v.optional(v.string()),
     previousPhase: v.optional(sessionPhaseValidator),
@@ -153,21 +160,25 @@ export const recompute = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const now = Date.now();
-    const states = await currentStates(ctx, now);
+    const states = await currentStates(ctx, args.userId, now);
     const aggregate = makeAggregate(states, now);
     const [activities, devices] = await Promise.all([
       ctx.db
         .query("liveActivities")
-        .withIndex("by_mode_and_ended_at", (query) =>
-          query.eq("mode", "all_running").eq("endedAt", undefined),
+        .withIndex("by_user_id_and_mode_and_ended_at", (query) =>
+          query.eq("userId", args.userId).eq("mode", "all_running").eq("endedAt", undefined),
         )
         .take(100),
-      ctx.db.query("devices").withIndex("by_updated_at").order("desc").take(100),
+      ctx.db
+        .query("devices")
+        .withIndex("by_user_id_and_updated_at", (query) => query.eq("userId", args.userId))
+        .order("desc")
+        .take(100),
     ]);
     const perSessionActivities = await ctx.db
       .query("liveActivities")
-      .withIndex("by_mode_and_ended_at", (query) =>
-        query.eq("mode", "per_session").eq("endedAt", undefined),
+      .withIndex("by_user_id_and_mode_and_ended_at", (query) =>
+        query.eq("userId", args.userId).eq("mode", "per_session").eq("endedAt", undefined),
       )
       .take(100);
     const allActivities = [...activities, ...perSessionActivities];
@@ -227,6 +238,7 @@ export const recompute = internalMutation({
           alert,
         });
         await enqueueJob(ctx, {
+          userId: args.userId,
           deviceId: activity.deviceId,
           activityId: activity.activityId,
           kind: "live_activity_end",
@@ -259,6 +271,7 @@ export const recompute = internalMutation({
         alert,
       });
       await enqueueJob(ctx, {
+        userId: args.userId,
         deviceId: activity.deviceId,
         activityId: activity.activityId,
         kind: "live_activity_update",
@@ -294,6 +307,7 @@ export const recompute = internalMutation({
           );
           if (!alert) continue;
           await enqueueJob(ctx, {
+            userId: args.userId,
             deviceId: device.deviceId,
             kind: "notification",
             sourcePublisherId: changedState.publisherId,
@@ -330,22 +344,22 @@ export const claimJob = internalMutation({
   ),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
-    if (!job || (job.status !== "queued" && job.status !== "running")) {
+    if (!job?.userId || (job.status !== "queued" && job.status !== "running")) {
       return { status: "stale" as const };
     }
     if (job.activityId) {
       const activityId = job.activityId;
       const activity = await ctx.db
         .query("liveActivities")
-        .withIndex("by_device_id_and_activity_id", (query) =>
-          query.eq("deviceId", job.deviceId).eq("activityId", activityId),
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
         )
         .unique();
       if (!activity || activity.activityPushToken !== job.expectedToken) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
       }
-      const states = await currentStates(ctx, args.now);
+      const states = await currentStates(ctx, job.userId, args.now);
       const currentAggregate =
         activity.mode === "all_running"
           ? makeAggregate(states, args.now)
@@ -367,7 +381,9 @@ export const claimJob = internalMutation({
     } else {
       const device = await ctx.db
         .query("devices")
-        .withIndex("by_device_id", (query) => query.eq("deviceId", job.deviceId))
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId),
+        )
         .unique();
       if (!device || device.pushToken !== job.expectedToken) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
@@ -376,8 +392,9 @@ export const claimJob = internalMutation({
       if (job.sourcePublisherId && job.sourceSessionId) {
         const state = await ctx.db
           .query("sessionStates")
-          .withIndex("by_publisher_id_and_session_id", (query) =>
+          .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
             query
+              .eq("userId", job.userId)
               .eq("publisherId", job.sourcePublisherId!)
               .eq("sessionId", job.sourceSessionId!),
           )
@@ -411,7 +428,7 @@ export const markDelivered = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
-    if (!job) return null;
+    if (!job?.userId) return null;
     await ctx.db.patch(job._id, {
       status: "done",
       apnsStatus: args.apnsStatus,
@@ -422,8 +439,8 @@ export const markDelivered = internalMutation({
       const activityId = job.activityId;
       const activity = await ctx.db
         .query("liveActivities")
-        .withIndex("by_device_id_and_activity_id", (query) =>
-          query.eq("deviceId", job.deviceId).eq("activityId", activityId),
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
         )
         .unique();
       if (activity && activity.activityPushToken === job.expectedToken) {
@@ -450,7 +467,7 @@ export const markPermanentFailure = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
-    if (!job) return null;
+    if (!job?.userId) return null;
     await ctx.db.patch(job._id, {
       status: "dead",
       apnsStatus: args.apnsStatus,
@@ -462,8 +479,8 @@ export const markPermanentFailure = internalMutation({
       const activityId = job.activityId;
       const activity = await ctx.db
         .query("liveActivities")
-        .withIndex("by_device_id_and_activity_id", (query) =>
-          query.eq("deviceId", job.deviceId).eq("activityId", activityId),
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId).eq("activityId", activityId),
         )
         .unique();
       if (activity?.activityPushToken === job.expectedToken) {
@@ -472,7 +489,9 @@ export const markPermanentFailure = internalMutation({
     } else {
       const device = await ctx.db
         .query("devices")
-        .withIndex("by_device_id", (query) => query.eq("deviceId", job.deviceId))
+        .withIndex("by_user_id_and_device_id", (query) =>
+          query.eq("userId", job.userId).eq("deviceId", job.deviceId),
+        )
         .unique();
       if (device?.pushToken === job.expectedToken) {
         await ctx.db.patch(device._id, { pushToken: undefined, updatedAt: args.now });

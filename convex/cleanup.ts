@@ -9,13 +9,25 @@ export const prune = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const oldJobCutoff = now - 7 * 24 * 60 * 60 * 1_000;
-    const [nonces, enrollments, sessions, doneJobs, deadJobs, staleJobs] = await Promise.all([
+    const [nonces, enrollments, userSessions, appleTokens, invitations, sessions, doneJobs, deadJobs, staleJobs] = await Promise.all([
       ctx.db
         .query("publisherNonces")
         .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
         .take(100),
       ctx.db
         .query("enrollmentCodes")
+        .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
+        .take(100),
+      ctx.db
+        .query("userSessions")
+        .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
+        .take(100),
+      ctx.db
+        .query("appleIdentityTokens")
+        .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
+        .take(100),
+      ctx.db
+        .query("publisherInvitations")
         .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
         .take(100),
       ctx.db
@@ -41,9 +53,24 @@ export const prune = internalMutation({
         )
         .take(100),
     ]);
-    const documents = [...nonces, ...enrollments, ...sessions, ...doneJobs, ...deadJobs, ...staleJobs];
+    const documents = [
+      ...nonces,
+      ...enrollments,
+      ...userSessions,
+      ...appleTokens,
+      ...invitations,
+      ...sessions,
+      ...doneJobs,
+      ...deadJobs,
+      ...staleJobs,
+    ];
     for (const document of documents) await ctx.db.delete(document._id);
-    if (sessions.length > 0) await ctx.scheduler.runAfter(0, internal.delivery.recompute, {});
+    const affectedUsers = new Set(
+      sessions.flatMap((session) => session.userId ? [session.userId] : []),
+    );
+    for (const userId of affectedUsers) {
+      await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId });
+    }
     return { deleted: documents.length };
   },
 });

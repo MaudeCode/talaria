@@ -1,30 +1,10 @@
 # Talaria Relay
 
-Private Convex relay for Talaria notifications and Live Activities.
+Tenant-isolated Convex relay for Talaria notifications and aggregate Live Activities.
 
-Hermes WebUI publishers send bounded semantic session state. The relay aggregates state from every enrolled publisher, stores relay-wide device and ActivityKit tokens, and queues APNs delivery. It does not accept transcript text, commands, tool arguments, file paths, or provider credentials.
+Talaria signs in natively with Apple and receives a relay session. It creates a short-lived publisher invitation and sends it through the already-authenticated Hermes WebUI API. Hermes redeems the invitation, stores its Ed25519 signing key locally, and publishes complete session snapshots. The relay scopes publishers, devices, session state, ActivityKit tokens, and APNs jobs to the Apple-backed relay user.
 
-## Current status
-
-Implemented and locally verified:
-
-- One-time publisher and device enrollment.
-- Ed25519-signed publisher requests with timestamp, nonce, and revision replay protection.
-- Relay-wide devices plus cross-publisher `all_running` aggregation.
-- `per_session` and `all_running` Live Activity registrations.
-- Bounded aggregate rows, attention-first ordering, terminal retention, and stale-state expiry.
-- Workpool delivery with serialized APNs actions, retries, completion handling, and stale token/state rejection.
-- ActivityKit update/end payloads and ordinary notification fallback.
-- APNs ES256 provider-token reuse and Node `http2` transport.
-- Five-minute pruning of expired nonces, codes, session state, and old delivery jobs.
-
-Still requires maintainer setup:
-
-- Production Convex deployment selection.
-- APNs environment values and `.p8` key.
-- Custom domain attachment.
-- A physical-iPhone APNs sandbox proof.
-- Hermes publisher and Talaria client integrations in their own repositories.
+The relay accepts bounded semantic state only. It does not accept transcripts, commands, tool arguments, file paths, provider credentials, or Hermes authentication secrets.
 
 ## Local development
 
@@ -34,62 +14,38 @@ pnpm convex deployment select local
 pnpm dev
 ```
 
-The checked-in Convex project is `talaria-relay`; `.env.local` selects the uncommitted local deployment.
-
-Run checks:
+Run all local checks:
 
 ```sh
 pnpm check
 pnpm convex dev --once --typecheck enable
 ```
 
-Create short-lived enrollment codes from a trusted Convex CLI session:
+## Production configuration
 
-```sh
-pnpm convex run admin:createEnrollmentCode '{"kind":"publisher"}'
-pnpm convex run admin:createEnrollmentCode '{"kind":"device"}'
-```
-
-Enroll a WebUI publisher and create its local Ed25519 private key:
-
-```sh
-pnpm convex run admin:createEnrollmentCode \
-  '{"kind":"publisher","publisherId":"https://hermes.example.com"}'
-
-PUBLISHER_ENROLLMENT_CODE=... \
-PUBLISHER_ID=https://hermes.example.com \
-pnpm enroll:publisher
-```
-
-The command prints the four `HERMES_WEBUI_TALARIA_*` settings to copy into the
-WebUI `.env`; it writes the private key with mode `0600` and never prints it.
-`PUBLISHER_ID` must exactly match that Hermes server's URL in Talaria so a tap
-from a cross-publisher aggregate can switch to the correct configured server.
-
-Exercise publisher enrollment, device enrollment, signed state publication, duplicate/stale revision handling, and aggregate snapshot retrieval:
-
-```sh
-PUBLISHER_ENROLLMENT_CODE=... \
-DEVICE_ENROLLMENT_CODE=... \
-pnpm smoke
-```
-
-## APNs configuration
-
-Set these as Convex deployment environment variables when credentials are available:
+Set these once on the production Convex deployment:
 
 ```text
 APNS_TEAM_ID
 APNS_KEY_ID
 APNS_PRIVATE_KEY
+APPLE_SUBJECT_HASH_KEY
+APPLE_CLIENT_IDS=dev.kil.talaria,dev.kil.talaria.branch
 ```
 
-Bundle ID and sandbox/production routing are registered per Talaria device. The private key never enters the database or API responses.
+`APPLE_SUBJECT_HASH_KEY` is a random server secret used to pseudonymize Apple's stable subject before storage. APNs credentials and this hash key never enter the database or API responses.
 
-The Workpool has `maxParallelism: 1`, so provider-token creation and APNs sends stay serialized. Provider JWTs are stored for 45 minutes, below Apple's one-hour lifetime.
+Production deploys are tag-only. Tags matching `relay-v*` run the full check suite and deploy with the repository's `CONVEX_DEPLOY_KEY` GitHub Actions secret.
 
-## Repository boundary
+The production HTTP origin is `https://relay.talaria.kil.dev`.
 
-This repository is temporary. When Talaria consolidates into its monorepo, its contents can move under `relay/` without changing the HTTP contract.
+## Remaining real-boundary proof
 
-See [docs/http-api.md](docs/http-api.md) for the version 1 contract.
+After Apple enables Sign in with Apple for the Talaria App ID and production configuration is installed:
+
+1. Sign in from a physical iPhone.
+2. Pair an authenticated Hermes server from Talaria Settings.
+3. Start concurrent Hermes sessions and arm the aggregate Live Activity.
+4. Lock the phone and verify APNs update/end plus approval/input notification fallback.
+
+See [docs/http-api.md](docs/http-api.md) for the v1 contract.
