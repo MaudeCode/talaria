@@ -595,6 +595,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "shared-token",
+      seededLocally: false,
       now,
     };
 
@@ -697,6 +698,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "tenant-token",
+      seededLocally: false,
       now,
     });
     const stolen = await backend.mutation(internal.devices.registerActivity, {
@@ -707,6 +709,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "tenant-token",
+      seededLocally: false,
       now: now + 1,
     });
     expect(registered).toEqual({ ok: true });
@@ -1099,6 +1102,7 @@ describe("Convex relay state", () => {
       attributesType: "TalariaAggregateActivityAttributes",
       schemaVersion: 1,
       activityPushToken: "activity-token",
+      seededLocally: false,
       now: now + 8,
     });
     const registeredDevice = await backend.run(async (ctx) =>
@@ -1125,6 +1129,83 @@ describe("Convex relay state", () => {
     expect(endJob).toMatchObject({
       kind: "live_activity_end",
       activityId: "activity-from-apns",
+    });
+  });
+
+  it("leases a locally seeded activity until publisher state arrives", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1",
+      deviceId: "device-1",
+      activityId: "seeded-activity",
+      mode: "all_running",
+      attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1,
+      activityPushToken: "seeded-token",
+      seededLocally: true,
+      now,
+    });
+
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    let state = await backend.run(async (ctx) => ({
+      activity: await ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "seeded-activity"),
+        )
+        .unique(),
+      jobs: await ctx.db.query("deliveryJobs").collect(),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(state.activity?.emptyStateLeaseUntil).toBe(now + 30_000);
+    expect(state.jobs).toHaveLength(0);
+    expect(state.scheduled.some((job) => job.name === "delivery:recompute")).toBe(true);
+
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-1",
+        revision: 1,
+        title: "Local work",
+        phase: "starting",
+        updatedAt: now + 1,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 60_000,
+        receivedAt: now + 1,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    state = await backend.run(async (ctx) => ({
+      activity: await ctx.db
+        .query("liveActivities")
+        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+          query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "seeded-activity"),
+        )
+        .unique(),
+      jobs: await ctx.db.query("deliveryJobs").collect(),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(state.jobs).toHaveLength(1);
+    expect(state.jobs[0]).toMatchObject({
+      kind: "live_activity_update",
+      activityId: "seeded-activity",
     });
   });
 });

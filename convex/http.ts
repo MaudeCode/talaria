@@ -564,6 +564,7 @@ http.route({
       const attributesType = stringField(body, "attributesType", 120);
       const schemaVersion = numberField(body, "schemaVersion");
       const activityPushToken = stringField(body, "activityPushToken", 512);
+      const seededLocally = body.seededLocally ?? false;
       if (
         !activityId ||
         (mode !== "per_session" && mode !== "all_running") ||
@@ -572,7 +573,8 @@ http.route({
         !attributesType ||
         schemaVersion === null ||
         !Number.isSafeInteger(schemaVersion) ||
-        !activityPushToken
+        !activityPushToken ||
+        typeof seededLocally !== "boolean"
       ) {
         return json(400, { error: "invalid_activity" });
       }
@@ -586,6 +588,7 @@ http.route({
         attributesType,
         schemaVersion,
         activityPushToken,
+        seededLocally,
         now: Date.now(),
       });
       return result.ok ? json(200, result) : json(400, { error: result.reason });

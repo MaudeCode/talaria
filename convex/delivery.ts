@@ -307,6 +307,14 @@ export const recompute = internalMutation({
       })[0] ?? null;
 
       if (nextAggregate === null) {
+        if (activity.emptyStateLeaseUntil !== undefined && activity.emptyStateLeaseUntil > now) {
+          await ctx.scheduler.runAfter(
+            activity.emptyStateLeaseUntil - now,
+            internal.delivery.recompute,
+            { userId: args.userId },
+          );
+          continue;
+        }
         const request = makeLiveActivityEnd({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
@@ -593,6 +601,7 @@ export const markDelivered = internalMutation({
         await ctx.db.patch(activity._id, {
           lastAggregate: job.aggregate,
           lastDeliveryAt: args.now,
+          ...(job.kind === "live_activity_update" ? { emptyStateLeaseUntil: undefined } : {}),
           ...(job.kind === "live_activity_end" && activity.endedAt === undefined
             ? { endedAt: args.now }
             : {}),
