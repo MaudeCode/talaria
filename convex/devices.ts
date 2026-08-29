@@ -142,6 +142,9 @@ export const registerActivity = internalMutation({
       if (tokenOwner.userId !== args.userId) {
         return { ok: false, reason: "token_owned" };
       }
+      if (tokenOwner.endedAt !== undefined) {
+        return { ok: false, reason: "ended" };
+      }
       await ctx.db.delete(tokenOwner._id);
     }
 
