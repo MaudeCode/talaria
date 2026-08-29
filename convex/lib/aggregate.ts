@@ -63,7 +63,11 @@ export function rowForState(state: SessionState): AggregateRow {
   };
 }
 
-export function makeAggregate(states: readonly SessionState[], now: number): ActivityAggregate | null {
+export function makeAggregate(
+  states: readonly SessionState[],
+  now: number,
+  includeTerminalOnly = false,
+): ActivityAggregate | null {
   const visible = states
     .filter((state) => {
       if (state.deleted) return false;
@@ -79,7 +83,7 @@ export function makeAggregate(states: readonly SessionState[], now: number): Act
     );
 
   if (visible.length === 0) return null;
-  if (!visible.some((state) => !isTerminalPhase(state.phase))) return null;
+  if (!includeTerminalOnly && !visible.some((state) => !isTerminalPhase(state.phase))) return null;
 
   const activeCount = visible.filter(
     (state) => !isTerminalPhase(state.phase) && state.phase !== "stale",

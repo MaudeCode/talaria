@@ -335,16 +335,15 @@ export const recompute = internalMutation({
       ) {
         continue;
       }
-      const nextAggregate =
-        activity.mode === "all_running"
-          ? aggregate
-          : makeAggregate(
-              states.filter(
-                (state) =>
-                  state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
-              ),
-              now,
-            );
+      const activityStates = activity.mode === "all_running"
+        ? states
+        : states.filter(
+            (state) =>
+              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
+          );
+      const nextAggregate = activity.mode === "all_running"
+        ? aggregate
+        : makeAggregate(activityStates, now);
       const alert = changed.flatMap(({ state, previousPhase }) => {
         if (
           activity.mode !== "all_running" &&
@@ -384,12 +383,14 @@ export const recompute = internalMutation({
         continue;
       }
       if (nextAggregate === null) {
+        const terminalAggregate = makeAggregate(activityStates, now, true);
         const request = makeLiveActivityEnd({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
           environment: device.apsEnvironment,
-          aggregate: null,
+          aggregate: terminalAggregate,
           nowEpochSeconds: Math.floor(now / 1_000),
+          dismissalDelaySeconds: 15,
           alert,
         });
         await enqueueJob(ctx, {
@@ -400,8 +401,8 @@ export const recompute = internalMutation({
           sourcePublisherId: changedState?.publisherId,
           sourceSessionId: changedState?.sessionId,
           request,
-          aggregate: activity.lastAggregate,
-          stateFingerprint: "end:null",
+          aggregate: terminalAggregate ?? activity.lastAggregate,
+          stateFingerprint: `end:${aggregateFingerprint(terminalAggregate)}`,
           now,
         });
         if (alert) alertedDevices.add(activity.deviceId);
@@ -548,21 +549,19 @@ export const claimJob = internalMutation({
         return { status: "stale" as const };
       }
       const states = await currentStates(ctx, job.userId, args.now);
-      const currentAggregate =
-        activity.mode === "all_running"
-          ? makeAggregate(states, args.now)
-          : makeAggregate(
-              states.filter(
-                (state) =>
-                  state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
-              ),
-              args.now,
-            );
+      const activityStates = activity.mode === "all_running"
+        ? states
+        : states.filter(
+            (state) =>
+              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
+          );
+      const currentAggregate = makeAggregate(activityStates, args.now);
       const stateIsCurrent =
         isDisplacementEnd
           ? true
           : job.kind === "live_activity_end"
-          ? currentAggregate === null
+          ? currentAggregate === null &&
+            job.stateFingerprint === `end:${aggregateFingerprint(makeAggregate(activityStates, args.now, true))}`
           : aggregateFingerprint(currentAggregate) === job.stateFingerprint;
       if (!stateIsCurrent) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
