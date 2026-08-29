@@ -58,6 +58,11 @@ describe("makeAggregate", () => {
     const terminal = state("done", "completed");
 
     expect(makeAggregate([expired, terminal], now)).toBeNull();
+    expect(makeAggregate([terminal], now, true)).toMatchObject({
+      activeCount: 0,
+      subtitle: "Agent work completed",
+      rows: [{ sessionId: "done", status: "Done" }],
+    });
     expect(makeAggregate([state("run", "running"), terminal], now)?.rows.map((row) => row.sessionId)).toEqual([
       "run",
       "done",

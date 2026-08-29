@@ -335,16 +335,15 @@ export const recompute = internalMutation({
       ) {
         continue;
       }
-      const nextAggregate =
-        activity.mode === "all_running"
-          ? aggregate
-          : makeAggregate(
-              states.filter(
-                (state) =>
-                  state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
-              ),
-              now,
-            );
+      const activityStates = activity.mode === "all_running"
+        ? states
+        : states.filter(
+            (state) =>
+              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
+          );
+      const nextAggregate = activity.mode === "all_running"
+        ? aggregate
+        : makeAggregate(activityStates, now);
       const alert = changed.flatMap(({ state, previousPhase }) => {
         if (
           activity.mode !== "all_running" &&
@@ -384,12 +383,14 @@ export const recompute = internalMutation({
         continue;
       }
       if (nextAggregate === null) {
+        const terminalAggregate = makeAggregate(activityStates, now, true);
         const request = makeLiveActivityEnd({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
           environment: device.apsEnvironment,
-          aggregate: null,
+          aggregate: terminalAggregate,
           nowEpochSeconds: Math.floor(now / 1_000),
+          dismissalDelaySeconds: 15,
           alert,
         });
         await enqueueJob(ctx, {
@@ -400,7 +401,7 @@ export const recompute = internalMutation({
           sourcePublisherId: changedState?.publisherId,
           sourceSessionId: changedState?.sessionId,
           request,
-          aggregate: activity.lastAggregate,
+          aggregate: terminalAggregate ?? activity.lastAggregate,
           stateFingerprint: "end:null",
           now,
         });

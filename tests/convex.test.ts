@@ -667,7 +667,11 @@ describe("Convex relay state", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.kind).toBe("live_activity_end");
     const payload = JSON.parse(jobs[0]!.request.payloadJson) as { aps: Record<string, unknown> };
-    expect(payload.aps["content-state"]).toBeUndefined();
+    expect(payload.aps["content-state"]).toMatchObject({
+      activeCount: 0,
+      subtitle: "Agent work completed",
+      rows: [{ sessionId: "session-1", status: "Done" }],
+    });
     expect((payload.aps["dismissal-date"] as number) - (payload.aps.timestamp as number)).toBe(15);
   });
 
