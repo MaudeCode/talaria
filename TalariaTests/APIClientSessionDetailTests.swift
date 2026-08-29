@@ -358,6 +358,62 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(timeline.toolCalls.first?.id, "call-1")
     }
 
+    func testContentPartsEndingInToolDoNotHideTrailingWorkAsFinalProse() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "message_id": "assistant-tool-tail",
+          "content": [
+            {"type":"text","text":"I will inspect it."},
+            {"type":"tool_use","id":"call-1","name":"terminal","input":{"command":"pwd"}}
+          ]
+        }
+        """.utf8))
+
+        let timeline = AssistantActivityTimeline.persisted(
+            message: message,
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+
+        XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "tools"])
+        XCTAssertEqual(turn.finalAnswer, "")
+        XCTAssertEqual(turn.workSegments, turn.segments)
+    }
+
+    func testCombinedFallbackAssistantRowsUseMessageScopedIDs() {
+        let timeline = AssistantActivityTimeline.persisted(
+            assistantSegments: [
+                TranscriptAssistantSegment(
+                    anchorID: "assistant-1",
+                    message: ChatMessage(
+                        role: "assistant",
+                        content: "First.",
+                        timestamp: nil,
+                        messageId: "assistant-1"
+                    )
+                ),
+                TranscriptAssistantSegment(
+                    anchorID: "assistant-2",
+                    message: ChatMessage(
+                        role: "assistant",
+                        content: "Second.",
+                        timestamp: nil,
+                        messageId: "assistant-2"
+                    )
+                )
+            ],
+            reasoningGroups: [],
+            toolCallGroups: []
+        )
+
+        XCTAssertEqual(timeline.rows.map(\.id), ["assistant-1:scene:final", "assistant-2:scene:final"])
+        XCTAssertEqual(Set(timeline.rows.map(\.id)).count, timeline.rows.count)
+    }
+
     func testTurnFallbackKeepsEarlierSegmentsWhenFinalMessageUsesOutputText() {
         let segments = [
             TranscriptAssistantSegment(

@@ -5946,12 +5946,13 @@ struct CompletedAssistantTurn: Equatable {
         }
 
         let explicitFinalIndex = rows.lastIndex(where: \.isFinalAnswer)
-        let fallbackFinalIndex = rows.contains { row in
+        var fallbackFinalIndex: Int?
+        if !rows.contains(where: { row in
             if case .steering = row.content { return true }
             return false
-        } ? nil : rows.lastIndex { row in
-            if case .prose = row.content { return true }
-            return false
+        }), let lastIndex = rows.indices.last,
+           case .prose = rows[lastIndex].content {
+            fallbackFinalIndex = lastIndex
         }
         let finalIndex = explicitFinalIndex ?? fallbackFinalIndex
 
@@ -6210,7 +6211,14 @@ struct AssistantActivityTimeline: Equatable {
                 reasoningGroups: reasoningGroups.filter { $0.anchorMessageID == segment.anchorID },
                 toolCallGroups: toolCallGroups.filter { $0.anchorMessageID == segment.anchorID }
             )
-            timeline.rows.append(contentsOf: segmentTimeline.rows)
+            timeline.rows.append(contentsOf: segmentTimeline.rows.map { row in
+                AssistantActivityRow(
+                    id: "\(segment.anchorID):\(row.id)",
+                    content: row.content,
+                    createdAt: row.createdAt,
+                    isFinalAnswer: row.isFinalAnswer
+                )
+            })
         }
 
         return timeline
@@ -6381,10 +6389,9 @@ struct AssistantActivityTimeline: Equatable {
     }
 
     private mutating func markLastProseAsFinal() {
-        guard let index = rows.lastIndex(where: { row in
-            if case .prose = row.content { return true }
-            return false
-        }) else { return }
+        guard let index = rows.indices.last,
+              case .prose = rows[index].content
+        else { return }
         rows[index].isFinalAnswer = true
     }
 
