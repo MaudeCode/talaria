@@ -175,30 +175,6 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertEqual(transcriptMessages.map(\.message.role), ["user", "assistant"])
     }
 
-    func testSteeringHintDoesNotStartANewAssistantTurn() {
-        let messages = [
-            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "u1"),
-            ChatMessage(role: "assistant", content: "Before hint", timestamp: 2, messageId: "a1"),
-            ChatMessage(
-                role: "user",
-                content: "Keep the hint visible",
-                timestamp: 3,
-                messageId: "local-steer-1",
-                name: SteeringHintState.consumed.rawValue
-            ),
-            ChatMessage(role: "assistant", content: "After hint", timestamp: 4, messageId: "a2")
-        ]
-
-        XCTAssertFalse(TranscriptTurnClassifier.isUserTurnBoundary(messages[2]))
-        XCTAssertEqual(
-            Set(TranscriptTurnClassifier.assistantTurnKeysByAnchorID(messages).values).count,
-            1
-        )
-
-        let transcript = ChatViewModel.transcriptMessages(from: messages)
-        XCTAssertEqual(transcript.map(\.message.id), ["u1", "a1", "local-steer-1", "a2"])
-        XCTAssertTrue(transcript.last?.isSteeringContinuation == true)
-    }
 }
 
 final class ChatTranscriptDisplaySettingsTests: XCTestCase {

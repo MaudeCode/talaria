@@ -251,6 +251,26 @@ extension ChatMessage {
     var isLocalSteeringHint: Bool {
         messageId?.hasPrefix("local-steer-") == true && steeringHintState != nil
     }
+
+    func applyingTurnMetrics(duration: Double? = nil, tokensPerSecond: Double? = nil) -> ChatMessage {
+        ChatMessage(
+            role: role,
+            content: content,
+            timestamp: timestamp,
+            messageId: messageId,
+            name: name,
+            toolCallId: toolCallId,
+            toolUseId: toolUseId,
+            toolCalls: toolCalls,
+            contentParts: contentParts,
+            reasoning: reasoning,
+            reasoningTitles: reasoningTitles,
+            activityScene: activityScene,
+            attachments: attachments,
+            turnDuration: duration ?? turnDuration,
+            turnTps: tokensPerSecond ?? turnTps
+        )
+    }
 }
 
 struct AssistantActivityScene: Codable, Equatable {
@@ -335,7 +355,7 @@ enum TranscriptTurnClassifier {
     }
 
     static func isUserTurnBoundary(_ message: ChatMessage) -> Bool {
-        guard message.role == "user", !message.isLocalSteeringHint else { return false }
+        guard message.role == "user" else { return false }
         return hasVisibleUserContent(message)
     }
 

@@ -2777,18 +2777,22 @@ final class ChatViewModel {
             return sent ? .executed(message: nil) : .unsupported(friendlyMessage: sendErrorMessage ?? String(localized: "Could not send the steering message."))
         }
 
-        let steeringMessageID = appendSteeringHint(message)
+        let steeringHint = appendSteeringHint(message)
         do {
             let response = try await client.steerChat(sessionID: sessionID, text: message)
             if response.accepted == true {
-                updateSteeringHint(id: steeringMessageID, state: .waiting)
+                updateSteeringHint(id: steeringHint.messageID, state: .waiting)
+                finalizeSteeringPhase(
+                    assistantMessageID: steeringHint.precedingAssistantMessageID,
+                    endingAt: steeringHint.timestamp
+                )
                 return .executed(message: nil)
             }
         } catch {
             lastError = error
         }
 
-        removeSteeringHint(id: steeringMessageID)
+        removeSteeringHint(id: steeringHint.messageID)
         _ = enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
         await cancelActiveStream()
         return .executed(message: String(localized: "Steer was unavailable, so the message was queued and the current response was stopped."))
@@ -3567,25 +3571,40 @@ final class ChatViewModel {
         pinnedLocalNotices.append(trimmed)
     }
 
-    private func appendSteeringHint(_ text: String) -> String {
+    private func appendSteeringHint(
+        _ text: String
+    ) -> (messageID: String, precedingAssistantMessageID: String?, timestamp: Double) {
         flushPendingStreamingContent()
         archiveLiveActivityIfNeeded()
         liveAssistantActivity.removeAll()
         pendingReasoningTitles = []
+        let precedingAssistantMessageID = streamingAssistantMessageID
         streamingAssistantMessageID = nil
         toolCallAnchorMessageID = nil
         reasoningAnchorMessageID = nil
 
         let messageID = "local-steer-\(UUID().uuidString)"
+        let timestamp = Date().timeIntervalSince1970
         messages.append(ChatMessage(
             role: "user",
             content: text,
-            timestamp: Date().timeIntervalSince1970,
+            timestamp: timestamp,
             messageId: messageID,
             name: SteeringHintState.sending.rawValue
         ))
         scheduleStreamingScrollTrigger()
-        return messageID
+        return (messageID, precedingAssistantMessageID, timestamp)
+    }
+
+    private func finalizeSteeringPhase(assistantMessageID: String?, endingAt timestamp: Double) {
+        guard let assistantMessageID,
+              let index = messages.firstIndex(where: { $0.messageId == assistantMessageID }),
+              let startedAt = messages[index].timestamp
+        else { return }
+
+        messages[index] = messages[index].applyingTurnMetrics(
+            duration: max(0, timestamp - startedAt)
+        )
     }
 
     private func updateSteeringHint(id: String, state: SteeringHintState) {
@@ -4944,8 +4963,7 @@ final class ChatViewModel {
             renderID: existingTranscriptMessage.renderID,
             anchorID: lastSegment.anchorID,
             message: lastSegment.message,
-            assistantSegments: updatedSegments,
-            isSteeringContinuation: existingTranscriptMessage.isSteeringContinuation
+            assistantSegments: updatedSegments
         )
     }
 
@@ -5627,8 +5645,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         let finalDuration = payload.usage?.durationSeconds.flatMap {
             $0.isFinite && $0 >= 0 ? $0 : nil
         }
-        if finalTokensPerSecond != nil || finalDuration != nil,
-           let currentStreamingAssistantID {
+        if let currentStreamingAssistantID {
             let currentAssistantIndex = messages.firstIndex(where: { $0.messageId == currentStreamingAssistantID })
                 ?? TranscriptTurnClassifier
                     .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
@@ -5642,29 +5659,30 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
                             ) == currentAssistantAnchorID
                         }
                     }
-            guard let index = currentAssistantIndex else {
-                return hasCompletedTranscript
+            if let index = currentAssistantIndex {
+                let totalDuration = finalDuration ?? messages[index].turnDuration
+                let remainingDuration = totalDuration.map {
+                    max(0, $0 - completedSteeringPhaseDuration(before: index))
+                }
+                messages[index] = messages[index].applyingTurnMetrics(
+                    duration: remainingDuration,
+                    tokensPerSecond: finalTokensPerSecond
+                )
             }
-            let message = messages[index]
-            messages[index] = ChatMessage(
-                role: message.role,
-                content: message.content,
-                timestamp: message.timestamp,
-                messageId: message.messageId,
-                name: message.name,
-                toolCallId: message.toolCallId,
-                toolUseId: message.toolUseId,
-                toolCalls: message.toolCalls,
-                contentParts: message.contentParts,
-                reasoning: message.reasoning,
-                reasoningTitles: message.reasoningTitles,
-                activityScene: message.activityScene,
-                attachments: message.attachments,
-                turnDuration: finalDuration ?? message.turnDuration,
-                turnTps: finalTokensPerSecond ?? message.turnTps
-            )
         }
         return hasCompletedTranscript
+    }
+
+    private func completedSteeringPhaseDuration(before currentAssistantIndex: Int) -> Double {
+        let precedingMessages = messages[..<currentAssistantIndex]
+        let startIndex = precedingMessages.lastIndex(where: { message in
+            Self.isOrdinaryUserTurnBoundary(message)
+        }).map { $0 + 1 } ?? messages.startIndex
+
+        return messages[startIndex..<currentAssistantIndex]
+            .filter { $0.role == "assistant" }
+            .compactMap(\.turnDuration)
+            .reduce(0, +)
     }
 
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse) {
@@ -6326,7 +6344,6 @@ struct TranscriptMessage: Identifiable, Equatable {
     let anchorID: String
     let message: ChatMessage
     let assistantSegments: [TranscriptAssistantSegment]
-    let isSteeringContinuation: Bool
 
     var id: String { renderID }
 }
@@ -6463,8 +6480,6 @@ extension ChatViewModel {
         var transcriptMessages: [TranscriptMessage] = []
         transcriptMessages.reserveCapacity(messages.count)
         var assistantSegments: [(loadedIndex: Int, segment: TranscriptAssistantSegment)] = []
-        var assistantTurnIsSteeringContinuation = false
-        var nextAssistantTurnIsSteeringContinuation = false
 
         func appendAssistantTurn() {
             guard let first = assistantSegments.first,
@@ -6476,11 +6491,9 @@ extension ChatViewModel {
                 renderID: "transcript:\(offset + first.loadedIndex)",
                 anchorID: last.segment.anchorID,
                 message: last.segment.message,
-                assistantSegments: assistantSegments.map(\.segment),
-                isSteeringContinuation: assistantTurnIsSteeringContinuation
+                assistantSegments: assistantSegments.map(\.segment)
             ))
             assistantSegments.removeAll(keepingCapacity: true)
-            assistantTurnIsSteeringContinuation = false
         }
 
         for (loadedIndex, message) in messages.enumerated() {
@@ -6497,10 +6510,6 @@ extension ChatViewModel {
             )
 
             if message.role == "assistant" {
-                if assistantSegments.isEmpty {
-                    assistantTurnIsSteeringContinuation = nextAssistantTurnIsSteeringContinuation
-                    nextAssistantTurnIsSteeringContinuation = false
-                }
                 assistantSegments.append((
                     loadedIndex,
                     TranscriptAssistantSegment(anchorID: anchorID, message: message)
@@ -6509,7 +6518,6 @@ extension ChatViewModel {
             }
 
             appendAssistantTurn()
-            nextAssistantTurnIsSteeringContinuation = message.isLocalSteeringHint
             let absoluteIndex = offset + loadedIndex
             let renderID = "transcript:\(absoluteIndex)"
 
@@ -6518,8 +6526,7 @@ extension ChatViewModel {
                 renderID: renderID,
                 anchorID: anchorID,
                 message: message,
-                assistantSegments: [],
-                isSteeringContinuation: false
+                assistantSegments: []
             ))
         }
 

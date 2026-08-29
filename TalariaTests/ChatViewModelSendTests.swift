@@ -7579,6 +7579,7 @@ final class ChatViewModelSendTests: XCTestCase {
         let didStart = await viewModel.sendMessage("Initial request")
         XCTAssertTrue(didStart)
         streamClient.emit(.token("Before hint. "))
+        try await Task.sleep(nanoseconds: 100_000_000)
 
         let result = await viewModel.executeSlashCommand(
             try XCTUnwrap(SlashCommandCatalog.command(named: "steer")),
@@ -7612,7 +7613,18 @@ final class ChatViewModelSendTests: XCTestCase {
             }
             """
         )
-        streamClient.emit(.done(DoneStreamEvent(session: completedSession)))
+        streamClient.emit(.done(DoneStreamEvent(
+            usage: ContextWindowSnapshot(
+                contextLength: nil,
+                thresholdTokens: nil,
+                lastPromptTokens: nil,
+                inputTokens: nil,
+                outputTokens: nil,
+                estimatedCost: nil,
+                durationSeconds: 10
+            ),
+            session: completedSession
+        )))
 
         XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user", "assistant"])
         XCTAssertEqual(
@@ -7620,6 +7632,11 @@ final class ChatViewModelSendTests: XCTestCase {
             ["Initial request", "Before hint. ", "Use the focused test", "After hint."]
         )
         XCTAssertEqual(viewModel.messages[2].name, "_talaria_steer_consumed")
+        let phaseDurations = viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.turnDuration)
+        XCTAssertEqual(phaseDurations.count, 2)
+        XCTAssertGreaterThan(phaseDurations[0], 0)
+        XCTAssertGreaterThan(phaseDurations[1], 0)
+        XCTAssertEqual(phaseDurations.reduce(0, +), 10, accuracy: 0.01)
         XCTAssertNil(viewModel.actionContext(for: viewModel.messages[2], visibleIndex: 2))
         XCTAssertFalse(viewModel.messages.contains { $0.content == "Steering hint delivered." })
     }
