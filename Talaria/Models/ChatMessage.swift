@@ -313,6 +313,16 @@ extension AssistantActivityScene {
     var hasConsumedSteering: Bool {
         activityRows?.contains { $0.role == "steering" && $0.status == "consumed" } == true
     }
+
+    var steeringIDs: Set<String> {
+        Set((activityRows ?? []).compactMap { row in
+            guard row.role == "steering" else { return nil }
+            if case .string(let steerID)? = row.payload?["steer_id"], !steerID.isEmpty {
+                return steerID
+            }
+            return row.rowID
+        })
+    }
 }
 
 struct AssistantActivitySceneRow: Codable, Equatable {

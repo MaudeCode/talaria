@@ -1687,6 +1687,7 @@ final class ChatViewModel {
         )
         let localUserMessages = cachedMessages.filter { cachedMessage in
             isLocalOptimisticUserMessage(cachedMessage)
+                && !cachedMessage.isLocalSteeringHint
                 && !loadedMessagesContainEquivalentUserMessage(mergedMessages, localMessage: cachedMessage)
         }
 
@@ -1732,7 +1733,19 @@ final class ChatViewModel {
                 loadedSearchEnd = loadedUserIndex
                 continue
             }
-            if result[loadedAssistantIndex].activityScene?.hasConsumedSteering == true {
+            if let scene = result[loadedAssistantIndex].activityScene,
+               scene.hasConsumedSteering {
+                let unresolvedHints = cachedTurn.filter { message in
+                    message.isLocalSteeringHint
+                        && message.steeringHintState != .consumed
+                        && message.messageId.map(scene.steeringIDs.contains) != true
+                }
+                if !unresolvedHints.isEmpty {
+                    result.insert(
+                        contentsOf: unresolvedHints,
+                        at: result.index(after: loadedAssistantIndex)
+                    )
+                }
                 loadedSearchEnd = loadedUserIndex
                 continue
             }
@@ -6269,15 +6282,17 @@ struct AssistantActivityTimeline: Equatable {
         let rowID = row.rowID ?? "scene:\(sourceIndex)"
         switch row.role {
         case "prose":
-            appendProseIfPresent(row.text, id: rowID)
-            rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+            if appendProseIfPresent(row.text, id: rowID) {
+                rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+            }
         case "thinking":
-            appendReasoningIfPresent(
+            if appendReasoningIfPresent(
                 Self.string(row.thinking?["text"]) ?? row.text,
                 titles: Self.strings(row.thinking?["titles"]),
                 id: rowID
-            )
-            rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+            ) {
+                rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+            }
         case "tool":
             if let toolCall = Self.toolCall(
                 object: row.tool ?? row.payload,
@@ -6373,14 +6388,22 @@ struct AssistantActivityTimeline: Equatable {
         rows[index].isFinalAnswer = true
     }
 
-    private mutating func appendProseIfPresent(_ text: String?, id: String) {
-        guard let text = Self.nonEmpty(text) else { return }
+    @discardableResult
+    private mutating func appendProseIfPresent(_ text: String?, id: String) -> Bool {
+        guard let text = Self.nonEmpty(text) else { return false }
         appendProse(text, id: id)
+        return true
     }
 
-    private mutating func appendReasoningIfPresent(_ text: String?, titles: [String] = [], id: String) {
-        guard let text = Self.nonEmpty(text) else { return }
+    @discardableResult
+    private mutating func appendReasoningIfPresent(
+        _ text: String?,
+        titles: [String] = [],
+        id: String
+    ) -> Bool {
+        guard let text = Self.nonEmpty(text) else { return false }
         appendReasoning(text, titles: titles, id: id)
+        return true
     }
 
     private static func toolCall(

@@ -195,6 +195,54 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertTrue(preSteerActivity.shouldShowTurnSummary(hasActiveStream: false))
     }
 
+    func testAuthoritativeConsumedSteerKeepsLaterUnresolvedHintDuringReconnect() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let serverAssistant = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role":"assistant",
+          "content":"Working",
+          "message_id":"assistant-server",
+          "_anchor_activity_scene":{
+            "version":"activity_scene_v1",
+            "activity_rows":[
+              {"row_id":"local-steer-consumed","order_index":0,"role":"steering","status":"consumed","text":"First hint","payload":{"steer_id":"local-steer-consumed"}}
+            ]
+          }
+        }
+        """.utf8))
+        let loaded = [
+            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "user-1"),
+            serverAssistant
+        ]
+        let cached = [
+            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "user-1"),
+            ChatMessage(role: "assistant", content: "Working", timestamp: 2, messageId: "assistant-local"),
+            ChatMessage(
+                role: "user",
+                content: "First hint",
+                timestamp: 3,
+                messageId: "local-steer-consumed",
+                name: SteeringHintState.consumed.rawValue
+            ),
+            ChatMessage(
+                role: "user",
+                content: "Second hint",
+                timestamp: 4,
+                messageId: "local-steer-waiting",
+                name: SteeringHintState.waiting.rawValue
+            )
+        ]
+
+        let merged = ChatViewModel.mergingLoadedMessages(
+            loaded,
+            withCachedLocalOptimisticMessages: cached
+        )
+
+        XCTAssertEqual(merged.filter(\.isLocalSteeringHint).map(\.messageId), ["local-steer-waiting"])
+        XCTAssertEqual(merged.last?.content, "Second hint")
+    }
+
 }
 
 final class ChatTranscriptDisplaySettingsTests: XCTestCase {

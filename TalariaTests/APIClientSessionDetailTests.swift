@@ -476,6 +476,32 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         )
     }
 
+    func testActivitySceneIgnoresEmptyTimestampedRowsWithoutTouchingAdjacentRows() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "final_answer": "Done.",
+            "activity_rows": [
+              {"row_id":"empty-prose","order_index":0,"role":"prose","text":"   ","created_at":1},
+              {"row_id":"empty-thinking","order_index":1,"role":"thinking","thinking":{"text":""},"created_at":2},
+              {"row_id":"tool","order_index":2,"role":"tool","status":"completed","created_at":3,"tool":{"id":"call-1","name":"terminal","done":true}}
+            ]
+          }
+        }
+        """.utf8))
+
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+
+        XCTAssertEqual(timeline.rows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(timeline.rows.first?.createdAt, 3)
+        XCTAssertEqual(timeline.rows.last?.text, "Done.")
+    }
+
     func testContentPartToolsUseResolvedResultsWithoutCompletingUnresolvedCalls() {
         let message = ChatMessage(
             role: "assistant",
