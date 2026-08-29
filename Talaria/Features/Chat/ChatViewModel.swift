@@ -6561,6 +6561,15 @@ struct TranscriptMessage: Identifiable, Equatable {
     func shouldShowTurnSummary(hasActiveStream: Bool) -> Bool {
         !hasActiveStream || !endsBeforeSteeringHint
     }
+
+    func ownsActiveStream(
+        hasLiveActivity: Bool,
+        streamingAssistantMessageID: String?
+    ) -> Bool {
+        hasLiveActivity || assistantSegments.contains {
+            $0.message.messageId == streamingAssistantMessageID
+        }
+    }
 }
 
 struct TranscriptAssistantSegment: Equatable {

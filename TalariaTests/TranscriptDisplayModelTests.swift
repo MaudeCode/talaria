@@ -8,6 +8,23 @@ import UniformTypeIdentifiers
 @testable import Talaria
 
 final class TranscriptMessageTests: XCTestCase {
+    func testOnlyTheCurrentAssistantTurnOwnsASeparateActiveStream() throws {
+        let messages = [
+            ChatMessage(role: "user", content: "First", timestamp: 1, messageId: "u1"),
+            ChatMessage(role: "assistant", content: "Old answer", timestamp: 2, messageId: "a1"),
+            ChatMessage(role: "user", content: "Second", timestamp: 3, messageId: "u2"),
+            ChatMessage(role: "assistant", content: "Streaming", timestamp: 4, messageId: "a2"),
+        ]
+        let transcript = ChatViewModel.transcriptMessages(from: messages)
+
+        let oldTurn = try XCTUnwrap(transcript.first { $0.message.messageId == "a1" })
+        let currentTurn = try XCTUnwrap(transcript.first { $0.message.messageId == "a2" })
+
+        XCTAssertFalse(oldTurn.ownsActiveStream(hasLiveActivity: false, streamingAssistantMessageID: "a2"))
+        XCTAssertTrue(currentTurn.ownsActiveStream(hasLiveActivity: false, streamingAssistantMessageID: "a2"))
+        XCTAssertTrue(oldTurn.ownsActiveStream(hasLiveActivity: true, streamingAssistantMessageID: nil))
+    }
+
     func testTranscriptMessagesHideToolRowsAndPreserveLoadedIndices() {
         let messages = [
             ChatMessage(role: "user", content: "Plan it", timestamp: 1, messageId: "u1"),

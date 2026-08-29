@@ -23,6 +23,7 @@ struct ChatMessageActionMenu: View {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
+    let disablesHistoryActions: Bool
     let onToggleListening: (MessageActionContext) -> Void
     let onSelectText: (MessageActionContext) -> Void
     let onRegenerate: (MessageActionContext) -> Void
@@ -52,7 +53,7 @@ struct ChatMessageActionMenu: View {
             } label: {
                 Label("Regenerate Response", systemImage: "arrow.clockwise")
             }
-            .disabled(isViewingCachedData || hasActiveStream || isRegeneratingMessage)
+            .disabled(disablesHistoryActions || isViewingCachedData || hasActiveStream || isRegeneratingMessage)
         }
 
         if context.role == .user {
@@ -61,7 +62,7 @@ struct ChatMessageActionMenu: View {
             } label: {
                 Label("Edit Message", systemImage: "pencil")
             }
-            .disabled(isViewingCachedData || hasActiveStream || isEditingMessage)
+            .disabled(disablesHistoryActions || isViewingCachedData || hasActiveStream || isEditingMessage)
         }
 
         Button {
@@ -69,7 +70,7 @@ struct ChatMessageActionMenu: View {
         } label: {
             Label("Fork From Here", systemImage: "arrow.triangle.branch")
         }
-        .disabled(isViewingCachedData || hasActiveStream || isForkingMessage)
+        .disabled(disablesHistoryActions || isViewingCachedData || hasActiveStream || isForkingMessage)
 
         Button {
             onCopy(context)

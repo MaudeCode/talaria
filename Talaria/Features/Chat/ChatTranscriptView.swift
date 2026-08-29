@@ -592,7 +592,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
 
         ForEach(Array(turn.phases.enumerated()), id: \.element.id) { index, phase in
             if !phase.workRows.isEmpty {
-                if hasActiveStream {
+                if ownsActiveStream {
                     ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { rowIndex, row in
                         activityItem(
                             row,
@@ -874,6 +874,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 isRegeneratingMessage: isRegeneratingMessage,
                 isEditingMessage: isEditingMessage,
                 isForkingMessage: isForkingMessage,
+                disablesHistoryActions: disablesSyntheticSteeringHistoryActions,
                 loadAttachmentImage: loadAttachmentImage,
                 loadAttachmentData: loadAttachmentData,
                 loadTranscriptMediaImage: loadTranscriptMediaImage,
@@ -888,6 +889,21 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 onFork: onFork,
                 onCopy: onCopy
             )
+        }
+    }
+
+    private var ownsActiveStream: Bool {
+        transcriptMessage.ownsActiveStream(
+            hasLiveActivity: !liveActivityRows.isEmpty,
+            streamingAssistantMessageID: streamingAssistantMessageID
+        )
+    }
+
+    private var disablesSyntheticSteeringHistoryActions: Bool {
+        guard transcriptMessage.message.activityScene == nil else { return false }
+        return activityRows.contains { row in
+            if case .steering = row.content { return true }
+            return false
         }
     }
 
@@ -939,6 +955,7 @@ private struct ChatTranscriptMessageRow: View {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
+    let disablesHistoryActions: Bool
     let loadAttachmentImage: (String) async -> Data?
     let loadAttachmentData: (String) async -> Data?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
@@ -970,6 +987,7 @@ private struct ChatTranscriptMessageRow: View {
                         isRegeneratingMessage: isRegeneratingMessage,
                         isEditingMessage: isEditingMessage,
                         isForkingMessage: isForkingMessage,
+                        disablesHistoryActions: disablesHistoryActions,
                         onToggleListening: onToggleListening,
                         onSelectText: onSelectText,
                         onRegenerate: onRegenerate,
