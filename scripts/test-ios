@@ -123,6 +123,7 @@ xcodebuild test -quiet \
     -derivedDataPath "$runtime_dir/derived-data" \
     -parallel-testing-enabled NO \
     -enableCodeCoverage NO \
+    -collect-test-diagnostics never \
     -resultBundlePath "$result_bundle" \
     APP_IDENTIFIER_SUFFIX=.xctest \
     "${test_filters[@]}"

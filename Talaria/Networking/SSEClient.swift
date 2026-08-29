@@ -98,7 +98,8 @@ enum SSEEvent: Equatable {
     case done(DoneStreamEvent)
     case approvalPending(ApprovalPendingResponse)
     case clarificationPending(ClarificationPendingResponse)
-    case pendingSteerLeftover(String)
+    case steerConsumed(SteeringStreamEvent)
+    case pendingSteerLeftover(SteeringStreamEvent)
     case streamEnd
     case cancelled
     case error(String)
@@ -133,6 +134,50 @@ struct ReasoningStreamEvent: Decodable, Equatable {
         titles = ReasoningTitleMetadata.normalize(
             (try? container.decodeIfPresent([String].self, forKey: .titles)) ?? []
         )
+    }
+}
+
+struct SteeringStreamEvent: Decodable, Equatable {
+    let sessionId: String?
+    let streamId: String?
+    let steerId: String?
+    let text: String
+    let createdAt: Double?
+    let consumedAt: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case streamId = "stream_id"
+        case steerId = "steer_id"
+        case text
+        case createdAt = "created_at"
+        case consumedAt = "consumed_at"
+    }
+
+    init(
+        sessionId: String? = nil,
+        streamId: String? = nil,
+        steerId: String? = nil,
+        text: String,
+        createdAt: Double? = nil,
+        consumedAt: Double? = nil
+    ) {
+        self.sessionId = sessionId
+        self.streamId = streamId
+        self.steerId = steerId
+        self.text = text
+        self.createdAt = createdAt
+        self.consumedAt = consumedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
+        streamId = container.decodeLossyStringIfPresent(forKey: .streamId)
+        steerId = container.decodeLossyStringIfPresent(forKey: .steerId)
+        text = container.decodeLossyStringIfPresent(forKey: .text) ?? ""
+        createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
+        consumedAt = container.decodeLossyDoubleIfPresent(forKey: .consumedAt)
     }
 }
 
@@ -331,14 +376,22 @@ struct SSEEventDecoder {
         case "clarify":
             logInvalidJSONIfNeeded(eventType: eventType, payloadName: "clarification stream payload", data: eventData)
             return .clarificationPending(ClarificationPendingResponse.streamPayload(from: eventData, decoder: decoder))
-        case "pending_steer_leftover":
+        case "steer_consumed":
             let payload = decodePayload(
-                PendingSteerLeftoverPayload.self,
+                SteeringStreamEvent.self,
                 eventType: eventType,
                 from: eventData,
                 decoder: decoder
             )
-            return .pendingSteerLeftover(payload?.text ?? "")
+            return .steerConsumed(payload ?? SteeringStreamEvent(text: ""))
+        case "pending_steer_leftover":
+            let payload = decodePayload(
+                SteeringStreamEvent.self,
+                eventType: eventType,
+                from: eventData,
+                decoder: decoder
+            )
+            return .pendingSteerLeftover(payload ?? SteeringStreamEvent(text: ""))
         case "stream_end":
             return .streamEnd
         case "cancel":
@@ -524,8 +577,4 @@ private struct DonePayload: Decodable {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(SessionDetail.self, from: data)
     }
-}
-
-private struct PendingSteerLeftoverPayload: Decodable {
-    let text: String?
 }

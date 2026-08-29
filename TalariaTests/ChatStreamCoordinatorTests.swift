@@ -952,6 +952,7 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     private(set) var tokens: [String] = []
     private(set) var donePayloads: [DoneStreamEvent] = []
     private(set) var pendingSteerLeftovers: [String] = []
+    private(set) var consumedSteerIDs: [String] = []
     var latestAssistantMessageID: String? = "assistant-latest"
     var restoredSnapshotEventID: String?
     var appendTokenResult = true
@@ -1058,8 +1059,14 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse) {}
 
-    func streamCoordinatorEnqueuePendingSteerLeftover(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool {
+        guard let steerID = event.steerId else { return false }
+        consumedSteerIDs.append(steerID)
+        return true
+    }
+
+    func streamCoordinatorEnqueuePendingSteerLeftover(_ event: SteeringStreamEvent) -> Bool {
+        let trimmed = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         pendingSteerLeftovers.append(trimmed)
         return true

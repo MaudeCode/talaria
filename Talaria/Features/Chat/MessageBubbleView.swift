@@ -60,6 +60,8 @@ struct MessageBubbleView: View {
 
     private var userMessageRow: some View {
         VStack(alignment: .trailing, spacing: 8) {
+            steeringHintHeader
+
             if let attachments = message.attachments, !attachments.isEmpty {
                 attachmentPreviews
             }
@@ -81,6 +83,36 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var steeringHintHeader: some View {
+        if let state = message.steeringHintState {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.turn.up.right")
+                    .accessibilityHidden(true)
+
+                Text("Steering hint")
+
+                switch state {
+                case .sending:
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityHidden(true)
+                    Text("Sending")
+                case .waiting:
+                    Image(systemName: "clock")
+                        .accessibilityHidden(true)
+                    Text("Waiting for agent")
+                case .consumed:
+                    EmptyView()
+                }
+            }
+            .font(AppFont.footnote())
+            .foregroundStyle(.secondary)
+            .padding(.trailing, 4)
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private var assistantMessageRow: some View {

@@ -7555,6 +7555,396 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
     }
 
+    @MainActor
+    func testAcceptedSteerRendersActualMessageInsideRunningTurnAndSettlesOnDone() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Before hint. "))
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let result = await viewModel.executeSlashCommand(
+            try XCTUnwrap(SlashCommandCatalog.command(named: "steer")),
+            args: "Use the focused test"
+        )
+
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user"])
+        XCTAssertEqual(
+            viewModel.messages.map(\.content),
+            ["Initial request", "Before hint. ", "Use the focused test"]
+        )
+        XCTAssertEqual(viewModel.messages.last?.name, "_talaria_steer_waiting")
+        XCTAssertTrue(viewModel.pinnedLocalNotices.isEmpty)
+
+        streamClient.emit(.token("After hint."))
+        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user", "assistant"])
+        XCTAssertEqual(
+            viewModel.messages.map(\.content),
+            ["Initial request", "Before hint. ", "Use the focused test", "After hint."]
+        )
+
+        let completedSession = try makeSessionDetail(
+            """
+            {
+              "session_id": "session-abc",
+              "messages": [
+                {"role":"user","content":"Initial request","message_id":"user-1"},
+                {"role":"assistant","content":"Before hint. After hint.","message_id":"assistant-final"}
+              ]
+            }
+            """
+        )
+        streamClient.emit(.done(DoneStreamEvent(
+            usage: ContextWindowSnapshot(
+                contextLength: nil,
+                thresholdTokens: nil,
+                lastPromptTokens: nil,
+                inputTokens: nil,
+                outputTokens: nil,
+                estimatedCost: nil,
+                durationSeconds: 10
+            ),
+            session: completedSession
+        )))
+
+        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user", "assistant"])
+        XCTAssertEqual(
+            viewModel.messages.map(\.content),
+            ["Initial request", "Before hint. ", "Use the focused test", "After hint."]
+        )
+        XCTAssertEqual(viewModel.messages[2].name, "_talaria_steer_consumed")
+        let phaseDurations = viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.turnDuration)
+        XCTAssertEqual(phaseDurations.count, 2)
+        XCTAssertGreaterThan(phaseDurations[0], 0)
+        XCTAssertGreaterThan(phaseDurations[1], 0)
+        XCTAssertEqual(phaseDurations.reduce(0, +), 10, accuracy: 0.01)
+        XCTAssertNil(viewModel.actionContext(for: viewModel.messages[2], visibleIndex: 2))
+        XCTAssertFalse(viewModel.messages.contains { $0.content == "Steering hint delivered." })
+    }
+
+    @MainActor
+    func testCompletedSteeringHintSurvivesAuthoritativeActivitySceneReload() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let modelContext = try makeContext()
+        let completedSessionJSON = """
+        {
+          "session_id": "session-abc",
+          "messages": [
+            {"role":"user","content":"Initial request","message_id":"user-1"},
+            {
+              "role":"assistant",
+              "content":"Before hint. Final answer.",
+              "message_id":"assistant-final",
+              "_turn_duration":10,
+              "_anchor_activity_scene": {
+                "version":"activity_scene_v1",
+                "final_answer":"Final answer.",
+                "turn_duration":10,
+                "activity_rows":[
+                  {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before hint. ","created_at":1},
+                  {"row_id":"tool-1","order_index":1,"role":"tool","tool_call_id":"call-1","status":"completed","created_at":2,"tool":{"id":"call-1","name":"read_file","done":true}},
+                  {"row_id":"local-steer-authoritative","order_index":2,"role":"steering","status":"consumed","text":"Keep this visible","created_at":4,"payload":{"steer_id":"local-steer-authoritative","created_at":3,"consumed_at":4}},
+                  {"row_id":"tool-2","order_index":3,"role":"tool","tool_call_id":"call-2","status":"completed","created_at":7,"tool":{"id":"call-2","name":"terminal","done":true}},
+                  {"row_id":"prose-2","order_index":4,"role":"prose","text":"Final answer.","created_at":9}
+                ]
+              }
+            }
+          ]
+        }
+        """
+        let completedSession = try makeSessionDetail(completedSessionJSON)
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/session":
+                return apiTestJSONResponse("{\"session\":\(completedSessionJSON)}", for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request", modelContext: modelContext)
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Before hint. "))
+        _ = await viewModel.submitStreamingMessage("Keep this visible", behavior: .steer)
+        streamClient.emit(.token("Final answer."))
+        streamClient.emit(.done(DoneStreamEvent(session: completedSession)))
+        streamClient.emit(.streamEnd)
+        viewModel.cacheCompletedResponse(modelContext: modelContext)
+
+        await viewModel.loadMessages(modelContext: modelContext)
+
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        let assistant = try XCTUnwrap(viewModel.messages.last(where: { $0.role == "assistant" }))
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: assistant))
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+        XCTAssertTrue(turn.hasSteering)
+        XCTAssertEqual(turn.phases.compactMap { $0.steeringAfter?.text }, ["Keep this visible"])
+        XCTAssertEqual(turn.phaseDurations(totalDuration: assistant.turnDuration).compactMap { $0 }, [3, 7])
+    }
+
+    @MainActor
+    func testComposerSteerShowsSendingStateBeforeServerAccepts() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let steerRequests = LockedCounter()
+        let releaseSteer = DispatchSemaphore(value: 0)
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                _ = steerRequests.increment()
+                releaseSteer.wait()
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        let submission = Task {
+            await viewModel.submitStreamingMessage("Show the actual hint", behavior: .steer)
+        }
+        try await waitUntil { steerRequests.count == 1 }
+
+        XCTAssertEqual(viewModel.messages.last?.content, "Show the actual hint")
+        XCTAssertEqual(viewModel.messages.last?.steeringHintState, .sending)
+
+        releaseSteer.signal()
+        let result = await submission.value
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertEqual(viewModel.messages.last?.steeringHintState, .waiting)
+    }
+
+    @MainActor
+    func testRepeatedComposerSteersStayOrderedAndSettleTogether() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("First. "))
+        let firstSteer = await viewModel.submitStreamingMessage("Use tests", behavior: .steer)
+        XCTAssertEqual(firstSteer, .executed(message: nil))
+        let firstSteerID = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(
+            steerId: firstSteerID,
+            text: "Use tests"
+        )))
+        streamClient.emit(.token("Second. "))
+        let secondSteer = await viewModel.submitStreamingMessage("Keep it focused", behavior: .steer)
+        XCTAssertEqual(secondSteer, .executed(message: nil))
+        let secondSteerID = try XCTUnwrap(viewModel.messages.last(where: {
+            $0.isLocalSteeringHint && $0.messageId != firstSteerID
+        })?.messageId)
+        streamClient.emit(.token("Third."))
+
+        XCTAssertEqual(
+            viewModel.messages.compactMap { $0.isLocalSteeringHint ? $0.content : nil },
+            ["Use tests", "Keep it focused"]
+        )
+        XCTAssertEqual(
+            viewModel.messages.filter(\.isLocalSteeringHint).map(\.steeringHintState),
+            [.consumed, .waiting]
+        )
+
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(
+            steerId: secondSteerID,
+            text: "Keep it focused"
+        )))
+
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        XCTAssertEqual(
+            viewModel.messages.filter(\.isLocalSteeringHint).map(\.steeringHintState),
+            [.consumed, .consumed]
+        )
+    }
+
+    @MainActor
+    func testSteerLeftoverBecomesOneNormalNextTurnMessage() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var chatStartCount = 0
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                chatStartCount += 1
+                return apiTestJSONResponse(
+                    """
+                    {"session_id":"session-abc","stream_id":"stream-\(chatStartCount)"}
+                    """,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-1"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        _ = await viewModel.submitStreamingMessage("Run the focused test", behavior: .steer)
+        let steerID = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.pendingSteerLeftover(SteeringStreamEvent(
+            steerId: steerID,
+            text: "Run the focused test"
+        )))
+
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+
+        streamClient.emit(.streamEnd)
+        try await waitUntil { chatStartCount == 2 }
+        XCTAssertEqual(
+            viewModel.messages.filter { $0.content == "Run the focused test" }.count,
+            1
+        )
+        XCTAssertNil(viewModel.messages.last?.steeringHintState)
+    }
+
+    @MainActor
+    func testCancellationRemovesUnresolvedSteeringHint() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/cancel":
+                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        _ = await viewModel.submitStreamingMessage("Do not leave this stale", behavior: .steer)
+        XCTAssertTrue(viewModel.messages.contains(where: \.isLocalSteeringHint))
+
+        let didCancel = await viewModel.cancelActiveStream()
+        XCTAssertTrue(didCancel)
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+    }
+
+    @MainActor
+    func testReconnectSnapshotKeepsPendingSteeringHintInOrder() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/session":
+                return apiTestJSONResponse(
+                    """
+                    {
+                      "session": {
+                        "session_id": "session-abc",
+                        "active_stream_id": "stream-123",
+                        "messages": [
+                          {"role":"user","content":"Initial request","message_id":"user-1"},
+                          {"role":"assistant","content":"Before hint. ","message_id":"assistant-server"}
+                        ]
+                      }
+                    }
+                    """,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Before hint. "))
+        _ = await viewModel.submitStreamingMessage("Keep this after reconnect", behavior: .steer)
+        viewModel.suspendStreamForNavigation()
+
+        await viewModel.loadMessages()
+
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        XCTAssertNil(viewModel.streamingAssistantMessageID)
+        XCTAssertEqual(
+            viewModel.messages.map(\.content),
+            ["Initial request", "Before hint. ", "Keep this after reconnect"]
+        )
+        XCTAssertEqual(viewModel.messages.last?.steeringHintState, .waiting)
+    }
+
     /// Issue #202: a queued slash message whose send fails must not be retried in a tight loop.
     /// This is the verify-first verdict test — it queues one message behind a live stream, makes
     /// every drained send fail, triggers the drain, and counts how many times the send is retried.

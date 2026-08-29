@@ -237,6 +237,43 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     }
 }
 
+enum SteeringHintState: String {
+    case sending = "_talaria_steer_sending"
+    case waiting = "_talaria_steer_waiting"
+    case consumed = "_talaria_steer_consumed"
+}
+
+extension ChatMessage {
+    var steeringHintState: SteeringHintState? {
+        name.flatMap(SteeringHintState.init(rawValue:))
+    }
+
+    var isLocalSteeringHint: Bool {
+        guard steeringHintState != nil, let messageId else { return false }
+        return messageId.hasPrefix("local-steer-") || messageId.hasPrefix("steer-")
+    }
+
+    func applyingTurnMetrics(duration: Double? = nil, tokensPerSecond: Double? = nil) -> ChatMessage {
+        ChatMessage(
+            role: role,
+            content: content,
+            timestamp: timestamp,
+            messageId: messageId,
+            name: name,
+            toolCallId: toolCallId,
+            toolUseId: toolUseId,
+            toolCalls: toolCalls,
+            contentParts: contentParts,
+            reasoning: reasoning,
+            reasoningTitles: reasoningTitles,
+            activityScene: activityScene,
+            attachments: attachments,
+            turnDuration: duration ?? turnDuration,
+            turnTps: tokensPerSecond ?? turnTps
+        )
+    }
+}
+
 struct AssistantActivityScene: Codable, Equatable {
     let version: String?
     let finalAnswer: String?
@@ -272,12 +309,36 @@ struct AssistantActivityScene: Codable, Equatable {
     }
 }
 
+extension AssistantActivityScene {
+    var hasConsumedSteering: Bool {
+        activityRows?.contains { $0.role == "steering" && $0.status == "consumed" } == true
+    }
+
+    var steeringIDs: Set<String> {
+        Set((activityRows ?? []).compactMap { row in
+            guard row.role == "steering" else { return nil }
+            if case .string(let steerID)? = row.payload?["steer_id"], !steerID.isEmpty {
+                return steerID
+            }
+            return row.rowID
+        })
+    }
+
+    var steeringTexts: Set<String> {
+        Set((activityRows ?? []).compactMap { row in
+            guard row.role == "steering" else { return nil }
+            return row.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+    }
+}
+
 struct AssistantActivitySceneRow: Codable, Equatable {
     let rowID: String?
     let orderIndex: Int?
     let role: String?
     let text: String?
     let status: String?
+    let createdAt: Double?
     let toolCallID: String?
     let thinking: [String: JSONValue]?
     let tool: [String: JSONValue]?
@@ -289,6 +350,7 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         case role
         case text
         case status
+        case createdAt
         case toolCallID = "toolCallId"
         case thinking
         case tool
@@ -302,6 +364,7 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         role = container.decodeLossyStringIfPresent(forKey: .role)
         text = container.decodeLossyStringIfPresent(forKey: .text)
         status = container.decodeLossyStringIfPresent(forKey: .status)
+        createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         toolCallID = container.decodeLossyStringIfPresent(forKey: .toolCallID)
         thinking = try? container.decodeIfPresent([String: JSONValue].self, forKey: .thinking)
         tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)

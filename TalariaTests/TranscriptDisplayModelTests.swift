@@ -8,6 +8,23 @@ import UniformTypeIdentifiers
 @testable import Talaria
 
 final class TranscriptMessageTests: XCTestCase {
+    func testOnlyTheCurrentAssistantTurnOwnsASeparateActiveStream() throws {
+        let messages = [
+            ChatMessage(role: "user", content: "First", timestamp: 1, messageId: "u1"),
+            ChatMessage(role: "assistant", content: "Old answer", timestamp: 2, messageId: "a1"),
+            ChatMessage(role: "user", content: "Second", timestamp: 3, messageId: "u2"),
+            ChatMessage(role: "assistant", content: "Streaming", timestamp: 4, messageId: "a2"),
+        ]
+        let transcript = ChatViewModel.transcriptMessages(from: messages)
+
+        let oldTurn = try XCTUnwrap(transcript.first { $0.message.messageId == "a1" })
+        let currentTurn = try XCTUnwrap(transcript.first { $0.message.messageId == "a2" })
+
+        XCTAssertFalse(oldTurn.ownsActiveStream(hasLiveActivity: false, streamingAssistantMessageID: "a2"))
+        XCTAssertTrue(currentTurn.ownsActiveStream(hasLiveActivity: false, streamingAssistantMessageID: "a2"))
+        XCTAssertTrue(oldTurn.ownsActiveStream(hasLiveActivity: true, streamingAssistantMessageID: nil))
+    }
+
     func testTranscriptMessagesHideToolRowsAndPreserveLoadedIndices() {
         let messages = [
             ChatMessage(role: "user", content: "Plan it", timestamp: 1, messageId: "u1"),
@@ -174,6 +191,75 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertEqual(transcriptMessages.map(\.loadedIndex), [0, 1])
         XCTAssertEqual(transcriptMessages.map(\.message.role), ["user", "assistant"])
     }
+
+    func testPreSteerActivityStaysExpandedUntilStreamCompletes() {
+        let messages = [
+            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "u1"),
+            ChatMessage(role: "assistant", content: "Working", timestamp: 2, messageId: "a1"),
+            ChatMessage(
+                role: "user",
+                content: "Stop after the next step",
+                timestamp: 3,
+                messageId: "local-steer-1",
+                name: SteeringHintState.waiting.rawValue
+            )
+        ]
+
+        let preSteerActivity = ChatViewModel.transcriptMessages(from: messages)[1]
+
+        XCTAssertTrue(preSteerActivity.endsBeforeSteeringHint)
+        XCTAssertFalse(preSteerActivity.shouldShowTurnSummary(hasActiveStream: true))
+        XCTAssertTrue(preSteerActivity.shouldShowTurnSummary(hasActiveStream: false))
+    }
+
+    func testAuthoritativeConsumedSteerKeepsLaterUnresolvedHintDuringReconnect() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let serverAssistant = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role":"assistant",
+          "content":"Working",
+          "message_id":"assistant-server",
+          "_anchor_activity_scene":{
+            "version":"activity_scene_v1",
+            "activity_rows":[
+              {"row_id":"local-steer-consumed","order_index":0,"role":"steering","status":"consumed","text":"First hint","payload":{"steer_id":"local-steer-consumed"}}
+            ]
+          }
+        }
+        """.utf8))
+        let loaded = [
+            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "user-1"),
+            serverAssistant
+        ]
+        let cached = [
+            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "user-1"),
+            ChatMessage(role: "assistant", content: "Working", timestamp: 2, messageId: "assistant-local"),
+            ChatMessage(
+                role: "user",
+                content: "First hint",
+                timestamp: 3,
+                messageId: "local-steer-consumed",
+                name: SteeringHintState.consumed.rawValue
+            ),
+            ChatMessage(
+                role: "user",
+                content: "Second hint",
+                timestamp: 4,
+                messageId: "local-steer-waiting",
+                name: SteeringHintState.waiting.rawValue
+            )
+        ]
+
+        let merged = ChatViewModel.mergingLoadedMessages(
+            loaded,
+            withCachedLocalOptimisticMessages: cached
+        )
+
+        XCTAssertEqual(merged.filter(\.isLocalSteeringHint).map(\.messageId), ["local-steer-waiting"])
+        XCTAssertEqual(merged.last?.content, "Second hint")
+    }
+
 }
 
 final class ChatTranscriptDisplaySettingsTests: XCTestCase {

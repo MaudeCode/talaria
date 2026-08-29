@@ -214,7 +214,7 @@ struct ChatTranscriptView: View {
                 compressionReferenceCardView(compressionReferenceCard)
             }
 
-            ForEach(displayedTranscriptMessages) { transcriptMessage in
+            ForEach(Array(displayedTranscriptMessages.enumerated()), id: \.element.id) { index, transcriptMessage in
                 // Scope live-streaming state to the row that actually displays it.
                 // Non-anchor / non-streaming rows receive stable empty/nil values so
                 // their inputs don't change on every ~16ms flush; combined with the
@@ -225,6 +225,10 @@ struct ChatTranscriptView: View {
                 let isToolCallAnchor = toolCallAnchorMessageID.map(activityAnchorIDs.contains) ?? false
                 let isStreamingRow = streamingAssistantMessageID != nil
                     && transcriptMessage.message.messageId == streamingAssistantMessageID
+                let isSyntheticSteeringNeighbor = transcriptMessage.message.activityScene == nil && (
+                    (index > 0 && displayedTranscriptMessages[index - 1].message.isLocalSteeringHint)
+                    || (index + 1 < displayedTranscriptMessages.count && displayedTranscriptMessages[index + 1].message.isLocalSteeringHint)
+                )
 
                 ChatTranscriptMessageBlock(
                     transcriptMessage: transcriptMessage,
@@ -243,6 +247,7 @@ struct ChatTranscriptView: View {
                     isRegeneratingMessage: isRegeneratingMessage,
                     isEditingMessage: isEditingMessage,
                     isForkingMessage: isForkingMessage,
+                    disablesHistoryActions: isSyntheticSteeringNeighbor,
                     loadAttachmentImage: loadAttachmentImage,
                     loadAttachmentData: loadAttachmentData,
                     loadTranscriptMediaImage: loadTranscriptMediaImage,
@@ -474,6 +479,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
+    let disablesHistoryActions: Bool
     let loadAttachmentImage: (String) async -> Data?
     let loadAttachmentData: (String) async -> Data?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
@@ -512,6 +518,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.isRegeneratingMessage == rhs.isRegeneratingMessage &&
             lhs.isEditingMessage == rhs.isEditingMessage &&
             lhs.isForkingMessage == rhs.isForkingMessage &&
+            lhs.disablesHistoryActions == rhs.disablesHistoryActions &&
             lhs.transcriptMediaCacheNamespace == rhs.transcriptMediaCacheNamespace
     }
 
@@ -519,8 +526,14 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
-                    if liveActivityRows.isEmpty {
-                        completedTurn(turn)
+                    if turn.hasSteering {
+                        steeredTurn(turn)
+                    } else if liveActivityRows.isEmpty {
+                        if transcriptMessage.shouldShowTurnSummary(hasActiveStream: ownsActiveStream) {
+                            completedTurn(turn)
+                        } else {
+                            activityTimeline(turn.segments, activeSegmentID: nil)
+                        }
                     } else {
                         activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
                     }
@@ -561,6 +574,99 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
         let title = AssistantTurnSummary.title(duration: transcriptMessage.message.turnDuration)
 
+        workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
+
+        if isExpanded {
+            activityTimeline(turn.workSegments, activeSegmentID: nil)
+                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        }
+
+        if !turn.finalAnswer.isEmpty {
+            messageRow(
+                activityMessage(
+                    text: turn.finalAnswer,
+                    includesAttachments: true,
+                    includesTurnMetrics: true
+                ),
+                isStreaming: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func steeredTurn(_ turn: CompletedAssistantTurn) -> some View {
+        let durations = turn.phaseDurations(totalDuration: transcriptMessage.message.turnDuration)
+
+        ForEach(Array(turn.phases.enumerated()), id: \.element.id) { index, phase in
+            if !phase.workRows.isEmpty {
+                if ownsActiveStream {
+                    ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { rowIndex, row in
+                        activityItem(
+                            row,
+                            at: rowIndex,
+                            includesAttachments: false,
+                            includesTurnMetrics: false,
+                            isActive: index == turn.phases.count - 1
+                        )
+                    }
+                } else {
+                    workedPhase(
+                        phase,
+                        duration: durations.indices.contains(index) ? durations[index] : nil
+                    )
+                }
+            }
+
+            if let steering = phase.steeringAfter {
+                messageRow(ChatMessage(
+                    role: "user",
+                    content: steering.text,
+                    timestamp: steering.submittedAt,
+                    messageId: steering.id,
+                    name: SteeringHintState.consumed.rawValue
+                ))
+            }
+        }
+
+        if !turn.finalAnswer.isEmpty {
+            messageRow(
+                activityMessage(
+                    text: turn.finalAnswer,
+                    includesAttachments: true,
+                    includesTurnMetrics: true
+                ),
+                isStreaming: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func workedPhase(_ phase: CompletedAssistantTurn.Phase, duration: Double?) -> some View {
+        let disclosureID = "worked:\(transcriptMessage.anchorID):\(phase.id)"
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        let title = AssistantTurnSummary.title(duration: duration)
+
+        workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
+
+        if isExpanded {
+            ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { index, row in
+                activityItem(
+                    row,
+                    at: index,
+                    includesAttachments: false,
+                    includesTurnMetrics: false,
+                    isActive: false
+                )
+            }
+            .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        }
+    }
+
+    private func workedDisclosureHeader(
+        disclosureID: String,
+        title: String,
+        isExpanded: Bool
+    ) -> some View {
         Button {
             withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                 if isExpanded {
@@ -589,27 +695,10 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .bottom) {
-            Divider()
-                .opacity(0.35)
+            Divider().opacity(0.35)
         }
         .accessibilityLabel(title)
         .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
-
-        if isExpanded {
-            activityTimeline(turn.workSegments, activeSegmentID: nil)
-                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
-        }
-
-        if !turn.finalAnswer.isEmpty {
-            messageRow(
-                activityMessage(
-                    text: turn.finalAnswer,
-                    includesAttachments: true,
-                    includesTurnMetrics: true
-                ),
-                isStreaming: false
-            )
-        }
     }
 
     @ViewBuilder
@@ -702,6 +791,14 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                         ),
                         isStreaming: activeSegmentID == segment.id
                     )
+                case .steering(let steering):
+                    messageRow(ChatMessage(
+                        role: "user",
+                        content: steering.text,
+                        timestamp: steering.submittedAt,
+                        messageId: steering.id,
+                        name: SteeringHintState.consumed.rawValue
+                    ))
                 }
             }
         }
@@ -742,6 +839,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                     toolCalls: toolCalls
                 ))
             }
+        case .steering:
+            EmptyView()
         }
     }
 
@@ -751,6 +850,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             true
         case .reasoning, .tools:
             showsThinkingAndToolCards
+        case .steering:
+            true
         }
     }
 
@@ -780,6 +881,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 isRegeneratingMessage: isRegeneratingMessage,
                 isEditingMessage: isEditingMessage,
                 isForkingMessage: isForkingMessage,
+                disablesHistoryActions: disablesHistoryActions || disablesSyntheticSteeringHistoryActions,
                 loadAttachmentImage: loadAttachmentImage,
                 loadAttachmentData: loadAttachmentData,
                 loadTranscriptMediaImage: loadTranscriptMediaImage,
@@ -794,6 +896,21 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 onFork: onFork,
                 onCopy: onCopy
             )
+        }
+    }
+
+    private var ownsActiveStream: Bool {
+        transcriptMessage.ownsActiveStream(
+            hasLiveActivity: !liveActivityRows.isEmpty,
+            streamingAssistantMessageID: streamingAssistantMessageID
+        )
+    }
+
+    private var disablesSyntheticSteeringHistoryActions: Bool {
+        guard transcriptMessage.message.activityScene == nil else { return false }
+        return activityRows.contains { row in
+            if case .steering = row.content { return true }
+            return false
         }
     }
 
@@ -845,6 +962,7 @@ private struct ChatTranscriptMessageRow: View {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
+    let disablesHistoryActions: Bool
     let loadAttachmentImage: (String) async -> Data?
     let loadAttachmentData: (String) async -> Data?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
@@ -876,6 +994,7 @@ private struct ChatTranscriptMessageRow: View {
                         isRegeneratingMessage: isRegeneratingMessage,
                         isEditingMessage: isEditingMessage,
                         isForkingMessage: isForkingMessage,
+                        disablesHistoryActions: disablesHistoryActions,
                         onToggleListening: onToggleListening,
                         onSelectText: onSelectText,
                         onRegenerate: onRegenerate,
