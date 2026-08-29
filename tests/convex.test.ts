@@ -583,6 +583,31 @@ describe("Convex relay state", () => {
       sessionId: "session-1",
     });
     expect(refreshed?.terminalExpiresAt).toBe(now + 120_000 + 15 * 60_000);
+
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-unknown-stream",
+      nonceExpiresAt: now + 240_000,
+      receivedAt: now + 180_000,
+      snapshotId: "snapshot-unknown-stream",
+      states: [{
+        sessionId: "session-1",
+        eventId: "event-5",
+        revision: 5,
+        title: "Finished without stream identity",
+        phase: "completed",
+        updatedAt: now + 180_000,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    refreshed = await backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    });
+    expect(refreshed?.terminalExpiresAt).toBe(now + 180_000 + 15 * 60_000);
   });
 
   it("ends immediately when only terminal session state remains", async () => {

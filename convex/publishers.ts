@@ -53,7 +53,8 @@ function expiryForState(
     !current.deleted &&
     isTerminalPhase(current.phase) &&
     current.phase === next.phase &&
-    (next.streamId === undefined || next.streamId === current.streamId) &&
+    next.streamId !== undefined &&
+    next.streamId === current.streamId &&
     current.terminalExpiresAt !== undefined
   ) {
     return { expiresAt: current.expiresAt, terminalExpiresAt: current.terminalExpiresAt };
