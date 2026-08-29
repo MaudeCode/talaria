@@ -25,7 +25,11 @@ struct DefaultModelPickerView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    ModelPickerSearchField(text: $searchText)
+                    SettingsPickerSearchField(
+                        text: $searchText,
+                        prompt: "Search models",
+                        clearLabel: "Clear model search"
+                    )
 
                     if let saveError {
                         Text(saveError)
@@ -34,7 +38,7 @@ struct DefaultModelPickerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    ModelPickerCard(title: String(localized: "Custom")) {
+                    SettingsPickerCard(title: String(localized: "Custom")) {
                         TextField("Custom model ID", text: $customModel)
                             .font(.subheadline)
                             .autocorrectionDisabled()
@@ -79,7 +83,7 @@ struct DefaultModelPickerView: View {
     @ViewBuilder
     private var modelListContent: some View {
         if isLoading && groups.isEmpty {
-            ModelPickerCard(title: String(localized: "Models")) {
+            SettingsPickerCard(title: String(localized: "Models")) {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Loading models...")
@@ -89,7 +93,7 @@ struct DefaultModelPickerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let errorMessage, groups.isEmpty {
-            ModelPickerCard(title: String(localized: "Models")) {
+            SettingsPickerCard(title: String(localized: "Models")) {
                 Label("Could Not Load Models", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
 
@@ -98,7 +102,7 @@ struct DefaultModelPickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else if filteredGroups.isEmpty {
-            ModelPickerCard(title: String(localized: "Models")) {
+            SettingsPickerCard(title: String(localized: "Models")) {
                 Label("No Matching Models", systemImage: "magnifyingglass")
                     .font(.subheadline.weight(.semibold))
 
@@ -108,7 +112,7 @@ struct DefaultModelPickerView: View {
             }
         } else {
             ForEach(filteredGroups) { group in
-                ModelPickerCard(title: group.name) {
+                SettingsPickerCard(title: group.name) {
                     VStack(spacing: 0) {
                         ForEach(Array(group.models.enumerated()), id: \.element.id) { index, model in
                             modelRow(model)
@@ -320,94 +324,4 @@ struct DefaultModelPickerView: View {
         isSavingCustom = false
     }
 
-}
-
-private struct ModelPickerSearchField: View {
-    @Binding var text: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            TextField("Search models", text: $text)
-                .font(.subheadline)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-
-            if !text.isEmpty {
-                Button {
-                    text = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear model search")
-            }
-        }
-        .padding(.horizontal, 12)
-        .frame(minHeight: 44)
-        .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-}
-
-private struct ModelPickerCard<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .textCase(.uppercase)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-                .padding(.bottom, 8)
-
-            VStack(alignment: .leading, spacing: 12) {
-                content
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-    }
-}
-
-private struct ModelPickerButton: View {
-    let title: String
-    var isLoading = false
-    let action: () -> Void
-
-    init(_ title: String, isLoading: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.isLoading = isLoading
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Group {
-                if isLoading {
-                    ProgressView()
-                } else {
-                    Text(title)
-                }
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .frame(minHeight: 44)
-            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
 }
