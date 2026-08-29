@@ -73,7 +73,7 @@ describe("ActivityKit payloads", () => {
         timestamp: 100,
         event: "update",
         "content-state": aggregate,
-        "stale-date": 700,
+        "stale-date": 250,
       },
     });
   });
