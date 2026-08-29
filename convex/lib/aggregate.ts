@@ -54,6 +54,7 @@ export function rowForState(state: SessionState): AggregateRow {
     publisherId: state.publisherId,
     publisherLabel: state.publisherLabel,
     sessionId: state.sessionId,
+    streamId: state.streamId,
     title: state.title,
     phase: state.phase,
     status: statusForPhase(state.phase),

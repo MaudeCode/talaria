@@ -44,6 +44,24 @@ import { apnsPool } from "./workpool";
 const MAX_STATE_ROWS = 500;
 const PUSH_TO_START_LEASE_MS = 15 * 60_000;
 
+function semanticAggregateFingerprint(value: ActivityAggregate): string {
+  return JSON.stringify({
+    schemaVersion: value.schemaVersion,
+    activeCount: value.activeCount,
+    title: value.title,
+    subtitle: value.subtitle,
+    rows: value.rows.map((row) => ({
+      publisherId: row.publisherId,
+      sessionId: row.sessionId,
+      streamId: row.streamId,
+      title: row.title,
+      phase: row.phase,
+      status: row.status,
+      deepLink: row.deepLink,
+    })),
+  });
+}
+
 function asSessionState(state: DataModel["sessionStates"]["document"]): SessionState {
   return {
     deleted: state.deleted,
@@ -306,15 +324,26 @@ export const recompute = internalMutation({
         return value ? [value] : [];
       })[0] ?? null;
 
+      const seededLeaseUntil = activity.emptyStateLeaseUntil;
+      const seededLeaseActive = seededLeaseUntil !== undefined && seededLeaseUntil > now;
+      const matchesDeliveredAggregate =
+        nextAggregate !== null &&
+        activity.lastAggregate !== undefined &&
+        semanticAggregateFingerprint(activity.lastAggregate) ===
+          semanticAggregateFingerprint(nextAggregate);
+      if (
+        seededLeaseUntil !== undefined &&
+        seededLeaseUntil > now &&
+        (nextAggregate === null || matchesDeliveredAggregate)
+      ) {
+        await ctx.scheduler.runAfter(
+          seededLeaseUntil - now,
+          internal.delivery.recompute,
+          { userId: args.userId },
+        );
+        continue;
+      }
       if (nextAggregate === null) {
-        if (activity.emptyStateLeaseUntil !== undefined && activity.emptyStateLeaseUntil > now) {
-          await ctx.scheduler.runAfter(
-            activity.emptyStateLeaseUntil - now,
-            internal.delivery.recompute,
-            { userId: args.userId },
-          );
-          continue;
-        }
         const request = makeLiveActivityEnd({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
@@ -339,6 +368,7 @@ export const recompute = internalMutation({
         continue;
       }
       if (
+        !seededLeaseActive &&
         !shouldUpdateAggregate(
           activity.lastAggregate ?? null,
           nextAggregate,
