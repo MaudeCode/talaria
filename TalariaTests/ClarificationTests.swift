@@ -1,12 +1,7 @@
 import XCTest
 @testable import Talaria
 
-final class ClarificationTests: XCTestCase {
-    override func tearDown() {
-        ClarificationMockURLProtocol.requestHandler = nil
-        super.tearDown()
-    }
-
+final class ClarificationTests: APIClientTestCase {
     func testClarificationPendingDecodesUpstreamShapeTolerantly() throws {
         let response = try JSONDecoder().decode(
             ClarificationPendingResponse.self,
@@ -70,7 +65,7 @@ final class ClarificationTests: XCTestCase {
                 let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
                 XCTAssertEqual(query["session_id"], "session-abc")
 
-                return jsonResponse("""
+                return apiTestJSONResponse("""
                 {
                   "pending": {
                     "clarify_id": "clarify-1",
@@ -83,8 +78,8 @@ final class ClarificationTests: XCTestCase {
             case 2:
                 XCTAssertEqual(request.url?.path, "/api/clarify/respond")
                 XCTAssertEqual(request.httpMethod, "POST")
-                respondBody = try XCTUnwrap(jsonBody(from: request))
-                return jsonResponse(#"{"ok": true, "response": "A"}"#, for: request)
+                respondBody = try XCTUnwrap(apiTestJSONBody(from: request))
+                return apiTestJSONResponse(#"{"ok": true, "response": "A"}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -142,16 +137,16 @@ final class ClarificationTests: XCTestCase {
         ) { request in
             switch request.url?.path {
             case "/api/chat/start":
-                return jsonResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
             case "/api/clarify/respond":
-                return jsonResponse(
+                return apiTestJSONResponse(
                     #"{"ok": false, "error": "Clarification prompt expired or not found. The agent may have already proceeded.", "stale": true}"#,
                     statusCode: 409,
                     for: request
                 )
             case "/api/clarify/pending":
                 didRefreshPendingAfterStale = true
-                return jsonResponse(#"{"pending": null}"#, for: request)
+                return apiTestJSONResponse(#"{"pending": null}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -245,13 +240,13 @@ final class ClarificationTests: XCTestCase {
         ) { request in
             switch request.url?.path {
             case "/api/chat/start":
-                return jsonResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
             case "/api/clarify/respond":
-                respondBody = try XCTUnwrap(jsonBody(from: request))
-                return jsonResponse(#"{"ok": true, "response": "Use main"}"#, for: request)
+                respondBody = try XCTUnwrap(apiTestJSONBody(from: request))
+                return apiTestJSONResponse(#"{"ok": true, "response": "Use main"}"#, for: request)
             case "/api/clarify/pending":
                 didFetchPendingAfterResponse = true
-                return jsonResponse(#"{"pending": null}"#, for: request)
+                return apiTestJSONResponse(#"{"pending": null}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -314,7 +309,7 @@ final class ClarificationTests: XCTestCase {
         ) { request in
             switch request.url?.path {
             case "/api/chat/start":
-                return jsonResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
             case "/api/clarify/respond":
                 throw URLError(.timedOut)
             default:
@@ -347,7 +342,7 @@ final class ClarificationTests: XCTestCase {
     func testClarificationForDifferentSessionDoesNotRenderOverCurrentChat() async throws {
         let viewModel = try makeViewModel { request in
             XCTAssertEqual(request.url?.path, "/api/chat/start")
-            return jsonResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+            return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
         }
 
         let didStart = await viewModel.sendMessage("Continue")
@@ -389,13 +384,8 @@ final class ClarificationTests: XCTestCase {
         clarifyStreamClient: SSEStreamingClient? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
-        ClarificationMockURLProtocol.requestHandler = handler
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ClarificationMockURLProtocol.self]
-        let urlSession = URLSession(configuration: configuration)
         let server = try XCTUnwrap(URL(string: "https://example.test"))
-        let client = APIClient(baseURL: server, session: urlSession)
+        let client = makeClient(handler: handler)
         let session = try makeSession()
 
         return ChatViewModel(
@@ -423,16 +413,6 @@ final class ClarificationTests: XCTestCase {
             """.utf8)
         )
     }
-
-    private func makeClient(
-        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) -> APIClient {
-        ClarificationMockURLProtocol.requestHandler = handler
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ClarificationMockURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-        return APIClient(baseURL: URL(string: "https://example.test")!, session: session)
-    }
 }
 
 private final class ClarificationSpySSEStreamingClient: SSEStreamingClient {
@@ -455,81 +435,4 @@ private final class ClarificationSpySSEStreamingClient: SSEStreamingClient {
     func emit(_ event: SSEEvent) {
         onEvent?(event)
     }
-}
-
-private final class ClarificationMockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-
-    override class func canInit(with request: URLRequest) -> Bool {
-        true
-    }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        guard let handler = Self.requestHandler else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
-            return
-        }
-
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {}
-}
-
-private func jsonResponse(_ json: String, statusCode: Int = 200, for request: URLRequest) -> (HTTPURLResponse, Data) {
-    let url = request.url ?? URL(string: "https://example.test")!
-    let response = HTTPURLResponse(
-        url: url,
-        statusCode: statusCode,
-        httpVersion: nil,
-        headerFields: ["Content-Type": "application/json"]
-    )!
-    return (response, Data(json.utf8))
-}
-
-private func jsonBody(from request: URLRequest) throws -> [String: Any] {
-    let data = try XCTUnwrap(bodyData(from: request))
-    return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-}
-
-private func bodyData(from request: URLRequest) -> Data? {
-    if let httpBody = request.httpBody {
-        return httpBody
-    }
-
-    guard let stream = request.httpBodyStream else {
-        return nil
-    }
-
-    stream.open()
-    defer { stream.close() }
-
-    var data = Data()
-    let bufferSize = 1024
-    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-    defer { buffer.deallocate() }
-
-    while stream.hasBytesAvailable {
-        let count = stream.read(buffer, maxLength: bufferSize)
-        if count < 0 {
-            return nil
-        }
-        if count == 0 {
-            break
-        }
-        data.append(buffer, count: count)
-    }
-
-    return data
 }

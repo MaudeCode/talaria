@@ -195,12 +195,7 @@ final class CronManagementModelTests: XCTestCase {
     }
 }
 
-final class CronManagementViewModelTests: XCTestCase {
-    override func tearDown() {
-        MockURLProtocol.requestHandler = nil
-        super.tearDown()
-    }
-
+final class CronManagementViewModelTests: APIClientTestCase {
     @MainActor
     func testTasksViewModelCreateInsertsReturnedJob() async throws {
         let client = makeClient { request in
@@ -362,18 +357,6 @@ final class CronManagementViewModelTests: XCTestCase {
 
         XCTAssertTrue(didDelete)
         XCTAssertEqual(viewModel.lastMutation, .delete(jobID: "job123"))
-    }
-
-    private func makeClient(
-        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) -> APIClient {
-        MockURLProtocol.requestHandler = handler
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-
-        return APIClient(baseURL: URL(string: "https://example.test")!, session: session)
     }
 
     private func decodeCronJob(_ json: String) throws -> CronJob {
