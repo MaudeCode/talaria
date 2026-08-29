@@ -40,6 +40,10 @@ explicitly adopted it.
 
 - For API requests, JSON decoding, SSE or streaming, and server-version
   compatibility, use `$talaria-upstream-contract`.
+- Before adding code, inspect nearby callers and existing helpers. Reuse or
+  consolidate behavior with multiple callers, delete obsolete code, keep files
+  and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up
+  when necessary cleanup is too broad for the selected task.
 - Do not add a third-party package without approval.
 - Automated tests must run from deterministic, isolated, test-owned state in a
   clean environment. Fixture identifiers must be synthetic, and the harness must
