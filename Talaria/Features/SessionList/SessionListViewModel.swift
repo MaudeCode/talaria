@@ -254,7 +254,7 @@ final class SessionListViewModel {
 
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             sessionLoadError = error
@@ -295,7 +295,7 @@ final class SessionListViewModel {
             let response = try await client.profiles()
             applyActiveProfile(response)
         } catch {
-            guard !isCancellationError(error) else { return }
+            guard !APIError.isCancellation(error) else { return }
 
             activeProfileErrorMessage = error.localizedDescription
         }
@@ -347,7 +347,7 @@ final class SessionListViewModel {
             )
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             activeProfileErrorMessage = error.localizedDescription
@@ -389,7 +389,7 @@ final class SessionListViewModel {
             guard activeRemoteSearchQuery == query else { return }
 
             isSearchingRemoteSessions = false
-            guard !isCancellationError(error) else { return }
+            guard !APIError.isCancellation(error) else { return }
 
             remoteContentSearchSessionIDs = []
             searchErrorMessage = error.localizedDescription
@@ -426,7 +426,7 @@ final class SessionListViewModel {
                 guard response.active == false else { continue }
                 return await load(modelContext: modelContext) ? .reloaded : loadFailureRefreshResult
             } catch {
-                guard !isCancellationError(error) else { return .unchanged }
+                guard !APIError.isCancellation(error) else { return .unchanged }
                 if case APIError.unauthorized = error {
                     lastError = error
                     return .failed
@@ -595,7 +595,7 @@ final class SessionListViewModel {
 
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -688,7 +688,7 @@ final class SessionListViewModel {
             try file.data.write(to: fileURL, options: .atomic)
             return fileURL
         } catch {
-            guard !isCancellationError(error) else { return nil }
+            guard !APIError.isCancellation(error) else { return nil }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -706,7 +706,7 @@ final class SessionListViewModel {
             let response = try await client.projects()
             projects = response.projects ?? []
         } catch {
-            guard !isCancellationError(error) else { return }
+            guard !APIError.isCancellation(error) else { return }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -774,7 +774,7 @@ final class SessionListViewModel {
             await load(modelContext: modelContext)
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -820,7 +820,7 @@ final class SessionListViewModel {
             await load(modelContext: modelContext)
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -845,7 +845,7 @@ final class SessionListViewModel {
             await load(modelContext: modelContext)
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -886,7 +886,7 @@ final class SessionListViewModel {
             upsertProject(renamedProject)
             return true
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -956,7 +956,7 @@ final class SessionListViewModel {
 
             return newSession
         } catch {
-            guard !isCancellationError(error) else { return nil }
+            guard !APIError.isCancellation(error) else { return nil }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -1140,28 +1140,12 @@ final class SessionListViewModel {
             try await operation()
             return await load(modelContext: modelContext, animation: animation)
         } catch {
-            guard !isCancellationError(error) else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
             return false
         }
-    }
-
-    private func isCancellationError(_ error: Error) -> Bool {
-        if error is CancellationError {
-            return true
-        }
-
-        let underlying: Error
-        if case APIError.network(let wrapped) = error {
-            underlying = wrapped
-        } else {
-            underlying = error
-        }
-
-        guard let urlError = underlying as? URLError else { return false }
-        return urlError.code == .cancelled
     }
 
 }

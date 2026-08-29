@@ -112,6 +112,22 @@ enum APIError: LocalizedError {
 
         return "other"
     }
+
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        let underlying: Error
+        if case APIError.network(let wrapped) = error {
+            underlying = wrapped
+        } else {
+            underlying = error
+        }
+
+        guard let urlError = underlying as? URLError else { return false }
+        return urlError.code == .cancelled
+    }
 }
 
 private extension APIError {
