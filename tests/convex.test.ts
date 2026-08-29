@@ -938,6 +938,19 @@ describe("Convex relay state", () => {
       activityPushToken: "old-token",
       now: now + 3,
     })).resolves.toEqual({ ok: false, reason: "ended" });
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "old-activity",
+      activityPushToken: "new-token",
+      now: now + 4,
+    })).resolves.toEqual({ ok: false, reason: "ended" });
+    const replacement = await backend.run(async (ctx) =>
+      ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "new-activity"),
+      ).unique(),
+    );
+    expect(replacement?.activityPushToken).toBe("new-token");
     const payload = JSON.parse(claimed.request.payloadJson);
     expect(payload.aps).toMatchObject({
       event: "end",
