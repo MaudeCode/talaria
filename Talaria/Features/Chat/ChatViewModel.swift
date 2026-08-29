@@ -1741,6 +1741,9 @@ final class ChatViewModel {
                     message.isLocalSteeringHint
                         && message.steeringHintState != .consumed
                         && message.messageId.map(scene.steeringIDs.contains) != true
+                        && message.content.map {
+                            scene.steeringTexts.contains($0.trimmingCharacters(in: .whitespacesAndNewlines))
+                        } != true
                 }
                 if !unresolvedHints.isEmpty {
                     result.insert(
@@ -4042,6 +4045,7 @@ final class ChatViewModel {
                 return false
             }
 
+            removeUnresolvedSteeringHints()
             return true
         } catch {
             lastError = error
@@ -4514,7 +4518,7 @@ final class ChatViewModel {
         var didApplyCompletedTranscript = false
         if let completedMessages = completedSession.messages,
            !completedMessages.isEmpty {
-            let currentTurnStart = messages.lastIndex(where: { $0.role == "user" }) ?? -1
+            let currentTurnStart = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary) ?? -1
             let currentTurn = messages.dropFirst(currentTurnStart + 1)
             let preservesSteeringTurn = currentTurn.contains(where: \.isLocalSteeringHint)
                 && !currentTurn.contains { $0.activityScene?.hasConsumedSteering == true }

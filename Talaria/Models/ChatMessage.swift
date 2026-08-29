@@ -323,6 +323,13 @@ extension AssistantActivityScene {
             return row.rowID
         })
     }
+
+    var steeringTexts: Set<String> {
+        Set((activityRows ?? []).compactMap { row in
+            guard row.role == "steering" else { return nil }
+            return row.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+    }
 }
 
 struct AssistantActivitySceneRow: Codable, Equatable {
