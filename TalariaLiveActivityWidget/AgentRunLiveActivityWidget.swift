@@ -15,8 +15,12 @@ struct TalariaLiveActivityWidgetBundle: WidgetBundle {
 struct TalariaAggregateLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TalariaAggregateActivityAttributes.self) { context in
+            let isStale = TalariaAggregateLiveActivityPresentation.isEffectivelyStale(
+                state: context.state,
+                isStale: context.isStale
+            )
             VStack(alignment: .leading, spacing: 6) {
-                TalariaAggregateHeader(state: context.state, isStale: context.isStale)
+                TalariaAggregateHeader(state: context.state, isStale: isStale)
                 ForEach(context.state.rows.prefix(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit)) { row in
                     HStack(spacing: 7) {
                         Text(row.title)
@@ -26,7 +30,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                         AggregateStatusLabel(
                             status: row.status,
                             phase: row.phase,
-                            isStale: context.isStale
+                            isStale: isStale
                         )
                             .layoutPriority(1)
                     }
@@ -39,14 +43,18 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                 TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
             })
         } dynamicIsland: { context in
-            DynamicIsland {
+            let isStale = TalariaAggregateLiveActivityPresentation.isEffectivelyStale(
+                state: context.state,
+                isStale: context.isStale
+            )
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     SandalMark(height: 15)
                     .padding(.leading, 4)
                     .padding(.vertical, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.isStale
+                    Text(isStale
                         ? String(localized: "Waiting")
                         : "\(context.state.activeCount) active")
                         .font(.caption)
@@ -67,7 +75,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                                 AggregateStatusLabel(
                                     status: row.status,
                                     phase: row.phase,
-                                    isStale: context.isStale
+                                    isStale: isStale
                                 )
                                     .layoutPriority(1)
                             }
@@ -80,7 +88,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             } compactLeading: {
                 SandalMark(height: 16)
             } compactTrailing: {
-                AggregateCompactTrailing(state: context.state, isStale: context.isStale)
+                AggregateCompactTrailing(state: context.state, isStale: isStale)
             } minimal: {
                 SandalMark(height: 13)
             }
