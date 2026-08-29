@@ -29,7 +29,7 @@ concurrency:
 jobs:
   upload:
     name: Archive and Upload
-    runs-on: macos-26
+    runs-on: maude-mac
     environment: internal-testflight
     timeout-minutes: 60
 
