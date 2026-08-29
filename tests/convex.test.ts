@@ -869,6 +869,77 @@ describe("Convex relay state", () => {
     expect(activities[0]?.activityId).toBe("activity-2");
   });
 
+  it("ends a displaced same-mode activity on its ActivityKit token", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "production",
+        preferences: defaultNotificationPreferences,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const registration = {
+      userId: "user-1",
+      deviceId: "device-1",
+      mode: "all_running" as const,
+      attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1,
+      seededLocally: false,
+    };
+    await backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "old-activity",
+      activityPushToken: "old-token",
+      now,
+    });
+    await backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "new-activity",
+      activityPushToken: "new-token",
+      now: now + 1,
+    });
+
+    const state = await backend.run(async (ctx) => ({
+      oldActivity: await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "old-activity"),
+      ).unique(),
+      newActivity: await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "new-activity"),
+      ).unique(),
+      displacedEnd: await ctx.db.query("deliveryJobs").withIndex(
+        "by_user_id_and_activity_id_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "queued"),
+      ).unique(),
+    }));
+    expect(state.oldActivity?.endedAt).toBe(now + 1);
+    expect(state.newActivity?.endedAt).toBeUndefined();
+    expect(state.displacedEnd).toMatchObject({
+      kind: "live_activity_end",
+      expectedToken: "old-token",
+      stateFingerprint: "end:displaced:old-activity",
+    });
+    const claimed = await backend.mutation(internal.delivery.claimJob, {
+      jobId: state.displacedEnd!._id,
+      now: now + 2,
+    });
+    expect(claimed).toMatchObject({ status: "ready", kind: "live_activity_end" });
+    if (claimed.status !== "ready") throw new Error("displacement end was not claimable");
+    const payload = JSON.parse(claimed.request.payloadJson);
+    expect(payload.aps).toMatchObject({
+      event: "end",
+      timestamp: Math.floor((now + 1) / 1_000),
+      "dismissal-date": Math.floor((now + 1) / 1_000),
+    });
+  });
+
   it("keeps publisher, device, snapshot, and activity state tenant isolated", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;

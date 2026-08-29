@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
-import type { DataModel } from "./_generated/dataModel";
+import type { DataModel, Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import {
   aggregateFingerprint,
@@ -191,6 +191,31 @@ async function enqueueJob(
   await apnsPool.enqueueAction(ctx, internal.apns.sendJob, { jobId }, {
     onComplete: internal.delivery.completeJob,
     context: { jobId },
+  });
+}
+
+export async function enqueueDisplacedActivityEnd(
+  ctx: MutationCtx,
+  activity: Doc<"liveActivities">,
+  device: Doc<"devices">,
+  now: number,
+): Promise<void> {
+  if (!device.bundleId || !device.apsEnvironment) return;
+  await enqueueJob(ctx, {
+    userId: activity.userId,
+    deviceId: activity.deviceId,
+    activityId: activity.activityId,
+    kind: "live_activity_end",
+    request: makeLiveActivityEnd({
+      token: activity.activityPushToken,
+      bundleId: device.bundleId,
+      environment: device.apsEnvironment,
+      aggregate: null,
+      nowEpochSeconds: Math.floor(now / 1_000),
+      dismissalDelaySeconds: 0,
+    }),
+    stateFingerprint: `end:displaced:${activity.activityId}`,
+    now,
   });
 }
 
@@ -494,6 +519,8 @@ export const claimJob = internalMutation({
       return { status: "stale" as const };
     }
     if (job.activityId) {
+      const isDisplacementEnd = job.kind === "live_activity_end"
+        && job.stateFingerprint === `end:displaced:${job.activityId}`;
       const activityId = job.activityId;
       const [activity, device] = await Promise.all([
         ctx.db
@@ -511,7 +538,7 @@ export const claimJob = internalMutation({
       ]);
       if (
         !activity ||
-        activity.endedAt !== undefined ||
+        (isDisplacementEnd ? activity.endedAt === undefined : activity.endedAt !== undefined) ||
         activity.activityPushToken !== job.expectedToken ||
         !device ||
         device.revokedAt !== undefined ||
@@ -532,7 +559,9 @@ export const claimJob = internalMutation({
               args.now,
             );
       const stateIsCurrent =
-        job.kind === "live_activity_end"
+        isDisplacementEnd
+          ? true
+          : job.kind === "live_activity_end"
           ? currentAggregate === null
           : aggregateFingerprint(currentAggregate) === job.stateFingerprint;
       if (!stateIsCurrent) {

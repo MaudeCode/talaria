@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
+import { enqueueDisplacedActivityEnd } from "./delivery";
 import {
   activityModeValidator,
   apsEnvironmentValidator,
@@ -142,6 +143,7 @@ export const registerActivity = internalMutation({
       .take(10);
     for (const activity of sameMode) {
       if (activity.activityId !== args.activityId) {
+        await enqueueDisplacedActivityEnd(ctx, activity, device, args.now);
         await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
       }
     }
