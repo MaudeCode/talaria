@@ -1242,11 +1242,14 @@ final class TalariaAggregateLiveActivityManager {
     private func stateByAddingPendingSeeds(
         to state: TalariaAggregateActivityAttributes.ContentState
     ) -> TalariaAggregateActivityAttributes.ContentState {
-        prunePendingSeeds()
-        return TalariaAggregateActivitySeed.merging(
-            pendingSeeds.values.map(\.state),
-            into: queuedAggregateState ?? state
-        )
+        if let queuedAggregateState {
+            prunePendingSeeds()
+            return TalariaAggregateActivitySeed.merging(
+                pendingSeeds.values.map(\.state),
+                into: queuedAggregateState
+            )
+        }
+        return stateByReconcilingPendingSeeds(with: state)
     }
 
     private func stateByReconcilingPendingSeeds(
@@ -1373,7 +1376,12 @@ enum TalariaAggregateActivitySeed {
         seed: TalariaAggregateActivityAttributes.ContentState
     ) -> Bool {
         guard row.id == seed.rows.first?.id else { return false }
-        if isActive(row.phase) { return true }
+        if isActive(row.phase) {
+            let isLocalPlaceholder = row.phase == "starting"
+                && row.status == String(localized: "Connecting")
+                && row.updatedAt == seed.updatedAt
+            return !isLocalPlaceholder && row.updatedAt >= seed.updatedAt
+        }
         return terminalPhases.contains(row.phase) && row.updatedAt >= seed.updatedAt
     }
 

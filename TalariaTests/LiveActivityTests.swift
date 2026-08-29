@@ -393,8 +393,22 @@ final class LiveActivityTests: XCTestCase {
             aggregateRow(sessionID: "session", phase: "completed", updatedAt: 999),
             seed: seed
         ))
-        XCTAssertTrue(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+        XCTAssertFalse(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
             aggregateRow(sessionID: "session", phase: "running", updatedAt: 999),
+            seed: seed
+        ))
+        XCTAssertTrue(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+            aggregateRow(sessionID: "session", phase: "running", updatedAt: 1_001),
+            seed: seed
+        ))
+        var localPlaceholder = aggregateRow(
+            sessionID: "session",
+            phase: "starting",
+            updatedAt: seed.updatedAt
+        )
+        localPlaceholder.status = "Connecting"
+        XCTAssertFalse(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+            localPlaceholder,
             seed: seed
         ))
     }
