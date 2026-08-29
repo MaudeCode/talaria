@@ -1622,7 +1622,8 @@ final class ChatViewModel {
     }
 
     func actionContext(for message: ChatMessage, visibleIndex: Int) -> MessageActionContext? {
-        MessageActionContext(
+        guard !message.isLocalSteeringHint else { return nil }
+        return MessageActionContext(
             message: message,
             visibleIndex: visibleIndex,
             messagesOffset: messagesOffset
@@ -1655,7 +1656,7 @@ final class ChatViewModel {
         _ loadedMessages: [ChatMessage],
         withCachedLocalOptimisticMessages cachedMessages: [ChatMessage]
     ) -> [ChatMessage] {
-        let mergedMessages = loadedMessages.map { loadedMessage in
+        let serverMergedMessages = loadedMessages.map { loadedMessage in
             guard loadedMessage.role == "assistant",
                   let cachedMessage = cachedMessages.last(where: {
                       $0.role == "assistant" && $0.id == loadedMessage.id
@@ -1680,6 +1681,10 @@ final class ChatViewModel {
                 turnTps: loadedMessage.turnTps ?? cachedMessage.turnTps
             )
         }
+        let mergedMessages = preservingLocalSteeringTurns(
+            serverMergedMessages,
+            cachedMessages: cachedMessages
+        )
         let localUserMessages = cachedMessages.filter { cachedMessage in
             isLocalOptimisticUserMessage(cachedMessage)
                 && !loadedMessagesContainEquivalentUserMessage(mergedMessages, localMessage: cachedMessage)
@@ -1692,6 +1697,153 @@ final class ChatViewModel {
         return localUserMessages.reduce(into: mergedMessages) { partialMessages, localMessage in
             insertLocalOptimisticMessage(localMessage, into: &partialMessages)
         }
+    }
+
+    nonisolated private static func preservingLocalSteeringTurns(
+        _ loadedMessages: [ChatMessage],
+        cachedMessages: [ChatMessage]
+    ) -> [ChatMessage] {
+        let cachedTurnStarts = cachedMessages.indices.filter { index in
+            isOrdinaryUserTurnBoundary(cachedMessages[index])
+        }
+        guard !cachedTurnStarts.isEmpty else { return loadedMessages }
+
+        var result = loadedMessages
+        var loadedSearchEnd = result.endIndex
+
+        for (turnOffset, cachedStart) in cachedTurnStarts.enumerated().reversed() {
+            let cachedEnd = turnOffset + 1 < cachedTurnStarts.count
+                ? cachedTurnStarts[turnOffset + 1]
+                : cachedMessages.endIndex
+            let cachedTurn = Array(cachedMessages[cachedMessages.index(after: cachedStart)..<cachedEnd])
+            guard cachedTurn.contains(where: \.isLocalSteeringHint) else { continue }
+
+            let cachedUser = cachedMessages[cachedStart]
+            guard let loadedUserIndex = result.indices[..<loadedSearchEnd].last(where: { index in
+                loadedMessagesContainEquivalentUserMessage([result[index]], localMessage: cachedUser)
+            }) else { continue }
+
+            let loadedTurnEnd = result[result.index(after: loadedUserIndex)...]
+                .firstIndex(where: isOrdinaryUserTurnBoundary)
+                ?? result.endIndex
+            guard let loadedAssistantIndex = result.indices[loadedUserIndex..<loadedTurnEnd]
+                .last(where: { result[$0].role == "assistant" })
+            else {
+                loadedSearchEnd = loadedUserIndex
+                continue
+            }
+
+            let visualMessages = cachedTurn.filter { message in
+                message.role == "assistant" || message.isLocalSteeringHint
+            }
+            guard visualMessages.contains(where: \.isLocalSteeringHint) else {
+                loadedSearchEnd = loadedUserIndex
+                continue
+            }
+
+            guard let replacement = reconciledSteeringTurn(
+                visualMessages,
+                serverAssistant: result[loadedAssistantIndex]
+            ) else {
+                loadedSearchEnd = loadedUserIndex
+                continue
+            }
+            result.replaceSubrange(loadedAssistantIndex...loadedAssistantIndex, with: replacement)
+            loadedSearchEnd = loadedUserIndex
+        }
+
+        return result
+    }
+
+    nonisolated private static func reconciledSteeringTurn(
+        _ visualMessages: [ChatMessage],
+        serverAssistant: ChatMessage
+    ) -> [ChatMessage]? {
+        var result = visualMessages
+        let localAssistantText = result
+            .filter { $0.role == "assistant" }
+            .compactMap(\.content)
+            .joined()
+        let serverText = serverAssistant.content ?? ""
+        guard serverText.hasPrefix(localAssistantText) || localAssistantText.hasPrefix(serverText) else {
+            return nil
+        }
+        let suffix = serverText.hasPrefix(localAssistantText)
+            ? String(serverText.dropFirst(localAssistantText.count))
+            : ""
+        let lastSteerIndex = result.lastIndex(where: \.isLocalSteeringHint)
+        let lastAssistantIndex = result.lastIndex(where: { $0.role == "assistant" })
+
+        if !suffix.isEmpty,
+           let lastAssistantIndex,
+           lastSteerIndex.map({ lastAssistantIndex > $0 }) == true {
+            result[lastAssistantIndex] = mergedSteeringAssistant(
+                result[lastAssistantIndex],
+                serverAssistant: serverAssistant,
+                content: (result[lastAssistantIndex].content ?? "") + suffix,
+                preservesLocalActivity: true
+            )
+        } else if !suffix.isEmpty {
+            result.append(ChatMessage(
+                role: "assistant",
+                content: suffix,
+                timestamp: serverAssistant.timestamp,
+                messageId: serverAssistant.messageId,
+                name: serverAssistant.name,
+                toolCallId: serverAssistant.toolCallId,
+                toolUseId: serverAssistant.toolUseId,
+                toolCalls: serverAssistant.toolCalls,
+                contentParts: serverAssistant.contentParts,
+                reasoning: serverAssistant.reasoning,
+                reasoningTitles: serverAssistant.reasoningTitles,
+                activityScene: serverAssistant.activityScene,
+                attachments: serverAssistant.attachments,
+                turnDuration: serverAssistant.turnDuration,
+                turnTps: serverAssistant.turnTps
+            ))
+        } else if let lastAssistantIndex {
+            result[lastAssistantIndex] = mergedSteeringAssistant(
+                result[lastAssistantIndex],
+                serverAssistant: serverAssistant,
+                content: result[lastAssistantIndex].content,
+                preservesLocalActivity: result.filter { $0.role == "assistant" }.count > 1
+            )
+        }
+
+        return result
+    }
+
+    nonisolated private static func mergedSteeringAssistant(
+        _ localAssistant: ChatMessage,
+        serverAssistant: ChatMessage,
+        content: String?,
+        preservesLocalActivity: Bool
+    ) -> ChatMessage {
+        ChatMessage(
+            role: localAssistant.role,
+            content: content,
+            timestamp: localAssistant.timestamp ?? serverAssistant.timestamp,
+            messageId: localAssistant.messageId,
+            name: localAssistant.name,
+            toolCallId: serverAssistant.toolCallId ?? localAssistant.toolCallId,
+            toolUseId: serverAssistant.toolUseId ?? localAssistant.toolUseId,
+            toolCalls: serverAssistant.toolCalls ?? localAssistant.toolCalls,
+            contentParts: preservesLocalActivity
+                ? localAssistant.contentParts
+                : localAssistant.contentParts ?? serverAssistant.contentParts,
+            reasoning: localAssistant.reasoning ?? serverAssistant.reasoning,
+            reasoningTitles: localAssistant.reasoningTitles ?? serverAssistant.reasoningTitles,
+            activityScene: preservesLocalActivity
+                ? localAssistant.activityScene
+                : localAssistant.activityScene ?? serverAssistant.activityScene,
+            attachments: localAssistant.attachments ?? serverAssistant.attachments,
+            turnDuration: serverAssistant.turnDuration ?? localAssistant.turnDuration,
+            turnTps: serverAssistant.turnTps ?? localAssistant.turnTps
+        )
+    }
+
+    nonisolated private static func isOrdinaryUserTurnBoundary(_ message: ChatMessage) -> Bool {
+        TranscriptTurnClassifier.isUserTurnBoundary(message) && !message.isLocalSteeringHint
     }
 
     nonisolated private static func prependingOlderMessages(
@@ -1853,9 +2005,13 @@ final class ChatViewModel {
                 )
             }
 
+            let mergedMessages = preservingLocalSteeringTurns(
+                loadedMessages,
+                cachedMessages: snapshot.messages
+            )
             return ActiveStreamMessageMerge(
-                messages: loadedMessages,
-                streamingAssistantMessageID: latestAssistantMessageID(in: loadedMessages),
+                messages: mergedMessages,
+                streamingAssistantMessageID: latestAssistantMessageID(in: mergedMessages),
                 usedSnapshotMessagesOffset: false
             )
         }
@@ -1868,7 +2024,10 @@ final class ChatViewModel {
             )
         }
 
-        var mergedMessages = loadedMessages
+        var mergedMessages = preservingLocalSteeringTurns(
+            loadedMessages,
+            cachedMessages: snapshot.messages
+        )
         let latestUserIndex = mergedMessages.lastIndex { $0.role == "user" }
         let assistantSearchRange: Range<Int>
         if let latestUserIndex {
@@ -2618,15 +2777,18 @@ final class ChatViewModel {
             return sent ? .executed(message: nil) : .unsupported(friendlyMessage: sendErrorMessage ?? String(localized: "Could not send the steering message."))
         }
 
+        let steeringMessageID = appendSteeringHint(message)
         do {
             let response = try await client.steerChat(sessionID: sessionID, text: message)
             if response.accepted == true {
-                return .executed(message: String(localized: "Steering hint delivered."))
+                updateSteeringHint(id: steeringMessageID, state: .waiting)
+                return .executed(message: nil)
             }
         } catch {
             lastError = error
         }
 
+        removeSteeringHint(id: steeringMessageID)
         _ = enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
         await cancelActiveStream()
         return .executed(message: String(localized: "Steer was unavailable, so the message was queued and the current response was stopped."))
@@ -3403,6 +3565,98 @@ final class ChatViewModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         pinnedLocalNotices.append(trimmed)
+    }
+
+    private func appendSteeringHint(_ text: String) -> String {
+        flushPendingStreamingContent()
+        archiveLiveActivityIfNeeded()
+        liveAssistantActivity.removeAll()
+        pendingReasoningTitles = []
+        streamingAssistantMessageID = nil
+        toolCallAnchorMessageID = nil
+        reasoningAnchorMessageID = nil
+
+        let messageID = "local-steer-\(UUID().uuidString)"
+        messages.append(ChatMessage(
+            role: "user",
+            content: text,
+            timestamp: Date().timeIntervalSince1970,
+            messageId: messageID,
+            name: SteeringHintState.sending.rawValue
+        ))
+        scheduleStreamingScrollTrigger()
+        return messageID
+    }
+
+    private func updateSteeringHint(id: String, state: SteeringHintState) {
+        guard let index = messages.firstIndex(where: { $0.messageId == id }),
+              let currentState = messages[index].steeringHintState,
+              currentState != .consumed
+        else { return }
+
+        messages[index] = Self.steeringHintMessage(messages[index], state: state)
+    }
+
+    private func removeSteeringHint(id: String) {
+        messages.removeAll { $0.messageId == id && $0.isLocalSteeringHint }
+    }
+
+    private func settleAcceptedSteeringHints() {
+        for index in messages.indices where messages[index].steeringHintState == .waiting {
+            messages[index] = Self.steeringHintMessage(messages[index], state: .consumed)
+        }
+    }
+
+    private func removeUnresolvedSteeringHints() {
+        messages.removeAll { message in
+            message.steeringHintState == .sending || message.steeringHintState == .waiting
+        }
+    }
+
+    private func removeLeftoverSteeringHints(matching text: String) {
+        let candidates = messages.enumerated().filter { entry in
+            entry.element.steeringHintState == .sending || entry.element.steeringHintState == .waiting
+        }
+        guard !candidates.isEmpty else { return }
+
+        for start in candidates.indices {
+            let suffix = candidates[start...]
+                .compactMap { $0.element.content }
+                .joined(separator: "\n")
+            guard suffix == text else { continue }
+            let ids = Set(candidates[start...].compactMap { $0.element.messageId })
+            messages.removeAll { message in
+                message.messageId.map(ids.contains) == true
+            }
+            return
+        }
+
+        if let exactID = candidates.first(where: { $0.element.content == text })?.element.messageId {
+            removeSteeringHint(id: exactID)
+        }
+    }
+
+    nonisolated private static func steeringHintMessage(
+        _ message: ChatMessage,
+        state: SteeringHintState
+    ) -> ChatMessage {
+        ChatMessage(
+            role: message.role,
+            content: message.content,
+            timestamp: message.timestamp,
+            messageId: message.messageId,
+            name: state.rawValue,
+            toolCallId: message.toolCallId,
+            toolUseId: message.toolUseId,
+            toolCalls: message.toolCalls,
+            contentParts: message.contentParts,
+            reasoning: message.reasoning,
+            reasoningTitles: message.reasoningTitles,
+            activityScene: message.activityScene,
+            attachments: message.attachments,
+            turnDuration: message.turnDuration,
+            turnTps: message.turnTps
+        )
     }
 
     private func appendLocalMessage(_ text: String, role: String, idPrefix: String) -> String? {
@@ -4189,6 +4443,10 @@ final class ChatViewModel {
         var didApplyCompletedTranscript = false
         if let completedMessages = completedSession.messages,
            !completedMessages.isEmpty {
+            let preservesSteeringTurn = messages.contains(where: \.isLocalSteeringHint)
+            if preservesSteeringTurn {
+                archiveLiveActivityIfNeeded()
+            }
             let previousMessages = messages
             let previousMessagesOffset = messagesOffset
             let reloadedMessages = Self.mergingLoadedMessages(
@@ -4201,7 +4459,9 @@ final class ChatViewModel {
                 previousMessages: previousMessages,
                 previousMessagesOffset: previousMessagesOffset
             )
-            archiveLiveActivityIfNeeded()
+            if !preservesSteeringTurn {
+                archiveLiveActivityIfNeeded()
+            }
             didApplyCompletedTranscript = true
         }
 
@@ -5289,6 +5549,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorDidFinishStream() {
         flushPendingStreamingContent()
+        removeUnresolvedSteeringHints()
         responseCompletionNeedsTranscriptRefresh = false
     }
 
@@ -5355,6 +5616,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         if let completedSession = payload.session {
             applyCompletedStreamSession(completedSession)
         }
+        settleAcceptedSteeringHints()
         if let usage = payload.usage {
             contextWindowSnapshot = usage
         }
@@ -5419,6 +5681,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return false }
 
+        removeLeftoverSteeringHints(matching: message)
         _ = enqueueQueuedSlashMessage(message, attachments: [])
         appendLocalNoticeMessage(String(localized: "Steering hint was not consumed before the response ended, so it was queued for the next turn."))
         return true

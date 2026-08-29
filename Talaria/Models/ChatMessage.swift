@@ -237,6 +237,22 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     }
 }
 
+enum SteeringHintState: String {
+    case sending = "_talaria_steer_sending"
+    case waiting = "_talaria_steer_waiting"
+    case consumed = "_talaria_steer_consumed"
+}
+
+extension ChatMessage {
+    var steeringHintState: SteeringHintState? {
+        name.flatMap(SteeringHintState.init(rawValue:))
+    }
+
+    var isLocalSteeringHint: Bool {
+        messageId?.hasPrefix("local-steer-") == true && steeringHintState != nil
+    }
+}
+
 struct AssistantActivityScene: Codable, Equatable {
     let version: String?
     let finalAnswer: String?
