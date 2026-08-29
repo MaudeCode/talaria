@@ -63,7 +63,7 @@ enum AssistantActivityGroupPolicy {
                 count += 1
             case .tools(let toolCalls):
                 count += toolCalls.count
-            case .prose:
+            case .prose, .steering:
                 break
             }
         } > 1

@@ -519,7 +519,9 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
-                    if liveActivityRows.isEmpty {
+                    if turn.hasSteering {
+                        steeredTurn(turn)
+                    } else if liveActivityRows.isEmpty {
                         if transcriptMessage.shouldShowTurnSummary(hasActiveStream: hasActiveStream) {
                             completedTurn(turn)
                         } else {
@@ -565,6 +567,99 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
         let title = AssistantTurnSummary.title(duration: transcriptMessage.message.turnDuration)
 
+        workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
+
+        if isExpanded {
+            activityTimeline(turn.workSegments, activeSegmentID: nil)
+                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        }
+
+        if !turn.finalAnswer.isEmpty {
+            messageRow(
+                activityMessage(
+                    text: turn.finalAnswer,
+                    includesAttachments: true,
+                    includesTurnMetrics: true
+                ),
+                isStreaming: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func steeredTurn(_ turn: CompletedAssistantTurn) -> some View {
+        let durations = turn.phaseDurations(totalDuration: transcriptMessage.message.turnDuration)
+
+        ForEach(Array(turn.phases.enumerated()), id: \.element.id) { index, phase in
+            if !phase.workRows.isEmpty {
+                if hasActiveStream {
+                    ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { rowIndex, row in
+                        activityItem(
+                            row,
+                            at: rowIndex,
+                            includesAttachments: false,
+                            includesTurnMetrics: false,
+                            isActive: index == turn.phases.count - 1
+                        )
+                    }
+                } else {
+                    workedPhase(
+                        phase,
+                        duration: durations.indices.contains(index) ? durations[index] : nil
+                    )
+                }
+            }
+
+            if let steering = phase.steeringAfter {
+                messageRow(ChatMessage(
+                    role: "user",
+                    content: steering.text,
+                    timestamp: steering.submittedAt,
+                    messageId: steering.id,
+                    name: SteeringHintState.consumed.rawValue
+                ))
+            }
+        }
+
+        if !turn.finalAnswer.isEmpty {
+            messageRow(
+                activityMessage(
+                    text: turn.finalAnswer,
+                    includesAttachments: true,
+                    includesTurnMetrics: true
+                ),
+                isStreaming: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func workedPhase(_ phase: CompletedAssistantTurn.Phase, duration: Double?) -> some View {
+        let disclosureID = "worked:\(transcriptMessage.anchorID):\(phase.id)"
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        let title = AssistantTurnSummary.title(duration: duration)
+
+        workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
+
+        if isExpanded {
+            ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { index, row in
+                activityItem(
+                    row,
+                    at: index,
+                    includesAttachments: false,
+                    includesTurnMetrics: false,
+                    isActive: false
+                )
+            }
+            .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        }
+    }
+
+    private func workedDisclosureHeader(
+        disclosureID: String,
+        title: String,
+        isExpanded: Bool
+    ) -> some View {
         Button {
             withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                 if isExpanded {
@@ -593,27 +688,10 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .bottom) {
-            Divider()
-                .opacity(0.35)
+            Divider().opacity(0.35)
         }
         .accessibilityLabel(title)
         .accessibilityHint(isExpanded ? "Double tap to collapse work." : "Double tap to expand work.")
-
-        if isExpanded {
-            activityTimeline(turn.workSegments, activeSegmentID: nil)
-                .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
-        }
-
-        if !turn.finalAnswer.isEmpty {
-            messageRow(
-                activityMessage(
-                    text: turn.finalAnswer,
-                    includesAttachments: true,
-                    includesTurnMetrics: true
-                ),
-                isStreaming: false
-            )
-        }
     }
 
     @ViewBuilder
@@ -706,6 +784,14 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                         ),
                         isStreaming: activeSegmentID == segment.id
                     )
+                case .steering(let steering):
+                    messageRow(ChatMessage(
+                        role: "user",
+                        content: steering.text,
+                        timestamp: steering.submittedAt,
+                        messageId: steering.id,
+                        name: SteeringHintState.consumed.rawValue
+                    ))
                 }
             }
         }
@@ -746,6 +832,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                     toolCalls: toolCalls
                 ))
             }
+        case .steering:
+            EmptyView()
         }
     }
 
@@ -755,6 +843,8 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             true
         case .reasoning, .tools:
             showsThinkingAndToolCards
+        case .steering:
+            true
         }
     }
 

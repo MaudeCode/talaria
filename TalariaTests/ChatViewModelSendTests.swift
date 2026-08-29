@@ -7654,13 +7654,17 @@ final class ChatViewModelSendTests: XCTestCase {
               "role":"assistant",
               "content":"Before hint. Final answer.",
               "message_id":"assistant-final",
+              "_turn_duration":10,
               "_anchor_activity_scene": {
                 "version":"activity_scene_v1",
                 "final_answer":"Final answer.",
+                "turn_duration":10,
                 "activity_rows":[
-                  {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before hint. "},
-                  {"row_id":"tool-1","order_index":1,"role":"tool","tool_call_id":"call-1","status":"completed","tool":{"id":"call-1","name":"read_file","done":true}},
-                  {"row_id":"prose-2","order_index":2,"role":"prose","text":"Final answer."}
+                  {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before hint. ","created_at":1},
+                  {"row_id":"tool-1","order_index":1,"role":"tool","tool_call_id":"call-1","status":"completed","created_at":2,"tool":{"id":"call-1","name":"read_file","done":true}},
+                  {"row_id":"local-steer-authoritative","order_index":2,"role":"steering","status":"consumed","text":"Keep this visible","created_at":4,"payload":{"steer_id":"local-steer-authoritative","created_at":3,"consumed_at":4}},
+                  {"row_id":"tool-2","order_index":3,"role":"tool","tool_call_id":"call-2","status":"completed","created_at":7,"tool":{"id":"call-2","name":"terminal","done":true}},
+                  {"row_id":"prose-2","order_index":4,"role":"prose","text":"Final answer.","created_at":9}
                 ]
               }
             }
@@ -7699,10 +7703,13 @@ final class ChatViewModelSendTests: XCTestCase {
 
         await viewModel.loadMessages(modelContext: modelContext)
 
-        XCTAssertEqual(
-            viewModel.displayedTranscriptMessages.filter { $0.message.isLocalSteeringHint }.map { $0.message.content },
-            ["Keep this visible"]
-        )
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        let assistant = try XCTUnwrap(viewModel.messages.last(where: { $0.role == "assistant" }))
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: assistant))
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+        XCTAssertTrue(turn.hasSteering)
+        XCTAssertEqual(turn.phases.compactMap { $0.steeringAfter?.text }, ["Keep this visible"])
+        XCTAssertEqual(turn.phaseDurations(totalDuration: assistant.turnDuration).compactMap { $0 }, [3, 7])
     }
 
     @MainActor
@@ -7772,9 +7779,17 @@ final class ChatViewModelSendTests: XCTestCase {
         streamClient.emit(.token("First. "))
         let firstSteer = await viewModel.submitStreamingMessage("Use tests", behavior: .steer)
         XCTAssertEqual(firstSteer, .executed(message: nil))
+        let firstSteerID = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(
+            steerId: firstSteerID,
+            text: "Use tests"
+        )))
         streamClient.emit(.token("Second. "))
         let secondSteer = await viewModel.submitStreamingMessage("Keep it focused", behavior: .steer)
         XCTAssertEqual(secondSteer, .executed(message: nil))
+        let secondSteerID = try XCTUnwrap(viewModel.messages.last(where: {
+            $0.isLocalSteeringHint && $0.messageId != firstSteerID
+        })?.messageId)
         streamClient.emit(.token("Third."))
 
         XCTAssertEqual(
@@ -7783,8 +7798,13 @@ final class ChatViewModelSendTests: XCTestCase {
         )
         XCTAssertEqual(
             viewModel.messages.filter(\.isLocalSteeringHint).map(\.steeringHintState),
-            [.waiting, .waiting]
+            [.consumed, .waiting]
         )
+
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(
+            steerId: secondSteerID,
+            text: "Keep it focused"
+        )))
 
         streamClient.emit(.done(DoneStreamEvent(session: nil)))
         XCTAssertEqual(
@@ -7821,7 +7841,11 @@ final class ChatViewModelSendTests: XCTestCase {
         let didStart = await viewModel.sendMessage("Initial request")
         XCTAssertTrue(didStart)
         _ = await viewModel.submitStreamingMessage("Run the focused test", behavior: .steer)
-        streamClient.emit(.pendingSteerLeftover("Run the focused test"))
+        let steerID = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.pendingSteerLeftover(SteeringStreamEvent(
+            steerId: steerID,
+            text: "Run the focused test"
+        )))
 
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
 

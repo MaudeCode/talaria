@@ -270,6 +270,60 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertNotNil(CompletedAssistantTurn(rows: Array(timeline.rows.dropLast())))
     }
 
+    func testActivitySceneKeepsSteeringBoundaryBetweenWorkPhases() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "assistant-final",
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "final_answer": "Done.",
+            "turn_duration": 10,
+            "activity_rows": [
+              {"row_id":"prose-before","order_index":0,"role":"prose","text":"First phase.","created_at":1},
+              {"row_id":"tool-before","order_index":1,"role":"tool","status":"completed","created_at":2,"tool":{"id":"call-1","name":"terminal","done":true}},
+              {"row_id":"local-steer-1","order_index":2,"role":"steering","status":"consumed","text":"Stop after the next sleep","created_at":4,"payload":{"steer_id":"local-steer-1","created_at":3,"consumed_at":4}},
+              {"row_id":"tool-after","order_index":3,"role":"tool","status":"completed","created_at":7,"tool":{"id":"call-2","name":"terminal","done":true}}
+            ]
+          }
+        }
+        """.utf8))
+
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+
+        XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "tools", "steering", "tools", "prose"])
+        XCTAssertEqual(timeline.rows[2].text, "Stop after the next sleep")
+    }
+
+    func testActiveSteeringSceneKeepsPreSteerProseInTheFirstExpandedPhase() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "content": "First phase.",
+          "message_id": "assistant-live",
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {"row_id":"prose-before","order_index":0,"role":"prose","text":"First phase.","created_at":1},
+              {"row_id":"local-steer-1","order_index":1,"role":"steering","status":"consumed","text":"Stop now","created_at":4,"payload":{"steer_id":"local-steer-1","created_at":3,"consumed_at":4}}
+            ]
+          }
+        }
+        """.utf8))
+
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+
+        XCTAssertEqual(turn.finalAnswer, "")
+        XCTAssertEqual(turn.phases.first?.workRows.compactMap(\.text), ["First phase."])
+        XCTAssertEqual(turn.phases.first?.steeringAfter?.text, "Stop now")
+    }
+
     func testContentPartsPreserveTextToolTextOrderAndOutputText() async throws {
         let client = makeClient { request in
             apiTestJSONResponse("""

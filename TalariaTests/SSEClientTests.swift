@@ -633,7 +633,26 @@ final class SSEClientTests: XCTestCase {
             data: #"{"session_id":"abc123","text":"follow this constraint"}"#
         )
 
-        XCTAssertEqual(event, .pendingSteerLeftover("follow this constraint"))
+        XCTAssertEqual(event, .pendingSteerLeftover(SteeringStreamEvent(
+            sessionId: "abc123",
+            text: "follow this constraint"
+        )))
+    }
+
+    func testDecodesConsumedSteerEvent() {
+        let event = SSEEventDecoder.decode(
+            eventType: "steer_consumed",
+            data: #"{"session_id":"abc123","stream_id":"stream-1","steer_id":"local-steer-1","text":"stop after the next sleep","created_at":10,"consumed_at":12}"#
+        )
+
+        XCTAssertEqual(event, .steerConsumed(SteeringStreamEvent(
+            sessionId: "abc123",
+            streamId: "stream-1",
+            steerId: "local-steer-1",
+            text: "stop after the next sleep",
+            createdAt: 10,
+            consumedAt: 12
+        )))
     }
 
     func testDecodesApprovalInitialEventFromApprovalStream() {

@@ -98,11 +98,11 @@ extension APIClient {
         )
     }
 
-    func steerChat(sessionID: String, text: String) async throws -> ChatSteerResponse {
+    func steerChat(sessionID: String, text: String, steerID: String) async throws -> ChatSteerResponse {
         try await send(
             endpoint: .chatSteer,
             method: "POST",
-            body: ChatSteerRequest(sessionId: sessionID, text: text)
+            body: ChatSteerRequest(sessionId: sessionID, text: text, steerId: steerID)
         )
     }
 
@@ -163,6 +163,7 @@ private struct ChatStartRequest: Encodable {
 private struct ChatSteerRequest: Encodable {
     let sessionId: String
     let text: String
+    let steerId: String
 }
 
 private struct GoalSubmissionRequest: Encodable {

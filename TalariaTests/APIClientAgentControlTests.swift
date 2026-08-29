@@ -198,21 +198,28 @@ final class APIClientAgentControlTests: APIClientTestCase {
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             XCTAssertEqual(body?["session_id"] as? String, "abc123")
             XCTAssertEqual(body?["text"] as? String, "prefer tests")
+            XCTAssertEqual(body?["steer_id"] as? String, "local-steer-1")
 
             return apiTestJSONResponse("""
             {
               "accepted": true,
               "fallback": null,
-              "stream_id": "stream-123"
+              "stream_id": "stream-123",
+              "steer_id": "local-steer-1"
             }
             """, for: request)
         }
 
-        let response = try await client.steerChat(sessionID: "abc123", text: "prefer tests")
+        let response = try await client.steerChat(
+            sessionID: "abc123",
+            text: "prefer tests",
+            steerID: "local-steer-1"
+        )
 
         XCTAssertEqual(response.accepted, true)
         XCTAssertNil(response.fallback)
         XCTAssertEqual(response.streamId, "stream-123")
+        XCTAssertEqual(response.steerId, "local-steer-1")
     }
 
     func testSubmitGoalBuildsExpectedBodyAndDecodesResponse() async throws {

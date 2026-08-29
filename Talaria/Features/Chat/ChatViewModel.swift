@@ -1732,6 +1732,10 @@ final class ChatViewModel {
                 loadedSearchEnd = loadedUserIndex
                 continue
             }
+            if result[loadedAssistantIndex].activityScene?.hasConsumedSteering == true {
+                loadedSearchEnd = loadedUserIndex
+                continue
+            }
 
             let visualMessages = cachedTurn.filter { message in
                 message.role == "assistant" || message.isLocalSteeringHint
@@ -2779,7 +2783,11 @@ final class ChatViewModel {
 
         let steeringHint = appendSteeringHint(message)
         do {
-            let response = try await client.steerChat(sessionID: sessionID, text: message)
+            let response = try await client.steerChat(
+                sessionID: sessionID,
+                text: message,
+                steerID: steeringHint.messageID
+            )
             if response.accepted == true {
                 updateSteeringHint(id: steeringHint.messageID, state: .waiting)
                 finalizeSteeringPhase(
@@ -3626,6 +3634,20 @@ final class ChatViewModel {
         }
     }
 
+    @discardableResult
+    private func consumeSteeringHint(id: String?, text: String) -> Bool {
+        if let id,
+           let index = messages.firstIndex(where: { $0.messageId == id && $0.isLocalSteeringHint }) {
+            messages[index] = Self.steeringHintMessage(messages[index], state: .consumed)
+            return true
+        }
+        guard let index = messages.firstIndex(where: {
+            $0.isLocalSteeringHint && $0.content == text && $0.steeringHintState == .waiting
+        }) else { return false }
+        messages[index] = Self.steeringHintMessage(messages[index], state: .consumed)
+        return true
+    }
+
     private func removeUnresolvedSteeringHints() {
         messages.removeAll { message in
             message.steeringHintState == .sending || message.steeringHintState == .waiting
@@ -4314,7 +4336,7 @@ final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .pendingSteerLeftover:
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .pendingSteerLeftover:
             break
         }
     }
@@ -5636,7 +5658,9 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         if let completedSession = payload.session {
             applyCompletedStreamSession(completedSession)
         }
-        settleAcceptedSteeringHints()
+        if payload.session?.messages?.contains(where: { $0.activityScene?.hasConsumedSteering == true }) != true {
+            settleAcceptedSteeringHints()
+        }
         if let usage = payload.usage {
             contextWindowSnapshot = usage
         }
@@ -5697,11 +5721,19 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     @discardableResult
-    func streamCoordinatorEnqueuePendingSteerLeftover(_ text: String) -> Bool {
-        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool {
+        consumeSteeringHint(id: event.steerId, text: event.text)
+    }
+
+    func streamCoordinatorEnqueuePendingSteerLeftover(_ event: SteeringStreamEvent) -> Bool {
+        let message = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return false }
 
-        removeLeftoverSteeringHints(matching: message)
+        if let steerID = event.steerId {
+            removeSteeringHint(id: steerID)
+        } else {
+            removeLeftoverSteeringHints(matching: message)
+        }
         _ = enqueueQueuedSlashMessage(message, attachments: [])
         appendLocalNoticeMessage(String(localized: "Steering hint was not consumed before the response ended, so it was queued for the next turn."))
         return true
@@ -5792,20 +5824,31 @@ struct AssistantActivityRow: Identifiable, Equatable {
         }
     }
 
+    struct Steering: Equatable {
+        let id: String
+        let text: String
+        let submittedAt: Double?
+        let consumedAt: Double?
+    }
+
     enum Content: Equatable {
         case prose(String)
         case reasoning(Reasoning)
         case tools([ToolCall])
+        case steering(Steering)
     }
 
     let id: String
     var content: Content
+    var createdAt: Double? = nil
+    var isFinalAnswer = false
 
     var kind: String {
         switch content {
         case .prose: "prose"
         case .reasoning: "reasoning"
         case .tools: "tools"
+        case .steering: "steering"
         }
     }
 
@@ -5814,6 +5857,7 @@ struct AssistantActivityRow: Identifiable, Equatable {
         case .prose(let text): text
         case .reasoning(let reasoning): reasoning.text
         case .tools: nil
+        case .steering(let steering): steering.text
         }
     }
 
@@ -5824,10 +5868,17 @@ struct AssistantActivityRow: Identifiable, Equatable {
 }
 
 struct CompletedAssistantTurn: Equatable {
+    struct Phase: Identifiable, Equatable {
+        let id: String
+        let workRows: [AssistantActivityRow]
+        let steeringAfter: AssistantActivityRow.Steering?
+    }
+
     struct Segment: Identifiable, Equatable {
         enum Content: Equatable {
             case activity([AssistantActivityRow])
             case prose(String)
+            case steering(AssistantActivityRow.Steering)
         }
 
         let id: String
@@ -5837,9 +5888,35 @@ struct CompletedAssistantTurn: Equatable {
     let segments: [Segment]
     let workRows: [AssistantActivityRow]
     let finalAnswer: String
+    let phases: [Phase]
+
+    var hasSteering: Bool { phases.contains { $0.steeringAfter != nil } }
 
     var workSegments: [Segment] {
         finalAnswer.isEmpty ? segments : Array(segments.dropLast())
+    }
+
+    func phaseDurations(totalDuration: Double?) -> [Double?] {
+        guard !phases.isEmpty else { return [] }
+        var durations = Array<Double?>(repeating: nil, count: phases.count)
+        var phaseStart = phases.first?.workRows.compactMap(\.createdAt).min()
+            ?? phases.first?.steeringAfter?.submittedAt
+        var measuredTotal = 0.0
+
+        for index in phases.indices.dropLast() {
+            guard let boundary = phases[index].steeringAfter?.consumedAt else { continue }
+            if let phaseStart {
+                let duration = max(0, boundary - phaseStart)
+                durations[index] = duration
+                measuredTotal += duration
+            }
+            phaseStart = boundary
+        }
+
+        if let totalDuration {
+            durations[phases.index(before: phases.endIndex)] = max(0, totalDuration - measuredTotal)
+        }
+        return durations
     }
 
     init?(rows: [AssistantActivityRow]) {
@@ -5855,6 +5932,16 @@ struct CompletedAssistantTurn: Equatable {
             pendingActivity = []
         }
 
+        let explicitFinalIndex = rows.lastIndex(where: \.isFinalAnswer)
+        let fallbackFinalIndex = rows.contains { row in
+            if case .steering = row.content { return true }
+            return false
+        } ? nil : rows.lastIndex { row in
+            if case .prose = row.content { return true }
+            return false
+        }
+        let finalIndex = explicitFinalIndex ?? fallbackFinalIndex
+
         for row in rows {
             switch row.content {
             case .prose(let text):
@@ -5863,23 +5950,53 @@ struct CompletedAssistantTurn: Equatable {
                 segments.append(Segment(id: "prose:\(segments.count):\(row.id)", content: .prose(text)))
             case .reasoning, .tools:
                 pendingActivity.append(row)
+            case .steering(let steering):
+                appendActivity()
+                segments.append(Segment(
+                    id: "steering:\(segments.count):\(steering.id)",
+                    content: .steering(steering)
+                ))
             }
         }
         appendActivity()
 
         guard segments.contains(where: {
-            if case .activity = $0.content { return true }
-            return false
+            switch $0.content {
+            case .activity, .steering: true
+            case .prose: false
+            }
         }) else { return nil }
 
         self.segments = segments
-        if case .prose(let finalAnswer)? = segments.last?.content {
+        if let finalIndex,
+           case .prose(let finalAnswer) = rows[finalIndex].content {
             self.finalAnswer = finalAnswer
-            workRows = Array(rows.dropLast())
+            workRows = rows.enumerated().compactMap { $0.offset == finalIndex ? nil : $0.element }
         } else {
             finalAnswer = ""
             workRows = rows
         }
+
+        var phases: [Phase] = []
+        var phaseRows: [AssistantActivityRow] = []
+        for row in workRows {
+            if case .steering(let steering) = row.content {
+                phases.append(Phase(
+                    id: "phase:\(phases.count):\(phaseRows.first?.id ?? steering.id)",
+                    workRows: phaseRows,
+                    steeringAfter: steering
+                ))
+                phaseRows = []
+            } else {
+                phaseRows.append(row)
+            }
+        }
+        phases.append(Phase(
+            id: "phase:\(phases.count):\(phaseRows.first?.id ?? "tail")",
+            workRows: phaseRows,
+            steeringAfter: nil
+        ))
+        self.phases = phases
     }
 }
 
@@ -5914,6 +6031,8 @@ struct AssistantActivityTimeline: Equatable {
                     part["done"] = .bool(toolCall.isCompleted)
                     return .object(part)
                 }
+            case .steering:
+                return []
             }
         }
     }
@@ -6039,6 +6158,7 @@ struct AssistantActivityTimeline: Equatable {
             }
             if !timeline.rows.isEmpty {
                 timeline.enrichTools(from: toolCallGroups)
+                timeline.markLastProseAsFinal()
                 return timeline
             }
         }
@@ -6055,7 +6175,7 @@ struct AssistantActivityTimeline: Equatable {
                 timeline.appendTool(toolCall, id: group.id)
             }
         }
-        timeline.appendProseIfPresent(message.content, id: "message:\(message.id)")
+        timeline.appendFinalProseIfNeeded(message.content)
         return timeline
     }
 
@@ -6095,7 +6215,10 @@ struct AssistantActivityTimeline: Equatable {
             timeline.appendSceneRow(row, sourceIndex: sourceIndex)
         }
         guard !timeline.rows.isEmpty else { return nil }
-        timeline.appendFinalProseIfNeeded(Self.nonEmpty(scene.finalAnswer) ?? message.content)
+        let finalAnswer = scene.hasConsumedSteering
+            ? Self.nonEmpty(scene.finalAnswer)
+            : Self.nonEmpty(scene.finalAnswer) ?? message.content
+        timeline.appendFinalProseIfNeeded(finalAnswer)
         return timeline
     }
 
@@ -6147,12 +6270,14 @@ struct AssistantActivityTimeline: Equatable {
         switch row.role {
         case "prose":
             appendProseIfPresent(row.text, id: rowID)
+            rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
         case "thinking":
             appendReasoningIfPresent(
                 Self.string(row.thinking?["text"]) ?? row.text,
                 titles: Self.strings(row.thinking?["titles"]),
                 id: rowID
             )
+            rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
         case "tool":
             if let toolCall = Self.toolCall(
                 object: row.tool ?? row.payload,
@@ -6160,7 +6285,23 @@ struct AssistantActivityTimeline: Equatable {
                 status: row.status
             ) {
                 appendTool(toolCall, id: rowID)
+                if rows[rows.index(before: rows.endIndex)].createdAt == nil {
+                    rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+                }
             }
+        case "steering":
+            guard let text = Self.nonEmpty(row.text) else { break }
+            let steerID = Self.string(row.payload?["steer_id"]) ?? rowID
+            rows.append(AssistantActivityRow(
+                id: rowID,
+                content: .steering(.init(
+                    id: steerID,
+                    text: text,
+                    submittedAt: Self.number(row.payload?["created_at"]),
+                    consumedAt: Self.number(row.payload?["consumed_at"]) ?? row.createdAt
+                )),
+                createdAt: row.createdAt
+            ))
         default:
             break
         }
@@ -6209,13 +6350,27 @@ struct AssistantActivityTimeline: Equatable {
     private mutating func appendFinalProseIfNeeded(_ text: String?) {
         guard let text = Self.nonEmpty(text) else { return }
         let normalizedText = Self.normalized(text)
-        let alreadyPresent = rows.contains { row in
+        let alreadyPresentIndex = rows.lastIndex { row in
             guard case .prose(let prose) = row.content else { return false }
             return Self.normalized(prose) == normalizedText
         }
-        if !alreadyPresent {
-            appendProse(text, id: "scene:final")
+        if let alreadyPresentIndex {
+            rows[alreadyPresentIndex].isFinalAnswer = true
+        } else {
+            rows.append(AssistantActivityRow(
+                id: "scene:final",
+                content: .prose(text),
+                isFinalAnswer: true
+            ))
         }
+    }
+
+    private mutating func markLastProseAsFinal() {
+        guard let index = rows.lastIndex(where: { row in
+            if case .prose = row.content { return true }
+            return false
+        }) else { return }
+        rows[index].isFinalAnswer = true
     }
 
     private mutating func appendProseIfPresent(_ text: String?, id: String) {

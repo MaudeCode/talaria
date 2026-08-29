@@ -41,6 +41,7 @@ struct ChatSteerResponse: Decodable, Equatable {
     let accepted: Bool?
     let fallback: String?
     let streamId: String?
+    let steerId: String?
     let error: String?
 }
 

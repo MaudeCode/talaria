@@ -249,7 +249,8 @@ extension ChatMessage {
     }
 
     var isLocalSteeringHint: Bool {
-        messageId?.hasPrefix("local-steer-") == true && steeringHintState != nil
+        guard steeringHintState != nil, let messageId else { return false }
+        return messageId.hasPrefix("local-steer-") || messageId.hasPrefix("steer-")
     }
 
     func applyingTurnMetrics(duration: Double? = nil, tokensPerSecond: Double? = nil) -> ChatMessage {
@@ -308,12 +309,19 @@ struct AssistantActivityScene: Codable, Equatable {
     }
 }
 
+extension AssistantActivityScene {
+    var hasConsumedSteering: Bool {
+        activityRows?.contains { $0.role == "steering" && $0.status == "consumed" } == true
+    }
+}
+
 struct AssistantActivitySceneRow: Codable, Equatable {
     let rowID: String?
     let orderIndex: Int?
     let role: String?
     let text: String?
     let status: String?
+    let createdAt: Double?
     let toolCallID: String?
     let thinking: [String: JSONValue]?
     let tool: [String: JSONValue]?
@@ -325,6 +333,7 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         case role
         case text
         case status
+        case createdAt
         case toolCallID = "toolCallId"
         case thinking
         case tool
@@ -338,6 +347,7 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         role = container.decodeLossyStringIfPresent(forKey: .role)
         text = container.decodeLossyStringIfPresent(forKey: .text)
         status = container.decodeLossyStringIfPresent(forKey: .status)
+        createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         toolCallID = container.decodeLossyStringIfPresent(forKey: .toolCallID)
         thinking = try? container.decodeIfPresent([String: JSONValue].self, forKey: .thinking)
         tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)
