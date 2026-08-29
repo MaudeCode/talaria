@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
-import type { SessionPhase } from "./lib/model";
+import { isTerminalPhase, type SessionPhase } from "./lib/model";
 import {
   sessionStateContentValidator,
   sessionStateInputValidator,
@@ -222,7 +222,9 @@ export const acceptSnapshot = internalMutation({
       if (current && state.revision < current.revision) continue;
       if (current && state.revision === current.revision) {
         await ctx.db.patch(current._id, {
-          ...expiryForPhase(current.phase, args.receivedAt),
+          ...(isTerminalPhase(current.phase)
+            ? {}
+            : expiryForPhase(current.phase, args.receivedAt)),
           receivedAt: args.receivedAt,
         });
         continue;

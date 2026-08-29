@@ -424,6 +424,134 @@ describe("Convex relay state", () => {
     expect(refreshed?.expiresAt).toBe(now + 60_000 + 3 * 60_000);
   });
 
+  it("does not renew terminal retention on equal-revision heartbeats", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    const terminalExpiresAt = now + 15 * 60_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publishers", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        label: "Home",
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherKeys", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        keyId: "key-1",
+        publicKey: "public-key",
+        activatedAt: now,
+        createdAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-2",
+        revision: 2,
+        title: "Finished",
+        phase: "completed",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: terminalExpiresAt,
+        terminalExpiresAt,
+        receivedAt: now,
+      });
+    });
+
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-heartbeat",
+      nonceExpiresAt: now + 120_000,
+      receivedAt: now + 60_000,
+      snapshotId: "snapshot-heartbeat",
+      states: [{
+        sessionId: "session-1",
+        eventId: "event-2",
+        revision: 2,
+        title: "Finished",
+        phase: "completed",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    const refreshed = await backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    });
+    expect(refreshed?.expiresAt).toBe(terminalExpiresAt);
+    expect(refreshed?.terminalExpiresAt).toBe(terminalExpiresAt);
+    expect(refreshed?.receivedAt).toBe(now + 60_000);
+  });
+
+  it("ends immediately when only terminal session state remains", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        preferences: defaultNotificationPreferences,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-2",
+        revision: 2,
+        title: "Finished",
+        phase: "completed",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 15 * 60_000,
+        terminalExpiresAt: now + 15 * 60_000,
+        receivedAt: now,
+      });
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "device-1",
+        activityId: "activity-1",
+        mode: "all_running",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "activity-token",
+        lastAggregate: {
+          schemaVersion: 1,
+          activeCount: 1,
+          title: "Talaria",
+          subtitle: "1 active session",
+          updatedAt: now - 1,
+          rows: [],
+        },
+        lastDeliveryAt: now - 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const jobs = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.kind).toBe("live_activity_end");
+    const payload = JSON.parse(jobs[0]!.request.payloadJson) as { aps: Record<string, unknown> };
+    expect(payload.aps["content-state"]).toBeUndefined();
+    expect((payload.aps["dismissal-date"] as number) - (payload.aps.timestamp as number)).toBe(15);
+  });
+
   it("retires devices and activities when cleanup expires their relay session", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;

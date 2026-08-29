@@ -75,6 +75,7 @@ export function makeAggregate(states: readonly SessionState[], now: number): Act
     );
 
   if (visible.length === 0) return null;
+  if (!visible.some((state) => !isTerminalPhase(state.phase))) return null;
 
   const activeCount = visible.filter(
     (state) => !isTerminalPhase(state.phase) && state.phase !== "stale",
