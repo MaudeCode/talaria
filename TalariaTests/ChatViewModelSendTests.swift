@@ -8018,6 +8018,7 @@ private final class SpyChatLiveActivityManager: AgentLiveActivityManaging {
     struct AggregateArm: Equatable {
         let sessionID: String
         let sessionTitle: String
+        let publisherURL: URL
     }
 
     struct End: Equatable {
@@ -8029,8 +8030,12 @@ private final class SpyChatLiveActivityManager: AgentLiveActivityManaging {
     private(set) var aggregateArms: [AggregateArm] = []
     private(set) var ends: [End] = []
 
-    func armAggregateForLocalWork(sessionID: String, sessionTitle: String) {
-        aggregateArms.append(AggregateArm(sessionID: sessionID, sessionTitle: sessionTitle))
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
+        aggregateArms.append(AggregateArm(
+            sessionID: sessionID,
+            sessionTitle: sessionTitle,
+            publisherURL: publisherURL
+        ))
     }
 
     func start(sessionID: String, sessionTitle: String, streamID: String?) {}

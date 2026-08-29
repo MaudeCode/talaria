@@ -33,7 +33,7 @@ struct OrphanedLiveActivity: Equatable {
 
 @MainActor
 protocol AgentLiveActivityManaging: AnyObject {
-    func armAggregateForLocalWork(sessionID: String, sessionTitle: String)
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL)
     func start(sessionID: String, sessionTitle: String, streamID: String?)
     func update(_ event: AgentLiveActivityEvent)
     func markStale()
@@ -51,7 +51,7 @@ protocol AgentLiveActivityManaging: AnyObject {
 }
 
 extension AgentLiveActivityManaging {
-    func armAggregateForLocalWork(sessionID: String, sessionTitle: String) {}
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {}
     // Defaults so test spies and non-ActivityKit conformers don't have to care
     // about reconciliation; the real manager overrides both.
     func orphanedActivities() -> [OrphanedLiveActivity] { [] }
@@ -86,10 +86,11 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         self.minimumUpdateInterval = minimumUpdateInterval
     }
 
-    func armAggregateForLocalWork(sessionID: String, sessionTitle: String) {
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
         TalariaAggregateLiveActivityManager.shared.armForLocalWork(
             sessionID: sessionID,
-            sessionTitle: sessionTitle
+            sessionTitle: sessionTitle,
+            publisherURL: publisherURL
         )
     }
 
@@ -922,17 +923,15 @@ final class TalariaAggregateLiveActivityManager {
     private var aggregateUpdateSequence = 0
     private var seedRegistrationTask: Task<Void, Never>?
 
-    func armForLocalWork(sessionID: String, sessionTitle: String) {
+    func armForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
         guard TalariaLiveActivityMode.current == .allRunning,
               ActivityAuthorizationInfo().areActivitiesEnabled,
-              let account = ServerRegistry.shared.activeServer,
-              let server = URL(string: account.urlString),
-              TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server),
+              TalariaRelayConfigurationStore.ownsCompletionAlerts(for: publisherURL),
               let credentials = TalariaRelayConfigurationStore.load(),
               let state = TalariaAggregateActivitySeed.make(
                   sessionID: sessionID,
                   sessionTitle: sessionTitle,
-                  publisherURL: server
+                  publisherURL: publisherURL
               ) else { return }
 
         let client = TalariaRelayClient(credentials: credentials)
@@ -1229,7 +1228,9 @@ final class TalariaAggregateLiveActivityManager {
                     self.queuedAggregateState = nil
                 }
             }
-            guard !Task.isCancelled, generation == self.operationGeneration else { return }
+            guard !Task.isCancelled,
+                  generation == self.operationGeneration,
+                  sequence == self.aggregateUpdateSequence else { return }
             await activity.update(ActivityContent(
                 state: state,
                 staleDate: Date().addingTimeInterval(Self.staleInterval)

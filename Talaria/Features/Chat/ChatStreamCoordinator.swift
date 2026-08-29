@@ -741,7 +741,8 @@ final class ChatStreamCoordinator {
         if armsAggregateForLocalWork {
             liveActivityManager.armAggregateForLocalWork(
                 sessionID: sessionID,
-                sessionTitle: sessionTitle
+                sessionTitle: sessionTitle,
+                publisherURL: client.baseURL
             )
         }
 

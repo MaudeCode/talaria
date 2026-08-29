@@ -50,7 +50,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(liveActivityManager.aggregateArms, [
             CoordinatorSpyLiveActivityManager.AggregateArm(
                 sessionID: "session-abc",
-                sessionTitle: "Planning"
+                sessionTitle: "Planning",
+                publisherURL: URL(string: "https://example.test")!
             )
         ])
         XCTAssertEqual(liveActivityManager.starts, [
@@ -1093,6 +1094,7 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
     struct AggregateArm: Equatable {
         let sessionID: String
         let sessionTitle: String
+        let publisherURL: URL
     }
 
     struct Start: Equatable {
@@ -1117,8 +1119,12 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
         starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID))
     }
 
-    func armAggregateForLocalWork(sessionID: String, sessionTitle: String) {
-        aggregateArms.append(AggregateArm(sessionID: sessionID, sessionTitle: sessionTitle))
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
+        aggregateArms.append(AggregateArm(
+            sessionID: sessionID,
+            sessionTitle: sessionTitle,
+            publisherURL: publisherURL
+        ))
     }
 
     func update(_ event: AgentLiveActivityEvent) {
