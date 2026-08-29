@@ -1239,7 +1239,12 @@ final class TalariaAggregateLiveActivityManager {
         with aggregate: TalariaAggregateActivityAttributes.ContentState
     ) -> TalariaAggregateActivityAttributes.ContentState {
         prunePendingSeeds()
-        for row in aggregate.rows where TalariaAggregateActivitySeed.isActive(row.phase) {
+        for row in aggregate.rows {
+            guard let pending = pendingSeeds[row.id],
+                  TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+                      row,
+                      seed: pending.state
+                  ) else { continue }
             pendingSeeds.removeValue(forKey: row.id)
         }
         return TalariaAggregateActivitySeed.merging(
@@ -1345,9 +1350,19 @@ enum TalariaAggregateActivitySeed {
         activePhases.contains(phase)
     }
 
+    static func authoritativeRowRetiresSeed(
+        _ row: TalariaAggregateActivityAttributes.ContentState.Row,
+        seed: TalariaAggregateActivityAttributes.ContentState
+    ) -> Bool {
+        guard row.id == seed.rows.first?.id else { return false }
+        if isActive(row.phase) { return true }
+        return terminalPhases.contains(row.phase) && row.updatedAt >= seed.updatedAt
+    }
+
     private static let activePhases: Set<String> = [
         "starting", "running", "waiting_for_approval", "waiting_for_input"
     ]
+    private static let terminalPhases: Set<String> = ["completed", "failed", "cancelled"]
 
     private static func displayPriority(_ phase: String) -> Int {
         switch phase {

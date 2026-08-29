@@ -348,6 +348,28 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(Set(merged.rows.map(\.sessionId)), Set(["existing", "first", "second"]))
     }
 
+    func testNewerTerminalAggregateRowRetiresPendingSeed() throws {
+        let seed = try XCTUnwrap(TalariaAggregateActivitySeed.make(
+            sessionID: "session",
+            sessionTitle: "Local run",
+            publisherURL: try XCTUnwrap(URL(string: "https://hermes.example")),
+            now: Date(timeIntervalSince1970: 1)
+        ))
+
+        XCTAssertTrue(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+            aggregateRow(sessionID: "session", phase: "completed", updatedAt: 1_001),
+            seed: seed
+        ))
+        XCTAssertFalse(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+            aggregateRow(sessionID: "session", phase: "completed", updatedAt: 999),
+            seed: seed
+        ))
+        XCTAssertTrue(TalariaAggregateActivitySeed.authoritativeRowRetiresSeed(
+            aggregateRow(sessionID: "session", phase: "running", updatedAt: 999),
+            seed: seed
+        ))
+    }
+
     func testAggregatePresentationPolicyHandlesStaleAndAttentionStates() {
         let state = TalariaAggregateActivityAttributes.ContentState(
             schemaVersion: 1,
