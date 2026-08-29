@@ -326,8 +326,8 @@ final class LiveActivityTests: XCTestCase {
             activeCount: 2,
             title: "Talaria",
             subtitle: "2 active sessions",
-            updatedAt: 100,
-            rows: [aggregateRow(sessionID: "visible", phase: "running", updatedAt: 100)]
+            updatedAt: 2_000,
+            rows: [aggregateRow(sessionID: "visible", phase: "running", updatedAt: 2_000)]
         )
         let seed = try XCTUnwrap(TalariaAggregateActivitySeed.make(
             sessionID: "hidden-or-new",
@@ -340,6 +340,13 @@ final class LiveActivityTests: XCTestCase {
 
         XCTAssertEqual(merged.activeCount, 2)
         XCTAssertEqual(Set(merged.rows.map(\.sessionId)), Set(["visible", "hidden-or-new"]))
+
+        var olderSnapshot = existing
+        olderSnapshot.updatedAt = 100
+        XCTAssertEqual(
+            TalariaAggregateActivitySeed.merging(seed, into: olderSnapshot).activeCount,
+            3
+        )
     }
 
     func testMergingQueuedSeedsRetainsEveryConcurrentSession() throws {
