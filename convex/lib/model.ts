@@ -44,6 +44,7 @@ export interface AggregateRow {
   publisherId: string;
   publisherLabel: string;
   sessionId: string;
+  streamId?: string;
   title: string;
   phase: SessionPhase;
   status: string;

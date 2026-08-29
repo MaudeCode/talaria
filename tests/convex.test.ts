@@ -491,6 +491,125 @@ describe("Convex relay state", () => {
     expect(refreshed?.receivedAt).toBe(now + 60_000);
   });
 
+  it("does not renew terminal retention on producer heartbeat revisions", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    const terminalExpiresAt = now + 15 * 60_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publishers", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        label: "Home",
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherKeys", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        keyId: "key-1",
+        publicKey: "public-key",
+        activatedAt: now,
+        createdAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        streamId: "stream-1",
+        eventId: "event-2",
+        revision: 2,
+        title: "Finished",
+        phase: "completed",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: terminalExpiresAt,
+        terminalExpiresAt,
+        receivedAt: now,
+      });
+    });
+
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-heartbeat",
+      nonceExpiresAt: now + 120_000,
+      receivedAt: now + 60_000,
+      snapshotId: "snapshot-heartbeat",
+      states: [{
+        sessionId: "session-1",
+        streamId: "stream-1",
+        eventId: "event-3",
+        revision: 3,
+        title: "Finished",
+        phase: "completed",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    let refreshed = await backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    });
+    expect(refreshed?.expiresAt).toBe(terminalExpiresAt);
+    expect(refreshed?.terminalExpiresAt).toBe(terminalExpiresAt);
+
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-new-stream",
+      nonceExpiresAt: now + 180_000,
+      receivedAt: now + 120_000,
+      snapshotId: "snapshot-new-stream",
+      states: [{
+        sessionId: "session-1",
+        streamId: "stream-2",
+        eventId: "event-4",
+        revision: 4,
+        title: "Finished again",
+        phase: "completed",
+        updatedAt: now + 120_000,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    refreshed = await backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    });
+    expect(refreshed?.terminalExpiresAt).toBe(now + 120_000 + 15 * 60_000);
+
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "nonce-unknown-stream",
+      nonceExpiresAt: now + 240_000,
+      receivedAt: now + 180_000,
+      snapshotId: "snapshot-unknown-stream",
+      states: [{
+        sessionId: "session-1",
+        eventId: "event-5",
+        revision: 5,
+        title: "Finished without stream identity",
+        phase: "completed",
+        updatedAt: now + 180_000,
+        deepLink: "/sessions/session-1",
+      }],
+    });
+    refreshed = await backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    });
+    expect(refreshed?.terminalExpiresAt).toBe(now + 180_000 + 15 * 60_000);
+  });
+
   it("ends immediately when only terminal session state remains", async () => {
     const backend = testBackend();
     const now = Date.now();
@@ -1260,7 +1379,191 @@ describe("Convex relay state", () => {
     });
   });
 
-  it("leases a locally seeded activity until publisher state arrives", async () => {
+  it("keeps an exact locally seeded re-registration from repainting delivered state", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        streamId: "stream-1",
+        eventId: "event-1",
+        revision: 1,
+        title: "Old publisher state",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-2",
+        streamId: "stream-2",
+        eventId: "event-session-2",
+        revision: 1,
+        title: "Other publisher state",
+        phase: "running",
+        updatedAt: now - 1,
+        deepLink: "/sessions/session-2",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "device-1",
+        activityId: "activity-1",
+        mode: "all_running",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "activity-token",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const initialJob = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").withIndex("by_status_and_updated_at", (query) =>
+        query.eq("status", "queued"),
+      ).unique(),
+    );
+    expect(initialJob).not.toBeNull();
+    await backend.mutation(internal.delivery.claimJob, { jobId: initialJob!._id, now: now + 1 });
+    await backend.mutation(internal.delivery.markDelivered, {
+      jobId: initialJob!._id,
+      apnsStatus: 200,
+      now: now + 2,
+    });
+    const delivered = await backend.run(async (ctx) =>
+      ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+      ).unique(),
+    );
+
+    const legacyAggregate = await backend.run(async (ctx) => {
+      const activity = await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+      ).unique();
+      const lastAggregate = activity!.lastAggregate && {
+        ...activity!.lastAggregate,
+        rows: activity!.lastAggregate.rows.map(({ streamId: _streamId, ...row }) => row),
+      };
+      await ctx.db.patch(activity!._id, { lastAggregate });
+      return lastAggregate;
+    });
+
+    await backend.run(async (ctx) => {
+      const session = await ctx.db.query("sessionStates").withIndex(
+        "by_user_id_and_publisher_id_and_session_id",
+        (query) => query
+          .eq("userId", "user-1")
+          .eq("publisherId", "https://hermes.example")
+          .eq("sessionId", "session-1"),
+      ).unique();
+      await ctx.db.patch(session!._id, {
+        eventId: "event-2",
+        revision: 2,
+        updatedAt: now + 3,
+        receivedAt: now + 3,
+      });
+      const otherSession = await ctx.db.query("sessionStates").withIndex(
+        "by_user_id_and_publisher_id_and_session_id",
+        (query) => query
+          .eq("userId", "user-1")
+          .eq("publisherId", "https://hermes.example")
+          .eq("sessionId", "session-2"),
+      ).unique();
+      await ctx.db.patch(otherSession!._id, {
+        eventId: "event-session-2-heartbeat",
+        revision: 2,
+        updatedAt: now + 4,
+        receivedAt: now + 4,
+      });
+    });
+
+    await backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1",
+      deviceId: "device-1",
+      activityId: "activity-1",
+      mode: "all_running",
+      attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1,
+      activityPushToken: "activity-token",
+      seededLocally: true,
+      now: now + 4,
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const state = await backend.run(async (ctx) => ({
+      activity: await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+      ).unique(),
+      queuedJobs: await ctx.db.query("deliveryJobs").withIndex("by_status_and_updated_at", (query) =>
+        query.eq("status", "queued"),
+      ).collect(),
+    }));
+    expect(state.activity?.lastAggregate).toEqual(legacyAggregate);
+    expect(state.activity?.lastDeliveryAt).toBe(delivered?.lastDeliveryAt);
+    expect(state.activity?.emptyStateLeaseUntil).toBe(now + 30_004);
+    expect(state.queuedJobs).toEqual([]);
+
+    await backend.run(async (ctx) => {
+      const activity = await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+      ).unique();
+      await ctx.db.patch(activity!._id, { lastAggregate: delivered!.lastAggregate });
+    });
+
+    await backend.run(async (ctx) => {
+      const session = await ctx.db.query("sessionStates").withIndex(
+        "by_user_id_and_publisher_id_and_session_id",
+        (query) => query
+          .eq("userId", "user-1")
+          .eq("publisherId", "https://hermes.example")
+          .eq("sessionId", "session-1"),
+      ).unique();
+      await ctx.db.patch(session!._id, {
+        eventId: "event-3",
+        revision: 3,
+        streamId: "stream-new",
+        updatedAt: now + 5,
+        receivedAt: now + 5,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const freshJobs = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").withIndex("by_status_and_updated_at", (query) =>
+        query.eq("status", "queued"),
+      ).collect(),
+    );
+    expect(freshJobs).toHaveLength(1);
+    expect(freshJobs[0]?.kind).toBe("live_activity_update");
+    expect(freshJobs[0]?.aggregate?.rows[0]).toMatchObject({
+      streamId: "stream-new",
+      title: "Old publisher state",
+    });
+  });
+
+  it("leases a locally seeded activity for publisher reconciliation", async () => {
     const backend = testBackend();
     const now = Date.now();
     await backend.run(async (ctx) => {

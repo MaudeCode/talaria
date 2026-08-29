@@ -43,6 +43,25 @@ function expiryForPhase(
   return { expiresAt: now + 3 * 60 * 1_000 };
 }
 
+function expiryForState(
+  current: Doc<"sessionStates"> | null | undefined,
+  next: { phase: SessionPhase; streamId?: string },
+  now: number,
+): { expiresAt: number; terminalExpiresAt?: number } {
+  if (
+    current &&
+    !current.deleted &&
+    isTerminalPhase(current.phase) &&
+    current.phase === next.phase &&
+    next.streamId !== undefined &&
+    next.streamId === current.streamId &&
+    current.terminalExpiresAt !== undefined
+  ) {
+    return { expiresAt: current.expiresAt, terminalExpiresAt: current.terminalExpiresAt };
+  }
+  return expiryForPhase(next.phase, now);
+}
+
 function exposedState(state: Doc<"sessionStates">) {
   return {
     deleted: state.deleted,
@@ -157,7 +176,7 @@ export const acceptState = internalMutation({
           eventId: args.eventId,
           revision: args.revision,
           ...args.state,
-          ...expiryForPhase(args.state.phase, args.receivedAt),
+          ...expiryForState(existing, args.state, args.receivedAt),
           receivedAt: args.receivedAt,
         }
       : {
@@ -235,7 +254,7 @@ export const acceptSnapshot = internalMutation({
         publisherId: args.publisherId,
         publisherLabel: authorization.label,
         ...state,
-        ...expiryForPhase(state.phase, args.receivedAt),
+        ...expiryForState(current, state, args.receivedAt),
         receivedAt: args.receivedAt,
       };
       if (current && current.phase !== state.phase) {

@@ -152,6 +152,7 @@ export const registerActivity = internalMutation({
         query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
       )
       .unique();
+    const sameRegistration = existing?.activityPushToken === args.activityPushToken;
     const value = {
       userId: args.userId,
       deviceId: args.deviceId,
@@ -162,8 +163,8 @@ export const registerActivity = internalMutation({
       attributesType: args.attributesType,
       schemaVersion: args.schemaVersion,
       activityPushToken: args.activityPushToken,
-      lastAggregate: undefined,
-      lastDeliveryAt: undefined,
+      lastAggregate: sameRegistration ? existing.lastAggregate : undefined,
+      lastDeliveryAt: sameRegistration ? existing.lastDeliveryAt : undefined,
       emptyStateLeaseUntil: args.seededLocally ? args.now + 30_000 : undefined,
       endedAt: undefined,
       createdAt: existing?.createdAt ?? args.now,

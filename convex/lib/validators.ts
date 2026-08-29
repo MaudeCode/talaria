@@ -34,6 +34,7 @@ export const aggregateRowValidator = v.object({
   publisherId: v.string(),
   publisherLabel: v.string(),
   sessionId: v.string(),
+  streamId: v.optional(v.string()),
   title: v.string(),
   phase: sessionPhaseValidator,
   status: v.string(),

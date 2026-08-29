@@ -44,6 +44,33 @@ import { apnsPool } from "./workpool";
 const MAX_STATE_ROWS = 500;
 const PUSH_TO_START_LEASE_MS = 15 * 60_000;
 
+function semanticAggregateFingerprint(
+  value: ActivityAggregate,
+  includeStreamIdentity: boolean,
+): string {
+  return JSON.stringify({
+    schemaVersion: value.schemaVersion,
+    activeCount: value.activeCount,
+    title: value.title,
+    subtitle: value.subtitle,
+    rows: [...value.rows]
+      .sort((left, right) =>
+        `${left.publisherId}\u0000${left.sessionId}${includeStreamIdentity ? `\u0000${left.streamId ?? ""}` : ""}`.localeCompare(
+          `${right.publisherId}\u0000${right.sessionId}${includeStreamIdentity ? `\u0000${right.streamId ?? ""}` : ""}`,
+        ),
+      )
+      .map((row) => ({
+        publisherId: row.publisherId,
+        sessionId: row.sessionId,
+        streamId: includeStreamIdentity ? row.streamId : undefined,
+        title: row.title,
+        phase: row.phase,
+        status: row.status,
+        deepLink: row.deepLink,
+      })),
+  });
+}
+
 function asSessionState(state: DataModel["sessionStates"]["document"]): SessionState {
   return {
     deleted: state.deleted,
@@ -306,15 +333,32 @@ export const recompute = internalMutation({
         return value ? [value] : [];
       })[0] ?? null;
 
+      const seededLeaseUntil = activity.emptyStateLeaseUntil;
+      const seededLeaseActive = seededLeaseUntil !== undefined && seededLeaseUntil > now;
+      const hasCompleteStreamIdentity = activity.lastAggregate?.rows.every(
+        (row) => row.streamId !== undefined,
+      ) ?? false;
+      const matchesDeliveredAggregate =
+        nextAggregate !== null &&
+        activity.lastAggregate !== undefined &&
+        semanticAggregateFingerprint(
+          activity.lastAggregate,
+          hasCompleteStreamIdentity,
+        ) ===
+          semanticAggregateFingerprint(nextAggregate, hasCompleteStreamIdentity);
+      if (
+        seededLeaseUntil !== undefined &&
+        seededLeaseUntil > now &&
+        (nextAggregate === null || matchesDeliveredAggregate)
+      ) {
+        await ctx.scheduler.runAfter(
+          seededLeaseUntil - now,
+          internal.delivery.recompute,
+          { userId: args.userId },
+        );
+        continue;
+      }
       if (nextAggregate === null) {
-        if (activity.emptyStateLeaseUntil !== undefined && activity.emptyStateLeaseUntil > now) {
-          await ctx.scheduler.runAfter(
-            activity.emptyStateLeaseUntil - now,
-            internal.delivery.recompute,
-            { userId: args.userId },
-          );
-          continue;
-        }
         const request = makeLiveActivityEnd({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
@@ -339,6 +383,7 @@ export const recompute = internalMutation({
         continue;
       }
       if (
+        !seededLeaseActive &&
         !shouldUpdateAggregate(
           activity.lastAggregate ?? null,
           nextAggregate,

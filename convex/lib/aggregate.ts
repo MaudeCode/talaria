@@ -54,6 +54,7 @@ export function rowForState(state: SessionState): AggregateRow {
     publisherId: state.publisherId,
     publisherLabel: state.publisherLabel,
     sessionId: state.sessionId,
+    streamId: state.streamId,
     title: state.title,
     phase: state.phase,
     status: statusForPhase(state.phase),
@@ -71,7 +72,10 @@ export function makeAggregate(states: readonly SessionState[], now: number): Act
     })
     .sort(
       (left, right) =>
-        phasePriority(left.phase) - phasePriority(right.phase) || right.updatedAt - left.updatedAt,
+        phasePriority(left.phase) - phasePriority(right.phase) ||
+        `${left.publisherId}\u0000${left.sessionId}\u0000${left.streamId ?? ""}`.localeCompare(
+          `${right.publisherId}\u0000${right.sessionId}\u0000${right.streamId ?? ""}`,
+        ),
     );
 
   if (visible.length === 0) return null;
