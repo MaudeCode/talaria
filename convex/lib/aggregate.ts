@@ -142,7 +142,9 @@ export function shouldUpdateAggregate(
   now: number,
 ): boolean {
   if (previous === null) return true;
-  if (aggregateFingerprint(previous) === aggregateFingerprint(next)) return false;
+  if (aggregateFingerprint(previous) === aggregateFingerprint(next)) {
+    return lastDeliveryAt === null || now - lastDeliveryAt >= 120_000;
+  }
   if (previous.activeCount !== next.activeCount) return true;
   if (next.rows.some((row) => row.phase.startsWith("waiting_for_"))) return true;
   if (next.rows.some((row) => isTerminalPhase(row.phase))) return true;

@@ -72,6 +72,7 @@ describe("makeAggregate", () => {
     const changed = makeAggregate([state("a", "running", now + 1)], now)!;
 
     expect(shouldUpdateAggregate(previous, previous, now, now)).toBe(false);
+    expect(shouldUpdateAggregate(previous, previous, now, now + 120_000)).toBe(true);
     expect(shouldUpdateAggregate(previous, changed, now, now + 1)).toBe(false);
     expect(shouldUpdateAggregate(previous, changed, now, now + 15_000)).toBe(true);
   });

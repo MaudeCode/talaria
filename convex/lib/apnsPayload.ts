@@ -42,7 +42,7 @@ export function makeLiveActivityUpdate(input: {
         timestamp: input.nowEpochSeconds,
         event: "update",
         "content-state": aggregate,
-        "stale-date": input.nowEpochSeconds + 10 * 60,
+        "stale-date": input.nowEpochSeconds + 150,
         ...(input.alert
           ? { alert: { title: input.alert.title, body: input.alert.body, sound: "default" } }
           : {}),
@@ -71,7 +71,7 @@ export function makeLiveActivityStart(input: {
         timestamp: input.nowEpochSeconds,
         event: "start",
         "content-state": aggregate,
-        "stale-date": input.nowEpochSeconds + 10 * 60,
+        "stale-date": input.nowEpochSeconds + 150,
         "attributes-type": "TalariaAggregateActivityAttributes",
         attributes: {},
         "input-push-token": 1,
