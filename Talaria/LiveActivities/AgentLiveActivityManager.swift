@@ -1323,7 +1323,9 @@ enum TalariaAggregateActivitySeed {
         guard let seedRow = seed.rows.first else { return existing }
         let matchingRow = existing.rows.first { $0.id == seedRow.id }
         let wasActive = matchingRow.map { activePhases.contains($0.phase) } ?? false
-        let activeCount = max(1, existing.activeCount + (wasActive ? 0 : 1))
+        let visibleActiveCount = existing.rows.filter { activePhases.contains($0.phase) }.count
+        let sessionMayBeHidden = matchingRow == nil && existing.activeCount > visibleActiveCount
+        let activeCount = max(1, existing.activeCount + (wasActive || sessionMayBeHidden ? 0 : 1))
         let rows = ([seedRow] + existing.rows.filter { $0.id != seedRow.id })
             .sorted {
                 let lhsPriority = displayPriority($0.phase)

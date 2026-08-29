@@ -320,6 +320,28 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(merged.rows[0].status, "Connecting")
     }
 
+    func testMergingSeedPreservesAuthoritativeCountWhenActiveRowsAreOmitted() throws {
+        let existing = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1,
+            activeCount: 2,
+            title: "Talaria",
+            subtitle: "2 active sessions",
+            updatedAt: 100,
+            rows: [aggregateRow(sessionID: "visible", phase: "running", updatedAt: 100)]
+        )
+        let seed = try XCTUnwrap(TalariaAggregateActivitySeed.make(
+            sessionID: "hidden-or-new",
+            sessionTitle: "Local work",
+            publisherURL: try XCTUnwrap(URL(string: "https://hermes.example")),
+            now: Date(timeIntervalSince1970: 1)
+        ))
+
+        let merged = TalariaAggregateActivitySeed.merging(seed, into: existing)
+
+        XCTAssertEqual(merged.activeCount, 2)
+        XCTAssertEqual(Set(merged.rows.map(\.sessionId)), Set(["visible", "hidden-or-new"]))
+    }
+
     func testMergingQueuedSeedsRetainsEveryConcurrentSession() throws {
         let existing = TalariaAggregateActivityAttributes.ContentState(
             schemaVersion: 1,
