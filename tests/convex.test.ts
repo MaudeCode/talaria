@@ -1457,6 +1457,19 @@ describe("Convex relay state", () => {
       ).unique(),
     );
 
+    const legacyAggregate = await backend.run(async (ctx) => {
+      const activity = await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+      ).unique();
+      const lastAggregate = activity!.lastAggregate && {
+        ...activity!.lastAggregate,
+        rows: activity!.lastAggregate.rows.map(({ streamId: _streamId, ...row }) => row),
+      };
+      await ctx.db.patch(activity!._id, { lastAggregate });
+      return lastAggregate;
+    });
+
     await backend.run(async (ctx) => {
       const session = await ctx.db.query("sessionStates").withIndex(
         "by_user_id_and_publisher_id_and_session_id",
@@ -1507,10 +1520,18 @@ describe("Convex relay state", () => {
         query.eq("status", "queued"),
       ).collect(),
     }));
-    expect(state.activity?.lastAggregate).toEqual(delivered?.lastAggregate);
+    expect(state.activity?.lastAggregate).toEqual(legacyAggregate);
     expect(state.activity?.lastDeliveryAt).toBe(delivered?.lastDeliveryAt);
     expect(state.activity?.emptyStateLeaseUntil).toBe(now + 30_004);
     expect(state.queuedJobs).toEqual([]);
+
+    await backend.run(async (ctx) => {
+      const activity = await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
+      ).unique();
+      await ctx.db.patch(activity!._id, { lastAggregate: delivered!.lastAggregate });
+    });
 
     await backend.run(async (ctx) => {
       const session = await ctx.db.query("sessionStates").withIndex(

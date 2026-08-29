@@ -44,7 +44,10 @@ import { apnsPool } from "./workpool";
 const MAX_STATE_ROWS = 500;
 const PUSH_TO_START_LEASE_MS = 15 * 60_000;
 
-function semanticAggregateFingerprint(value: ActivityAggregate): string {
+function semanticAggregateFingerprint(
+  value: ActivityAggregate,
+  includeStreamIdentity: boolean,
+): string {
   return JSON.stringify({
     schemaVersion: value.schemaVersion,
     activeCount: value.activeCount,
@@ -52,14 +55,14 @@ function semanticAggregateFingerprint(value: ActivityAggregate): string {
     subtitle: value.subtitle,
     rows: [...value.rows]
       .sort((left, right) =>
-        `${left.publisherId}\u0000${left.sessionId}\u0000${left.streamId ?? ""}`.localeCompare(
-          `${right.publisherId}\u0000${right.sessionId}\u0000${right.streamId ?? ""}`,
+        `${left.publisherId}\u0000${left.sessionId}${includeStreamIdentity ? `\u0000${left.streamId ?? ""}` : ""}`.localeCompare(
+          `${right.publisherId}\u0000${right.sessionId}${includeStreamIdentity ? `\u0000${right.streamId ?? ""}` : ""}`,
         ),
       )
       .map((row) => ({
         publisherId: row.publisherId,
         sessionId: row.sessionId,
-        streamId: row.streamId,
+        streamId: includeStreamIdentity ? row.streamId : undefined,
         title: row.title,
         phase: row.phase,
         status: row.status,
@@ -332,11 +335,17 @@ export const recompute = internalMutation({
 
       const seededLeaseUntil = activity.emptyStateLeaseUntil;
       const seededLeaseActive = seededLeaseUntil !== undefined && seededLeaseUntil > now;
+      const hasCompleteStreamIdentity = activity.lastAggregate?.rows.every(
+        (row) => row.streamId !== undefined,
+      ) ?? false;
       const matchesDeliveredAggregate =
         nextAggregate !== null &&
         activity.lastAggregate !== undefined &&
-        semanticAggregateFingerprint(activity.lastAggregate) ===
-          semanticAggregateFingerprint(nextAggregate);
+        semanticAggregateFingerprint(
+          activity.lastAggregate,
+          hasCompleteStreamIdentity,
+        ) ===
+          semanticAggregateFingerprint(nextAggregate, hasCompleteStreamIdentity);
       if (
         seededLeaseUntil !== undefined &&
         seededLeaseUntil > now &&
