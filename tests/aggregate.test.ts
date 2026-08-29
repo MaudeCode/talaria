@@ -53,11 +53,13 @@ describe("makeAggregate", () => {
     ]);
   });
 
-  it("drops expired state and keeps recent terminal outcomes", () => {
+  it("keeps terminal context only while nonterminal work remains", () => {
     const expired = { ...state("expired", "running"), expiresAt: now - 1 };
     const terminal = state("done", "completed");
 
-    expect(makeAggregate([expired, terminal], now)?.rows.map((row) => row.sessionId)).toEqual([
+    expect(makeAggregate([expired, terminal], now)).toBeNull();
+    expect(makeAggregate([state("run", "running"), terminal], now)?.rows.map((row) => row.sessionId)).toEqual([
+      "run",
       "done",
     ]);
     expect(

@@ -319,7 +319,7 @@ export const recompute = internalMutation({
           token: activity.activityPushToken,
           bundleId: device.bundleId,
           environment: device.apsEnvironment,
-          aggregate: activity.lastAggregate ?? null,
+          aggregate: null,
           nowEpochSeconds: Math.floor(now / 1_000),
           alert,
         });
@@ -382,7 +382,7 @@ export const recompute = internalMutation({
       if (alert) alertedDevices.add(activity.deviceId);
     }
 
-    if (changedState && aggregate) {
+    if (changedState) {
       for (const device of devices) {
           if (
             alertedDevices.has(device.deviceId) ||
