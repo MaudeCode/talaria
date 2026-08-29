@@ -918,6 +918,8 @@ final class TalariaAggregateLiveActivityManager {
     private var activeDisconnectCount = 0
     private var pendingSeeds: [String: PendingSeed] = [:]
     private var aggregateUpdateTask: Task<Void, Never>?
+    private var queuedAggregateState: TalariaAggregateActivityAttributes.ContentState?
+    private var aggregateUpdateSequence = 0
     private var seedRegistrationTask: Task<Void, Never>?
 
     func armForLocalWork(sessionID: String, sessionTitle: String) {
@@ -1164,6 +1166,8 @@ final class TalariaAggregateLiveActivityManager {
         activityUpdatesTask = nil
         aggregateUpdateTask?.cancel()
         aggregateUpdateTask = nil
+        queuedAggregateState = nil
+        aggregateUpdateSequence += 1
         seedRegistrationTask?.cancel()
         seedRegistrationTask = nil
         pendingSeeds.removeAll()
@@ -1213,9 +1217,19 @@ final class TalariaAggregateLiveActivityManager {
         generation: Int
     ) -> Task<Void, Never> {
         let previous = aggregateUpdateTask
-        let task = Task {
+        aggregateUpdateSequence += 1
+        let sequence = aggregateUpdateSequence
+        queuedAggregateState = state
+        let task = Task { [weak self] in
+            guard let self else { return }
             await previous?.value
-            guard !Task.isCancelled, generation == operationGeneration else { return }
+            defer {
+                if sequence == self.aggregateUpdateSequence {
+                    self.aggregateUpdateTask = nil
+                    self.queuedAggregateState = nil
+                }
+            }
+            guard !Task.isCancelled, generation == self.operationGeneration else { return }
             await activity.update(ActivityContent(
                 state: state,
                 staleDate: Date().addingTimeInterval(Self.staleInterval)
@@ -1231,7 +1245,7 @@ final class TalariaAggregateLiveActivityManager {
         prunePendingSeeds()
         return TalariaAggregateActivitySeed.merging(
             pendingSeeds.values.map(\.state),
-            into: state
+            into: queuedAggregateState ?? state
         )
     }
 
