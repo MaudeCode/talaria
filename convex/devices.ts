@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
+import { enqueueDisplacedActivityEnd } from "./delivery";
 import {
   activityModeValidator,
   apsEnvironmentValidator,
@@ -121,6 +122,16 @@ export const registerActivity = internalMutation({
       return { ok: false, reason: "session_required" };
     }
 
+    const existing = await ctx.db
+      .query("liveActivities")
+      .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
+      )
+      .unique();
+    if (existing?.endedAt !== undefined) {
+      return { ok: false, reason: "ended" };
+    }
+
     const tokenOwner = await ctx.db
       .query("liveActivities")
       .withIndex("by_activity_push_token", (query) =>
@@ -130,6 +141,9 @@ export const registerActivity = internalMutation({
     if (tokenOwner && (tokenOwner.deviceId !== args.deviceId || tokenOwner.activityId !== args.activityId)) {
       if (tokenOwner.userId !== args.userId) {
         return { ok: false, reason: "token_owned" };
+      }
+      if (tokenOwner.endedAt !== undefined) {
+        return { ok: false, reason: "ended" };
       }
       await ctx.db.delete(tokenOwner._id);
     }
@@ -142,16 +156,11 @@ export const registerActivity = internalMutation({
       .take(10);
     for (const activity of sameMode) {
       if (activity.activityId !== args.activityId) {
+        await enqueueDisplacedActivityEnd(ctx, activity, device, args.now);
         await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
       }
     }
 
-    const existing = await ctx.db
-      .query("liveActivities")
-      .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
-      )
-      .unique();
     const sameRegistration = existing?.activityPushToken === args.activityPushToken;
     const value = {
       userId: args.userId,

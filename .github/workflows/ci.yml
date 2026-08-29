@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ["ghar-set-maudecode"]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

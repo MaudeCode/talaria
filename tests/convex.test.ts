@@ -869,6 +869,154 @@ describe("Convex relay state", () => {
     expect(activities[0]?.activityId).toBe("activity-2");
   });
 
+  it("ends a displaced same-mode activity on its ActivityKit token", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "production",
+        preferences: defaultNotificationPreferences,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const registration = {
+      userId: "user-1",
+      deviceId: "device-1",
+      mode: "all_running" as const,
+      attributesType: "TalariaAggregateActivityAttributes",
+      schemaVersion: 1,
+      seededLocally: false,
+    };
+    await backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "old-activity",
+      activityPushToken: "old-token",
+      now,
+    });
+    await backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "new-activity",
+      activityPushToken: "new-token",
+      now: now + 1,
+    });
+
+    const state = await backend.run(async (ctx) => ({
+      oldActivity: await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "old-activity"),
+      ).unique(),
+      newActivity: await ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "new-activity"),
+      ).unique(),
+      displacedEnd: await ctx.db.query("deliveryJobs").withIndex(
+        "by_user_id_and_activity_id_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "queued"),
+      ).unique(),
+    }));
+    expect(state.oldActivity?.endedAt).toBe(now + 1);
+    expect(state.newActivity?.endedAt).toBeUndefined();
+    expect(state.displacedEnd).toMatchObject({
+      kind: "live_activity_end",
+      expectedToken: "old-token",
+      stateFingerprint: "end:displaced:device-1:old-activity",
+    });
+    const claimed = await backend.mutation(internal.delivery.claimJob, {
+      jobId: state.displacedEnd!._id,
+      now: now + 2,
+    });
+    expect(claimed).toMatchObject({ status: "ready", kind: "live_activity_end" });
+    if (claimed.status !== "ready") throw new Error("displacement end was not claimable");
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "old-activity",
+      activityPushToken: "old-token",
+      now: now + 3,
+    })).resolves.toEqual({ ok: false, reason: "ended" });
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "old-activity",
+      activityPushToken: "new-token",
+      now: now + 4,
+    })).resolves.toEqual({ ok: false, reason: "ended" });
+    const replacement = await backend.run(async (ctx) =>
+      ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "new-activity"),
+      ).unique(),
+    );
+    expect(replacement?.activityPushToken).toBe("new-token");
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "third-activity",
+      activityPushToken: "old-token",
+      now: now + 5,
+    })).resolves.toEqual({ ok: false, reason: "ended" });
+    const tombstone = await backend.run(async (ctx) =>
+      ctx.db.query("liveActivities").withIndex(
+        "by_user_id_and_device_id_and_activity_id",
+        (query) => query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "old-activity"),
+      ).unique(),
+    );
+    expect(tombstone?.endedAt).toBe(now + 1);
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-2",
+        label: "Other iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "production",
+        preferences: defaultNotificationPreferences,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "device-2",
+        activityId: "old-activity",
+        mode: "all_running",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "other-old-token",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      deviceId: "device-2",
+      activityId: "other-new-activity",
+      activityPushToken: "other-new-token",
+      now: now + 6,
+    });
+    const displacementJobs = await backend.run(async (ctx) => {
+      const queued = await ctx.db.query("deliveryJobs").withIndex(
+        "by_user_id_and_activity_id_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "queued"),
+      ).collect();
+      const running = await ctx.db.query("deliveryJobs").withIndex(
+        "by_user_id_and_activity_id_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "running"),
+      ).collect();
+      return [...queued, ...running];
+    });
+    expect(new Set(displacementJobs.map((job) => job.stateFingerprint))).toEqual(new Set([
+      "end:displaced:device-1:old-activity",
+      "end:displaced:device-2:old-activity",
+    ]));
+    const payload = JSON.parse(claimed.request.payloadJson);
+    expect(payload.aps).toMatchObject({
+      event: "end",
+      timestamp: Math.floor((now + 1) / 1_000),
+      "dismissal-date": Math.floor((now + 1) / 1_000),
+    });
+  });
+
   it("keeps publisher, device, snapshot, and activity state tenant isolated", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;

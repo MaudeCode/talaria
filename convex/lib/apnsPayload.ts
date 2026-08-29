@@ -87,6 +87,7 @@ export function makeLiveActivityEnd(input: {
   environment: ApsEnvironment;
   aggregate: ActivityAggregate | null;
   nowEpochSeconds: number;
+  dismissalDelaySeconds?: number;
   alert?: ActivityAlert | null;
 }): ApnsRequest {
   const aggregate = input.aggregate ? fitActivityAggregate(input.aggregate) : null;
@@ -104,7 +105,8 @@ export function makeLiveActivityEnd(input: {
         ...(input.alert
           ? { alert: { title: input.alert.title, body: input.alert.body, sound: "default" } }
           : {}),
-        "dismissal-date": input.nowEpochSeconds + (aggregate ? 5 * 60 : 15),
+        "dismissal-date": input.nowEpochSeconds
+          + (input.dismissalDelaySeconds ?? (aggregate ? 5 * 60 : 15)),
       },
     },
   };
