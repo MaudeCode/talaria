@@ -4512,7 +4512,10 @@ final class ChatViewModel {
         var didApplyCompletedTranscript = false
         if let completedMessages = completedSession.messages,
            !completedMessages.isEmpty {
-            let preservesSteeringTurn = messages.contains(where: \.isLocalSteeringHint)
+            let currentTurnStart = messages.lastIndex(where: { $0.role == "user" }) ?? -1
+            let currentTurn = messages.dropFirst(currentTurnStart + 1)
+            let preservesSteeringTurn = currentTurn.contains(where: \.isLocalSteeringHint)
+                && !currentTurn.contains { $0.activityScene?.hasConsumedSteering == true }
             if preservesSteeringTurn {
                 archiveLiveActivityIfNeeded()
             }
@@ -5575,7 +5578,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
-        Self.latestAssistantMessageID(in: messages)
+        Self.latestAssistantMessageIDAfterLatestSteeringHint(in: messages)
     }
 
     func streamCoordinatorStartAuxiliaryMonitoring() {

@@ -214,7 +214,7 @@ struct ChatTranscriptView: View {
                 compressionReferenceCardView(compressionReferenceCard)
             }
 
-            ForEach(displayedTranscriptMessages) { transcriptMessage in
+            ForEach(Array(displayedTranscriptMessages.enumerated()), id: \.element.id) { index, transcriptMessage in
                 // Scope live-streaming state to the row that actually displays it.
                 // Non-anchor / non-streaming rows receive stable empty/nil values so
                 // their inputs don't change on every ~16ms flush; combined with the
@@ -225,6 +225,10 @@ struct ChatTranscriptView: View {
                 let isToolCallAnchor = toolCallAnchorMessageID.map(activityAnchorIDs.contains) ?? false
                 let isStreamingRow = streamingAssistantMessageID != nil
                     && transcriptMessage.message.messageId == streamingAssistantMessageID
+                let isSyntheticSteeringNeighbor = transcriptMessage.message.activityScene == nil && (
+                    (index > 0 && displayedTranscriptMessages[index - 1].message.isLocalSteeringHint)
+                    || (index + 1 < displayedTranscriptMessages.count && displayedTranscriptMessages[index + 1].message.isLocalSteeringHint)
+                )
 
                 ChatTranscriptMessageBlock(
                     transcriptMessage: transcriptMessage,
@@ -243,6 +247,7 @@ struct ChatTranscriptView: View {
                     isRegeneratingMessage: isRegeneratingMessage,
                     isEditingMessage: isEditingMessage,
                     isForkingMessage: isForkingMessage,
+                    disablesHistoryActions: isSyntheticSteeringNeighbor,
                     loadAttachmentImage: loadAttachmentImage,
                     loadAttachmentData: loadAttachmentData,
                     loadTranscriptMediaImage: loadTranscriptMediaImage,
@@ -474,6 +479,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
+    let disablesHistoryActions: Bool
     let loadAttachmentImage: (String) async -> Data?
     let loadAttachmentData: (String) async -> Data?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
@@ -512,6 +518,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.isRegeneratingMessage == rhs.isRegeneratingMessage &&
             lhs.isEditingMessage == rhs.isEditingMessage &&
             lhs.isForkingMessage == rhs.isForkingMessage &&
+            lhs.disablesHistoryActions == rhs.disablesHistoryActions &&
             lhs.transcriptMediaCacheNamespace == rhs.transcriptMediaCacheNamespace
     }
 
@@ -522,7 +529,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                     if turn.hasSteering {
                         steeredTurn(turn)
                     } else if liveActivityRows.isEmpty {
-                        if transcriptMessage.shouldShowTurnSummary(hasActiveStream: hasActiveStream) {
+                        if transcriptMessage.shouldShowTurnSummary(hasActiveStream: ownsActiveStream) {
                             completedTurn(turn)
                         } else {
                             activityTimeline(turn.segments, activeSegmentID: nil)
@@ -874,7 +881,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                 isRegeneratingMessage: isRegeneratingMessage,
                 isEditingMessage: isEditingMessage,
                 isForkingMessage: isForkingMessage,
-                disablesHistoryActions: disablesSyntheticSteeringHistoryActions,
+                disablesHistoryActions: disablesHistoryActions || disablesSyntheticSteeringHistoryActions,
                 loadAttachmentImage: loadAttachmentImage,
                 loadAttachmentData: loadAttachmentData,
                 loadTranscriptMediaImage: loadTranscriptMediaImage,
