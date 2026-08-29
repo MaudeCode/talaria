@@ -214,7 +214,7 @@ export async function enqueueDisplacedActivityEnd(
       nowEpochSeconds: Math.floor(now / 1_000),
       dismissalDelaySeconds: 0,
     }),
-    stateFingerprint: `end:displaced:${activity.activityId}`,
+    stateFingerprint: `end:displaced:${activity.deviceId}:${activity.activityId}`,
     now,
   });
 }
@@ -520,7 +520,7 @@ export const claimJob = internalMutation({
     }
     if (job.activityId) {
       const isDisplacementEnd = job.kind === "live_activity_end"
-        && job.stateFingerprint === `end:displaced:${job.activityId}`;
+        && job.stateFingerprint === `end:displaced:${job.deviceId}:${job.activityId}`;
       const activityId = job.activityId;
       const [activity, device] = await Promise.all([
         ctx.db

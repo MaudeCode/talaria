@@ -924,7 +924,7 @@ describe("Convex relay state", () => {
     expect(state.displacedEnd).toMatchObject({
       kind: "live_activity_end",
       expectedToken: "old-token",
-      stateFingerprint: "end:displaced:old-activity",
+      stateFingerprint: "end:displaced:device-1:old-activity",
     });
     const claimed = await backend.mutation(internal.delivery.claimJob, {
       jobId: state.displacedEnd!._id,
@@ -964,6 +964,51 @@ describe("Convex relay state", () => {
       ).unique(),
     );
     expect(tombstone?.endedAt).toBe(now + 1);
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-2",
+        label: "Other iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "production",
+        preferences: defaultNotificationPreferences,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "device-2",
+        activityId: "old-activity",
+        mode: "all_running",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "other-old-token",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      deviceId: "device-2",
+      activityId: "other-new-activity",
+      activityPushToken: "other-new-token",
+      now: now + 6,
+    });
+    const displacementJobs = await backend.run(async (ctx) => {
+      const queued = await ctx.db.query("deliveryJobs").withIndex(
+        "by_user_id_and_activity_id_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "queued"),
+      ).collect();
+      const running = await ctx.db.query("deliveryJobs").withIndex(
+        "by_user_id_and_activity_id_and_status",
+        (query) => query.eq("userId", "user-1").eq("activityId", "old-activity").eq("status", "running"),
+      ).collect();
+      return [...queued, ...running];
+    });
+    expect(new Set(displacementJobs.map((job) => job.stateFingerprint))).toEqual(new Set([
+      "end:displaced:device-1:old-activity",
+      "end:displaced:device-2:old-activity",
+    ]));
     const payload = JSON.parse(claimed.request.payloadJson);
     expect(payload.aps).toMatchObject({
       event: "end",
