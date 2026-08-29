@@ -35,7 +35,7 @@ APPLE_CLIENT_IDS=dev.kil.talaria,dev.kil.talaria.branch
 
 `APPLE_SUBJECT_HASH_KEY` is a random server secret used to pseudonymize Apple's stable subject before storage. APNs credentials and this hash key never enter the database or API responses.
 
-Production deploys are tag-only. Tags matching `relay-v*` run the full check suite and deploy with the repository's `CONVEX_DEPLOY_KEY` GitHub Actions secret.
+Production deploys are tag-only. Tags matching `v*` run the full check suite and deploy with the repository's `CONVEX_DEPLOY_KEY` GitHub Actions secret.
 
 The production HTTP origin is `https://relay.talaria.kil.dev`.
 
