@@ -4944,7 +4944,8 @@ final class ChatViewModel {
             renderID: existingTranscriptMessage.renderID,
             anchorID: lastSegment.anchorID,
             message: lastSegment.message,
-            assistantSegments: updatedSegments
+            assistantSegments: updatedSegments,
+            isSteeringContinuation: existingTranscriptMessage.isSteeringContinuation
         )
     }
 
@@ -6325,6 +6326,7 @@ struct TranscriptMessage: Identifiable, Equatable {
     let anchorID: String
     let message: ChatMessage
     let assistantSegments: [TranscriptAssistantSegment]
+    let isSteeringContinuation: Bool
 
     var id: String { renderID }
 }
@@ -6461,6 +6463,8 @@ extension ChatViewModel {
         var transcriptMessages: [TranscriptMessage] = []
         transcriptMessages.reserveCapacity(messages.count)
         var assistantSegments: [(loadedIndex: Int, segment: TranscriptAssistantSegment)] = []
+        var assistantTurnIsSteeringContinuation = false
+        var nextAssistantTurnIsSteeringContinuation = false
 
         func appendAssistantTurn() {
             guard let first = assistantSegments.first,
@@ -6472,9 +6476,11 @@ extension ChatViewModel {
                 renderID: "transcript:\(offset + first.loadedIndex)",
                 anchorID: last.segment.anchorID,
                 message: last.segment.message,
-                assistantSegments: assistantSegments.map(\.segment)
+                assistantSegments: assistantSegments.map(\.segment),
+                isSteeringContinuation: assistantTurnIsSteeringContinuation
             ))
             assistantSegments.removeAll(keepingCapacity: true)
+            assistantTurnIsSteeringContinuation = false
         }
 
         for (loadedIndex, message) in messages.enumerated() {
@@ -6491,6 +6497,10 @@ extension ChatViewModel {
             )
 
             if message.role == "assistant" {
+                if assistantSegments.isEmpty {
+                    assistantTurnIsSteeringContinuation = nextAssistantTurnIsSteeringContinuation
+                    nextAssistantTurnIsSteeringContinuation = false
+                }
                 assistantSegments.append((
                     loadedIndex,
                     TranscriptAssistantSegment(anchorID: anchorID, message: message)
@@ -6499,6 +6509,7 @@ extension ChatViewModel {
             }
 
             appendAssistantTurn()
+            nextAssistantTurnIsSteeringContinuation = message.isLocalSteeringHint
             let absoluteIndex = offset + loadedIndex
             let renderID = "transcript:\(absoluteIndex)"
 
@@ -6507,7 +6518,8 @@ extension ChatViewModel {
                 renderID: renderID,
                 anchorID: anchorID,
                 message: message,
-                assistantSegments: []
+                assistantSegments: [],
+                isSteeringContinuation: false
             ))
         }
 

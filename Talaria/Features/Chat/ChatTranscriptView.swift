@@ -520,7 +520,11 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if liveActivityRows.isEmpty {
-                        completedTurn(turn)
+                        if transcriptMessage.isSteeringContinuation {
+                            completedSteeringContinuation(turn)
+                        } else {
+                            completedTurn(turn)
+                        }
                     } else {
                         activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
                     }
@@ -598,6 +602,24 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
         if isExpanded {
             activityTimeline(turn.workSegments, activeSegmentID: nil)
                 .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
+        }
+
+        if !turn.finalAnswer.isEmpty {
+            messageRow(
+                activityMessage(
+                    text: turn.finalAnswer,
+                    includesAttachments: true,
+                    includesTurnMetrics: true
+                ),
+                isStreaming: false
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func completedSteeringContinuation(_ turn: CompletedAssistantTurn) -> some View {
+        if !turn.workSegments.isEmpty {
+            activityTimeline(turn.workSegments, activeSegmentID: nil)
         }
 
         if !turn.finalAnswer.isEmpty {
