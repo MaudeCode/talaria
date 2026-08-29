@@ -7937,6 +7937,7 @@ final class ChatViewModelSendTests: XCTestCase {
         await viewModel.loadMessages()
 
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        XCTAssertNil(viewModel.streamingAssistantMessageID)
         XCTAssertEqual(
             viewModel.messages.map(\.content),
             ["Initial request", "Before hint. ", "Keep this after reconnect"]

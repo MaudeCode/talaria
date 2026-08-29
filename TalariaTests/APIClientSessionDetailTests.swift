@@ -499,6 +499,37 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Finished.")
     }
 
+    func testExplicitFinalProseBeforeTrailingToolKeepsTheToolInWork() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "assistant-final-before-tool",
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "final_answer": "Done.",
+            "activity_rows": [
+              {"row_id":"final","order_index":0,"role":"prose","text":"Done."},
+              {"row_id":"tool","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"terminal","done":true}}
+            ]
+          }
+        }
+        """.utf8))
+
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+
+        XCTAssertEqual(turn.finalAnswer, "Done.")
+        XCTAssertEqual(turn.workRows.map(\.kind), ["tools"])
+        XCTAssertEqual(turn.workSegments.count, 1)
+        guard case .activity(let rows) = turn.workSegments[0].content else {
+            return XCTFail("Expected the trailing tool to remain in Worked")
+        }
+        XCTAssertEqual(rows.map(\.kind), ["tools"])
+    }
+
     func testActivitySceneDecodingKeepsValidRowsAroundMalformedFields() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

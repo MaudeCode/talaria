@@ -2017,7 +2017,9 @@ final class ChatViewModel {
             if loadedMessages.isEmpty {
                 return ActiveStreamMessageMerge(
                     messages: snapshot.messages,
-                    streamingAssistantMessageID: latestAssistantMessageID(in: snapshot.messages),
+                    streamingAssistantMessageID: latestAssistantMessageIDAfterLatestSteeringHint(
+                        in: snapshot.messages
+                    ),
                     usedSnapshotMessagesOffset: true
                 )
             }
@@ -2028,7 +2030,9 @@ final class ChatViewModel {
             )
             return ActiveStreamMessageMerge(
                 messages: mergedMessages,
-                streamingAssistantMessageID: latestAssistantMessageID(in: mergedMessages),
+                streamingAssistantMessageID: latestAssistantMessageIDAfterLatestSteeringHint(
+                    in: mergedMessages
+                ),
                 usedSnapshotMessagesOffset: false
             )
         }
@@ -2278,6 +2282,17 @@ final class ChatViewModel {
 
     nonisolated private static func latestAssistantMessageID(in messages: [ChatMessage]) -> String? {
         messages.last(where: { $0.role == "assistant" })?.messageId
+    }
+
+    nonisolated private static func latestAssistantMessageIDAfterLatestSteeringHint(
+        in messages: [ChatMessage]
+    ) -> String? {
+        guard let steeringIndex = messages.lastIndex(where: \.isLocalSteeringHint) else {
+            return latestAssistantMessageID(in: messages)
+        }
+        return messages[messages.index(after: steeringIndex)...]
+            .last(where: { $0.role == "assistant" })?
+            .messageId
     }
 
     nonisolated private static func latestAssistantAnchorID(in messages: [ChatMessage], messageOffset: Int?) -> String? {
@@ -5902,11 +5917,15 @@ struct CompletedAssistantTurn: Equatable {
     let workRows: [AssistantActivityRow]
     let finalAnswer: String
     let phases: [Phase]
+    private let finalSegmentIndex: Int?
 
     var hasSteering: Bool { phases.contains { $0.steeringAfter != nil } }
 
     var workSegments: [Segment] {
-        finalAnswer.isEmpty ? segments : Array(segments.dropLast())
+        guard let finalSegmentIndex else { return segments }
+        return segments.enumerated().compactMap { index, segment in
+            index == finalSegmentIndex ? nil : segment
+        }
     }
 
     func phaseDurations(totalDuration: Double?) -> [Double?] {
@@ -5935,6 +5954,7 @@ struct CompletedAssistantTurn: Equatable {
     init?(rows: [AssistantActivityRow]) {
         var segments: [Segment] = []
         var pendingActivity: [AssistantActivityRow] = []
+        var resolvedFinalSegmentIndex: Int?
 
         func appendActivity() {
             guard !pendingActivity.isEmpty else { return }
@@ -5956,12 +5976,15 @@ struct CompletedAssistantTurn: Equatable {
         }
         let finalIndex = explicitFinalIndex ?? fallbackFinalIndex
 
-        for row in rows {
+        for (rowIndex, row) in rows.enumerated() {
             switch row.content {
             case .prose(let text):
                 appendActivity()
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 segments.append(Segment(id: "prose:\(segments.count):\(row.id)", content: .prose(text)))
+                if rowIndex == finalIndex {
+                    resolvedFinalSegmentIndex = segments.index(before: segments.endIndex)
+                }
             case .reasoning, .tools:
                 pendingActivity.append(row)
             case .steering(let steering):
@@ -5982,6 +6005,7 @@ struct CompletedAssistantTurn: Equatable {
         }) else { return nil }
 
         self.segments = segments
+        finalSegmentIndex = resolvedFinalSegmentIndex
         if let finalIndex,
            case .prose(let finalAnswer) = rows[finalIndex].content {
             self.finalAnswer = finalAnswer
