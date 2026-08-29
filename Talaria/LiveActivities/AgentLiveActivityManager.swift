@@ -901,6 +901,12 @@ extension APIClient {
 @MainActor
 final class TalariaAggregateLiveActivityManager {
     static let shared = TalariaAggregateLiveActivityManager()
+    private struct PendingSeed {
+        let state: TalariaAggregateActivityAttributes.ContentState
+        let expiresAt: Date
+    }
+
+    private static let seedLeaseInterval: TimeInterval = 30
     private static let staleInterval: TimeInterval = 150
     private var tokenTasks: [String: Task<Void, Never>] = [:]
     private var pushToStartTask: Task<Void, Never>?
@@ -910,6 +916,9 @@ final class TalariaAggregateLiveActivityManager {
     private var refreshRequested = false
     private var operationGeneration = 0
     private var activeDisconnectCount = 0
+    private var pendingSeeds: [String: PendingSeed] = [:]
+    private var aggregateUpdateTask: Task<Void, Never>?
+    private var seedRegistrationTask: Task<Void, Never>?
 
     func armForLocalWork(sessionID: String, sessionTitle: String) {
         guard TalariaLiveActivityMode.current == .allRunning,
@@ -924,28 +933,22 @@ final class TalariaAggregateLiveActivityManager {
                   publisherURL: server
               ) else { return }
 
+        let client = TalariaRelayClient(credentials: credentials)
+        if observedSessionToken != credentials.sessionToken {
+            stopObservers()
+            observedSessionToken = credentials.sessionToken
+        }
+        prunePendingSeeds()
+        guard let seedID = state.rows.first?.id else { return }
+        pendingSeeds[seedID] = PendingSeed(
+            state: state,
+            expiresAt: Date().addingTimeInterval(Self.seedLeaseInterval)
+        )
+
         let activities = Activity<TalariaAggregateActivityAttributes>.activities
         if let activity = activities.first {
-            let merged = TalariaAggregateActivitySeed.merging(state, into: activity.content.state)
-            let client = TalariaRelayClient(credentials: credentials)
-            if observedSessionToken != credentials.sessionToken {
-                stopObservers()
-                observedSessionToken = credentials.sessionToken
-            }
             startObservers(client: client)
-            Task {
-                await activity.update(ActivityContent(
-                    state: merged,
-                    staleDate: Date().addingTimeInterval(Self.staleInterval)
-                ))
-                if let token = activity.pushToken {
-                    try? await client.register(
-                        activityID: activity.id,
-                        pushToken: token.map { String(format: "%02x", $0) }.joined(),
-                        seededLocally: true
-                    )
-                }
-            }
+            scheduleSeedUpdate(for: activity, client: client, credentials: credentials)
             return
         }
 
@@ -958,14 +961,10 @@ final class TalariaAggregateLiveActivityManager {
                 ),
                 pushType: .token
             )
-            let client = TalariaRelayClient(credentials: credentials)
-            if observedSessionToken != credentials.sessionToken {
-                stopObservers()
-                observedSessionToken = credentials.sessionToken
-            }
             observePushToken(for: activity, client: client, seededLocally: true)
             startObservers(client: client)
         } catch {
+            pendingSeeds.removeValue(forKey: seedID)
             return
         }
     }
@@ -1017,6 +1016,13 @@ final class TalariaAggregateLiveActivityManager {
         try await client.configureDevice()
         guard let aggregate = try await client.snapshot() else {
             guard generation == operationGeneration else { return }
+            prunePendingSeeds()
+            if !pendingSeeds.isEmpty,
+               let activity = Activity<TalariaAggregateActivityAttributes>.activities.first {
+                let state = stateByAddingPendingSeeds(to: activity.content.state)
+                await enqueueUpdate(state, for: activity, generation: generation).value
+                return
+            }
             await endAggregateActivities(client: client)
             return
         }
@@ -1030,14 +1036,12 @@ final class TalariaAggregateLiveActivityManager {
         }
         guard operationIsCurrent(generation, credentials: credentials) else { return }
 
+        let reconciledAggregate = stateByReconcilingPendingSeeds(with: aggregate)
         let activities = Activity<TalariaAggregateActivityAttributes>.activities
         let activity: Activity<TalariaAggregateActivityAttributes>
         if let existing = activities.first {
             activity = existing
-            await activity.update(ActivityContent(
-                state: aggregate,
-                staleDate: Date().addingTimeInterval(Self.staleInterval)
-            ))
+            await enqueueUpdate(reconciledAggregate, for: activity, generation: generation).value
             for duplicate in activities.dropFirst() {
                 await duplicate.end(nil, dismissalPolicy: .immediate)
             }
@@ -1046,7 +1050,7 @@ final class TalariaAggregateLiveActivityManager {
             activity = try Activity.request(
                 attributes: TalariaAggregateActivityAttributes(),
                 content: ActivityContent(
-                    state: aggregate,
+                    state: reconciledAggregate,
                     staleDate: Date().addingTimeInterval(Self.staleInterval)
                 ),
                 pushType: .token
@@ -1158,7 +1162,94 @@ final class TalariaAggregateLiveActivityManager {
         pushToStartTask = nil
         activityUpdatesTask?.cancel()
         activityUpdatesTask = nil
+        aggregateUpdateTask?.cancel()
+        aggregateUpdateTask = nil
+        seedRegistrationTask?.cancel()
+        seedRegistrationTask = nil
+        pendingSeeds.removeAll()
         observedSessionToken = nil
+    }
+
+    private func scheduleSeedUpdate(
+        for activity: Activity<TalariaAggregateActivityAttributes>,
+        client: TalariaRelayClient,
+        credentials: TalariaRelayCredentials
+    ) {
+        let generation = operationGeneration
+        let state = stateByAddingPendingSeeds(to: activity.content.state)
+        let updateTask = enqueueUpdate(state, for: activity, generation: generation)
+        seedRegistrationTask?.cancel()
+        seedRegistrationTask = Task { [weak self] in
+            await updateTask.value
+            guard let self,
+                  !Task.isCancelled,
+                  self.operationIsCurrent(generation, credentials: credentials),
+                  let token = activity.pushToken else { return }
+            var retryDelay: Duration = .seconds(5)
+            while !Task.isCancelled,
+                  self.operationIsCurrent(generation, credentials: credentials) {
+                do {
+                    try await client.register(
+                        activityID: activity.id,
+                        pushToken: token.map { String(format: "%02x", $0) }.joined(),
+                        seededLocally: true
+                    )
+                    return
+                } catch {
+                    if let error = error as? TalariaRelayClient.ClientError,
+                       !error.isRetryable {
+                        return
+                    }
+                    try? await Task.sleep(for: retryDelay)
+                    retryDelay = min(retryDelay * 2, .seconds(300))
+                }
+            }
+        }
+    }
+
+    private func enqueueUpdate(
+        _ state: TalariaAggregateActivityAttributes.ContentState,
+        for activity: Activity<TalariaAggregateActivityAttributes>,
+        generation: Int
+    ) -> Task<Void, Never> {
+        let previous = aggregateUpdateTask
+        let task = Task {
+            await previous?.value
+            guard !Task.isCancelled, generation == operationGeneration else { return }
+            await activity.update(ActivityContent(
+                state: state,
+                staleDate: Date().addingTimeInterval(Self.staleInterval)
+            ))
+        }
+        aggregateUpdateTask = task
+        return task
+    }
+
+    private func stateByAddingPendingSeeds(
+        to state: TalariaAggregateActivityAttributes.ContentState
+    ) -> TalariaAggregateActivityAttributes.ContentState {
+        prunePendingSeeds()
+        return TalariaAggregateActivitySeed.merging(
+            pendingSeeds.values.map(\.state),
+            into: state
+        )
+    }
+
+    private func stateByReconcilingPendingSeeds(
+        with aggregate: TalariaAggregateActivityAttributes.ContentState
+    ) -> TalariaAggregateActivityAttributes.ContentState {
+        prunePendingSeeds()
+        for row in aggregate.rows where TalariaAggregateActivitySeed.isActive(row.phase) {
+            pendingSeeds.removeValue(forKey: row.id)
+        }
+        return TalariaAggregateActivitySeed.merging(
+            pendingSeeds.values.map(\.state),
+            into: aggregate
+        )
+    }
+
+    private func prunePendingSeeds(now: Date = Date()) {
+        pendingSeeds = pendingSeeds.filter { $0.value.expiresAt > now }
     }
 
     private func operationIsCurrent(
@@ -1239,6 +1330,19 @@ enum TalariaAggregateActivitySeed {
         merged.updatedAt = max(existing.updatedAt, seed.updatedAt)
         merged.rows = Array(rows)
         return merged
+    }
+
+    static func merging(
+        _ seeds: [TalariaAggregateActivityAttributes.ContentState],
+        into existing: TalariaAggregateActivityAttributes.ContentState
+    ) -> TalariaAggregateActivityAttributes.ContentState {
+        seeds.sorted { $0.updatedAt < $1.updatedAt }.reduce(existing) { state, seed in
+            merging(seed, into: state)
+        }
+    }
+
+    static func isActive(_ phase: String) -> Bool {
+        activePhases.contains(phase)
     }
 
     private static let activePhases: Set<String> = [
