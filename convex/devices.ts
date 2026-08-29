@@ -135,6 +135,16 @@ export const registerActivity = internalMutation({
       await ctx.db.delete(tokenOwner._id);
     }
 
+    const existing = await ctx.db
+      .query("liveActivities")
+      .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
+      )
+      .unique();
+    if (existing?.endedAt !== undefined) {
+      return { ok: false, reason: "ended" };
+    }
+
     const sameMode = await ctx.db
       .query("liveActivities")
       .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
@@ -148,12 +158,6 @@ export const registerActivity = internalMutation({
       }
     }
 
-    const existing = await ctx.db
-      .query("liveActivities")
-      .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
-        query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("activityId", args.activityId),
-      )
-      .unique();
     const sameRegistration = existing?.activityPushToken === args.activityPushToken;
     const value = {
       userId: args.userId,

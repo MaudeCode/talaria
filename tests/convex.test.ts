@@ -932,6 +932,12 @@ describe("Convex relay state", () => {
     });
     expect(claimed).toMatchObject({ status: "ready", kind: "live_activity_end" });
     if (claimed.status !== "ready") throw new Error("displacement end was not claimable");
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      ...registration,
+      activityId: "old-activity",
+      activityPushToken: "old-token",
+      now: now + 3,
+    })).resolves.toEqual({ ok: false, reason: "ended" });
     const payload = JSON.parse(claimed.request.payloadJson);
     expect(payload.aps).toMatchObject({
       event: "end",
