@@ -4963,7 +4963,8 @@ final class ChatViewModel {
             renderID: existingTranscriptMessage.renderID,
             anchorID: lastSegment.anchorID,
             message: lastSegment.message,
-            assistantSegments: updatedSegments
+            assistantSegments: updatedSegments,
+            endsBeforeSteeringHint: existingTranscriptMessage.endsBeforeSteeringHint
         )
     }
 
@@ -6344,8 +6345,13 @@ struct TranscriptMessage: Identifiable, Equatable {
     let anchorID: String
     let message: ChatMessage
     let assistantSegments: [TranscriptAssistantSegment]
+    let endsBeforeSteeringHint: Bool
 
     var id: String { renderID }
+
+    func shouldShowTurnSummary(hasActiveStream: Bool) -> Bool {
+        !hasActiveStream || !endsBeforeSteeringHint
+    }
 }
 
 struct TranscriptAssistantSegment: Equatable {
@@ -6481,7 +6487,7 @@ extension ChatViewModel {
         transcriptMessages.reserveCapacity(messages.count)
         var assistantSegments: [(loadedIndex: Int, segment: TranscriptAssistantSegment)] = []
 
-        func appendAssistantTurn() {
+        func appendAssistantTurn(endsBeforeSteeringHint: Bool = false) {
             guard let first = assistantSegments.first,
                   let last = assistantSegments.last
             else { return }
@@ -6491,7 +6497,8 @@ extension ChatViewModel {
                 renderID: "transcript:\(offset + first.loadedIndex)",
                 anchorID: last.segment.anchorID,
                 message: last.segment.message,
-                assistantSegments: assistantSegments.map(\.segment)
+                assistantSegments: assistantSegments.map(\.segment),
+                endsBeforeSteeringHint: endsBeforeSteeringHint
             ))
             assistantSegments.removeAll(keepingCapacity: true)
         }
@@ -6517,7 +6524,7 @@ extension ChatViewModel {
                 continue
             }
 
-            appendAssistantTurn()
+            appendAssistantTurn(endsBeforeSteeringHint: message.isLocalSteeringHint)
             let absoluteIndex = offset + loadedIndex
             let renderID = "transcript:\(absoluteIndex)"
 
@@ -6526,7 +6533,8 @@ extension ChatViewModel {
                 renderID: renderID,
                 anchorID: anchorID,
                 message: message,
-                assistantSegments: []
+                assistantSegments: [],
+                endsBeforeSteeringHint: false
             ))
         }
 

@@ -175,6 +175,26 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertEqual(transcriptMessages.map(\.message.role), ["user", "assistant"])
     }
 
+    func testPreSteerActivityStaysExpandedUntilStreamCompletes() {
+        let messages = [
+            ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "u1"),
+            ChatMessage(role: "assistant", content: "Working", timestamp: 2, messageId: "a1"),
+            ChatMessage(
+                role: "user",
+                content: "Stop after the next step",
+                timestamp: 3,
+                messageId: "local-steer-1",
+                name: SteeringHintState.waiting.rawValue
+            )
+        ]
+
+        let preSteerActivity = ChatViewModel.transcriptMessages(from: messages)[1]
+
+        XCTAssertTrue(preSteerActivity.endsBeforeSteeringHint)
+        XCTAssertFalse(preSteerActivity.shouldShowTurnSummary(hasActiveStream: true))
+        XCTAssertTrue(preSteerActivity.shouldShowTurnSummary(hasActiveStream: false))
+    }
+
 }
 
 final class ChatTranscriptDisplaySettingsTests: XCTestCase {

@@ -520,7 +520,11 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if liveActivityRows.isEmpty {
-                        completedTurn(turn)
+                        if transcriptMessage.shouldShowTurnSummary(hasActiveStream: hasActiveStream) {
+                            completedTurn(turn)
+                        } else {
+                            activityTimeline(turn.segments, activeSegmentID: nil)
+                        }
                     } else {
                         activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
                     }
