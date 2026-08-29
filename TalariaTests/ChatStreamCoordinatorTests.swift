@@ -33,6 +33,34 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
                 streamID: "stream-123"
             )
         ])
+        XCTAssertTrue(liveActivityManager.aggregateArms.isEmpty)
+    }
+
+    @MainActor
+    func testLocalStartArmsAggregateBeforeStartingPerSessionState() {
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(
+            liveActivityManager: liveActivityManager,
+            delegate: delegate
+        )
+
+        coordinator.start(streamID: "stream-123", armsAggregateForLocalWork: true)
+
+        XCTAssertEqual(liveActivityManager.aggregateArms, [
+            CoordinatorSpyLiveActivityManager.AggregateArm(
+                sessionID: "session-abc",
+                sessionTitle: "Planning",
+                publisherURL: URL(string: "https://example.test")!
+            )
+        ])
+        XCTAssertEqual(liveActivityManager.starts, [
+            CoordinatorSpyLiveActivityManager.Start(
+                sessionID: "session-abc",
+                sessionTitle: "Planning",
+                streamID: "stream-123"
+            )
+        ])
     }
 
     @MainActor
@@ -1063,6 +1091,12 @@ private final class CoordinatorSpySSEStreamingClient: SSEStreamingClient {
 
 @MainActor
 private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging {
+    struct AggregateArm: Equatable {
+        let sessionID: String
+        let sessionTitle: String
+        let publisherURL: URL
+    }
+
     struct Start: Equatable {
         let sessionID: String
         let sessionTitle: String
@@ -1076,12 +1110,21 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
     }
 
     private(set) var starts: [Start] = []
+    private(set) var aggregateArms: [AggregateArm] = []
     private(set) var updates: [AgentLiveActivityEvent] = []
     private(set) var markStaleCount = 0
     private(set) var ends: [End] = []
 
     func start(sessionID: String, sessionTitle: String, streamID: String?) {
         starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID))
+    }
+
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
+        aggregateArms.append(AggregateArm(
+            sessionID: sessionID,
+            sessionTitle: sessionTitle,
+            publisherURL: publisherURL
+        ))
     }
 
     func update(_ event: AgentLiveActivityEvent) {

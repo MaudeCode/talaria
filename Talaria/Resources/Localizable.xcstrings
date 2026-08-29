@@ -4,6 +4,33 @@
     "" : {
       "shouldTranslate" : false
     },
+    "%lld active sessions" : {
+
+    },
+    "1 active session" : {
+
+    },
+    "Agent status" : {
+
+    },
+    "Agent work failed" : {
+
+    },
+    "Approval needed" : {
+
+    },
+    "Connecting" : {
+
+    },
+    "Input needed" : {
+
+    },
+    "Waiting" : {
+
+    },
+    "Waiting for server" : {
+
+    },
     "  %lld" : {
 
     },

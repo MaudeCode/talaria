@@ -2499,7 +2499,7 @@ final class ChatViewModel {
             }
 
             completeExplicitModelPickForChatStart(explicitModelPick)
-            streamCoordinator.start(streamID: streamID)
+            streamCoordinator.start(streamID: streamID, armsAggregateForLocalWork: true)
             return true
         } catch {
             if let streamID = (error as? APIError)?.activeStreamID {
@@ -2622,7 +2622,7 @@ final class ChatViewModel {
             pinLocalNoticeMessage(noticeMessage)
         }
 
-        streamCoordinator.start(streamID: streamID)
+        streamCoordinator.start(streamID: streamID, armsAggregateForLocalWork: true)
         return true
     }
 
@@ -3498,7 +3498,7 @@ final class ChatViewModel {
                 )
             )
 
-            streamCoordinator.start(streamID: streamID)
+            streamCoordinator.start(streamID: streamID, armsAggregateForLocalWork: true)
             return .executed(message: nil)
         } catch {
             lastError = error
@@ -3855,7 +3855,7 @@ final class ChatViewModel {
 
             streamCoordinator.prepareForNewResponse()
             responseCompletionNeedsTranscriptRefresh = false
-            streamCoordinator.start(streamID: streamID)
+            streamCoordinator.start(streamID: streamID, armsAggregateForLocalWork: true)
             return true
         } catch {
             lastError = error
@@ -3946,7 +3946,7 @@ final class ChatViewModel {
             completeExplicitModelPickForChatStart(explicitModelPick)
             streamCoordinator.prepareForNewResponse()
             responseCompletionNeedsTranscriptRefresh = false
-            streamCoordinator.start(streamID: streamID)
+            streamCoordinator.start(streamID: streamID, armsAggregateForLocalWork: true)
             return true
         } catch {
             lastError = error
