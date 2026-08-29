@@ -1409,6 +1409,22 @@ describe("Convex relay state", () => {
         expiresAt: now + 60_000,
         receivedAt: now,
       });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-2",
+        streamId: "stream-2",
+        eventId: "event-session-2",
+        revision: 1,
+        title: "Other publisher state",
+        phase: "running",
+        updatedAt: now - 1,
+        deepLink: "/sessions/session-2",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
       await ctx.db.insert("liveActivities", {
         userId: "user-1",
         deviceId: "device-1",
@@ -1455,6 +1471,19 @@ describe("Convex relay state", () => {
         updatedAt: now + 3,
         receivedAt: now + 3,
       });
+      const otherSession = await ctx.db.query("sessionStates").withIndex(
+        "by_user_id_and_publisher_id_and_session_id",
+        (query) => query
+          .eq("userId", "user-1")
+          .eq("publisherId", "https://hermes.example")
+          .eq("sessionId", "session-2"),
+      ).unique();
+      await ctx.db.patch(otherSession!._id, {
+        eventId: "event-session-2-heartbeat",
+        revision: 2,
+        updatedAt: now + 4,
+        receivedAt: now + 4,
+      });
     });
 
     await backend.mutation(internal.devices.registerActivity, {
@@ -1494,7 +1523,7 @@ describe("Convex relay state", () => {
       await ctx.db.patch(session!._id, {
         eventId: "event-3",
         revision: 3,
-        streamId: "stream-2",
+        streamId: "stream-new",
         updatedAt: now + 5,
         receivedAt: now + 5,
       });
@@ -1506,9 +1535,10 @@ describe("Convex relay state", () => {
       ).collect(),
     );
     expect(freshJobs).toHaveLength(1);
-    expect(freshJobs[0]).toMatchObject({
-      kind: "live_activity_update",
-      aggregate: { rows: [{ streamId: "stream-2", title: "Old publisher state" }] },
+    expect(freshJobs[0]?.kind).toBe("live_activity_update");
+    expect(freshJobs[0]?.aggregate?.rows[0]).toMatchObject({
+      streamId: "stream-new",
+      title: "Old publisher state",
     });
   });
 

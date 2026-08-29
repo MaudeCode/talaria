@@ -50,15 +50,21 @@ function semanticAggregateFingerprint(value: ActivityAggregate): string {
     activeCount: value.activeCount,
     title: value.title,
     subtitle: value.subtitle,
-    rows: value.rows.map((row) => ({
-      publisherId: row.publisherId,
-      sessionId: row.sessionId,
-      streamId: row.streamId,
-      title: row.title,
-      phase: row.phase,
-      status: row.status,
-      deepLink: row.deepLink,
-    })),
+    rows: [...value.rows]
+      .sort((left, right) =>
+        `${left.publisherId}\u0000${left.sessionId}\u0000${left.streamId ?? ""}`.localeCompare(
+          `${right.publisherId}\u0000${right.sessionId}\u0000${right.streamId ?? ""}`,
+        ),
+      )
+      .map((row) => ({
+        publisherId: row.publisherId,
+        sessionId: row.sessionId,
+        streamId: row.streamId,
+        title: row.title,
+        phase: row.phase,
+        status: row.status,
+        deepLink: row.deepLink,
+      })),
   });
 }
 
