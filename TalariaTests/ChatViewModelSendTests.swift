@@ -1035,8 +1035,12 @@ final class ChatViewModelSendTests: XCTestCase {
     @MainActor
     func testSubmitGoalAttachesToServerStartedKickoffStream() async throws {
         let streamClient = SpySSEStreamingClient()
+        let liveActivityManager = SpyChatLiveActivityManager()
         var requestedPaths: [String] = []
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            liveActivityManager: liveActivityManager
+        ) { request in
             let path = request.url?.path
             requestedPaths.append(path ?? "nil")
 
@@ -1096,6 +1100,9 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertEqual(viewModel.activeStreamID, "stream-goal")
         XCTAssertEqual(streamClient.startedURLs.count, 1)
         XCTAssertEqual(streamClient.startedURLs.first?.path, "/api/chat/stream")
+        XCTAssertEqual(liveActivityManager.aggregateArms.count, 1)
+        XCTAssertEqual(liveActivityManager.aggregateArms.first?.sessionID, "session-abc")
+        XCTAssertEqual(liveActivityManager.aggregateArms.first?.sessionTitle, "Planning")
         XCTAssertEqual(viewModel.messages.map(\.role), ["user"])
         XCTAssertEqual(viewModel.messages.last?.content, "Start executing the goal.")
         XCTAssertEqual(viewModel.pinnedLocalNotices, ["Goal set."])
@@ -8008,13 +8015,28 @@ private final class LockedCounter {
 
 @MainActor
 private final class SpyChatLiveActivityManager: AgentLiveActivityManaging {
+    struct AggregateArm: Equatable {
+        let sessionID: String
+        let sessionTitle: String
+        let publisherURL: URL
+    }
+
     struct End: Equatable {
         let status: AgentRunActivityStatus
         let activity: String
         let errorSummary: String?
     }
 
+    private(set) var aggregateArms: [AggregateArm] = []
     private(set) var ends: [End] = []
+
+    func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
+        aggregateArms.append(AggregateArm(
+            sessionID: sessionID,
+            sessionTitle: sessionTitle,
+            publisherURL: publisherURL
+        ))
+    }
 
     func start(sessionID: String, sessionTitle: String, streamID: String?) {}
 
