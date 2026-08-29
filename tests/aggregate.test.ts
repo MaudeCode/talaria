@@ -67,6 +67,22 @@ describe("makeAggregate", () => {
     ).toBeNull();
   });
 
+  it("keeps capped row membership stable across heartbeat timestamps", () => {
+    const sessions = ["run-1", "run-2", "run-3", "run-4", "run-5", "run-6"];
+    const first = makeAggregate(
+      sessions.map((sessionId, index) => state(sessionId, "running", now + index)),
+      now
+    );
+    const heartbeat = makeAggregate(
+      sessions.map((sessionId, index) => state(sessionId, "running", now - index)),
+      now
+    );
+
+    expect(heartbeat?.rows.map((row) => row.sessionId)).toEqual(
+      first?.rows.map((row) => row.sessionId)
+    );
+  });
+
   it("does not update unchanged aggregates and throttles routine changes", () => {
     const previous = makeAggregate([state("a", "running")], now)!;
     const changed = makeAggregate([state("a", "running", now + 1)], now)!;
