@@ -28,7 +28,7 @@ concurrency:
 jobs:
   changes:
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 5
     outputs:
       run_ios: ${{ steps.filter.outputs.run_ios }}
@@ -59,7 +59,7 @@ jobs:
     name: Build and Test
     needs: changes
     if: needs.changes.outputs.run_ios == 'true'
-    runs-on: macos-26
+    runs-on: maude-mac
     timeout-minutes: 90
 
     env:
@@ -203,7 +203,7 @@ jobs:
     name: CI Gate
     needs: [changes, test]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 5
     steps:
       - name: Check results
