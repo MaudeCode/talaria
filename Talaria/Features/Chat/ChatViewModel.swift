@@ -1730,6 +1730,8 @@ final class ChatViewModel {
             guard let loadedAssistantIndex = result.indices[loadedUserIndex..<loadedTurnEnd]
                 .last(where: { result[$0].role == "assistant" })
             else {
+                let unresolvedHints = cachedTurn.filter { $0.isLocalSteeringHint }
+                result.insert(contentsOf: unresolvedHints, at: result.index(after: loadedUserIndex))
                 loadedSearchEnd = loadedUserIndex
                 continue
             }
@@ -5622,7 +5624,6 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorDidFinishStream() {
         flushPendingStreamingContent()
-        removeUnresolvedSteeringHints()
         responseCompletionNeedsTranscriptRefresh = false
     }
 
