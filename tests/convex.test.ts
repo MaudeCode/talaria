@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
@@ -613,6 +614,7 @@ describe("Convex relay state", () => {
   it("ends immediately when only terminal session state remains", async () => {
     const backend = testBackend();
     const now = Date.now();
+    let stateId: Id<"sessionStates">;
     await backend.run(async (ctx) => {
       await ctx.db.insert("devices", {
         userId: "user-1",
@@ -624,7 +626,7 @@ describe("Convex relay state", () => {
         createdAt: now,
         updatedAt: now,
       });
-      await ctx.db.insert("sessionStates", {
+      stateId = await ctx.db.insert("sessionStates", {
         userId: "user-1",
         deleted: false,
         publisherId: "https://hermes.example",
@@ -673,6 +675,30 @@ describe("Convex relay state", () => {
       rows: [{ sessionId: "session-1", status: "Done" }],
     });
     expect((payload.aps["dismissal-date"] as number) - (payload.aps.timestamp as number)).toBe(15);
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(stateId, {
+        eventId: "event-3",
+        revision: 3,
+        phase: "failed",
+        updatedAt: now + 1,
+        receivedAt: now + 1,
+      });
+    });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+
+    const revisedJobs = await backend.run(async (ctx) =>
+      ctx.db.query("deliveryJobs").order("asc").collect(),
+    );
+    expect(revisedJobs).toHaveLength(2);
+    expect(revisedJobs[0]?.stateFingerprint).not.toBe(revisedJobs[1]?.stateFingerprint);
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: revisedJobs[0]!._id,
+      now: now + 2,
+    })).resolves.toEqual({ status: "stale" });
+    await expect(backend.mutation(internal.delivery.claimJob, {
+      jobId: revisedJobs[1]!._id,
+      now: now + 2,
+    })).resolves.toMatchObject({ status: "ready", kind: "live_activity_end" });
   });
 
   it("retires devices and activities when cleanup expires their relay session", async () => {
