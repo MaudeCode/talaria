@@ -445,6 +445,27 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.colorHex(for: "running"), 0x0284C7)
     }
 
+    func testTerminalAggregateOverridesStalePresentation() {
+        let state = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1,
+            activeCount: 0,
+            title: "Talaria",
+            subtitle: "Agent work completed",
+            updatedAt: 100,
+            rows: [aggregateRow(sessionID: "done", phase: "completed", updatedAt: 100)]
+        )
+
+        XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(
+            state: state,
+            isStale: true
+        ))
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: true),
+            "Agent work completed"
+        )
+        XCTAssertNil(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true))
+    }
+
     private func aggregateRow(
         sessionID: String,
         phase: String,

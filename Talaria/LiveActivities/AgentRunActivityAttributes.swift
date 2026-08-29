@@ -80,11 +80,20 @@ enum TalariaAggregateLiveActivityPresentation {
     static let lockScreenRowLimit = 5
     static let expandedIslandRowLimit = 3
 
+    static func isEffectivelyStale(
+        state: TalariaAggregateActivityAttributes.ContentState,
+        isStale: Bool
+    ) -> Bool {
+        isStale && state.activeCount > 0
+    }
+
     static func headerText(
         state: TalariaAggregateActivityAttributes.ContentState,
         isStale: Bool
     ) -> String {
-        isStale ? String(localized: "Waiting for server") : state.subtitle
+        isEffectivelyStale(state: state, isStale: isStale)
+            ? String(localized: "Waiting for server")
+            : state.subtitle
     }
 
     static func statusText(_ status: String, isStale: Bool) -> String {
@@ -95,7 +104,7 @@ enum TalariaAggregateLiveActivityPresentation {
         state: TalariaAggregateActivityAttributes.ContentState,
         isStale: Bool
     ) -> String? {
-        if isStale { return "stale" }
+        if isEffectivelyStale(state: state, isStale: isStale) { return "stale" }
         return state.rows.first(where: {
             $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
         })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
