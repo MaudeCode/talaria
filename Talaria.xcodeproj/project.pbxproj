@@ -303,6 +303,47 @@
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
+		C107N0000000000000000001 /* HeroBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000101 /* HeroBadge.swift */; };
+		C107N0000000000000000002 /* OnboardingCommandPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000102 /* OnboardingCommandPill.swift */; };
+		C107N0000000000000000003 /* OnboardingField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000103 /* OnboardingField.swift */; };
+		C107N0000000000000000004 /* OnboardingStatusBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000104 /* OnboardingStatusBanner.swift */; };
+		C107N0000000000000000005 /* OnboardingStepHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000105 /* OnboardingStepHeader.swift */; };
+		C107N0000000000000000006 /* OnboardingAgentPromptCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000106 /* OnboardingAgentPromptCard.swift */; };
+		C107N0000000000000000007 /* OnboardingPageIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000107 /* OnboardingPageIndicator.swift */; };
+		C107N0000000000000000008 /* MemorySectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000108 /* MemorySectionHeader.swift */; };
+		C107N0000000000000000009 /* ProjectContextSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000109 /* ProjectContextSectionHeader.swift */; };
+		C107N0000000000000000010 /* ProjectContextSectionFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000110 /* ProjectContextSectionFooter.swift */; };
+		C107N0000000000000000011 /* MemorySectionContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000111 /* MemorySectionContent.swift */; };
+		C107N0000000000000000012 /* MemoryEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000112 /* MemoryEditSheet.swift */; };
+		C107N0000000000000000013 /* SkillCategorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000113 /* SkillCategorySection.swift */; };
+		C107N0000000000000000014 /* SkillRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000114 /* SkillRow.swift */; };
+		C107N0000000000000000015 /* SkillDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000115 /* SkillDetailView.swift */; };
+		C107N0000000000000000016 /* SkillLinkedFilesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000116 /* SkillLinkedFilesSection.swift */; };
+		C107N0000000000000000017 /* SkillLinkedFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000117 /* SkillLinkedFileView.swift */; };
+		C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */; };
+		C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */; };
+		C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000120 /* ChatScrollToBottomButton.swift */; };
+		C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000121 /* LoadOlderMessagesButton.swift */; };
+		C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000122 /* SelectableTextPresentationView.swift */; };
+		C107N0000000000000000023 /* SelectableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000123 /* SelectableTextView.swift */; };
+		C107N0000000000000000024 /* EditMessageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000124 /* EditMessageSheet.swift */; };
+		C107N0000000000000000025 /* ActivityGlowText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000125 /* ActivityGlowText.swift */; };
+		C107N0000000000000000026 /* RotatingActivityTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000126 /* RotatingActivityTitle.swift */; };
+		C107N0000000000000000027 /* GridAttachmentCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000127 /* GridAttachmentCell.swift */; };
+		C107N0000000000000000028 /* RemoteAttachmentImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000128 /* RemoteAttachmentImage.swift */; };
+		C107N0000000000000000029 /* ContextWindowPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000129 /* ContextWindowPopover.swift */; };
+		C107N0000000000000000030 /* ContextWindowInfoRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000130 /* ContextWindowInfoRow.swift */; };
+		C107N0000000000000000031 /* ComposerVoiceStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000131 /* ComposerVoiceStatusView.swift */; };
+		C107N0000000000000000032 /* ComposerVoiceControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000132 /* ComposerVoiceControlButton.swift */; };
+		C107N0000000000000000033 /* ComposerVoiceRecordingBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */; };
+		C107N0000000000000000034 /* TranscriptStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000134 /* TranscriptStatusPill.swift */; };
+		C107N0000000000000000035 /* SwiftMathLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000135 /* SwiftMathLabelView.swift */; };
+		C107N0000000000000000036 /* GoalSubmissionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000136 /* GoalSubmissionSheet.swift */; };
+		C107N0000000000000000037 /* ComposerStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000137 /* ComposerStatusView.swift */; };
+		C107N0000000000000000038 /* ComposerTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000138 /* ComposerTextView.swift */; };
+		C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */; };
+		C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */; };
+		C107N0000000000000000041 /* ApprovalBypassStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */; };
 		C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000101 /* ModelBreakdownRow.swift */; };
 		C107L0000000000000000002 /* DailyTokenRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* DailyTokenRow.swift */; };
 		C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* ActivitySummaryRow.swift */; };
@@ -799,6 +840,47 @@
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		C107N0000000000000000101 /* HeroBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeroBadge.swift; sourceTree = "<group>"; };
+		C107N0000000000000000102 /* OnboardingCommandPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCommandPill.swift; sourceTree = "<group>"; };
+		C107N0000000000000000103 /* OnboardingField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingField.swift; sourceTree = "<group>"; };
+		C107N0000000000000000104 /* OnboardingStatusBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStatusBanner.swift; sourceTree = "<group>"; };
+		C107N0000000000000000105 /* OnboardingStepHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStepHeader.swift; sourceTree = "<group>"; };
+		C107N0000000000000000106 /* OnboardingAgentPromptCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAgentPromptCard.swift; sourceTree = "<group>"; };
+		C107N0000000000000000107 /* OnboardingPageIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPageIndicator.swift; sourceTree = "<group>"; };
+		C107N0000000000000000108 /* MemorySectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionHeader.swift; sourceTree = "<group>"; };
+		C107N0000000000000000109 /* ProjectContextSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectContextSectionHeader.swift; sourceTree = "<group>"; };
+		C107N0000000000000000110 /* ProjectContextSectionFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectContextSectionFooter.swift; sourceTree = "<group>"; };
+		C107N0000000000000000111 /* MemorySectionContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionContent.swift; sourceTree = "<group>"; };
+		C107N0000000000000000112 /* MemoryEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryEditSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000113 /* SkillCategorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCategorySection.swift; sourceTree = "<group>"; };
+		C107N0000000000000000114 /* SkillRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRow.swift; sourceTree = "<group>"; };
+		C107N0000000000000000115 /* SkillDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000116 /* SkillLinkedFilesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFilesSection.swift; sourceTree = "<group>"; };
+		C107N0000000000000000117 /* SkillLinkedFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFileView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageBlock.swift; sourceTree = "<group>"; };
+		C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageRow.swift; sourceTree = "<group>"; };
+		C107N0000000000000000120 /* ChatScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollToBottomButton.swift; sourceTree = "<group>"; };
+		C107N0000000000000000121 /* LoadOlderMessagesButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadOlderMessagesButton.swift; sourceTree = "<group>"; };
+		C107N0000000000000000122 /* SelectableTextPresentationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextPresentationView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000123 /* SelectableTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000124 /* EditMessageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMessageSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000125 /* ActivityGlowText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityGlowText.swift; sourceTree = "<group>"; };
+		C107N0000000000000000126 /* RotatingActivityTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotatingActivityTitle.swift; sourceTree = "<group>"; };
+		C107N0000000000000000127 /* GridAttachmentCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridAttachmentCell.swift; sourceTree = "<group>"; };
+		C107N0000000000000000128 /* RemoteAttachmentImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAttachmentImage.swift; sourceTree = "<group>"; };
+		C107N0000000000000000129 /* ContextWindowPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowPopover.swift; sourceTree = "<group>"; };
+		C107N0000000000000000130 /* ContextWindowInfoRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowInfoRow.swift; sourceTree = "<group>"; };
+		C107N0000000000000000131 /* ComposerVoiceStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceStatusView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000132 /* ComposerVoiceControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceControlButton.swift; sourceTree = "<group>"; };
+		C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceRecordingBar.swift; sourceTree = "<group>"; };
+		C107N0000000000000000134 /* TranscriptStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptStatusPill.swift; sourceTree = "<group>"; };
+		C107N0000000000000000135 /* SwiftMathLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftMathLabelView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000136 /* GoalSubmissionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalSubmissionSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000137 /* ComposerStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerStatusView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000138 /* ComposerTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspacePickerSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerAttachmentThumbnailView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalBypassStatusPill.swift; sourceTree = "<group>"; };
 		C107L0000000000000000101 /* ModelBreakdownRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelBreakdownRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000102 /* DailyTokenRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTokenRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000103 /* ActivitySummaryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySummaryRow.swift; sourceTree = "<group>"; };
@@ -1310,6 +1392,13 @@
 				C15200000000000000000005 /* OnboardingTailscalePage.swift */,
 				C15200000000000000000002 /* OnboardingWelcomePage.swift */,
 				1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */,
+				C107N0000000000000000101 /* HeroBadge.swift */,
+				C107N0000000000000000102 /* OnboardingCommandPill.swift */,
+				C107N0000000000000000103 /* OnboardingField.swift */,
+				C107N0000000000000000104 /* OnboardingStatusBanner.swift */,
+				C107N0000000000000000105 /* OnboardingStepHeader.swift */,
+				C107N0000000000000000106 /* OnboardingAgentPromptCard.swift */,
+				C107N0000000000000000107 /* OnboardingPageIndicator.swift */,
 				1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */,
 			);
 			path = Onboarding;
@@ -1397,6 +1486,30 @@
 				C107A000000000000000015 /* ChatToolbarActionSlot.swift */,
 				C107A000000000000000016 /* ChatToolbarSubtitleResolver.swift */,
 				C05100000000000000000011 /* ChatTranscriptView.swift */,
+				C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */,
+				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
+				C107N0000000000000000120 /* ChatScrollToBottomButton.swift */,
+				C107N0000000000000000121 /* LoadOlderMessagesButton.swift */,
+				C107N0000000000000000122 /* SelectableTextPresentationView.swift */,
+				C107N0000000000000000123 /* SelectableTextView.swift */,
+				C107N0000000000000000124 /* EditMessageSheet.swift */,
+				C107N0000000000000000125 /* ActivityGlowText.swift */,
+				C107N0000000000000000126 /* RotatingActivityTitle.swift */,
+				C107N0000000000000000127 /* GridAttachmentCell.swift */,
+				C107N0000000000000000128 /* RemoteAttachmentImage.swift */,
+				C107N0000000000000000129 /* ContextWindowPopover.swift */,
+				C107N0000000000000000130 /* ContextWindowInfoRow.swift */,
+				C107N0000000000000000131 /* ComposerVoiceStatusView.swift */,
+				C107N0000000000000000132 /* ComposerVoiceControlButton.swift */,
+				C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */,
+				C107N0000000000000000134 /* TranscriptStatusPill.swift */,
+				C107N0000000000000000135 /* SwiftMathLabelView.swift */,
+				C107N0000000000000000136 /* GoalSubmissionSheet.swift */,
+				C107N0000000000000000137 /* ComposerStatusView.swift */,
+				C107N0000000000000000138 /* ComposerTextView.swift */,
+				C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */,
+				C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */,
+				C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */,
 				C05100000000000000000012 /* ChatMessageActions.swift */,
 				C05100000000000000000013 /* ChatGoalControls.swift */,
 				C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */,
@@ -1669,6 +1782,11 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F70000000203 /* MemoryView.swift */,
+				C107N0000000000000000108 /* MemorySectionHeader.swift */,
+				C107N0000000000000000109 /* ProjectContextSectionHeader.swift */,
+				C107N0000000000000000110 /* ProjectContextSectionFooter.swift */,
+				C107N0000000000000000111 /* MemorySectionContent.swift */,
+				C107N0000000000000000112 /* MemoryEditSheet.swift */,
 				1A2B3C4D5E6F70000000205 /* MemoryViewModel.swift */,
 			);
 			path = Memory;
@@ -1678,6 +1796,11 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F70000000213 /* SkillsView.swift */,
+				C107N0000000000000000113 /* SkillCategorySection.swift */,
+				C107N0000000000000000114 /* SkillRow.swift */,
+				C107N0000000000000000115 /* SkillDetailView.swift */,
+				C107N0000000000000000116 /* SkillLinkedFilesSection.swift */,
+				C107N0000000000000000117 /* SkillLinkedFileView.swift */,
 				1A2B3C4D5E6F70000000215 /* SkillsViewModel.swift */,
 			);
 			path = Skills;
@@ -2077,6 +2200,47 @@
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
 				C09200000000000000000001 /* AppFont.swift in Sources */,
 				1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */,
+				C107N0000000000000000001 /* HeroBadge.swift in Sources */,
+				C107N0000000000000000002 /* OnboardingCommandPill.swift in Sources */,
+				C107N0000000000000000003 /* OnboardingField.swift in Sources */,
+				C107N0000000000000000004 /* OnboardingStatusBanner.swift in Sources */,
+				C107N0000000000000000005 /* OnboardingStepHeader.swift in Sources */,
+				C107N0000000000000000006 /* OnboardingAgentPromptCard.swift in Sources */,
+				C107N0000000000000000007 /* OnboardingPageIndicator.swift in Sources */,
+				C107N0000000000000000008 /* MemorySectionHeader.swift in Sources */,
+				C107N0000000000000000009 /* ProjectContextSectionHeader.swift in Sources */,
+				C107N0000000000000000010 /* ProjectContextSectionFooter.swift in Sources */,
+				C107N0000000000000000011 /* MemorySectionContent.swift in Sources */,
+				C107N0000000000000000012 /* MemoryEditSheet.swift in Sources */,
+				C107N0000000000000000013 /* SkillCategorySection.swift in Sources */,
+				C107N0000000000000000014 /* SkillRow.swift in Sources */,
+				C107N0000000000000000015 /* SkillDetailView.swift in Sources */,
+				C107N0000000000000000016 /* SkillLinkedFilesSection.swift in Sources */,
+				C107N0000000000000000017 /* SkillLinkedFileView.swift in Sources */,
+				C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */,
+				C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */,
+				C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */,
+				C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */,
+				C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */,
+				C107N0000000000000000023 /* SelectableTextView.swift in Sources */,
+				C107N0000000000000000024 /* EditMessageSheet.swift in Sources */,
+				C107N0000000000000000025 /* ActivityGlowText.swift in Sources */,
+				C107N0000000000000000026 /* RotatingActivityTitle.swift in Sources */,
+				C107N0000000000000000027 /* GridAttachmentCell.swift in Sources */,
+				C107N0000000000000000028 /* RemoteAttachmentImage.swift in Sources */,
+				C107N0000000000000000029 /* ContextWindowPopover.swift in Sources */,
+				C107N0000000000000000030 /* ContextWindowInfoRow.swift in Sources */,
+				C107N0000000000000000031 /* ComposerVoiceStatusView.swift in Sources */,
+				C107N0000000000000000032 /* ComposerVoiceControlButton.swift in Sources */,
+				C107N0000000000000000033 /* ComposerVoiceRecordingBar.swift in Sources */,
+				C107N0000000000000000034 /* TranscriptStatusPill.swift in Sources */,
+				C107N0000000000000000035 /* SwiftMathLabelView.swift in Sources */,
+				C107N0000000000000000036 /* GoalSubmissionSheet.swift in Sources */,
+				C107N0000000000000000037 /* ComposerStatusView.swift in Sources */,
+				C107N0000000000000000038 /* ComposerTextView.swift in Sources */,
+				C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */,
+				C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */,
+				C107N0000000000000000041 /* ApprovalBypassStatusPill.swift in Sources */,
 				C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */,
 				C107L0000000000000000002 /* DailyTokenRow.swift in Sources */,
 				C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */,
