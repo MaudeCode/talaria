@@ -120,6 +120,14 @@ class TestFlightBuildNumberSelector
     selected
   end
 
+  def ensure_open_train!(bundle_id:, marketing_version:)
+    enforce_open_train!(bundle_id: bundle_id, marketing_version: marketing_version)
+  end
+
+  def latest_build_number(bundle_id:, marketing_version:)
+    latest_uploaded_build_number(bundle_id: bundle_id, marketing_version: marketing_version)
+  end
+
   private
 
   # Fails fast — before the ~15-minute archive step — when App Store Connect
@@ -134,8 +142,7 @@ class TestFlightBuildNumberSelector
     if blocking
       raise SelectionError,
             "The #{marketing_version} pre-release train is closed: App Store version #{blocking} is already approved. " \
-            "Bump MARKETING_VERSION in Talaria.xcodeproj/project.pbxproj above #{blocking}, land it on main, " \
-            "and re-run this workflow (see TESTFLIGHT.md, Upload External-Capable Build)."
+            "Prepare a version above #{blocking} with scripts/prepare-release and publish a new signed tag."
     end
 
     warn "Pre-release train #{marketing_version} is open: no approved App Store version at or above it."

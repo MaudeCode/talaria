@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+release_ci_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+tag_signature_verified() {
+  local tag="$1"
+  local repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+  local ref_json object_type object_sha verified
+
+  ref_json="$(gh api "repos/${repository}/git/ref/tags/${tag}")"
+  object_type="$(printf '%s' "$ref_json" | ruby -rjson -e 'puts JSON.parse($stdin.read).dig("object", "type")')"
+  object_sha="$(printf '%s' "$ref_json" | ruby -rjson -e 'puts JSON.parse($stdin.read).dig("object", "sha")')"
+  [[ "$object_type" == "tag" ]] || return 1
+
+  verified="$(gh api "repos/${repository}/git/tags/${object_sha}" --jq '.verification.verified')"
+  [[ "$verified" == "true" ]]
+}
+
+validate_release_tag() {
+  local tag="${RELEASE_TAG:?RELEASE_TAG is required}"
+  local expected_sha="${EXPECTED_SHA:-}"
+  local version commit project_state project_version project_build
+
+  if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    echo "Release tag must use vX.Y.Z numeric semantic versioning. Received: ${tag}" >&2
+    return 1
+  fi
+  version="${tag#v}"
+
+  if [[ "$(git cat-file -t "refs/tags/${tag}" 2>/dev/null)" != "tag" ]]; then
+    echo "Release tag ${tag} must be an annotated signed tag." >&2
+    return 1
+  fi
+  if ! tag_signature_verified "$tag"; then
+    echo "GitHub did not verify the signature for release tag ${tag}." >&2
+    return 1
+  fi
+
+  commit="$(git rev-list -n 1 "refs/tags/${tag}")"
+  if [[ -n "$expected_sha" && "$commit" != "$expected_sha" ]]; then
+    echo "Release tag ${tag} resolves to ${commit}, expected ${expected_sha}." >&2
+    return 1
+  fi
+  if ! git merge-base --is-ancestor "$commit" origin/main; then
+    echo "Release tag ${tag} commit ${commit} is not contained in origin/main." >&2
+    return 1
+  fi
+
+  project_state="$(ruby -I"$release_ci_dir" -rrelease_project -e 'state = TalariaReleaseProject.new.read_state; puts "#{state.fetch(:marketing_version)} #{state.fetch(:build_number)}"')"
+  read -r project_version project_build <<< "$project_state"
+  if [[ "$project_version" != "$version" ]]; then
+    echo "Release tag ${tag} does not match project MARKETING_VERSION ${project_version}." >&2
+    return 1
+  fi
+
+  echo "Verified signed release tag ${tag} at ${commit}, version ${project_version}, build ${project_build}."
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  validate_release_tag
+fi

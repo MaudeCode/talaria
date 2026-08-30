@@ -4,27 +4,38 @@ set -euo pipefail
 require_successful_main_ci() {
   local repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
   local sha="${GITHUB_SHA:?GITHUB_SHA is required}"
+  local wait_seconds="${WAIT_FOR_MAIN_CI_SECONDS:-0}"
+  local poll_seconds="${MAIN_CI_POLL_SECONDS:-15}"
+  local deadline=$((SECONDS + wait_seconds))
   local run_id
 
-  run_id="$(
-    gh run list \
-      --repo "$repository" \
-      --workflow pr-ci.yml \
-      --branch main \
-      --commit "$sha" \
-      --event push \
-      --status success \
-      --limit 1 \
-      --json databaseId \
-      --jq '.[0].databaseId // empty'
-  )"
+  while true; do
+    run_id="$(
+      gh run list \
+        --repo "$repository" \
+        --workflow pr-ci.yml \
+        --branch main \
+        --commit "$sha" \
+        --event push \
+        --status success \
+        --limit 1 \
+        --json databaseId \
+        --jq '.[0].databaseId // empty'
+    )"
 
-  if [[ -z "$run_id" ]]; then
-    echo "No successful main-push CI run found for exact commit $sha. Wait for CI or run this workflow from a validated main commit." >&2
-    return 1
-  fi
+    if [[ -n "$run_id" ]]; then
+      echo "Verified successful CI run $run_id for exact commit $sha."
+      return 0
+    fi
 
-  echo "Verified successful CI run $run_id for exact commit $sha."
+    if (( SECONDS >= deadline )); then
+      echo "No successful main-push CI run found for exact commit $sha. Wait for CI or inspect the failed run." >&2
+      return 1
+    fi
+
+    echo "Waiting for successful main CI on exact commit $sha."
+    sleep "$poll_seconds"
+  done
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -1,0 +1,81 @@
+name: Repository Tooling
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Optional branch, tag, or commit to validate.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    name: Repository Tooling
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 5
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Prepare tooling runtime
+        run: |
+          sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Run actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check
+          tar -xzf "${archive}" actionlint
+          ./actionlint
+
+      - name: Test repository tooling
+        run: |
+          ruby ci/select_testflight_build_number_test.rb
+          ruby ci/release_project_test.rb
+          ruby ci/test_ios_runner_test.rb
+          ci/require_successful_main_ci_test.sh
+          ci/prepare_release_test.sh
+          ci/validate_release_tag_test.sh
+
+      - name: Validate property lists
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from plistlib import load
+
+          for path in Path(".").rglob("*.plist"):
+              if ".git" not in path.parts:
+                  with path.open("rb") as stream:
+                      load(stream)
+          PY
+
+      - name: Check script syntax
+        run: |
+          set -euo pipefail
+          bash -n ci/prepare_release_test.sh ci/require_successful_main_ci ci/require_successful_main_ci_test.sh ci/validate_release_tag ci/validate_release_tag_test.sh scripts/check-swift-file-sizes scripts/webui-json
+          zsh -n ci/verify_bundle_versions scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/setup-ios-test-pool scripts/test-ios scripts/validate-release scripts/validate-upstream-contract
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
+          for file in ci/*.rb scripts/prepare-release; do ruby -c "${file}"; done

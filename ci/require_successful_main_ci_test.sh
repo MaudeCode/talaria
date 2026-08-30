@@ -24,4 +24,19 @@ if require_successful_main_ci >/dev/null 2>&1; then
   exit 1
 fi
 
+attempt_file="$(mktemp)"
+trap 'rm -f "$attempt_file"' EXIT
+printf '0\n' > "$attempt_file"
+gh() {
+  local attempts
+  attempts="$(cat "$attempt_file")"
+  attempts=$((attempts + 1))
+  printf '%s\n' "$attempts" > "$attempt_file"
+  [[ "$attempts" -ge 2 ]] && printf '84\n'
+}
+sleep() { :; }
+export WAIT_FOR_MAIN_CI_SECONDS=1
+export MAIN_CI_POLL_SECONDS=0
+[[ "$(require_successful_main_ci)" == *"Verified successful CI run 84"* ]]
+
 echo "require_successful_main_ci tests passed."

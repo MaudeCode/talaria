@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed vX.Y.Z tag to validate and build.
+        required: true
+        type: string
+      upload:
+        description: Upload the built IPA to TestFlight after validation.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: testflight-release
+  cancel-in-progress: false
+
+jobs:
+  validate-release:
+    name: Validate release tag
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 95
+    outputs:
+      ref: ${{ steps.release.outputs.ref }}
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "ref=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+
+      - name: Prepare Ruby runtime
+        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Validate signed tag and exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.ref }}
+        run: |
+          set -euo pipefail
+          ci/validate_release_tag
+          sha="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+        id: tag
+
+      - name: Verify exact commit passed main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_SHA: ${{ steps.tag.outputs.sha }}
+          WAIT_FOR_MAIN_CI_SECONDS: "5400"
+          MAIN_CI_POLL_SECONDS: "30"
+        run: ci/require_successful_main_ci
+
+  tooling:
+    needs: validate-release
+    uses: ./.github/workflows/repository-tooling.yml
+    with:
+      ref: ${{ needs.validate-release.outputs.ref }}
+
+  ios-build:
+    needs: [validate-release, tooling]
+    uses: ./.github/workflows/ios-release-build.yml
+    with:
+      ref: ${{ needs.validate-release.outputs.ref }}
+    secrets: inherit
+
+  validate-artifacts:
+    name: Validate release artifacts
+    needs: ios-build
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 5
+    steps:
+      - name: Download IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-ipa
+          path: ios-ipa
+
+      - name: Download dSYMs
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-dsyms
+          path: ios-dsyms
+
+      - name: Verify artifacts exist
+        run: |
+          set -euo pipefail
+          test -s ios-ipa/*.ipa
+          test -d ios-dsyms
+
+  publish-ios:
+    name: Publish iOS app
+    needs: [validate-release, validate-artifacts]
+    if: github.event_name == 'push' || inputs.upload == true
+    runs-on: ["ghar-set-maudecode"]
+    environment: testflight
+    timeout-minutes: 30
+    steps:
+      - name: Download IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-ipa
+          path: ios-ipa
+
+      - name: Resolve IPA path
+        id: ipa
+        run: |
+          set -euo pipefail
+          ipa_path="$(find ios-ipa -maxdepth 1 -name '*.ipa' -type f | head -n 1)"
+          test -n "${ipa_path}"
+          echo "path=${ipa_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload to TestFlight
+        uses: apple-actions/upload-testflight-build@v4
+        with:
+          app-path: ${{ steps.ipa.outputs.path }}
+          app-type: ios
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          uses-non-exempt-encryption: "false"
+          wait-for-processing: "true"
+          backend: AppStoreAPI
