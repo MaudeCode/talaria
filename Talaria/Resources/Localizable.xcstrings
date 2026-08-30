@@ -10,6 +10,9 @@
     "Alerts & Haptics" : {
 
     },
+    "All Devices" : {
+
+    },
     "Connect %@" : {
 
     },
@@ -49,6 +52,9 @@
     "Signed Out" : {
 
     },
+    "This iPhone" : {
+
+    },
     "Sign out of Talaria Relay?" : {
 
     },
@@ -56,6 +62,21 @@
 
     },
     "Talaria Relay" : {
+
+    },
+    "Unenroll" : {
+
+    },
+    "Unenroll %@?" : {
+
+    },
+    "Unenroll Server?" : {
+
+    },
+    "Unenrolling" : {
+
+    },
+    "Choose whether %@ stops sending relay updates to this iPhone or every device on this Talaria Relay account." : {
 
     },
     "This signs this iPhone out of Talaria Relay. Your Hermes server settings stay on the device." : {

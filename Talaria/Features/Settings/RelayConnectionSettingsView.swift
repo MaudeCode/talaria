@@ -177,11 +177,19 @@ struct RelayAccountSettingsSection: View {
 }
 
 struct RelayConnectionManagementView: View {
+    private enum UnenrollmentScope {
+        case thisIPhone
+        case allDevices
+    }
+
     @Bindable var authManager: AuthManager
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var credentials: TalariaRelayCredentials?
     @State private var connectingServerID: String?
+    @State private var unenrollingServerID: String?
+    @State private var unenrollmentAccount: ServerAccount?
+    @State private var isPresentingUnenrollment = false
     @State private var failedServerID: String?
     @State private var errorMessage: String?
     @State private var isConfirmingDisconnect = false
@@ -205,7 +213,7 @@ struct RelayConnectionManagementView: View {
                 Button("Sign Out of Talaria Relay", role: .destructive) {
                     isConfirmingDisconnect = true
                 }
-                .disabled(isDisconnecting || connectingServerID != nil || credentials == nil)
+                .disabled(isBusy || credentials == nil)
                 .accessibilityIdentifier("settings-disconnect-relay")
             } footer: {
                 Text("Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone.")
@@ -214,7 +222,27 @@ struct RelayConnectionManagementView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Talaria Relay")
         .navigationBarTitleDisplayMode(.inline)
-        .task { credentials = TalariaRelayConfigurationStore.load() }
+        .task { await loadCredentials() }
+        .alert(
+            unenrollmentAccount.map { String(localized: "Unenroll \($0.displayName)?") }
+                ?? String(localized: "Unenroll Server?"),
+            isPresented: $isPresentingUnenrollment,
+            presenting: unenrollmentAccount
+        ) { account in
+            Button("This iPhone", role: .destructive) {
+                Task { await unenroll(account, scope: .thisIPhone) }
+            }
+            .accessibilityIdentifier("settings-unenroll-this-iphone")
+
+            Button("All Devices", role: .destructive) {
+                Task { await unenroll(account, scope: .allDevices) }
+            }
+            .accessibilityIdentifier("settings-unenroll-all-devices")
+
+            Button("Cancel", role: .cancel) {}
+        } message: { account in
+            Text("Choose whether \(account.displayName) stops sending relay updates to this iPhone or every device on this Talaria Relay account.")
+        }
         .alert("Sign out of Talaria Relay?", isPresented: $isConfirmingDisconnect) {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
@@ -243,8 +271,6 @@ struct RelayConnectionManagementView: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .contain)
-        .accessibilityValue(failedServerID == account.id ? String(localized: "Failed") : state.title)
         .accessibilityIdentifier("settings-relay-server-\(account.id)")
     }
 
@@ -265,21 +291,42 @@ struct RelayConnectionManagementView: View {
 
     @ViewBuilder
     private func serverStatus(_ account: ServerAccount, state: TalariaRelayConnectionState) -> some View {
-        if connectingServerID == account.id {
+        if connectingServerID == account.id || unenrollingServerID == account.id {
             ProgressView()
-                .accessibilityLabel("Connecting")
+                .accessibilityLabel(connectingServerID == account.id ? "Connecting" : "Unenrolling")
         } else if state == .unpaired || failedServerID == account.id {
             Button(failedServerID == account.id ? "Retry" : "Connect") {
                 Task { await pair(account) }
             }
             .buttonStyle(.borderless)
             .font(.subheadline.weight(.semibold))
-            .disabled(connectingServerID != nil || isDisconnecting)
+            .disabled(isBusy)
+        } else if state == .connected {
+            VStack(alignment: .trailing, spacing: 5) {
+                Label(state.title, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.green)
+
+                Button("Unenroll", role: .destructive) {
+                    unenrollmentAccount = account
+                    isPresentingUnenrollment = true
+                }
+                .buttonStyle(.borderless)
+                .font(.caption.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                .contentShape(Rectangle())
+                .disabled(isBusy)
+                .accessibilityIdentifier("settings-unenroll-server-\(account.id)")
+            }
         } else {
-            Label(state.title, systemImage: state == .connected ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+            Label(state.title, systemImage: "exclamationmark.circle.fill")
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(state == .connected ? Color.green : Color.secondary)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    private var isBusy: Bool {
+        connectingServerID != nil || unenrollingServerID != nil || isDisconnecting
     }
 
     private func state(for account: ServerAccount) -> TalariaRelayConnectionState {
@@ -288,9 +335,27 @@ struct RelayConnectionManagementView: View {
     }
 
     @MainActor
+    private func loadCredentials() async {
+        credentials = TalariaRelayConfigurationStore.load()
+        guard let credentials else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
+            return
+        }
+        #endif
+        guard let subscriptions = try? await TalariaRelayClient(credentials: credentials).publisherSubscriptions() else {
+            return
+        }
+        try? TalariaRelayConfigurationStore.replacePairedPublishers(
+            subscriptions.filter(\.subscribed).map(\.publisherId)
+        )
+        self.credentials = TalariaRelayConfigurationStore.load()
+    }
+
+    @MainActor
     private func pair(_ account: ServerAccount) async {
         guard connectingServerID == nil,
-              !isDisconnecting,
+              !isBusy,
               let credentials,
               let server = URL(string: account.urlString) else { return }
         connectingServerID = account.id
@@ -311,9 +376,33 @@ struct RelayConnectionManagementView: View {
     }
 
     @MainActor
+    private func unenroll(_ account: ServerAccount, scope: UnenrollmentScope) async {
+        guard !isBusy,
+              let credentials,
+              let server = URL(string: account.urlString),
+              let publisherID = TalariaRelayClient.originURL(server) else { return }
+        unenrollingServerID = account.id
+        errorMessage = nil
+        defer { unenrollingServerID = nil }
+        do {
+            let client = TalariaRelayClient(credentials: credentials)
+            switch scope {
+            case .thisIPhone:
+                try await client.setPublisherSubscription(publisherID, subscribed: false)
+            case .allDevices:
+                try await client.revokePublisher(publisherID)
+            }
+            try TalariaRelayConfigurationStore.removePairedPublisher(publisherID)
+            self.credentials = TalariaRelayConfigurationStore.load()
+            try await TalariaAggregateLiveActivityManager.shared.refresh()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
     private func disconnect() async {
-        guard !isDisconnecting,
-              connectingServerID == nil,
+        guard !isBusy,
               let credentials else { return }
         isDisconnecting = true
         errorMessage = nil
@@ -345,6 +434,10 @@ enum RelayConnectionOperations {
             invitation: invitation,
             relayURL: credentials.baseURL,
             publisherID: publisherID
+        )
+        try await TalariaRelayClient(credentials: credentials).setPublisherSubscription(
+            publisherID,
+            subscribed: true
         )
         try TalariaRelayConfigurationStore.recordPairedPublisher(publisherID)
         try await TalariaAggregateLiveActivityManager.shared.refresh()

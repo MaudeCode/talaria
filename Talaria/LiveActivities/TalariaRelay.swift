@@ -63,6 +63,26 @@ enum TalariaRelayConfigurationStore {
         try save(credentials, keychain: keychain)
     }
 
+    static func removePairedPublisher(
+        _ publisherURL: URL,
+        keychain: any KeychainStoring = KeychainStore()
+    ) throws {
+        guard var credentials = load(keychain: keychain),
+              let publisherID = TalariaRelayClient.originURL(publisherURL)?.absoluteString else { return }
+        credentials.pairedPublisherIDs = (credentials.pairedPublisherIDs ?? [])
+            .filter { $0 != publisherID }
+        try save(credentials, keychain: keychain)
+    }
+
+    static func replacePairedPublishers(
+        _ publisherIDs: [String],
+        keychain: any KeychainStoring = KeychainStore()
+    ) throws {
+        guard var credentials = load(keychain: keychain) else { return }
+        credentials.pairedPublisherIDs = Set(publisherIDs.compactMap(TalariaRelayClient.originIdentifier)).sorted()
+        try save(credentials, keychain: keychain)
+    }
+
     static func connectionState(
         for server: URL,
         credentials: TalariaRelayCredentials?,
@@ -108,6 +128,16 @@ struct TalariaRelayClient {
 
     struct SnapshotResponse: Decodable {
         var aggregate: TalariaAggregateActivityAttributes.ContentState?
+    }
+
+    struct PublisherSubscription: Decodable, Equatable {
+        var publisherId: String
+        var label: String
+        var subscribed: Bool
+    }
+
+    private struct PublisherSubscriptionsResponse: Decodable {
+        var publishers: [PublisherSubscription]
     }
 
     enum ClientError: LocalizedError {
@@ -175,6 +205,44 @@ struct TalariaRelayClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let data = try await Self.responseData(for: request, session: session)
         return try JSONDecoder().decode(PublisherInvitationResponse.self, from: data).invitation
+    }
+
+    func publisherSubscriptions() async throws -> [PublisherSubscription] {
+        let request = authenticatedRequest(
+            url: Self.endpoint(
+                credentials.baseURL,
+                "v1/devices/\(credentials.deviceID)/publisher-subscriptions"
+            ),
+            method: "GET"
+        )
+        let data = try await Self.responseData(for: request, session: session)
+        return try JSONDecoder().decode(PublisherSubscriptionsResponse.self, from: data).publishers
+    }
+
+    func setPublisherSubscription(_ publisherID: URL, subscribed: Bool) async throws {
+        guard let canonicalPublisherID = Self.originURL(publisherID)?.absoluteString else {
+            throw ClientError.invalidURL
+        }
+        try await send(
+            path: "v1/devices/\(credentials.deviceID)/publisher-subscriptions",
+            method: "PUT",
+            body: try JSONSerialization.data(withJSONObject: [
+                "publisherId": canonicalPublisherID,
+                "subscribed": subscribed
+            ])
+        )
+    }
+
+    func revokePublisher(_ publisherID: URL) async throws {
+        guard let canonicalPublisherID = Self.originURL(publisherID)?.absoluteString,
+              var components = URLComponents(
+                url: Self.endpoint(credentials.baseURL, "v1/publisher-enrollment"),
+                resolvingAgainstBaseURL: false
+              ) else { throw ClientError.invalidURL }
+        components.queryItems = [URLQueryItem(name: "publisherId", value: canonicalPublisherID)]
+        guard let url = components.url else { throw ClientError.invalidURL }
+        let request = authenticatedRequest(url: url, method: "DELETE")
+        _ = try await Self.responseData(for: request, session: session)
     }
 
     func configureDevice(

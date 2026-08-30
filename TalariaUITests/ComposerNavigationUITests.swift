@@ -235,6 +235,16 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Talaria Relay"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://ui-test.talaria.invalid"].exists)
         XCTAssertFalse(app.buttons["Connect"].exists)
+        let unenroll = app.buttons["Unenroll"].firstMatch
+        XCTAssertTrue(unenroll.exists)
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: unenroll.frame.midX / app.frame.width,
+            dy: unenroll.frame.midY / app.frame.height
+        )).tap()
+        XCTAssertTrue(app.buttons["This iPhone"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["All Devices"].exists)
+        XCTAssertTrue(app.buttons["Cancel"].exists)
+        app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
     }
 

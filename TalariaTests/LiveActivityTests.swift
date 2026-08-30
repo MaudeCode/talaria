@@ -21,6 +21,30 @@ final class LiveActivityTests: XCTestCase {
 
         try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
         XCTAssertEqual(TalariaRelayConfigurationStore.load(keychain: keychain), credentials)
+        try TalariaRelayConfigurationStore.recordPairedPublisher(
+            try XCTUnwrap(URL(string: "https://one.example")),
+            keychain: keychain
+        )
+        try TalariaRelayConfigurationStore.recordPairedPublisher(
+            try XCTUnwrap(URL(string: "https://two.example")),
+            keychain: keychain
+        )
+        try TalariaRelayConfigurationStore.removePairedPublisher(
+            try XCTUnwrap(URL(string: "https://one.example")),
+            keychain: keychain
+        )
+        XCTAssertEqual(
+            TalariaRelayConfigurationStore.load(keychain: keychain)?.pairedPublisherIDs,
+            ["https://two.example"]
+        )
+        try TalariaRelayConfigurationStore.replacePairedPublishers(
+            ["https://THREE.example:443/path", "invalid"],
+            keychain: keychain
+        )
+        XCTAssertEqual(
+            TalariaRelayConfigurationStore.load(keychain: keychain)?.pairedPublisherIDs,
+            ["https://three.example"]
+        )
         var expired = credentials
         expired.expiresAt = .distantPast
         XCTAssertTrue(expired.isExpired)
@@ -157,6 +181,12 @@ final class LiveActivityTests: XCTestCase {
                 body = #"{"userId":"user-1","sessionToken":"secret","expiresAt":1900000000000}"#
             case "/v1/pairings/publisher":
                 body = #"{"invitation":"invite-once","expiresAt":1787845600000}"#
+            case _ where request.url?.path.hasSuffix("/publisher-subscriptions") == true:
+                body = request.httpMethod == "GET"
+                    ? #"{"publishers":[{"publisherId":"https://hermes.example.com","label":"Home","subscribed":true}]}"#
+                    : #"{"ok":true}"#
+            case "/v1/publisher-enrollment":
+                body = #"{"ok":true}"#
             case "/api/talaria/relay/pair":
                 body = #"{"ok":true,"publisher_id":"https://hermes.example.com"}"#
             case "/v1/activity-snapshot":
@@ -301,6 +331,34 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(perSessionRegistration["sessionId"] as? String, "session-1")
         XCTAssertEqual(perSessionRegistration["attributesType"] as? String, "AgentRunActivityAttributes")
         XCTAssertEqual(perSessionRegistration["seededLocally"] as? Bool, false)
+
+        let publisherID = try XCTUnwrap(URL(string: "https://hermes.example.com"))
+        try await client.setPublisherSubscription(publisherID, subscribed: false)
+        let subscriptionRequest = try XCTUnwrap(requests.last)
+        let subscriptionBody = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(apiTestBodyData(from: subscriptionRequest)))
+                as? [String: Any]
+        )
+        XCTAssertEqual(subscriptionRequest.httpMethod, "PUT")
+        XCTAssertEqual(subscriptionBody["publisherId"] as? String, "https://hermes.example.com")
+        XCTAssertEqual(subscriptionBody["subscribed"] as? Bool, false)
+        let subscriptions = try await client.publisherSubscriptions()
+        XCTAssertEqual(subscriptions, [
+            TalariaRelayClient.PublisherSubscription(
+                publisherId: "https://hermes.example.com",
+                label: "Home",
+                subscribed: true
+            )
+        ])
+        try await client.revokePublisher(publisherID)
+        let revokeRequest = try XCTUnwrap(requests.last)
+        XCTAssertEqual(revokeRequest.httpMethod, "DELETE")
+        XCTAssertEqual(revokeRequest.url?.path, "/v1/publisher-enrollment")
+        XCTAssertEqual(
+            URLComponents(url: try XCTUnwrap(revokeRequest.url), resolvingAgainstBaseURL: false)?
+                .queryItems?.first,
+            URLQueryItem(name: "publisherId", value: "https://hermes.example.com")
+        )
 
         try await client.unregister(activityID: "activity-1")
         try await client.revokeDevice()
