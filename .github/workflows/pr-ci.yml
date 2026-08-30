@@ -209,10 +209,11 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
+      - name: Prepare tool cache
+        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
-        env:
-          RUNNER_TOOL_CACHE: ${{ runner.temp }}/tool-cache
         with:
           ruby-version: "3.3"
 
