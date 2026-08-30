@@ -1,29 +1,20 @@
-# Weekly upstream drift digest. Runs on a Monday cron; run manually from the
-# Actions tab (workflow_dispatch).
+# Weekly drift report for Talaria's configured Hermes WebUI fork.
 name: Upstream Hermes-WebUI Watch
 
 on:
   schedule:
-    # Monday 14:00 UTC: morning in the US, with enough time to triage before the week gets busy.
     - cron: "0 14 * * 1"
   workflow_dispatch:
     inputs:
       target_ref:
-        description: "Upstream ref to compare against UPSTREAM_TESTED_SHA."
+        description: "Fork tag or commit to compare with UPSTREAM_TESTED_SHA."
         required: false
-        default: "origin/master"
         type: string
-      post_issue:
-        description: "Create or update the GitHub digest issue."
-        required: false
-        default: true
-        type: boolean
 
 run-name: "Upstream watch from ${{ github.ref_name }}"
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: upstream-webui-watch
@@ -35,98 +26,48 @@ jobs:
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 15
 
-    env:
-      DIGEST_TITLE: "Upstream Hermes-WebUI watch digest"
-      UPSTREAM_REPO: "https://github.com/MaudeCode/hermes-webui.git"
-      TARGET_REF: ${{ inputs.target_ref || 'origin/master' }}
-
     steps:
-      - name: Check out repository
+      - name: Check out Talaria
         uses: actions/checkout@v7
 
-      - name: Clone upstream Hermes-WebUI
+      - name: Clone configured fork
+        env:
+          INPUT_TARGET_REF: ${{ inputs.target_ref }}
         run: |
           set -euo pipefail
-
+          repository="$(tr -d '[:space:]' < UPSTREAM_REPOSITORY)"
+          branch="$(tr -d '[:space:]' < UPSTREAM_BRANCH)"
+          url="https://github.com/${repository}.git"
+          default_branch="$(git ls-remote --symref "${url}" HEAD | sed -n 's#^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$#\1#p')"
+          test "${default_branch}" = "${branch}"
           mkdir -p .codex-tmp
-          git clone --filter=blob:none "${UPSTREAM_REPO}" .codex-tmp/hermes-webui
-          git -C .codex-tmp/hermes-webui fetch --tags origin master
+          git clone --filter=blob:none --branch "${branch}" "${url}" .codex-tmp/hermes-webui
+          target_ref="${INPUT_TARGET_REF:-origin/${branch}}"
+          if [[ -n "${INPUT_TARGET_REF}" ]]; then
+            git -C .codex-tmp/hermes-webui fetch origin "${INPUT_TARGET_REF}"
+            target_ref="FETCH_HEAD"
+          fi
+          echo "TARGET_REF=${target_ref}" >> "${GITHUB_ENV}"
 
       - name: Generate upstream watch report
         run: |
           set -euo pipefail
-
           scripts/upstream-watch \
             --target-ref "${TARGET_REF}" \
             --route-limit 80 \
             --file-limit 80 \
             --commit-limit 60 \
-            > upstream-watch-report.md
-
+            > upstream-watch-report.md \
+            2> upstream-watch-errors.log
           cat upstream-watch-report.md
+          cat upstream-watch-errors.log >&2
 
       - name: Upload report artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: upstream-watch-report
-          path: upstream-watch-report.md
-          if-no-files-found: error
-
-      - name: Create or update digest issue
-        if: ${{ github.event_name == 'schedule' || inputs.post_issue }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          if ! gh label list --limit 200 --json name --jq '.[].name' | grep -Fxq "needs-triage"; then
-            gh label create "needs-triage" \
-              --color "D29922" \
-              --description "Maintainer needs to evaluate this issue" || true
-          fi
-
-          issue_body="${RUNNER_TEMP}/upstream-watch-issue-body.md"
-          {
-            echo "<!-- upstream-watch-digest -->"
-            echo "# Upstream Hermes-WebUI Watch Digest"
-            echo
-            echo "This standing issue is updated by the Upstream Hermes-WebUI Watch workflow."
-            echo
-            echo "- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "- Upstream commit: ${GITHUB_SHA}"
-            echo "- Target ref: \`${TARGET_REF}\`"
-            echo
-            echo "Treat this as triage input, not approved implementation scope. Keep this issue labeled \`needs-triage\` until a human decides whether any findings should become separate actionable issues."
-            echo
-            echo "Create separate issues only for likely Talaria impact, such as removed mobile endpoint paths, streaming/run-state contract changes, auth/CSRF changes, model/provider routing changes, session schema changes, upload/media/workspace security changes, or contract-test coverage gaps."
-            echo
-            cat upstream-watch-report.md
-          } > "${issue_body}"
-
-          issue_record="$(
-            gh issue list \
-              --state all \
-              --limit 100 \
-              --search "in:title \"${DIGEST_TITLE}\"" \
-              --json number,state,title \
-              --jq ".[] | select(.title == \"${DIGEST_TITLE}\") | [.number, .state] | @tsv" |
-              head -n 1
-          )"
-
-          if [[ -z "${issue_record}" ]]; then
-            gh issue create \
-              --title "${DIGEST_TITLE}" \
-              --body-file "${issue_body}" \
-              --label "needs-triage"
-          else
-            issue_number="${issue_record%%$'\t'*}"
-            issue_state="${issue_record#*$'\t'}"
-
-            if [[ "${issue_state}" != "OPEN" ]]; then
-              gh issue reopen "${issue_number}"
-            fi
-
-            gh issue edit "${issue_number}" \
-              --body-file "${issue_body}" \
-              --add-label "needs-triage"
-          fi
+          path: |
+            upstream-watch-report.md
+            upstream-watch-errors.log
+          if-no-files-found: warn

@@ -10,15 +10,31 @@ Use official documentation only as secondary context.
 
 ## Establish the contract
 
-1. Read `UPSTREAM_TESTED_SHA`.
+1. Read `UPSTREAM_REPOSITORY`, `UPSTREAM_BRANCH`, and `UPSTREAM_TESTED_SHA`.
 2. Read only the relevant sections of `CONTRACT_TESTS.md`.
 3. Inspect `hermes-webui` at the exact pinned commit. Prefer `git show` against an
    existing `.codex-tmp/hermes-webui` clone so its checkout stays unchanged.
 4. Verify the route, HTTP method, query or body keys, response shape, and SSE event
    sequence touched by the task.
 
-Cloning, fetching, checking out, or modifying the upstream clone requires the
-user's permission under the repository workflow boundaries.
+Cloning, fetching, or checking out upstream requires the user's permission under
+the repository workflow boundaries. Keep existing upstream checkouts read-only.
+
+## Complete validation
+
+Run `scripts/validate-upstream-contract` for the pinned fork commit or pass
+`--ref <tag-or-commit>` for a candidate. The command preserves source identity,
+server, live JSON fixtures, probe, and Swift-test logs under
+`.codex-tmp/upstream-contract/`.
+
+Treat a named endpoint, fixture, decoder, or stream failure as the handoff's
+boundary. Inspect the matching fork source and Talaria test before changing a
+fixture or client contract. A candidate run leaves `UPSTREAM_TESTED_SHA`
+unchanged. Advance the pin only on the selected ticket branch after a green
+candidate run, then rerun the command against the new pin.
+
+Record the resolved fork SHA, artifact directory, focused/full XCTest results,
+and any held drift in the Kaneo or PR handoff.
 
 ## Running-server evidence
 
@@ -42,5 +58,5 @@ the client around an unidentified server version.
   the adopted shape, then use `$talaria-ios-testing` for XCTest validation.
 
 Update `UPSTREAM_TESTED_SHA` only when the user selected a pin advance and the
-advance policy in `CONTRACT_TESTS.md` has passed. An upstream difference by itself
-is not permission to move the pin.
+advance policy in `CONTRACT_TESTS.md` has passed. Fork synchronization remains
+outside this repository.

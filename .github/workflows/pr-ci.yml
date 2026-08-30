@@ -265,8 +265,8 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/check-swift-file-sizes scripts/webui-json
-          zsh -n scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/setup-ios-test-pool scripts/test-ios
-          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/load_env_test.py scripts/load-env scripts/upstream-watch scripts/verify_kanban_reference_server.py
+          zsh -n scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/setup-ios-test-pool scripts/test-ios scripts/validate-upstream-contract
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
           for file in ci/*.rb; do ruby -c "${file}"; done
 
   gate:

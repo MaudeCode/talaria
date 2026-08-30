@@ -26,7 +26,9 @@ The app is currently tested against `hermes-webui` tag `v0.51.85`, peeled commit
 
 The pin was last verified against the upstream GitHub tag source during the 2026-05-05 audit slice; authenticated settings/version checks require server credentials.
 
-Contract test readiness is documented in [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md). Current coverage verifies the app's endpoint matrix and native POST header shape with URLProtocol-backed tests; the full Docker-backed upstream contract target remains future hardening.
+Run `scripts/validate-upstream-contract` for the complete disposable fork-server,
+HTTP/SSE, and focused Swift contract check. [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md)
+maps adopted behavior to each executable check.
 
 ## SSE and Cloudflare Stream Verification
 
@@ -56,6 +58,13 @@ For contributors without access to the tunnel:
 git clone https://github.com/MaudeCode/hermes-webui.git
 cd hermes-webui
 ```
+
+The canonical fork and branch are stored in `UPSTREAM_REPOSITORY` and
+`UPSTREAM_BRANCH`. If this checkout still has the retired Hermex source remote,
+verify it first with `git remote get-url upstream`. When it points to
+`uzairansaruzi/hermex`, remove only that local alias with
+`git remote remove upstream`. Repository-scoped GitHub commands must pass
+`--repo MaudeCode/talaria`.
 
 2. Run it with Docker or directly with Python, following the upstream README.
 
@@ -173,6 +182,7 @@ Recognized variables:
 
 - `TALARIA_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `TALARIA_SIMULATOR_ID` — simulator selection for `scripts/test-ios`.
+- `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`.
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
 - `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
@@ -451,7 +461,7 @@ Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://githu
 
 Preferred Git workflow before CI automation:
 
-1. Create one short branch per work item, such as `issue/<n>-slug`.
+1. Create one `<type>/TAL-<number>-<slug>` branch per work item.
 2. Build and test on that branch.
 3. Merge to `main` only after validation passes.
 4. Treat `main` as the source for internal TestFlight candidates.

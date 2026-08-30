@@ -70,23 +70,21 @@ independently useful, it deserves its own PR.
 
 ## App bug or server bug?
 
-Talaria is a thin client over [hermes-webui](https://github.com/MaudeCode/hermes-webui),
-so a fair share of apparent app bugs are really server bugs. Before filing a
-bug here, reproduce it in the hermes-webui **web UI** against the same server:
+Talaria is a thin client over the canonical
+[`MaudeCode/hermes-webui`](https://github.com/MaudeCode/hermes-webui) fork, so a
+fair share of apparent app bugs are server bugs. Reproduce the problem in that
+fork's web UI against the same server:
 
-- **Breaks in the web UI too** → it's a server bug. File it
-  [upstream](https://github.com/MaudeCode/hermes-webui/issues); if the app
-  should still handle it more gracefully, open an issue here that links the
-  upstream ticket (we track those with the `upstream-change` label).
+- **Breaks in the web UI too** → report the fork behavior with its exact commit.
+  Reference the public parent only when the same bug is verified there.
 - **Only breaks in the app** → file it here with the bug-report form.
 
 ## PR workflow
 
-1. **Start from an issue.** Every change should trace to a GitHub issue —
-   comment on it so work isn't duplicated, or open one first (bug/feature
-   templates are provided).
-2. **Branch** from `main` as `issue/<number>-<short-slug>` (e.g.
-   `issue/42-fix-session-search`).
+1. **Start from tracked work.** Maintainer work uses a Kaneo `TAL-<number>` key.
+   External reports may start in GitHub, but a maintainer links the canonical
+   Kaneo task before implementation.
+2. **Branch** from `main` as `<type>/TAL-<number>-<short-slug>`.
 3. **Make the change**, keeping these repo hard rules (full list in
    [`AGENTS.md`](AGENTS.md)):
    - **Tolerant decoding:** every `Codable` model uses optionals for fields the
@@ -95,8 +93,8 @@ bug here, reproduce it in the hermes-webui **web UI** against the same server:
      upstream `hermes-webui` source or your own running server.
    - **No new third-party dependencies** without approval.
 4. **Run the full test suite** (command above) and make sure it passes.
-5. **Open a PR** against `main` using the PR template — link the issue with
-   `Fixes #<number>`, describe what changed and how you tested it. CI must be
+5. **Open a PR** against `main` using the PR template. Reference the `TAL` key
+   and describe what changed and how you tested it. CI must be
    green; automated review bots may comment, and the maintainer reviews and
    merges.
 6. **Disclose AI usage** in one line of the PR description: the tool/model
@@ -104,7 +102,7 @@ bug here, reproduce it in the hermes-webui **web UI** against the same server:
    itself built with coding agents, so it's normal context for review — not a
    gate.
 
-`main` is the protected release-candidate branch. Releases and TestFlight
+`main` is the protected release branch. Releases and TestFlight
 uploads (`.github/workflows/*-testflight.yml`) are maintainer-only operations —
 contributors never need App Store Connect access.
 
