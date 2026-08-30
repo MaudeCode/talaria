@@ -49,8 +49,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "${GITHUB_REF_NAME}" != "master" ]]; then
-            echo "Internal TestFlight uploads must be run from master. Current ref: ${GITHUB_REF_NAME}" >&2
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "Internal TestFlight uploads must be run from main. Current ref: ${GITHUB_REF_NAME}" >&2
             exit 1
           fi
 

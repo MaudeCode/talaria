@@ -283,7 +283,7 @@ Steps:
 
 Manual internal TestFlight release flow:
 
-1. Confirm `master` is clean and validated with the current simulator build/tests.
+1. Confirm `main` is clean and validated with the current simulator build/tests.
 2. Increment `CURRENT_PROJECT_VERSION` before every upload. `MARKETING_VERSION` can remain `1.0` while internal builds iterate.
 3. In Xcode, select `Any iOS Device` and run `Product > Archive`.
 4. In Organizer, choose `Distribute App > App Store Connect > Upload`.
@@ -300,13 +300,13 @@ GitHub Actions internal TestFlight flow:
    - `APP_STORE_CONNECT_PRIVATE_KEY`: the full `.p8` private key contents. A one-line value with escaped `\n` separators also works.
 3. Use an App Store Connect team API key with enough access to upload builds and let `xcodebuild -allowProvisioningUpdates` manage automatic signing for Team ID `Q28NF3NH3D`. If provisioning fails in CI, check the API key role, Apple Developer agreements, and App Store Connect access before changing the project to manual signing.
 4. Run the `Internal TestFlight` workflow manually from the GitHub Actions tab after the workflow file exists on the default branch.
-5. Select `master` as the workflow ref, set `confirm_internal_only` to `INTERNAL`, and leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
+5. Select `main` as the workflow ref, set `confirm_internal_only` to `INTERNAL`, and leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
 6. The workflow archives the Release build, uploads directly to App Store Connect, and uses `testFlightInternalTestingOnly = true` so uploaded builds cannot be promoted to external TestFlight or App Store distribution.
 7. Wait for App Store Connect processing to complete, then add the processed build to the internal TestFlight group and test on the owner's iPhone.
 
 CI upload guardrails and likely failure modes:
 
-- The workflow only runs on manual `workflow_dispatch`, fails unless the selected ref is `master`, and serializes uploads with a single concurrency group.
+- The workflow only runs on manual `workflow_dispatch`, fails unless the selected ref is `main`, and serializes uploads with a single concurrency group.
 - The workflow detects `MARKETING_VERSION` from Xcode build settings, queries App Store Connect for existing uploaded builds for that version, selects the next build number, and overrides `CURRENT_PROJECT_VERSION` without editing the Xcode project. If `build_number` is provided manually, the workflow still fails before archiving unless that value is greater than the latest App Store Connect build.
 - Missing or malformed secrets fail before archiving. The private key must remain a secret and must never be committed.
 - Automatic signing can fail if the API key lacks Developer Portal/provisioning access, the Apple Developer Program agreements are pending, or App Store Connect has not finished recognizing the app record.
@@ -316,11 +316,11 @@ CI upload guardrails and likely failure modes:
 
 GitHub Actions external-capable TestFlight flow:
 
-1. Use this only after the intended RC commit has passed local validation, been pushed to `origin/master`, and passed owner internal TestFlight smoke on a physical iPhone.
+1. Use this only after the intended RC commit has passed local validation, been pushed to `origin/main`, and passed owner internal TestFlight smoke on a physical iPhone.
 2. Configure a GitHub environment named `external-testflight`. Require manual approval on that environment if available for the repository plan.
 3. Add the same App Store Connect secrets used by the internal workflow to the `external-testflight` environment.
 4. Run the `External TestFlight` workflow manually from the GitHub Actions tab.
-5. Select `master` as the workflow ref, set `confirm_external_review` to `EXTERNAL_REVIEW`, and leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
+5. Select `main` as the workflow ref, set `confirm_external_review` to `EXTERNAL_REVIEW`, and leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
 6. The workflow archives the Release build, uploads directly to App Store Connect, and uses `ci/ExternalTestFlightExportOptions.plist`, which intentionally does not set `testFlightInternalTestingOnly`.
 7. Wait for App Store Connect processing to complete. Adding the build to an external group and submitting it to Beta App Review remain manual App Store Connect steps; the workflow does not invite testers.
 
@@ -424,5 +424,5 @@ Preferred Git workflow before CI automation:
 
 1. Create one short branch per work item, such as `issue/<n>-slug`.
 2. Build and test on that branch.
-3. Merge to `master` only after validation passes.
-4. Treat `master` as the source for internal TestFlight candidates.
+3. Merge to `main` only after validation passes.
+4. Treat `main` as the source for internal TestFlight candidates.

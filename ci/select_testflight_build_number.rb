@@ -134,7 +134,7 @@ class TestFlightBuildNumberSelector
     if blocking
       raise SelectionError,
             "The #{marketing_version} pre-release train is closed: App Store version #{blocking} is already approved. " \
-            "Bump MARKETING_VERSION in Talaria.xcodeproj/project.pbxproj above #{blocking}, land it on master, " \
+            "Bump MARKETING_VERSION in Talaria.xcodeproj/project.pbxproj above #{blocking}, land it on main, " \
             "and re-run this workflow (see TESTFLIGHT.md, Upload External-Capable Build)."
     end
 

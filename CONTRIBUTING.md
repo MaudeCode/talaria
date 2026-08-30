@@ -85,7 +85,7 @@ bug here, reproduce it in the hermes-webui **web UI** against the same server:
 1. **Start from an issue.** Every change should trace to a GitHub issue —
    comment on it so work isn't duplicated, or open one first (bug/feature
    templates are provided).
-2. **Branch** from `master` as `issue/<number>-<short-slug>` (e.g.
+2. **Branch** from `main` as `issue/<number>-<short-slug>` (e.g.
    `issue/42-fix-session-search`).
 3. **Make the change**, keeping these repo hard rules (full list in
    [`AGENTS.md`](AGENTS.md)):
@@ -95,7 +95,7 @@ bug here, reproduce it in the hermes-webui **web UI** against the same server:
      upstream `hermes-webui` source or your own running server.
    - **No new third-party dependencies** without approval.
 4. **Run the full test suite** (command above) and make sure it passes.
-5. **Open a PR** against `master` using the PR template — link the issue with
+5. **Open a PR** against `main` using the PR template — link the issue with
    `Fixes #<number>`, describe what changed and how you tested it. CI must be
    green; automated review bots may comment, and the maintainer reviews and
    merges.
@@ -104,7 +104,7 @@ bug here, reproduce it in the hermes-webui **web UI** against the same server:
    itself built with coding agents, so it's normal context for review — not a
    gate.
 
-`master` is the protected release-candidate branch. Releases and TestFlight
+`main` is the protected release-candidate branch. Releases and TestFlight
 uploads (`.github/workflows/*-testflight.yml`) are maintainer-only operations —
 contributors never need App Store Connect access.
 
