@@ -218,6 +218,16 @@
 		1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */; };
 		BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */; };
 		1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */; };
+		C107Q0000000000000000001 /* StreamingMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */; };
+		C107Q0000000000000000002 /* StreamingMarkdownChunkedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */; };
+		C107Q0000000000000000003 /* StreamingFadeBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000103 /* StreamingFadeBlockView.swift */; };
+		C107Q0000000000000000004 /* ChatMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000104 /* ChatMarkdownView.swift */; };
+		C107Q0000000000000000005 /* MathFenceOrCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000105 /* MathFenceOrCodeBlock.swift */; };
+		C107Q0000000000000000006 /* ChatCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000106 /* ChatCodeBlock.swift */; };
+		C107Q0000000000000000007 /* PlainCodeBlockText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000107 /* PlainCodeBlockText.swift */; };
+		C107Q0000000000000000008 /* HighlightedCodeBlockText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000108 /* HighlightedCodeBlockText.swift */; };
+		C107Q0000000000000000009 /* PlainMarkdownFallbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000109 /* PlainMarkdownFallbackView.swift */; };
+		C107Q0000000000000000010 /* ChatMarkdownTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000110 /* ChatMarkdownTable.swift */; };
 		C14300000000000000000001 /* StreamingMarkdownSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14300000000000000000002 /* StreamingMarkdownSupport.swift */; };
 		C0DE34000000000000000001 /* TranscriptMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000002 /* TranscriptMedia.swift */; };
 		C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000005 /* TranscriptMediaView.swift */; };
@@ -788,6 +798,16 @@
 		1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentPreviewView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownRenderer.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunkedView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000103 /* StreamingFadeBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingFadeBlockView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000104 /* ChatMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000105 /* MathFenceOrCodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MathFenceOrCodeBlock.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000106 /* ChatCodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCodeBlock.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000107 /* PlainCodeBlockText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainCodeBlockText.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000108 /* HighlightedCodeBlockText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightedCodeBlockText.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000109 /* PlainMarkdownFallbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainMarkdownFallbackView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000110 /* ChatMarkdownTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownTable.swift; sourceTree = "<group>"; };
 		C14300000000000000000002 /* StreamingMarkdownSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownSupport.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000002 /* TranscriptMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMedia.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000005 /* TranscriptMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaView.swift; sourceTree = "<group>"; };
@@ -1633,6 +1653,16 @@
 				C21300000000000000000002 /* StreamingTextFade.swift */,
 				C21300000000000000000004 /* StreamingTextFadeRenderer.swift */,
 				1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */,
+				C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */,
+				C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */,
+				C107Q0000000000000000103 /* StreamingFadeBlockView.swift */,
+				C107Q0000000000000000104 /* ChatMarkdownView.swift */,
+				C107Q0000000000000000105 /* MathFenceOrCodeBlock.swift */,
+				C107Q0000000000000000106 /* ChatCodeBlock.swift */,
+				C107Q0000000000000000107 /* PlainCodeBlockText.swift */,
+				C107Q0000000000000000108 /* HighlightedCodeBlockText.swift */,
+				C107Q0000000000000000109 /* PlainMarkdownFallbackView.swift */,
+				C107Q0000000000000000110 /* ChatMarkdownTable.swift */,
 				C14300000000000000000002 /* StreamingMarkdownSupport.swift */,
 				C0DE34000000000000000002 /* TranscriptMedia.swift */,
 				C0DE34000000000000000005 /* TranscriptMediaView.swift */,
@@ -2443,6 +2473,16 @@
 				1A2B3C4D5E6F7000000000EA /* FilePreviewViewModel.swift in Sources */,
 				BEEF02600000000000000001 /* FileExportSupport.swift in Sources */,
 				1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */,
+				C107Q0000000000000000001 /* StreamingMarkdownRenderer.swift in Sources */,
+				C107Q0000000000000000002 /* StreamingMarkdownChunkedView.swift in Sources */,
+				C107Q0000000000000000003 /* StreamingFadeBlockView.swift in Sources */,
+				C107Q0000000000000000004 /* ChatMarkdownView.swift in Sources */,
+				C107Q0000000000000000005 /* MathFenceOrCodeBlock.swift in Sources */,
+				C107Q0000000000000000006 /* ChatCodeBlock.swift in Sources */,
+				C107Q0000000000000000007 /* PlainCodeBlockText.swift in Sources */,
+				C107Q0000000000000000008 /* HighlightedCodeBlockText.swift in Sources */,
+				C107Q0000000000000000009 /* PlainMarkdownFallbackView.swift in Sources */,
+				C107Q0000000000000000010 /* ChatMarkdownTable.swift in Sources */,
 				C14300000000000000000001 /* StreamingMarkdownSupport.swift in Sources */,
 				C0DE34000000000000000001 /* TranscriptMedia.swift in Sources */,
 				C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */,
