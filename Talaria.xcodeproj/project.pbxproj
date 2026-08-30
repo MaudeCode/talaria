@@ -222,6 +222,32 @@
 		C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */; };
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
+		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
+		C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000102 /* SettingsTextFieldRow.swift */; };
+		C107J0000000000000000003 /* AccentColorSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000103 /* AccentColorSettings.swift */; };
+		C107J0000000000000000004 /* HeaderLogoColorPresetButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000104 /* HeaderLogoColorPresetButton.swift */; };
+		C107J0000000000000000005 /* SettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000105 /* SettingsCard.swift */; };
+		C107J0000000000000000006 /* ProviderQuotaWidgetProfilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000106 /* ProviderQuotaWidgetProfilesView.swift */; };
+		C107J0000000000000000007 /* ProviderQuotaSidebarDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000107 /* ProviderQuotaSidebarDisplayView.swift */; };
+		C107J0000000000000000008 /* ProviderQuotaWidgetAutomaticSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000108 /* ProviderQuotaWidgetAutomaticSettingsSections.swift */; };
+		C107J0000000000000000009 /* SettingsPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000109 /* SettingsPickerRow.swift */; };
+		C107J0000000000000000010 /* SettingsRowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000110 /* SettingsRowLabel.swift */; };
+		C107J0000000000000000011 /* SettingsFootnote.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000111 /* SettingsFootnote.swift */; };
+		C107J0000000000000000012 /* SettingsErrorFootnote.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000112 /* SettingsErrorFootnote.swift */; };
+		C107J0000000000000000013 /* SettingsValueRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000113 /* SettingsValueRow.swift */; };
+		C107J0000000000000000014 /* SettingsInfoRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000114 /* SettingsInfoRow.swift */; };
+		C107J0000000000000000015 /* SettingsAccessoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000115 /* SettingsAccessoryRow.swift */; };
+		C107J0000000000000000016 /* CustomHeadersSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000116 /* CustomHeadersSettingsView.swift */; };
+		C107J0000000000000000017 /* SettingsToggleRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000117 /* SettingsToggleRow.swift */; };
+		C107J0000000000000000018 /* SettingsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000118 /* SettingsButton.swift */; };
+		C107J0000000000000000019 /* SettingsStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000119 /* SettingsStatusPill.swift */; };
+		C107J0000000000000000020 /* SettingsDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000120 /* SettingsDivider.swift */; };
+		C107J0000000000000000021 /* ServerAvatarBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000121 /* ServerAvatarBadge.swift */; };
+		C107J0000000000000000022 /* SettingsServerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000122 /* SettingsServerRow.swift */; };
+		C107J0000000000000000023 /* ServerIdentityEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000123 /* ServerIdentityEditor.swift */; };
+		C107J0000000000000000024 /* ServerDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000124 /* ServerDetailView.swift */; };
+		C107J0000000000000000025 /* AddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000125 /* AddServerView.swift */; };
+		C107J0000000000000000026 /* ProviderQuotaWidgetAppearanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */; };
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
@@ -619,6 +645,32 @@
 		C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStoreTests.swift; sourceTree = "<group>"; };
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
+		C107J0000000000000000102 /* SettingsTextFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTextFieldRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000103 /* AccentColorSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentColorSettings.swift; sourceTree = "<group>"; };
+		C107J0000000000000000104 /* HeaderLogoColorPresetButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderLogoColorPresetButton.swift; sourceTree = "<group>"; };
+		C107J0000000000000000105 /* SettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCard.swift; sourceTree = "<group>"; };
+		C107J0000000000000000106 /* ProviderQuotaWidgetProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetProfilesView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000107 /* ProviderQuotaSidebarDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaSidebarDisplayView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000108 /* ProviderQuotaWidgetAutomaticSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetAutomaticSettingsSections.swift; sourceTree = "<group>"; };
+		C107J0000000000000000109 /* SettingsPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000110 /* SettingsRowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRowLabel.swift; sourceTree = "<group>"; };
+		C107J0000000000000000111 /* SettingsFootnote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsFootnote.swift; sourceTree = "<group>"; };
+		C107J0000000000000000112 /* SettingsErrorFootnote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsErrorFootnote.swift; sourceTree = "<group>"; };
+		C107J0000000000000000113 /* SettingsValueRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsValueRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000114 /* SettingsInfoRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsInfoRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000115 /* SettingsAccessoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAccessoryRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000116 /* CustomHeadersSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeadersSettingsView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000117 /* SettingsToggleRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsToggleRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000118 /* SettingsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsButton.swift; sourceTree = "<group>"; };
+		C107J0000000000000000119 /* SettingsStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusPill.swift; sourceTree = "<group>"; };
+		C107J0000000000000000120 /* SettingsDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDivider.swift; sourceTree = "<group>"; };
+		C107J0000000000000000121 /* ServerAvatarBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAvatarBadge.swift; sourceTree = "<group>"; };
+		C107J0000000000000000122 /* SettingsServerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsServerRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000123 /* ServerIdentityEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerIdentityEditor.swift; sourceTree = "<group>"; };
+		C107J0000000000000000124 /* ServerDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerDetailView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000125 /* AddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetAppearanceView.swift; sourceTree = "<group>"; };
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
@@ -1261,6 +1313,32 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
+				C107J0000000000000000102 /* SettingsTextFieldRow.swift */,
+				C107J0000000000000000103 /* AccentColorSettings.swift */,
+				C107J0000000000000000104 /* HeaderLogoColorPresetButton.swift */,
+				C107J0000000000000000105 /* SettingsCard.swift */,
+				C107J0000000000000000106 /* ProviderQuotaWidgetProfilesView.swift */,
+				C107J0000000000000000107 /* ProviderQuotaSidebarDisplayView.swift */,
+				C107J0000000000000000108 /* ProviderQuotaWidgetAutomaticSettingsSections.swift */,
+				C107J0000000000000000109 /* SettingsPickerRow.swift */,
+				C107J0000000000000000110 /* SettingsRowLabel.swift */,
+				C107J0000000000000000111 /* SettingsFootnote.swift */,
+				C107J0000000000000000112 /* SettingsErrorFootnote.swift */,
+				C107J0000000000000000113 /* SettingsValueRow.swift */,
+				C107J0000000000000000114 /* SettingsInfoRow.swift */,
+				C107J0000000000000000115 /* SettingsAccessoryRow.swift */,
+				C107J0000000000000000116 /* CustomHeadersSettingsView.swift */,
+				C107J0000000000000000117 /* SettingsToggleRow.swift */,
+				C107J0000000000000000118 /* SettingsButton.swift */,
+				C107J0000000000000000119 /* SettingsStatusPill.swift */,
+				C107J0000000000000000120 /* SettingsDivider.swift */,
+				C107J0000000000000000121 /* ServerAvatarBadge.swift */,
+				C107J0000000000000000122 /* SettingsServerRow.swift */,
+				C107J0000000000000000123 /* ServerIdentityEditor.swift */,
+				C107J0000000000000000124 /* ServerDetailView.swift */,
+				C107J0000000000000000125 /* AddServerView.swift */,
+				C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */,
 				A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
 				C107I000000000000000011 /* AppIconDisclosureLabel.swift */,
@@ -1724,6 +1802,32 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,
+				C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */,
+				C107J0000000000000000003 /* AccentColorSettings.swift in Sources */,
+				C107J0000000000000000004 /* HeaderLogoColorPresetButton.swift in Sources */,
+				C107J0000000000000000005 /* SettingsCard.swift in Sources */,
+				C107J0000000000000000006 /* ProviderQuotaWidgetProfilesView.swift in Sources */,
+				C107J0000000000000000007 /* ProviderQuotaSidebarDisplayView.swift in Sources */,
+				C107J0000000000000000008 /* ProviderQuotaWidgetAutomaticSettingsSections.swift in Sources */,
+				C107J0000000000000000009 /* SettingsPickerRow.swift in Sources */,
+				C107J0000000000000000010 /* SettingsRowLabel.swift in Sources */,
+				C107J0000000000000000011 /* SettingsFootnote.swift in Sources */,
+				C107J0000000000000000012 /* SettingsErrorFootnote.swift in Sources */,
+				C107J0000000000000000013 /* SettingsValueRow.swift in Sources */,
+				C107J0000000000000000014 /* SettingsInfoRow.swift in Sources */,
+				C107J0000000000000000015 /* SettingsAccessoryRow.swift in Sources */,
+				C107J0000000000000000016 /* CustomHeadersSettingsView.swift in Sources */,
+				C107J0000000000000000017 /* SettingsToggleRow.swift in Sources */,
+				C107J0000000000000000018 /* SettingsButton.swift in Sources */,
+				C107J0000000000000000019 /* SettingsStatusPill.swift in Sources */,
+				C107J0000000000000000020 /* SettingsDivider.swift in Sources */,
+				C107J0000000000000000021 /* ServerAvatarBadge.swift in Sources */,
+				C107J0000000000000000022 /* SettingsServerRow.swift in Sources */,
+				C107J0000000000000000023 /* ServerIdentityEditor.swift in Sources */,
+				C107J0000000000000000024 /* ServerDetailView.swift in Sources */,
+				C107J0000000000000000025 /* AddServerView.swift in Sources */,
+				C107J0000000000000000026 /* ProviderQuotaWidgetAppearanceView.swift in Sources */,
 				A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */,
 				C012400000000000000004 /* AppIconSettingsSection.swift in Sources */,
 				C107I000000000000000001 /* AppIconDisclosureLabel.swift in Sources */,
