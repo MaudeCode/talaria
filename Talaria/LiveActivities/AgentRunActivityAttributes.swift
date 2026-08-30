@@ -110,14 +110,16 @@ enum TalariaAggregateLiveActivityPresentation {
         })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
     }
 
-    static func colorHex(for phase: String) -> UInt32? {
+    static func colorHex(for phase: String, isLuminanceReduced: Bool = false) -> UInt32? {
+        if isLuminanceReduced, phase != "starting", phase != "running" { return nil }
+
         switch phase {
-        case "waiting_for_approval": 0xD97706
-        case "waiting_for_input": 0x4F46E5
-        case "failed": 0xDC2626
-        case "completed": 0x059669
-        case "starting", "running": 0x0284C7
-        default: nil
+        case "waiting_for_approval": return 0xD97706
+        case "waiting_for_input": return 0x4F46E5
+        case "failed": return 0xDC2626
+        case "completed": return 0x059669
+        case "starting", "running": return 0x0284C7
+        default: return nil
         }
     }
 
