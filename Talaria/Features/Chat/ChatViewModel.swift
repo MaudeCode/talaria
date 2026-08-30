@@ -4286,6 +4286,9 @@ final class ChatViewModel {
             guard !textToAppend.isEmpty else { return false }
 
             let shouldAppendReplaySuffixDirectly = isActiveStreamReplayConnection && textToAppend != text
+            if isActiveStreamReplayConnection {
+                streamCoordinator.clearReplayConnection()
+            }
             let shouldUseSeparator = currentContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 && !shouldAppendReplaySuffixDirectly
             let separator = shouldUseSeparator ? "\n\n" : ""
@@ -4540,6 +4543,9 @@ final class ChatViewModel {
         }
         guard !remainder.isEmpty else { return false }
 
+        if isActiveStreamReplayConnection {
+            streamCoordinator.clearReplayConnection()
+        }
         pendingReasoningText.append(contentsOf: remainder)
         scheduleStreamingContentFlush()
         return true
@@ -4592,6 +4598,9 @@ final class ChatViewModel {
             return false
         }
 
+        if isActiveStreamReplayConnection {
+            streamCoordinator.clearReplayConnection()
+        }
         liveAssistantActivity.appendTool(
             ToolCall(
                 id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
@@ -4626,6 +4635,9 @@ final class ChatViewModel {
         }
 
         activeStreamReplayPendingToolMatchIndex = nil
+        if isActiveStreamReplayConnection {
+            streamCoordinator.clearReplayConnection()
+        }
 
         guard let index = liveToolCallCompletionIndex(for: payload) else {
             flushPendingStreamingContent()
@@ -4734,6 +4746,9 @@ final class ChatViewModel {
         }
         guard !remainder.isEmpty else { return false }
 
+        if isActiveStreamReplayConnection {
+            streamCoordinator.clearReplayConnection()
+        }
         pendingAssistantTokenText.append(contentsOf: remainder)
         scheduleStreamingContentFlush()
         return true
@@ -4845,9 +4860,6 @@ final class ChatViewModel {
         let expectedReplayRemainder = String(existingContent.dropFirst(matchedPrefixLength))
         if expectedReplayRemainder.hasPrefix(token) {
             activeStreamReplayMatchedPrefixLength = matchedPrefixLength + token.count
-            if activeStreamReplayMatchedPrefixLength >= existingContent.count {
-                activeStreamReplayMatchedPrefixLength = 0
-            }
             return ""
         }
 
@@ -4899,9 +4911,6 @@ final class ChatViewModel {
         let expectedReplayRemainder = String(existingContent.dropFirst(matchedLength))
         if expectedReplayRemainder.hasPrefix(text) {
             matchedPrefixLength = matchedLength + text.count
-            if matchedPrefixLength >= existingContent.count {
-                matchedPrefixLength = 0
-            }
             return ""
         }
 

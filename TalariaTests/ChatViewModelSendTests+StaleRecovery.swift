@@ -1099,18 +1099,20 @@ extension ChatViewModelSendTests {
 
         let didStart = await viewModel.sendMessage("Inspect logs")
         XCTAssertTrue(didStart)
+        let titleEvent = TitleStreamEvent(sessionId: "session-abc", title: "Inspect logs")
+        streamClient.emit(.title(titleEvent))
         streamClient.emit(.token("Checking. "))
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
         streamClient.emit(.reasoning("Plan."))
 
         await viewModel.recoverStaleActiveStreamIfNeeded(now: Date().addingTimeInterval(20))
+        streamClient.emit(.title(titleEvent))
         streamClient.emit(.token("Checking. "))
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
         streamClient.emit(.reasoning("Plan."))
 
-        XCTAssertEqual(viewModel.activeStreamRecoveryState, .reconnecting)
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Inspect logs", "Checking. "])
         XCTAssertEqual(viewModel.liveReasoningText, "Plan.")
         XCTAssertEqual(viewModel.liveToolCalls.count, 1)
@@ -1118,11 +1120,12 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.liveToolCalls.first?.preview, "Passed tests")
         XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
 
-        streamClient.emit(.token("Finished."))
+        streamClient.emit(.token("Checking. "))
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
 
         XCTAssertEqual(viewModel.activeStreamRecoveryState, .idle)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Inspect logs", "Checking. Checking. "])
         XCTAssertEqual(viewModel.liveToolCalls.count, 2)
     }
 
