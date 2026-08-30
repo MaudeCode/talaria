@@ -3,6 +3,7 @@
 set -euo pipefail
 
 repo_root=${0:A:h:h}
+[[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/test-ios" "$@"
 runtime_dir="$repo_root/.codex-tmp/xctest"
 lock_file="$runtime_dir/runner.lock"
 pool_runtime_dir="/tmp/talaria-xctest-$EUID"

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/check-swift-file-sizes" "$@"
 raw_limit="${TALARIA_SWIFT_FILE_SIZE_LIMIT:-500}"
 scan_root="$repo_root/Talaria"
 
