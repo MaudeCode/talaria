@@ -121,7 +121,8 @@ final class OnboardingViewModel {
         await authManager.configure(
             serverURLString: serverURLString,
             password: password,
-            customHeaders: customHeaders
+            customHeaders: customHeaders,
+            canCommit: { revision == self.connectionInputRevision }
         )
         guard revision == connectionInputRevision else { return }
         errorMessage = authManager.lastErrorMessage

@@ -154,7 +154,8 @@ final class AuthManager {
     func configure(
         serverURLString: String,
         password: String,
-        customHeaders: [CustomHeader]? = nil
+        customHeaders: [CustomHeader]? = nil,
+        canCommit: @escaping @MainActor () -> Bool = { true }
     ) async {
         lastErrorMessage = nil
         let previousServerID = state.server?.absoluteString
@@ -167,6 +168,7 @@ final class AuthManager {
             let serverURL = try Self.normalizedServerURL(from: serverURLString)
             let client = clientFactory(serverURL)
             let authStatus = try await testConnection(client: client)
+            guard canCommit() else { return }
 
             if let message = Self.unsupportedSignInMessage(for: authStatus) {
                 lastErrorMessage = message
@@ -183,6 +185,7 @@ final class AuthManager {
                 }
 
                 let loginResponse = try await client.login(password: password)
+                guard canCommit() else { return }
                 guard loginResponse.ok == true else {
                     state = .loggedOut(server: serverURL)
                     lastErrorMessage = APIError.unauthorized.localizedDescription
@@ -205,6 +208,7 @@ final class AuthManager {
             }
             state = .loggedIn(server: serverURL)
         } catch {
+            guard canCommit() else { return }
             lastErrorMessage = error.localizedDescription
         }
     }

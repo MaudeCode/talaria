@@ -6,17 +6,7 @@ final class OnboardingFlowTests: XCTestCase {
     func testStaleSuccessfulProbeCannotReplaceCurrentFailure() async {
         let staleClient = DeferredOnboardingAuthClient()
         let currentClient = DeferredOnboardingAuthClient()
-        let keychain = InMemoryKeychainStore()
-        let authManager = AuthManager(
-            keychain: keychain,
-            clientFactory: { url in
-                url.host == "stale.example.test" ? staleClient : currentClient
-            },
-            headerStore: CustomHeaderStore(),
-            cookieStorage: HTTPCookieStorage(),
-            profileEntityCache: ProfileEntityCache(defaults: nil),
-            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
-        )
+        let authManager = makeAuthManager(staleClient: staleClient, currentClient: currentClient)
         let viewModel = OnboardingViewModel()
 
         viewModel.serverURLString = "https://stale.example.test"
@@ -39,6 +29,35 @@ final class OnboardingFlowTests: XCTestCase {
         XCTAssertNil(viewModel.connectionMessage)
         XCTAssertEqual(viewModel.errorMessage, currentError)
         XCTAssertFalse(viewModel.isWorking)
+    }
+
+    @MainActor
+    func testStaleConfigureCannotReplaceCurrentAuthentication() async {
+        let staleClient = DeferredOnboardingAuthClient()
+        let currentClient = DeferredOnboardingAuthClient()
+        let authManager = makeAuthManager(staleClient: staleClient, currentClient: currentClient)
+        let viewModel = OnboardingViewModel()
+        let successfulStatus = AuthStatusResponse(authEnabled: false, loggedIn: false)
+
+        viewModel.serverURLString = "https://stale.example.test"
+        viewModel.authStatus = successfulStatus
+        let staleConnect = Task { await viewModel.connect(authManager: authManager) }
+        await staleClient.waitUntilStarted()
+
+        viewModel.serverURLString = "https://current.example.test"
+        viewModel.authStatus = successfulStatus
+        let currentConnect = Task { await viewModel.connect(authManager: authManager) }
+        await currentClient.waitUntilStarted()
+        await currentClient.complete(with: .success(successfulStatus))
+        await currentConnect.value
+
+        await staleClient.complete(with: .success(successfulStatus))
+        await staleConnect.value
+
+        XCTAssertEqual(
+            authManager.state,
+            .loggedIn(server: URL(string: "https://current.example.test")!)
+        )
     }
 
     @MainActor
@@ -214,6 +233,24 @@ final class OnboardingFlowTests: XCTestCase {
 
     func testConnectPageIndexIsFinalPagerPage() {
         XCTAssertEqual(OnboardingFlowPolicy.connectPageIndex, OnboardingFlowPolicy.pageCount - 1)
+    }
+
+    @MainActor
+    private func makeAuthManager(
+        staleClient: DeferredOnboardingAuthClient,
+        currentClient: DeferredOnboardingAuthClient
+    ) -> AuthManager {
+        let keychain = InMemoryKeychainStore()
+        return AuthManager(
+            keychain: keychain,
+            clientFactory: { url in
+                url.host == "stale.example.test" ? staleClient : currentClient
+            },
+            headerStore: CustomHeaderStore(),
+            cookieStorage: HTTPCookieStorage(),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
     }
 }
 
