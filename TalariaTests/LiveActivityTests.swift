@@ -585,6 +585,27 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.colorHex(for: "running"), 0x0284C7)
     }
 
+    func testAggregatePresentationKeepsWorkingTintWhenLuminanceIsReduced() {
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.colorHex(
+                for: "running",
+                isLuminanceReduced: true
+            ),
+            0x0284C7
+        )
+        XCTAssertEqual(
+            TalariaAggregateLiveActivityPresentation.colorHex(
+                for: "starting",
+                isLuminanceReduced: true
+            ),
+            0x0284C7
+        )
+        XCTAssertNil(TalariaAggregateLiveActivityPresentation.colorHex(
+            for: "waiting_for_approval",
+            isLuminanceReduced: true
+        ))
+    }
+
     func testTerminalAggregateOverridesStalePresentation() {
         let state = TalariaAggregateActivityAttributes.ContentState(
             schemaVersion: 1,

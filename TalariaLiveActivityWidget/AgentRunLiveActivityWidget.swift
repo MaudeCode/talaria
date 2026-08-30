@@ -107,10 +107,10 @@ enum AggregatePhaseStyle {
         for phase: String,
         isLuminanceReduced: Bool
     ) -> Color {
-        if isLuminanceReduced {
-            return AgentRunLiveActivityTheme.secondaryText
-        }
-        guard let hex = TalariaAggregateLiveActivityPresentation.colorHex(for: phase) else {
+        guard let hex = TalariaAggregateLiveActivityPresentation.colorHex(
+            for: phase,
+            isLuminanceReduced: isLuminanceReduced
+        ) else {
             return AgentRunLiveActivityTheme.secondaryText
         }
         return Color(
