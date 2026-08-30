@@ -99,7 +99,7 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
 /// Mirrors `CustomHeaderStore`: the blob is loaded from the Keychain **once** at
 /// init into a lock-guarded in-memory snapshot, reads come from that snapshot
 /// (no synchronous `securityd` IPC on every property access), and mutations
-/// update the snapshot and write through to the Keychain under the same lock.
+/// persist a candidate snapshot before committing it in memory under the same lock.
 /// `AuthManager` owns all writes: it calls `activate(url:)` when it configures or
 /// restores a server, and `forgetActiveServer()` on full sign-out. Per-server
 /// identity is seeded from the global identity defaults on first insert only, so
@@ -176,7 +176,7 @@ final class ServerRegistry: @unchecked Sendable {
     /// seeded from the current global identity defaults. Callers pass an
     /// already-normalized URL (`AuthManager.normalizedServerURL`).
     @discardableResult
-    func activate(url: URL) -> ServerAccount {
+    func activate(url: URL) throws -> ServerAccount {
         let id = url.absoluteString
         // When re-activating an already-registered server we mirror its (possibly
         // per-server-edited, #17) identity into the global identity defaults so the
@@ -184,24 +184,28 @@ final class ServerRegistry: @unchecked Sendable {
         // on first insert: a new entry is *seeded from* those defaults, so writing
         // back would change first-run identity for single-server users.
         var identityToMirror: ServerAccount?
-        let result: ServerAccount = storage.withLock { snapshot in
+        let result: ServerAccount = try storage.withLock { snapshot in
             if let existing = snapshot.servers.first(where: { $0.id == id }) {
                 // Already registered: only flip the active selection + write
                 // through when it actually changes, so the launch path
                 // (restoreSavedServer → activate for the already-active server)
                 // doesn't do a redundant synchronous Keychain write every start.
                 if snapshot.activeServerID != id {
-                    snapshot.activeServerID = id
-                    persist(snapshot)
+                    var updated = snapshot
+                    updated.activeServerID = id
+                    try persist(updated)
+                    snapshot = updated
                     identityToMirror = existing
                 }
                 return existing
             }
 
             let account = makeSeededAccount(id: id, url: url)
-            snapshot.servers.append(account)
-            snapshot.activeServerID = id
-            persist(snapshot)
+            var updated = snapshot
+            updated.servers.append(account)
+            updated.activeServerID = id
+            try persist(updated)
+            snapshot = updated
             return account
         }
         if let identityToMirror {
@@ -215,15 +219,17 @@ final class ServerRegistry: @unchecked Sendable {
     /// Mirrors the newly active server's identity into the global identity
     /// defaults so the avatar / header tint follow the switch.
     @discardableResult
-    func setActive(id: String) -> ServerAccount? {
+    func setActive(id: String) throws -> ServerAccount? {
         var newActive: ServerAccount?
-        storage.withLock { snapshot in
+        try storage.withLock { snapshot in
             guard snapshot.activeServerID != id,
                   let account = snapshot.servers.first(where: { $0.id == id }) else {
                 return
             }
-            snapshot.activeServerID = id
-            persist(snapshot)
+            var updated = snapshot
+            updated.activeServerID = id
+            try persist(updated)
+            snapshot = updated
             newActive = account
         }
         if let newActive {
@@ -238,23 +244,25 @@ final class ServerRegistry: @unchecked Sendable {
     /// caller should return to onboarding). Removing a non-active server leaves
     /// the active selection untouched. No-op for an unregistered id. (#17)
     @discardableResult
-    func remove(id: String) -> ServerAccount? {
+    func remove(id: String) throws -> ServerAccount? {
         var activeChangedTo: ServerAccount?
         var didChangeActive = false
-        let activeAfter: ServerAccount? = storage.withLock { snapshot in
+        let activeAfter: ServerAccount? = try storage.withLock { snapshot in
             guard snapshot.servers.contains(where: { $0.id == id }) else {
                 return snapshot.activeServer
             }
+            var updated = snapshot
             let wasActive = snapshot.activeServerID == id
-            snapshot.servers.removeAll { $0.id == id }
+            updated.servers.removeAll { $0.id == id }
             if wasActive {
-                let next = snapshot.servers.first
-                snapshot.activeServerID = next?.id
+                let next = updated.servers.first
+                updated.activeServerID = next?.id
                 didChangeActive = true
                 activeChangedTo = next
             }
-            persist(snapshot)
-            return snapshot.activeServer
+            try persist(updated)
+            snapshot = updated
+            return updated.activeServer
         }
         if didChangeActive, let activeChangedTo {
             mirrorIdentityToDefaults(activeChangedTo)
@@ -267,16 +275,18 @@ final class ServerRegistry: @unchecked Sendable {
     /// global identity defaults when the updated server is the active one, so the
     /// active server's edits show up live without each consumer reading the
     /// registry directly.
-    func update(_ account: ServerAccount) {
+    func update(_ account: ServerAccount) throws {
         var activeUpdate: ServerAccount?
-        storage.withLock { snapshot in
+        try storage.withLock { snapshot in
             guard let index = snapshot.servers.firstIndex(where: { $0.id == account.id }) else {
                 return
             }
             var updated = account
             updated.updatedAt = now()
-            snapshot.servers[index] = updated
-            persist(snapshot)
+            var updatedSnapshot = snapshot
+            updatedSnapshot.servers[index] = updated
+            try persist(updatedSnapshot)
+            snapshot = updatedSnapshot
             if snapshot.activeServerID == account.id {
                 activeUpdate = updated
             }
@@ -289,12 +299,14 @@ final class ServerRegistry: @unchecked Sendable {
     /// Forgets the active server entirely, mirroring a full sign-out
     /// (`AuthManager.clearLocalAuth`) so a single-server install returns to
     /// "no servers configured."
-    func forgetActiveServer() {
-        storage.withLock { snapshot in
+    func forgetActiveServer() throws {
+        try storage.withLock { snapshot in
             guard let id = snapshot.activeServerID else { return }
-            snapshot.servers.removeAll { $0.id == id }
-            snapshot.activeServerID = nil
-            persist(snapshot)
+            var updated = snapshot
+            updated.servers.removeAll { $0.id == id }
+            updated.activeServerID = nil
+            try persist(updated)
+            snapshot = updated
         }
     }
 
@@ -346,14 +358,9 @@ final class ServerRegistry: @unchecked Sendable {
     // MARK: - Persistence
 
     /// Writes the snapshot through to the Keychain. Called under the storage lock.
-    private func persist(_ snapshot: Snapshot) {
-        guard
-            let data = try? JSONEncoder().encode(snapshot),
-            let json = String(data: data, encoding: .utf8)
-        else {
-            return
-        }
-        try? keychain.save(json, forKey: .servers)
+    private func persist(_ snapshot: Snapshot) throws {
+        let data = try JSONEncoder().encode(snapshot)
+        try keychain.save(String(decoding: data, as: UTF8.self), forKey: .servers)
     }
 
     private static func loadSnapshot(from keychain: any KeychainStoring) -> Snapshot {
