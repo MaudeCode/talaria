@@ -334,23 +334,18 @@ enum TalariaShareDraft {
         from directory: URL,
         fileManager: FileManager = .default
     ) async throws -> SharedImportReservation? {
-        let sendableFileManager = SendableFileManager(value: fileManager)
-        return try await Task.detached(priority: importPriority) {
-            try reserveNextPendingImport(
-                from: directory,
-                fileManager: sendableFileManager.value
-            )
-        }.value
+        try await performOffMainActor(fileManager: fileManager) {
+            try reserveNextPendingImport(from: directory, fileManager: $0)
+        }
     }
 
     static func hasPendingImportOffMainActor(
         in directory: URL,
         fileManager: FileManager = .default
     ) async throws -> Bool {
-        let sendableFileManager = SendableFileManager(value: fileManager)
-        return try await Task.detached(priority: importPriority) {
-            try hasPendingImport(in: directory, fileManager: sendableFileManager.value)
-        }.value
+        try await performOffMainActor(fileManager: fileManager) {
+            try hasPendingImport(in: directory, fileManager: $0)
+        }
     }
 
     static func consumeOffMainActor(
@@ -358,10 +353,9 @@ enum TalariaShareDraft {
         from directory: URL,
         fileManager: FileManager = .default
     ) async throws {
-        let sendableFileManager = SendableFileManager(value: fileManager)
-        try await Task.detached(priority: importPriority) {
-            try consume(reservation, from: directory, fileManager: sendableFileManager.value)
-        }.value
+        try await performOffMainActor(fileManager: fileManager) {
+            try consume(reservation, from: directory, fileManager: $0)
+        }
     }
 
     static func releaseOffMainActor(
@@ -369,9 +363,18 @@ enum TalariaShareDraft {
         in directory: URL,
         fileManager: FileManager = .default
     ) async throws {
+        try await performOffMainActor(fileManager: fileManager) {
+            try release(reservation, in: directory, fileManager: $0)
+        }
+    }
+
+    private static func performOffMainActor<Result: Sendable>(
+        fileManager: FileManager,
+        operation: @escaping @Sendable (FileManager) throws -> Result
+    ) async throws -> Result {
         let sendableFileManager = SendableFileManager(value: fileManager)
-        try await Task.detached(priority: importPriority) {
-            try release(reservation, in: directory, fileManager: sendableFileManager.value)
+        return try await Task.detached(priority: importPriority) {
+            try operation(sendableFileManager.value)
         }.value
     }
 

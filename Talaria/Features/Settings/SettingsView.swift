@@ -3,13 +3,6 @@ import SwiftData
 import UIKit
 import UserNotifications
 
-/// A Settings section a deep link can scroll to when the screen opens — the
-/// avatar long-press "Manage Servers" shortcut lands on the Servers card (#283).
-enum SettingsScrollAnchor: Hashable {
-    case servers
-    case providerQuotas
-}
-
 struct SettingsView: View {
     @Bindable var authManager: AuthManager
     let server: URL

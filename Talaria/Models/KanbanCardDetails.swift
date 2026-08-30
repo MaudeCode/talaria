@@ -6,34 +6,24 @@ enum KanbanDependencyMutationValidator {
         request: KanbanDependencyMutationRequest
     ) throws {
         guard envelope.ok == true,
-              normalized(envelope.prerequisiteID) == normalized(request.prerequisiteID),
-              normalized(envelope.dependentID) == normalized(request.dependentID) else {
+              normalizedKanbanIdentifier(envelope.prerequisiteID) == normalizedKanbanIdentifier(request.prerequisiteID),
+              normalizedKanbanIdentifier(envelope.dependentID) == normalizedKanbanIdentifier(request.dependentID) else {
             throw KanbanContractViolation.missingCardIdentity
         }
-    }
-
-    private static func normalized(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed : nil
     }
 }
 
 enum KanbanCardMutationValidator {
     static func validate(_ envelope: KanbanCardMutationEnvelope, expectedCardID: String? = nil) throws -> KanbanCard {
         guard let card = envelope.card,
-              let cardID = normalized(card.cardID),
-              normalized(card.status?.rawValue) != nil else {
+              let cardID = normalizedKanbanIdentifier(card.cardID),
+              normalizedKanbanIdentifier(card.status?.rawValue) != nil else {
             throw KanbanContractViolation.missingCardIdentity
         }
-        if let expectedCardID, cardID != normalized(expectedCardID) {
+        if let expectedCardID, cardID != normalizedKanbanIdentifier(expectedCardID) {
             throw KanbanContractViolation.missingCardIdentity
         }
         return card
-    }
-
-    private static func normalized(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed : nil
     }
 }
 
@@ -218,18 +208,19 @@ struct KanbanAddCommentResponse: Decodable, Equatable, Sendable {
 
 enum KanbanCardDetailValidator {
     static func validate(_ envelope: KanbanCardDetailEnvelope, requestedCardID: String) throws {
-        guard let cardID = normalized(envelope.card?.cardID), cardID == normalized(requestedCardID) else {
+        guard let cardID = normalizedKanbanIdentifier(envelope.card?.cardID),
+              cardID == normalizedKanbanIdentifier(requestedCardID) else {
             throw KanbanContractViolation.missingCardIdentity
         }
-        guard normalized(envelope.card?.status?.rawValue) != nil else {
+        guard normalizedKanbanIdentifier(envelope.card?.status?.rawValue) != nil else {
             throw KanbanContractViolation.missingCardStatus
         }
     }
+}
 
-    private static func normalized(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed : nil
-    }
+private func normalizedKanbanIdentifier(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed?.isEmpty == false ? trimmed : nil
 }
 
 struct KanbanLinkCounts: Decodable, Equatable, Sendable {

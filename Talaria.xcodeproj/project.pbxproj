@@ -56,6 +56,11 @@
 		1A2B3C4D5E6F70000000410 /* OnboardingComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */; };
 		1A2B3C4D5E6F7000000000A6 /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */; };
 		1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */; };
+		C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000101 /* SessionListInitialLoad.swift */; };
+		C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000102 /* SessionListNewChatReturn.swift */; };
+		C107V0000000000000000003 /* NewChatRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000103 /* NewChatRequest.swift */; };
+		C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000104 /* PendingNewChatRoute.swift */; };
+		C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000105 /* SessionListUtilityDestination.swift */; };
 		1A2B3C4D5E6F7000000000A8 /* Endpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */; };
 		1A2B3C4D5E6F7000000000A9 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */; };
 		1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */; };
@@ -83,6 +88,16 @@
 		C0391000000000000000000C /* APIClientSkillEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000C /* APIClientSkillEndpointTests.swift */; };
 		C0391000000000000000000D /* APIClientUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000D /* APIClientUploadTests.swift */; };
 		C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000E /* ChatViewModelSendTests.swift */; };
+		C107Y0000000000000000001 /* ChatViewModelSendTests+ActionsQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000101 /* ChatViewModelSendTests+ActionsQueue.swift */; };
+		C107Y0000000000000000002 /* ChatViewModelSendTests+Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000102 /* ChatViewModelSendTests+Attachments.swift */; };
+		C107Y0000000000000000003 /* ChatViewModelSendTests+ComposerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000103 /* ChatViewModelSendTests+ComposerConfig.swift */; };
+		C107Y0000000000000000004 /* ChatViewModelSendTests+Listen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000104 /* ChatViewModelSendTests+Listen.swift */; };
+		C107Y0000000000000000005 /* ChatViewModelSendTests+SendApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000105 /* ChatViewModelSendTests+SendApproval.swift */; };
+		C107Y0000000000000000006 /* ChatViewModelSendTests+StaleRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000106 /* ChatViewModelSendTests+StaleRecovery.swift */; };
+		C107Y0000000000000000007 /* ChatViewModelSendTests+StreamingEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000107 /* ChatViewModelSendTests+StreamingEvents.swift */; };
+		C107Y0000000000000000008 /* ChatViewModelSendTests+Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000108 /* ChatViewModelSendTests+Support.swift */; };
+		C107Y0000000000000000009 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000109 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift */; };
+		C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */; };
 		C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */; };
 		C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14600000000000000000001 /* ChatToolbarHeaderTests.swift */; };
 		C15210000000000000000001 /* OnboardingFlowPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000001 /* OnboardingFlowPolicy.swift */; };
@@ -93,6 +108,11 @@
 		C15210000000000000000006 /* OnboardingConnectPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000006 /* OnboardingConnectPage.swift */; };
 		C15210000000000000000007 /* OnboardingFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000007 /* OnboardingFlowTests.swift */; };
 		C0391000000000000000000F /* SessionListMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000F /* SessionListMutationTests.swift */; };
+		C107X0000000000000000001 /* SessionListLoadProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000101 /* SessionListLoadProfileTests.swift */; };
+		C107X0000000000000000002 /* SessionListSessionProjectArchiveMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000102 /* SessionListSessionProjectArchiveMutationTests.swift */; };
+		C107X0000000000000000003 /* SessionListRemoteSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000103 /* SessionListRemoteSearchTests.swift */; };
+		C107X0000000000000000004 /* SessionListAutomatedVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */; };
+		C107X0000000000000000005 /* SessionListMutationTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000105 /* SessionListMutationTestSupport.swift */; };
 		A10900000000000000000002 /* SessionNavigationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10900000000000000000012 /* SessionNavigationStateTests.swift */; };
 		C03910000000000000000010 /* APIEndpointContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000010 /* APIEndpointContractTests.swift */; };
 		C03910000000000000000011 /* CronManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000011 /* CronManagementTests.swift */; };
@@ -121,7 +141,11 @@
 		C107G000000000000000004 /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000014 /* ModelCatalog.swift */; };
 		A06100000000000000000001 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000005 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
-		A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
+		A06100000000000000000006 /* ProviderQuotaWidgetSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */; };
+		C107W0000000000000000001 /* ProviderQuotaPresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */; };
+		C107W0000000000000000002 /* ProviderQuotaWidgetLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */; };
+		C107W0000000000000000003 /* ProviderQuotaPace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000103 /* ProviderQuotaPace.swift */; };
+		C107W0000000000000000004 /* ProviderQuotaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000104 /* ProviderQuotaPresentation.swift */; };
 		C107M0000000000000000001 /* ProviderQuotaBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000201 /* ProviderQuotaBarsView.swift */; };
 		C107M0000000000000000002 /* ProviderQuotaBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000201 /* ProviderQuotaBarsView.swift */; };
 		C107M0000000000000000003 /* ProviderQuotaGaugeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */; };
@@ -150,7 +174,11 @@
 		C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000221 /* AgentRunProgressRail.swift */; };
 		C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000222 /* AgentRunTimerPill.swift */; };
 		C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */; };
-		A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
+		A06100000000000000000008 /* ProviderQuotaWidgetSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */; };
+		C107W0000000000000000011 /* ProviderQuotaPresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */; };
+		C107W0000000000000000012 /* ProviderQuotaWidgetLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */; };
+		C107W0000000000000000013 /* ProviderQuotaPace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000103 /* ProviderQuotaPace.swift */; };
+		C107W0000000000000000014 /* ProviderQuotaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000104 /* ProviderQuotaPresentation.swift */; };
 		C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
 		C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
 		C107F000000000000000003 /* ProviderQuotaWidgetRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */; };
@@ -217,6 +245,14 @@
 		C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */; };
 		C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000004 /* StreamReconnectContractTests.swift */; };
 		1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */; };
+		C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000101 /* ApprovalPromptState.swift */; };
+		C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000102 /* ProfileSwitchOutcome.swift */; };
+		C107T0000000000000000003 /* ChatPollingIntervals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000103 /* ChatPollingIntervals.swift */; };
+		C107T0000000000000000004 /* ActiveStreamRecoveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */; };
+		C107T0000000000000000005 /* ActiveChatStreamSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */; };
+		C107T0000000000000000006 /* QueuedSlashMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000106 /* QueuedSlashMessage.swift */; };
+		C107T0000000000000000007 /* ToolCall+ReplayMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */; };
+		C107T0000000000000000008 /* ClarificationPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000108 /* ClarificationPromptState.swift */; };
 		C107R0000000000000000001 /* ChatTranscriptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107R0000000000000000101 /* ChatTranscriptModels.swift */; };
 		C107C000000000000000001 /* ChatListenPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107C000000000000000011 /* ChatListenPlayback.swift */; };
 		1A2B3C4D5E6F7000000000D6 /* SSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */; };
@@ -299,6 +335,7 @@
 		C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */; };
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
+		C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000106 /* SettingsScrollAnchor.swift */; };
 		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
 		C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000102 /* SettingsTextFieldRow.swift */; };
 		C107J0000000000000000003 /* AccentColorSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000103 /* AccentColorSettings.swift */; };
@@ -518,8 +555,20 @@
 		C14900000000000000000005 /* KanbanFeatureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000006 /* KanbanFeatureState.swift */; };
 		C107S0000000000000000001 /* KanbanFeatureStateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000101 /* KanbanFeatureStateModels.swift */; };
 		C14900000000000000000007 /* KanbanLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000008 /* KanbanLabView.swift */; };
+		C107U0000000000000000001 /* KanbanCardInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000101 /* KanbanCardInteraction.swift */; };
+		C107U0000000000000000002 /* KanbanDispatcherPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000102 /* KanbanDispatcherPresentation.swift */; };
+		C107U0000000000000000003 /* KanbanFiltersDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000103 /* KanbanFiltersDraft.swift */; };
+		C107U0000000000000000004 /* KanbanBoardEditorMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000104 /* KanbanBoardEditorMode.swift */; };
+		C107U0000000000000000005 /* KanbanAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000105 /* KanbanAccessibility.swift */; };
+		C107U0000000000000000006 /* KanbanStatusPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000106 /* KanbanStatusPresentation.swift */; };
+		C107U0000000000000000007 /* KanbanFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000107 /* KanbanFormatters.swift */; };
 		C14900000000000000000009 /* APIClientKanbanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1490000000000000000000A /* APIClientKanbanTests.swift */; };
 		C1490000000000000000000B /* KanbanFeatureStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1490000000000000000000C /* KanbanFeatureStateTests.swift */; };
+		C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */; };
+		C107Z0000000000000000002 /* KanbanFeatureStateDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000102 /* KanbanFeatureStateDispatcherTests.swift */; };
+		C107Z0000000000000000003 /* KanbanFeatureStateCardMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */; };
+		C107Z0000000000000000004 /* KanbanFeatureStateBulkActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */; };
+		C107Z0000000000000000005 /* KanbanFeatureStateBoardManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */; };
 		C15100000000000000000001 /* KanbanEventStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000002 /* KanbanEventStreamClient.swift */; };
 		C15100000000000000000003 /* KanbanEventStreamClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000004 /* KanbanEventStreamClientTests.swift */; };
 		C15100000000000000000005 /* KanbanLiveUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000006 /* KanbanLiveUpdateTests.swift */; };
@@ -656,6 +705,11 @@
 		1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingComponents.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
+		C107V0000000000000000101 /* SessionListInitialLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListInitialLoad.swift; sourceTree = "<group>"; };
+		C107V0000000000000000102 /* SessionListNewChatReturn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListNewChatReturn.swift; sourceTree = "<group>"; };
+		C107V0000000000000000103 /* NewChatRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatRequest.swift; sourceTree = "<group>"; };
+		C107V0000000000000000104 /* PendingNewChatRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatRoute.swift; sourceTree = "<group>"; };
+		C107V0000000000000000105 /* SessionListUtilityDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListUtilityDestination.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoints.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
@@ -683,6 +737,16 @@
 		C0390000000000000000000C /* APIClientSkillEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSkillEndpointTests.swift; sourceTree = "<group>"; };
 		C0390000000000000000000D /* APIClientUploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientUploadTests.swift; sourceTree = "<group>"; };
 		C0390000000000000000000E /* ChatViewModelSendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelSendTests.swift; sourceTree = "<group>"; };
+		C107Y0000000000000000101 /* ChatViewModelSendTests+ActionsQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+ActionsQueue.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000102 /* ChatViewModelSendTests+Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+Attachments.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000103 /* ChatViewModelSendTests+ComposerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+ComposerConfig.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000104 /* ChatViewModelSendTests+Listen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+Listen.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000105 /* ChatViewModelSendTests+SendApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+SendApproval.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000106 /* ChatViewModelSendTests+StaleRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+StaleRecovery.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000107 /* ChatViewModelSendTests+StreamingEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+StreamingEvents.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000108 /* ChatViewModelSendTests+Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+Support.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000109 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+TranscriptCacheReconcile.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+TranscriptHistory.swift"; sourceTree = "<group>"; };
 		C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelMergeDedupTests.swift; sourceTree = "<group>"; };
 		C14600000000000000000001 /* ChatToolbarHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarHeaderTests.swift; sourceTree = "<group>"; };
 		C15200000000000000000001 /* OnboardingFlowPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowPolicy.swift; sourceTree = "<group>"; };
@@ -693,6 +757,11 @@
 		C15200000000000000000006 /* OnboardingConnectPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingConnectPage.swift; sourceTree = "<group>"; };
 		C15200000000000000000007 /* OnboardingFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowTests.swift; sourceTree = "<group>"; };
 		C0390000000000000000000F /* SessionListMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListMutationTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000101 /* SessionListLoadProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListLoadProfileTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000102 /* SessionListSessionProjectArchiveMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListSessionProjectArchiveMutationTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000103 /* SessionListRemoteSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListRemoteSearchTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListAutomatedVisibilityTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000105 /* SessionListMutationTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListMutationTestSupport.swift; sourceTree = "<group>"; };
 		A10900000000000000000012 /* SessionNavigationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationStateTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000010 /* APIEndpointContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIEndpointContractTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000011 /* CronManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronManagementTests.swift; sourceTree = "<group>"; };
@@ -720,7 +789,11 @@
 		C107G000000000000000013 /* ServerProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerProfiles.swift; sourceTree = "<group>"; };
 		C107G000000000000000014 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
 		A06100000000000000000002 /* ProviderQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuota.swift; sourceTree = "<group>"; };
-		A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSupport.swift; sourceTree = "<group>"; };
+		A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSettings.swift; sourceTree = "<group>"; };
+		C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPresentationModels.swift; sourceTree = "<group>"; };
+		C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetLayout.swift; sourceTree = "<group>"; };
+		C107W0000000000000000103 /* ProviderQuotaPace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPace.swift; sourceTree = "<group>"; };
+		C107W0000000000000000104 /* ProviderQuotaPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPresentation.swift; sourceTree = "<group>"; };
 		C107M0000000000000000201 /* ProviderQuotaBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaBarsView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaGaugeView.swift; sourceTree = "<group>"; };
 		C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPercentageView.swift; sourceTree = "<group>"; };
@@ -804,6 +877,14 @@
 		C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedSSEStreamFixture.swift; sourceTree = "<group>"; };
 		C22600000000000000000004 /* StreamReconnectContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamReconnectContractTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		C107T0000000000000000101 /* ApprovalPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalPromptState.swift; sourceTree = "<group>"; };
+		C107T0000000000000000102 /* ProfileSwitchOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitchOutcome.swift; sourceTree = "<group>"; };
+		C107T0000000000000000103 /* ChatPollingIntervals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPollingIntervals.swift; sourceTree = "<group>"; };
+		C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveStreamRecoveryState.swift; sourceTree = "<group>"; };
+		C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChatStreamSnapshotStore.swift; sourceTree = "<group>"; };
+		C107T0000000000000000106 /* QueuedSlashMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedSlashMessage.swift; sourceTree = "<group>"; };
+		C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ToolCall+ReplayMatching.swift"; sourceTree = "<group>"; };
+		C107T0000000000000000108 /* ClarificationPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationPromptState.swift; sourceTree = "<group>"; };
 		C107R0000000000000000101 /* ChatTranscriptModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptModels.swift; sourceTree = "<group>"; };
 		C107C000000000000000011 /* ChatListenPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListenPlayback.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClient.swift; sourceTree = "<group>"; };
@@ -886,6 +967,7 @@
 		C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStoreTests.swift; sourceTree = "<group>"; };
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		C107V0000000000000000106 /* SettingsScrollAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScrollAnchor.swift; sourceTree = "<group>"; };
 		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
 		C107J0000000000000000102 /* SettingsTextFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTextFieldRow.swift; sourceTree = "<group>"; };
 		C107J0000000000000000103 /* AccentColorSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentColorSettings.swift; sourceTree = "<group>"; };
@@ -1129,8 +1211,20 @@
 		C14900000000000000000006 /* KanbanFeatureState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureState.swift; sourceTree = "<group>"; };
 		C107S0000000000000000101 /* KanbanFeatureStateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateModels.swift; sourceTree = "<group>"; };
 		C14900000000000000000008 /* KanbanLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLabView.swift; sourceTree = "<group>"; };
+		C107U0000000000000000101 /* KanbanCardInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardInteraction.swift; sourceTree = "<group>"; };
+		C107U0000000000000000102 /* KanbanDispatcherPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanDispatcherPresentation.swift; sourceTree = "<group>"; };
+		C107U0000000000000000103 /* KanbanFiltersDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFiltersDraft.swift; sourceTree = "<group>"; };
+		C107U0000000000000000104 /* KanbanBoardEditorMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardEditorMode.swift; sourceTree = "<group>"; };
+		C107U0000000000000000105 /* KanbanAccessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanAccessibility.swift; sourceTree = "<group>"; };
+		C107U0000000000000000106 /* KanbanStatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanStatusPresentation.swift; sourceTree = "<group>"; };
+		C107U0000000000000000107 /* KanbanFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFormatters.swift; sourceTree = "<group>"; };
 		C1490000000000000000000A /* APIClientKanbanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientKanbanTests.swift; sourceTree = "<group>"; };
 		C1490000000000000000000C /* KanbanFeatureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateLoadTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000102 /* KanbanFeatureStateDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateDispatcherTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateCardMutationTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateBulkActionTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateBoardManagementTests.swift; sourceTree = "<group>"; };
 		C15100000000000000000002 /* KanbanEventStreamClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanEventStreamClient.swift; sourceTree = "<group>"; };
 		C15100000000000000000004 /* KanbanEventStreamClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanEventStreamClientTests.swift; sourceTree = "<group>"; };
 		C15100000000000000000006 /* KanbanLiveUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLiveUpdateTests.swift; sourceTree = "<group>"; };
@@ -1310,10 +1404,25 @@
 					C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */,
 					C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */,
 					C0390000000000000000000E /* ChatViewModelSendTests.swift */,
+					C107Y0000000000000000101 /* ChatViewModelSendTests+ActionsQueue.swift */,
+					C107Y0000000000000000102 /* ChatViewModelSendTests+Attachments.swift */,
+					C107Y0000000000000000103 /* ChatViewModelSendTests+ComposerConfig.swift */,
+					C107Y0000000000000000104 /* ChatViewModelSendTests+Listen.swift */,
+					C107Y0000000000000000105 /* ChatViewModelSendTests+SendApproval.swift */,
+					C107Y0000000000000000106 /* ChatViewModelSendTests+StaleRecovery.swift */,
+					C107Y0000000000000000107 /* ChatViewModelSendTests+StreamingEvents.swift */,
+					C107Y0000000000000000108 /* ChatViewModelSendTests+Support.swift */,
+					C107Y0000000000000000109 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift */,
+					C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */,
 					C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */,
 					C14600000000000000000001 /* ChatToolbarHeaderTests.swift */,
 					C15200000000000000000007 /* OnboardingFlowTests.swift */,
 				C0390000000000000000000F /* SessionListMutationTests.swift */,
+				C107X0000000000000000101 /* SessionListLoadProfileTests.swift */,
+				C107X0000000000000000102 /* SessionListSessionProjectArchiveMutationTests.swift */,
+				C107X0000000000000000103 /* SessionListRemoteSearchTests.swift */,
+				C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */,
+				C107X0000000000000000105 /* SessionListMutationTestSupport.swift */,
 				A10900000000000000000012 /* SessionNavigationStateTests.swift */,
 				C03900000000000000000010 /* APIEndpointContractTests.swift */,
 				C03900000000000000000011 /* CronManagementTests.swift */,
@@ -1335,6 +1444,11 @@
 				C23400000000000000000006 /* StreamingLabReplayTests.swift */,
 				C1490000000000000000000A /* APIClientKanbanTests.swift */,
 				C1490000000000000000000C /* KanbanFeatureStateTests.swift */,
+				C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */,
+				C107Z0000000000000000102 /* KanbanFeatureStateDispatcherTests.swift */,
+				C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */,
+				C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */,
+				C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */,
 				C15100000000000000000004 /* KanbanEventStreamClientTests.swift */,
 				C15100000000000000000006 /* KanbanLiveUpdateTests.swift */,
 				C15400000000000000000006 /* KanbanCardDetailStateTests.swift */,
@@ -1432,7 +1546,11 @@
 				C107G000000000000000013 /* ServerProfiles.swift */,
 				C107G000000000000000014 /* ModelCatalog.swift */,
 				A06100000000000000000002 /* ProviderQuota.swift */,
-				A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */,
+				A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */,
+				C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */,
+				C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */,
+				C107W0000000000000000103 /* ProviderQuotaPace.swift */,
+				C107W0000000000000000104 /* ProviderQuotaPresentation.swift */,
 				C107M0000000000000000201 /* ProviderQuotaBarsView.swift */,
 				C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */,
 				C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */,
@@ -1515,6 +1633,13 @@
 				C14900000000000000000006 /* KanbanFeatureState.swift */,
 				C107S0000000000000000101 /* KanbanFeatureStateModels.swift */,
 				C14900000000000000000008 /* KanbanLabView.swift */,
+				C107U0000000000000000101 /* KanbanCardInteraction.swift */,
+				C107U0000000000000000102 /* KanbanDispatcherPresentation.swift */,
+				C107U0000000000000000103 /* KanbanFiltersDraft.swift */,
+				C107U0000000000000000104 /* KanbanBoardEditorMode.swift */,
+				C107U0000000000000000105 /* KanbanAccessibility.swift */,
+				C107U0000000000000000106 /* KanbanStatusPresentation.swift */,
+				C107U0000000000000000107 /* KanbanFormatters.swift */,
 				C107O0000000000000000118 /* KanbanStatusFocusView.swift */,
 				C107O0000000000000000119 /* KanbanBoardManagementView.swift */,
 				C107O0000000000000000120 /* KanbanBoardEditorView.swift */,
@@ -1546,6 +1671,11 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */,
+				C107V0000000000000000101 /* SessionListInitialLoad.swift */,
+				C107V0000000000000000102 /* SessionListNewChatReturn.swift */,
+				C107V0000000000000000103 /* NewChatRequest.swift */,
+				C107V0000000000000000104 /* PendingNewChatRoute.swift */,
+				C107V0000000000000000105 /* SessionListUtilityDestination.swift */,
 				1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */,
 				C107L0000000000000000120 /* SessionRowStateBadge.swift */,
 				C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */,
@@ -1711,6 +1841,14 @@
 					C04700000000000000000002 /* ChatPendingActionCoordinator.swift */,
 					C04800000000000000000002 /* ChatAttachmentCoordinator.swift */,
 				1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */,
+				C107T0000000000000000101 /* ApprovalPromptState.swift */,
+				C107T0000000000000000108 /* ClarificationPromptState.swift */,
+				C107T0000000000000000102 /* ProfileSwitchOutcome.swift */,
+				C107T0000000000000000103 /* ChatPollingIntervals.swift */,
+				C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */,
+				C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */,
+				C107T0000000000000000106 /* QueuedSlashMessage.swift */,
+				C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */,
 				C107R0000000000000000101 /* ChatTranscriptModels.swift */,
 					C107C000000000000000011 /* ChatListenPlayback.swift */,
 				A710739233F64F4FA4C2B710 /* ComposerVoiceInputController.swift */,
@@ -1773,6 +1911,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				C107V0000000000000000106 /* SettingsScrollAnchor.swift */,
 				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
 				C107J0000000000000000102 /* SettingsTextFieldRow.swift */,
 				C107J0000000000000000103 /* AccentColorSettings.swift */,
@@ -2253,6 +2392,13 @@
 				C14900000000000000000005 /* KanbanFeatureState.swift in Sources */,
 				C107S0000000000000000001 /* KanbanFeatureStateModels.swift in Sources */,
 				C14900000000000000000007 /* KanbanLabView.swift in Sources */,
+				C107U0000000000000000001 /* KanbanCardInteraction.swift in Sources */,
+				C107U0000000000000000002 /* KanbanDispatcherPresentation.swift in Sources */,
+				C107U0000000000000000003 /* KanbanFiltersDraft.swift in Sources */,
+				C107U0000000000000000004 /* KanbanBoardEditorMode.swift in Sources */,
+				C107U0000000000000000005 /* KanbanAccessibility.swift in Sources */,
+				C107U0000000000000000006 /* KanbanStatusPresentation.swift in Sources */,
+				C107U0000000000000000007 /* KanbanFormatters.swift in Sources */,
 				C15400000000000000000001 /* KanbanCardDetailState.swift in Sources */,
 				C15400000000000000000003 /* KanbanCardDetailView.swift in Sources */,
 				C15300000000000000000001 /* KanbanCardEditorState.swift in Sources */,
@@ -2286,7 +2432,11 @@
 				C107G000000000000000003 /* ServerProfiles.swift in Sources */,
 				C107G000000000000000004 /* ModelCatalog.swift in Sources */,
 				A06100000000000000000001 /* ProviderQuota.swift in Sources */,
-				A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				A06100000000000000000006 /* ProviderQuotaWidgetSettings.swift in Sources */,
+				C107W0000000000000000001 /* ProviderQuotaPresentationModels.swift in Sources */,
+				C107W0000000000000000002 /* ProviderQuotaWidgetLayout.swift in Sources */,
+				C107W0000000000000000003 /* ProviderQuotaPace.swift in Sources */,
+				C107W0000000000000000004 /* ProviderQuotaPresentation.swift in Sources */,
 				C107M0000000000000000001 /* ProviderQuotaBarsView.swift in Sources */,
 				C107M0000000000000000003 /* ProviderQuotaGaugeView.swift in Sources */,
 				C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
@@ -2305,6 +2455,7 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */,
 				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,
 				C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */,
 				C107J0000000000000000003 /* AccentColorSettings.swift in Sources */,
@@ -2454,6 +2605,11 @@
 				C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */,
 				C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */,
 					1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */,
+					C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */,
+					C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */,
+					C107V0000000000000000003 /* NewChatRequest.swift in Sources */,
+					C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */,
+					C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */,
 					1A2B3C4D5E6F7000000000AF /* ChatView.swift in Sources */,
 					C107A000000000000000001 /* NavigationAppearanceCompletionObserver.swift in Sources */,
 					C107A000000000000000002 /* ListenPlaybackBar.swift in Sources */,
@@ -2538,6 +2694,14 @@
 					C04700000000000000000001 /* ChatPendingActionCoordinator.swift in Sources */,
 					C04800000000000000000001 /* ChatAttachmentCoordinator.swift in Sources */,
 				1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */,
+				C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */,
+				C107T0000000000000000008 /* ClarificationPromptState.swift in Sources */,
+				C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */,
+				C107T0000000000000000003 /* ChatPollingIntervals.swift in Sources */,
+				C107T0000000000000000004 /* ActiveStreamRecoveryState.swift in Sources */,
+				C107T0000000000000000005 /* ActiveChatStreamSnapshotStore.swift in Sources */,
+				C107T0000000000000000006 /* QueuedSlashMessage.swift in Sources */,
+				C107T0000000000000000007 /* ToolCall+ReplayMatching.swift in Sources */,
 				C107R0000000000000000001 /* ChatTranscriptModels.swift in Sources */,
 					C107C000000000000000001 /* ChatListenPlayback.swift in Sources */,
 				1A2B3C4D5E6F7000000000D6 /* SSEClient.swift in Sources */,
@@ -2648,10 +2812,25 @@
 					C04600000000000000000003 /* ChatStreamCoordinatorTests.swift in Sources */,
 					C04800000000000000000003 /* ChatAttachmentCoordinatorTests.swift in Sources */,
 					C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */,
+					C107Y0000000000000000001 /* ChatViewModelSendTests+ActionsQueue.swift in Sources */,
+					C107Y0000000000000000002 /* ChatViewModelSendTests+Attachments.swift in Sources */,
+					C107Y0000000000000000003 /* ChatViewModelSendTests+ComposerConfig.swift in Sources */,
+					C107Y0000000000000000004 /* ChatViewModelSendTests+Listen.swift in Sources */,
+					C107Y0000000000000000005 /* ChatViewModelSendTests+SendApproval.swift in Sources */,
+					C107Y0000000000000000006 /* ChatViewModelSendTests+StaleRecovery.swift in Sources */,
+					C107Y0000000000000000007 /* ChatViewModelSendTests+StreamingEvents.swift in Sources */,
+					C107Y0000000000000000008 /* ChatViewModelSendTests+Support.swift in Sources */,
+					C107Y0000000000000000009 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift in Sources */,
+					C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */,
 					C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */,
 					C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */,
 					C15210000000000000000007 /* OnboardingFlowTests.swift in Sources */,
 				C0391000000000000000000F /* SessionListMutationTests.swift in Sources */,
+				C107X0000000000000000001 /* SessionListLoadProfileTests.swift in Sources */,
+				C107X0000000000000000002 /* SessionListSessionProjectArchiveMutationTests.swift in Sources */,
+				C107X0000000000000000003 /* SessionListRemoteSearchTests.swift in Sources */,
+				C107X0000000000000000004 /* SessionListAutomatedVisibilityTests.swift in Sources */,
+				C107X0000000000000000005 /* SessionListMutationTestSupport.swift in Sources */,
 				A10900000000000000000002 /* SessionNavigationStateTests.swift in Sources */,
 				C03910000000000000000010 /* APIEndpointContractTests.swift in Sources */,
 				C03910000000000000000011 /* CronManagementTests.swift in Sources */,
@@ -2673,6 +2852,11 @@
 				C23400000000000000000005 /* StreamingLabReplayTests.swift in Sources */,
 				C14900000000000000000009 /* APIClientKanbanTests.swift in Sources */,
 				C1490000000000000000000B /* KanbanFeatureStateTests.swift in Sources */,
+				C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */,
+				C107Z0000000000000000002 /* KanbanFeatureStateDispatcherTests.swift in Sources */,
+				C107Z0000000000000000003 /* KanbanFeatureStateCardMutationTests.swift in Sources */,
+				C107Z0000000000000000004 /* KanbanFeatureStateBulkActionTests.swift in Sources */,
+				C107Z0000000000000000005 /* KanbanFeatureStateBoardManagementTests.swift in Sources */,
 				C15100000000000000000003 /* KanbanEventStreamClientTests.swift in Sources */,
 				C15100000000000000000005 /* KanbanLiveUpdateTests.swift in Sources */,
 				C15400000000000000000005 /* KanbanCardDetailStateTests.swift in Sources */,
@@ -2745,7 +2929,11 @@
 				A04500000000000000000005 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */,
 				A06100000000000000000005 /* ProviderQuota.swift in Sources */,
-				A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				A06100000000000000000008 /* ProviderQuotaWidgetSettings.swift in Sources */,
+				C107W0000000000000000011 /* ProviderQuotaPresentationModels.swift in Sources */,
+				C107W0000000000000000012 /* ProviderQuotaWidgetLayout.swift in Sources */,
+				C107W0000000000000000013 /* ProviderQuotaPace.swift in Sources */,
+				C107W0000000000000000014 /* ProviderQuotaPresentation.swift in Sources */,
 				C107M0000000000000000002 /* ProviderQuotaBarsView.swift in Sources */,
 				C107M0000000000000000004 /* ProviderQuotaGaugeView.swift in Sources */,
 				C107M0000000000000000006 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
