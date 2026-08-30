@@ -232,7 +232,13 @@ final class AuthManager {
                 }
             }
 
-            try completeConfiguration(serverURL, previousServerID: previousServerID)
+            do {
+                try completeConfiguration(serverURL, previousServerID: previousServerID)
+            } catch {
+                _ = try? await client.logout()
+                clearSessionCookies(for: serverURL)
+                throw error
+            }
         } catch {
             guard canCommit() else { return }
             lastErrorMessage = error.localizedDescription
@@ -464,6 +470,9 @@ final class AuthManager {
                 codeVerifier: flow.codeVerifier
             )
             guard response.ok == true else { throw APIError.unauthorized }
+            guard try await client.authStatus().isAlreadySignedIn else {
+                throw APIError.unauthorized
+            }
             startedFlow = nil
         } catch {
             if let startedFlow {

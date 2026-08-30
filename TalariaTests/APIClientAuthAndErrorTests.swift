@@ -421,7 +421,11 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             .path: "/",
             .secure: "TRUE"
         ]))
-        let client = OIDCMockAuthAPIClient(onExchange: { cookies.setCookie(cookie) })
+        var logoutSawCookie = false
+        let client = OIDCMockAuthAPIClient(
+            onExchange: { cookies.setCookie(cookie) },
+            onLogout: { logoutSawCookie = cookies.cookies?.contains(cookie) == true }
+        )
         let keychain = ServerURLFailingKeychain()
         let manager = AuthManager(
             keychain: keychain,
@@ -439,6 +443,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
 
         XCTAssertTrue(cookies.cookies?.isEmpty ?? true)
         XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertTrue(logoutSawCookie)
         XCTAssertEqual(manager.state, .unconfigured)
         XCTAssertNotNil(manager.lastErrorMessage)
     }
@@ -557,6 +562,35 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
                 codeVerifier: "verifier"
             )
             XCTFail("An exchange without a session cookie must fail closed")
+        } catch APIError.unauthorized {
+            // Expected.
+        } catch {
+            XCTFail("Expected unauthorized, got \(error)")
+        }
+    }
+
+    func testNativeOIDCExchangeRejectsNonHTTPOnlyCookie() async throws {
+        let client = makeClient { request in
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: [
+                    "Content-Type": "application/json",
+                    "Set-Cookie": "not_a_session=value; Path=/; Secure"
+                ]
+            ))
+            return (response, Data(#"{"ok":true}"#.utf8))
+        }
+
+        do {
+            _ = try await client.exchangeNativeOIDC(
+                flowID: "flow-1",
+                code: "one-time-code",
+                state: "app-state",
+                codeVerifier: "verifier"
+            )
+            XCTFail("A non-HttpOnly cookie must not establish a session")
         } catch APIError.unauthorized {
             // Expected.
         } catch {
@@ -698,6 +732,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private let authorizationBaseURL: URL
     private let passwordAuthEnabled: Bool
     private let onExchange: () -> Void
+    private let onLogout: () -> Void
     private(set) var state: String?
     private(set) var codeChallenge: String?
     private(set) var exchangeCodes: [String] = []
@@ -709,11 +744,13 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     init(
         authorizationBaseURL: URL = URL(string: "https://example.test")!,
         passwordAuthEnabled: Bool = false,
-        onExchange: @escaping () -> Void = {}
+        onExchange: @escaping () -> Void = {},
+        onLogout: @escaping () -> Void = {}
     ) {
         self.authorizationBaseURL = authorizationBaseURL
         self.passwordAuthEnabled = passwordAuthEnabled
         self.onExchange = onExchange
+        self.onLogout = onLogout
     }
 
     func health() async throws -> HealthResponse {
@@ -723,7 +760,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     func authStatus() async throws -> AuthStatusResponse {
         AuthStatusResponse(
             authEnabled: true,
-            loggedIn: false,
+            loggedIn: !exchangeCodes.isEmpty,
             passwordAuthEnabled: passwordAuthEnabled,
             oidcEnabled: true,
             oidcNativeHandoffEnabled: true
@@ -737,6 +774,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
 
     func logout() async throws -> LoginResponse {
         logoutCount += 1
+        onLogout()
         return LoginResponse(ok: true, message: nil, error: nil)
     }
 

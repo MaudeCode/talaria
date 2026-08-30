@@ -146,8 +146,28 @@ actor APIClient {
             withResponseHeaderFields: headerFields,
             for: responseURL
         )
-        guard !responseCookies.isEmpty else { throw APIError.unauthorized }
+        let requiresSecureCookie = responseURL.scheme?.lowercased() == "https"
+        let secureSessionCookies = responseCookies.filter {
+            $0.isHTTPOnly && (!requiresSecureCookie || $0.isSecure)
+        }
+        guard !secureSessionCookies.isEmpty else {
+            responseCookies.forEach(cookieStorage.deleteCookie)
+            throw APIError.unauthorized
+        }
         responseCookies.forEach(cookieStorage.setCookie)
+        let authStatusURL = Endpoint.authStatus.url(relativeTo: baseURL)
+        let applicable = cookieStorage.cookies(for: authStatusURL) ?? []
+        guard secureSessionCookies.contains(where: { candidate in
+            applicable.contains(where: {
+                $0.name == candidate.name
+                    && $0.domain == candidate.domain
+                    && $0.path == candidate.path
+                    && $0.value == candidate.value
+            })
+        }) else {
+            responseCookies.forEach(cookieStorage.deleteCookie)
+            throw APIError.unauthorized
+        }
         return try decode(LoginResponse.self, from: data)
     }
 
@@ -372,115 +392,6 @@ private extension APIClient {
     }
 }
 
-final class ServerCookieStore: @unchecked Sendable {
-    static let shared = ServerCookieStore()
-
-    private let keychain: any KeychainStoring
-    private let legacyStorage: HTTPCookieStorage
-    private let storages = OSAllocatedUnfairLock(initialState: [String: HTTPCookieStorage]())
-
-    init(
-        keychain: any KeychainStoring = KeychainStore(),
-        legacyStorage: HTTPCookieStorage = .shared
-    ) {
-        self.keychain = keychain
-        self.legacyStorage = legacyStorage
-    }
-
-    func storage(for server: URL) -> HTTPCookieStorage {
-        let server = Self.scopeURL(for: server)
-        let scope = server.absoluteString
-        return storages.withLock { storages in
-            if let existing = storages[scope] { return existing }
-
-            let storage = Self.makeIsolatedStorage()
-            if let encoded = try? keychain.load(.sessionCookies, scope: scope),
-               let data = encoded.data(using: .utf8),
-               let cookies = try? JSONDecoder().decode([StoredCookie].self, from: data) {
-                cookies.compactMap(\.cookie).forEach(storage.setCookie)
-            } else {
-                // One-time migration from the legacy shared jar. The first exact
-                // server URL to claim a host gets its old cookie; a second port
-                // fails closed instead of inheriting that credential.
-                let legacy = legacyStorage.cookies(for: server) ?? []
-                legacy.forEach {
-                    storage.setCookie($0)
-                    legacyStorage.deleteCookie($0)
-                }
-            }
-            storages[scope] = storage
-            return storage
-        }
-    }
-
-    func persist(for server: URL) throws {
-        let server = Self.scopeURL(for: server)
-        let cookies = (storage(for: server).cookies(for: server) ?? []).map(StoredCookie.init)
-        guard !cookies.isEmpty,
-              let data = try? JSONEncoder().encode(cookies),
-              let encoded = String(data: data, encoding: .utf8)
-        else {
-            try keychain.delete(.sessionCookies, scope: server.absoluteString)
-            return
-        }
-        try keychain.save(encoded, forKey: .sessionCookies, scope: server.absoluteString)
-    }
-
-    func clear(for server: URL) {
-        let server = Self.scopeURL(for: server)
-        let storage = storage(for: server)
-        storage.cookies?.forEach(storage.deleteCookie)
-        try? keychain.delete(.sessionCookies, scope: server.absoluteString)
-    }
-
-    static func makeIsolatedStorage() -> HTTPCookieStorage {
-        URLSessionConfiguration.ephemeral.httpCookieStorage ?? HTTPCookieStorage()
-    }
-
-    private static func scopeURL(for url: URL) -> URL {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url
-        }
-        components.path = ""
-        components.query = nil
-        components.fragment = nil
-        return components.url ?? url
-    }
-}
-
-private struct StoredCookie: Codable {
-    let name: String
-    let value: String
-    let domain: String
-    let path: String
-    let expiresDate: Date?
-    let isSecure: Bool
-    let isHTTPOnly: Bool
-
-    init(_ cookie: HTTPCookie) {
-        name = cookie.name
-        value = cookie.value
-        domain = cookie.domain
-        path = cookie.path
-        expiresDate = cookie.expiresDate
-        isSecure = cookie.isSecure
-        isHTTPOnly = cookie.isHTTPOnly
-    }
-
-    var cookie: HTTPCookie? {
-        var properties: [HTTPCookiePropertyKey: Any] = [
-            .name: name,
-            .value: value,
-            .domain: domain,
-            .path: path,
-            .secure: isSecure ? "TRUE" : "FALSE"
-        ]
-        if let expiresDate { properties[.expires] = expiresDate }
-        if isHTTPOnly { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
-        return HTTPCookie(properties: properties)
-    }
-}
-
 private struct LoginRequest: Encodable {
     let password: String
 }
@@ -560,7 +471,8 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         // slip through unstripped (a sub-second live-edit race; see #277 review).
         // Accepted as a known narrow gap; closing it would require carrying the
         // applied-name set through the redirect.
-        let namesToStrip = Set(
+        var namesToStrip: Set<String> = ["cookie"]
+        namesToStrip.formUnion(
             customHeaderProvider()
                 .filter { $0.isApplicable }
                 .map { $0.sanitizedName.lowercased() }
