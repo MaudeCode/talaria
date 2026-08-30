@@ -21,7 +21,7 @@ struct ArchivedSessionsView: View {
     var body: some View {
         content
             .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
-            .navigationTitle("Archived Sessions")
+            .navigationTitle("Archived Chats")
             .navigationDestination(item: $openedSession) { session in
                 // Opening an archived session reuses the normal read path —
                 // no special-casing on the chat side (issue #17).

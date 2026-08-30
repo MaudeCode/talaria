@@ -335,6 +335,12 @@
 		C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */; };
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
+		C108A0000000000000000001 /* SettingsCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000101 /* SettingsCategory.swift */; };
+		C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000102 /* PersonalizationSettingsViews.swift */; };
+		C108A0000000000000000003 /* ConversationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000103 /* ConversationSettingsViews.swift */; };
+		C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000104 /* SystemSettingsViews.swift */; };
+		C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */; };
+		C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */; };
 		C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000106 /* SettingsScrollAnchor.swift */; };
 		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
 		C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000102 /* SettingsTextFieldRow.swift */; };
@@ -363,6 +369,7 @@
 		C107J0000000000000000025 /* AddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000125 /* AddServerView.swift */; };
 		C107J0000000000000000026 /* ProviderQuotaWidgetAppearanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */; };
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
+		C100A0000000000000000001 /* RelayConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100A0000000000000000101 /* RelayConnectionSettingsView.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
 		C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000101 /* ChatScrollObserver.swift */; };
@@ -586,6 +593,7 @@
 		A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000002 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000012 /* AgentLiveActivityManager.swift */; };
+		C100B0000000000000000001 /* PerSessionRelayActivityRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */; };
 		C107E000000000000000001 /* TalariaRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000011 /* TalariaRelay.swift */; };
 		C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */; };
 		C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000013 /* LiveActivityReconciler.swift */; };
@@ -967,6 +975,12 @@
 		C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStoreTests.swift; sourceTree = "<group>"; };
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		C108A0000000000000000101 /* SettingsCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCategory.swift; sourceTree = "<group>"; };
+		C108A0000000000000000102 /* PersonalizationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000103 /* ConversationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000104 /* SystemSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersProvidersSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerUpdateSettingsSection.swift; sourceTree = "<group>"; };
 		C107V0000000000000000106 /* SettingsScrollAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScrollAnchor.swift; sourceTree = "<group>"; };
 		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
 		C107J0000000000000000102 /* SettingsTextFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTextFieldRow.swift; sourceTree = "<group>"; };
@@ -995,6 +1009,7 @@
 		C107J0000000000000000125 /* AddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
 		C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetAppearanceView.swift; sourceTree = "<group>"; };
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
+		C100A0000000000000000101 /* RelayConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayConnectionSettingsView.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		C107O0000000000000000101 /* ChatScrollObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollObserver.swift; sourceTree = "<group>"; };
@@ -1239,6 +1254,7 @@
 		A04500000000000000000010 /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
 		A04500000000000000000011 /* TalariaDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaDeepLink.swift; sourceTree = "<group>"; };
 		A04500000000000000000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
+		C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerSessionRelayActivityRegistration.swift; sourceTree = "<group>"; };
 		C107E000000000000000011 /* TalariaRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaRelay.swift; sourceTree = "<group>"; };
 		C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateLiveActivityManager.swift; sourceTree = "<group>"; };
 		C107E000000000000000013 /* LiveActivityReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityReconciler.swift; sourceTree = "<group>"; };
@@ -1911,6 +1927,12 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				C108A0000000000000000101 /* SettingsCategory.swift */,
+				C108A0000000000000000102 /* PersonalizationSettingsViews.swift */,
+				C108A0000000000000000103 /* ConversationSettingsViews.swift */,
+				C108A0000000000000000104 /* SystemSettingsViews.swift */,
+				C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */,
+				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
 				C107V0000000000000000106 /* SettingsScrollAnchor.swift */,
 				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
 				C107J0000000000000000102 /* SettingsTextFieldRow.swift */,
@@ -1939,6 +1961,7 @@
 				C107J0000000000000000125 /* AddServerView.swift */,
 				C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */,
 				A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */,
+				C100A0000000000000000101 /* RelayConnectionSettingsView.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
 				C107I000000000000000011 /* AppIconDisclosureLabel.swift */,
 				C107I000000000000000012 /* AppIconChoiceRow.swift */,
@@ -2014,6 +2037,7 @@
 				A04500000000000000000010 /* AgentRunActivityAttributes.swift */,
 				A04500000000000000000011 /* TalariaDeepLink.swift */,
 				A04500000000000000000012 /* AgentLiveActivityManager.swift */,
+				C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */,
 				C107E000000000000000011 /* TalariaRelay.swift */,
 				C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */,
 				C107E000000000000000013 /* LiveActivityReconciler.swift */,
@@ -2356,6 +2380,7 @@
 				A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */,
 				A04500000000000000000002 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */,
+				C100B0000000000000000001 /* PerSessionRelayActivityRegistration.swift in Sources */,
 				C107E000000000000000001 /* TalariaRelay.swift in Sources */,
 				C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */,
 				C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */,
@@ -2455,6 +2480,12 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				C108A0000000000000000001 /* SettingsCategory.swift in Sources */,
+				C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */,
+				C108A0000000000000000003 /* ConversationSettingsViews.swift in Sources */,
+				C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */,
+				C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */,
+				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
 				C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */,
 				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,
 				C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */,
@@ -2483,6 +2514,7 @@
 				C107J0000000000000000025 /* AddServerView.swift in Sources */,
 				C107J0000000000000000026 /* ProviderQuotaWidgetAppearanceView.swift in Sources */,
 				A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */,
+				C100A0000000000000000001 /* RelayConnectionSettingsView.swift in Sources */,
 				C012400000000000000004 /* AppIconSettingsSection.swift in Sources */,
 				C107I000000000000000001 /* AppIconDisclosureLabel.swift in Sources */,
 				C107I000000000000000002 /* AppIconChoiceRow.swift in Sources */,

@@ -1,5 +1,12 @@
-/// A Settings section a deep link can scroll to when the screen opens.
+/// A Settings destination that an external entry point can open directly.
 enum SettingsScrollAnchor: Hashable {
     case servers
     case providerQuotas
+
+    var destination: SettingsDestination {
+        switch self {
+        case .servers: .servers
+        case .providerQuotas: .providerQuotas
+        }
+    }
 }

@@ -1122,7 +1122,7 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
     private(set) var markStaleCount = 0
     private(set) var ends: [End] = []
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?) {
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL) {
         starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID))
     }
 

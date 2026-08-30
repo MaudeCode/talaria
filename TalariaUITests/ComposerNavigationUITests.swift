@@ -106,19 +106,10 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     func testComposerSettingsAreGroupedAndConfigurable() throws {
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
-
-        openNavigation.tap()
-        let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
-        sidebar.descendants(matching: .any)["Settings"].firstMatch.tap()
+        openSettings()
+        tapSettingsCategory(id: "chats", title: "Chats")
 
         let composerHeading = app.staticTexts["Composer"]
-        for _ in 0..<8 where !composerHeading.exists {
-            app.swipeUp()
-        }
-
         XCTAssertTrue(composerHeading.exists)
         for label in [
             "Send While Responding",
@@ -137,8 +128,11 @@ final class ComposerNavigationUITests: XCTestCase {
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
         }
 
+        app.navigationBars["Chats"].buttons["Settings"].tap()
+        tapSettingsCategory(id: "providers", title: "Providers")
+
         let percentage = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Percentage"))
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Percentage"))
             .firstMatch
         for _ in 0..<12 where !percentage.exists {
             app.swipeUp()
@@ -156,6 +150,103 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Every 5 minutes"].exists)
 
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
+    }
+
+    func testSettingsRootContainsCategoriesInsteadOfLeafControls() throws {
+        openSettings()
+
+        XCTAssertTrue(app.buttons["settings-user-profile"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-apple-account"].exists)
+        XCTAssertTrue(app.buttons["settings-sign-in-with-apple"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["Haptic Feedback"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["Default Model"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["Clear Offline Cache"].exists)
+        let rootScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        rootScreenshot.name = "Settings category root"
+        rootScreenshot.lifetime = .keepAlways
+        add(rootScreenshot)
+
+        for category in [
+            ("appearance", "Appearance"),
+            ("notificationsAndHaptics", "Notifications & Haptics"),
+            ("chats", "Chats"),
+            ("liveActivitiesAndWidgets", "Live Activities & Widgets"),
+            ("siriAndShortcuts", "Siri & Shortcuts"),
+            ("servers", "Servers"),
+            ("providers", "Providers"),
+            ("dataAndStorage", "Data & Storage"),
+            ("about", "About"),
+            ("developer", "Developer"),
+        ] {
+            tapSettingsCategory(id: category.0, title: category.1)
+            app.navigationBars[category.1].buttons["Settings"].tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        }
+    }
+
+    func testSettingsTaxonomyKeepsMovedControlsWithTheirOwners() throws {
+        openSettings()
+
+        let profile = app.buttons["settings-user-profile"]
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: profile.frame.midX / app.frame.width,
+            dy: profile.frame.midY / app.frame.height
+        )).tap()
+        XCTAssertTrue(app.navigationBars["User Profile"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["Display Name"].exists)
+        app.navigationBars["User Profile"].buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+
+        for category in [
+            ("notificationsAndHaptics", "Notifications & Haptics", "Quota Pace Alerts"),
+            ("notificationsAndHaptics", "Notifications & Haptics", "Approval & Input Alerts"),
+            ("chats", "Chats", "Thinking & Tools"),
+            ("liveActivitiesAndWidgets", "Live Activities & Widgets", "Live Activity Excerpts"),
+        ] {
+            tapSettingsCategory(id: category.0, title: category.1)
+            let setting = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", category.2))
+                .firstMatch
+            for _ in 0..<12 where !setting.exists {
+                app.swipeUp()
+            }
+            XCTAssertTrue(setting.exists, "Missing \(category.2) under \(category.1)")
+            app.navigationBars[category.1].buttons["Settings"].tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        }
+    }
+
+    func testConnectedRelaySettingsUsePassiveStatusAndManagedDisconnect() throws {
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments + ["--ui-test-relay-connected"]
+        app.launch()
+        openSettings()
+
+        XCTAssertFalse(app.buttons["settings-sign-in-with-apple"].exists)
+
+        let manageRelay = app.buttons["settings-manage-relay"]
+        XCTAssertTrue(manageRelay.waitForExistence(timeout: 3))
+        XCTAssertTrue(manageRelay.label.contains("Connected to"))
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: manageRelay.frame.midX / app.frame.width,
+            dy: manageRelay.frame.midY / app.frame.height
+        )).tap()
+
+        XCTAssertTrue(app.navigationBars["Talaria Relay"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://ui-test.talaria.invalid"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://removed.ui-test.invalid"].exists)
+        XCTAssertFalse(app.buttons["Connect"].exists)
+        let unenroll = app.buttons["Enrollment options for removed.ui-test.invalid"]
+        XCTAssertTrue(unenroll.waitForExistence(timeout: 3))
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: unenroll.frame.midX / app.frame.width,
+            dy: unenroll.frame.midY / app.frame.height
+        )).tap()
+        XCTAssertTrue(app.buttons["This iPhone"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["All Devices"].exists)
+        XCTAssertTrue(app.buttons["Cancel"].exists)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
     }
 
     func testInsightsShowsQuotaSurface() throws {
@@ -451,6 +542,47 @@ final class ComposerNavigationUITests: XCTestCase {
         let composer = waitForComposer(timeout: 15)
         XCTAssertNotNil(composer)
         return try XCTUnwrap(composer)
+    }
+
+    private func openSettings() {
+        let openNavigation = app.buttons["Open navigation"]
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
+        openNavigation.tap()
+
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        sidebar.descendants(matching: .any)["Settings"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        let sidebarHidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == false"),
+            object: sidebar
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [sidebarHidden], timeout: 3), .completed)
+    }
+
+    private func tapSettingsCategory(id: String, title: String) {
+        let category = app.buttons["settings-category-\(id)"]
+        for _ in 0..<10 where !category.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(category.waitForExistence(timeout: 3), "Missing Settings category: \(title)")
+        let viewportTop = app.navigationBars["Settings"].frame.maxY
+        for _ in 0..<10
+            where category.frame.minY < viewportTop || category.frame.maxY > app.frame.maxY {
+            if category.frame.maxY > app.frame.maxY {
+                app.swipeUp()
+            } else {
+                app.swipeDown()
+            }
+        }
+        let visibleTop = max(category.frame.minY, viewportTop)
+        let visibleBottom = min(category.frame.maxY, app.frame.maxY)
+        XCTAssertGreaterThan(visibleBottom - visibleTop, 20)
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: category.frame.midX / app.frame.width,
+            dy: ((visibleTop + visibleBottom) / 2) / app.frame.height
+        )).tap()
+        XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
     }
 
     private func waitForComposer(timeout: TimeInterval) -> XCUIElement? {

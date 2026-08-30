@@ -1,16 +1,8 @@
-import AuthenticationServices
 import SwiftUI
 import UIKit
 
 struct RelayLiveActivitySettingsCard: View {
-    let server: URL
-
-    @State private var appleNonce = TalariaRelayClient.makeAppleNonce()
-    @State private var statusMessage: String?
-    @State private var isConnecting = false
-    @State private var isConfigured = false
     @AppStorage(TalariaLiveActivityMode.storageKey) private var modeRawValue = TalariaLiveActivityMode.perSession.rawValue
-    @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
 
     var body: some View {
         SettingsCard(title: String(localized: "Live Activities")) {
@@ -23,12 +15,7 @@ struct RelayLiveActivitySettingsCard: View {
                     Text(mode.title).tag(mode.rawValue)
                 }
             }
-
-            if modeRawValue == TalariaLiveActivityMode.allRunning.rawValue {
-                relayControls
-            }
         }
-        .task { await loadRelayState() }
         .onChange(of: modeRawValue) {
             Task {
                 await AgentLiveActivityManager.shared.refreshForCurrentMode()
@@ -36,43 +23,36 @@ struct RelayLiveActivitySettingsCard: View {
             }
         }
     }
+}
 
-    @ViewBuilder
-    private var relayControls: some View {
-        SettingsDivider()
-        SettingsToggleRow(
-            title: String(localized: "Approval & Input Alerts"),
-            systemImage: "bell.badge",
-            isOn: notificationBinding
-        )
-        SettingsDivider()
-        SettingsFootnote(
-            statusMessage
-                ?? String(localized: "Sign in with Apple, then Talaria securely pairs this Hermes server with your Live Activities.")
-        )
+struct RelayNotificationSettingsRow: View {
+    @Bindable var authManager: AuthManager
 
-        if isConfigured {
-            SettingsButton(String(localized: "Connect This Server"), isLoading: isConnecting) {
-                Task { await pairCurrentServer() }
-            }
-            .disabled(isConnecting)
-        } else {
-            SignInWithAppleButton(.continue) { request in
-                request.nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
-            } onCompletion: { result in
-                handleAppleSignIn(result)
-            }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 50)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .disabled(isConnecting)
+    @State private var statusMessage: String?
+    @State private var isRelayAvailable = false
+    @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
+
+    var body: some View {
+        Group {
+            SettingsToggleRow(
+                title: String(localized: "Approval & Input Alerts"),
+                systemImage: "bell.badge",
+                isOn: notificationBinding
+            )
+            .disabled(!isRelayAvailable)
+
+            SettingsFootnote(
+                statusMessage
+                    ?? (isRelayAvailable
+                        ? String(localized: "Delivered for servers connected to Talaria Relay.")
+                        : String(localized: "Connect a server to Talaria Relay to enable remote alerts."))
+            )
         }
-
-        if isConfigured {
-            SettingsButton(String(localized: "Disconnect Relay"), role: .destructive) {
-                Task { await disconnect() }
+        .task {
+            isRelayAvailable = authManager.servers.contains { account in
+                guard let server = URL(string: account.urlString) else { return false }
+                return TalariaRelayConfigurationStore.operationalCredentials(for: server) != nil
             }
-            .disabled(isConnecting)
         }
     }
 
@@ -91,112 +71,11 @@ struct RelayLiveActivitySettingsCard: View {
     }
 
     @MainActor
-    private func loadRelayState() async {
-        guard let credentials = TalariaRelayConfigurationStore.load() else { return }
-        let appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(
-            userID: credentials.appleUserID
-        )
-        isConfigured = !credentials.isExpired && appleAuthorized
-        statusMessage = isConfigured
-            ? String(localized: "Connected")
-            : String(localized: "Sign in with Apple again to restore remote Live Activities.")
-    }
-
-    @MainActor
-    private func handleAppleSignIn(_ result: Result<ASAuthorization, any Error>) {
-        let nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
-        appleNonce = TalariaRelayClient.makeAppleNonce()
-        switch result {
-        case .success(let authorization):
-            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                  let identityToken = credential.identityToken else {
-                statusMessage = String(localized: "Apple did not return an identity token.")
-                return
-            }
-            Task {
-                await connect(
-                    identityToken: identityToken,
-                    appleUserID: credential.user,
-                    nonce: nonce
-                )
-            }
-        case .failure(let error):
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func connect(identityToken: Data, appleUserID: String, nonce: String) async {
-        isConnecting = true
-        defer { isConnecting = false }
-        do {
-            let previousCredentials = TalariaRelayConfigurationStore.load()
-            if let previousCredentials, previousCredentials.pendingRevocation == true {
-                if previousCredentials.isExpired {
-                    try? await TalariaAggregateLiveActivityManager.shared.disconnect()
-                    try TalariaRelayConfigurationStore.clear()
-                } else {
-                    try await revoke(previousCredentials)
-                }
-            }
-            var credentials = try await TalariaRelayClient.signIn(
-                identityToken: identityToken,
-                nonce: nonce,
-                appleUserID: appleUserID,
-                deviceID: previousCredentials?.deviceID
-            )
-            if previousCredentials?.appleUserID == appleUserID {
-                credentials.pairedPublisherIDs = previousCredentials?.pairedPublisherIDs
-            }
-            try TalariaRelayConfigurationStore.save(credentials)
-            isConfigured = true
-            try await pair(using: credentials)
-            try await TalariaAggregateLiveActivityManager.shared.refresh()
-            statusMessage = String(localized: "Connected")
-        } catch {
-            if case TalariaRelayClient.ClientError.invalidResponse(401, _) = error {
-                isConfigured = false
-            }
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func pairCurrentServer() async {
-        isConnecting = true
-        defer { isConnecting = false }
-        do {
-            guard let credentials = TalariaRelayConfigurationStore.load() else {
-                isConfigured = false
-                return
-            }
-            try await pair(using: credentials)
-            try await TalariaAggregateLiveActivityManager.shared.refresh()
-            statusMessage = String(localized: "Connected")
-        } catch {
-            if case TalariaRelayClient.ClientError.invalidResponse(401, _) = error {
-                isConfigured = false
-            }
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    private func pair(using credentials: TalariaRelayCredentials) async throws {
-        guard let publisherID = TalariaRelayClient.originURL(server) else {
-            throw TalariaRelayClient.ClientError.invalidURL
-        }
-        let headers = CustomHeaderStore.shared.snapshot()
-        let invitation = try await TalariaRelayClient(credentials: credentials).createPublisherInvitation()
-        try await APIClient(baseURL: server, customHeaderProvider: { headers }).pairTalariaRelay(
-            invitation: invitation,
-            relayURL: credentials.baseURL,
-            publisherID: publisherID
-        )
-        try TalariaRelayConfigurationStore.recordPairedPublisher(publisherID)
-    }
-
-    @MainActor
     private func enableNotifications() async {
+        guard isRelayAvailable else {
+            notificationsEnabled = false
+            return
+        }
         let granted = await ResponseCompletionNotificationService.requestAuthorization()
         notificationsEnabled = granted
         if granted {
@@ -206,36 +85,5 @@ struct RelayLiveActivitySettingsCard: View {
             statusMessage = String(localized: "Notification permission is required for relay alerts.")
         }
         try? await TalariaAggregateLiveActivityManager.shared.refresh()
-    }
-
-    @MainActor
-    private func disconnect() async {
-        guard !isConnecting else { return }
-        isConnecting = true
-        defer { isConnecting = false }
-        guard var credentials = TalariaRelayConfigurationStore.load() else { return }
-        do {
-            try await revoke(credentials)
-            isConfigured = false
-            statusMessage = String(localized: "Disconnected")
-        } catch {
-            credentials.pendingRevocation = true
-            try? TalariaRelayConfigurationStore.save(credentials)
-            isConfigured = false
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    private func revoke(_ credentials: TalariaRelayCredentials) async throws {
-        try await TalariaAggregateLiveActivityManager.shared.disconnect()
-        try TalariaRelayConfigurationStore.clear()
-        do {
-            try await TalariaRelayClient(credentials: credentials).revokeSession()
-        } catch {
-            var pendingCredentials = credentials
-            pendingCredentials.pendingRevocation = true
-            try? TalariaRelayConfigurationStore.save(pendingCredentials)
-            throw error
-        }
     }
 }

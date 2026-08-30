@@ -93,3 +93,9 @@ _Avoid_: Bulk update, batch operation
 **Select Cards**:
 The mode for choosing Cards before applying a Bulk Action.
 _Avoid_: Multi-select, bulk mode
+
+## Settings
+
+**Settings Category**:
+A Settings destination for one distinct user-facing concern. Every ordinary setting has one canonical Settings Category, even when another screen links to it directly. User Profile and Sign in with Apple are approved account actions above the category directory.
+_Avoid_: Settings section, card, shortcut

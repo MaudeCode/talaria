@@ -4,6 +4,129 @@
     "" : {
       "shouldTranslate" : false
     },
+    "About" : {
+
+    },
+    "Alerts & Haptics" : {
+
+    },
+    "All Devices" : {
+
+    },
+    "Connect %@" : {
+
+    },
+    "Checking connection…" : {
+
+    },
+    "Connect a server to Talaria Relay to enable remote alerts." : {
+
+    },
+    "Connecting…" : {
+
+    },
+    "Connection" : {
+
+    },
+    "Delivered for servers connected to Talaria Relay." : {
+
+    },
+    "Connected to %@" : {
+
+    },
+    "Sign in for remote Live Activities and alerts" : {
+
+    },
+    "Disconnect Pending" : {
+
+    },
+    "Sign Out of Talaria Relay" : {
+
+    },
+    "Not Connected" : {
+
+    },
+    "Sign In Required" : {
+
+    },
+    "Signed Out" : {
+
+    },
+    "This iPhone" : {
+
+    },
+    "Sign out of Talaria Relay?" : {
+
+    },
+    "Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone." : {
+
+    },
+    "Talaria Relay" : {
+
+    },
+    "Enrollment options for %@" : {
+
+    },
+    "Unenroll %@?" : {
+
+    },
+    "Unenroll Server?" : {
+
+    },
+    "Unenrolling" : {
+
+    },
+    "Choose whether %@ stops sending relay updates to this iPhone or every device on this Talaria Relay account." : {
+
+    },
+    "This signs this iPhone out of Talaria Relay. Your Hermes server settings stay on the device." : {
+
+    },
+    "Archived Chats" : {
+
+    },
+    "Chat List" : {
+
+    },
+    "Choose which details and filters appear in the chat list." : {
+
+    },
+    "Conversation" : {
+
+    },
+    "Data & Storage" : {
+
+    },
+    "Included Chats" : {
+
+    },
+    "Live Activities & Widgets" : {
+
+    },
+    "Notifications & Haptics" : {
+
+    },
+    "Quota Display" : {
+
+    },
+    "Quota Percentage" : {
+
+    },
+    "Server Access" : {
+
+    },
+    "Server Identity" : {
+
+    },
+    "Sign in for remote Live Activities" : {
+
+    },
+    "Storage" : {
+
+    },
+    "Thinking & Tools" : {
+
+    },
     "%lld active sessions" : {
 
     },

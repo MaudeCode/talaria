@@ -44,6 +44,10 @@ explicitly adopted it.
   consolidate behavior with multiple callers, delete obsolete code, keep files
   and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up
   when necessary cleanup is too broad for the selected task.
+- Keep the Settings root as a category directory. Put new controls in their
+  owning category. A new root category needs a distinct user-facing concern;
+  a direct root action needs explicit justification as unusually important.
+  User Profile and Sign in with Apple are the approved root exceptions.
 - Do not add a third-party package without approval.
 - Automated tests must run from deterministic, isolated, test-owned state in a
   clean environment. Fixture identifiers must be synthetic, and the harness must

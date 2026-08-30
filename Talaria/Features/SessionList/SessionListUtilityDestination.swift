@@ -1,8 +1,8 @@
 import Foundation
 
 enum SessionListUtilityDestination: Hashable, Identifiable {
-    /// Optional section to scroll to when Settings opens — "Manage Servers"
-    /// passes `.servers`, a plain avatar tap passes `nil` (#283).
+    /// Optional category to open when Settings appears. "Manage Servers"
+    /// passes `.servers`, while a plain Settings action passes `nil` (#283).
     case settings(SettingsScrollAnchor?)
     case providers(String?)
     case providerQuotaWidgetSettings

@@ -4,7 +4,22 @@ import Foundation
 @MainActor
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = "--ui-test-fixture"
+    nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
+    nonisolated static var relayCredentials: TalariaRelayCredentials {
+        TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.ui-test.invalid")!,
+            deviceID: "device-ui-fixture",
+            userID: "user-ui-fixture",
+            appleUserID: "apple-ui-fixture",
+            sessionToken: "session-ui-fixture",
+            expiresAt: .distantFuture,
+            pairedPublisherIDs: [
+                TalariaRelayClient.originURL(serverURL)!.absoluteString,
+                "https://removed.ui-test.invalid"
+            ]
+        )
+    }
 
     let authManager: AuthManager
     let client: APIClient
@@ -16,7 +31,6 @@ struct UITestFixtureEnvironment {
         let defaults = UserDefaults(suiteName: defaultsName)!
         defaults.removePersistentDomain(forName: defaultsName)
         let client = APIClient(baseURL: serverURL)
-
         return UITestFixtureEnvironment(
             authManager: AuthManager(
                 keychain: keychain,
