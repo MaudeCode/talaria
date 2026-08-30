@@ -5,6 +5,7 @@ struct RelayAccountSettingsSection: View {
     @Bindable var authManager: AuthManager
     let server: URL
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var appleNonce = TalariaRelayClient.makeAppleNonce()
     @State private var credentials: TalariaRelayCredentials?
     @State private var appleAuthorized = false
@@ -14,61 +15,35 @@ struct RelayAccountSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "apple.logo")
-                    .font(.title2)
-                    .frame(width: 34, height: 34)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Apple Account")
-                        .font(.body.weight(.semibold))
-
-                    Text(summaryText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                if isLoading || isConnecting {
-                    ProgressView()
-                } else if connectionState == .connected {
-                    SettingsStatusPill(label: String(localized: "Connected"))
-                }
-            }
-
-            if let errorMessage {
-                SettingsErrorFootnote(errorMessage)
-            }
-
             switch connectionState {
             case .signedOut, .expired, .disconnectPending:
+                accountSummary
+
                 SignInWithAppleButton(.continue) { request in
                     request.nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
                 } onCompletion: { result in
                     handleAppleSignIn(result)
                 }
-                .signInWithAppleButtonStyle(.black)
-                .frame(height: 50)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(height: 46)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .disabled(isLoading || isConnecting)
                 .accessibilityIdentifier("settings-sign-in-with-apple")
             case .unpaired, .connected:
                 NavigationLink {
                     RelayConnectionManagementView(authManager: authManager)
                 } label: {
-                    SettingsAccessoryRow(
-                        title: activeServerName,
-                        value: connectionState.title,
-                        systemImage: "server.rack"
-                    )
+                    accountSummary
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens Apple account and server connection management.")
+                .accessibilityHint("Opens Talaria Relay connection management.")
                 .accessibilityIdentifier("settings-manage-relay")
             }
+
+            if let errorMessage {
+                SettingsErrorFootnote(errorMessage)
+            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .onAppear {
             Task { await loadState() }
         }
@@ -85,13 +60,48 @@ struct RelayAccountSettingsSection: View {
     private var summaryText: String {
         if isLoading { return String(localized: "Checking connection…") }
         if isConnecting { return String(localized: "Connecting…") }
-        return connectionState.title
+        switch connectionState {
+        case .connected: return String(localized: "Connected to \(activeServerName)")
+        case .unpaired: return String(localized: "Connect \(activeServerName)")
+        case .signedOut: return String(localized: "Sign in for remote Live Activities and alerts")
+        case .expired, .disconnectPending: return connectionState.title
+        }
     }
 
     private var activeServerName: String {
         authManager.servers.first(where: { $0.id == authManager.activeServerID })?.displayName
             ?? server.host
             ?? server.absoluteString
+    }
+
+    private var accountSummary: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "apple.logo")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 40, height: 40)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Talaria Relay")
+                    .font(.body.weight(.semibold))
+
+                Text(summaryText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            if isLoading || isConnecting {
+                ProgressView()
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     @MainActor
@@ -169,6 +179,7 @@ struct RelayAccountSettingsSection: View {
 struct RelayConnectionManagementView: View {
     @Bindable var authManager: AuthManager
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var credentials: TalariaRelayCredentials?
     @State private var connectingServerID: String?
     @State private var failedServerID: String?
@@ -177,86 +188,98 @@ struct RelayConnectionManagementView: View {
     @State private var isDisconnecting = false
 
     var body: some View {
-        SettingsPage(title: String(localized: "Apple Account")) {
-            SettingsCard(title: String(localized: "Connection")) {
-                SettingsValueRow(title: String(localized: "Apple Account")) {
-                    SettingsStatusPill(label: globalStatus)
-                }
-
-                if let errorMessage {
+        List {
+            if let errorMessage {
+                Section {
                     SettingsErrorFootnote(errorMessage)
                 }
             }
 
-            SettingsCard(title: String(localized: "Servers")) {
+            Section("Servers") {
                 ForEach(authManager.servers) { account in
-                    if account.id != authManager.servers.first?.id {
-                        SettingsDivider()
-                    }
                     serverRow(account)
                 }
             }
 
-            SettingsCard(title: String(localized: "Account")) {
-                SettingsFootnote(String(localized: "Disconnecting stops relay Live Activities and alerts but keeps local server setup."))
-
-                Button("Disconnect Apple Account", role: .destructive) {
+            Section {
+                Button("Sign Out of Talaria Relay", role: .destructive) {
                     isConfirmingDisconnect = true
                 }
-                .buttonStyle(.bordered)
                 .disabled(isDisconnecting || connectingServerID != nil || credentials == nil)
                 .accessibilityIdentifier("settings-disconnect-relay")
+            } footer: {
+                Text("Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone.")
             }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Talaria Relay")
+        .navigationBarTitleDisplayMode(.inline)
         .task { credentials = TalariaRelayConfigurationStore.load() }
-        .alert("Disconnect Apple account?", isPresented: $isConfirmingDisconnect) {
+        .alert("Sign out of Talaria Relay?", isPresented: $isConfirmingDisconnect) {
             Button("Cancel", role: .cancel) {}
-            Button("Disconnect", role: .destructive) {
+            Button("Sign Out", role: .destructive) {
                 Task { await disconnect() }
             }
         } message: {
-            Text("This stops relay delivery and signs this device out of the Talaria relay. Your Hermes server setup stays on this device.")
+            Text("This signs this iPhone out of Talaria Relay. Your Hermes server settings stay on the device.")
         }
     }
 
     @ViewBuilder
     private func serverRow(_ account: ServerAccount) -> some View {
         let state = state(for: account)
-        VStack(alignment: .leading, spacing: 8) {
-            SettingsValueRow(title: account.displayName) {
-                if connectingServerID == account.id {
-                    ProgressView()
-                } else {
-                    SettingsStatusPill(
-                        label: failedServerID == account.id ? String(localized: "Failed") : state.title,
-                        tint: state == .connected ? .green : .secondary
-                    )
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    serverDetails(account)
+                    serverStatus(account, state: state)
                 }
-            }
-
-            Text(URL(string: account.urlString)?.host ?? account.urlString)
-                .font(AppFont.caption())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            if state == .unpaired || failedServerID == account.id {
-                Button(failedServerID == account.id ? "Retry" : "Connect") {
-                    Task { await pair(account) }
+            } else {
+                HStack(spacing: 12) {
+                    serverDetails(account)
+                    Spacer(minLength: 12)
+                    serverStatus(account, state: state)
                 }
-                .buttonStyle(.bordered)
-                .disabled(connectingServerID != nil || isDisconnecting)
             }
         }
+        .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
         .accessibilityValue(failedServerID == account.id ? String(localized: "Failed") : state.title)
         .accessibilityIdentifier("settings-relay-server-\(account.id)")
     }
 
-    private var globalStatus: String {
-        guard let credentials else { return String(localized: "Signed Out") }
-        if credentials.pendingRevocation == true { return String(localized: "Disconnect Pending") }
-        if credentials.isExpired { return String(localized: "Sign In Required") }
-        return String(localized: "Connected")
+    private func serverDetails(_ account: ServerAccount) -> some View {
+        let host = URL(string: account.urlString)?.host ?? account.urlString
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(account.displayName)
+                .font(.body)
+            if host.localizedCaseInsensitiveCompare(account.displayName) != .orderedSame {
+                Text(host)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func serverStatus(_ account: ServerAccount, state: TalariaRelayConnectionState) -> some View {
+        if connectingServerID == account.id {
+            ProgressView()
+                .accessibilityLabel("Connecting")
+        } else if state == .unpaired || failedServerID == account.id {
+            Button(failedServerID == account.id ? "Retry" : "Connect") {
+                Task { await pair(account) }
+            }
+            .buttonStyle(.borderless)
+            .font(.subheadline.weight(.semibold))
+            .disabled(connectingServerID != nil || isDisconnecting)
+        } else {
+            Label(state.title, systemImage: state == .connected ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(state == .connected ? Color.green : Color.secondary)
+        }
     }
 
     private func state(for account: ServerAccount) -> TalariaRelayConnectionState {

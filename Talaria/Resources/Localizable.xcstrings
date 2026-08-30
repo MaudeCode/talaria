@@ -10,7 +10,7 @@
     "Alerts & Haptics" : {
 
     },
-    "Apple Account" : {
+    "Connect %@" : {
 
     },
     "Checking connection…" : {
@@ -28,16 +28,16 @@
     "Delivered for servers connected to Talaria Relay." : {
 
     },
-    "Disconnect Apple Account" : {
+    "Connected to %@" : {
 
     },
-    "Disconnect Apple account?" : {
+    "Sign in for remote Live Activities and alerts" : {
 
     },
     "Disconnect Pending" : {
 
     },
-    "Disconnecting stops relay Live Activities and alerts but keeps local server setup." : {
+    "Sign Out of Talaria Relay" : {
 
     },
     "Not Connected" : {
@@ -49,7 +49,16 @@
     "Signed Out" : {
 
     },
-    "This stops relay delivery and signs this device out of the Talaria relay. Your Hermes server setup stays on this device." : {
+    "Sign out of Talaria Relay?" : {
+
+    },
+    "Signing out stops remote Live Activities and alerts. Your server settings stay on this iPhone." : {
+
+    },
+    "Talaria Relay" : {
+
+    },
+    "This signs this iPhone out of Talaria Relay. Your Hermes server settings stay on the device." : {
 
     },
     "Archived Chats" : {

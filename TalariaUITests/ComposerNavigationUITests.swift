@@ -223,16 +223,16 @@ final class ComposerNavigationUITests: XCTestCase {
         openSettings()
 
         XCTAssertFalse(app.buttons["settings-sign-in-with-apple"].exists)
-        XCTAssertTrue(app.staticTexts["Connected"].exists)
 
         let manageRelay = app.buttons["settings-manage-relay"]
         XCTAssertTrue(manageRelay.waitForExistence(timeout: 3))
+        XCTAssertTrue(manageRelay.label.contains("Connected to"))
         app.coordinate(withNormalizedOffset: CGVector(
             dx: manageRelay.frame.midX / app.frame.width,
             dy: manageRelay.frame.midY / app.frame.height
         )).tap()
 
-        XCTAssertTrue(app.navigationBars["Apple Account"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Talaria Relay"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://ui-test.talaria.invalid"].exists)
         XCTAssertFalse(app.buttons["Connect"].exists)
         XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
