@@ -10,6 +10,7 @@ export interface ApnsRequest {
 }
 
 const maximumContentStateBytes = 3_500;
+const liveActivityStaleAfterSeconds = 10 * 60;
 
 export function fitActivityAggregate(aggregate: ActivityAggregate): ActivityAggregate {
   const fitted = { ...aggregate, rows: [...aggregate.rows] };
@@ -36,13 +37,17 @@ export function makeLiveActivityUpdate(input: {
     topic: `${input.bundleId}.push-type.liveactivity`,
     environment: input.environment,
     pushType: "liveactivity",
-    priority: input.alert ? "10" : "5",
+    priority: input.alert || aggregate.rows.some(
+      (row) => row.phase === "waiting_for_approval"
+        || row.phase === "waiting_for_input"
+        || row.phase === "failed",
+    ) ? "10" : "5",
     payload: {
       aps: {
         timestamp: input.nowEpochSeconds,
         event: "update",
         "content-state": aggregate,
-        "stale-date": input.nowEpochSeconds + 150,
+        "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
         ...(input.alert
           ? { alert: { title: input.alert.title, body: input.alert.body, sound: "default" } }
           : {}),
@@ -71,7 +76,7 @@ export function makeLiveActivityStart(input: {
         timestamp: input.nowEpochSeconds,
         event: "start",
         "content-state": aggregate,
-        "stale-date": input.nowEpochSeconds + 150,
+        "stale-date": input.nowEpochSeconds + liveActivityStaleAfterSeconds,
         "attributes-type": "TalariaAggregateActivityAttributes",
         attributes: {},
         "input-push-token": 1,

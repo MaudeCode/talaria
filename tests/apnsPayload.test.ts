@@ -51,6 +51,7 @@ describe("ActivityKit payloads", () => {
           attributes: {},
           "input-push-token": 1,
           "content-state": aggregate,
+          "stale-date": 700,
           alert: { title: "Talaria", body: "1 active session", sound: "default" },
         },
       },
@@ -73,7 +74,7 @@ describe("ActivityKit payloads", () => {
         timestamp: 100,
         event: "update",
         "content-state": aggregate,
-        "stale-date": 250,
+        "stale-date": 700,
       },
     });
   });
@@ -93,6 +94,46 @@ describe("ActivityKit payloads", () => {
       aps: { alert: { title: "Approval needed", body: "Build relay", sound: "default" } },
     });
   });
+
+  it.each(["waiting_for_approval", "waiting_for_input", "failed"] as const)(
+    "uses high priority for %s without requiring an alert",
+    (phase) => {
+      const request = makeLiveActivityUpdate({
+        token: "activity-token",
+        bundleId: "dev.kil.talaria",
+        environment: "sandbox",
+        aggregate: {
+          ...aggregate,
+          rows: [{ ...aggregate.rows[0]!, phase, status: phase }],
+        },
+        nowEpochSeconds: 100,
+      });
+
+      expect(request.priority).toBe("10");
+      expect(request.payload.aps).not.toHaveProperty("alert");
+    },
+  );
+
+  it.each(["completed", "cancelled"] as const)(
+    "keeps %s rows at low priority when work remains active",
+    (phase) => {
+      const request = makeLiveActivityUpdate({
+        token: "activity-token",
+        bundleId: "dev.kil.talaria",
+        environment: "sandbox",
+        aggregate: {
+          ...aggregate,
+          rows: [
+            aggregate.rows[0]!,
+            { ...aggregate.rows[0]!, sessionId: "terminal-session", phase, status: phase },
+          ],
+        },
+        nowEpochSeconds: 100,
+      });
+
+      expect(request.priority).toBe("5");
+    },
+  );
 
   it("ends with final content and a five-minute dismissal", () => {
     const request = makeLiveActivityEnd({
