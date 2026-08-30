@@ -6,6 +6,17 @@ struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = "--ui-test-fixture"
     nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
+    nonisolated static var relayCredentials: TalariaRelayCredentials {
+        TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.ui-test.invalid")!,
+            deviceID: "device-ui-fixture",
+            userID: "user-ui-fixture",
+            appleUserID: "apple-ui-fixture",
+            sessionToken: "session-ui-fixture",
+            expiresAt: .distantFuture,
+            pairedPublisherIDs: [TalariaRelayClient.originURL(serverURL)!.absoluteString]
+        )
+    }
 
     let authManager: AuthManager
     let client: APIClient
@@ -17,20 +28,6 @@ struct UITestFixtureEnvironment {
         let defaults = UserDefaults(suiteName: defaultsName)!
         defaults.removePersistentDomain(forName: defaultsName)
         let client = APIClient(baseURL: serverURL)
-        try? TalariaRelayConfigurationStore.clear()
-        if ProcessInfo.processInfo.arguments.contains(relayConnectedArgument),
-           let publisherID = TalariaRelayClient.originURL(serverURL)?.absoluteString {
-            try? TalariaRelayConfigurationStore.save(TalariaRelayCredentials(
-                baseURL: URL(string: "https://relay.ui-test.invalid")!,
-                deviceID: "device-ui-fixture",
-                userID: "user-ui-fixture",
-                appleUserID: "apple-ui-fixture",
-                sessionToken: "session-ui-fixture",
-                expiresAt: .distantFuture,
-                pairedPublisherIDs: [publisherID]
-            ))
-        }
-
         return UITestFixtureEnvironment(
             authManager: AuthManager(
                 keychain: keychain,
