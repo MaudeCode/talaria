@@ -91,14 +91,14 @@ final class AppThemeTests: XCTestCase {
 final class SettingsNavigationTests: XCTestCase {
     func testRootContainsOnlyCategoryDestinations() {
         var expected: [SettingsCategory] = [
-            .profileAndAppearance,
+            .appearance,
             .notificationsAndHaptics,
-            .chatAndComposer,
-            .chatsAndSessions,
-            .serversAndProviders,
+            .chats,
             .liveActivitiesAndWidgets,
             .siriAndShortcuts,
-            .storage,
+            .servers,
+            .providers,
+            .dataAndStorage,
             .about,
         ]
         #if DEBUG
@@ -106,12 +106,11 @@ final class SettingsNavigationTests: XCTestCase {
         #endif
 
         XCTAssertEqual(SettingsCategory.rootCategories, expected)
-        XCTAssertFalse(SettingsCategory.rootCategories.contains(.providerQuotas))
     }
 
     func testExternalSettingsDestinationsOpenTheirOwningCategory() {
-        XCTAssertEqual(SettingsScrollAnchor.servers.category, .serversAndProviders)
-        XCTAssertEqual(SettingsScrollAnchor.providerQuotas.category, .providerQuotas)
+        XCTAssertEqual(SettingsScrollAnchor.servers.destination, .servers)
+        XCTAssertEqual(SettingsScrollAnchor.providerQuotas.destination, .providerQuotas)
     }
 }
 

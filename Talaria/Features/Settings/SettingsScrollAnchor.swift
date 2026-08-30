@@ -3,9 +3,9 @@ enum SettingsScrollAnchor: Hashable {
     case servers
     case providerQuotas
 
-    var category: SettingsCategory {
+    var destination: SettingsDestination {
         switch self {
-        case .servers: .serversAndProviders
+        case .servers: .servers
         case .providerQuotas: .providerQuotas
         }
     }

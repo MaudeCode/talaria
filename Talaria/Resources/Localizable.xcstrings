@@ -7,10 +7,25 @@
     "About" : {
 
     },
-    "Chat & Composer" : {
+    "Alerts & Haptics" : {
 
     },
-    "Chats & Sessions" : {
+    "Archived Chats" : {
+
+    },
+    "Chat List" : {
+
+    },
+    "Choose which details and filters appear in the chat list." : {
+
+    },
+    "Conversation" : {
+
+    },
+    "Data & Storage" : {
+
+    },
+    "Included Chats" : {
 
     },
     "Live Activities & Widgets" : {
@@ -19,13 +34,22 @@
     "Notifications & Haptics" : {
 
     },
-    "Profile & Appearance" : {
+    "Quota Display" : {
 
     },
-    "Servers & Providers" : {
+    "Quota Percentage" : {
+
+    },
+    "Server Access" : {
+
+    },
+    "Server Identity" : {
 
     },
     "Storage" : {
+
+    },
+    "Thinking & Tools" : {
 
     },
     "%lld active sessions" : {

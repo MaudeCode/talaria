@@ -882,7 +882,7 @@ struct SessionListView: View {
                     .frame(width: 24)
                     .accessibilityHidden(true)
 
-                Text("Archived Sessions")
+                Text("Archived Chats")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

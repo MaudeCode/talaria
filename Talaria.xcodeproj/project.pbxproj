@@ -335,6 +335,12 @@
 		C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */; };
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
+		C108A0000000000000000001 /* SettingsCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000101 /* SettingsCategory.swift */; };
+		C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000102 /* PersonalizationSettingsViews.swift */; };
+		C108A0000000000000000003 /* ConversationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000103 /* ConversationSettingsViews.swift */; };
+		C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000104 /* SystemSettingsViews.swift */; };
+		C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */; };
+		C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */; };
 		C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000106 /* SettingsScrollAnchor.swift */; };
 		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
 		C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000102 /* SettingsTextFieldRow.swift */; };
@@ -967,6 +973,12 @@
 		C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStoreTests.swift; sourceTree = "<group>"; };
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		C108A0000000000000000101 /* SettingsCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCategory.swift; sourceTree = "<group>"; };
+		C108A0000000000000000102 /* PersonalizationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000103 /* ConversationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000104 /* SystemSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServersProvidersSettingsViews.swift; sourceTree = "<group>"; };
+		C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerUpdateSettingsSection.swift; sourceTree = "<group>"; };
 		C107V0000000000000000106 /* SettingsScrollAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScrollAnchor.swift; sourceTree = "<group>"; };
 		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
 		C107J0000000000000000102 /* SettingsTextFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTextFieldRow.swift; sourceTree = "<group>"; };
@@ -1911,6 +1923,12 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				C108A0000000000000000101 /* SettingsCategory.swift */,
+				C108A0000000000000000102 /* PersonalizationSettingsViews.swift */,
+				C108A0000000000000000103 /* ConversationSettingsViews.swift */,
+				C108A0000000000000000104 /* SystemSettingsViews.swift */,
+				C108A0000000000000000105 /* ServersProvidersSettingsViews.swift */,
+				C108A0000000000000000106 /* ServerUpdateSettingsSection.swift */,
 				C107V0000000000000000106 /* SettingsScrollAnchor.swift */,
 				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
 				C107J0000000000000000102 /* SettingsTextFieldRow.swift */,
@@ -2455,6 +2473,12 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				C108A0000000000000000001 /* SettingsCategory.swift in Sources */,
+				C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */,
+				C108A0000000000000000003 /* ConversationSettingsViews.swift in Sources */,
+				C108A0000000000000000004 /* SystemSettingsViews.swift in Sources */,
+				C108A0000000000000000005 /* ServersProvidersSettingsViews.swift in Sources */,
+				C108A0000000000000000006 /* ServerUpdateSettingsSection.swift in Sources */,
 				C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */,
 				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,
 				C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */,

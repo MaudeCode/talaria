@@ -107,7 +107,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
     func testComposerSettingsAreGroupedAndConfigurable() throws {
         openSettings()
-        tapSettingsCategory(id: "chatAndComposer", title: "Chat & Composer")
+        tapSettingsCategory(id: "chats", title: "Chats")
 
         let composerHeading = app.staticTexts["Composer"]
         XCTAssertTrue(composerHeading.exists)
@@ -128,11 +128,11 @@ final class ComposerNavigationUITests: XCTestCase {
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
         }
 
-        app.navigationBars["Chat & Composer"].buttons["Settings"].tap()
-        tapSettingsCategory(id: "serversAndProviders", title: "Servers & Providers")
+        app.navigationBars["Chats"].buttons["Settings"].tap()
+        tapSettingsCategory(id: "providers", title: "Providers")
 
         let percentage = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Percentage"))
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Percentage"))
             .firstMatch
         for _ in 0..<12 where !percentage.exists {
             app.swipeUp()
@@ -164,18 +164,40 @@ final class ComposerNavigationUITests: XCTestCase {
         add(rootScreenshot)
 
         for category in [
-            ("profileAndAppearance", "Profile & Appearance"),
+            ("appearance", "Appearance"),
             ("notificationsAndHaptics", "Notifications & Haptics"),
-            ("chatAndComposer", "Chat & Composer"),
-            ("chatsAndSessions", "Chats & Sessions"),
-            ("serversAndProviders", "Servers & Providers"),
+            ("chats", "Chats"),
             ("liveActivitiesAndWidgets", "Live Activities & Widgets"),
             ("siriAndShortcuts", "Siri & Shortcuts"),
-            ("storage", "Storage"),
+            ("servers", "Servers"),
+            ("providers", "Providers"),
+            ("dataAndStorage", "Data & Storage"),
             ("about", "About"),
             ("developer", "Developer"),
         ] {
             tapSettingsCategory(id: category.0, title: category.1)
+            app.navigationBars[category.1].buttons["Settings"].tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        }
+    }
+
+    func testSettingsTaxonomyKeepsMovedControlsWithTheirOwners() throws {
+        openSettings()
+
+        for category in [
+            ("notificationsAndHaptics", "Notifications & Haptics", "Quota Pace Alerts"),
+            ("chats", "Chats", "Thinking & Tools"),
+            ("liveActivitiesAndWidgets", "Live Activities & Widgets", "Live Activity Excerpts"),
+            ("servers", "Servers", "Server Identity"),
+        ] {
+            tapSettingsCategory(id: category.0, title: category.1)
+            let setting = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", category.2))
+                .firstMatch
+            for _ in 0..<12 where !setting.exists {
+                app.swipeUp()
+            }
+            XCTAssertTrue(setting.exists, "Missing \(category.2) under \(category.1)")
             app.navigationBars[category.1].buttons["Settings"].tap()
             XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         }
