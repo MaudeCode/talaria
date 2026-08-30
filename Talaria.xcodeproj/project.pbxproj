@@ -275,6 +275,32 @@
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
+		C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000101 /* ModelBreakdownRow.swift */; };
+		C107L0000000000000000002 /* DailyTokenRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* DailyTokenRow.swift */; };
+		C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* ActivitySummaryRow.swift */; };
+		C107L0000000000000000004 /* ProviderQuotaRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000104 /* ProviderQuotaRow.swift */; };
+		C107L0000000000000000005 /* AnalyticsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000105 /* AnalyticsCard.swift */; };
+		C107L0000000000000000006 /* CronJobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000106 /* CronJobRowView.swift */; };
+		C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000107 /* CronJobEditorSheet.swift */; };
+		C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000108 /* CronJobMetadataRow.swift */; };
+		C107L0000000000000000009 /* StatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000109 /* StatusBadge.swift */; };
+		C107L0000000000000000010 /* FileBrowserRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000110 /* FileBrowserRow.swift */; };
+		C107L0000000000000000011 /* GitBranchPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000111 /* GitBranchPickerSheet.swift */; };
+		C107L0000000000000000012 /* GitCommitFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000112 /* GitCommitFileRow.swift */; };
+		C107L0000000000000000013 /* DiffLineRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000113 /* DiffLineRow.swift */; };
+		C107L0000000000000000014 /* GitTurnDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000114 /* GitTurnDiffSheet.swift */; };
+		C107L0000000000000000015 /* GitAheadBehindBadges.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000115 /* GitAheadBehindBadges.swift */; };
+		C107L0000000000000000016 /* DiffCountsLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000116 /* DiffCountsLabel.swift */; };
+		C107L0000000000000000017 /* GitFileCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000117 /* GitFileCard.swift */; };
+		C107L0000000000000000018 /* GitStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000118 /* GitStatusChip.swift */; };
+		C107L0000000000000000019 /* WorkspaceAddSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000119 /* WorkspaceAddSheet.swift */; };
+		C107L0000000000000000020 /* SessionRowStateBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000120 /* SessionRowStateBadge.swift */; };
+		C107L0000000000000000021 /* ActiveSessionStreamingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */; };
+		C107L0000000000000000022 /* ProjectRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000122 /* ProjectRenameSheet.swift */; };
+		C107L0000000000000000023 /* ProjectFormSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000123 /* ProjectFormSheet.swift */; };
+		C107L0000000000000000024 /* PendingNewChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000124 /* PendingNewChatView.swift */; };
+		C107L0000000000000000025 /* OnboardingFeatureRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000125 /* OnboardingFeatureRow.swift */; };
+		C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000126 /* KanbanCardDetailContent.swift */; };
 		C107D000000000000000001 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000011 /* AppSettings.swift */; };
 		C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000012 /* ChatActiveRunStatus.swift */; };
 		C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000013 /* ResponseCompletionNotifications.swift */; };
@@ -722,6 +748,32 @@
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		C107L0000000000000000101 /* ModelBreakdownRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelBreakdownRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000102 /* DailyTokenRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTokenRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000103 /* ActivitySummaryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySummaryRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000104 /* ProviderQuotaRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000105 /* AnalyticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsCard.swift; sourceTree = "<group>"; };
+		C107L0000000000000000106 /* CronJobRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobRowView.swift; sourceTree = "<group>"; };
+		C107L0000000000000000107 /* CronJobEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobEditorSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000108 /* CronJobMetadataRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobMetadataRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000109 /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
+		C107L0000000000000000110 /* FileBrowserRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000111 /* GitBranchPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBranchPickerSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000112 /* GitCommitFileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitFileRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000113 /* DiffLineRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffLineRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000114 /* GitTurnDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitTurnDiffSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000115 /* GitAheadBehindBadges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitAheadBehindBadges.swift; sourceTree = "<group>"; };
+		C107L0000000000000000116 /* DiffCountsLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffCountsLabel.swift; sourceTree = "<group>"; };
+		C107L0000000000000000117 /* GitFileCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitFileCard.swift; sourceTree = "<group>"; };
+		C107L0000000000000000118 /* GitStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitStatusChip.swift; sourceTree = "<group>"; };
+		C107L0000000000000000119 /* WorkspaceAddSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceAddSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000120 /* SessionRowStateBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowStateBadge.swift; sourceTree = "<group>"; };
+		C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionStreamingIndicator.swift; sourceTree = "<group>"; };
+		C107L0000000000000000122 /* ProjectRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectRenameSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000123 /* ProjectFormSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFormSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000124 /* PendingNewChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatView.swift; sourceTree = "<group>"; };
+		C107L0000000000000000125 /* OnboardingFeatureRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeatureRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000126 /* KanbanCardDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailContent.swift; sourceTree = "<group>"; };
 		C107D000000000000000011 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		C107D000000000000000012 /* ChatActiveRunStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatActiveRunStatus.swift; sourceTree = "<group>"; };
 		C107D000000000000000013 /* ResponseCompletionNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseCompletionNotifications.swift; sourceTree = "<group>"; };
@@ -1197,6 +1249,7 @@
 				C15200000000000000000006 /* OnboardingConnectPage.swift */,
 				C15200000000000000000004 /* OnboardingAgentPromptPage.swift */,
 				C15200000000000000000003 /* OnboardingFeaturesPage.swift */,
+				C107L0000000000000000125 /* OnboardingFeatureRow.swift */,
 				C15200000000000000000001 /* OnboardingFlowPolicy.swift */,
 				C15200000000000000000005 /* OnboardingTailscalePage.swift */,
 				C15200000000000000000002 /* OnboardingWelcomePage.swift */,
@@ -1213,6 +1266,7 @@
 				C14900000000000000000008 /* KanbanLabView.swift */,
 				C15400000000000000000002 /* KanbanCardDetailState.swift */,
 				C15400000000000000000004 /* KanbanCardDetailView.swift */,
+				C107L0000000000000000126 /* KanbanCardDetailContent.swift */,
 				C15300000000000000000002 /* KanbanCardEditorState.swift */,
 				C15300000000000000000004 /* KanbanCardEditorView.swift */,
 			);
@@ -1235,6 +1289,11 @@
 			children = (
 				1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */,
 				1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */,
+				C107L0000000000000000120 /* SessionRowStateBadge.swift */,
+				C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */,
+				C107L0000000000000000122 /* ProjectRenameSheet.swift */,
+				C107L0000000000000000123 /* ProjectFormSheet.swift */,
+				C107L0000000000000000124 /* PendingNewChatView.swift */,
 				1A2B3C4D5E6F7000000000D3 /* SessionListViewModel.swift */,
 				A04300000000000000000011 /* SessionListComponents.swift */,
 				C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */,
@@ -1350,6 +1409,16 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000E5 /* FileBrowserView.swift */,
+				C107L0000000000000000110 /* FileBrowserRow.swift */,
+				C107L0000000000000000111 /* GitBranchPickerSheet.swift */,
+				C107L0000000000000000112 /* GitCommitFileRow.swift */,
+				C107L0000000000000000113 /* DiffLineRow.swift */,
+				C107L0000000000000000114 /* GitTurnDiffSheet.swift */,
+				C107L0000000000000000115 /* GitAheadBehindBadges.swift */,
+				C107L0000000000000000116 /* DiffCountsLabel.swift */,
+				C107L0000000000000000117 /* GitFileCard.swift */,
+				C107L0000000000000000118 /* GitStatusChip.swift */,
+				C107L0000000000000000119 /* WorkspaceAddSheet.swift */,
 				1A2B3C4D5E6F7000000000E7 /* FileBrowserViewModel.swift */,
 				1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */,
 				1A2B3C4D5E6F7000000000EB /* FilePreviewViewModel.swift */,
@@ -1544,6 +1613,10 @@
 			isa = PBXGroup;
 			children = (
 				3F91D2A54B9A4F66A2C01012 /* TasksView.swift */,
+				C107L0000000000000000106 /* CronJobRowView.swift */,
+				C107L0000000000000000107 /* CronJobEditorSheet.swift */,
+				C107L0000000000000000108 /* CronJobMetadataRow.swift */,
+				C107L0000000000000000109 /* StatusBadge.swift */,
 				3F91D2A54B9A4F66A2C01013 /* TasksViewModel.swift */,
 				3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */,
 				3F91D2A54B9A4F66A2C01015 /* TaskDetailViewModel.swift */,
@@ -1555,6 +1628,11 @@
 			isa = PBXGroup;
 			children = (
 				57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */,
+				C107L0000000000000000101 /* ModelBreakdownRow.swift */,
+				C107L0000000000000000102 /* DailyTokenRow.swift */,
+				C107L0000000000000000103 /* ActivitySummaryRow.swift */,
+				C107L0000000000000000104 /* ProviderQuotaRow.swift */,
+				C107L0000000000000000105 /* AnalyticsCard.swift */,
 				C0DE512E0000000000000201 /* InsightsModels.swift */,
 				C0DE512E0000000000000203 /* InsightsRows.swift */,
 				931EC010A2D940B0E42287A4 /* InsightsViewModel.swift */,
@@ -1920,6 +1998,32 @@
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
 				C09200000000000000000001 /* AppFont.swift in Sources */,
 				1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */,
+				C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */,
+				C107L0000000000000000002 /* DailyTokenRow.swift in Sources */,
+				C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */,
+				C107L0000000000000000004 /* ProviderQuotaRow.swift in Sources */,
+				C107L0000000000000000005 /* AnalyticsCard.swift in Sources */,
+				C107L0000000000000000006 /* CronJobRowView.swift in Sources */,
+				C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */,
+				C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */,
+				C107L0000000000000000009 /* StatusBadge.swift in Sources */,
+				C107L0000000000000000010 /* FileBrowserRow.swift in Sources */,
+				C107L0000000000000000011 /* GitBranchPickerSheet.swift in Sources */,
+				C107L0000000000000000012 /* GitCommitFileRow.swift in Sources */,
+				C107L0000000000000000013 /* DiffLineRow.swift in Sources */,
+				C107L0000000000000000014 /* GitTurnDiffSheet.swift in Sources */,
+				C107L0000000000000000015 /* GitAheadBehindBadges.swift in Sources */,
+				C107L0000000000000000016 /* DiffCountsLabel.swift in Sources */,
+				C107L0000000000000000017 /* GitFileCard.swift in Sources */,
+				C107L0000000000000000018 /* GitStatusChip.swift in Sources */,
+				C107L0000000000000000019 /* WorkspaceAddSheet.swift in Sources */,
+				C107L0000000000000000020 /* SessionRowStateBadge.swift in Sources */,
+				C107L0000000000000000021 /* ActiveSessionStreamingIndicator.swift in Sources */,
+				C107L0000000000000000022 /* ProjectRenameSheet.swift in Sources */,
+				C107L0000000000000000023 /* ProjectFormSheet.swift in Sources */,
+				C107L0000000000000000024 /* PendingNewChatView.swift in Sources */,
+				C107L0000000000000000025 /* OnboardingFeatureRow.swift in Sources */,
+				C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */,
 				C107D000000000000000001 /* AppSettings.swift in Sources */,
 				C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */,
 				C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */,
