@@ -117,6 +117,34 @@
 		A06100000000000000000001 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000005 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
+		C107M0000000000000000001 /* ProviderQuotaBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000201 /* ProviderQuotaBarsView.swift */; };
+		C107M0000000000000000002 /* ProviderQuotaBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000201 /* ProviderQuotaBarsView.swift */; };
+		C107M0000000000000000003 /* ProviderQuotaGaugeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */; };
+		C107M0000000000000000004 /* ProviderQuotaGaugeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */; };
+		C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */; };
+		C107M0000000000000000006 /* ProviderQuotaLockScreenPercentageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */; };
+		C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */; };
+		C107M0000000000000000008 /* ProviderQuotaLockScreenPaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */; };
+		C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000205 /* ProviderQuotaForecastView.swift */; };
+		C107M0000000000000000010 /* ProviderQuotaForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000205 /* ProviderQuotaForecastView.swift */; };
+		C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */; };
+		C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */; };
+		C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */; };
+		C107M0000000000000000014 /* ProviderQuotaAccessoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */; };
+		C107M0000000000000000015 /* ProviderQuotaWidgetPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */; };
+		C107M0000000000000000016 /* TalariaAggregateHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000211 /* TalariaAggregateHeader.swift */; };
+		C107M0000000000000000017 /* AggregateCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000212 /* AggregateCompactTrailing.swift */; };
+		C107M0000000000000000018 /* AggregateStatusLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000213 /* AggregateStatusLabel.swift */; };
+		C107M0000000000000000019 /* SandalMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000214 /* SandalMark.swift */; };
+		C107M0000000000000000020 /* AgentRunExpandedIslandBottomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */; };
+		C107M0000000000000000021 /* AgentRunLockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000216 /* AgentRunLockScreenView.swift */; };
+		C107M0000000000000000022 /* AgentRunIslandBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000217 /* AgentRunIslandBadge.swift */; };
+		C107M0000000000000000023 /* AgentRunIslandStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000218 /* AgentRunIslandStatusView.swift */; };
+		C107M0000000000000000024 /* AgentRunIslandCompactMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */; };
+		C107M0000000000000000025 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
+		C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000221 /* AgentRunProgressRail.swift */; };
+		C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000222 /* AgentRunTimerPill.swift */; };
+		C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */; };
 		A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
 		C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
 		C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
@@ -597,6 +625,29 @@
 		C107G000000000000000014 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
 		A06100000000000000000002 /* ProviderQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuota.swift; sourceTree = "<group>"; };
 		A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSupport.swift; sourceTree = "<group>"; };
+		C107M0000000000000000201 /* ProviderQuotaBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaBarsView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaGaugeView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPercentageView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPaceView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000205 /* ProviderQuotaForecastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaForecastView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPaceWidgetView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSourceView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaAccessoryView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetPrompt.swift; sourceTree = "<group>"; };
+		C107M0000000000000000211 /* TalariaAggregateHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateHeader.swift; sourceTree = "<group>"; };
+		C107M0000000000000000212 /* AggregateCompactTrailing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregateCompactTrailing.swift; sourceTree = "<group>"; };
+		C107M0000000000000000213 /* AggregateStatusLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregateStatusLabel.swift; sourceTree = "<group>"; };
+		C107M0000000000000000214 /* SandalMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandalMark.swift; sourceTree = "<group>"; };
+		C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunExpandedIslandBottomView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000216 /* AgentRunLockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLockScreenView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000217 /* AgentRunIslandBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandBadge.swift; sourceTree = "<group>"; };
+		C107M0000000000000000218 /* AgentRunIslandStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandStatusView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandCompactMark.swift; sourceTree = "<group>"; };
+		C107M0000000000000000220 /* AgentRunStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunStatusDot.swift; sourceTree = "<group>"; };
+		C107M0000000000000000221 /* AgentRunProgressRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunProgressRail.swift; sourceTree = "<group>"; };
+		C107M0000000000000000222 /* AgentRunTimerPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunTimerPill.swift; sourceTree = "<group>"; };
+		C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunElapsedTimerText.swift; sourceTree = "<group>"; };
 		C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSnapshot.swift; sourceTree = "<group>"; };
 		C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetRefresh.swift; sourceTree = "<group>"; };
 		A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetConfiguration.swift; sourceTree = "<group>"; };
@@ -1195,6 +1246,11 @@
 				C107G000000000000000014 /* ModelCatalog.swift */,
 				A06100000000000000000002 /* ProviderQuota.swift */,
 				A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */,
+				C107M0000000000000000201 /* ProviderQuotaBarsView.swift */,
+				C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */,
+				C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */,
+				C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */,
+				C107M0000000000000000205 /* ProviderQuotaForecastView.swift */,
 				C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */,
 				C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */,
 				A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */,
@@ -1577,6 +1633,24 @@
 			children = (
 				A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */,
 				A0610000000000000000000A /* ProviderQuotaWidget.swift */,
+				C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */,
+				C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */,
+				C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */,
+				C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */,
+				C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */,
+				C107M0000000000000000211 /* TalariaAggregateHeader.swift */,
+				C107M0000000000000000212 /* AggregateCompactTrailing.swift */,
+				C107M0000000000000000213 /* AggregateStatusLabel.swift */,
+				C107M0000000000000000214 /* SandalMark.swift */,
+				C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */,
+				C107M0000000000000000216 /* AgentRunLockScreenView.swift */,
+				C107M0000000000000000217 /* AgentRunIslandBadge.swift */,
+				C107M0000000000000000218 /* AgentRunIslandStatusView.swift */,
+				C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */,
+				C107M0000000000000000220 /* AgentRunStatusDot.swift */,
+				C107M0000000000000000221 /* AgentRunProgressRail.swift */,
+				C107M0000000000000000222 /* AgentRunTimerPill.swift */,
+				C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */,
 				A04500000000000000000022 /* Resources */,
 			);
 			path = TalariaLiveActivityWidget;
@@ -1939,6 +2013,11 @@
 				C107G000000000000000004 /* ModelCatalog.swift in Sources */,
 				A06100000000000000000001 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				C107M0000000000000000001 /* ProviderQuotaBarsView.swift in Sources */,
+				C107M0000000000000000003 /* ProviderQuotaGaugeView.swift in Sources */,
+				C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
+				C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
+				C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */,
 				C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
 				C107F000000000000000003 /* ProviderQuotaWidgetRefresh.swift in Sources */,
 				A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
@@ -2303,6 +2382,29 @@
 				A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */,
 				A06100000000000000000005 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				C107M0000000000000000002 /* ProviderQuotaBarsView.swift in Sources */,
+				C107M0000000000000000004 /* ProviderQuotaGaugeView.swift in Sources */,
+				C107M0000000000000000006 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
+				C107M0000000000000000008 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
+				C107M0000000000000000010 /* ProviderQuotaForecastView.swift in Sources */,
+				C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */,
+				C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */,
+				C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */,
+				C107M0000000000000000014 /* ProviderQuotaAccessoryView.swift in Sources */,
+				C107M0000000000000000015 /* ProviderQuotaWidgetPrompt.swift in Sources */,
+				C107M0000000000000000016 /* TalariaAggregateHeader.swift in Sources */,
+				C107M0000000000000000017 /* AggregateCompactTrailing.swift in Sources */,
+				C107M0000000000000000018 /* AggregateStatusLabel.swift in Sources */,
+				C107M0000000000000000019 /* SandalMark.swift in Sources */,
+				C107M0000000000000000020 /* AgentRunExpandedIslandBottomView.swift in Sources */,
+				C107M0000000000000000021 /* AgentRunLockScreenView.swift in Sources */,
+				C107M0000000000000000022 /* AgentRunIslandBadge.swift in Sources */,
+				C107M0000000000000000023 /* AgentRunIslandStatusView.swift in Sources */,
+				C107M0000000000000000024 /* AgentRunIslandCompactMark.swift in Sources */,
+				C107M0000000000000000025 /* AgentRunStatusDot.swift in Sources */,
+				C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */,
+				C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */,
+				C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */,
 				C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
 				C107F000000000000000004 /* ProviderQuotaWidgetRefresh.swift in Sources */,
 				A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
