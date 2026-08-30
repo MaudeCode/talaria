@@ -144,7 +144,10 @@ Read these from the upstream repo (in this order) and summarize key takeaways in
 7. `api/workspace.py` — file listing/reading endpoints
 8. `ARCHITECTURE.md` — narrative reference
 
-Also note: this repo uses a pinned, read-only upstream clone at `.codex-tmp/hermes-webui/` (clone it if missing: `git clone https://github.com/MaudeCode/hermes-webui .codex-tmp/hermes-webui`). **Read from that pinned copy first** when convenient. Cross-check against GitHub master only when you need to confirm something changed after the pin.
+The canonical repository, branch, and reviewed commit live in
+`UPSTREAM_REPOSITORY`, `UPSTREAM_BRANCH`, and `UPSTREAM_TESTED_SHA`. Use
+`scripts/validate-upstream-contract` for an isolated checkout and executable
+contract evidence. Keep other local upstream checkouts read-only.
 
 When in doubt about behavior, hit your running server with `curl` and inspect the JSON. **The wire format is the source of truth — not docs.**
 
@@ -772,12 +775,11 @@ This is the long-term maintenance plan. Implement the basics in v1.
 - [ ] Never crash on unknown JSON fields.
 
 ### 11.2 In the iOS repo
-- [ ] Add a GitHub Action (`.github/workflows/upstream-watch.yml`) that runs daily:
-  - Clones latest `MaudeCode/hermes-webui` master.
-  - Diffs `api/routes.py` vs the SHA last marked "tested" in `UPSTREAM_TESTED_SHA` file.
-  - If diff non-empty, opens an issue: "Upstream API drift — review needed" with the diff inline.
-- [ ] Add a "contract test" target in Xcode: spins up upstream via Docker in CI and hits each endpoint we use, asserting the JSON shape decodes. Run on every PR + nightly.
-  - **Note:** CI uses Docker because a native server setup (e.g. launchd) isn't reproducible in CI. The contract tests pin the same upstream SHA the maintainer validates against locally.
+- [x] The weekly upstream watch clones the configured fork and branch, compares
+  the tested and triaged pins, and uploads a drift report.
+- [x] `scripts/validate-upstream-contract` boots the selected fork commit with
+  isolated state, runs the live HTTP/SSE probe, and runs the focused Swift
+  contract tests. It preserves logs and never advances the pin.
 
 ### 11.3 Cadence
 - Bi-weekly: the maintainer pulls the latest upstream in their server checkout, restarts the server, runs the app against it, and reports any breakage.

@@ -178,6 +178,25 @@ struct SessionStatusResponse: Decodable, Equatable {
     let isStreaming: Bool?
     let pendingUserMessage: String?
     let error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId
+        case activeStreamId
+        case isStreaming
+        case agentRunning
+        case pendingUserMessage
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        activeStreamId = try container.decodeIfPresent(String.self, forKey: .activeStreamId)
+        isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming)
+            ?? container.decodeIfPresent(Bool.self, forKey: .agentRunning)
+        pendingUserMessage = try container.decodeIfPresent(String.self, forKey: .pendingUserMessage)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
 }
 
 struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {

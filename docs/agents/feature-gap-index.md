@@ -148,7 +148,7 @@ implementation**, not pre-cached in this index. When you pick up a `roadmap` row
 ## Implementation rules for any slice
 
 1. Start from this index.
-2. Create a short `issue/<n>-slug` branch unless the owner explicitly says otherwise.
+2. Create the tracked branch required by `AGENTS.md`.
 3. Validate the route in `.codex-tmp/hermes-webui/api/routes.py` before coding
    (the just-in-time rule above).
 4. Prefer existing mobile patterns in `Endpoints.swift`, `APIClient.swift`, model
@@ -172,7 +172,7 @@ Read docs/agents/feature-gap-index.md.
 We are implementing "[FEATURE NAME]".
 
 Before coding (just-in-time validation):
-- Create a branch with the prefix `issue/` (e.g. `issue/<n>-slug`).
+- Create the `<type>/TAL-<number>-<slug>` branch required by `AGENTS.md`.
 - Validate the endpoint and JSON shape in .codex-tmp/hermes-webui/api/routes.py
   at the pinned upstream commit. Never guess shapes.
 - Check WebUI static callers when relevant.

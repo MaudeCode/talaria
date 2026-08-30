@@ -122,4 +122,8 @@ Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for how t
 
 MIT — see [LICENSE](LICENSE).
 
-Talaria is an independent client and is not affiliated with the upstream [hermes-webui](https://github.com/MaudeCode/hermes-webui) project. Apple, the Apple logo, and App Store are trademarks of Apple Inc.
+Talaria is an independent client built against the
+[`MaudeCode/hermes-webui`](https://github.com/MaudeCode/hermes-webui) fork of the
+public [`nesquena/hermes-webui`](https://github.com/nesquena/hermes-webui)
+project. It is not affiliated with either project. Apple, the Apple logo, and
+App Store are trademarks of Apple Inc.

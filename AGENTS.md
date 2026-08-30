@@ -32,6 +32,8 @@ explicitly adopted it.
   commit intentionally spans issues. Keep unrelated changes out of the commit.
 - Pushing, opening or updating a PR, merging, and uploading a build each require
   explicit human approval.
+- Pass `--repo MaudeCode/talaria` to repository-scoped `gh` commands; do not
+  infer the target from local remotes.
 - Triage automated review feedback before accepting it.
 - Do not modify or restart the user's Hermes server, tunnel, macOS services,
   upstream checkout, or Apple resources unless explicitly asked.

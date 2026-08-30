@@ -16,7 +16,8 @@ from pathlib import Path
 DEFAULT_UPSTREAM_DIR = ".codex-tmp/hermes-webui"
 DEFAULT_BASE_SHA_FILE = "UPSTREAM_TESTED_SHA"
 DEFAULT_TRIAGED_SHA_FILE = "UPSTREAM_TRIAGED_SHA"
-DEFAULT_TARGET_REF = "origin/master"
+UPSTREAM_REPOSITORY_FILE = "UPSTREAM_REPOSITORY"
+UPSTREAM_BRANCH_FILE = "UPSTREAM_BRANCH"
 # Past this many release tags behind the tested pin, the digest flags loudly so
 # the validation debt cannot grow silently. See the advance policy in
 # CONTRACT_TESTS.md.
@@ -146,6 +147,13 @@ def run_git(repo: Path, args: list[str], *, check: bool = True) -> str:
             f"git {' '.join(args)} failed in {repo}\n{result.stderr.strip()}"
         )
     return result.stdout
+
+
+def normalized_remote(value: str) -> str:
+    value = value.strip().removesuffix(".git")
+    if value.startswith("git@github.com:"):
+        return value.removeprefix("git@github.com:")
+    return value.removeprefix("https://github.com/")
 
 
 def git_show(repo: Path, ref: str, file_path: str) -> str:
@@ -664,18 +672,28 @@ def build_report(args: argparse.Namespace) -> str:
     upstream_dir = (repo_root / args.upstream_dir).resolve()
     base_sha_file = repo_root / args.base_sha_file
     triaged_sha_file = repo_root / args.triaged_sha_file
+    upstream_repository = read_ref_file(
+        repo_root / UPSTREAM_REPOSITORY_FILE, "Upstream repository"
+    )
+    upstream_branch = read_ref_file(repo_root / UPSTREAM_BRANCH_FILE, "Upstream branch")
 
     if not upstream_dir.exists():
         raise SystemExit(f"Upstream repo not found: {upstream_dir}")
     if not base_sha_file.exists():
         raise SystemExit(f"Base SHA file not found: {base_sha_file}")
 
+    origin = run_git(upstream_dir, ["remote", "get-url", "origin"]).strip()
+    if normalized_remote(origin) != upstream_repository:
+        raise SystemExit(
+            f"Upstream origin is {origin}, expected https://github.com/{upstream_repository}.git"
+        )
+
     if args.fetch:
-        run_git(upstream_dir, ["fetch", "--tags", "origin", "master"])
+        run_git(upstream_dir, ["fetch", "--tags", "origin", upstream_branch])
 
     base_ref = read_ref_file(base_sha_file, "Base SHA")
     triaged_ref = read_ref_file(triaged_sha_file, "Triaged SHA") if triaged_sha_file.exists() else base_ref
-    target_ref = args.target_ref.strip() if args.target_ref else DEFAULT_TARGET_REF
+    target_ref = args.target_ref.strip() if args.target_ref else f"origin/{upstream_branch}"
     base_routes = git_show(upstream_dir, base_ref, "api/routes.py")
     triaged_routes = git_show(upstream_dir, triaged_ref, "api/routes.py")
     target_routes = git_show(upstream_dir, target_ref, "api/routes.py")
@@ -727,9 +745,9 @@ def build_report(args: argparse.Namespace) -> str:
     if loud_releases:
         loud_bullet = (
             f"- ⚠️ LOUD: tested pin is {releases_behind} releases behind target "
-            f"(threshold {args.releases_loud_threshold}). Run a live-smoke of the read-only "
-            "CONTRACT_TESTS.md groups + the disposable-session mutate, then advance "
-            "`UPSTREAM_TESTED_SHA` to the validated release."
+            f"(threshold {args.releases_loud_threshold}). Run "
+            "`scripts/validate-upstream-contract --ref <candidate>` before considering "
+            "a reviewed `UPSTREAM_TESTED_SHA` advance."
         )
 
     has_breakage_signal = bool(missing_mobile_paths or removed_paths_since_triage)
@@ -843,10 +861,10 @@ def build_report(args: argparse.Namespace) -> str:
             "",
             "## Recommended Triage",
             "",
-            "- Create `needs-triage` issues for removed mobile paths, streaming/run-state changes, auth/CSRF changes, model/provider routing changes, session schema changes, and upload/media/workspace security changes.",
-            "- Promote to `ready-for-agent` only after app impact and acceptance criteria are clear.",
-            "- Advance `UPSTREAM_TESTED_SHA` per the advance policy in `CONTRACT_TESTS.md`: after a green live-smoke of the read-only groups + the disposable-session mutate, move the pin to the validated release.",
-            "- Update `UPSTREAM_TRIAGED_SHA` after the digest is reviewed and any follow-up issues are created.",
+            "- Create Kaneo follow-ups only for verified Talaria impact: removed mobile paths, stream/run-state changes, auth/CSRF changes, model/provider routing, session schema, or upload/media/workspace security.",
+            "- Keep follow-ups in To Do until app impact and acceptance criteria are clear.",
+            "- Advance `UPSTREAM_TESTED_SHA` only after `scripts/validate-upstream-contract --ref <candidate>` passes and the pin move is reviewed separately.",
+            "- Update `UPSTREAM_TRIAGED_SHA` after the digest is reviewed and any follow-up tasks are created.",
         ]
     )
 
@@ -861,8 +879,12 @@ def main() -> int:
     parser.add_argument("--upstream-dir", default=DEFAULT_UPSTREAM_DIR)
     parser.add_argument("--base-sha-file", default=DEFAULT_BASE_SHA_FILE)
     parser.add_argument("--triaged-sha-file", default=DEFAULT_TRIAGED_SHA_FILE)
-    parser.add_argument("--target-ref", default=DEFAULT_TARGET_REF)
-    parser.add_argument("--fetch", action="store_true", help="Fetch origin/master and tags first.")
+    parser.add_argument("--target-ref")
+    parser.add_argument(
+        "--fetch",
+        action="store_true",
+        help="Fetch the configured fork branch and tags first.",
+    )
     parser.add_argument(
         "--releases-loud-threshold",
         type=int,

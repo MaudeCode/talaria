@@ -2,6 +2,21 @@ import XCTest
 @testable import Talaria
 
 final class APIClientSessionListTests: APIClientTestCase {
+    func testSessionStatusDecodesPinnedAgentRunningShape() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session/status")
+            return apiTestJSONResponse(
+                #"{"session_id":"contract-session","agent_running":true}"#,
+                for: request
+            )
+        }
+
+        let response = try await client.sessionStatus(id: "contract-session")
+
+        XCTAssertEqual(response.sessionId, "contract-session")
+        XCTAssertEqual(response.isStreaming, true)
+    }
+
     func testSessionsDecodesSnakeCaseResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/sessions")
