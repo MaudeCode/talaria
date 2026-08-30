@@ -25,10 +25,15 @@ def read_env_file(path):
 
     for line_number, line in enumerate(lines, 1):
         try:
-            fields = shlex.split(line, comments=True, posix=True)
+            fields = shlex.split(line, comments=False, posix=True)
         except ValueError:
             fail(f"{path}:{line_number}: malformed entry")
 
+        comment_index = next(
+            (index for index, field in enumerate(fields) if field.startswith("#")),
+            len(fields),
+        )
+        fields = fields[:comment_index]
         if not fields:
             continue
         if fields[0] == "export":

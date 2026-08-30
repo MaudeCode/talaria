@@ -25,7 +25,7 @@ class LoadEnvTests(unittest.TestCase):
             "#!/usr/bin/env python3\n"
             "import json, os\n"
             "print(json.dumps({key: os.environ.get(key) for key in "
-            "['BASE', 'LOCAL', 'EXPLICIT', 'PROCESS', 'QUOTED', 'EMPTY']}))\n"
+            "['BASE', 'LOCAL', 'EXPLICIT', 'PROCESS', 'QUOTED', 'HASH', 'EMPTY']}))\n"
         )
         self.command.chmod(0o755)
 
@@ -66,13 +66,14 @@ class LoadEnvTests(unittest.TestCase):
         explicit = self.root / "custom.env"
         explicit.write_bytes(
             b"# comment\r\nexport EXPLICIT=explicit\r\n"
-            b"QUOTED=\"two words\" # comment\r\nEMPTY=''\r\n"
+            b"QUOTED=\"two words\" # comment\r\nHASH=abc#def\r\nEMPTY=''\r\n"
         )
 
         values = self.values(environment={"TALARIA_ENV_FILE": explicit.name})
 
         self.assertEqual(values["EXPLICIT"], "explicit")
         self.assertEqual(values["QUOTED"], "two words")
+        self.assertEqual(values["HASH"], "abc#def")
         self.assertEqual(values["EMPTY"], "")
 
     def test_shell_syntax_is_not_executed(self):
