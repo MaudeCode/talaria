@@ -232,8 +232,10 @@ jobs:
           tar -xzf "${archive}" actionlint
           ./actionlint
 
-      - name: Test TestFlight build-number selection
-        run: ruby ci/select_testflight_build_number_test.rb
+      - name: Test Ruby tooling
+        run: |
+          ruby ci/select_testflight_build_number_test.rb
+          ruby ci/test_ios_runner_test.rb
 
       - name: Validate property lists
         run: |
