@@ -98,7 +98,11 @@ final class TalariaAggregateLiveActivityManager {
             stopObservers()
             let client = credentials.map { TalariaRelayClient(credentials: $0) }
             if let client {
-                try? await client.configureDevice(liveActivitiesEnabled: false)
+                let perSessionEnabled = TalariaLiveActivityMode.current == .perSession
+                try? await client.configureDevice(
+                    liveActivitiesEnabled: perSessionEnabled,
+                    pushToStartEnabled: false
+                )
             }
             await endAggregateActivities(client: client)
             return
@@ -135,6 +139,7 @@ final class TalariaAggregateLiveActivityManager {
         }
 
         for perSession in Activity<AgentRunActivityAttributes>.activities {
+            try? await client.unregister(activityID: perSession.id)
             await perSession.end(nil, dismissalPolicy: .immediate)
         }
         guard operationIsCurrent(generation, credentials: credentials) else { return }
@@ -164,6 +169,7 @@ final class TalariaAggregateLiveActivityManager {
 
     func disconnect() async throws {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
+        await AgentLiveActivityManager.shared.disconnectRelayRegistration()
         activeDisconnectCount += 1
         defer { activeDisconnectCount -= 1 }
         operationGeneration += 1

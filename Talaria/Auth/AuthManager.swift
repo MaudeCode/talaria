@@ -114,6 +114,17 @@ final class AuthManager {
         headerStore.snapshot()
     }
 
+    /// Returns the request headers scoped to one configured server without
+    /// changing the active server's live header snapshot.
+    func customHeaders(for account: ServerAccount) -> [CustomHeader] {
+        if account.id == activeServerID {
+            return headerStore.snapshot()
+        }
+        let scope = account.customHeadersRef ?? account.urlString
+        let stored = try? keychain.load(.customHeaders, scope: scope)
+        return [CustomHeader].decodeFromStorage(stored)
+    }
+
     func testConnection(
         serverURLString: String,
         customHeaders: [CustomHeader]? = nil

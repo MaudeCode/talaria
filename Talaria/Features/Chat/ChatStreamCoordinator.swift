@@ -755,7 +755,8 @@ final class ChatStreamCoordinator {
         liveActivityManager.start(
             sessionID: sessionID,
             sessionTitle: sessionTitle,
-            streamID: streamID
+            streamID: streamID,
+            publisherURL: client.baseURL
         )
     }
 

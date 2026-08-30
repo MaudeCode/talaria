@@ -13,6 +13,45 @@
     "Apple Account" : {
 
     },
+    "Checking connection…" : {
+
+    },
+    "Connect a server to Talaria Relay to enable remote alerts." : {
+
+    },
+    "Connecting…" : {
+
+    },
+    "Connection" : {
+
+    },
+    "Delivered for servers connected to Talaria Relay." : {
+
+    },
+    "Disconnect Apple Account" : {
+
+    },
+    "Disconnect Apple account?" : {
+
+    },
+    "Disconnect Pending" : {
+
+    },
+    "Disconnecting stops relay Live Activities and alerts but keeps local server setup." : {
+
+    },
+    "Not Connected" : {
+
+    },
+    "Sign In Required" : {
+
+    },
+    "Signed Out" : {
+
+    },
+    "This stops relay delivery and signs this device out of the Talaria relay. Your Hermes server setup stays on this device." : {
+
+    },
     "Archived Chats" : {
 
     },

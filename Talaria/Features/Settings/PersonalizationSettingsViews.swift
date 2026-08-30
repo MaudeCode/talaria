@@ -59,6 +59,8 @@ struct AppearanceSettingsView: View {
 }
 
 struct NotificationsHapticsSettingsView: View {
+    @Bindable var authManager: AuthManager
+
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     var body: some View {
@@ -77,6 +79,10 @@ struct NotificationsHapticsSettingsView: View {
                 SettingsDivider()
 
                 NotificationPermissionToggle(kind: .providerQuota)
+
+                SettingsDivider()
+
+                RelayNotificationSettingsRow(authManager: authManager)
             }
         }
     }

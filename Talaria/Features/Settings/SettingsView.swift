@@ -24,7 +24,7 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings-user-profile")
 
-                RelayAccountSettingsSection(server: server)
+                RelayAccountSettingsSection(authManager: authManager, server: server)
             }
 
             Section {
@@ -53,7 +53,7 @@ struct SettingsView: View {
         case .appearance:
             AppearanceSettingsView(authManager: authManager)
         case .notificationsAndHaptics:
-            NotificationsHapticsSettingsView()
+            NotificationsHapticsSettingsView(authManager: authManager)
         case .chats:
             ChatsSettingsView(authManager: authManager, server: server)
         case .liveActivitiesAndWidgets:

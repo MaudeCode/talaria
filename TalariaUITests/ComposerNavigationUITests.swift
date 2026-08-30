@@ -199,6 +199,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
         for category in [
             ("notificationsAndHaptics", "Notifications & Haptics", "Quota Pace Alerts"),
+            ("notificationsAndHaptics", "Notifications & Haptics", "Approval & Input Alerts"),
             ("chats", "Chats", "Thinking & Tools"),
             ("liveActivitiesAndWidgets", "Live Activities & Widgets", "Live Activity Excerpts"),
         ] {
@@ -213,6 +214,28 @@ final class ComposerNavigationUITests: XCTestCase {
             app.navigationBars[category.1].buttons["Settings"].tap()
             XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         }
+    }
+
+    func testConnectedRelaySettingsUsePassiveStatusAndManagedDisconnect() throws {
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments + ["--ui-test-relay-connected"]
+        app.launch()
+        openSettings()
+
+        XCTAssertFalse(app.buttons["settings-sign-in-with-apple"].exists)
+        XCTAssertTrue(app.staticTexts["Connected"].exists)
+
+        let manageRelay = app.buttons["settings-manage-relay"]
+        XCTAssertTrue(manageRelay.waitForExistence(timeout: 3))
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: manageRelay.frame.midX / app.frame.width,
+            dy: manageRelay.frame.midY / app.frame.height
+        )).tap()
+
+        XCTAssertTrue(app.navigationBars["Apple Account"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://ui-test.talaria.invalid"].exists)
+        XCTAssertFalse(app.buttons["Connect"].exists)
+        XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
     }
 
     func testInsightsShowsQuotaSurface() throws {

@@ -15,6 +15,24 @@ struct TalariaRelayCredentials: Codable, Equatable {
     var isExpired: Bool { expiresAt.map { $0 <= Date() } ?? true }
 }
 
+enum TalariaRelayConnectionState: Equatable {
+    case signedOut
+    case expired
+    case disconnectPending
+    case unpaired
+    case connected
+
+    var title: String {
+        switch self {
+        case .signedOut: String(localized: "Signed Out")
+        case .expired: String(localized: "Sign In Required")
+        case .disconnectPending: String(localized: "Disconnect Pending")
+        case .unpaired: String(localized: "Not Connected")
+        case .connected: String(localized: "Connected")
+        }
+    }
+}
+
 enum TalariaRelayConfigurationStore {
     static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
         guard let encoded = try? keychain.load(.talariaRelay),
@@ -45,16 +63,35 @@ enum TalariaRelayConfigurationStore {
         try save(credentials, keychain: keychain)
     }
 
-    static func ownsCompletionAlerts(
+    static func connectionState(
+        for server: URL,
+        credentials: TalariaRelayCredentials?,
+        now: Date = Date()
+    ) -> TalariaRelayConnectionState {
+        guard let credentials else { return .signedOut }
+        if credentials.pendingRevocation == true { return .disconnectPending }
+        guard credentials.expiresAt.map({ $0 > now }) == true else { return .expired }
+        guard let publisherID = TalariaRelayClient.originURL(server)?.absoluteString,
+              credentials.pairedPublisherIDs?.contains(publisherID) == true else { return .unpaired }
+        return .connected
+    }
+
+    static func operationalCredentials(
         for server: URL,
         keychain: any KeychainStoring = KeychainStore()
+    ) -> TalariaRelayCredentials? {
+        let credentials = load(keychain: keychain)
+        guard connectionState(for: server, credentials: credentials) == .connected else { return nil }
+        return credentials
+    }
+
+    static func ownsCompletionAlerts(
+        for server: URL,
+        keychain: any KeychainStoring = KeychainStore(),
+        defaults: UserDefaults = .standard
     ) -> Bool {
-        guard TalariaLiveActivityMode.current == .allRunning,
-              let credentials = load(keychain: keychain),
-              !credentials.isExpired,
-              credentials.pendingRevocation != true,
-              let publisherID = TalariaRelayClient.originURL(server)?.absoluteString else { return false }
-        return credentials.pairedPublisherIDs?.contains(publisherID) == true
+        operationalCredentials(for: server, keychain: keychain) != nil
+            && defaults.string(forKey: TalariaRelayNotifications.pushTokenKey) != nil
     }
 }
 
@@ -140,7 +177,10 @@ struct TalariaRelayClient {
         return try JSONDecoder().decode(PublisherInvitationResponse.self, from: data).invitation
     }
 
-    func configureDevice(liveActivitiesEnabled: Bool = true) async throws {
+    func configureDevice(
+        liveActivitiesEnabled: Bool = true,
+        pushToStartEnabled: Bool = true
+    ) async throws {
         let pushToken = UserDefaults.standard.string(forKey: TalariaRelayNotifications.pushTokenKey)
         let pushToStartToken = UserDefaults.standard.string(
             forKey: TalariaRelayNotifications.pushToStartTokenKey
@@ -171,9 +211,9 @@ struct TalariaRelayClient {
         if let pushToken {
             body["pushToken"] = pushToken
         }
-        if liveActivitiesEnabled, let pushToStartToken {
+        if liveActivitiesEnabled, pushToStartEnabled, let pushToStartToken {
             body["pushToStartToken"] = pushToStartToken
-        } else if !liveActivitiesEnabled {
+        } else if !liveActivitiesEnabled || !pushToStartEnabled {
             body["pushToStartToken"] = NSNull()
         }
         try await send(
@@ -207,6 +247,28 @@ struct TalariaRelayClient {
             "schemaVersion": 1,
             "activityPushToken": pushToken,
             "seededLocally": seededLocally
+        ]
+        try await send(
+            path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)",
+            method: "PUT",
+            body: try JSONSerialization.data(withJSONObject: body)
+        )
+    }
+
+    func registerPerSession(
+        activityID: String,
+        pushToken: String,
+        publisherID: String,
+        sessionID: String
+    ) async throws {
+        let body: [String: Any] = [
+            "mode": "per_session",
+            "publisherId": publisherID,
+            "sessionId": sessionID,
+            "attributesType": "AgentRunActivityAttributes",
+            "schemaVersion": 1,
+            "activityPushToken": pushToken,
+            "seededLocally": false
         ]
         try await send(
             path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)",
@@ -311,9 +373,14 @@ struct TalariaRelayClient {
 
 enum TalariaRelayAppleCredentialState {
     static func isAuthorized(userID: String) async -> Bool {
-        await withCheckedContinuation { continuation in
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
+            return true
+        }
+        #endif
+        return await withCheckedContinuation { continuation in
             ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
-                continuation.resume(returning: error != nil || state == .authorized)
+                continuation.resume(returning: error == nil && state == .authorized)
             }
         }
     }

@@ -30,11 +30,12 @@ final class LiveActivityTests: XCTestCase {
 
     func testRelayOwnsCompletionAlertsOnlyForPairedOperationalServer() throws {
         let keychain = InMemoryKeychainStore()
+        let suite = "relay-alert-owner-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("push-token", forKey: TalariaRelayNotifications.pushTokenKey)
         let previousMode = UserDefaults.standard.string(forKey: TalariaLiveActivityMode.storageKey)
-        UserDefaults.standard.set(
-            TalariaLiveActivityMode.allRunning.rawValue,
-            forKey: TalariaLiveActivityMode.storageKey
-        )
+        UserDefaults.standard.set(TalariaLiveActivityMode.perSession.rawValue, forKey: TalariaLiveActivityMode.storageKey)
         defer {
             if let previousMode {
                 UserDefaults.standard.set(previousMode, forKey: TalariaLiveActivityMode.storageKey)
@@ -56,11 +57,20 @@ final class LiveActivityTests: XCTestCase {
 
         XCTAssertTrue(TalariaRelayConfigurationStore.ownsCompletionAlerts(
             for: pairedServer,
-            keychain: keychain
+            keychain: keychain,
+            defaults: defaults
         ))
+        defaults.removeObject(forKey: TalariaRelayNotifications.pushTokenKey)
+        XCTAssertFalse(TalariaRelayConfigurationStore.ownsCompletionAlerts(
+            for: pairedServer,
+            keychain: keychain,
+            defaults: defaults
+        ))
+        defaults.set("push-token", forKey: TalariaRelayNotifications.pushTokenKey)
         XCTAssertFalse(TalariaRelayConfigurationStore.ownsCompletionAlerts(
             for: try XCTUnwrap(URL(string: "https://other.example")),
-            keychain: keychain
+            keychain: keychain,
+            defaults: defaults
         ))
 
         credentials = try XCTUnwrap(TalariaRelayConfigurationStore.load(keychain: keychain))
@@ -68,8 +78,55 @@ final class LiveActivityTests: XCTestCase {
         try TalariaRelayConfigurationStore.save(credentials, keychain: keychain)
         XCTAssertFalse(TalariaRelayConfigurationStore.ownsCompletionAlerts(
             for: pairedServer,
-            keychain: keychain
+            keychain: keychain,
+            defaults: defaults
         ))
+    }
+
+    func testRelayConnectionStateDistinguishesEveryStoredState() throws {
+        let server = try XCTUnwrap(URL(string: "https://hermes.example.com/path"))
+        let publisherID = try XCTUnwrap(TalariaRelayClient.originURL(server)?.absoluteString)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var credentials = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example.com")),
+            deviceID: "device-1",
+            userID: "user-1",
+            appleUserID: "apple-user-1",
+            sessionToken: "secret",
+            expiresAt: now.addingTimeInterval(60)
+        )
+
+        XCTAssertEqual(TalariaRelayConfigurationStore.connectionState(
+            for: server,
+            credentials: nil,
+            now: now
+        ), .signedOut)
+        XCTAssertEqual(TalariaRelayConfigurationStore.connectionState(
+            for: server,
+            credentials: credentials,
+            now: now
+        ), .unpaired)
+
+        credentials.pairedPublisherIDs = [publisherID]
+        XCTAssertEqual(TalariaRelayConfigurationStore.connectionState(
+            for: server,
+            credentials: credentials,
+            now: now
+        ), .connected)
+
+        credentials.expiresAt = now
+        XCTAssertEqual(TalariaRelayConfigurationStore.connectionState(
+            for: server,
+            credentials: credentials,
+            now: now
+        ), .expired)
+
+        credentials.pendingRevocation = true
+        XCTAssertEqual(TalariaRelayConfigurationStore.connectionState(
+            for: server,
+            credentials: credentials,
+            now: now
+        ), .disconnectPending)
     }
 
     func testRelayPublisherOriginCanonicalizesDefaultPorts() throws {
@@ -186,6 +243,15 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(completionPreferences["notifyOnCompletion"], true)
         XCTAssertEqual(completionPreferences["notifyOnFailure"], true)
 
+        try await client.configureDevice(pushToStartEnabled: false)
+        let perSessionDeviceBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let perSessionDevice = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: perSessionDeviceBody) as? [String: Any]
+        )
+        let perSessionPreferences = try XCTUnwrap(perSessionDevice["preferences"] as? [String: Bool])
+        XCTAssertEqual(perSessionPreferences["liveActivitiesEnabled"], true)
+        XCTAssertTrue(perSessionDevice["pushToStartToken"] is NSNull)
+
         try await client.configureDevice(liveActivitiesEnabled: false)
         let disabledBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
         let disabledRegistration = try XCTUnwrap(JSONSerialization.jsonObject(with: disabledBody) as? [String: Any])
@@ -219,6 +285,22 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(seededRegistration["mode"] as? String, "all_running")
         XCTAssertEqual(seededRegistration["activityPushToken"] as? String, "activity-token")
         XCTAssertEqual(seededRegistration["seededLocally"] as? Bool, true)
+
+        try await client.registerPerSession(
+            activityID: "activity-session-1",
+            pushToken: "session-token",
+            publisherID: "https://hermes.example.com",
+            sessionID: "session-1"
+        )
+        let perSessionBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
+        let perSessionRegistration = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: perSessionBody) as? [String: Any]
+        )
+        XCTAssertEqual(perSessionRegistration["mode"] as? String, "per_session")
+        XCTAssertEqual(perSessionRegistration["publisherId"] as? String, "https://hermes.example.com")
+        XCTAssertEqual(perSessionRegistration["sessionId"] as? String, "session-1")
+        XCTAssertEqual(perSessionRegistration["attributesType"] as? String, "AgentRunActivityAttributes")
+        XCTAssertEqual(perSessionRegistration["seededLocally"] as? Bool, false)
 
         try await client.unregister(activityID: "activity-1")
         try await client.revokeDevice()
@@ -1634,7 +1716,12 @@ final class LiveActivityTests: XCTestCase {
         let manager = AgentLiveActivityManager()
 
         // A live SSE connection claims the stream so the reconciler leaves it alone.
-        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-abc")
+        manager.start(
+            sessionID: "session-1",
+            sessionTitle: "Title",
+            streamID: "stream-abc",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
         XCTAssertEqual(manager.activeConnectedStreamID, "stream-abc")
 
         // Suspension / transport trouble releases the claim — the suspended stream is
@@ -1643,7 +1730,12 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(manager.activeConnectedStreamID)
 
         // Reconnecting the same stream re-claims it.
-        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-abc")
+        manager.start(
+            sessionID: "session-1",
+            sessionTitle: "Title",
+            streamID: "stream-abc",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
         XCTAssertEqual(manager.activeConnectedStreamID, "stream-abc")
 
         // Finalizing the run releases the claim.
@@ -1666,7 +1758,12 @@ final class LiveActivityTests: XCTestCase {
         }
 
         let manager = AgentLiveActivityManager()
-        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1")
+        manager.start(
+            sessionID: "session-1",
+            sessionTitle: "Title",
+            streamID: "stream-1",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
         manager.update(.reasoning("Still tracked while aggregate mode renders"))
 
         XCTAssertEqual(manager.activeConnectedStreamID, "stream-1")
@@ -1694,7 +1791,7 @@ private final class SpyAgentLiveActivityManager: AgentLiveActivityManaging {
     private(set) var didMarkStale = false
     private(set) var ends: [End] = []
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?) {
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL) {
         starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID))
     }
 

@@ -444,6 +444,22 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.activeServerID, "https://a.test")
     }
 
+    func testCustomHeadersAreLoadedForRequestedServerOnly() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let bHeaders = try XCTUnwrap([CustomHeader(name: "X-B", value: "b-token")].encodedForStorage())
+        try keychain.save(bHeaders, forKey: .customHeaders, scope: "https://b.test")
+        let (manager, aAccount, bAccount) = try await makeTwoServerManager(
+            keychain: keychain,
+            registry: registry
+        )
+
+        manager.updateCustomHeaders([CustomHeader(name: "X-A", value: "a-token")])
+
+        XCTAssertEqual(manager.customHeaders(for: aAccount).map(\.value), ["a-token"])
+        XCTAssertEqual(manager.customHeaders(for: bAccount).map(\.value), ["b-token"])
+    }
+
     func testUpdateServerIdentityPersistsAndMirrorsTheActiveServer() async throws {
         let keychain = InMemoryKeychainStore()
         let defaults = UserDefaults.ephemeral()

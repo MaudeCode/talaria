@@ -26,7 +26,7 @@ struct OrphanedLiveActivity: Equatable {
 @MainActor
 protocol AgentLiveActivityManaging: AnyObject {
     func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL)
-    func start(sessionID: String, sessionTitle: String, streamID: String?)
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL)
     func update(_ event: AgentLiveActivityEvent)
     func markStale()
     func end(status: AgentRunActivityStatus, activity: String, errorSummary: String?)
@@ -60,6 +60,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     private var currentState: AgentRunActivityAttributes.ContentState?
     private var currentSessionID: String?
     private var currentStreamID: String?
+    private var currentPublisherURL: URL?
     // StreamID of the run whose SSE is live in THIS process right now: set when the
     // coordinator (re)connects (`start`), cleared the moment it suspends/hits trouble
     // (`markStale`) or finalizes (`end`/`reset`). The orphan reconciler skips it so a
@@ -73,6 +74,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     private var pendingUpdateTask: Task<Void, Never>?
     private var updateGeneration = 0
     private var lifecycleGeneration = 0
+    private let relayRegistration = PerSessionRelayActivityRegistration()
 
     init(minimumUpdateInterval: TimeInterval = 1.5) {
         self.minimumUpdateInterval = minimumUpdateInterval
@@ -86,10 +88,11 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         )
     }
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?) {
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL) {
         let normalizedSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedSessionID.isEmpty else { return }
         let normalizedStreamID = AgentLiveActivityReusePolicy.normalizedStreamID(streamID)
+        currentPublisherURL = TalariaRelayClient.originURL(publisherURL)
         // A live SSE connection now owns this stream's completion (PR #266 #3).
         activeConnectedStreamID = normalizedStreamID
 
@@ -115,6 +118,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
+        relayRegistration.cancelObservation()
         rawResponseText = ""
         currentSessionID = normalizedSessionID
         currentStreamID = normalizedStreamID
@@ -138,13 +142,15 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             return
         }
 
-        Task { [weak self, lifecycle] in
+        let publisherURL = currentPublisherURL
+        Task { [weak self, lifecycle, publisherURL] in
             await self?.requestOrUpdateActivity(
                 sessionID: normalizedSessionID,
                 streamID: normalizedStreamID,
                 sessionTitle: state.sessionTitle,
                 state: state,
-                lifecycle: lifecycle
+                lifecycle: lifecycle,
+                publisherURL: publisherURL
             )
         }
     }
@@ -159,6 +165,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             let endingActivity = activity
             activity = nil
             if let endingActivity {
+                await relayRegistration.unregister(activityID: endingActivity.id)
                 await endingActivity.end(nil, dismissalPolicy: .immediate)
             }
         case .perSession:
@@ -171,8 +178,17 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 streamID: currentStreamID,
                 sessionTitle: state.sessionTitle,
                 state: state,
-                lifecycle: lifecycle
+                lifecycle: lifecycle,
+                publisherURL: currentPublisherURL
             )
+        }
+    }
+
+    func disconnectRelayRegistration() async {
+        if let activityID = relayRegistration.activityID {
+            await relayRegistration.unregister(activityID: activityID)
+        } else {
+            relayRegistration.reset()
         }
     }
 
@@ -316,6 +332,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 activity: activityLine,
                 state: persisted.content.state
             )
+            await relayRegistration.unregister(
+                activityID: persisted.id,
+                fallbackCredentials: TalariaRelayConfigurationStore.load()
+            )
             // `end(content:)` sets the final content directly and there is no
             // intervening render delay here, so a preceding `update` is redundant
             // (PR #266 review).
@@ -334,13 +354,16 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         return didEndRunningActivity
     }
+}
 
+private extension AgentLiveActivityManager {
     private func requestOrUpdateActivity(
         sessionID: String,
         streamID: String?,
         sessionTitle: String,
         state: AgentRunActivityAttributes.ContentState,
-        lifecycle: Int
+        lifecycle: Int,
+        publisherURL: URL?
     ) async {
         guard lifecycle == lifecycleGeneration else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
@@ -348,6 +371,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
 
         do {
+            let relayContext = PerSessionRelayContext.make(for: publisherURL)
             let existingActivities = Activity<AgentRunActivityAttributes>.activities
             let reusableActivity = existingActivities.first { existing in
                 AgentLiveActivityReusePolicy.canReuseActivity(
@@ -356,6 +380,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                     requestedSessionID: sessionID,
                     requestedStreamID: streamID
                 )
+                    && (relayContext == nil || existing.id == relayRegistration.activityID)
             }
 
             for staleActivity in existingActivities {
@@ -363,12 +388,23 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                     continue
                 }
 
+                await relayRegistration.unregister(
+                    activityID: staleActivity.id,
+                    fallbackCredentials: relayContext?.credentials
+                )
                 await staleActivity.end(nil, dismissalPolicy: .immediate)
             }
             guard lifecycle == lifecycleGeneration else { return }
 
             if let existing = reusableActivity {
                 activity = existing
+                if let relayContext {
+                    relayRegistration.observe(
+                        activity: existing,
+                        context: relayContext,
+                        sessionID: sessionID
+                    )
+                }
                 let latestState = currentState ?? state
                 await existing.update(
                     ActivityContent(state: latestState, staleDate: staleDate(for: latestState))
@@ -386,10 +422,17 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             let requestedActivity = try Activity.request(
                 attributes: attributes,
                 content: ActivityContent(state: state, staleDate: staleDate(for: state)),
-                pushType: nil
+                pushType: relayContext == nil ? nil : .token
             )
             guard lifecycle == lifecycleGeneration else { return }
             activity = requestedActivity
+            if let relayContext {
+                relayRegistration.observe(
+                    activity: requestedActivity,
+                    context: relayContext,
+                    sessionID: sessionID
+                )
+            }
             if let latestState = currentState, latestState != state {
                 await requestedActivity.update(
                     ActivityContent(state: latestState, staleDate: staleDate(for: latestState))
@@ -475,6 +518,8 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         let policy = dismissalPolicy(for: status)
 
+        await relayRegistration.unregister(activityID: endingActivity.id)
+
         await endingActivity.update(ActivityContent(state: finalState, staleDate: nil))
         if status == .complete {
             try? await Task.sleep(nanoseconds: 600_000_000)
@@ -515,11 +560,13 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         currentState = nil
         currentSessionID = nil
         currentStreamID = nil
+        currentPublisherURL = nil
         activeConnectedStreamID = nil
         rawResponseText = ""
         lastSentUpdateAt = nil
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
+        relayRegistration.reset()
         _ = nextLifecycleGeneration()
         _ = nextUpdateGeneration()
     }
