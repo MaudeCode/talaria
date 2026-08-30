@@ -21,6 +21,9 @@ struct KeychainStore: KeychainStoring {
         // JSON-encoded [{name, value}] of user-supplied request headers (#255).
         // Values may be secrets, so the list lives in the Keychain, not defaults.
         case customHeaders = "custom_headers"
+        // JSON-encoded WebUI cookies, scoped by normalized server URL. Keeping
+        // these in Keychain lets same-host servers use independent cookie jars.
+        case sessionCookies = "session_cookies"
         // JSON-encoded multi-server registry (server list + active id). The server
         // URL is treated as a credential (PROJECT_SPEC Phase 1), so the registry
         // lives in the Keychain, not UserDefaults (#15).

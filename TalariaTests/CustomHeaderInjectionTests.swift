@@ -312,9 +312,21 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         defer { CustomHeaderStore.shared.replace(with: previous) }
         CustomHeaderStore.shared.replace(with: [CustomHeader(name: "Authorization", value: "Bearer active-a")])
 
+        let streamURL = try XCTUnwrap(URL(string: "https://a-\(UUID().uuidString).test/api/chat/stream?stream_id=s1"))
+        let cookieStorage = ServerCookieStore.shared.storage(for: streamURL)
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: try XCTUnwrap(streamURL.host),
+            .path: "/",
+            .name: "hermes_session",
+            .value: "active-cookie"
+        ]))
+        cookieStorage.setCookie(cookie)
+        defer { cookieStorage.deleteCookie(cookie) }
+
         let captured = expectation(description: "sse request captured")
         MockURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer active-a")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "hermes_session=active-cookie")
             captured.fulfill()
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -330,36 +342,36 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         // No explicit provider → uses the default active-server store.
         let client = SSEClient(urlSessionConfiguration: configuration)
 
-        client.start(url: URL(string: "https://a.test/api/chat/stream?stream_id=s1")!) { _ in }
+        client.start(url: streamURL) { _ in }
         await fulfillment(of: [captured], timeout: 2)
         client.stop()
     }
 
-    /// Verify the shared jar only surfaces a server's own cookie for its stream
-    /// URL, so domain isolation covers SSE too (#16). The test adds and removes
-    /// only cookies for its synthetic hosts; it never clears the jar.
-    func testSSECookieJarIsDomainIsolatedPerStreamURL() throws {
-        let storage = HTTPCookieStorage.shared
+    /// Verify exact server URLs get independent jars, even on one hostname.
+    func testSSECookieJarIsPortIsolatedPerStreamURL() throws {
         let nonce = UUID().uuidString.lowercased()
-        let hostA = "a-\(nonce).test"
-        let hostB = "b-\(nonce).test"
+        let host = "same-\(nonce).test"
+        let streamA = try XCTUnwrap(URL(string: "https://\(host):8443/api/chat/stream?stream_id=s1"))
+        let streamB = try XCTUnwrap(URL(string: "https://\(host):9443/api/chat/stream?stream_id=s1"))
+        let storageA = ServerCookieStore.shared.storage(for: streamA)
+        let storageB = ServerCookieStore.shared.storage(for: streamB)
 
         func sessionCookie(host: String, value: String) throws -> HTTPCookie {
             try XCTUnwrap(HTTPCookie(properties: [
                 .domain: host, .path: "/", .name: "hermes_session", .value: value
             ]))
         }
-        let cookieA = try sessionCookie(host: hostA, value: "a-cookie")
-        let cookieB = try sessionCookie(host: hostB, value: "b-cookie")
-        storage.setCookie(cookieA)
-        storage.setCookie(cookieB)
+        let cookieA = try sessionCookie(host: host, value: "a-cookie")
+        let cookieB = try sessionCookie(host: host, value: "b-cookie")
+        storageA.setCookie(cookieA)
+        storageB.setCookie(cookieB)
         defer {
-            storage.deleteCookie(cookieA)
-            storage.deleteCookie(cookieB)
+            storageA.deleteCookie(cookieA)
+            storageB.deleteCookie(cookieB)
         }
 
-        let streamA = try XCTUnwrap(URL(string: "https://\(hostA)/api/chat/stream?stream_id=s1"))
-        XCTAssertEqual(storage.cookies(for: streamA)?.map(\.value), ["a-cookie"])
+        XCTAssertEqual(storageA.cookies(for: streamA)?.map(\.value), ["a-cookie"])
+        XCTAssertEqual(storageB.cookies(for: streamB)?.map(\.value), ["b-cookie"])
     }
 }
 
@@ -492,7 +504,7 @@ final class CustomHeaderAuthManagerTests: XCTestCase {
         ))
         let manager = AuthManager(
             keychain: InMemoryKeychainStore(),
-            probeClientFactory: { _, _ in client },
+            probeClientFactory: { _, _, _ in client },
             serverRegistry: ServerRegistry.inMemory()
         )
 

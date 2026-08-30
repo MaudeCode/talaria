@@ -376,7 +376,7 @@ final class AuthManagerStateTests: XCTestCase {
     func testAddServerNeedsPasswordWhenAuthEnabledAndNoPassword() async {
         let manager = AuthManager(
             keychain: InMemoryKeychainStore(),
-            probeClientFactory: { _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false)) },
+            probeClientFactory: { _, _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false)) },
             cookieStorage: cookieStorage,
             serverRegistry: ServerRegistry.inMemory()
         )
@@ -417,7 +417,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
-            probeClientFactory: { _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            probeClientFactory: { _, _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
             cookieStorage: cookieStorage,
             serverRegistry: registry
         )
@@ -444,7 +444,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { $0.absoluteString.contains("a.test") ? clientA : clientB },
-            probeClientFactory: { url, _ in url.absoluteString.contains("a.test") ? clientA : clientB },
+            probeClientFactory: { url, _, _ in url.absoluteString.contains("a.test") ? clientA : clientB },
             headerStore: CustomHeaderStore(),
             cookieStorage: cookieStorage,
             serverRegistry: registry

@@ -163,10 +163,16 @@
     "The SSO provider couldn't complete sign-in. Try again." : {
 
     },
+    "The SSO sign-in expired. Start again." : {
+
+    },
     "The SSO response didn't match this server. Try signing in again." : {
 
     },
     "This server doesn't offer single sign-on." : {
+
+    },
+    "That SSO response was already used. Start again." : {
 
     },
     "This server needs a newer secure SSO handoff before Talaria can sign in." : {

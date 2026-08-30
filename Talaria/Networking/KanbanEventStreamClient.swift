@@ -100,7 +100,7 @@ final class KanbanEventStreamClient: KanbanEventStreamingClient {
         #if DEBUG
         UITestFixtureURLProtocol.configure(configuration)
         #endif
-        configuration.httpCookieStorage = .shared
+        configuration.httpCookieStorage = ServerCookieStore.shared.storage(for: url)
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData

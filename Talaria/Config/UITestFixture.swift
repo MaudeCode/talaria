@@ -47,7 +47,7 @@ struct UITestFixtureEnvironment {
             authManager: AuthManager(
                 keychain: keychain,
                 clientFactory: { _ in client },
-                probeClientFactory: { _, _ in client },
+                probeClientFactory: { _, _, _ in client },
                 headerStore: CustomHeaderStore(),
                 cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
                 profileEntityCache: ProfileEntityCache(defaults: nil),

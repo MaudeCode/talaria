@@ -390,7 +390,7 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 - [x] `OnboardingView`: form with **Server URL** (default placeholder `https://hermes.yourdomain.com`) and **Password** (optional).
 - [x] "Test connection" button hits `GET /health` → green check or red error.
 - [x] On success, save server URL to Keychain (yes, the URL too — it's effectively a credential combined with the password) and call `POST /api/auth/login` if password provided.
-- [x] Persist auth cookie via `URLSession.shared.configuration.httpCookieStorage`.
+- [x] Persist auth cookies in server-scoped `HTTPCookieStorage` jars backed by Keychain snapshots, including same-host servers on different ports.
 - [x] If `/api/auth/status` says auth not enabled, skip the password field gracefully.
 - [x] If `/api/auth/status` reports compatible native OIDC, offer system-browser SSO and exchange its short-lived state/PKCE-bound code into the shared cookie jar.
 - [x] App opens to Onboarding when not configured, otherwise to SessionList.

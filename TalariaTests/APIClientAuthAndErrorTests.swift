@@ -241,7 +241,8 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 
     func testNativeOIDCFlowCreatesS256PKCEAndValidatesExactCallback() throws {
-        let flow = try NativeOIDCFlow.make(callbackScheme: "talaria-branch")
+        let template = try NativeOIDCFlow.make(callbackScheme: "talaria-branch")
+        var flow = template
         let expectedChallenge = Data(SHA256.hash(data: Data(flow.codeVerifier.utf8)))
             .base64URLEncodedString()
         let callback = try XCTUnwrap(URL(
@@ -253,7 +254,8 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             try flow.exchangeCode(
                 from: callback,
                 expectedFlowID: "flow-1",
-                expectedServerID: "server-1"
+                expectedServerID: "server-1",
+                expiresAt: Date().addingTimeInterval(60)
             ),
             "one-time-code"
         )
@@ -266,13 +268,39 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             "talaria-branch://oidc-callback?code=c&state=\(flow.state)&flow_id=flow-1&server_id=server-2",
             "talaria-branch://oidc-callback?code=c&state=\(flow.state)&flow_id=flow-1&server_id=server-1&token=must-not-appear"
         ] {
+            var invalidFlow = template
             XCTAssertThrowsError(
-                try flow.exchangeCode(
+                try invalidFlow.exchangeCode(
                     from: XCTUnwrap(URL(string: invalid)),
                     expectedFlowID: "flow-1",
-                    expectedServerID: "server-1"
+                    expectedServerID: "server-1",
+                    expiresAt: Date().addingTimeInterval(60)
                 )
             )
+        }
+
+        XCTAssertThrowsError(
+            try flow.exchangeCode(
+                from: callback,
+                expectedFlowID: "flow-1",
+                expectedServerID: "server-1",
+                expiresAt: Date().addingTimeInterval(60)
+            )
+        ) { error in
+            XCTAssertEqual(error as? OIDCSignInError, .replayed)
+        }
+
+        var expiredFlow = template
+        XCTAssertThrowsError(
+            try expiredFlow.exchangeCode(
+                from: callback,
+                expectedFlowID: "flow-1",
+                expectedServerID: "server-1",
+                expiresAt: Date(timeIntervalSince1970: 1),
+                now: Date(timeIntervalSince1970: 2)
+            )
+        ) { error in
+            XCTAssertEqual(error as? OIDCSignInError, .expired)
         }
     }
 
@@ -383,6 +411,77 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         }
     }
 
+    @MainActor
+    func testOIDCKeychainFailureClearsExchangedCookieAndLogsOut() async throws {
+        let cookies = try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .name: "hermes_session",
+            .value: "partial-session",
+            .domain: "example.test",
+            .path: "/",
+            .secure: "TRUE"
+        ]))
+        let client = OIDCMockAuthAPIClient(onExchange: { cookies.setCookie(cookie) })
+        let keychain = ServerURLFailingKeychain()
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStorage: cookies,
+            serverRegistry: ServerRegistry.inMemory()
+        )
+
+        await manager.configureWithOIDC(serverURLString: "https://example.test")
+
+        XCTAssertTrue(cookies.cookies?.isEmpty ?? true)
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNotNil(manager.lastErrorMessage)
+    }
+
+    @MainActor
+    func testConcurrentOIDCStartIsRejectedWithoutMixingFlows() async throws {
+        let client = OIDCMockAuthAPIClient()
+        let browserStarted = expectation(description: "browser flow started")
+        var browserContinuation: CheckedContinuation<URL, Error>?
+        let manager = AuthManager(
+            keychain: InMemoryKeychainStore(),
+            clientFactory: { _ in client },
+            webAuthenticator: { _, _ in
+                try await withCheckedThrowingContinuation { continuation in
+                    browserContinuation = continuation
+                    browserStarted.fulfill()
+                }
+            },
+            serverRegistry: ServerRegistry.inMemory()
+        )
+
+        let first = Task { @MainActor in
+            await manager.configureWithOIDC(serverURLString: "https://example.test")
+        }
+        await fulfillment(of: [browserStarted], timeout: 2)
+
+        await manager.configureWithOIDC(serverURLString: "https://example.test")
+        XCTAssertEqual(client.beginCount, 1)
+        XCTAssertEqual(
+            manager.lastErrorMessage,
+            OIDCSignInError.alreadyInProgress.localizedDescription
+        )
+
+        browserContinuation?.resume(returning: try XCTUnwrap(URL(
+            string: "talaria://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+        )))
+        await first.value
+
+        XCTAssertEqual(client.beginCount, 1)
+        XCTAssertEqual(client.exchangeCodes, ["exchange-code"])
+        XCTAssertNil(manager.lastErrorMessage)
+    }
+
     func testNativeOIDCExchangePersistsHttpOnlyCookieInClientSessionJar() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         let cookieStorage = try XCTUnwrap(configuration.httpCookieStorage)
@@ -478,7 +577,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
-            probeClientFactory: { _, _ in client },
+            probeClientFactory: { _, _, _ in client },
             webAuthenticator: { _, scheme in
                 XCTAssertEqual(manager.state, .loggedIn(server: activeURL))
                 XCTAssertEqual(keychain.savedValues[.serverURL], activeURL.absoluteString)
@@ -512,7 +611,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let manager = AuthManager(
             keychain: InMemoryKeychainStore(),
             clientFactory: { _ in client },
-            probeClientFactory: { _, _ in client },
+            probeClientFactory: { _, _, _ in client },
             serverRegistry: ServerRegistry.inMemory()
         )
 
@@ -525,24 +624,96 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(client.beginCount, 0)
         XCTAssertEqual(manager.state, .unconfigured)
     }
+
+    func testServerCookieStoreIsolatesSameHostPortsAndRestoresFromKeychain() throws {
+        let keychain = InMemoryKeychainStore()
+        let legacy = try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        let store = ServerCookieStore(keychain: keychain, legacyStorage: legacy)
+        let first = try XCTUnwrap(URL(string: "https://same.test:8443"))
+        let second = try XCTUnwrap(URL(string: "https://same.test:9443"))
+        let firstCookie = try makeSessionCookie(value: "first")
+        let secondCookie = try makeSessionCookie(value: "second")
+
+        store.storage(for: first).setCookie(firstCookie)
+        store.storage(for: second).setCookie(secondCookie)
+        try store.persist(for: first)
+        try store.persist(for: second)
+
+        XCTAssertEqual(store.storage(for: first).cookies(for: first)?.map(\.value), ["first"])
+        XCTAssertEqual(store.storage(for: second).cookies(for: second)?.map(\.value), ["second"])
+
+        store.clear(for: first)
+        XCTAssertTrue(store.storage(for: first).cookies?.isEmpty ?? true)
+        XCTAssertEqual(store.storage(for: second).cookies(for: second)?.map(\.value), ["second"])
+
+        let restored = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        )
+        XCTAssertTrue(restored.storage(for: first).cookies?.isEmpty ?? true)
+        XCTAssertEqual(restored.storage(for: second).cookies(for: second)?.map(\.value), ["second"])
+    }
+
+    @MainActor
+    func testSessionExpiryClearsOnlyExactSameHostServerCookieJar() throws {
+        let keychain = InMemoryKeychainStore()
+        let first = try XCTUnwrap(URL(string: "https://same.test:8443"))
+        let second = try XCTUnwrap(URL(string: "https://same.test:9443"))
+        try keychain.save(first.absoluteString, forKey: .serverURL)
+        let registry = ServerRegistry.inMemory()
+        registry.activate(url: second)
+        registry.activate(url: first)
+        let store = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        )
+        store.storage(for: first).setCookie(try makeSessionCookie(value: "first"))
+        store.storage(for: second).setCookie(try makeSessionCookie(value: "second"))
+        let manager = AuthManager(
+            keychain: keychain,
+            cookieStore: store,
+            serverRegistry: registry
+        )
+
+        manager.handleAPIError(APIError.unauthorized)
+
+        XCTAssertTrue(store.storage(for: first).cookies?.isEmpty ?? true)
+        XCTAssertEqual(store.storage(for: second).cookies(for: second)?.map(\.value), ["second"])
+        XCTAssertEqual(manager.state, .loggedOut(server: first))
+    }
+
+    private func makeSessionCookie(value: String) throws -> HTTPCookie {
+        try XCTUnwrap(HTTPCookie(properties: [
+            .name: "hermes_session",
+            .value: value,
+            .domain: "same.test",
+            .path: "/",
+            .secure: "TRUE",
+            .expires: Date().addingTimeInterval(600)
+        ]))
+    }
 }
 
 private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private let authorizationBaseURL: URL
     private let passwordAuthEnabled: Bool
+    private let onExchange: () -> Void
     private(set) var state: String?
     private(set) var codeChallenge: String?
     private(set) var exchangeCodes: [String] = []
     private(set) var exchangeVerifiers: [String] = []
     private(set) var cancelledFlowIDs: [String] = []
     private(set) var beginCount = 0
+    private(set) var logoutCount = 0
 
     init(
         authorizationBaseURL: URL = URL(string: "https://example.test")!,
-        passwordAuthEnabled: Bool = false
+        passwordAuthEnabled: Bool = false,
+        onExchange: @escaping () -> Void = {}
     ) {
         self.authorizationBaseURL = authorizationBaseURL
         self.passwordAuthEnabled = passwordAuthEnabled
+        self.onExchange = onExchange
     }
 
     func health() async throws -> HealthResponse {
@@ -565,7 +736,8 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     }
 
     func logout() async throws -> LoginResponse {
-        LoginResponse(ok: true, message: nil, error: nil)
+        logoutCount += 1
+        return LoginResponse(ok: true, message: nil, error: nil)
     }
 
     func beginNativeOIDC(
@@ -595,6 +767,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
         XCTAssertEqual(state, self.state)
         exchangeCodes.append(code)
         exchangeVerifiers.append(codeVerifier)
+        onExchange()
         return LoginResponse(ok: true, message: nil, error: nil)
     }
 
@@ -602,5 +775,26 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
         XCTAssertEqual(state, self.state)
         cancelledFlowIDs.append(flowID)
         return LoginResponse(ok: true, message: nil, error: nil)
+    }
+}
+
+private final class ServerURLFailingKeychain: KeychainStoring {
+    private let storage = InMemoryKeychainStore()
+
+    func save(_ value: String, forKey key: KeychainStore.Key) throws {
+        if key == .serverURL { throw CocoaError(.fileWriteNoPermission) }
+        try storage.save(value, forKey: key)
+    }
+
+    func load(_ key: KeychainStore.Key) throws -> String? { try storage.load(key) }
+    func delete(_ key: KeychainStore.Key) throws { try storage.delete(key) }
+    func save(_ value: String, forKey key: KeychainStore.Key, scope: String) throws {
+        try storage.save(value, forKey: key, scope: scope)
+    }
+    func load(_ key: KeychainStore.Key, scope: String) throws -> String? {
+        try storage.load(key, scope: scope)
+    }
+    func delete(_ key: KeychainStore.Key, scope: String) throws {
+        try storage.delete(key, scope: scope)
     }
 }
