@@ -95,6 +95,7 @@ final class SessionListViewModel {
 
     private(set) var remoteContentSearchSessionIDs: [String] = []
     private var activeRemoteSearchQuery: String?
+    private var loadGeneration = 0
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -226,15 +227,23 @@ final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> Bool {
+        loadGeneration += 1
+        let generation = loadGeneration
+
         isLoading = true
         errorMessage = nil
         cacheErrorMessage = nil
         sessionLoadError = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
+            }
+        }
 
         do {
             let response = try await client.sessions(visibility: .showAll)
+            guard generation == loadGeneration else { return false }
             let visibleSessions = (response.sessions ?? [])
                 .filter {
                     Self.nonEmpty($0.sessionId) != nil
@@ -254,6 +263,7 @@ final class SessionListViewModel {
 
             return true
         } catch {
+            guard generation == loadGeneration else { return false }
             guard !APIError.isCancellation(error) else { return false }
 
             lastError = error

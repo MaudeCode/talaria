@@ -65,6 +65,64 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+/// URLProtocol whose responses are completed manually so concurrent requests
+/// can be answered out of order.
+final class DeferredMockURLProtocol: URLProtocol {
+    static var onRequest: ((DeferredMockURLProtocol) -> Void)?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let onRequest = Self.onRequest else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        onRequest(self)
+    }
+
+    override func stopLoading() {}
+
+    func complete(withJSON json: String) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    func fail(with error: Error) {
+        client?.urlProtocol(self, didFailWithError: error)
+    }
+}
+
+final class DeferredRequests: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [DeferredMockURLProtocol] = []
+
+    func append(_ request: DeferredMockURLProtocol) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        pending.append(request)
+        return pending.count
+    }
+
+    func request(at index: Int) -> DeferredMockURLProtocol {
+        lock.lock()
+        defer { lock.unlock() }
+        return pending[index]
+    }
+}
+
 final class InMemoryKeychainStore: KeychainStoring {
     private(set) var savedValues: [KeychainStore.Key: String] = [:]
     /// Per-key write count, so tests can assert no redundant writes occur.
