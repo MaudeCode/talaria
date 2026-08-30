@@ -279,6 +279,8 @@ struct RelayConnectionManagementView: View {
         return VStack(alignment: .leading, spacing: 3) {
             Text(account.displayName)
                 .font(.body)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             if host.localizedCaseInsensitiveCompare(account.displayName) != .orderedSame {
                 Text(host)
                     .font(.subheadline)
@@ -302,22 +304,31 @@ struct RelayConnectionManagementView: View {
             .font(.subheadline.weight(.semibold))
             .disabled(isBusy)
         } else if state == .connected {
-            VStack(alignment: .trailing, spacing: 5) {
-                Label(state.title, systemImage: "checkmark.circle.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.green)
+            HStack(spacing: 8) {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text(state.title)
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.green)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
-                Button("Unenroll", role: .destructive) {
+                Button {
                     unenrollmentAccount = account
                     isPresentingUnenrollment = true
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
-                .font(.caption.weight(.semibold))
-                .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
-                .contentShape(Rectangle())
+                .frame(width: 44, height: 44)
                 .disabled(isBusy)
+                .accessibilityLabel("Enrollment options for \(account.displayName)")
                 .accessibilityIdentifier("settings-unenroll-server-\(account.id)")
             }
+            .layoutPriority(1)
         } else {
             Label(state.title, systemImage: "exclamationmark.circle.fill")
                 .font(.subheadline.weight(.medium))
