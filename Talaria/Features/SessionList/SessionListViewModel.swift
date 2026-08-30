@@ -243,7 +243,7 @@ final class SessionListViewModel {
 
         do {
             let response = try await client.sessions(visibility: .showAll)
-            guard generation == loadGeneration else { return false }
+            guard generation == loadGeneration else { return true }
             let visibleSessions = (response.sessions ?? [])
                 .filter {
                     Self.nonEmpty($0.sessionId) != nil
@@ -263,7 +263,7 @@ final class SessionListViewModel {
 
             return true
         } catch {
-            guard generation == loadGeneration else { return false }
+            guard generation == loadGeneration else { return true }
             guard !APIError.isCancellation(error) else { return false }
 
             lastError = error

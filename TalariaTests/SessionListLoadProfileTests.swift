@@ -36,10 +36,12 @@ extension SessionListMutationTests {
         await fulfillment(of: [secondRequestArrived], timeout: 5)
 
         requests.request(at: 1).complete(withJSON: #"{"sessions":[{"session_id":"newest","title":"Newest","archived":false}]}"#)
-        _ = await secondLoad.value
+        let didApplyNewestLoad = await secondLoad.value
         requests.request(at: 0).complete(withJSON: #"{"sessions":[{"session_id":"stale","title":"Stale","archived":false}]}"#)
-        _ = await firstLoad.value
+        let didSupersedeFirstLoad = await firstLoad.value
 
+        XCTAssertTrue(didApplyNewestLoad)
+        XCTAssertTrue(didSupersedeFirstLoad)
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["newest"])
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNil(viewModel.errorMessage)
@@ -73,15 +75,17 @@ extension SessionListMutationTests {
         await fulfillment(of: [secondRequestArrived], timeout: 5)
 
         requests.request(at: 0).fail(with: URLError(.timedOut))
-        _ = await firstLoad.value
+        let didSupersedeFirstLoad = await firstLoad.value
 
+        XCTAssertTrue(didSupersedeFirstLoad)
         XCTAssertTrue(viewModel.isLoading)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNil(viewModel.sessionLoadError)
 
         requests.request(at: 1).complete(withJSON: #"{"sessions":[{"session_id":"newest","title":"Newest","archived":false}]}"#)
-        _ = await secondLoad.value
+        let didApplyNewestLoad = await secondLoad.value
 
+        XCTAssertTrue(didApplyNewestLoad)
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["newest"])
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNil(viewModel.errorMessage)
