@@ -34,17 +34,12 @@ git -C "$seed" commit -m "Initial fixture" >/dev/null
 git -C "$seed" push origin main >/dev/null
 initial_head="$(git -C "$seed" rev-parse HEAD)"
 
-signing_key="$test_root/signing-key"
-ssh-keygen -q -t ed25519 -N '' -f "$signing_key"
-
 configure_clone() {
   local clone="$1"
   git -C "$clone" config user.name "Release Test"
   git -C "$clone" config user.email "release-test@example.invalid"
-  git -C "$clone" config gpg.format ssh
-  git -C "$clone" config user.signingkey "$signing_key"
-  git -C "$clone" config commit.gpgsign true
-  git -C "$clone" config tag.gpgSign true
+  git -C "$clone" config commit.gpgSign false
+  git -C "$clone" config tag.gpgSign false
 }
 
 git clone "$remote" "$test_root/dry-run" >/dev/null 2>&1

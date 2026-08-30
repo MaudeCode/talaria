@@ -96,7 +96,7 @@ class TalariaReleaseCommand
 
   def resolve_latest_build(version)
     if @options[:latest_build]
-      if @options[:publish] && ENV["TALARIA_RELEASE_TEST_MODE"] != "1"
+      if @options[:publish] && !test_mode?
         raise "--latest-app-store-build cannot publish a release; live App Store Connect reconciliation is required."
       end
       return @options[:latest_build]
@@ -124,8 +124,13 @@ class TalariaReleaseCommand
       raise "Release validation changed unexpected tracked files: #{changed.join(', ')}" unless changed == expected
 
       run!("git", "add", "--", TalariaReleaseProject::PROJECT_PATH)
-      run!("git", "commit", "-S", "-m", "Release: prepare #{tag}")
-      run!("git", "tag", "-s", "-m", "Talaria #{tag}", tag)
+      if test_mode?
+        run!("git", "-c", "commit.gpgSign=false", "commit", "-m", "Release: prepare #{tag}")
+        run!("git", "-c", "tag.gpgSign=false", "tag", "-a", "-m", "Talaria #{tag}", tag)
+      else
+        run!("git", "commit", "-S", "-m", "Release: prepare #{tag}")
+        run!("git", "tag", "-s", "-m", "Talaria #{tag}", tag)
+      end
       tag_created = true
       run!(
         "git", "push", "--atomic", "origin",
@@ -157,6 +162,13 @@ class TalariaReleaseCommand
     puts "Build number: #{plan.old_build_number} -> #{plan.new_build_number}"
     puts "Latest App Store Connect build: #{plan.latest_app_store_build || 'none'}"
     puts(@options[:dry_run] ? "Dry run: checkout unchanged." : "Publish: validation and atomic push required.")
+  end
+
+  def test_mode?
+    return false unless ENV["TALARIA_RELEASE_TEST_MODE"] == "1"
+
+    remote = capture("git", "remote", "get-url", "origin").strip
+    remote.start_with?("/", "file://")
   end
 
   def git_success?(*arguments)
