@@ -439,17 +439,36 @@ struct TalariaRelayClient {
     }
 }
 
+enum TalariaRelayAppleCredentialStatus: Equatable {
+    case authorized
+    case revoked
+    case unknown
+}
+
 enum TalariaRelayAppleCredentialState {
-    static func isAuthorized(userID: String) async -> Bool {
+    static func status(userID: String) async -> TalariaRelayAppleCredentialStatus {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
-            return true
+            return .authorized
         }
         #endif
         return await withCheckedContinuation { continuation in
             ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
-                continuation.resume(returning: error == nil && state == .authorized)
+                continuation.resume(returning: resolvedStatus(state: state, error: error))
             }
+        }
+    }
+
+    static func resolvedStatus(
+        state: ASAuthorizationAppleIDProvider.CredentialState,
+        error: (any Error)?
+    ) -> TalariaRelayAppleCredentialStatus {
+        guard error == nil else { return .unknown }
+        switch state {
+        case .authorized: return .authorized
+        case .revoked, .notFound: return .revoked
+        case .transferred: return .unknown
+        @unknown default: return .unknown
         }
     }
 }

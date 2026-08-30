@@ -168,6 +168,32 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
+    func testRelayAppleCredentialLookupPreservesIndeterminateErrors() {
+        XCTAssertEqual(
+            TalariaRelayAppleCredentialState.resolvedStatus(state: .authorized, error: nil),
+            .authorized
+        )
+        XCTAssertEqual(
+            TalariaRelayAppleCredentialState.resolvedStatus(state: .revoked, error: nil),
+            .revoked
+        )
+        XCTAssertEqual(
+            TalariaRelayAppleCredentialState.resolvedStatus(state: .notFound, error: nil),
+            .revoked
+        )
+        XCTAssertEqual(
+            TalariaRelayAppleCredentialState.resolvedStatus(
+                state: .authorized,
+                error: URLError(.notConnectedToInternet)
+            ),
+            .unknown
+        )
+        XCTAssertEqual(
+            TalariaRelayAppleCredentialState.resolvedStatus(state: .transferred, error: nil),
+            .unknown
+        )
+    }
+
     func testRelayAppleSignInPairingAndAggregateSnapshotContract() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]

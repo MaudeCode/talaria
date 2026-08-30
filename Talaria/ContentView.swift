@@ -78,17 +78,18 @@ struct ContentView: View {
             }
             return
         }
-        let appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(
+        let appleCredentialStatus = await TalariaRelayAppleCredentialState.status(
             userID: credentials.appleUserID
         )
         if credentials.isExpired {
             try? await TalariaAggregateLiveActivityManager.shared.disconnect()
             return
         }
-        guard appleAuthorized else {
+        guard appleCredentialStatus != .revoked else {
             await invalidateRelayIdentity()
             return
         }
+        guard appleCredentialStatus == .authorized else { return }
         try? await TalariaAggregateLiveActivityManager.shared.refresh()
     }
 

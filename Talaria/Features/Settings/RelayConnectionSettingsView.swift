@@ -111,7 +111,9 @@ struct RelayAccountSettingsSection: View {
         if let credentials,
            credentials.pendingRevocation != true,
            !credentials.isExpired {
-            appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(userID: credentials.appleUserID)
+            appleAuthorized = await TalariaRelayAppleCredentialState.status(
+                userID: credentials.appleUserID
+            ) != .revoked
         } else {
             appleAuthorized = false
         }
