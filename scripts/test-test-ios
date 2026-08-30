@@ -1,0 +1,213 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source_root=${0:A:h:h}
+rounds=${1:-20}
+[[ "$rounds" =~ '^[1-9][0-9]*$' ]] || {
+    print -u2 "Usage: scripts/test-test-ios [positive-round-count]"
+    exit 64
+}
+test_root=$(mktemp -d "${TMPDIR:-/tmp}/talaria-test-ios.XXXXXX")
+
+cleanup() {
+    set +e
+    for pid in $(jobs -pr); do
+        kill "$pid" 2>/dev/null || true
+    done
+    if [[ -n "${TALARIA_KEEP_SCRIPT_TEST_TMP:-}" ]]; then
+        print -u2 "Preserved test state: $test_root"
+    elif [[ -d "$test_root" ]]; then
+        rm -rf -- "$test_root"
+    fi
+}
+trap cleanup EXIT
+
+repo="$test_root/repo"
+peer="$test_root/peer"
+fake_bin="$test_root/bin"
+state="$test_root/state"
+mkdir -p "$repo/scripts" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
+cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
+# Keep the base revision's pool state synthetic when reproducing the pre-fix overlap.
+if ! rg -q TALARIA_XCTEST_POOL_DIR "$repo/scripts/test-ios"; then
+    sed -i '' 's|pool_runtime_dir="/tmp/talaria-xctest-$EUID"|pool_runtime_dir="${TALARIA_XCTEST_POOL_DIR:-/tmp/talaria-xctest-$EUID}"|' "$repo/scripts/test-ios"
+fi
+chmod +x "$repo/scripts/test-ios"
+
+cat > "$repo/scripts/assert-no-skipped-ui-tests" <<'EOF'
+#!/bin/zsh
+exit 0
+EOF
+cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
+defaults:
+  simulatorName: "iPhone 17"
+EOF
+cat > "$fake_bin/xcrun" <<'EOF'
+#!/bin/zsh
+if [[ "$*" == "simctl list devices available" ]]; then
+    <"${TALARIA_DEVICE_FIXTURE:?}"
+fi
+EOF
+cat > "$fake_bin/xcodebuild" <<'EOF'
+#!/bin/zsh
+set -euo pipefail
+
+state=${TALARIA_TEST_STATE:?}
+destination=""
+result_bundle=""
+exit_status=0
+typeset -a selectors=()
+typeset -a args=("$@")
+for (( index = 1; index <= ${#args}; index++ )); do
+    case "${args[index]}" in
+        -destination)
+            (( index++ ))
+            destination="${args[index]}"
+            ;;
+        -resultBundlePath)
+            (( index++ ))
+            result_bundle="${args[index]}"
+            ;;
+        -only-testing:*)
+            selectors+=("${args[index]}")
+            [[ "${args[index]}" != *Failure* ]] || exit_status=42
+            ;;
+    esac
+done
+
+lock="$state/counter.lock"
+while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
+read -r active < "$state/active"
+read -r maximum < "$state/maximum"
+active=$(( active + 1 ))
+(( active > maximum )) && maximum=$active
+print -r -- "$active" > "$state/active"
+print -r -- "$maximum" > "$state/maximum"
+print -r -- "$destination|$result_bundle|${(j: :)selectors}" >> "$state/runs"
+rmdir "$lock"
+
+sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
+mkdir -p "$result_bundle"
+
+while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
+read -r active < "$state/active"
+print -r -- "$(( active - 1 ))" > "$state/active"
+rmdir "$lock"
+exit "$exit_status"
+EOF
+chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
+
+cat > "$state/pool-devices" <<'EOF'
+== Devices ==
+-- iOS 27.0 --
+    Talaria Test 1 (AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA) (Shutdown)
+    Talaria Test 2 (BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB) (Shutdown)
+    iPhone 17 (CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC) (Shutdown)
+EOF
+cat > "$state/fallback-devices" <<'EOF'
+== Devices ==
+-- iOS 27.0 --
+    iPad Pro (AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA) (Shutdown)
+    iPhone 16 (DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD) (Shutdown)
+EOF
+print 0 > "$state/active"
+print 0 > "$state/maximum"
+: > "$state/runs"
+
+git -C "$repo" init -q
+git -C "$repo" add .
+git -C "$repo" -c user.name=Talaria -c user.email=talaria@example.invalid commit -qm fixture
+git -C "$repo" worktree add -qb peer "$peer"
+
+export PATH="$fake_bin:$PATH"
+export TALARIA_TEST_STATE="$state"
+export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
+export TALARIA_XCTEST_POOL_DIR="$state/pool"
+
+wait_until_active() {
+    local pid=$1
+    for _ in {1..200}; do
+        read -r active < "$state/active"
+        (( active > 0 )) && return
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.01
+    done
+    print -u2 "Timed out waiting for the first synthetic xcodebuild."
+    return 1
+}
+
+for round in {1..$rounds}; do
+    "$repo/scripts/test-ios" "TalariaTests/Primary$round" > "$state/primary-$round.log" 2>&1 &
+    primary_pid=$!
+    wait_until_active "$primary_pid"
+    "$peer/scripts/test-ios" "TalariaTests/Peer$round" > "$state/peer-$round.log" 2>&1 &
+    peer_pid=$!
+    wait "$primary_pid"
+    wait "$peer_pid"
+done
+
+read -r maximum < "$state/maximum"
+[[ "$maximum" == 1 ]] || {
+    print -u2 "Expected one xcodebuild at a time, observed $maximum."
+    exit 1
+}
+[[ $(wc -l < "$state/runs" | tr -d ' ') == $(( rounds * 2 )) ]]
+[[ $(sed -n 's/^[^|]*|\([^|]*\)|.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == $(( rounds * 2 )) ]]
+rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state"/peer-*.log
+
+print 'defaults:\n  simulatorName: "Missing simulator"' > "$repo/.xcodebuildmcp/config.yaml"
+export TALARIA_DEVICE_FIXTURE="$state/fallback-devices"
+"$repo/scripts/test-ios" TalariaTests/Fallback > "$state/fallback.log" 2>&1
+rg -q "platform=iOS Simulator,id=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD" "$state/fallback.log"
+if "$repo/scripts/test-ios" TalariaTests/Failure > "$state/failure.log" 2>&1; then
+    print -u2 "Expected the synthetic xcodebuild failure to propagate."
+    exit 1
+else
+    [[ $? == 42 ]]
+fi
+
+common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
+sleep 0.01 &
+dead_pid=$!
+wait "$dead_pid"
+print -r -- "$dead_pid" > "$common_dir/talaria-xctest-runner.lock"
+"$peer/scripts/test-ios" TalariaTests/StaleLock > "$state/stale.log" 2>&1
+
+export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
+export TALARIA_FAKE_XCODEBUILD_SECONDS=0.4
+"$repo/scripts/test-ios" TalariaTests/Owner > "$state/owner.log" 2>&1 &
+owner=$!
+wait_until_active "$owner"
+"$peer/scripts/test-ios" TalariaTests/CancelledWaiter > "$state/cancelled-waiter.log" 2>&1 &
+waiter=$!
+for _ in {1..200}; do
+    rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log" && break
+    kill -0 "$waiter" 2>/dev/null || break
+    sleep 0.01
+done
+rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log"
+kill -TERM "$waiter"
+if wait "$waiter"; then
+    print -u2 "Expected the waiting runner to exit after cancellation."
+    exit 1
+else
+    [[ $? == 130 ]]
+fi
+[[ -e "$common_dir/talaria-xctest-runner.lock" ]]
+wait "$owner"
+
+"$repo/scripts/test-ios" TalariaTests/KilledOwner > "$state/killed-owner.log" 2>&1 &
+killed_owner=$!
+wait_until_active "$killed_owner"
+kill -KILL "$killed_owner"
+wait "$killed_owner" 2>/dev/null || true
+"$peer/scripts/test-ios" TalariaTests/AfterKilledOwner > "$state/after-kill.log" 2>&1
+unset TALARIA_FAKE_XCODEBUILD_SECONDS
+
+read -r maximum < "$state/maximum"
+read -r active < "$state/active"
+[[ "$maximum" == 1 && "$active" == 0 ]]
+[[ ! -e "$common_dir/talaria-xctest-runner.lock.owner" ]]
+
+print "test-ios admission and selection checks passed ($rounds concurrent rounds)."
