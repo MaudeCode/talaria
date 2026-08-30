@@ -15,28 +15,32 @@ struct RelayAccountSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            switch connectionState {
-            case .signedOut, .expired, .disconnectPending:
+            if isLoading {
                 accountSummary
-
-                SignInWithAppleButton(.continue) { request in
-                    request.nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
-                } onCompletion: { result in
-                    handleAppleSignIn(result)
-                }
-                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                .frame(height: 46)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .disabled(isLoading || isConnecting)
-                .accessibilityIdentifier("settings-sign-in-with-apple")
-            case .unpaired, .connected:
-                NavigationLink {
-                    RelayConnectionManagementView(authManager: authManager)
-                } label: {
+            } else {
+                switch connectionState {
+                case .signedOut, .expired, .disconnectPending:
                     accountSummary
+
+                    SignInWithAppleButton(.continue) { request in
+                        request.nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
+                    } onCompletion: { result in
+                        handleAppleSignIn(result)
+                    }
+                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                    .frame(height: 46)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .disabled(isConnecting)
+                    .accessibilityIdentifier("settings-sign-in-with-apple")
+                case .unpaired, .connected:
+                    NavigationLink {
+                        RelayConnectionManagementView(authManager: authManager)
+                    } label: {
+                        accountSummary
+                    }
+                    .accessibilityHint("Opens Talaria Relay connection management.")
+                    .accessibilityIdentifier("settings-manage-relay")
                 }
-                .accessibilityHint("Opens Talaria Relay connection management.")
-                .accessibilityIdentifier("settings-manage-relay")
             }
 
             if let errorMessage {
