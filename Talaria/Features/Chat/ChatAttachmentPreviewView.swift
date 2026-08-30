@@ -112,7 +112,7 @@ struct ChatAttachmentPreviewView: View {
                         Text(errorMessage)
                     } actions: {
                         Button("Try Again") {
-                            Task { await loadAttachment() }
+                            Task { await loadAttachment(force: true) }
                         }
                     }
                 } else if let preview = viewModel.preview {
@@ -288,10 +288,15 @@ final class ChatAttachmentPreviewViewModel {
     private(set) var errorMessage: String?
     private(set) var lastError: Error?
 
-    init(session: SessionSummary, server: URL, item: ChatAttachmentPreviewItem) {
+    init(
+        session: SessionSummary,
+        server: URL,
+        item: ChatAttachmentPreviewItem,
+        apiClient: APIClient? = nil
+    ) {
         self.session = session
         self.item = item
-        apiClient = APIClient(baseURL: server)
+        self.apiClient = apiClient ?? APIClient(baseURL: server)
     }
 
     func load(force: Bool = false) async {
