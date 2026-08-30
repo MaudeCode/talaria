@@ -786,6 +786,40 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
+    func testLiveActivityAttributesPersistRelayPublisherIdentityTolerantly() throws {
+        struct LegacyAttributes: Encodable {
+            var sessionID: String
+            var sessionTitle: String
+            var streamID: String?
+            var startedAt: Date
+        }
+
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let attributes = AgentRunActivityAttributes(
+            sessionID: "session-abc",
+            sessionTitle: "Relay work",
+            streamID: "stream-1",
+            startedAt: startedAt,
+            relayPublisherID: "https://hermes.example"
+        )
+        let roundTrip = try JSONDecoder().decode(
+            AgentRunActivityAttributes.self,
+            from: JSONEncoder().encode(attributes)
+        )
+        XCTAssertEqual(roundTrip.relayPublisherID, "https://hermes.example")
+
+        let legacy = try JSONDecoder().decode(
+            AgentRunActivityAttributes.self,
+            from: JSONEncoder().encode(LegacyAttributes(
+                sessionID: "session-abc",
+                sessionTitle: "Relay work",
+                streamID: "stream-1",
+                startedAt: startedAt
+            ))
+        )
+        XCTAssertNil(legacy.relayPublisherID)
+    }
+
     func testActiveLiveActivityStatesCarryRenderableText() {
         let startedAt = Date(timeIntervalSince1970: 100)
         let later = Date(timeIntervalSince1970: 106)

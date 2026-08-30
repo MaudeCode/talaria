@@ -380,7 +380,11 @@ private extension AgentLiveActivityManager {
                     requestedSessionID: sessionID,
                     requestedStreamID: streamID
                 )
-                    && (relayContext == nil || existing.id == relayRegistration.activityID)
+                    && (
+                        relayContext == nil
+                            || existing.attributes.relayPublisherID == relayContext?.publisherID
+                            || existing.id == relayRegistration.activityID
+                    )
             }
 
             for staleActivity in existingActivities {
@@ -417,7 +421,8 @@ private extension AgentLiveActivityManager {
                 sessionID: sessionID,
                 sessionTitle: sessionTitle,
                 streamID: streamID,
-                startedAt: state.startedAt
+                startedAt: state.startedAt,
+                relayPublisherID: relayContext?.publisherID
             )
             let requestedActivity = try Activity.request(
                 attributes: attributes,

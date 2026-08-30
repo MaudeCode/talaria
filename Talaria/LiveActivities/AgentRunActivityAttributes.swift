@@ -43,12 +43,20 @@ struct AgentRunActivityAttributes: ActivityAttributes {
     var sessionTitle: String
     var streamID: String?
     var startedAt: Date
+    var relayPublisherID: String?
 
-    init(sessionID: String, sessionTitle: String, streamID: String? = nil, startedAt: Date) {
+    init(
+        sessionID: String,
+        sessionTitle: String,
+        streamID: String? = nil,
+        startedAt: Date,
+        relayPublisherID: String? = nil
+    ) {
         self.sessionID = sessionID
         self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
         self.streamID = AgentLiveActivityReusePolicy.normalizedStreamID(streamID)
         self.startedAt = startedAt
+        self.relayPublisherID = relayPublisherID
     }
 }
 
