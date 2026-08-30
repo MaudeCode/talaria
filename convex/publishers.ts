@@ -295,13 +295,24 @@ export const listCurrentStates = internalQuery({
   args: { userId: v.string(), now: v.number() },
   returns: v.array(storedSessionStateValidator),
   handler: async (ctx, args) => {
-    const states = await ctx.db
-      .query("sessionStates")
-      .withIndex("by_user_id_and_expires_at", (query) =>
-        query.eq("userId", args.userId).gt("expiresAt", args.now),
-      )
-      .take(500);
-    return states.filter((state) => !state.deleted).map(exposedState);
+    const [states, publishers] = await Promise.all([
+      ctx.db
+        .query("sessionStates")
+        .withIndex("by_user_id_and_expires_at", (query) =>
+          query.eq("userId", args.userId).gt("expiresAt", args.now),
+        )
+        .take(500),
+      ctx.db
+        .query("publishers")
+        .withIndex("by_user_id_and_publisher_id", (query) => query.eq("userId", args.userId))
+        .take(500),
+    ]);
+    const disabledPublisherIds = new Set(
+      publishers.filter((publisher) => !publisher.enabled).map((publisher) => publisher.publisherId),
+    );
+    return states
+      .filter((state) => !state.deleted && !disabledPublisherIds.has(state.publisherId))
+      .map(exposedState);
   },
 });
 

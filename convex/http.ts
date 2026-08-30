@@ -504,6 +504,25 @@ http.route({
 
 http.route({
   pathPrefix: "/v1/devices/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const parts = pathParts(request);
+    const deviceId = parts[2];
+    if (!deviceId || parts.length !== 4 || parts[3] !== "publisher-subscriptions") {
+      return json(404, { error: "not_found" });
+    }
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
+    const publishers = await ctx.runQuery(internal.subscriptions.listForDevice, {
+      userId: auth.userId,
+      deviceId,
+    });
+    return publishers ? json(200, { publishers }) : json(404, { error: "not_found" });
+  }),
+});
+
+http.route({
+  pathPrefix: "/v1/devices/",
   method: "PUT",
   handler: httpAction(async (ctx, request) => {
     const parts = pathParts(request);
@@ -513,6 +532,22 @@ http.route({
     if (!auth) return json(401, { error: "unauthorized" });
     const body = await readJson(request);
     if (!body) return json(400, { error: "invalid_json" });
+
+    if (parts.length === 4 && parts[3] === "publisher-subscriptions") {
+      const publisherId = canonicalHttpOrigin(stringField(body, "publisherId", 191) ?? "");
+      const subscribed = body.subscribed;
+      if (!publisherId || typeof subscribed !== "boolean") {
+        return json(400, { error: "invalid_subscription" });
+      }
+      const result = await ctx.runMutation(internal.subscriptions.setForDevice, {
+        userId: auth.userId,
+        deviceId,
+        publisherId,
+        subscribed,
+        now: Date.now(),
+      });
+      return json(result.ok ? 200 : 404, result);
+    }
 
     if (parts.length === 3) {
       const label = stringField(body, "label", 80);
@@ -629,6 +664,23 @@ http.route({
 });
 
 http.route({
+  path: "/v1/publisher-enrollment",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
+    const publisherId = canonicalHttpOrigin(new URL(request.url).searchParams.get("publisherId") ?? "");
+    if (!publisherId) return json(400, { error: "publisher_required" });
+    const result = await ctx.runMutation(internal.subscriptions.revokePublisher, {
+      userId: auth.userId,
+      publisherId,
+      now: Date.now(),
+    });
+    return json(result.ok ? 200 : 404, result);
+  }),
+});
+
+http.route({
   path: "/v1/activity-snapshot",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
@@ -640,17 +692,26 @@ http.route({
     }
     const mode = url.searchParams.get("mode");
     const now = Date.now();
+    const excludedPublisherIds = await ctx.runQuery(internal.subscriptions.excludedPublisherIds, {
+      userId: auth.userId,
+      deviceId,
+    });
+    if (!excludedPublisherIds) return json(404, { error: "not_found" });
+    const excluded = new Set(excludedPublisherIds);
     if (mode === "all_running") {
       const states = await ctx.runQuery(internal.publishers.listCurrentStates, {
         userId: auth.userId,
         now,
       });
-      return json(200, { aggregate: makeAggregate(states, now) });
+      return json(200, {
+        aggregate: makeAggregate(states.filter((state) => !excluded.has(state.publisherId)), now),
+      });
     }
     if (mode === "per_session") {
       const publisherId = canonicalHttpOrigin(url.searchParams.get("publisherId") ?? "");
       const sessionId = url.searchParams.get("sessionId");
       if (!publisherId || !sessionId) return json(400, { error: "session_required" });
+      if (excluded.has(publisherId)) return json(200, { aggregate: null });
       const state = await ctx.runQuery(internal.publishers.getState, {
         userId: auth.userId,
         publisherId,

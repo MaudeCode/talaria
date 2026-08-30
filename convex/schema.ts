@@ -120,6 +120,13 @@ export default defineSchema({
     .index("by_revoked_at", ["revokedAt"])
     .index("by_user_id_and_updated_at", ["userId", "updatedAt"]),
 
+  devicePublisherExclusions: defineTable({
+    userId: v.string(),
+    deviceId: v.string(),
+    publisherId: v.string(),
+    createdAt: v.number(),
+  }).index("by_user_id_and_device_id_and_publisher_id", ["userId", "deviceId", "publisherId"]),
+
   sessionStates: defineTable({
     userId: v.string(),
     deleted: v.boolean(),
