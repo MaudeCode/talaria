@@ -47,6 +47,7 @@ explicitly adopted it.
 - Keep the Settings root as a category directory. Put new controls in their
   owning category. A new root category needs a distinct user-facing concern;
   a direct root action needs explicit justification as unusually important.
+  User Profile and Sign in with Apple are the approved root exceptions.
 - Do not add a third-party package without approval.
 - Automated tests must run from deterministic, isolated, test-owned state in a
   clean environment. Fixture identifiers must be synthetic, and the harness must

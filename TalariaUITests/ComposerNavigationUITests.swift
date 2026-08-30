@@ -155,6 +155,9 @@ final class ComposerNavigationUITests: XCTestCase {
     func testSettingsRootContainsCategoriesInsteadOfLeafControls() throws {
         openSettings()
 
+        XCTAssertTrue(app.buttons["settings-user-profile"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-apple-account"].exists)
+        XCTAssertTrue(app.buttons["settings-sign-in-with-apple"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Haptic Feedback"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Default Model"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Clear Offline Cache"].exists)
@@ -184,11 +187,20 @@ final class ComposerNavigationUITests: XCTestCase {
     func testSettingsTaxonomyKeepsMovedControlsWithTheirOwners() throws {
         openSettings()
 
+        let profile = app.buttons["settings-user-profile"]
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: profile.frame.midX / app.frame.width,
+            dy: profile.frame.midY / app.frame.height
+        )).tap()
+        XCTAssertTrue(app.navigationBars["User Profile"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["Display Name"].exists)
+        app.navigationBars["User Profile"].buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+
         for category in [
             ("notificationsAndHaptics", "Notifications & Haptics", "Quota Pace Alerts"),
             ("chats", "Chats", "Thinking & Tools"),
             ("liveActivitiesAndWidgets", "Live Activities & Widgets", "Live Activity Excerpts"),
-            ("servers", "Servers", "Server Identity"),
         ] {
             tapSettingsCategory(id: category.0, title: category.1)
             let setting = app.descendants(matching: .any)

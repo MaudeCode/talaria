@@ -3,12 +3,7 @@ import SwiftUI
 import UIKit
 
 struct RelayLiveActivitySettingsCard: View {
-    let server: URL
-
-    @State private var appleNonce = TalariaRelayClient.makeAppleNonce()
     @State private var statusMessage: String?
-    @State private var isConnecting = false
-    @State private var isConfigured = false
     @AppStorage(TalariaLiveActivityMode.storageKey) private var modeRawValue = TalariaLiveActivityMode.perSession.rawValue
     @AppStorage(TalariaRelayNotifications.isEnabledKey) private var notificationsEnabled = false
 
@@ -25,54 +20,24 @@ struct RelayLiveActivitySettingsCard: View {
             }
 
             if modeRawValue == TalariaLiveActivityMode.allRunning.rawValue {
-                relayControls
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Approval & Input Alerts"),
+                    systemImage: "bell.badge",
+                    isOn: notificationBinding
+                )
+
+                if let statusMessage {
+                    SettingsFootnote(statusMessage)
+                }
             }
         }
-        .task { await loadRelayState() }
         .onChange(of: modeRawValue) {
             Task {
                 await AgentLiveActivityManager.shared.refreshForCurrentMode()
                 try? await TalariaAggregateLiveActivityManager.shared.refresh()
             }
-        }
-    }
-
-    @ViewBuilder
-    private var relayControls: some View {
-        SettingsDivider()
-        SettingsToggleRow(
-            title: String(localized: "Approval & Input Alerts"),
-            systemImage: "bell.badge",
-            isOn: notificationBinding
-        )
-        SettingsDivider()
-        SettingsFootnote(
-            statusMessage
-                ?? String(localized: "Sign in with Apple, then Talaria securely pairs this Hermes server with your Live Activities.")
-        )
-
-        if isConfigured {
-            SettingsButton(String(localized: "Connect This Server"), isLoading: isConnecting) {
-                Task { await pairCurrentServer() }
-            }
-            .disabled(isConnecting)
-        } else {
-            SignInWithAppleButton(.continue) { request in
-                request.nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
-            } onCompletion: { result in
-                handleAppleSignIn(result)
-            }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 50)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .disabled(isConnecting)
-        }
-
-        if isConfigured {
-            SettingsButton(String(localized: "Disconnect Relay"), role: .destructive) {
-                Task { await disconnect() }
-            }
-            .disabled(isConnecting)
         }
     }
 
@@ -91,6 +56,81 @@ struct RelayLiveActivitySettingsCard: View {
     }
 
     @MainActor
+    private func enableNotifications() async {
+        let granted = await ResponseCompletionNotificationService.requestAuthorization()
+        notificationsEnabled = granted
+        if granted {
+            UIApplication.shared.registerForRemoteNotifications()
+            statusMessage = nil
+        } else {
+            statusMessage = String(localized: "Notification permission is required for relay alerts.")
+        }
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
+    }
+}
+
+struct RelayAccountSettingsSection: View {
+    let server: URL
+
+    @State private var appleNonce = TalariaRelayClient.makeAppleNonce()
+    @State private var statusMessage: String?
+    @State private var isConnecting = false
+    @State private var isConfigured = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "apple.logo")
+                    .font(.title2)
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(.primary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Apple Account")
+                        .font(.body.weight(.semibold))
+
+                    Text(isConfigured ? "Connected" : "Sign in for remote Live Activities")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.secondary)
+            }
+
+            if isConfigured {
+                SettingsButton(String(localized: "Connect This Server"), isLoading: isConnecting) {
+                    Task { await pairCurrentServer() }
+                }
+                .disabled(isConnecting)
+
+                SettingsButton(String(localized: "Disconnect Relay"), role: .destructive) {
+                    Task { await disconnect() }
+                }
+                .disabled(isConnecting)
+            } else {
+                SignInWithAppleButton(.continue) { request in
+                    request.nonce = TalariaRelayClient.hashedAppleNonce(appleNonce)
+                } onCompletion: { result in
+                    handleAppleSignIn(result)
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(height: 50)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .disabled(isConnecting)
+                .accessibilityIdentifier("settings-sign-in-with-apple")
+            }
+        }
+        .padding(.vertical, 4)
+        .task { await loadRelayState() }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings-apple-account")
+    }
+
+    @MainActor
     private func loadRelayState() async {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
         let appleAuthorized = await TalariaRelayAppleCredentialState.isAuthorized(
@@ -98,7 +138,7 @@ struct RelayLiveActivitySettingsCard: View {
         )
         isConfigured = !credentials.isExpired && appleAuthorized
         statusMessage = isConfigured
-            ? String(localized: "Connected")
+            ? nil
             : String(localized: "Sign in with Apple again to restore remote Live Activities.")
     }
 
@@ -193,19 +233,6 @@ struct RelayLiveActivitySettingsCard: View {
             publisherID: publisherID
         )
         try TalariaRelayConfigurationStore.recordPairedPublisher(publisherID)
-    }
-
-    @MainActor
-    private func enableNotifications() async {
-        let granted = await ResponseCompletionNotificationService.requestAuthorization()
-        notificationsEnabled = granted
-        if granted {
-            UIApplication.shared.registerForRemoteNotifications()
-            statusMessage = nil
-        } else {
-            statusMessage = String(localized: "Notification permission is required for relay alerts.")
-        }
-        try? await TalariaAggregateLiveActivityManager.shared.refresh()
     }
 
     @MainActor

@@ -69,13 +69,29 @@ enum SettingsDestination: Hashable {
 }
 
 struct SettingsCategoryPage<Content: View>: View {
-    @ScaledMetric(relativeTo: .body) private var cardSpacing: CGFloat = 18
-
     let category: SettingsCategory
     @ViewBuilder let content: Content
 
     init(category: SettingsCategory, @ViewBuilder content: () -> Content) {
         self.category = category
+        self.content = content()
+    }
+
+    var body: some View {
+        SettingsPage(title: category.title) {
+            content
+        }
+    }
+}
+
+struct SettingsPage<Content: View>: View {
+    @ScaledMetric(relativeTo: .body) private var cardSpacing: CGFloat = 18
+
+    let title: String
+    @ViewBuilder let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
         self.content = content()
     }
 
@@ -90,6 +106,6 @@ struct SettingsCategoryPage<Content: View>: View {
             .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
         }
         .background(Color(.systemBackground))
-        .navigationTitle(category.title)
+        .navigationTitle(title)
     }
 }

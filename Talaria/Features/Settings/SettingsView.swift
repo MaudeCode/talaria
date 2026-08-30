@@ -15,13 +15,28 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        List(SettingsCategory.rootCategories) { category in
-            NavigationLink {
-                categoryDestination(category)
-            } label: {
-                Label(category.title, systemImage: category.systemImage)
+        List {
+            Section {
+                NavigationLink {
+                    UserProfileSettingsView(authManager: authManager)
+                } label: {
+                    UserProfileSettingsRow(server: server)
+                }
+                .accessibilityIdentifier("settings-user-profile")
+
+                RelayAccountSettingsSection(server: server)
             }
-            .accessibilityIdentifier("settings-category-\(category.id)")
+
+            Section {
+                ForEach(SettingsCategory.rootCategories) { category in
+                    NavigationLink {
+                        categoryDestination(category)
+                    } label: {
+                        Label(category.title, systemImage: category.systemImage)
+                    }
+                    .accessibilityIdentifier("settings-category-\(category.id)")
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
@@ -42,7 +57,7 @@ struct SettingsView: View {
         case .chats:
             ChatsSettingsView(authManager: authManager, server: server)
         case .liveActivitiesAndWidgets:
-            LiveActivitiesWidgetsSettingsView(server: server)
+            LiveActivitiesWidgetsSettingsView()
         case .siriAndShortcuts:
             SiriShortcutsSettingsView()
         case .servers:

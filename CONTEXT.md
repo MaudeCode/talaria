@@ -97,5 +97,5 @@ _Avoid_: Multi-select, bulk mode
 ## Settings
 
 **Settings Category**:
-A root-level Settings destination for one distinct user-facing concern. Every setting has one canonical Settings Category, even when another screen links to it directly.
+A Settings destination for one distinct user-facing concern. Every ordinary setting has one canonical Settings Category, even when another screen links to it directly. User Profile and Sign in with Apple are approved account actions above the category directory.
 _Avoid_: Settings section, card, shortcut

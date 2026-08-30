@@ -1,6 +1,104 @@
 import SwiftData
 import SwiftUI
 
+struct UserProfileSettingsRow: View {
+    let server: URL
+
+    @AppStorage(SessionIdentitySettings.displayNameKey) private var displayName = ""
+    @AppStorage(SessionIdentitySettings.initialsKey) private var initials = ""
+    @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(previewInitials)
+                .font(.headline)
+                .foregroundStyle(previewForeground)
+                .frame(width: 48, height: 48)
+                .background(previewColor, in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "User Profile" : displayName)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+
+                Text(server.host ?? server.absoluteString)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var previewInitials: String {
+        SessionIdentitySettings.displayInitials(
+            displayName: displayName,
+            storedInitials: initials,
+            fallbackFullName: NSFullUserName()
+        )
+    }
+
+    private var previewColor: Color {
+        HeaderLogoColor.color(for: headerLogoColorHex)
+    }
+
+    private var previewForeground: Color {
+        HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
+    }
+}
+
+struct UserProfileSettingsView: View {
+    @Bindable var authManager: AuthManager
+
+    @AppStorage(SessionIdentitySettings.displayNameKey) private var displayName = ""
+    @AppStorage(SessionIdentitySettings.initialsKey) private var initials = ""
+    @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
+
+    var body: some View {
+        SettingsPage(title: String(localized: "User Profile")) {
+            SettingsCard(title: String(localized: "User Profile")) {
+                SessionIdentitySettingsEditor(
+                    displayName: $displayName,
+                    initials: initialsBinding,
+                    previewInitials: previewInitials,
+                    previewColor: HeaderLogoColor.color(for: headerLogoColorHex),
+                    previewForeground: HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
+                )
+            }
+        }
+        .onChange(of: displayName) { syncActiveServerIdentity() }
+        .onChange(of: initials) { syncActiveServerIdentity() }
+        .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
+    }
+
+    private var initialsBinding: Binding<String> {
+        Binding(
+            get: { initials },
+            set: { initials = SessionIdentitySettings.normalizedInitials($0) }
+        )
+    }
+
+    private var previewInitials: String {
+        SessionIdentitySettings.displayInitials(
+            displayName: displayName,
+            storedInitials: initials,
+            fallbackFullName: NSFullUserName()
+        )
+    }
+
+    private func syncActiveServerIdentity() {
+        guard let account = authManager.servers.first(where: { $0.id == authManager.activeServerID }) else { return }
+        authManager.updateServerIdentity(
+            account,
+            displayName: displayName,
+            initials: initials,
+            headerLogoColorHex: headerLogoColorHex
+        )
+    }
+}
+
 struct ServersSettingsView: View {
     @Bindable var authManager: AuthManager
     let server: URL
@@ -14,24 +112,11 @@ struct ServersSettingsView: View {
     @State private var isLoadingDefaultProfile = false
     @State private var showDefaultModelPicker = false
     @State private var showDefaultProfilePicker = false
-    @AppStorage(SessionIdentitySettings.displayNameKey) private var identityDisplayName = ""
-    @AppStorage(SessionIdentitySettings.initialsKey) private var identityInitials = ""
-    @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         SettingsCategoryPage(category: .servers) {
-            SettingsCard(title: String(localized: "Server Identity")) {
-                SessionIdentitySettingsEditor(
-                    displayName: $identityDisplayName,
-                    initials: identityInitialsBinding,
-                    previewInitials: identityPreviewInitials,
-                    previewColor: HeaderLogoColor.color(for: headerLogoColorHex),
-                    previewForeground: HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
-                )
-            }
-
             serversCard
 
             SettingsCard(title: String(localized: "Active Server")) {
@@ -75,9 +160,6 @@ struct ServersSettingsView: View {
             }
         }
         .task { await loadDefaults() }
-        .onChange(of: identityDisplayName) { syncActiveServerIdentity() }
-        .onChange(of: identityInitials) { syncActiveServerIdentity() }
-        .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
         }
@@ -145,21 +227,6 @@ struct ServersSettingsView: View {
         }
     }
 
-    private var identityInitialsBinding: Binding<String> {
-        Binding(
-            get: { identityInitials },
-            set: { identityInitials = SessionIdentitySettings.normalizedInitials($0) }
-        )
-    }
-
-    private var identityPreviewInitials: String {
-        SessionIdentitySettings.displayInitials(
-            displayName: identityDisplayName,
-            storedInitials: identityInitials,
-            fallbackFullName: NSFullUserName()
-        )
-    }
-
     private var defaultModelLabel: String {
         if isLoadingDefaultModel { return String(localized: "Loading") }
         guard let defaultModel, !defaultModel.isEmpty else { return String(localized: "Not set") }
@@ -185,16 +252,6 @@ struct ServersSettingsView: View {
         authManager.servers.count > 1
             ? String(localized: "You'll switch to another configured server. Sign in again to use this one.")
             : String(localized: "You'll return to onboarding and need the server URL and password to sign back in.")
-    }
-
-    private func syncActiveServerIdentity() {
-        guard let account = authManager.servers.first(where: { $0.id == authManager.activeServerID }) else { return }
-        authManager.updateServerIdentity(
-            account,
-            displayName: identityDisplayName,
-            initials: identityInitials,
-            headerLogoColorHex: headerLogoColorHex
-        )
     }
 
     @MainActor

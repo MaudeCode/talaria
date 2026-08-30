@@ -3,14 +3,12 @@ import SwiftUI
 import UIKit
 
 struct LiveActivitiesWidgetsSettingsView: View {
-    let server: URL
-
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey)
     private var showsLiveActivityResponseExcerpts = false
 
     var body: some View {
         SettingsCategoryPage(category: .liveActivitiesAndWidgets) {
-            RelayLiveActivitySettingsCard(server: server)
+            RelayLiveActivitySettingsCard()
 
             SettingsCard(title: String(localized: "Privacy")) {
                 SettingsToggleRow(
