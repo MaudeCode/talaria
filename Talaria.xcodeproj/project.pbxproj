@@ -310,6 +310,9 @@
 		C23400000000000000000003 /* StreamingLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000004 /* StreamingLabView.swift */; };
 		C23400000000000000000005 /* StreamingLabReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000006 /* StreamingLabReplayTests.swift */; };
 		C14900000000000000000001 /* Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000002 /* Kanban.swift */; };
+		C107H000000000000000001 /* KanbanRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000011 /* KanbanRequests.swift */; };
+		C107H000000000000000002 /* KanbanCardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000012 /* KanbanCardDetails.swift */; };
+		C107H000000000000000003 /* KanbanCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000013 /* KanbanCompatibility.swift */; };
 		C14900000000000000000003 /* APIClient+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000004 /* APIClient+Kanban.swift */; };
 		C14900000000000000000005 /* KanbanFeatureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000006 /* KanbanFeatureState.swift */; };
 		C14900000000000000000007 /* KanbanLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000008 /* KanbanLabView.swift */; };
@@ -721,6 +724,9 @@
 		C23400000000000000000004 /* StreamingLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabView.swift; sourceTree = "<group>"; };
 		C23400000000000000000006 /* StreamingLabReplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabReplayTests.swift; sourceTree = "<group>"; };
 		C14900000000000000000002 /* Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kanban.swift; sourceTree = "<group>"; };
+		C107H000000000000000011 /* KanbanRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanRequests.swift; sourceTree = "<group>"; };
+		C107H000000000000000012 /* KanbanCardDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetails.swift; sourceTree = "<group>"; };
+		C107H000000000000000013 /* KanbanCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCompatibility.swift; sourceTree = "<group>"; };
 		C14900000000000000000004 /* APIClient+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Kanban.swift"; sourceTree = "<group>"; };
 		C14900000000000000000006 /* KanbanFeatureState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureState.swift; sourceTree = "<group>"; };
 		C14900000000000000000008 /* KanbanLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLabView.swift; sourceTree = "<group>"; };
@@ -1044,6 +1050,9 @@
 				1A2B3C4D5E6F70000000201 /* Memory.swift */,
 				1A2B3C4D5E6F70000000211 /* Skills.swift */,
 				C14900000000000000000002 /* Kanban.swift */,
+				C107H000000000000000011 /* KanbanRequests.swift */,
+				C107H000000000000000012 /* KanbanCardDetails.swift */,
+				C107H000000000000000013 /* KanbanCompatibility.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -1640,6 +1649,9 @@
 				C04000000000000000000008 /* APIClient+Skills.swift in Sources */,
 				C04000000000000000000009 /* APIClient+Upload.swift in Sources */,
 				C14900000000000000000001 /* Kanban.swift in Sources */,
+				C107H000000000000000001 /* KanbanRequests.swift in Sources */,
+				C107H000000000000000002 /* KanbanCardDetails.swift in Sources */,
+				C107H000000000000000003 /* KanbanCompatibility.swift in Sources */,
 				C14900000000000000000003 /* APIClient+Kanban.swift in Sources */,
 				C15100000000000000000001 /* KanbanEventStreamClient.swift in Sources */,
 				C14900000000000000000005 /* KanbanFeatureState.swift in Sources */,
