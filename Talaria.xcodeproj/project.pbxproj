@@ -56,6 +56,11 @@
 		1A2B3C4D5E6F70000000410 /* OnboardingComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */; };
 		1A2B3C4D5E6F7000000000A6 /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */; };
 		1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */; };
+		C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000101 /* SessionListInitialLoad.swift */; };
+		C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000102 /* SessionListNewChatReturn.swift */; };
+		C107V0000000000000000003 /* NewChatRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000103 /* NewChatRequest.swift */; };
+		C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000104 /* PendingNewChatRoute.swift */; };
+		C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000105 /* SessionListUtilityDestination.swift */; };
 		1A2B3C4D5E6F7000000000A8 /* Endpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */; };
 		1A2B3C4D5E6F7000000000A9 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */; };
 		1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */; };
@@ -67,6 +72,11 @@
 		C03910000000000000000017 /* APIClientUpdatesCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000017 /* APIClientUpdatesCheckTests.swift */; };
 		C03910000000000000000018 /* APIClientUpdatesApplyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000018 /* APIClientUpdatesApplyTests.swift */; };
 		C03910000000000000000003 /* APIClientSessionDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000003 /* APIClientSessionDetailTests.swift */; };
+		C107S0000000000000000002 /* APIClientSessionDetailRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000102 /* APIClientSessionDetailRequestTests.swift */; };
+		C107S0000000000000000003 /* APIClientSessionDetailActivitySceneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000103 /* APIClientSessionDetailActivitySceneTests.swift */; };
+		C107S0000000000000000004 /* APIClientSessionDetailAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000104 /* APIClientSessionDetailAttachmentTests.swift */; };
+		C107S0000000000000000005 /* APIClientSessionDetailToolTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000105 /* APIClientSessionDetailToolTimelineTests.swift */; };
+		C107S0000000000000000006 /* APIClientSessionDetailPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000106 /* APIClientSessionDetailPresentationTests.swift */; };
 		C03910000000000000000004 /* APIClientSessionMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000004 /* APIClientSessionMutationTests.swift */; };
 		C03910000000000000000005 /* APIClientWorkspaceFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */; };
 		C03910000000000000000006 /* APIClientChatEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000006 /* APIClientChatEndpointTests.swift */; };
@@ -78,6 +88,16 @@
 		C0391000000000000000000C /* APIClientSkillEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000C /* APIClientSkillEndpointTests.swift */; };
 		C0391000000000000000000D /* APIClientUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000D /* APIClientUploadTests.swift */; };
 		C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000E /* ChatViewModelSendTests.swift */; };
+		C107Y0000000000000000001 /* ChatViewModelSendTests+ActionsQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000101 /* ChatViewModelSendTests+ActionsQueue.swift */; };
+		C107Y0000000000000000002 /* ChatViewModelSendTests+Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000102 /* ChatViewModelSendTests+Attachments.swift */; };
+		C107Y0000000000000000003 /* ChatViewModelSendTests+ComposerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000103 /* ChatViewModelSendTests+ComposerConfig.swift */; };
+		C107Y0000000000000000004 /* ChatViewModelSendTests+Listen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000104 /* ChatViewModelSendTests+Listen.swift */; };
+		C107Y0000000000000000005 /* ChatViewModelSendTests+SendApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000105 /* ChatViewModelSendTests+SendApproval.swift */; };
+		C107Y0000000000000000006 /* ChatViewModelSendTests+StaleRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000106 /* ChatViewModelSendTests+StaleRecovery.swift */; };
+		C107Y0000000000000000007 /* ChatViewModelSendTests+StreamingEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000107 /* ChatViewModelSendTests+StreamingEvents.swift */; };
+		C107Y0000000000000000008 /* ChatViewModelSendTests+Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000108 /* ChatViewModelSendTests+Support.swift */; };
+		C107Y0000000000000000009 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000109 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift */; };
+		C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */; };
 		C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */; };
 		C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14600000000000000000001 /* ChatToolbarHeaderTests.swift */; };
 		C15210000000000000000001 /* OnboardingFlowPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000001 /* OnboardingFlowPolicy.swift */; };
@@ -88,6 +108,11 @@
 		C15210000000000000000006 /* OnboardingConnectPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000006 /* OnboardingConnectPage.swift */; };
 		C15210000000000000000007 /* OnboardingFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000007 /* OnboardingFlowTests.swift */; };
 		C0391000000000000000000F /* SessionListMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000F /* SessionListMutationTests.swift */; };
+		C107X0000000000000000001 /* SessionListLoadProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000101 /* SessionListLoadProfileTests.swift */; };
+		C107X0000000000000000002 /* SessionListSessionProjectArchiveMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000102 /* SessionListSessionProjectArchiveMutationTests.swift */; };
+		C107X0000000000000000003 /* SessionListRemoteSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000103 /* SessionListRemoteSearchTests.swift */; };
+		C107X0000000000000000004 /* SessionListAutomatedVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */; };
+		C107X0000000000000000005 /* SessionListMutationTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000105 /* SessionListMutationTestSupport.swift */; };
 		A10900000000000000000002 /* SessionNavigationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10900000000000000000012 /* SessionNavigationStateTests.swift */; };
 		C03910000000000000000010 /* APIEndpointContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000010 /* APIEndpointContractTests.swift */; };
 		C03910000000000000000011 /* CronManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000011 /* CronManagementTests.swift */; };
@@ -110,10 +135,56 @@
 		C04800000000000000000003 /* ChatAttachmentCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */; };
 		1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BD /* Workspace.swift */; };
 		1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */; };
+		C107G000000000000000001 /* ChatControlResponses.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000011 /* ChatControlResponses.swift */; };
+		C107G000000000000000002 /* ServerSettingsUpdates.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000012 /* ServerSettingsUpdates.swift */; };
+		C107G000000000000000003 /* ServerProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000013 /* ServerProfiles.swift */; };
+		C107G000000000000000004 /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000014 /* ModelCatalog.swift */; };
 		A06100000000000000000001 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000005 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
-		A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
-		A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
+		A06100000000000000000006 /* ProviderQuotaWidgetSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */; };
+		C107W0000000000000000001 /* ProviderQuotaPresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */; };
+		C107W0000000000000000002 /* ProviderQuotaWidgetLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */; };
+		C107W0000000000000000003 /* ProviderQuotaPace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000103 /* ProviderQuotaPace.swift */; };
+		C107W0000000000000000004 /* ProviderQuotaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000104 /* ProviderQuotaPresentation.swift */; };
+		C107M0000000000000000001 /* ProviderQuotaBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000201 /* ProviderQuotaBarsView.swift */; };
+		C107M0000000000000000002 /* ProviderQuotaBarsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000201 /* ProviderQuotaBarsView.swift */; };
+		C107M0000000000000000003 /* ProviderQuotaGaugeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */; };
+		C107M0000000000000000004 /* ProviderQuotaGaugeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */; };
+		C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */; };
+		C107M0000000000000000006 /* ProviderQuotaLockScreenPercentageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */; };
+		C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */; };
+		C107M0000000000000000008 /* ProviderQuotaLockScreenPaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */; };
+		C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000205 /* ProviderQuotaForecastView.swift */; };
+		C107M0000000000000000010 /* ProviderQuotaForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000205 /* ProviderQuotaForecastView.swift */; };
+		C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */; };
+		C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */; };
+		C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */; };
+		C107M0000000000000000014 /* ProviderQuotaAccessoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */; };
+		C107M0000000000000000015 /* ProviderQuotaWidgetPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */; };
+		C107M0000000000000000016 /* TalariaAggregateHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000211 /* TalariaAggregateHeader.swift */; };
+		C107M0000000000000000017 /* AggregateCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000212 /* AggregateCompactTrailing.swift */; };
+		C107M0000000000000000018 /* AggregateStatusLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000213 /* AggregateStatusLabel.swift */; };
+		C107M0000000000000000019 /* SandalMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000214 /* SandalMark.swift */; };
+		C107M0000000000000000020 /* AgentRunExpandedIslandBottomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */; };
+		C107M0000000000000000021 /* AgentRunLockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000216 /* AgentRunLockScreenView.swift */; };
+		C107M0000000000000000022 /* AgentRunIslandBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000217 /* AgentRunIslandBadge.swift */; };
+		C107M0000000000000000023 /* AgentRunIslandStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000218 /* AgentRunIslandStatusView.swift */; };
+		C107M0000000000000000024 /* AgentRunIslandCompactMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */; };
+		C107M0000000000000000025 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
+		C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000221 /* AgentRunProgressRail.swift */; };
+		C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000222 /* AgentRunTimerPill.swift */; };
+		C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */; };
+		A06100000000000000000008 /* ProviderQuotaWidgetSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */; };
+		C107W0000000000000000011 /* ProviderQuotaPresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */; };
+		C107W0000000000000000012 /* ProviderQuotaWidgetLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */; };
+		C107W0000000000000000013 /* ProviderQuotaPace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000103 /* ProviderQuotaPace.swift */; };
+		C107W0000000000000000014 /* ProviderQuotaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000104 /* ProviderQuotaPresentation.swift */; };
+		C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
+		C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
+		C107F000000000000000003 /* ProviderQuotaWidgetRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */; };
+		C107F000000000000000004 /* ProviderQuotaWidgetRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */; };
+		A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */; };
+		A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */; };
 		A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000011 /* ProviderIconRegistry.swift */; };
 		A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000011 /* ProviderIconRegistry.swift */; };
 		A06300000000000000000003 /* ProviderIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000012 /* ProviderIcons.xcassets */; };
@@ -121,6 +192,12 @@
 		A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0610000000000000000000A /* ProviderQuotaWidget.swift */; };
 		A0610000000000000000000B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000301 /* PrivacyInfo.xcprivacy */; };
 		1A2B3C4D5E6F7000000000AF /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BF /* ChatView.swift */; };
+		C107A000000000000000001 /* NavigationAppearanceCompletionObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000011 /* NavigationAppearanceCompletionObserver.swift */; };
+		C107A000000000000000002 /* ListenPlaybackBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000012 /* ListenPlaybackBar.swift */; };
+		C107A000000000000000003 /* ChatToolbarTitleLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000013 /* ChatToolbarTitleLabel.swift */; };
+		C107A000000000000000004 /* ChatToolbarActionCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000014 /* ChatToolbarActionCluster.swift */; };
+		C107A000000000000000005 /* ChatToolbarActionSlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000015 /* ChatToolbarActionSlot.swift */; };
+		C107A000000000000000006 /* ChatToolbarSubtitleResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000016 /* ChatToolbarSubtitleResolver.swift */; };
 		C05100000000000000000001 /* ChatTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000011 /* ChatTranscriptView.swift */; };
 		C05100000000000000000002 /* ChatMessageActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000012 /* ChatMessageActions.swift */; };
 		C05100000000000000000003 /* ChatGoalControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000013 /* ChatGoalControls.swift */; };
@@ -128,6 +205,30 @@
 		1A2B3C4D5E6F7000000000D0 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */; };
 		1A2B3C4D5E6F7000000000D1 /* SessionListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D3 /* SessionListViewModel.swift */; };
 		A04300000000000000000001 /* SessionListComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000011 /* SessionListComponents.swift */; };
+		C107K0000000000000000001 /* NavigationBarLeadingMarginObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */; };
+		C107K0000000000000000002 /* SessionFilterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000102 /* SessionFilterControls.swift */; };
+		C107K0000000000000000003 /* SessionFilterChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000103 /* SessionFilterChip.swift */; };
+		C107K0000000000000000004 /* SessionListRowsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000104 /* SessionListRowsSection.swift */; };
+		C107K0000000000000000005 /* SessionInteractiveRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000105 /* SessionInteractiveRow.swift */; };
+		C107K0000000000000000006 /* GroupedSessionsDisclosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000106 /* GroupedSessionsDisclosure.swift */; };
+		C107K0000000000000000007 /* GroupedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000107 /* GroupedSessionsView.swift */; };
+		C107K0000000000000000008 /* SessionRowContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000108 /* SessionRowContextMenu.swift */; };
+		C107K0000000000000000009 /* SessionProjectMoveMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000109 /* SessionProjectMoveMenu.swift */; };
+		C107K0000000000000000010 /* AvatarServerSwitcherMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000110 /* AvatarServerSwitcherMenu.swift */; };
+		C107K0000000000000000011 /* SessionExportShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000111 /* SessionExportShareSheet.swift */; };
+		C107K0000000000000000012 /* SidebarNavButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000112 /* SidebarNavButton.swift */; };
+		C107K0000000000000000013 /* AppSidebarContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000113 /* AppSidebarContainer.swift */; };
+		C107K0000000000000000014 /* AppSidebarDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000114 /* AppSidebarDrawer.swift */; };
+		C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000115 /* SidebarDisclosureButton.swift */; };
+		C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000116 /* SidebarDisclosureChevron.swift */; };
+		C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000117 /* SidebarUtilityIcon.swift */; };
+		C107K0000000000000000018 /* SidebarSelectedSubrowIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */; };
+		C107K0000000000000000019 /* ActiveProfilePickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000119 /* ActiveProfilePickerRow.swift */; };
+		C107K0000000000000000020 /* ProjectFilterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000120 /* ProjectFilterRow.swift */; };
+		C107K0000000000000000021 /* CompactStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000121 /* CompactStatusRow.swift */; };
+		C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000122 /* SessionListStatusRow.swift */; };
+		C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000123 /* SessionRowSkeletonView.swift */; };
+		C107K0000000000000000024 /* OfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000124 /* OfflineCacheBanner.swift */; };
 		A10900000000000000000001 /* SessionNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10900000000000000000011 /* SessionNavigationState.swift */; };
 		A04300000000000000000002 /* SessionListActionConfirmations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000012 /* SessionListActionConfirmations.swift */; };
 		A04300000000000000000003 /* SessionMutator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000013 /* SessionMutator.swift */; };
@@ -144,14 +245,43 @@
 		C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */; };
 		C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000004 /* StreamReconnectContractTests.swift */; };
 		1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */; };
+		C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000101 /* ApprovalPromptState.swift */; };
+		C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000102 /* ProfileSwitchOutcome.swift */; };
+		C107T0000000000000000003 /* ChatPollingIntervals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000103 /* ChatPollingIntervals.swift */; };
+		C107T0000000000000000004 /* ActiveStreamRecoveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */; };
+		C107T0000000000000000005 /* ActiveChatStreamSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */; };
+		C107T0000000000000000006 /* QueuedSlashMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000106 /* QueuedSlashMessage.swift */; };
+		C107T0000000000000000007 /* ToolCall+ReplayMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */; };
+		C107T0000000000000000008 /* ClarificationPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000108 /* ClarificationPromptState.swift */; };
+		C107R0000000000000000001 /* ChatTranscriptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107R0000000000000000101 /* ChatTranscriptModels.swift */; };
+		C107C000000000000000001 /* ChatListenPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107C000000000000000011 /* ChatListenPlayback.swift */; };
 		1A2B3C4D5E6F7000000000D6 /* SSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */; };
 		C0FF000000000000000000A1 /* CustomHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FF000000000000000000A2 /* CustomHeader.swift */; };
 		1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */; };
 		BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */; };
 		1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */; };
+		C107Q0000000000000000001 /* StreamingMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */; };
+		C107Q0000000000000000002 /* StreamingMarkdownChunkedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */; };
+		C107Q0000000000000000003 /* StreamingFadeBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000103 /* StreamingFadeBlockView.swift */; };
+		C107Q0000000000000000004 /* ChatMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000104 /* ChatMarkdownView.swift */; };
+		C107Q0000000000000000005 /* MathFenceOrCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000105 /* MathFenceOrCodeBlock.swift */; };
+		C107Q0000000000000000006 /* ChatCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000106 /* ChatCodeBlock.swift */; };
+		C107Q0000000000000000007 /* PlainCodeBlockText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000107 /* PlainCodeBlockText.swift */; };
+		C107Q0000000000000000008 /* HighlightedCodeBlockText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000108 /* HighlightedCodeBlockText.swift */; };
+		C107Q0000000000000000009 /* PlainMarkdownFallbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000109 /* PlainMarkdownFallbackView.swift */; };
+		C107Q0000000000000000010 /* ChatMarkdownTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Q0000000000000000110 /* ChatMarkdownTable.swift */; };
 		C14300000000000000000001 /* StreamingMarkdownSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14300000000000000000002 /* StreamingMarkdownSupport.swift */; };
 		C0DE34000000000000000001 /* TranscriptMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000002 /* TranscriptMedia.swift */; };
 		C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000005 /* TranscriptMediaView.swift */; };
+		C107P0000000000000000001 /* TranscriptMediaContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000101 /* TranscriptMediaContentView.swift */; };
+		C107P0000000000000000002 /* TranscriptMediaThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */; };
+		C107P0000000000000000003 /* TranscriptMediaResolvedRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */; };
+		C107P0000000000000000004 /* TranscriptMediaAudioExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */; };
+		C107P0000000000000000005 /* TranscriptMediaFileExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */; };
+		C107P0000000000000000006 /* TranscriptMediaVideoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */; };
+		C107P0000000000000000007 /* TranscriptMediaUnavailableChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000107 /* TranscriptMediaUnavailableChip.swift */; };
+		C107P0000000000000000008 /* TranscriptMediaPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000108 /* TranscriptMediaPreviewView.swift */; };
+		C107P0000000000000000009 /* TranscriptVideoPreviewPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000109 /* TranscriptVideoPreviewPlayerView.swift */; };
 		C0DE34000000000000000008 /* TranscriptMediaPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000007 /* TranscriptMediaPreviewViewModel.swift */; };
 		C0DE34000000000000000009 /* TranscriptMediaDataLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE3400000000000000000A /* TranscriptMediaDataLoader.swift */; };
 		C0DE3400000000000000000D /* TranscriptMediaExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE3400000000000000000E /* TranscriptMediaExportSupport.swift */; };
@@ -205,9 +335,131 @@
 		C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */; };
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
+		C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000106 /* SettingsScrollAnchor.swift */; };
+		C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */; };
+		C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000102 /* SettingsTextFieldRow.swift */; };
+		C107J0000000000000000003 /* AccentColorSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000103 /* AccentColorSettings.swift */; };
+		C107J0000000000000000004 /* HeaderLogoColorPresetButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000104 /* HeaderLogoColorPresetButton.swift */; };
+		C107J0000000000000000005 /* SettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000105 /* SettingsCard.swift */; };
+		C107J0000000000000000006 /* ProviderQuotaWidgetProfilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000106 /* ProviderQuotaWidgetProfilesView.swift */; };
+		C107J0000000000000000007 /* ProviderQuotaSidebarDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000107 /* ProviderQuotaSidebarDisplayView.swift */; };
+		C107J0000000000000000008 /* ProviderQuotaWidgetAutomaticSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000108 /* ProviderQuotaWidgetAutomaticSettingsSections.swift */; };
+		C107J0000000000000000009 /* SettingsPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000109 /* SettingsPickerRow.swift */; };
+		C107J0000000000000000010 /* SettingsRowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000110 /* SettingsRowLabel.swift */; };
+		C107J0000000000000000011 /* SettingsFootnote.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000111 /* SettingsFootnote.swift */; };
+		C107J0000000000000000012 /* SettingsErrorFootnote.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000112 /* SettingsErrorFootnote.swift */; };
+		C107J0000000000000000013 /* SettingsValueRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000113 /* SettingsValueRow.swift */; };
+		C107J0000000000000000014 /* SettingsInfoRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000114 /* SettingsInfoRow.swift */; };
+		C107J0000000000000000015 /* SettingsAccessoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000115 /* SettingsAccessoryRow.swift */; };
+		C107J0000000000000000016 /* CustomHeadersSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000116 /* CustomHeadersSettingsView.swift */; };
+		C107J0000000000000000017 /* SettingsToggleRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000117 /* SettingsToggleRow.swift */; };
+		C107J0000000000000000018 /* SettingsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000118 /* SettingsButton.swift */; };
+		C107J0000000000000000019 /* SettingsStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000119 /* SettingsStatusPill.swift */; };
+		C107J0000000000000000020 /* SettingsDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000120 /* SettingsDivider.swift */; };
+		C107J0000000000000000021 /* ServerAvatarBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000121 /* ServerAvatarBadge.swift */; };
+		C107J0000000000000000022 /* SettingsServerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000122 /* SettingsServerRow.swift */; };
+		C107J0000000000000000023 /* ServerIdentityEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000123 /* ServerIdentityEditor.swift */; };
+		C107J0000000000000000024 /* ServerDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000124 /* ServerDetailView.swift */; };
+		C107J0000000000000000025 /* AddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000125 /* AddServerView.swift */; };
+		C107J0000000000000000026 /* ProviderQuotaWidgetAppearanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */; };
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
+		C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000101 /* ChatScrollObserver.swift */; };
+		C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */; };
+		C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */; };
+		C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000104 /* BottomComposerMaterialFade.swift */; };
+		C107O0000000000000000005 /* StreamRecoveryStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000105 /* StreamRecoveryStatusView.swift */; };
+		C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */; };
+		C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */; };
+		C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */; };
+		C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */; };
+		C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */; };
+		C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */; };
+		C107O0000000000000000012 /* ComposerProfileSelectorMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */; };
+		C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000113 /* ComposerModelMenu.swift */; };
+		C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000114 /* ComposerReasoningMenu.swift */; };
+		C107O0000000000000000015 /* ComposerMetaControlLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000115 /* ComposerMetaControlLabel.swift */; };
+		C107O0000000000000000016 /* ComposerSecondaryBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */; };
+		C107O0000000000000000017 /* LucideBrainIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000117 /* LucideBrainIcon.swift */; };
+		C107O0000000000000000018 /* KanbanStatusFocusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000118 /* KanbanStatusFocusView.swift */; };
+		C107O0000000000000000019 /* KanbanBoardManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000119 /* KanbanBoardManagementView.swift */; };
+		C107O0000000000000000020 /* KanbanBoardEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000120 /* KanbanBoardEditorView.swift */; };
+		C107O0000000000000000021 /* KanbanBulkActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000121 /* KanbanBulkActionsView.swift */; };
+		C107O0000000000000000022 /* KanbanFiltersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000122 /* KanbanFiltersView.swift */; };
+		C107O0000000000000000023 /* KanbanCardSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000123 /* KanbanCardSummaryView.swift */; };
+		C107O0000000000000000024 /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000124 /* KanbanView.swift */; };
+		C107N0000000000000000001 /* HeroBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000101 /* HeroBadge.swift */; };
+		C107N0000000000000000002 /* OnboardingCommandPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000102 /* OnboardingCommandPill.swift */; };
+		C107N0000000000000000003 /* OnboardingField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000103 /* OnboardingField.swift */; };
+		C107N0000000000000000004 /* OnboardingStatusBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000104 /* OnboardingStatusBanner.swift */; };
+		C107N0000000000000000005 /* OnboardingStepHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000105 /* OnboardingStepHeader.swift */; };
+		C107N0000000000000000006 /* OnboardingAgentPromptCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000106 /* OnboardingAgentPromptCard.swift */; };
+		C107N0000000000000000007 /* OnboardingPageIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000107 /* OnboardingPageIndicator.swift */; };
+		C107N0000000000000000008 /* MemorySectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000108 /* MemorySectionHeader.swift */; };
+		C107N0000000000000000009 /* ProjectContextSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000109 /* ProjectContextSectionHeader.swift */; };
+		C107N0000000000000000010 /* ProjectContextSectionFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000110 /* ProjectContextSectionFooter.swift */; };
+		C107N0000000000000000011 /* MemorySectionContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000111 /* MemorySectionContent.swift */; };
+		C107N0000000000000000012 /* MemoryEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000112 /* MemoryEditSheet.swift */; };
+		C107N0000000000000000013 /* SkillCategorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000113 /* SkillCategorySection.swift */; };
+		C107N0000000000000000014 /* SkillRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000114 /* SkillRow.swift */; };
+		C107N0000000000000000015 /* SkillDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000115 /* SkillDetailView.swift */; };
+		C107N0000000000000000016 /* SkillLinkedFilesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000116 /* SkillLinkedFilesSection.swift */; };
+		C107N0000000000000000017 /* SkillLinkedFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000117 /* SkillLinkedFileView.swift */; };
+		C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */; };
+		C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */; };
+		C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000120 /* ChatScrollToBottomButton.swift */; };
+		C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000121 /* LoadOlderMessagesButton.swift */; };
+		C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000122 /* SelectableTextPresentationView.swift */; };
+		C107N0000000000000000023 /* SelectableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000123 /* SelectableTextView.swift */; };
+		C107N0000000000000000024 /* EditMessageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000124 /* EditMessageSheet.swift */; };
+		C107N0000000000000000025 /* ActivityGlowText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000125 /* ActivityGlowText.swift */; };
+		C107N0000000000000000026 /* RotatingActivityTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000126 /* RotatingActivityTitle.swift */; };
+		C107N0000000000000000027 /* GridAttachmentCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000127 /* GridAttachmentCell.swift */; };
+		C107N0000000000000000028 /* RemoteAttachmentImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000128 /* RemoteAttachmentImage.swift */; };
+		C107N0000000000000000029 /* ContextWindowPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000129 /* ContextWindowPopover.swift */; };
+		C107N0000000000000000030 /* ContextWindowInfoRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000130 /* ContextWindowInfoRow.swift */; };
+		C107N0000000000000000031 /* ComposerVoiceStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000131 /* ComposerVoiceStatusView.swift */; };
+		C107N0000000000000000032 /* ComposerVoiceControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000132 /* ComposerVoiceControlButton.swift */; };
+		C107N0000000000000000033 /* ComposerVoiceRecordingBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */; };
+		C107N0000000000000000034 /* TranscriptStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000134 /* TranscriptStatusPill.swift */; };
+		C107N0000000000000000035 /* SwiftMathLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000135 /* SwiftMathLabelView.swift */; };
+		C107N0000000000000000036 /* GoalSubmissionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000136 /* GoalSubmissionSheet.swift */; };
+		C107N0000000000000000037 /* ComposerStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000137 /* ComposerStatusView.swift */; };
+		C107N0000000000000000038 /* ComposerTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000138 /* ComposerTextView.swift */; };
+		C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */; };
+		C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */; };
+		C107N0000000000000000041 /* ApprovalBypassStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */; };
+		C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000101 /* ModelBreakdownRow.swift */; };
+		C107L0000000000000000002 /* DailyTokenRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* DailyTokenRow.swift */; };
+		C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* ActivitySummaryRow.swift */; };
+		C107L0000000000000000004 /* ProviderQuotaRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000104 /* ProviderQuotaRow.swift */; };
+		C107L0000000000000000005 /* AnalyticsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000105 /* AnalyticsCard.swift */; };
+		C107L0000000000000000006 /* CronJobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000106 /* CronJobRowView.swift */; };
+		C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000107 /* CronJobEditorSheet.swift */; };
+		C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000108 /* CronJobMetadataRow.swift */; };
+		C107L0000000000000000009 /* StatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000109 /* StatusBadge.swift */; };
+		C107L0000000000000000010 /* FileBrowserRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000110 /* FileBrowserRow.swift */; };
+		C107L0000000000000000011 /* GitBranchPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000111 /* GitBranchPickerSheet.swift */; };
+		C107L0000000000000000012 /* GitCommitFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000112 /* GitCommitFileRow.swift */; };
+		C107L0000000000000000013 /* DiffLineRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000113 /* DiffLineRow.swift */; };
+		C107L0000000000000000014 /* GitTurnDiffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000114 /* GitTurnDiffSheet.swift */; };
+		C107L0000000000000000015 /* GitAheadBehindBadges.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000115 /* GitAheadBehindBadges.swift */; };
+		C107L0000000000000000016 /* DiffCountsLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000116 /* DiffCountsLabel.swift */; };
+		C107L0000000000000000017 /* GitFileCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000117 /* GitFileCard.swift */; };
+		C107L0000000000000000018 /* GitStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000118 /* GitStatusChip.swift */; };
+		C107L0000000000000000019 /* WorkspaceAddSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000119 /* WorkspaceAddSheet.swift */; };
+		C107L0000000000000000020 /* SessionRowStateBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000120 /* SessionRowStateBadge.swift */; };
+		C107L0000000000000000021 /* ActiveSessionStreamingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */; };
+		C107L0000000000000000022 /* ProjectRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000122 /* ProjectRenameSheet.swift */; };
+		C107L0000000000000000023 /* ProjectFormSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000123 /* ProjectFormSheet.swift */; };
+		C107L0000000000000000024 /* PendingNewChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000124 /* PendingNewChatView.swift */; };
+		C107L0000000000000000025 /* OnboardingFeatureRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000125 /* OnboardingFeatureRow.swift */; };
+		C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000126 /* KanbanCardDetailContent.swift */; };
+		C107D000000000000000001 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000011 /* AppSettings.swift */; };
+		C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000012 /* ChatActiveRunStatus.swift */; };
+		C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000013 /* ResponseCompletionNotifications.swift */; };
+		C107D000000000000000004 /* ComposerBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000014 /* ComposerBehavior.swift */; };
 		1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C012400000000000000002 /* AppIconChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000001 /* AppIconChoice.swift */; };
@@ -242,12 +494,24 @@
 		C03120000000000000B006 /* APIClientGitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F006 /* APIClientGitTests.swift */; };
 		C03120000000000000B007 /* GitWorkspaceViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F007 /* GitWorkspaceViewModelTests.swift */; };
 		C012400000000000000004 /* AppIconSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000003 /* AppIconSettingsSection.swift */; };
+		C107I000000000000000001 /* AppIconDisclosureLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000011 /* AppIconDisclosureLabel.swift */; };
+		C107I000000000000000002 /* AppIconChoiceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000012 /* AppIconChoiceRow.swift */; };
+		C107I000000000000000003 /* AppIconChoicePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000013 /* AppIconChoicePreview.swift */; };
+		C107I000000000000000004 /* AppIconPreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000014 /* AppIconPreviewImage.swift */; };
+		C107I000000000000000005 /* ArchivedStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000015 /* ArchivedStatusRow.swift */; };
+		C107I000000000000000006 /* ProviderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000016 /* ProviderRow.swift */; };
+		C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000017 /* ProvidersStatusRow.swift */; };
 		1A2B3C4D5E6F700000000102 /* AppThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */; };
 		C012400000000000000006 /* AppIconChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000005 /* AppIconChoiceTests.swift */; };
 		1A2B3C4D5E6F70000000110 /* ArchivedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */; };
 		1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000113 /* ArchivedSessionsViewModel.swift */; };
 		1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */; };
 		103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103200000000000000000001 /* DefaultProfilePickerView.swift */; };
+		C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000011 /* SettingsPickerSearchField.swift */; };
+		C107B000000000000000002 /* SettingsPickerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000012 /* SettingsPickerCard.swift */; };
+		C107B000000000000000003 /* ModelPickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000013 /* ModelPickerButton.swift */; };
+		C107B000000000000000004 /* CreateProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000014 /* CreateProfileSheet.swift */; };
+		C107B000000000000000005 /* ProfileStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000015 /* ProfileStatusBadge.swift */; };
 		1A2B3C4D5E6F70000000130 /* ContextWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000120 /* ContextWindowSnapshot.swift */; };
 		1A2B3C4D5E6F70000000131 /* ContextWindowIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000121 /* ContextWindowIndicatorView.swift */; };
 		1A2B3C4D5E6F70000000132 /* ContextWindowIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000122 /* ContextWindowIndicatorTests.swift */; };
@@ -284,11 +548,27 @@
 		C23400000000000000000003 /* StreamingLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000004 /* StreamingLabView.swift */; };
 		C23400000000000000000005 /* StreamingLabReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000006 /* StreamingLabReplayTests.swift */; };
 		C14900000000000000000001 /* Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000002 /* Kanban.swift */; };
+		C107H000000000000000001 /* KanbanRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000011 /* KanbanRequests.swift */; };
+		C107H000000000000000002 /* KanbanCardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000012 /* KanbanCardDetails.swift */; };
+		C107H000000000000000003 /* KanbanCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000013 /* KanbanCompatibility.swift */; };
 		C14900000000000000000003 /* APIClient+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000004 /* APIClient+Kanban.swift */; };
 		C14900000000000000000005 /* KanbanFeatureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000006 /* KanbanFeatureState.swift */; };
+		C107S0000000000000000001 /* KanbanFeatureStateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000101 /* KanbanFeatureStateModels.swift */; };
 		C14900000000000000000007 /* KanbanLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000008 /* KanbanLabView.swift */; };
+		C107U0000000000000000001 /* KanbanCardInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000101 /* KanbanCardInteraction.swift */; };
+		C107U0000000000000000002 /* KanbanDispatcherPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000102 /* KanbanDispatcherPresentation.swift */; };
+		C107U0000000000000000003 /* KanbanFiltersDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000103 /* KanbanFiltersDraft.swift */; };
+		C107U0000000000000000004 /* KanbanBoardEditorMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000104 /* KanbanBoardEditorMode.swift */; };
+		C107U0000000000000000005 /* KanbanAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000105 /* KanbanAccessibility.swift */; };
+		C107U0000000000000000006 /* KanbanStatusPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000106 /* KanbanStatusPresentation.swift */; };
+		C107U0000000000000000007 /* KanbanFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000107 /* KanbanFormatters.swift */; };
 		C14900000000000000000009 /* APIClientKanbanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1490000000000000000000A /* APIClientKanbanTests.swift */; };
 		C1490000000000000000000B /* KanbanFeatureStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1490000000000000000000C /* KanbanFeatureStateTests.swift */; };
+		C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */; };
+		C107Z0000000000000000002 /* KanbanFeatureStateDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000102 /* KanbanFeatureStateDispatcherTests.swift */; };
+		C107Z0000000000000000003 /* KanbanFeatureStateCardMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */; };
+		C107Z0000000000000000004 /* KanbanFeatureStateBulkActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */; };
+		C107Z0000000000000000005 /* KanbanFeatureStateBoardManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */; };
 		C15100000000000000000001 /* KanbanEventStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000002 /* KanbanEventStreamClient.swift */; };
 		C15100000000000000000003 /* KanbanEventStreamClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000004 /* KanbanEventStreamClientTests.swift */; };
 		C15100000000000000000005 /* KanbanLiveUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000006 /* KanbanLiveUpdateTests.swift */; };
@@ -306,6 +586,9 @@
 		A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000002 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000012 /* AgentLiveActivityManager.swift */; };
+		C107E000000000000000001 /* TalariaRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000011 /* TalariaRelay.swift */; };
+		C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */; };
+		C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000013 /* LiveActivityReconciler.swift */; };
 		A04500000000000000000004 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000005 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */; };
@@ -422,6 +705,11 @@
 		1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingComponents.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
+		C107V0000000000000000101 /* SessionListInitialLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListInitialLoad.swift; sourceTree = "<group>"; };
+		C107V0000000000000000102 /* SessionListNewChatReturn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListNewChatReturn.swift; sourceTree = "<group>"; };
+		C107V0000000000000000103 /* NewChatRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatRequest.swift; sourceTree = "<group>"; };
+		C107V0000000000000000104 /* PendingNewChatRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatRoute.swift; sourceTree = "<group>"; };
+		C107V0000000000000000105 /* SessionListUtilityDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListUtilityDestination.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoints.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
@@ -433,6 +721,11 @@
 		C03900000000000000000017 /* APIClientUpdatesCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientUpdatesCheckTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000018 /* APIClientUpdatesApplyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientUpdatesApplyTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000003 /* APIClientSessionDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailTests.swift; sourceTree = "<group>"; };
+		C107S0000000000000000102 /* APIClientSessionDetailRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailRequestTests.swift; sourceTree = "<group>"; };
+		C107S0000000000000000103 /* APIClientSessionDetailActivitySceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailActivitySceneTests.swift; sourceTree = "<group>"; };
+		C107S0000000000000000104 /* APIClientSessionDetailAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailAttachmentTests.swift; sourceTree = "<group>"; };
+		C107S0000000000000000105 /* APIClientSessionDetailToolTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailToolTimelineTests.swift; sourceTree = "<group>"; };
+		C107S0000000000000000106 /* APIClientSessionDetailPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailPresentationTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000004 /* APIClientSessionMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionMutationTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientWorkspaceFileTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000006 /* APIClientChatEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientChatEndpointTests.swift; sourceTree = "<group>"; };
@@ -444,6 +737,16 @@
 		C0390000000000000000000C /* APIClientSkillEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSkillEndpointTests.swift; sourceTree = "<group>"; };
 		C0390000000000000000000D /* APIClientUploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientUploadTests.swift; sourceTree = "<group>"; };
 		C0390000000000000000000E /* ChatViewModelSendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelSendTests.swift; sourceTree = "<group>"; };
+		C107Y0000000000000000101 /* ChatViewModelSendTests+ActionsQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+ActionsQueue.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000102 /* ChatViewModelSendTests+Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+Attachments.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000103 /* ChatViewModelSendTests+ComposerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+ComposerConfig.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000104 /* ChatViewModelSendTests+Listen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+Listen.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000105 /* ChatViewModelSendTests+SendApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+SendApproval.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000106 /* ChatViewModelSendTests+StaleRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+StaleRecovery.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000107 /* ChatViewModelSendTests+StreamingEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+StreamingEvents.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000108 /* ChatViewModelSendTests+Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+Support.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000109 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+TranscriptCacheReconcile.swift"; sourceTree = "<group>"; };
+		C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+TranscriptHistory.swift"; sourceTree = "<group>"; };
 		C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelMergeDedupTests.swift; sourceTree = "<group>"; };
 		C14600000000000000000001 /* ChatToolbarHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarHeaderTests.swift; sourceTree = "<group>"; };
 		C15200000000000000000001 /* OnboardingFlowPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowPolicy.swift; sourceTree = "<group>"; };
@@ -454,6 +757,11 @@
 		C15200000000000000000006 /* OnboardingConnectPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingConnectPage.swift; sourceTree = "<group>"; };
 		C15200000000000000000007 /* OnboardingFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowTests.swift; sourceTree = "<group>"; };
 		C0390000000000000000000F /* SessionListMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListMutationTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000101 /* SessionListLoadProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListLoadProfileTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000102 /* SessionListSessionProjectArchiveMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListSessionProjectArchiveMutationTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000103 /* SessionListRemoteSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListRemoteSearchTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListAutomatedVisibilityTests.swift; sourceTree = "<group>"; };
+		C107X0000000000000000105 /* SessionListMutationTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListMutationTestSupport.swift; sourceTree = "<group>"; };
 		A10900000000000000000012 /* SessionNavigationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationStateTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000010 /* APIEndpointContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIEndpointContractTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000011 /* CronManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronManagementTests.swift; sourceTree = "<group>"; };
@@ -476,12 +784,52 @@
 		C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentCoordinatorTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BD /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCatalog.swift; sourceTree = "<group>"; };
+		C107G000000000000000011 /* ChatControlResponses.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatControlResponses.swift; sourceTree = "<group>"; };
+		C107G000000000000000012 /* ServerSettingsUpdates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsUpdates.swift; sourceTree = "<group>"; };
+		C107G000000000000000013 /* ServerProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerProfiles.swift; sourceTree = "<group>"; };
+		C107G000000000000000014 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
 		A06100000000000000000002 /* ProviderQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuota.swift; sourceTree = "<group>"; };
-		A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSupport.swift; sourceTree = "<group>"; };
+		A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSettings.swift; sourceTree = "<group>"; };
+		C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPresentationModels.swift; sourceTree = "<group>"; };
+		C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetLayout.swift; sourceTree = "<group>"; };
+		C107W0000000000000000103 /* ProviderQuotaPace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPace.swift; sourceTree = "<group>"; };
+		C107W0000000000000000104 /* ProviderQuotaPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPresentation.swift; sourceTree = "<group>"; };
+		C107M0000000000000000201 /* ProviderQuotaBarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaBarsView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaGaugeView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPercentageView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaLockScreenPaceView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000205 /* ProviderQuotaForecastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaForecastView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPaceWidgetView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSourceView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaAccessoryView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetPrompt.swift; sourceTree = "<group>"; };
+		C107M0000000000000000211 /* TalariaAggregateHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateHeader.swift; sourceTree = "<group>"; };
+		C107M0000000000000000212 /* AggregateCompactTrailing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregateCompactTrailing.swift; sourceTree = "<group>"; };
+		C107M0000000000000000213 /* AggregateStatusLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregateStatusLabel.swift; sourceTree = "<group>"; };
+		C107M0000000000000000214 /* SandalMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandalMark.swift; sourceTree = "<group>"; };
+		C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunExpandedIslandBottomView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000216 /* AgentRunLockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLockScreenView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000217 /* AgentRunIslandBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandBadge.swift; sourceTree = "<group>"; };
+		C107M0000000000000000218 /* AgentRunIslandStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandStatusView.swift; sourceTree = "<group>"; };
+		C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandCompactMark.swift; sourceTree = "<group>"; };
+		C107M0000000000000000220 /* AgentRunStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunStatusDot.swift; sourceTree = "<group>"; };
+		C107M0000000000000000221 /* AgentRunProgressRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunProgressRail.swift; sourceTree = "<group>"; };
+		C107M0000000000000000222 /* AgentRunTimerPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunTimerPill.swift; sourceTree = "<group>"; };
+		C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunElapsedTimerText.swift; sourceTree = "<group>"; };
+		C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSnapshot.swift; sourceTree = "<group>"; };
+		C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetRefresh.swift; sourceTree = "<group>"; };
+		A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetConfiguration.swift; sourceTree = "<group>"; };
 		A06300000000000000000011 /* ProviderIconRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIconRegistry.swift; sourceTree = "<group>"; };
 		A06300000000000000000012 /* ProviderIcons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = ProviderIcons.xcassets; sourceTree = "<group>"; };
 		A0610000000000000000000A /* ProviderQuotaWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidget.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BF /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		C107A000000000000000011 /* NavigationAppearanceCompletionObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationAppearanceCompletionObserver.swift; sourceTree = "<group>"; };
+		C107A000000000000000012 /* ListenPlaybackBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenPlaybackBar.swift; sourceTree = "<group>"; };
+		C107A000000000000000013 /* ChatToolbarTitleLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarTitleLabel.swift; sourceTree = "<group>"; };
+		C107A000000000000000014 /* ChatToolbarActionCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarActionCluster.swift; sourceTree = "<group>"; };
+		C107A000000000000000015 /* ChatToolbarActionSlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarActionSlot.swift; sourceTree = "<group>"; };
+		C107A000000000000000016 /* ChatToolbarSubtitleResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarSubtitleResolver.swift; sourceTree = "<group>"; };
 		C05100000000000000000011 /* ChatTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptView.swift; sourceTree = "<group>"; };
 		C05100000000000000000012 /* ChatMessageActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageActions.swift; sourceTree = "<group>"; };
 		C05100000000000000000013 /* ChatGoalControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGoalControls.swift; sourceTree = "<group>"; };
@@ -489,6 +837,30 @@
 		1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D3 /* SessionListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListViewModel.swift; sourceTree = "<group>"; };
 		A04300000000000000000011 /* SessionListComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListComponents.swift; sourceTree = "<group>"; };
+		C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationBarLeadingMarginObserver.swift; sourceTree = "<group>"; };
+		C107K0000000000000000102 /* SessionFilterControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFilterControls.swift; sourceTree = "<group>"; };
+		C107K0000000000000000103 /* SessionFilterChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFilterChip.swift; sourceTree = "<group>"; };
+		C107K0000000000000000104 /* SessionListRowsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListRowsSection.swift; sourceTree = "<group>"; };
+		C107K0000000000000000105 /* SessionInteractiveRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionInteractiveRow.swift; sourceTree = "<group>"; };
+		C107K0000000000000000106 /* GroupedSessionsDisclosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSessionsDisclosure.swift; sourceTree = "<group>"; };
+		C107K0000000000000000107 /* GroupedSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSessionsView.swift; sourceTree = "<group>"; };
+		C107K0000000000000000108 /* SessionRowContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowContextMenu.swift; sourceTree = "<group>"; };
+		C107K0000000000000000109 /* SessionProjectMoveMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionProjectMoveMenu.swift; sourceTree = "<group>"; };
+		C107K0000000000000000110 /* AvatarServerSwitcherMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarServerSwitcherMenu.swift; sourceTree = "<group>"; };
+		C107K0000000000000000111 /* SessionExportShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExportShareSheet.swift; sourceTree = "<group>"; };
+		C107K0000000000000000112 /* SidebarNavButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarNavButton.swift; sourceTree = "<group>"; };
+		C107K0000000000000000113 /* AppSidebarContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarContainer.swift; sourceTree = "<group>"; };
+		C107K0000000000000000114 /* AppSidebarDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarDrawer.swift; sourceTree = "<group>"; };
+		C107K0000000000000000115 /* SidebarDisclosureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureButton.swift; sourceTree = "<group>"; };
+		C107K0000000000000000116 /* SidebarDisclosureChevron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDisclosureChevron.swift; sourceTree = "<group>"; };
+		C107K0000000000000000117 /* SidebarUtilityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUtilityIcon.swift; sourceTree = "<group>"; };
+		C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSelectedSubrowIndicator.swift; sourceTree = "<group>"; };
+		C107K0000000000000000119 /* ActiveProfilePickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProfilePickerRow.swift; sourceTree = "<group>"; };
+		C107K0000000000000000120 /* ProjectFilterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFilterRow.swift; sourceTree = "<group>"; };
+		C107K0000000000000000121 /* CompactStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompactStatusRow.swift; sourceTree = "<group>"; };
+		C107K0000000000000000122 /* SessionListStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListStatusRow.swift; sourceTree = "<group>"; };
+		C107K0000000000000000123 /* SessionRowSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowSkeletonView.swift; sourceTree = "<group>"; };
+		C107K0000000000000000124 /* OfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheBanner.swift; sourceTree = "<group>"; };
 		A10900000000000000000011 /* SessionNavigationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationState.swift; sourceTree = "<group>"; };
 		A04300000000000000000012 /* SessionListActionConfirmations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListActionConfirmations.swift; sourceTree = "<group>"; };
 		A04300000000000000000013 /* SessionMutator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMutator.swift; sourceTree = "<group>"; };
@@ -505,14 +877,43 @@
 		C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedSSEStreamFixture.swift; sourceTree = "<group>"; };
 		C22600000000000000000004 /* StreamReconnectContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamReconnectContractTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		C107T0000000000000000101 /* ApprovalPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalPromptState.swift; sourceTree = "<group>"; };
+		C107T0000000000000000102 /* ProfileSwitchOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitchOutcome.swift; sourceTree = "<group>"; };
+		C107T0000000000000000103 /* ChatPollingIntervals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPollingIntervals.swift; sourceTree = "<group>"; };
+		C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveStreamRecoveryState.swift; sourceTree = "<group>"; };
+		C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChatStreamSnapshotStore.swift; sourceTree = "<group>"; };
+		C107T0000000000000000106 /* QueuedSlashMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedSlashMessage.swift; sourceTree = "<group>"; };
+		C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ToolCall+ReplayMatching.swift"; sourceTree = "<group>"; };
+		C107T0000000000000000108 /* ClarificationPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationPromptState.swift; sourceTree = "<group>"; };
+		C107R0000000000000000101 /* ChatTranscriptModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptModels.swift; sourceTree = "<group>"; };
+		C107C000000000000000011 /* ChatListenPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListenPlayback.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClient.swift; sourceTree = "<group>"; };
 		C0FF000000000000000000A2 /* CustomHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeader.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentPreviewView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownRenderer.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunkedView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000103 /* StreamingFadeBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingFadeBlockView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000104 /* ChatMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000105 /* MathFenceOrCodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MathFenceOrCodeBlock.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000106 /* ChatCodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCodeBlock.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000107 /* PlainCodeBlockText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainCodeBlockText.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000108 /* HighlightedCodeBlockText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightedCodeBlockText.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000109 /* PlainMarkdownFallbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainMarkdownFallbackView.swift; sourceTree = "<group>"; };
+		C107Q0000000000000000110 /* ChatMarkdownTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownTable.swift; sourceTree = "<group>"; };
 		C14300000000000000000002 /* StreamingMarkdownSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownSupport.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000002 /* TranscriptMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMedia.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000005 /* TranscriptMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000101 /* TranscriptMediaContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaContentView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaThumbnailView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaResolvedRemoteView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaAudioExportView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaFileExportView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaVideoTile.swift; sourceTree = "<group>"; };
+		C107P0000000000000000107 /* TranscriptMediaUnavailableChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaUnavailableChip.swift; sourceTree = "<group>"; };
+		C107P0000000000000000108 /* TranscriptMediaPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaPreviewView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000109 /* TranscriptVideoPreviewPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptVideoPreviewPlayerView.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000007 /* TranscriptMediaPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaPreviewViewModel.swift; sourceTree = "<group>"; };
 		C0DE3400000000000000000A /* TranscriptMediaDataLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaDataLoader.swift; sourceTree = "<group>"; };
 		C0DE3400000000000000000E /* TranscriptMediaExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaExportSupport.swift; sourceTree = "<group>"; };
@@ -566,9 +967,131 @@
 		C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStoreTests.swift; sourceTree = "<group>"; };
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		C107V0000000000000000106 /* SettingsScrollAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScrollAnchor.swift; sourceTree = "<group>"; };
+		C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIdentitySettingsEditor.swift; sourceTree = "<group>"; };
+		C107J0000000000000000102 /* SettingsTextFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTextFieldRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000103 /* AccentColorSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentColorSettings.swift; sourceTree = "<group>"; };
+		C107J0000000000000000104 /* HeaderLogoColorPresetButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderLogoColorPresetButton.swift; sourceTree = "<group>"; };
+		C107J0000000000000000105 /* SettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCard.swift; sourceTree = "<group>"; };
+		C107J0000000000000000106 /* ProviderQuotaWidgetProfilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetProfilesView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000107 /* ProviderQuotaSidebarDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaSidebarDisplayView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000108 /* ProviderQuotaWidgetAutomaticSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetAutomaticSettingsSections.swift; sourceTree = "<group>"; };
+		C107J0000000000000000109 /* SettingsPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000110 /* SettingsRowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRowLabel.swift; sourceTree = "<group>"; };
+		C107J0000000000000000111 /* SettingsFootnote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsFootnote.swift; sourceTree = "<group>"; };
+		C107J0000000000000000112 /* SettingsErrorFootnote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsErrorFootnote.swift; sourceTree = "<group>"; };
+		C107J0000000000000000113 /* SettingsValueRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsValueRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000114 /* SettingsInfoRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsInfoRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000115 /* SettingsAccessoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAccessoryRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000116 /* CustomHeadersSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeadersSettingsView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000117 /* SettingsToggleRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsToggleRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000118 /* SettingsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsButton.swift; sourceTree = "<group>"; };
+		C107J0000000000000000119 /* SettingsStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusPill.swift; sourceTree = "<group>"; };
+		C107J0000000000000000120 /* SettingsDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDivider.swift; sourceTree = "<group>"; };
+		C107J0000000000000000121 /* ServerAvatarBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAvatarBadge.swift; sourceTree = "<group>"; };
+		C107J0000000000000000122 /* SettingsServerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsServerRow.swift; sourceTree = "<group>"; };
+		C107J0000000000000000123 /* ServerIdentityEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerIdentityEditor.swift; sourceTree = "<group>"; };
+		C107J0000000000000000124 /* ServerDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerDetailView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000125 /* AddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
+		C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetAppearanceView.swift; sourceTree = "<group>"; };
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		C107O0000000000000000101 /* ChatScrollObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollObserver.swift; sourceTree = "<group>"; };
+		C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuard.swift; sourceTree = "<group>"; };
+		C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTypingIndicatorView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000104 /* BottomComposerMaterialFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomComposerMaterialFade.swift; sourceTree = "<group>"; };
+		C107O0000000000000000105 /* StreamRecoveryStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamRecoveryStatusView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonRow.swift; sourceTree = "<group>"; };
+		C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOfflineCacheBanner.swift; sourceTree = "<group>"; };
+		C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedLocalNoticeStack.swift; sourceTree = "<group>"; };
+		C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryControlsView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspaceSelectorButton.swift; sourceTree = "<group>"; };
+		C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerProfileSelectorMenu.swift; sourceTree = "<group>"; };
+		C107O0000000000000000113 /* ComposerModelMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelMenu.swift; sourceTree = "<group>"; };
+		C107O0000000000000000114 /* ComposerReasoningMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerReasoningMenu.swift; sourceTree = "<group>"; };
+		C107O0000000000000000115 /* ComposerMetaControlLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMetaControlLabel.swift; sourceTree = "<group>"; };
+		C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryBarLabel.swift; sourceTree = "<group>"; };
+		C107O0000000000000000117 /* LucideBrainIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucideBrainIcon.swift; sourceTree = "<group>"; };
+		C107O0000000000000000118 /* KanbanStatusFocusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanStatusFocusView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000119 /* KanbanBoardManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardManagementView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000120 /* KanbanBoardEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardEditorView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000121 /* KanbanBulkActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBulkActionsView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000122 /* KanbanFiltersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFiltersView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000123 /* KanbanCardSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardSummaryView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000124 /* KanbanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000101 /* HeroBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeroBadge.swift; sourceTree = "<group>"; };
+		C107N0000000000000000102 /* OnboardingCommandPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCommandPill.swift; sourceTree = "<group>"; };
+		C107N0000000000000000103 /* OnboardingField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingField.swift; sourceTree = "<group>"; };
+		C107N0000000000000000104 /* OnboardingStatusBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStatusBanner.swift; sourceTree = "<group>"; };
+		C107N0000000000000000105 /* OnboardingStepHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStepHeader.swift; sourceTree = "<group>"; };
+		C107N0000000000000000106 /* OnboardingAgentPromptCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAgentPromptCard.swift; sourceTree = "<group>"; };
+		C107N0000000000000000107 /* OnboardingPageIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPageIndicator.swift; sourceTree = "<group>"; };
+		C107N0000000000000000108 /* MemorySectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionHeader.swift; sourceTree = "<group>"; };
+		C107N0000000000000000109 /* ProjectContextSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectContextSectionHeader.swift; sourceTree = "<group>"; };
+		C107N0000000000000000110 /* ProjectContextSectionFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectContextSectionFooter.swift; sourceTree = "<group>"; };
+		C107N0000000000000000111 /* MemorySectionContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionContent.swift; sourceTree = "<group>"; };
+		C107N0000000000000000112 /* MemoryEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryEditSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000113 /* SkillCategorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCategorySection.swift; sourceTree = "<group>"; };
+		C107N0000000000000000114 /* SkillRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRow.swift; sourceTree = "<group>"; };
+		C107N0000000000000000115 /* SkillDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000116 /* SkillLinkedFilesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFilesSection.swift; sourceTree = "<group>"; };
+		C107N0000000000000000117 /* SkillLinkedFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFileView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageBlock.swift; sourceTree = "<group>"; };
+		C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageRow.swift; sourceTree = "<group>"; };
+		C107N0000000000000000120 /* ChatScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollToBottomButton.swift; sourceTree = "<group>"; };
+		C107N0000000000000000121 /* LoadOlderMessagesButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadOlderMessagesButton.swift; sourceTree = "<group>"; };
+		C107N0000000000000000122 /* SelectableTextPresentationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextPresentationView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000123 /* SelectableTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000124 /* EditMessageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMessageSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000125 /* ActivityGlowText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityGlowText.swift; sourceTree = "<group>"; };
+		C107N0000000000000000126 /* RotatingActivityTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotatingActivityTitle.swift; sourceTree = "<group>"; };
+		C107N0000000000000000127 /* GridAttachmentCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridAttachmentCell.swift; sourceTree = "<group>"; };
+		C107N0000000000000000128 /* RemoteAttachmentImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAttachmentImage.swift; sourceTree = "<group>"; };
+		C107N0000000000000000129 /* ContextWindowPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowPopover.swift; sourceTree = "<group>"; };
+		C107N0000000000000000130 /* ContextWindowInfoRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowInfoRow.swift; sourceTree = "<group>"; };
+		C107N0000000000000000131 /* ComposerVoiceStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceStatusView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000132 /* ComposerVoiceControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceControlButton.swift; sourceTree = "<group>"; };
+		C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceRecordingBar.swift; sourceTree = "<group>"; };
+		C107N0000000000000000134 /* TranscriptStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptStatusPill.swift; sourceTree = "<group>"; };
+		C107N0000000000000000135 /* SwiftMathLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftMathLabelView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000136 /* GoalSubmissionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalSubmissionSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000137 /* ComposerStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerStatusView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000138 /* ComposerTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspacePickerSheet.swift; sourceTree = "<group>"; };
+		C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerAttachmentThumbnailView.swift; sourceTree = "<group>"; };
+		C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalBypassStatusPill.swift; sourceTree = "<group>"; };
+		C107L0000000000000000101 /* ModelBreakdownRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelBreakdownRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000102 /* DailyTokenRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTokenRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000103 /* ActivitySummaryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySummaryRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000104 /* ProviderQuotaRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000105 /* AnalyticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsCard.swift; sourceTree = "<group>"; };
+		C107L0000000000000000106 /* CronJobRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobRowView.swift; sourceTree = "<group>"; };
+		C107L0000000000000000107 /* CronJobEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobEditorSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000108 /* CronJobMetadataRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobMetadataRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000109 /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
+		C107L0000000000000000110 /* FileBrowserRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000111 /* GitBranchPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBranchPickerSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000112 /* GitCommitFileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitFileRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000113 /* DiffLineRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffLineRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000114 /* GitTurnDiffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitTurnDiffSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000115 /* GitAheadBehindBadges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitAheadBehindBadges.swift; sourceTree = "<group>"; };
+		C107L0000000000000000116 /* DiffCountsLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffCountsLabel.swift; sourceTree = "<group>"; };
+		C107L0000000000000000117 /* GitFileCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitFileCard.swift; sourceTree = "<group>"; };
+		C107L0000000000000000118 /* GitStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitStatusChip.swift; sourceTree = "<group>"; };
+		C107L0000000000000000119 /* WorkspaceAddSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceAddSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000120 /* SessionRowStateBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowStateBadge.swift; sourceTree = "<group>"; };
+		C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionStreamingIndicator.swift; sourceTree = "<group>"; };
+		C107L0000000000000000122 /* ProjectRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectRenameSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000123 /* ProjectFormSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFormSheet.swift; sourceTree = "<group>"; };
+		C107L0000000000000000124 /* PendingNewChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatView.swift; sourceTree = "<group>"; };
+		C107L0000000000000000125 /* OnboardingFeatureRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeatureRow.swift; sourceTree = "<group>"; };
+		C107L0000000000000000126 /* KanbanCardDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailContent.swift; sourceTree = "<group>"; };
+		C107D000000000000000011 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		C107D000000000000000012 /* ChatActiveRunStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatActiveRunStatus.swift; sourceTree = "<group>"; };
+		C107D000000000000000013 /* ResponseCompletionNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseCompletionNotifications.swift; sourceTree = "<group>"; };
+		C107D000000000000000014 /* ComposerBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerBehavior.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
 		C012400000000000000001 /* AppIconChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoice.swift; sourceTree = "<group>"; };
@@ -603,12 +1126,24 @@
 		C03120000000000000F006 /* APIClientGitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientGitTests.swift; sourceTree = "<group>"; };
 		C03120000000000000F007 /* GitWorkspaceViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceViewModelTests.swift; sourceTree = "<group>"; };
 		C012400000000000000003 /* AppIconSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconSettingsSection.swift; sourceTree = "<group>"; };
+		C107I000000000000000011 /* AppIconDisclosureLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconDisclosureLabel.swift; sourceTree = "<group>"; };
+		C107I000000000000000012 /* AppIconChoiceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoiceRow.swift; sourceTree = "<group>"; };
+		C107I000000000000000013 /* AppIconChoicePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoicePreview.swift; sourceTree = "<group>"; };
+		C107I000000000000000014 /* AppIconPreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconPreviewImage.swift; sourceTree = "<group>"; };
+		C107I000000000000000015 /* ArchivedStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedStatusRow.swift; sourceTree = "<group>"; };
+		C107I000000000000000016 /* ProviderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRow.swift; sourceTree = "<group>"; };
+		C107I000000000000000017 /* ProvidersStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersStatusRow.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppThemeTests.swift; sourceTree = "<group>"; };
 		C012400000000000000005 /* AppIconChoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoiceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedSessionsView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000113 /* ArchivedSessionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedSessionsViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultModelPickerView.swift; sourceTree = "<group>"; };
 		103200000000000000000001 /* DefaultProfilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultProfilePickerView.swift; sourceTree = "<group>"; };
+		C107B000000000000000011 /* SettingsPickerSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerSearchField.swift; sourceTree = "<group>"; };
+		C107B000000000000000012 /* SettingsPickerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerCard.swift; sourceTree = "<group>"; };
+		C107B000000000000000013 /* ModelPickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPickerButton.swift; sourceTree = "<group>"; };
+		C107B000000000000000014 /* CreateProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateProfileSheet.swift; sourceTree = "<group>"; };
+		C107B000000000000000015 /* ProfileStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStatusBadge.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000120 /* ContextWindowSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowSnapshot.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000121 /* ContextWindowIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowIndicatorView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000122 /* ContextWindowIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowIndicatorTests.swift; sourceTree = "<group>"; };
@@ -669,11 +1204,27 @@
 		C23400000000000000000004 /* StreamingLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabView.swift; sourceTree = "<group>"; };
 		C23400000000000000000006 /* StreamingLabReplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabReplayTests.swift; sourceTree = "<group>"; };
 		C14900000000000000000002 /* Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kanban.swift; sourceTree = "<group>"; };
+		C107H000000000000000011 /* KanbanRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanRequests.swift; sourceTree = "<group>"; };
+		C107H000000000000000012 /* KanbanCardDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetails.swift; sourceTree = "<group>"; };
+		C107H000000000000000013 /* KanbanCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCompatibility.swift; sourceTree = "<group>"; };
 		C14900000000000000000004 /* APIClient+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Kanban.swift"; sourceTree = "<group>"; };
 		C14900000000000000000006 /* KanbanFeatureState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureState.swift; sourceTree = "<group>"; };
+		C107S0000000000000000101 /* KanbanFeatureStateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateModels.swift; sourceTree = "<group>"; };
 		C14900000000000000000008 /* KanbanLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLabView.swift; sourceTree = "<group>"; };
+		C107U0000000000000000101 /* KanbanCardInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardInteraction.swift; sourceTree = "<group>"; };
+		C107U0000000000000000102 /* KanbanDispatcherPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanDispatcherPresentation.swift; sourceTree = "<group>"; };
+		C107U0000000000000000103 /* KanbanFiltersDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFiltersDraft.swift; sourceTree = "<group>"; };
+		C107U0000000000000000104 /* KanbanBoardEditorMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardEditorMode.swift; sourceTree = "<group>"; };
+		C107U0000000000000000105 /* KanbanAccessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanAccessibility.swift; sourceTree = "<group>"; };
+		C107U0000000000000000106 /* KanbanStatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanStatusPresentation.swift; sourceTree = "<group>"; };
+		C107U0000000000000000107 /* KanbanFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFormatters.swift; sourceTree = "<group>"; };
 		C1490000000000000000000A /* APIClientKanbanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientKanbanTests.swift; sourceTree = "<group>"; };
 		C1490000000000000000000C /* KanbanFeatureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateLoadTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000102 /* KanbanFeatureStateDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateDispatcherTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateCardMutationTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateBulkActionTests.swift; sourceTree = "<group>"; };
+		C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateBoardManagementTests.swift; sourceTree = "<group>"; };
 		C15100000000000000000002 /* KanbanEventStreamClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanEventStreamClient.swift; sourceTree = "<group>"; };
 		C15100000000000000000004 /* KanbanEventStreamClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanEventStreamClientTests.swift; sourceTree = "<group>"; };
 		C15100000000000000000006 /* KanbanLiveUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLiveUpdateTests.swift; sourceTree = "<group>"; };
@@ -688,6 +1239,9 @@
 		A04500000000000000000010 /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
 		A04500000000000000000011 /* TalariaDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaDeepLink.swift; sourceTree = "<group>"; };
 		A04500000000000000000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
+		C107E000000000000000011 /* TalariaRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaRelay.swift; sourceTree = "<group>"; };
+		C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateLiveActivityManager.swift; sourceTree = "<group>"; };
+		C107E000000000000000013 /* LiveActivityReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityReconciler.swift; sourceTree = "<group>"; };
 		A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivityWidget.swift; sourceTree = "<group>"; };
 		A04500000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A04500000000000000000017 /* TalariaLiveActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TalariaLiveActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -827,6 +1381,11 @@
 				C03900000000000000000017 /* APIClientUpdatesCheckTests.swift */,
 				C03900000000000000000018 /* APIClientUpdatesApplyTests.swift */,
 				C03900000000000000000003 /* APIClientSessionDetailTests.swift */,
+				C107S0000000000000000102 /* APIClientSessionDetailRequestTests.swift */,
+				C107S0000000000000000103 /* APIClientSessionDetailActivitySceneTests.swift */,
+				C107S0000000000000000104 /* APIClientSessionDetailAttachmentTests.swift */,
+				C107S0000000000000000105 /* APIClientSessionDetailToolTimelineTests.swift */,
+				C107S0000000000000000106 /* APIClientSessionDetailPresentationTests.swift */,
 				C03900000000000000000004 /* APIClientSessionMutationTests.swift */,
 				C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */,
 				C03900000000000000000006 /* APIClientChatEndpointTests.swift */,
@@ -845,10 +1404,25 @@
 					C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */,
 					C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */,
 					C0390000000000000000000E /* ChatViewModelSendTests.swift */,
+					C107Y0000000000000000101 /* ChatViewModelSendTests+ActionsQueue.swift */,
+					C107Y0000000000000000102 /* ChatViewModelSendTests+Attachments.swift */,
+					C107Y0000000000000000103 /* ChatViewModelSendTests+ComposerConfig.swift */,
+					C107Y0000000000000000104 /* ChatViewModelSendTests+Listen.swift */,
+					C107Y0000000000000000105 /* ChatViewModelSendTests+SendApproval.swift */,
+					C107Y0000000000000000106 /* ChatViewModelSendTests+StaleRecovery.swift */,
+					C107Y0000000000000000107 /* ChatViewModelSendTests+StreamingEvents.swift */,
+					C107Y0000000000000000108 /* ChatViewModelSendTests+Support.swift */,
+					C107Y0000000000000000109 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift */,
+					C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */,
 					C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */,
 					C14600000000000000000001 /* ChatToolbarHeaderTests.swift */,
 					C15200000000000000000007 /* OnboardingFlowTests.swift */,
 				C0390000000000000000000F /* SessionListMutationTests.swift */,
+				C107X0000000000000000101 /* SessionListLoadProfileTests.swift */,
+				C107X0000000000000000102 /* SessionListSessionProjectArchiveMutationTests.swift */,
+				C107X0000000000000000103 /* SessionListRemoteSearchTests.swift */,
+				C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */,
+				C107X0000000000000000105 /* SessionListMutationTestSupport.swift */,
 				A10900000000000000000012 /* SessionNavigationStateTests.swift */,
 				C03900000000000000000010 /* APIEndpointContractTests.swift */,
 				C03900000000000000000011 /* CronManagementTests.swift */,
@@ -870,6 +1444,11 @@
 				C23400000000000000000006 /* StreamingLabReplayTests.swift */,
 				C1490000000000000000000A /* APIClientKanbanTests.swift */,
 				C1490000000000000000000C /* KanbanFeatureStateTests.swift */,
+				C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */,
+				C107Z0000000000000000102 /* KanbanFeatureStateDispatcherTests.swift */,
+				C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */,
+				C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */,
+				C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */,
 				C15100000000000000000004 /* KanbanEventStreamClientTests.swift */,
 				C15100000000000000000006 /* KanbanLiveUpdateTests.swift */,
 				C15400000000000000000006 /* KanbanCardDetailStateTests.swift */,
@@ -962,8 +1541,24 @@
 				1A2B3C4D5E6F7000000000BD /* Workspace.swift */,
 				C03120000000000000F001 /* GitWorkspace.swift */,
 				1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */,
+				C107G000000000000000011 /* ChatControlResponses.swift */,
+				C107G000000000000000012 /* ServerSettingsUpdates.swift */,
+				C107G000000000000000013 /* ServerProfiles.swift */,
+				C107G000000000000000014 /* ModelCatalog.swift */,
 				A06100000000000000000002 /* ProviderQuota.swift */,
-				A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */,
+				A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */,
+				C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */,
+				C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */,
+				C107W0000000000000000103 /* ProviderQuotaPace.swift */,
+				C107W0000000000000000104 /* ProviderQuotaPresentation.swift */,
+				C107M0000000000000000201 /* ProviderQuotaBarsView.swift */,
+				C107M0000000000000000202 /* ProviderQuotaGaugeView.swift */,
+				C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */,
+				C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */,
+				C107M0000000000000000205 /* ProviderQuotaForecastView.swift */,
+				C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */,
+				C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */,
+				A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */,
 				A06300000000000000000011 /* ProviderIconRegistry.swift */,
 				1A2B3C4D5E6F70000000142 /* ModelFavoritesStore.swift */,
 				1A2B3C4D5E6F700000000301 /* ServerAccount.swift */,
@@ -982,6 +1577,9 @@
 				1A2B3C4D5E6F70000000201 /* Memory.swift */,
 				1A2B3C4D5E6F70000000211 /* Skills.swift */,
 				C14900000000000000000002 /* Kanban.swift */,
+				C107H000000000000000011 /* KanbanRequests.swift */,
+				C107H000000000000000012 /* KanbanCardDetails.swift */,
+				C107H000000000000000013 /* KanbanCompatibility.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -1012,10 +1610,18 @@
 				C15200000000000000000006 /* OnboardingConnectPage.swift */,
 				C15200000000000000000004 /* OnboardingAgentPromptPage.swift */,
 				C15200000000000000000003 /* OnboardingFeaturesPage.swift */,
+				C107L0000000000000000125 /* OnboardingFeatureRow.swift */,
 				C15200000000000000000001 /* OnboardingFlowPolicy.swift */,
 				C15200000000000000000005 /* OnboardingTailscalePage.swift */,
 				C15200000000000000000002 /* OnboardingWelcomePage.swift */,
 				1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */,
+				C107N0000000000000000101 /* HeroBadge.swift */,
+				C107N0000000000000000102 /* OnboardingCommandPill.swift */,
+				C107N0000000000000000103 /* OnboardingField.swift */,
+				C107N0000000000000000104 /* OnboardingStatusBanner.swift */,
+				C107N0000000000000000105 /* OnboardingStepHeader.swift */,
+				C107N0000000000000000106 /* OnboardingAgentPromptCard.swift */,
+				C107N0000000000000000107 /* OnboardingPageIndicator.swift */,
 				1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */,
 			);
 			path = Onboarding;
@@ -1025,9 +1631,25 @@
 			isa = PBXGroup;
 			children = (
 				C14900000000000000000006 /* KanbanFeatureState.swift */,
+				C107S0000000000000000101 /* KanbanFeatureStateModels.swift */,
 				C14900000000000000000008 /* KanbanLabView.swift */,
+				C107U0000000000000000101 /* KanbanCardInteraction.swift */,
+				C107U0000000000000000102 /* KanbanDispatcherPresentation.swift */,
+				C107U0000000000000000103 /* KanbanFiltersDraft.swift */,
+				C107U0000000000000000104 /* KanbanBoardEditorMode.swift */,
+				C107U0000000000000000105 /* KanbanAccessibility.swift */,
+				C107U0000000000000000106 /* KanbanStatusPresentation.swift */,
+				C107U0000000000000000107 /* KanbanFormatters.swift */,
+				C107O0000000000000000118 /* KanbanStatusFocusView.swift */,
+				C107O0000000000000000119 /* KanbanBoardManagementView.swift */,
+				C107O0000000000000000120 /* KanbanBoardEditorView.swift */,
+				C107O0000000000000000121 /* KanbanBulkActionsView.swift */,
+				C107O0000000000000000122 /* KanbanFiltersView.swift */,
+				C107O0000000000000000123 /* KanbanCardSummaryView.swift */,
+				C107O0000000000000000124 /* KanbanView.swift */,
 				C15400000000000000000002 /* KanbanCardDetailState.swift */,
 				C15400000000000000000004 /* KanbanCardDetailView.swift */,
+				C107L0000000000000000126 /* KanbanCardDetailContent.swift */,
 				C15300000000000000000002 /* KanbanCardEditorState.swift */,
 				C15300000000000000000004 /* KanbanCardEditorView.swift */,
 			);
@@ -1049,9 +1671,43 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */,
+				C107V0000000000000000101 /* SessionListInitialLoad.swift */,
+				C107V0000000000000000102 /* SessionListNewChatReturn.swift */,
+				C107V0000000000000000103 /* NewChatRequest.swift */,
+				C107V0000000000000000104 /* PendingNewChatRoute.swift */,
+				C107V0000000000000000105 /* SessionListUtilityDestination.swift */,
 				1A2B3C4D5E6F7000000000D2 /* SessionRowView.swift */,
+				C107L0000000000000000120 /* SessionRowStateBadge.swift */,
+				C107L0000000000000000121 /* ActiveSessionStreamingIndicator.swift */,
+				C107L0000000000000000122 /* ProjectRenameSheet.swift */,
+				C107L0000000000000000123 /* ProjectFormSheet.swift */,
+				C107L0000000000000000124 /* PendingNewChatView.swift */,
 				1A2B3C4D5E6F7000000000D3 /* SessionListViewModel.swift */,
 				A04300000000000000000011 /* SessionListComponents.swift */,
+				C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */,
+				C107K0000000000000000102 /* SessionFilterControls.swift */,
+				C107K0000000000000000103 /* SessionFilterChip.swift */,
+				C107K0000000000000000104 /* SessionListRowsSection.swift */,
+				C107K0000000000000000105 /* SessionInteractiveRow.swift */,
+				C107K0000000000000000106 /* GroupedSessionsDisclosure.swift */,
+				C107K0000000000000000107 /* GroupedSessionsView.swift */,
+				C107K0000000000000000108 /* SessionRowContextMenu.swift */,
+				C107K0000000000000000109 /* SessionProjectMoveMenu.swift */,
+				C107K0000000000000000110 /* AvatarServerSwitcherMenu.swift */,
+				C107K0000000000000000111 /* SessionExportShareSheet.swift */,
+				C107K0000000000000000112 /* SidebarNavButton.swift */,
+				C107K0000000000000000113 /* AppSidebarContainer.swift */,
+				C107K0000000000000000114 /* AppSidebarDrawer.swift */,
+				C107K0000000000000000115 /* SidebarDisclosureButton.swift */,
+				C107K0000000000000000116 /* SidebarDisclosureChevron.swift */,
+				C107K0000000000000000117 /* SidebarUtilityIcon.swift */,
+				C107K0000000000000000118 /* SidebarSelectedSubrowIndicator.swift */,
+				C107K0000000000000000119 /* ActiveProfilePickerRow.swift */,
+				C107K0000000000000000120 /* ProjectFilterRow.swift */,
+				C107K0000000000000000121 /* CompactStatusRow.swift */,
+				C107K0000000000000000122 /* SessionListStatusRow.swift */,
+				C107K0000000000000000123 /* SessionRowSkeletonView.swift */,
+				C107K0000000000000000124 /* OfflineCacheBanner.swift */,
 				A10900000000000000000011 /* SessionNavigationState.swift */,
 				A04300000000000000000012 /* SessionListActionConfirmations.swift */,
 				A04300000000000000000013 /* SessionMutator.swift */,
@@ -1066,10 +1722,57 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000BF /* ChatView.swift */,
+				C107A000000000000000011 /* NavigationAppearanceCompletionObserver.swift */,
+				C107A000000000000000012 /* ListenPlaybackBar.swift */,
+				C107A000000000000000013 /* ChatToolbarTitleLabel.swift */,
+				C107A000000000000000014 /* ChatToolbarActionCluster.swift */,
+				C107A000000000000000015 /* ChatToolbarActionSlot.swift */,
+				C107A000000000000000016 /* ChatToolbarSubtitleResolver.swift */,
 				C05100000000000000000011 /* ChatTranscriptView.swift */,
+				C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */,
+				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
+				C107N0000000000000000120 /* ChatScrollToBottomButton.swift */,
+				C107N0000000000000000121 /* LoadOlderMessagesButton.swift */,
+				C107N0000000000000000122 /* SelectableTextPresentationView.swift */,
+				C107N0000000000000000123 /* SelectableTextView.swift */,
+				C107N0000000000000000124 /* EditMessageSheet.swift */,
+				C107N0000000000000000125 /* ActivityGlowText.swift */,
+				C107N0000000000000000126 /* RotatingActivityTitle.swift */,
+				C107N0000000000000000127 /* GridAttachmentCell.swift */,
+				C107N0000000000000000128 /* RemoteAttachmentImage.swift */,
+				C107N0000000000000000129 /* ContextWindowPopover.swift */,
+				C107N0000000000000000130 /* ContextWindowInfoRow.swift */,
+				C107N0000000000000000131 /* ComposerVoiceStatusView.swift */,
+				C107N0000000000000000132 /* ComposerVoiceControlButton.swift */,
+				C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */,
+				C107N0000000000000000134 /* TranscriptStatusPill.swift */,
+				C107N0000000000000000135 /* SwiftMathLabelView.swift */,
+				C107N0000000000000000136 /* GoalSubmissionSheet.swift */,
+				C107N0000000000000000137 /* ComposerStatusView.swift */,
+				C107N0000000000000000138 /* ComposerTextView.swift */,
+				C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */,
+				C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */,
+				C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */,
 				C05100000000000000000012 /* ChatMessageActions.swift */,
 				C05100000000000000000013 /* ChatGoalControls.swift */,
 				C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */,
+				C107O0000000000000000101 /* ChatScrollObserver.swift */,
+				C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */,
+				C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */,
+				C107O0000000000000000104 /* BottomComposerMaterialFade.swift */,
+				C107O0000000000000000105 /* StreamRecoveryStatusView.swift */,
+				C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */,
+				C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */,
+				C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */,
+				C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */,
+				C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */,
+				C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */,
+				C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */,
+				C107O0000000000000000113 /* ComposerModelMenu.swift */,
+				C107O0000000000000000114 /* ComposerReasoningMenu.swift */,
+				C107O0000000000000000115 /* ComposerMetaControlLabel.swift */,
+				C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */,
+				C107O0000000000000000117 /* LucideBrainIcon.swift */,
 				C0CAM000000000000000B002 /* CameraPickerView.swift */,
 				C0DEC0DE0000000000000002 /* ChatComposerView.swift */,
 				C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */,
@@ -1100,9 +1803,28 @@
 				C21300000000000000000002 /* StreamingTextFade.swift */,
 				C21300000000000000000004 /* StreamingTextFadeRenderer.swift */,
 				1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */,
+				C107Q0000000000000000101 /* StreamingMarkdownRenderer.swift */,
+				C107Q0000000000000000102 /* StreamingMarkdownChunkedView.swift */,
+				C107Q0000000000000000103 /* StreamingFadeBlockView.swift */,
+				C107Q0000000000000000104 /* ChatMarkdownView.swift */,
+				C107Q0000000000000000105 /* MathFenceOrCodeBlock.swift */,
+				C107Q0000000000000000106 /* ChatCodeBlock.swift */,
+				C107Q0000000000000000107 /* PlainCodeBlockText.swift */,
+				C107Q0000000000000000108 /* HighlightedCodeBlockText.swift */,
+				C107Q0000000000000000109 /* PlainMarkdownFallbackView.swift */,
+				C107Q0000000000000000110 /* ChatMarkdownTable.swift */,
 				C14300000000000000000002 /* StreamingMarkdownSupport.swift */,
 				C0DE34000000000000000002 /* TranscriptMedia.swift */,
 				C0DE34000000000000000005 /* TranscriptMediaView.swift */,
+				C107P0000000000000000101 /* TranscriptMediaContentView.swift */,
+				C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */,
+				C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */,
+				C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */,
+				C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */,
+				C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */,
+				C107P0000000000000000107 /* TranscriptMediaUnavailableChip.swift */,
+				C107P0000000000000000108 /* TranscriptMediaPreviewView.swift */,
+				C107P0000000000000000109 /* TranscriptVideoPreviewPlayerView.swift */,
 				C0DE34000000000000000007 /* TranscriptMediaPreviewViewModel.swift */,
 				C0DE3400000000000000000A /* TranscriptMediaDataLoader.swift */,
 				C0DE3400000000000000000E /* TranscriptMediaExportSupport.swift */,
@@ -1118,7 +1840,17 @@
 					C04600000000000000000002 /* ChatStreamCoordinator.swift */,
 					C04700000000000000000002 /* ChatPendingActionCoordinator.swift */,
 					C04800000000000000000002 /* ChatAttachmentCoordinator.swift */,
-					1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */,
+				1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */,
+				C107T0000000000000000101 /* ApprovalPromptState.swift */,
+				C107T0000000000000000108 /* ClarificationPromptState.swift */,
+				C107T0000000000000000102 /* ProfileSwitchOutcome.swift */,
+				C107T0000000000000000103 /* ChatPollingIntervals.swift */,
+				C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */,
+				C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */,
+				C107T0000000000000000106 /* QueuedSlashMessage.swift */,
+				C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */,
+				C107R0000000000000000101 /* ChatTranscriptModels.swift */,
+					C107C000000000000000011 /* ChatListenPlayback.swift */,
 				A710739233F64F4FA4C2B710 /* ComposerVoiceInputController.swift */,
 				C03250000000000000F104 /* ComposerVoiceNoteRecorder.swift */,
 				1A2B3C4D5E6F70000000121 /* ContextWindowIndicatorView.swift */,
@@ -1134,6 +1866,16 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000E5 /* FileBrowserView.swift */,
+				C107L0000000000000000110 /* FileBrowserRow.swift */,
+				C107L0000000000000000111 /* GitBranchPickerSheet.swift */,
+				C107L0000000000000000112 /* GitCommitFileRow.swift */,
+				C107L0000000000000000113 /* DiffLineRow.swift */,
+				C107L0000000000000000114 /* GitTurnDiffSheet.swift */,
+				C107L0000000000000000115 /* GitAheadBehindBadges.swift */,
+				C107L0000000000000000116 /* DiffCountsLabel.swift */,
+				C107L0000000000000000117 /* GitFileCard.swift */,
+				C107L0000000000000000118 /* GitStatusChip.swift */,
+				C107L0000000000000000119 /* WorkspaceAddSheet.swift */,
 				1A2B3C4D5E6F7000000000E7 /* FileBrowserViewModel.swift */,
 				1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */,
 				1A2B3C4D5E6F7000000000EB /* FilePreviewViewModel.swift */,
@@ -1169,15 +1911,54 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				C107V0000000000000000106 /* SettingsScrollAnchor.swift */,
+				C107J0000000000000000101 /* SessionIdentitySettingsEditor.swift */,
+				C107J0000000000000000102 /* SettingsTextFieldRow.swift */,
+				C107J0000000000000000103 /* AccentColorSettings.swift */,
+				C107J0000000000000000104 /* HeaderLogoColorPresetButton.swift */,
+				C107J0000000000000000105 /* SettingsCard.swift */,
+				C107J0000000000000000106 /* ProviderQuotaWidgetProfilesView.swift */,
+				C107J0000000000000000107 /* ProviderQuotaSidebarDisplayView.swift */,
+				C107J0000000000000000108 /* ProviderQuotaWidgetAutomaticSettingsSections.swift */,
+				C107J0000000000000000109 /* SettingsPickerRow.swift */,
+				C107J0000000000000000110 /* SettingsRowLabel.swift */,
+				C107J0000000000000000111 /* SettingsFootnote.swift */,
+				C107J0000000000000000112 /* SettingsErrorFootnote.swift */,
+				C107J0000000000000000113 /* SettingsValueRow.swift */,
+				C107J0000000000000000114 /* SettingsInfoRow.swift */,
+				C107J0000000000000000115 /* SettingsAccessoryRow.swift */,
+				C107J0000000000000000116 /* CustomHeadersSettingsView.swift */,
+				C107J0000000000000000117 /* SettingsToggleRow.swift */,
+				C107J0000000000000000118 /* SettingsButton.swift */,
+				C107J0000000000000000119 /* SettingsStatusPill.swift */,
+				C107J0000000000000000120 /* SettingsDivider.swift */,
+				C107J0000000000000000121 /* ServerAvatarBadge.swift */,
+				C107J0000000000000000122 /* SettingsServerRow.swift */,
+				C107J0000000000000000123 /* ServerIdentityEditor.swift */,
+				C107J0000000000000000124 /* ServerDetailView.swift */,
+				C107J0000000000000000125 /* AddServerView.swift */,
+				C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */,
 				A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
+				C107I000000000000000011 /* AppIconDisclosureLabel.swift */,
+				C107I000000000000000012 /* AppIconChoiceRow.swift */,
+				C107I000000000000000013 /* AppIconChoicePreview.swift */,
+				C107I000000000000000014 /* AppIconPreviewImage.swift */,
 				1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */,
 				103200000000000000000001 /* DefaultProfilePickerView.swift */,
+				C107B000000000000000011 /* SettingsPickerSearchField.swift */,
+				C107B000000000000000012 /* SettingsPickerCard.swift */,
+				C107B000000000000000013 /* ModelPickerButton.swift */,
+				C107B000000000000000014 /* CreateProfileSheet.swift */,
+				C107B000000000000000015 /* ProfileStatusBadge.swift */,
 				1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */,
+				C107I000000000000000015 /* ArchivedStatusRow.swift */,
 				C23400000000000000000002 /* StreamingLabReplay.swift */,
 				C23400000000000000000004 /* StreamingLabView.swift */,
 				1A2B3C4D5E6F70000000113 /* ArchivedSessionsViewModel.swift */,
 				26AB000000000000000000F2 /* ProvidersView.swift */,
+				C107I000000000000000016 /* ProviderRow.swift */,
+				C107I000000000000000017 /* ProvidersStatusRow.swift */,
 				26AB000000000000000000F1 /* ProvidersViewModel.swift */,
 			);
 			path = Settings;
@@ -1190,6 +1971,10 @@
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C09200000000000000000002 /* AppFont.swift */,
 				1A2B3C4D5E6F700000000101 /* AppTheme.swift */,
+				C107D000000000000000011 /* AppSettings.swift */,
+				C107D000000000000000012 /* ChatActiveRunStatus.swift */,
+				C107D000000000000000013 /* ResponseCompletionNotifications.swift */,
+				C107D000000000000000014 /* ComposerBehavior.swift */,
 				C012400000000000000001 /* AppIconChoice.swift */,
 			);
 			path = Config;
@@ -1229,6 +2014,9 @@
 				A04500000000000000000010 /* AgentRunActivityAttributes.swift */,
 				A04500000000000000000011 /* TalariaDeepLink.swift */,
 				A04500000000000000000012 /* AgentLiveActivityManager.swift */,
+				C107E000000000000000011 /* TalariaRelay.swift */,
+				C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */,
+				C107E000000000000000013 /* LiveActivityReconciler.swift */,
 			);
 			path = LiveActivities;
 			sourceTree = "<group>";
@@ -1247,6 +2035,24 @@
 			children = (
 				A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */,
 				A0610000000000000000000A /* ProviderQuotaWidget.swift */,
+				C107M0000000000000000206 /* ProviderQuotaPaceWidgetView.swift */,
+				C107M0000000000000000207 /* ProviderQuotaWidgetView.swift */,
+				C107M0000000000000000208 /* ProviderQuotaWidgetSourceView.swift */,
+				C107M0000000000000000209 /* ProviderQuotaAccessoryView.swift */,
+				C107M0000000000000000210 /* ProviderQuotaWidgetPrompt.swift */,
+				C107M0000000000000000211 /* TalariaAggregateHeader.swift */,
+				C107M0000000000000000212 /* AggregateCompactTrailing.swift */,
+				C107M0000000000000000213 /* AggregateStatusLabel.swift */,
+				C107M0000000000000000214 /* SandalMark.swift */,
+				C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */,
+				C107M0000000000000000216 /* AgentRunLockScreenView.swift */,
+				C107M0000000000000000217 /* AgentRunIslandBadge.swift */,
+				C107M0000000000000000218 /* AgentRunIslandStatusView.swift */,
+				C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */,
+				C107M0000000000000000220 /* AgentRunStatusDot.swift */,
+				C107M0000000000000000221 /* AgentRunProgressRail.swift */,
+				C107M0000000000000000222 /* AgentRunTimerPill.swift */,
+				C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */,
 				A04500000000000000000022 /* Resources */,
 			);
 			path = TalariaLiveActivityWidget;
@@ -1265,6 +2071,11 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F70000000203 /* MemoryView.swift */,
+				C107N0000000000000000108 /* MemorySectionHeader.swift */,
+				C107N0000000000000000109 /* ProjectContextSectionHeader.swift */,
+				C107N0000000000000000110 /* ProjectContextSectionFooter.swift */,
+				C107N0000000000000000111 /* MemorySectionContent.swift */,
+				C107N0000000000000000112 /* MemoryEditSheet.swift */,
 				1A2B3C4D5E6F70000000205 /* MemoryViewModel.swift */,
 			);
 			path = Memory;
@@ -1274,6 +2085,11 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F70000000213 /* SkillsView.swift */,
+				C107N0000000000000000113 /* SkillCategorySection.swift */,
+				C107N0000000000000000114 /* SkillRow.swift */,
+				C107N0000000000000000115 /* SkillDetailView.swift */,
+				C107N0000000000000000116 /* SkillLinkedFilesSection.swift */,
+				C107N0000000000000000117 /* SkillLinkedFileView.swift */,
 				1A2B3C4D5E6F70000000215 /* SkillsViewModel.swift */,
 			);
 			path = Skills;
@@ -1283,6 +2099,10 @@
 			isa = PBXGroup;
 			children = (
 				3F91D2A54B9A4F66A2C01012 /* TasksView.swift */,
+				C107L0000000000000000106 /* CronJobRowView.swift */,
+				C107L0000000000000000107 /* CronJobEditorSheet.swift */,
+				C107L0000000000000000108 /* CronJobMetadataRow.swift */,
+				C107L0000000000000000109 /* StatusBadge.swift */,
 				3F91D2A54B9A4F66A2C01013 /* TasksViewModel.swift */,
 				3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */,
 				3F91D2A54B9A4F66A2C01015 /* TaskDetailViewModel.swift */,
@@ -1294,6 +2114,11 @@
 			isa = PBXGroup;
 			children = (
 				57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */,
+				C107L0000000000000000101 /* ModelBreakdownRow.swift */,
+				C107L0000000000000000102 /* DailyTokenRow.swift */,
+				C107L0000000000000000103 /* ActivitySummaryRow.swift */,
+				C107L0000000000000000104 /* ProviderQuotaRow.swift */,
+				C107L0000000000000000105 /* AnalyticsCard.swift */,
 				C0DE512E0000000000000201 /* InsightsModels.swift */,
 				C0DE512E0000000000000203 /* InsightsRows.swift */,
 				931EC010A2D940B0E42287A4 /* InsightsViewModel.swift */,
@@ -1531,6 +2356,9 @@
 				A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */,
 				A04500000000000000000002 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */,
+				C107E000000000000000001 /* TalariaRelay.swift in Sources */,
+				C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */,
+				C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */,
 				1A2B3C4D5E6F7000000000A2 /* APIClient.swift in Sources */,
 				C04000000000000000000001 /* APIClient+Sessions.swift in Sources */,
 				C04000000000000000000002 /* APIClient+Projects.swift in Sources */,
@@ -1556,10 +2384,21 @@
 				C04000000000000000000008 /* APIClient+Skills.swift in Sources */,
 				C04000000000000000000009 /* APIClient+Upload.swift in Sources */,
 				C14900000000000000000001 /* Kanban.swift in Sources */,
+				C107H000000000000000001 /* KanbanRequests.swift in Sources */,
+				C107H000000000000000002 /* KanbanCardDetails.swift in Sources */,
+				C107H000000000000000003 /* KanbanCompatibility.swift in Sources */,
 				C14900000000000000000003 /* APIClient+Kanban.swift in Sources */,
 				C15100000000000000000001 /* KanbanEventStreamClient.swift in Sources */,
 				C14900000000000000000005 /* KanbanFeatureState.swift in Sources */,
+				C107S0000000000000000001 /* KanbanFeatureStateModels.swift in Sources */,
 				C14900000000000000000007 /* KanbanLabView.swift in Sources */,
+				C107U0000000000000000001 /* KanbanCardInteraction.swift in Sources */,
+				C107U0000000000000000002 /* KanbanDispatcherPresentation.swift in Sources */,
+				C107U0000000000000000003 /* KanbanFiltersDraft.swift in Sources */,
+				C107U0000000000000000004 /* KanbanBoardEditorMode.swift in Sources */,
+				C107U0000000000000000005 /* KanbanAccessibility.swift in Sources */,
+				C107U0000000000000000006 /* KanbanStatusPresentation.swift in Sources */,
+				C107U0000000000000000007 /* KanbanFormatters.swift in Sources */,
 				C15400000000000000000001 /* KanbanCardDetailState.swift in Sources */,
 				C15400000000000000000003 /* KanbanCardDetailView.swift in Sources */,
 				C15300000000000000000001 /* KanbanCardEditorState.swift in Sources */,
@@ -1588,8 +2427,24 @@
 				1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */,
 				1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */,
 				1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */,
+				C107G000000000000000001 /* ChatControlResponses.swift in Sources */,
+				C107G000000000000000002 /* ServerSettingsUpdates.swift in Sources */,
+				C107G000000000000000003 /* ServerProfiles.swift in Sources */,
+				C107G000000000000000004 /* ModelCatalog.swift in Sources */,
 				A06100000000000000000001 /* ProviderQuota.swift in Sources */,
-				A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				A06100000000000000000006 /* ProviderQuotaWidgetSettings.swift in Sources */,
+				C107W0000000000000000001 /* ProviderQuotaPresentationModels.swift in Sources */,
+				C107W0000000000000000002 /* ProviderQuotaWidgetLayout.swift in Sources */,
+				C107W0000000000000000003 /* ProviderQuotaPace.swift in Sources */,
+				C107W0000000000000000004 /* ProviderQuotaPresentation.swift in Sources */,
+				C107M0000000000000000001 /* ProviderQuotaBarsView.swift in Sources */,
+				C107M0000000000000000003 /* ProviderQuotaGaugeView.swift in Sources */,
+				C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
+				C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
+				C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */,
+				C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
+				C107F000000000000000003 /* ProviderQuotaWidgetRefresh.swift in Sources */,
+				A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */,
 				1A2B3C4D5E6F70000000140 /* ModelFavoritesStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000DE /* ToolCall.swift in Sources */,
@@ -1600,16 +2455,148 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				C107V0000000000000000006 /* SettingsScrollAnchor.swift in Sources */,
+				C107J0000000000000000001 /* SessionIdentitySettingsEditor.swift in Sources */,
+				C107J0000000000000000002 /* SettingsTextFieldRow.swift in Sources */,
+				C107J0000000000000000003 /* AccentColorSettings.swift in Sources */,
+				C107J0000000000000000004 /* HeaderLogoColorPresetButton.swift in Sources */,
+				C107J0000000000000000005 /* SettingsCard.swift in Sources */,
+				C107J0000000000000000006 /* ProviderQuotaWidgetProfilesView.swift in Sources */,
+				C107J0000000000000000007 /* ProviderQuotaSidebarDisplayView.swift in Sources */,
+				C107J0000000000000000008 /* ProviderQuotaWidgetAutomaticSettingsSections.swift in Sources */,
+				C107J0000000000000000009 /* SettingsPickerRow.swift in Sources */,
+				C107J0000000000000000010 /* SettingsRowLabel.swift in Sources */,
+				C107J0000000000000000011 /* SettingsFootnote.swift in Sources */,
+				C107J0000000000000000012 /* SettingsErrorFootnote.swift in Sources */,
+				C107J0000000000000000013 /* SettingsValueRow.swift in Sources */,
+				C107J0000000000000000014 /* SettingsInfoRow.swift in Sources */,
+				C107J0000000000000000015 /* SettingsAccessoryRow.swift in Sources */,
+				C107J0000000000000000016 /* CustomHeadersSettingsView.swift in Sources */,
+				C107J0000000000000000017 /* SettingsToggleRow.swift in Sources */,
+				C107J0000000000000000018 /* SettingsButton.swift in Sources */,
+				C107J0000000000000000019 /* SettingsStatusPill.swift in Sources */,
+				C107J0000000000000000020 /* SettingsDivider.swift in Sources */,
+				C107J0000000000000000021 /* ServerAvatarBadge.swift in Sources */,
+				C107J0000000000000000022 /* SettingsServerRow.swift in Sources */,
+				C107J0000000000000000023 /* ServerIdentityEditor.swift in Sources */,
+				C107J0000000000000000024 /* ServerDetailView.swift in Sources */,
+				C107J0000000000000000025 /* AddServerView.swift in Sources */,
+				C107J0000000000000000026 /* ProviderQuotaWidgetAppearanceView.swift in Sources */,
 				A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */,
 				C012400000000000000004 /* AppIconSettingsSection.swift in Sources */,
+				C107I000000000000000001 /* AppIconDisclosureLabel.swift in Sources */,
+				C107I000000000000000002 /* AppIconChoiceRow.swift in Sources */,
+				C107I000000000000000003 /* AppIconChoicePreview.swift in Sources */,
+				C107I000000000000000004 /* AppIconPreviewImage.swift in Sources */,
 				1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */,
 				103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */,
+				C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */,
+				C107B000000000000000002 /* SettingsPickerCard.swift in Sources */,
+				C107B000000000000000003 /* ModelPickerButton.swift in Sources */,
+				C107B000000000000000004 /* CreateProfileSheet.swift in Sources */,
+				C107B000000000000000005 /* ProfileStatusBadge.swift in Sources */,
 				1A2B3C4D5E6F70000000110 /* ArchivedSessionsView.swift in Sources */,
+				C107I000000000000000005 /* ArchivedStatusRow.swift in Sources */,
 				C23400000000000000000001 /* StreamingLabReplay.swift in Sources */,
 				C23400000000000000000003 /* StreamingLabView.swift in Sources */,
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
 				C09200000000000000000001 /* AppFont.swift in Sources */,
 				1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */,
+				C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */,
+				C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */,
+				C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */,
+				C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */,
+				C107O0000000000000000005 /* StreamRecoveryStatusView.swift in Sources */,
+				C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */,
+				C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */,
+				C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */,
+				C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */,
+				C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */,
+				C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */,
+				C107O0000000000000000012 /* ComposerProfileSelectorMenu.swift in Sources */,
+				C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */,
+				C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */,
+				C107O0000000000000000015 /* ComposerMetaControlLabel.swift in Sources */,
+				C107O0000000000000000016 /* ComposerSecondaryBarLabel.swift in Sources */,
+				C107O0000000000000000017 /* LucideBrainIcon.swift in Sources */,
+				C107O0000000000000000018 /* KanbanStatusFocusView.swift in Sources */,
+				C107O0000000000000000019 /* KanbanBoardManagementView.swift in Sources */,
+				C107O0000000000000000020 /* KanbanBoardEditorView.swift in Sources */,
+				C107O0000000000000000021 /* KanbanBulkActionsView.swift in Sources */,
+				C107O0000000000000000022 /* KanbanFiltersView.swift in Sources */,
+				C107O0000000000000000023 /* KanbanCardSummaryView.swift in Sources */,
+				C107O0000000000000000024 /* KanbanView.swift in Sources */,
+				C107N0000000000000000001 /* HeroBadge.swift in Sources */,
+				C107N0000000000000000002 /* OnboardingCommandPill.swift in Sources */,
+				C107N0000000000000000003 /* OnboardingField.swift in Sources */,
+				C107N0000000000000000004 /* OnboardingStatusBanner.swift in Sources */,
+				C107N0000000000000000005 /* OnboardingStepHeader.swift in Sources */,
+				C107N0000000000000000006 /* OnboardingAgentPromptCard.swift in Sources */,
+				C107N0000000000000000007 /* OnboardingPageIndicator.swift in Sources */,
+				C107N0000000000000000008 /* MemorySectionHeader.swift in Sources */,
+				C107N0000000000000000009 /* ProjectContextSectionHeader.swift in Sources */,
+				C107N0000000000000000010 /* ProjectContextSectionFooter.swift in Sources */,
+				C107N0000000000000000011 /* MemorySectionContent.swift in Sources */,
+				C107N0000000000000000012 /* MemoryEditSheet.swift in Sources */,
+				C107N0000000000000000013 /* SkillCategorySection.swift in Sources */,
+				C107N0000000000000000014 /* SkillRow.swift in Sources */,
+				C107N0000000000000000015 /* SkillDetailView.swift in Sources */,
+				C107N0000000000000000016 /* SkillLinkedFilesSection.swift in Sources */,
+				C107N0000000000000000017 /* SkillLinkedFileView.swift in Sources */,
+				C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */,
+				C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */,
+				C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */,
+				C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */,
+				C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */,
+				C107N0000000000000000023 /* SelectableTextView.swift in Sources */,
+				C107N0000000000000000024 /* EditMessageSheet.swift in Sources */,
+				C107N0000000000000000025 /* ActivityGlowText.swift in Sources */,
+				C107N0000000000000000026 /* RotatingActivityTitle.swift in Sources */,
+				C107N0000000000000000027 /* GridAttachmentCell.swift in Sources */,
+				C107N0000000000000000028 /* RemoteAttachmentImage.swift in Sources */,
+				C107N0000000000000000029 /* ContextWindowPopover.swift in Sources */,
+				C107N0000000000000000030 /* ContextWindowInfoRow.swift in Sources */,
+				C107N0000000000000000031 /* ComposerVoiceStatusView.swift in Sources */,
+				C107N0000000000000000032 /* ComposerVoiceControlButton.swift in Sources */,
+				C107N0000000000000000033 /* ComposerVoiceRecordingBar.swift in Sources */,
+				C107N0000000000000000034 /* TranscriptStatusPill.swift in Sources */,
+				C107N0000000000000000035 /* SwiftMathLabelView.swift in Sources */,
+				C107N0000000000000000036 /* GoalSubmissionSheet.swift in Sources */,
+				C107N0000000000000000037 /* ComposerStatusView.swift in Sources */,
+				C107N0000000000000000038 /* ComposerTextView.swift in Sources */,
+				C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */,
+				C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */,
+				C107N0000000000000000041 /* ApprovalBypassStatusPill.swift in Sources */,
+				C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */,
+				C107L0000000000000000002 /* DailyTokenRow.swift in Sources */,
+				C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */,
+				C107L0000000000000000004 /* ProviderQuotaRow.swift in Sources */,
+				C107L0000000000000000005 /* AnalyticsCard.swift in Sources */,
+				C107L0000000000000000006 /* CronJobRowView.swift in Sources */,
+				C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */,
+				C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */,
+				C107L0000000000000000009 /* StatusBadge.swift in Sources */,
+				C107L0000000000000000010 /* FileBrowserRow.swift in Sources */,
+				C107L0000000000000000011 /* GitBranchPickerSheet.swift in Sources */,
+				C107L0000000000000000012 /* GitCommitFileRow.swift in Sources */,
+				C107L0000000000000000013 /* DiffLineRow.swift in Sources */,
+				C107L0000000000000000014 /* GitTurnDiffSheet.swift in Sources */,
+				C107L0000000000000000015 /* GitAheadBehindBadges.swift in Sources */,
+				C107L0000000000000000016 /* DiffCountsLabel.swift in Sources */,
+				C107L0000000000000000017 /* GitFileCard.swift in Sources */,
+				C107L0000000000000000018 /* GitStatusChip.swift in Sources */,
+				C107L0000000000000000019 /* WorkspaceAddSheet.swift in Sources */,
+				C107L0000000000000000020 /* SessionRowStateBadge.swift in Sources */,
+				C107L0000000000000000021 /* ActiveSessionStreamingIndicator.swift in Sources */,
+				C107L0000000000000000022 /* ProjectRenameSheet.swift in Sources */,
+				C107L0000000000000000023 /* ProjectFormSheet.swift in Sources */,
+				C107L0000000000000000024 /* PendingNewChatView.swift in Sources */,
+				C107L0000000000000000025 /* OnboardingFeatureRow.swift in Sources */,
+				C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */,
+				C107D000000000000000001 /* AppSettings.swift in Sources */,
+				C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */,
+				C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */,
+				C107D000000000000000004 /* ComposerBehavior.swift in Sources */,
 				1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */,
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,
 				C012400000000000000002 /* AppIconChoice.swift in Sources */,
@@ -1618,7 +2605,18 @@
 				C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */,
 				C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */,
 					1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */,
+					C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */,
+					C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */,
+					C107V0000000000000000003 /* NewChatRequest.swift in Sources */,
+					C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */,
+					C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */,
 					1A2B3C4D5E6F7000000000AF /* ChatView.swift in Sources */,
+					C107A000000000000000001 /* NavigationAppearanceCompletionObserver.swift in Sources */,
+					C107A000000000000000002 /* ListenPlaybackBar.swift in Sources */,
+					C107A000000000000000003 /* ChatToolbarTitleLabel.swift in Sources */,
+					C107A000000000000000004 /* ChatToolbarActionCluster.swift in Sources */,
+					C107A000000000000000005 /* ChatToolbarActionSlot.swift in Sources */,
+					C107A000000000000000006 /* ChatToolbarSubtitleResolver.swift in Sources */,
 					C05100000000000000000001 /* ChatTranscriptView.swift in Sources */,
 					C05100000000000000000002 /* ChatMessageActions.swift in Sources */,
 					C05100000000000000000003 /* ChatGoalControls.swift in Sources */,
@@ -1653,9 +2651,28 @@
 				1A2B3C4D5E6F7000000000EA /* FilePreviewViewModel.swift in Sources */,
 				BEEF02600000000000000001 /* FileExportSupport.swift in Sources */,
 				1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */,
+				C107Q0000000000000000001 /* StreamingMarkdownRenderer.swift in Sources */,
+				C107Q0000000000000000002 /* StreamingMarkdownChunkedView.swift in Sources */,
+				C107Q0000000000000000003 /* StreamingFadeBlockView.swift in Sources */,
+				C107Q0000000000000000004 /* ChatMarkdownView.swift in Sources */,
+				C107Q0000000000000000005 /* MathFenceOrCodeBlock.swift in Sources */,
+				C107Q0000000000000000006 /* ChatCodeBlock.swift in Sources */,
+				C107Q0000000000000000007 /* PlainCodeBlockText.swift in Sources */,
+				C107Q0000000000000000008 /* HighlightedCodeBlockText.swift in Sources */,
+				C107Q0000000000000000009 /* PlainMarkdownFallbackView.swift in Sources */,
+				C107Q0000000000000000010 /* ChatMarkdownTable.swift in Sources */,
 				C14300000000000000000001 /* StreamingMarkdownSupport.swift in Sources */,
 				C0DE34000000000000000001 /* TranscriptMedia.swift in Sources */,
 				C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */,
+				C107P0000000000000000001 /* TranscriptMediaContentView.swift in Sources */,
+				C107P0000000000000000002 /* TranscriptMediaThumbnailView.swift in Sources */,
+				C107P0000000000000000003 /* TranscriptMediaResolvedRemoteView.swift in Sources */,
+				C107P0000000000000000004 /* TranscriptMediaAudioExportView.swift in Sources */,
+				C107P0000000000000000005 /* TranscriptMediaFileExportView.swift in Sources */,
+				C107P0000000000000000006 /* TranscriptMediaVideoTile.swift in Sources */,
+				C107P0000000000000000007 /* TranscriptMediaUnavailableChip.swift in Sources */,
+				C107P0000000000000000008 /* TranscriptMediaPreviewView.swift in Sources */,
+				C107P0000000000000000009 /* TranscriptVideoPreviewPlayerView.swift in Sources */,
 				C0DE34000000000000000008 /* TranscriptMediaPreviewViewModel.swift in Sources */,
 				C0DE34000000000000000009 /* TranscriptMediaDataLoader.swift in Sources */,
 				C0DE3400000000000000000D /* TranscriptMediaExportSupport.swift in Sources */,
@@ -1676,12 +2693,46 @@
 					C04600000000000000000001 /* ChatStreamCoordinator.swift in Sources */,
 					C04700000000000000000001 /* ChatPendingActionCoordinator.swift in Sources */,
 					C04800000000000000000001 /* ChatAttachmentCoordinator.swift in Sources */,
-					1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */,
+				1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */,
+				C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */,
+				C107T0000000000000000008 /* ClarificationPromptState.swift in Sources */,
+				C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */,
+				C107T0000000000000000003 /* ChatPollingIntervals.swift in Sources */,
+				C107T0000000000000000004 /* ActiveStreamRecoveryState.swift in Sources */,
+				C107T0000000000000000005 /* ActiveChatStreamSnapshotStore.swift in Sources */,
+				C107T0000000000000000006 /* QueuedSlashMessage.swift in Sources */,
+				C107T0000000000000000007 /* ToolCall+ReplayMatching.swift in Sources */,
+				C107R0000000000000000001 /* ChatTranscriptModels.swift in Sources */,
+					C107C000000000000000001 /* ChatListenPlayback.swift in Sources */,
 				1A2B3C4D5E6F7000000000D6 /* SSEClient.swift in Sources */,
 				C0FF000000000000000000A1 /* CustomHeader.swift in Sources */,
 				1A2B3C4D5E6F7000000000D0 /* SessionRowView.swift in Sources */,
 				1A2B3C4D5E6F7000000000D1 /* SessionListViewModel.swift in Sources */,
 				A04300000000000000000001 /* SessionListComponents.swift in Sources */,
+				C107K0000000000000000001 /* NavigationBarLeadingMarginObserver.swift in Sources */,
+				C107K0000000000000000002 /* SessionFilterControls.swift in Sources */,
+				C107K0000000000000000003 /* SessionFilterChip.swift in Sources */,
+				C107K0000000000000000004 /* SessionListRowsSection.swift in Sources */,
+				C107K0000000000000000005 /* SessionInteractiveRow.swift in Sources */,
+				C107K0000000000000000006 /* GroupedSessionsDisclosure.swift in Sources */,
+				C107K0000000000000000007 /* GroupedSessionsView.swift in Sources */,
+				C107K0000000000000000008 /* SessionRowContextMenu.swift in Sources */,
+				C107K0000000000000000009 /* SessionProjectMoveMenu.swift in Sources */,
+				C107K0000000000000000010 /* AvatarServerSwitcherMenu.swift in Sources */,
+				C107K0000000000000000011 /* SessionExportShareSheet.swift in Sources */,
+				C107K0000000000000000012 /* SidebarNavButton.swift in Sources */,
+				C107K0000000000000000013 /* AppSidebarContainer.swift in Sources */,
+				C107K0000000000000000014 /* AppSidebarDrawer.swift in Sources */,
+				C107K0000000000000000015 /* SidebarDisclosureButton.swift in Sources */,
+				C107K0000000000000000016 /* SidebarDisclosureChevron.swift in Sources */,
+				C107K0000000000000000017 /* SidebarUtilityIcon.swift in Sources */,
+				C107K0000000000000000018 /* SidebarSelectedSubrowIndicator.swift in Sources */,
+				C107K0000000000000000019 /* ActiveProfilePickerRow.swift in Sources */,
+				C107K0000000000000000020 /* ProjectFilterRow.swift in Sources */,
+				C107K0000000000000000021 /* CompactStatusRow.swift in Sources */,
+				C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */,
+				C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */,
+				C107K0000000000000000024 /* OfflineCacheBanner.swift in Sources */,
 				A10900000000000000000001 /* SessionNavigationState.swift in Sources */,
 				A04300000000000000000002 /* SessionListActionConfirmations.swift in Sources */,
 				A04300000000000000000003 /* SessionMutator.swift in Sources */,
@@ -1718,6 +2769,8 @@
 				05814DEA5DE4690F730B1E15 /* InsightsViewModel.swift in Sources */,
 				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,
+				C107I000000000000000006 /* ProviderRow.swift in Sources */,
+				C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */,
 				B5A100000000000000000001 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000008 /* ShareInputReader.swift in Sources */,
 			);
@@ -1736,6 +2789,11 @@
 				C03910000000000000000017 /* APIClientUpdatesCheckTests.swift in Sources */,
 				C03910000000000000000018 /* APIClientUpdatesApplyTests.swift in Sources */,
 				C03910000000000000000003 /* APIClientSessionDetailTests.swift in Sources */,
+				C107S0000000000000000002 /* APIClientSessionDetailRequestTests.swift in Sources */,
+				C107S0000000000000000003 /* APIClientSessionDetailActivitySceneTests.swift in Sources */,
+				C107S0000000000000000004 /* APIClientSessionDetailAttachmentTests.swift in Sources */,
+				C107S0000000000000000005 /* APIClientSessionDetailToolTimelineTests.swift in Sources */,
+				C107S0000000000000000006 /* APIClientSessionDetailPresentationTests.swift in Sources */,
 				C03910000000000000000004 /* APIClientSessionMutationTests.swift in Sources */,
 				C03910000000000000000005 /* APIClientWorkspaceFileTests.swift in Sources */,
 				C03910000000000000000006 /* APIClientChatEndpointTests.swift in Sources */,
@@ -1754,10 +2812,25 @@
 					C04600000000000000000003 /* ChatStreamCoordinatorTests.swift in Sources */,
 					C04800000000000000000003 /* ChatAttachmentCoordinatorTests.swift in Sources */,
 					C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */,
+					C107Y0000000000000000001 /* ChatViewModelSendTests+ActionsQueue.swift in Sources */,
+					C107Y0000000000000000002 /* ChatViewModelSendTests+Attachments.swift in Sources */,
+					C107Y0000000000000000003 /* ChatViewModelSendTests+ComposerConfig.swift in Sources */,
+					C107Y0000000000000000004 /* ChatViewModelSendTests+Listen.swift in Sources */,
+					C107Y0000000000000000005 /* ChatViewModelSendTests+SendApproval.swift in Sources */,
+					C107Y0000000000000000006 /* ChatViewModelSendTests+StaleRecovery.swift in Sources */,
+					C107Y0000000000000000007 /* ChatViewModelSendTests+StreamingEvents.swift in Sources */,
+					C107Y0000000000000000008 /* ChatViewModelSendTests+Support.swift in Sources */,
+					C107Y0000000000000000009 /* ChatViewModelSendTests+TranscriptCacheReconcile.swift in Sources */,
+					C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */,
 					C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */,
 					C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */,
 					C15210000000000000000007 /* OnboardingFlowTests.swift in Sources */,
 				C0391000000000000000000F /* SessionListMutationTests.swift in Sources */,
+				C107X0000000000000000001 /* SessionListLoadProfileTests.swift in Sources */,
+				C107X0000000000000000002 /* SessionListSessionProjectArchiveMutationTests.swift in Sources */,
+				C107X0000000000000000003 /* SessionListRemoteSearchTests.swift in Sources */,
+				C107X0000000000000000004 /* SessionListAutomatedVisibilityTests.swift in Sources */,
+				C107X0000000000000000005 /* SessionListMutationTestSupport.swift in Sources */,
 				A10900000000000000000002 /* SessionNavigationStateTests.swift in Sources */,
 				C03910000000000000000010 /* APIEndpointContractTests.swift in Sources */,
 				C03910000000000000000011 /* CronManagementTests.swift in Sources */,
@@ -1779,6 +2852,11 @@
 				C23400000000000000000005 /* StreamingLabReplayTests.swift in Sources */,
 				C14900000000000000000009 /* APIClientKanbanTests.swift in Sources */,
 				C1490000000000000000000B /* KanbanFeatureStateTests.swift in Sources */,
+				C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */,
+				C107Z0000000000000000002 /* KanbanFeatureStateDispatcherTests.swift in Sources */,
+				C107Z0000000000000000003 /* KanbanFeatureStateCardMutationTests.swift in Sources */,
+				C107Z0000000000000000004 /* KanbanFeatureStateBulkActionTests.swift in Sources */,
+				C107Z0000000000000000005 /* KanbanFeatureStateBoardManagementTests.swift in Sources */,
 				C15100000000000000000003 /* KanbanEventStreamClientTests.swift in Sources */,
 				C15100000000000000000005 /* KanbanLiveUpdateTests.swift in Sources */,
 				C15400000000000000000005 /* KanbanCardDetailStateTests.swift in Sources */,
@@ -1851,7 +2929,37 @@
 				A04500000000000000000005 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */,
 				A06100000000000000000005 /* ProviderQuota.swift in Sources */,
-				A06100000000000000000008 /* ProviderQuotaWidgetSupport.swift in Sources */,
+				A06100000000000000000008 /* ProviderQuotaWidgetSettings.swift in Sources */,
+				C107W0000000000000000011 /* ProviderQuotaPresentationModels.swift in Sources */,
+				C107W0000000000000000012 /* ProviderQuotaWidgetLayout.swift in Sources */,
+				C107W0000000000000000013 /* ProviderQuotaPace.swift in Sources */,
+				C107W0000000000000000014 /* ProviderQuotaPresentation.swift in Sources */,
+				C107M0000000000000000002 /* ProviderQuotaBarsView.swift in Sources */,
+				C107M0000000000000000004 /* ProviderQuotaGaugeView.swift in Sources */,
+				C107M0000000000000000006 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
+				C107M0000000000000000008 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
+				C107M0000000000000000010 /* ProviderQuotaForecastView.swift in Sources */,
+				C107M0000000000000000011 /* ProviderQuotaPaceWidgetView.swift in Sources */,
+				C107M0000000000000000012 /* ProviderQuotaWidgetView.swift in Sources */,
+				C107M0000000000000000013 /* ProviderQuotaWidgetSourceView.swift in Sources */,
+				C107M0000000000000000014 /* ProviderQuotaAccessoryView.swift in Sources */,
+				C107M0000000000000000015 /* ProviderQuotaWidgetPrompt.swift in Sources */,
+				C107M0000000000000000016 /* TalariaAggregateHeader.swift in Sources */,
+				C107M0000000000000000017 /* AggregateCompactTrailing.swift in Sources */,
+				C107M0000000000000000018 /* AggregateStatusLabel.swift in Sources */,
+				C107M0000000000000000019 /* SandalMark.swift in Sources */,
+				C107M0000000000000000020 /* AgentRunExpandedIslandBottomView.swift in Sources */,
+				C107M0000000000000000021 /* AgentRunLockScreenView.swift in Sources */,
+				C107M0000000000000000022 /* AgentRunIslandBadge.swift in Sources */,
+				C107M0000000000000000023 /* AgentRunIslandStatusView.swift in Sources */,
+				C107M0000000000000000024 /* AgentRunIslandCompactMark.swift in Sources */,
+				C107M0000000000000000025 /* AgentRunStatusDot.swift in Sources */,
+				C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */,
+				C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */,
+				C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */,
+				C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
+				C107F000000000000000004 /* ProviderQuotaWidgetRefresh.swift in Sources */,
+				A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */,
 				A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */,
 			);

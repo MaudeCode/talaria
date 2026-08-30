@@ -1,17 +1,7 @@
 import XCTest
-import AVFoundation
-import ImageIO
-import SwiftData
-import UIKit
-import UniformTypeIdentifiers
 @testable import Talaria
 
-final class MemoryViewModelTests: XCTestCase {
-    override func tearDown() {
-        MockURLProtocol.requestHandler = nil
-        super.tearDown()
-    }
-
+final class MemoryViewModelTests: APIClientTestCase {
     @MainActor
     func testSaveWritesSelectedSectionAndReloadsMemory() async throws {
         var requestPaths: [String] = []
@@ -183,17 +173,5 @@ final class MemoryViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.showsProjectContext)
         XCTAssertFalse(viewModel.isProjectContextShadowed)
         XCTAssertEqual(viewModel.projectContextDetail, "/Users/test/workspace")
-    }
-
-    private func makeClient(
-        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) -> APIClient {
-        MockURLProtocol.requestHandler = handler
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-
-        return APIClient(baseURL: URL(string: "https://example.test")!, session: session)
     }
 }

@@ -1,12 +1,7 @@
 import XCTest
-import AVFoundation
-import ImageIO
-import SwiftData
-import UIKit
-import UniformTypeIdentifiers
 @testable import Talaria
 
-final class ContractReadinessTests: XCTestCase {
+final class ContractReadinessTests: APIClientTestCase {
     func testEndpointContractMatrixMatchesPinnedUpstreamPaths() throws {
         let contracts: [EndpointContract] = [
             .init(name: "health", method: "GET", endpoint: .health, path: "/health"),
@@ -336,18 +331,6 @@ final class ContractReadinessTests: XCTestCase {
         let response = try await client.uploadFile(sessionID: "abc123", data: Data("contract".utf8), filename: "contract.txt")
 
         XCTAssertEqual(response.filename, "contract.txt")
-    }
-
-    private func makeClient(
-        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) -> APIClient {
-        MockURLProtocol.requestHandler = handler
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-
-        return APIClient(baseURL: URL(string: "https://example.test")!, session: session)
     }
 
     private func queryDictionary(from components: URLComponents) -> [String: String] {

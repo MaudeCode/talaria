@@ -137,7 +137,7 @@ final class KanbanCardDetailState {
                 pendingAttempt = nil
                 activeMutationID = nil
                 await reconcileMissingEntity(loadID: nil)
-            } else if isDefinitiveWriteFailure(error) {
+            } else if APIError.isDefinitiveWriteFailure(error) {
                 commentSubmission = .failed
                 pendingAttempt = nil
                 activeMutationID = nil
@@ -252,33 +252,13 @@ final class KanbanCardDetailState {
         }
     }
 
-    private func isDefinitiveWriteFailure(_ error: Error) -> Bool {
-        guard let apiError = error as? APIError else { return false }
-        switch apiError {
-        case .unauthorized, .invalidServerURL:
-            return true
-        case let .http(statusCode, _):
-            return (400..<500).contains(statusCode) && statusCode != 408
-        case .network, .decoding:
-            return false
-        }
-    }
-
     private func isNotFound(_ error: Error) -> Bool {
         guard case let APIError.http(statusCode, _) = error else { return false }
         return statusCode == 404
     }
 
     private func isCancellation(_ error: Error) -> Bool {
-        if Task.isCancelled || error is CancellationError { return true }
-
-        let underlying: Error
-        if case let APIError.network(wrapped) = error {
-            underlying = wrapped
-        } else {
-            underlying = error
-        }
-        return (underlying as? URLError)?.code == .cancelled
+        Task.isCancelled || APIError.isCancellation(error)
     }
 
     private func forwardAuthentication(_ error: Error) {

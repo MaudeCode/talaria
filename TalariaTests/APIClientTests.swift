@@ -1,9 +1,4 @@
 import XCTest
-import AVFoundation
-import ImageIO
-import SwiftData
-import UIKit
-import UniformTypeIdentifiers
 @testable import Talaria
 
 class APIClientTestCase: XCTestCase {
@@ -165,10 +160,14 @@ final class MockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     }
 }
 
-func apiTestJSONResponse(_ json: String, for request: URLRequest) -> (HTTPURLResponse, Data) {
+func apiTestJSONResponse(
+    _ json: String,
+    statusCode: Int = 200,
+    for request: URLRequest
+) -> (HTTPURLResponse, Data) {
     let response = HTTPURLResponse(
         url: request.url!,
-        statusCode: 200,
+        statusCode: statusCode,
         httpVersion: nil,
         headerFields: ["Content-Type": "application/json"]
     )!

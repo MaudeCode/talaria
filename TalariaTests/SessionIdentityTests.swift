@@ -1,9 +1,4 @@
 import XCTest
-import AVFoundation
-import ImageIO
-import SwiftData
-import UIKit
-import UniformTypeIdentifiers
 @testable import Talaria
 
 final class SessionIdentityTests: XCTestCase {
