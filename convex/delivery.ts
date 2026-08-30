@@ -42,6 +42,7 @@ export const healthSummary = internalQuery({
 import { apnsPool } from "./workpool";
 
 const MAX_STATE_ROWS = 500;
+const MAX_PUBLISHER_EXCLUSIONS = 1_000;
 const PUSH_TO_START_LEASE_MS = 15 * 60_000;
 
 function semanticAggregateFingerprint(
@@ -90,13 +91,47 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
 }
 
 async function currentStates(ctx: MutationCtx, userId: string, now: number): Promise<SessionState[]> {
-  const states = await ctx.db
-    .query("sessionStates")
-    .withIndex("by_user_id_and_expires_at", (query) =>
-      query.eq("userId", userId).gt("expiresAt", now),
+  const [states, publishers] = await Promise.all([
+    ctx.db
+      .query("sessionStates")
+      .withIndex("by_user_id_and_expires_at", (query) =>
+        query.eq("userId", userId).gt("expiresAt", now),
+      )
+      .take(MAX_STATE_ROWS),
+    ctx.db
+      .query("publishers")
+      .withIndex("by_user_id_and_publisher_id", (query) => query.eq("userId", userId))
+      .take(MAX_STATE_ROWS),
+  ]);
+  const disabledPublisherIds = new Set(
+    publishers.filter((publisher) => !publisher.enabled).map((publisher) => publisher.publisherId),
+  );
+  return states
+    .map(asSessionState)
+    .filter((state) => !state.deleted && !disabledPublisherIds.has(state.publisherId));
+}
+
+async function excludedPublisherIds(
+  ctx: MutationCtx,
+  userId: string,
+  deviceId: string,
+): Promise<Set<string>> {
+  const exclusions = await ctx.db
+    .query("devicePublisherExclusions")
+    .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
+      query.eq("userId", userId).eq("deviceId", deviceId),
     )
     .take(MAX_STATE_ROWS);
-  return states.map(asSessionState).filter((state) => !state.deleted);
+  return new Set(exclusions.map((item) => item.publisherId));
+}
+
+function statesForDevice(
+  states: SessionState[],
+  exclusionsByDevice: Map<string, Set<string>>,
+  deviceId: string,
+): SessionState[] {
+  const excluded = exclusionsByDevice.get(deviceId);
+  return excluded ? states.filter((state) => !excluded.has(state.publisherId)) : states;
 }
 
 async function hasPendingActivityJob(
@@ -236,8 +271,7 @@ export const recompute = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const states = await currentStates(ctx, args.userId, now);
-    const aggregate = makeAggregate(states, now);
-    const [activities, devices] = await Promise.all([
+    const [activities, devices, exclusions] = await Promise.all([
       ctx.db
         .query("liveActivities")
         .withIndex("by_user_id_and_mode_and_ended_at", (query) =>
@@ -249,6 +283,12 @@ export const recompute = internalMutation({
         .withIndex("by_user_id_and_updated_at", (query) => query.eq("userId", args.userId))
         .order("desc")
         .take(100),
+      ctx.db
+        .query("devicePublisherExclusions")
+        .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
+          query.eq("userId", args.userId),
+        )
+        .take(MAX_PUBLISHER_EXCLUSIONS),
     ]);
     const perSessionActivities = await ctx.db
       .query("liveActivities")
@@ -258,6 +298,18 @@ export const recompute = internalMutation({
       .take(100);
     const allActivities = [...activities, ...perSessionActivities];
     const devicesById = new Map(devices.map((device) => [device.deviceId, device]));
+    const exclusionsByDevice = new Map<string, Set<string>>();
+    if (exclusions.length === MAX_PUBLISHER_EXCLUSIONS) {
+      // ponytail: fail closed above 1,000 exclusions; paginate per-device recompute if real accounts hit this.
+      const everyPublisher = new Set(states.map((state) => state.publisherId));
+      for (const device of devices) exclusionsByDevice.set(device.deviceId, everyPublisher);
+    } else {
+      for (const exclusion of exclusions) {
+        const deviceExclusions = exclusionsByDevice.get(exclusion.deviceId) ?? new Set<string>();
+        deviceExclusions.add(exclusion.publisherId);
+        exclusionsByDevice.set(exclusion.deviceId, deviceExclusions);
+      }
+    }
     const transitions = args.transitions ?? (
       args.publisherId && args.sessionId && args.previousPhase
         ? [{
@@ -278,9 +330,11 @@ export const recompute = internalMutation({
     const changedState = changed[0]?.state ?? null;
     const alertedDevices = new Set<string>();
 
-    if (aggregate !== null) {
-      const activeAggregateDevices = new Set(activities.map((activity) => activity.deviceId));
-      for (const device of devices) {
+    const activeAggregateDevices = new Set(activities.map((activity) => activity.deviceId));
+    for (const device of devices) {
+      const deviceStates = statesForDevice(states, exclusionsByDevice, device.deviceId);
+      const aggregate = makeAggregate(deviceStates, now);
+      if (aggregate !== null) {
         if (
           activeAggregateDevices.has(device.deviceId) ||
           device.revokedAt !== undefined ||
@@ -294,6 +348,7 @@ export const recompute = internalMutation({
           continue;
         }
         const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
+          if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
           const value = alertForTransition(
             { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
             state,
@@ -335,16 +390,19 @@ export const recompute = internalMutation({
       ) {
         continue;
       }
+      const deviceStates = statesForDevice(states, exclusionsByDevice, activity.deviceId);
       const activityStates = activity.mode === "all_running"
-        ? states
-        : states.filter(
+        ? deviceStates
+        : deviceStates.filter(
             (state) =>
               state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
           );
-      const nextAggregate = activity.mode === "all_running"
-        ? aggregate
-        : makeAggregate(activityStates, now);
-      const alert = changed.flatMap(({ state, previousPhase }) => {
+      const nextAggregate = makeAggregate(activityStates, now);
+      const activityChanged = changed.filter(
+        ({ state }) => !exclusionsByDevice.get(activity.deviceId)?.has(state.publisherId),
+      );
+      const activityChangedState = activityChanged[0]?.state ?? null;
+      const alert = activityChanged.flatMap(({ state, previousPhase }) => {
         if (
           activity.mode !== "all_running" &&
           (activity.publisherId !== state.publisherId || activity.sessionId !== state.sessionId)
@@ -398,8 +456,8 @@ export const recompute = internalMutation({
           deviceId: activity.deviceId,
           activityId: activity.activityId,
           kind: "live_activity_end",
-          sourcePublisherId: changedState?.publisherId,
-          sourceSessionId: changedState?.sessionId,
+          sourcePublisherId: activityChangedState?.publisherId,
+          sourceSessionId: activityChangedState?.sessionId,
           request,
           aggregate: terminalAggregate ?? activity.lastAggregate,
           stateFingerprint: `end:${aggregateFingerprint(terminalAggregate)}`,
@@ -443,8 +501,8 @@ export const recompute = internalMutation({
         deviceId: activity.deviceId,
         activityId: activity.activityId,
         kind: "live_activity_update",
-        sourcePublisherId: changedState?.publisherId,
-        sourceSessionId: changedState?.sessionId,
+        sourcePublisherId: activityChangedState?.publisherId,
+        sourceSessionId: activityChangedState?.sessionId,
         request,
         aggregate: nextAggregate,
         stateFingerprint: aggregateFingerprint(nextAggregate),
@@ -467,6 +525,7 @@ export const recompute = internalMutation({
             continue;
           }
           const changedAlert = changed.flatMap(({ state, previousPhase }) => {
+            if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
             const value = alertForTransition(
               { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
               state,
@@ -549,9 +608,11 @@ export const claimJob = internalMutation({
         return { status: "stale" as const };
       }
       const states = await currentStates(ctx, job.userId, args.now);
+      const excluded = await excludedPublisherIds(ctx, job.userId, job.deviceId);
+      const deviceStates = states.filter((state) => !excluded.has(state.publisherId));
       const activityStates = activity.mode === "all_running"
-        ? states
-        : states.filter(
+        ? deviceStates
+        : deviceStates.filter(
             (state) =>
               state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
           );
@@ -592,6 +653,7 @@ export const claimJob = internalMutation({
         }
         return { status: "stale" as const };
       }
+      const excluded = await excludedPublisherIds(ctx, job.userId, job.deviceId);
       if (job.kind === "live_activity_start") {
         const [states, activeActivity] = await Promise.all([
           currentStates(ctx, job.userId, args.now),
@@ -606,7 +668,8 @@ export const claimJob = internalMutation({
             )
             .first(),
         ]);
-        const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(states, args.now))}`;
+        const deviceStates = states.filter((state) => !excluded.has(state.publisherId));
+        const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(deviceStates, args.now))}`;
         if (activeActivity || fingerprint !== job.stateFingerprint) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           if (device.pushToStartToken === job.expectedToken) {
@@ -617,16 +680,29 @@ export const claimJob = internalMutation({
         }
       }
       if (job.sourcePublisherId && job.sourceSessionId) {
-        const state = await ctx.db
-          .query("sessionStates")
-          .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
-            query
-              .eq("userId", job.userId)
-              .eq("publisherId", job.sourcePublisherId!)
-              .eq("sessionId", job.sourceSessionId!),
-          )
-          .unique();
+        if (excluded.has(job.sourcePublisherId)) {
+          await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
+          return { status: "stale" as const };
+        }
+        const [publisher, state] = await Promise.all([
+          ctx.db
+            .query("publishers")
+            .withIndex("by_user_id_and_publisher_id", (query) =>
+              query.eq("userId", job.userId).eq("publisherId", job.sourcePublisherId!),
+            )
+            .unique(),
+          ctx.db
+            .query("sessionStates")
+            .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+              query
+                .eq("userId", job.userId)
+                .eq("publisherId", job.sourcePublisherId!)
+                .eq("sessionId", job.sourceSessionId!),
+            )
+            .unique(),
+        ]);
         if (
+          !publisher?.enabled ||
           !state ||
           state.deleted ||
           !job.stateFingerprint.includes(`:${state.eventId}:`)

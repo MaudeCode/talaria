@@ -425,6 +425,167 @@ describe("Convex relay state", () => {
     expect(refreshed?.expiresAt).toBe(now + 60_000 + 3 * 60_000);
   });
 
+  it("supports device-only subscriptions and account-wide publisher revocation", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", {
+        userId: "user-1",
+        appleSubjectHash: "apple-user-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("userSessions", {
+        userId: "user-1",
+        sessionId: "session-1",
+        tokenHash: await sha256("session-token"),
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
+      for (const deviceId of ["device-1", "device-2"]) {
+        await ctx.db.insert("devices", {
+          userId: "user-1",
+          sessionId: "session-1",
+          sessionExpiresAt: now + 60_000,
+          deviceId,
+          label: deviceId,
+          bundleId: "dev.kil.talaria",
+          apsEnvironment: "sandbox",
+          preferences: defaultNotificationPreferences,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      for (const publisherId of ["https://hermes.example", "https://other.example"]) {
+        await ctx.db.insert("publishers", {
+          userId: "user-1",
+          publisherId,
+          label: publisherId,
+          enabled: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      await ctx.db.insert("publisherKeys", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        keyId: "key-1",
+        publicKey: "public-key",
+        activatedAt: now,
+        createdAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Home",
+        sessionId: "session-1",
+        eventId: "event-1",
+        revision: 1,
+        title: "Working",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/session-1",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+    });
+    const headers = {
+      authorization: "Bearer session-token",
+      "content-type": "application/json",
+    };
+    const subscriptions = (deviceId: string) =>
+      backend.fetch(`/v1/devices/${deviceId}/publisher-subscriptions`, { headers });
+    const setSubscription = (deviceId: string, subscribed: boolean) =>
+      backend.fetch(`/v1/devices/${deviceId}/publisher-subscriptions`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ publisherId: "https://hermes.example", subscribed }),
+      });
+    const snapshot = (deviceId: string) =>
+      backend.fetch("/v1/activity-snapshot?mode=all_running", {
+        headers: { ...headers, "x-talaria-device-id": deviceId },
+      });
+
+    await expect(setSubscription("device-1", false).then((response) => response.status)).resolves.toBe(200);
+    await expect(subscriptions("device-1").then((response) => response.json())).resolves.toMatchObject({
+      publishers: expect.arrayContaining([
+        expect.objectContaining({ publisherId: "https://hermes.example", subscribed: false }),
+      ]),
+    });
+    await expect(subscriptions("device-2").then((response) => response.json())).resolves.toMatchObject({
+      publishers: expect.arrayContaining([
+        expect.objectContaining({ publisherId: "https://hermes.example", subscribed: true }),
+      ]),
+    });
+    await expect(snapshot("device-1").then((response) => response.json())).resolves.toEqual({ aggregate: null });
+    await expect(snapshot("device-2").then((response) => response.json())).resolves.toMatchObject({
+      aggregate: { activeCount: 1 },
+    });
+    await expect(backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1",
+      deviceId: "device-1",
+      activityId: "activity-1",
+      mode: "per_session",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+      attributesType: "AgentRunActivityAttributes",
+      schemaVersion: 1,
+      activityPushToken: "activity-token",
+      seededLocally: false,
+      now,
+    })).resolves.toEqual({ ok: false, reason: "publisher_unsubscribed" });
+
+    const revoke = await backend.fetch(
+      `/v1/publisher-enrollment?publisherId=${encodeURIComponent("https://hermes.example")}`,
+      { method: "DELETE", headers },
+    );
+    expect(revoke.status).toBe(200);
+    const revokedState = await backend.run(async (ctx) => ({
+      publisher: await ctx.db.query("publishers").withIndex(
+        "by_user_id_and_publisher_id",
+        (query) => query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),
+      ).unique(),
+      otherPublisher: await ctx.db.query("publishers").withIndex(
+        "by_user_id_and_publisher_id",
+        (query) => query.eq("userId", "user-1").eq("publisherId", "https://other.example"),
+      ).unique(),
+      key: await ctx.db.query("publisherKeys").withIndex(
+        "by_key_id",
+        (query) => query.eq("keyId", "key-1"),
+      ).unique(),
+      state: await ctx.db.query("sessionStates").withIndex(
+        "by_user_id_and_publisher_id_and_session_id",
+        (query) => query
+          .eq("userId", "user-1")
+          .eq("publisherId", "https://hermes.example")
+          .eq("sessionId", "session-1"),
+      ).unique(),
+    }));
+    expect(revokedState.publisher?.enabled).toBe(false);
+    expect(revokedState.otherPublisher?.enabled).toBe(true);
+    expect(revokedState.key?.revokedAt).toEqual(expect.any(Number));
+    expect(revokedState.state?.deleted).toBe(true);
+    await expect(backend.mutation(internal.publishers.acceptState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      keyId: "key-1",
+      nonce: "after-revoke",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 1,
+      sessionId: "session-1",
+      eventId: "event-2",
+      revision: 2,
+      state: {
+        sessionId: "session-1",
+        title: "Still working",
+        phase: "running",
+        updatedAt: now + 1,
+        deepLink: "/sessions/session-1",
+      },
+    })).resolves.toEqual({ status: "unauthorized" });
+  });
+
   it("does not renew terminal retention on equal-revision heartbeats", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;

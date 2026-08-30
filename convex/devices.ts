@@ -121,6 +121,18 @@ export const registerActivity = internalMutation({
     if (args.mode === "per_session" && (!args.publisherId || !args.sessionId)) {
       return { ok: false, reason: "session_required" };
     }
+    if (args.mode === "per_session") {
+      const exclusion = await ctx.db
+        .query("devicePublisherExclusions")
+        .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
+          query
+            .eq("userId", args.userId)
+            .eq("deviceId", args.deviceId)
+            .eq("publisherId", args.publisherId!),
+        )
+        .unique();
+      if (exclusion) return { ok: false, reason: "publisher_unsubscribed" };
+    }
 
     const existing = await ctx.db
       .query("liveActivities")
@@ -251,6 +263,13 @@ export const revokeDevice = internalMutation({
         await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
       }
     }
+    const exclusions = await ctx.db
+      .query("devicePublisherExclusions")
+      .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
+        query.eq("userId", args.userId).eq("deviceId", args.deviceId),
+      )
+      .take(500);
+    for (const exclusion of exclusions) await ctx.db.delete(exclusion._id);
     return { ok: true };
   },
 });

@@ -121,6 +121,23 @@ Set `seededLocally` to `true` only when the foreground app created a short-lived
 
 End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}` and revoke a device with `DELETE /v1/devices/{deviceId}`. A token cannot be claimed by another relay user.
 
+## Publisher subscriptions and revocation
+
+Existing publishers are subscribed on every device by default. List the current device's publisher state with authenticated `GET /v1/devices/{deviceId}/publisher-subscriptions`.
+
+Subscribe or unsubscribe only that device with authenticated `PUT /v1/devices/{deviceId}/publisher-subscriptions`:
+
+```json
+{
+  "publisherId": "https://hermes.example.com",
+  "subscribed": false
+}
+```
+
+An unsubscribed publisher is excluded from that device's aggregate snapshots, ActivityKit delivery, and notifications. Other devices remain subscribed.
+
+Revoke a publisher for the whole relay account with authenticated `DELETE /v1/publisher-enrollment?publisherId=https%3A%2F%2Fhermes.example.com`. Revocation disables the publisher, revokes its keys, retires its current states, and recomputes delivery for every device. Pairing it again creates a new publisher key.
+
 ## Foreground snapshot
 
 `GET /v1/activity-snapshot?mode=all_running` also requires `X-Talaria-Device-Id`. Talaria uses it only to seed or end an activity while foregrounded; APNs owns later updates while suspended.

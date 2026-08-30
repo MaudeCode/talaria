@@ -23,6 +23,7 @@ import type * as lib_model from "../lib/model.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as pairing from "../pairing.js";
 import type * as publishers from "../publishers.js";
+import type * as subscriptions from "../subscriptions.js";
 import type * as workpool from "../workpool.js";
 
 import type {
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators": typeof lib_validators;
   pairing: typeof pairing;
   publishers: typeof publishers;
+  subscriptions: typeof subscriptions;
   workpool: typeof workpool;
 }>;
 
