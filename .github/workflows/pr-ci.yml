@@ -211,6 +211,8 @@ jobs:
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
+        env:
+          RUNNER_TOOL_CACHE: ${{ runner.temp }}/tool-cache
         with:
           ruby-version: "3.3"
 
