@@ -209,6 +209,11 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
       - name: Run actionlint
         env:
           ACTIONLINT_VERSION: 1.7.12
