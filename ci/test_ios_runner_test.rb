@@ -9,4 +9,12 @@ class TestIOSRunnerTest < Minitest::Test
 
     assert_includes(script, "-collect-test-diagnostics never")
   end
+
+  def test_pr_ci_uses_a_unique_simulator_destination
+    workflow = File.read(File.expand_path("../.github/workflows/pr-ci.yml", __dir__))
+
+    assert_includes(workflow, 'selected["udid"]')
+    assert_equal(2, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
+    refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
+  end
 end
