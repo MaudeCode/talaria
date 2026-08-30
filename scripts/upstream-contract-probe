@@ -19,13 +19,15 @@ class ContractFailure(RuntimeError):
 
 
 class Probe:
-    def __init__(self, base_url: str, password: str) -> None:
+    def __init__(self, base_url: str, password: str, output: Path) -> None:
         self.base_url = base_url.rstrip("/")
         self.cookies = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies)
         )
         self.password = password
+        self.output = output
+        self.fixtures: dict[str, Any] = {}
 
     def request(
         self,
@@ -37,6 +39,7 @@ class Probe:
         expected_status: int = 200,
         headers: dict[str, str] | None = None,
         expect_json: bool = True,
+        fixture: str | None = None,
     ) -> Any:
         data = None
         request_headers = dict(headers or {})
@@ -67,12 +70,15 @@ class Probe:
         if not expect_json:
             return payload
         try:
-            return json.loads(payload)
+            decoded = json.loads(payload)
         except json.JSONDecodeError as error:
             raise ContractFailure(
                 f"{boundary}: {method} {path} returned invalid JSON: "
                 f"{payload.decode(errors='replace')}"
             ) from error
+        if fixture:
+            self.fixtures[fixture] = decoded
+        return decoded
 
     @staticmethod
     def require_keys(boundary: str, payload: Any, *keys: str) -> dict[str, Any]:
@@ -120,7 +126,7 @@ class Probe:
     def run(self, workspace: Path) -> None:
         health = self.require_keys(
             "health response",
-            self.request("health response", "/health"),
+            self.request("health response", "/health", fixture="health"),
             "status",
             "sessions",
             "uptime_seconds",
@@ -178,7 +184,9 @@ class Probe:
 
         authenticated = self.require_keys(
             "authenticated status",
-            self.request("authenticated status", "/api/auth/status"),
+            self.request(
+                "authenticated status", "/api/auth/status", fixture="auth_status"
+            ),
             "auth_enabled",
             "logged_in",
         )
@@ -186,21 +194,23 @@ class Probe:
             raise ContractFailure("authenticated status: login cookie was not accepted")
 
         read_only_checks = (
-            ("sessions list", "/api/sessions", ("sessions", "cli_count", "server_time")),
-            ("projects list", "/api/projects", ("projects",)),
-            ("workspaces list", "/api/workspaces", ("workspaces", "last")),
-            ("workspace suggestions", "/api/workspaces/suggest?prefix=%2F", ("suggestions", "prefix")),
-            ("models list", "/api/models", ("default_model", "active_provider")),
-            ("providers list", "/api/providers", ("providers", "active_provider")),
-            ("settings response", "/api/settings", ("webui_version", "agent_version", "bot_name")),
-            ("reasoning response", "/api/reasoning", ("show_reasoning",)),
-            ("profiles list", "/api/profiles", ("profiles", "active")),
-            ("personalities list", "/api/personalities", ("personalities",)),
-            ("commands list", "/api/commands", ("commands",)),
-            ("memory response", "/api/memory", ("memory", "memory_path")),
+            ("sessions list", "/api/sessions", ("sessions", "cli_count", "server_time"), "sessions"),
+            ("projects list", "/api/projects", ("projects",), "projects"),
+            ("workspaces list", "/api/workspaces", ("workspaces", "last"), "workspaces"),
+            ("workspace suggestions", "/api/workspaces/suggest?prefix=%2F", ("suggestions", "prefix"), "workspace_suggestions"),
+            ("models list", "/api/models", ("default_model", "active_provider"), "models"),
+            ("providers list", "/api/providers", ("providers", "active_provider"), "providers"),
+            ("settings response", "/api/settings", ("webui_version", "agent_version", "bot_name"), "settings"),
+            ("reasoning response", "/api/reasoning", ("show_reasoning",), "reasoning"),
+            ("profiles list", "/api/profiles", ("profiles", "active"), "profiles"),
+            ("personalities list", "/api/personalities", ("personalities",), "personalities"),
+            ("commands list", "/api/commands", ("commands",), "commands"),
+            ("memory response", "/api/memory", ("memory", "memory_path"), "memory"),
         )
-        for boundary, path, keys in read_only_checks:
-            self.require_keys(boundary, self.request(boundary, path), *keys)
+        for boundary, path, keys, fixture in read_only_checks:
+            self.require_keys(
+                boundary, self.request(boundary, path, fixture=fixture), *keys
+            )
 
         created = self.require_keys(
             "session creation",
@@ -209,6 +219,7 @@ class Probe:
                 "/api/session/new",
                 method="POST",
                 body={"workspace": str(workspace)},
+                fixture="session_new",
             ),
             "session",
         )
@@ -220,20 +231,30 @@ class Probe:
         query = urllib.parse.urlencode({"session_id": session_id, "messages": 1})
         self.require_keys(
             "session detail",
-            self.request("session detail", f"/api/session?{query}"),
+            self.request(
+                "session detail", f"/api/session?{query}", fixture="session_detail"
+            ),
             "session",
         )
         status_query = urllib.parse.urlencode({"session_id": session_id})
         self.require_keys(
             "session status",
-            self.request("session status", f"/api/session/status?{status_query}"),
+            self.request(
+                "session status",
+                f"/api/session/status?{status_query}",
+                fixture="session_status",
+            ),
             "session_id",
             "agent_running",
         )
         list_query = urllib.parse.urlencode({"session_id": session_id, "path": ""})
         self.require_keys(
             "workspace listing",
-            self.request("workspace listing", f"/api/list?{list_query}"),
+            self.request(
+                "workspace listing",
+                f"/api/list?{list_query}",
+                fixture="directory_list",
+            ),
             "entries",
             "path",
         )
@@ -242,7 +263,9 @@ class Probe:
         )
         self.require_keys(
             "file response",
-            self.request("file response", f"/api/file?{file_query}"),
+            self.request(
+                "file response", f"/api/file?{file_query}", fixture="file"
+            ),
             "content",
             "path",
         )
@@ -262,7 +285,13 @@ class Probe:
             ("session truncate", "/api/session/truncate", {"session_id": session_id, "keep_count": 0}),
         )
         for boundary, path, body in mutation_checks:
-            result = self.request(boundary, path, method="POST", body=body)
+            result = self.request(
+                boundary,
+                path,
+                method="POST",
+                body=body,
+                fixture="session_mutation" if boundary == "session pin" else None,
+            )
             if boundary == "session rename":
                 renamed = self.require_keys(boundary, result, "session")["session"]
                 renamed = self.require_keys(boundary, renamed, "session_id", "title")
@@ -284,6 +313,7 @@ class Probe:
                     "keep_count": 0,
                     "title": "talaria-contract-branch",
                 },
+                fixture="session_branch",
             ),
             "session_id",
             "parent_session_id",
@@ -300,7 +330,9 @@ class Probe:
         stream_status = self.require_keys(
             "stream status",
             self.request(
-                "stream status", f"/api/chat/stream/status?{stream_status_query}"
+                "stream status",
+                f"/api/chat/stream/status?{stream_status_query}",
+                fixture="stream_status",
             ),
             "active",
             "stream_id",
@@ -405,6 +437,12 @@ class Probe:
             raise ContractFailure(
                 "logged-out status: session cookie remained valid"
             )
+        self.output.parent.mkdir(parents=True, exist_ok=True)
+        self.output.write_text(
+            json.dumps(self.fixtures, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"PASS wrote {len(self.fixtures)} live decoder fixtures to {self.output}")
 
 
 def main() -> int:
@@ -412,9 +450,12 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        Probe(args.base_url, args.password).run(args.workspace.resolve())
+        Probe(args.base_url, args.password, args.output.resolve()).run(
+            args.workspace.resolve()
+        )
     except ContractFailure as error:
         print(f"FAIL {error}", file=sys.stderr)
         return 1

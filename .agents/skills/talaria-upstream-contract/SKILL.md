@@ -24,7 +24,8 @@ the repository workflow boundaries. Keep existing upstream checkouts read-only.
 
 Run `scripts/validate-upstream-contract` for the pinned fork commit or pass
 `--ref <tag-or-commit>` for a candidate. The command preserves source identity,
-server, probe, and Swift-test logs under `.codex-tmp/upstream-contract/`.
+server, live JSON fixtures, probe, and Swift-test logs under
+`.codex-tmp/upstream-contract/`.
 
 Treat a named endpoint, fixture, decoder, or stream failure as the handoff's
 boundary. Inspect the matching fork source and Talaria test before changing a

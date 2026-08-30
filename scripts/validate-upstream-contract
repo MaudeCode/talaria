@@ -50,6 +50,7 @@ workspace_dir="$run_dir/workspace"
 hermes_home="$run_dir/hermes-home"
 state_dir="$run_dir/state"
 venv_dir="$run_dir/venv"
+responses_file="$run_dir/live-responses.json"
 mkdir -p "$workspace_dir" "$hermes_home" "$state_dir"
 printf 'talaria contract fixture\n' > "$workspace_dir/contract-fixture.txt"
 
@@ -147,13 +148,15 @@ echo "Running live HTTP/SSE probe at $candidate_sha"
   --base-url "$base_url" \
   --password "$password" \
   --workspace "$workspace_dir" \
+  --output "$responses_file" \
   2>&1 | tee "$run_dir/probe.log"
 
 if (( run_swift_tests )); then
   echo "Running Talaria request and SSE contract tests"
+  encoded_responses="base64:$(base64 < "$responses_file" | tr -d '\n')"
   (
     cd "$repo_root"
-    scripts/test-ios \
+    TALARIA_UPSTREAM_CONTRACT_RESPONSES="$encoded_responses" scripts/test-ios \
       TalariaTests/APIEndpointContractTests \
       TalariaTests/APIClientAuthAndErrorTests \
       TalariaTests/APIClientSessionListTests \

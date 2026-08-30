@@ -37,6 +37,7 @@ or stream boundary that failed.
 | Synthetic workspace list/file/raw-file reads | `scripts/upstream-contract-probe` |
 | Disposable create, detail, status, rename, pin, archive, move, truncate, branch, delete, and cleanup | `scripts/upstream-contract-probe` |
 | SSE content type and controlled `initial`/`approval` events | `scripts/upstream-contract-probe` |
+| Live response values decoded by Talaria's real `Codable` models | `TalariaTests/APIClientSessionListTests.swift` through `scripts/validate-upstream-contract` |
 | Every app endpoint's method, path, and query shape | `TalariaTests/APIEndpointContractTests.swift` |
 | Auth/error decoding and native POST headers | `TalariaTests/APIClientAuthAndErrorTests.swift` |
 | Session status and mutation response decoding | `TalariaTests/APIClientSessionListTests.swift`, `TalariaTests/APIClientSessionMutationTests.swift` |
