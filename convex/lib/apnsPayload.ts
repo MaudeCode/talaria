@@ -31,17 +31,18 @@ export function makeLiveActivityUpdate(input: {
   nowEpochSeconds: number;
   alert?: ActivityAlert | null;
 }): ApnsRequest {
+  const requiresImmediateDelivery = input.aggregate.rows.some(
+    (row) => row.phase === "waiting_for_approval"
+      || row.phase === "waiting_for_input"
+      || row.phase === "failed",
+  );
   const aggregate = fitActivityAggregate(input.aggregate);
   return {
     token: input.token,
     topic: `${input.bundleId}.push-type.liveactivity`,
     environment: input.environment,
     pushType: "liveactivity",
-    priority: input.alert || aggregate.rows.some(
-      (row) => row.phase === "waiting_for_approval"
-        || row.phase === "waiting_for_input"
-        || row.phase === "failed",
-    ) ? "10" : "5",
+    priority: input.alert || requiresImmediateDelivery ? "10" : "5",
     payload: {
       aps: {
         timestamp: input.nowEpochSeconds,

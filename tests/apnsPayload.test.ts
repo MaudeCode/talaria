@@ -135,6 +135,27 @@ describe("ActivityKit payloads", () => {
     },
   );
 
+  it("preserves attention priority when fitting removes an oversized row", () => {
+    const request = makeLiveActivityUpdate({
+      token: "activity-token",
+      bundleId: "dev.kil.talaria",
+      environment: "sandbox",
+      aggregate: {
+        ...aggregate,
+        rows: [{
+          ...aggregate.rows[0]!,
+          title: "x".repeat(4_000),
+          phase: "waiting_for_input",
+          status: "Input",
+        }],
+      },
+      nowEpochSeconds: 100,
+    });
+
+    expect(request.priority).toBe("10");
+    expect(request.payload).toMatchObject({ aps: { "content-state": { rows: [] } } });
+  });
+
   it("ends with final content and a five-minute dismissal", () => {
     const request = makeLiveActivityEnd({
       token: "activity-token",
