@@ -121,6 +121,7 @@ xcodebuild test -quiet \
     -scheme Talaria \
     -destination "$destination" \
     -derivedDataPath "$runtime_dir/derived-data" \
+    -disableAutomaticPackageResolution \
     -parallel-testing-enabled NO \
     -enableCodeCoverage NO \
     -collect-test-diagnostics never \

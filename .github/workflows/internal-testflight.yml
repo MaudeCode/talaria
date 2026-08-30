@@ -95,7 +95,8 @@ jobs:
               -showBuildSettings \
               -project "${PROJECT_PATH}" \
               -scheme "${SCHEME}" \
-              -configuration Release 2>/dev/null |
+              -configuration Release \
+              -disableAutomaticPackageResolution 2>/dev/null |
               awk -F'= ' '/MARKETING_VERSION/ { print $2; exit }'
           )"
 
@@ -151,7 +152,8 @@ jobs:
           xcodebuild \
             -resolvePackageDependencies \
             -project "${PROJECT_PATH}" \
-            -scheme "${SCHEME}"
+            -scheme "${SCHEME}" \
+            -disableAutomaticPackageResolution
 
       - name: Archive
         run: |
@@ -164,6 +166,7 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath "${ARCHIVE_PATH}" \
             -derivedDataPath "${DERIVED_DATA_PATH}" \
+            -disableAutomaticPackageResolution \
             -allowProvisioningUpdates \
             -authenticationKeyPath "${APP_STORE_CONNECT_KEY_PATH}" \
             -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \

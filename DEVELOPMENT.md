@@ -151,6 +151,22 @@ scripts/run-ios
 
 If the configured simulator is not installed, choose a nearby available iPhone simulator and update `.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
 
+## Swift package updates
+
+Normal CI, test, and release builds use the versions in
+`Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+Update packages only in a dedicated change. Choose the new versions with
+Xcode's package dependency editor or **File > Packages > Update to Latest
+Package Versions**, then refresh and test the lockfile:
+
+```zsh
+xcodebuild -resolvePackageDependencies -project Talaria.xcodeproj -scheme Talaria
+scripts/test-ios
+```
+
+Review and commit the resulting `Package.resolved` diff with the code changes
+needed for the new versions. Do not hand-edit the lockfile.
+
 ## Swift File-Size Policy
 
 The repo keeps the project style target of small Swift files, but file-size enforcement is warning-only while the large code-audit refactors continue.
