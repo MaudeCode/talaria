@@ -411,6 +411,7 @@ final class ChatStreamCoordinator {
         lastTransportActivityDate = now
         lastRecoveryStatusCheckDate = nil
         recoveryState = .idle
+        isReplayConnection = false
     }
 
     func clearReplayConnection() {

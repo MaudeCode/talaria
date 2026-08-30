@@ -4846,7 +4846,7 @@ final class ChatViewModel {
         if expectedReplayRemainder.hasPrefix(token) {
             activeStreamReplayMatchedPrefixLength = matchedPrefixLength + token.count
             if activeStreamReplayMatchedPrefixLength >= existingContent.count {
-                resetActiveStreamReplayTokenState()
+                activeStreamReplayMatchedPrefixLength = 0
             }
             return ""
         }
