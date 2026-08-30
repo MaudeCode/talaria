@@ -2,6 +2,73 @@ import XCTest
 @testable import Talaria
 
 final class OnboardingFlowTests: XCTestCase {
+    @MainActor
+    func testStaleSuccessfulProbeCannotReplaceCurrentFailure() async {
+        let staleClient = DeferredOnboardingAuthClient()
+        let currentClient = DeferredOnboardingAuthClient()
+        let keychain = InMemoryKeychainStore()
+        let authManager = AuthManager(
+            keychain: keychain,
+            clientFactory: { url in
+                url.host == "stale.example.test" ? staleClient : currentClient
+            },
+            headerStore: CustomHeaderStore(),
+            cookieStorage: HTTPCookieStorage(),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+        let viewModel = OnboardingViewModel()
+
+        viewModel.serverURLString = "https://stale.example.test"
+        let staleProbe = Task { await viewModel.testConnection(authManager: authManager) }
+        await staleClient.waitUntilStarted()
+
+        viewModel.serverURLString = "https://current.example.test"
+        let currentProbe = Task { await viewModel.testConnection(authManager: authManager) }
+        await currentClient.waitUntilStarted()
+        await currentClient.complete(with: .failure(URLError(.cannotConnectToHost)))
+        await currentProbe.value
+        let currentError = viewModel.errorMessage
+
+        await staleClient.complete(
+            with: .success(AuthStatusResponse(authEnabled: false, loggedIn: false))
+        )
+        await staleProbe.value
+
+        XCTAssertNil(viewModel.authStatus)
+        XCTAssertNil(viewModel.connectionMessage)
+        XCTAssertEqual(viewModel.errorMessage, currentError)
+        XCTAssertFalse(viewModel.isWorking)
+    }
+
+    @MainActor
+    func testEditingConnectionInputsClearsSuccessfulProbeState() {
+        let viewModel = OnboardingViewModel(
+            savedServer: URL(string: "https://server.example.test"),
+            savedHeaders: [CustomHeader(name: "X-Test", value: "one")]
+        )
+
+        func recordSuccess() {
+            viewModel.authStatus = AuthStatusResponse(authEnabled: false, loggedIn: false)
+            viewModel.connectionMessage = "Connected"
+        }
+
+        recordSuccess()
+        viewModel.serverURLString = "https://other.example.test"
+        XCTAssertNil(viewModel.authStatus)
+        XCTAssertNil(viewModel.connectionMessage)
+
+        recordSuccess()
+        viewModel.password = "new-password"
+        XCTAssertNil(viewModel.authStatus)
+        XCTAssertNil(viewModel.connectionMessage)
+
+        recordSuccess()
+        viewModel.customHeaders[0].value = "two"
+        XCTAssertNil(viewModel.authStatus)
+        XCTAssertNil(viewModel.connectionMessage)
+    }
+
     func testPrimaryButtonTitlesFollowPagerFlow() {
         XCTAssertEqual(OnboardingFlowPolicy.primaryButtonTitle(for: 0), "Get Started")
         XCTAssertEqual(OnboardingFlowPolicy.primaryButtonTitle(for: 1), "Set Up")
@@ -147,5 +214,42 @@ final class OnboardingFlowTests: XCTestCase {
 
     func testConnectPageIndexIsFinalPagerPage() {
         XCTAssertEqual(OnboardingFlowPolicy.connectPageIndex, OnboardingFlowPolicy.pageCount - 1)
+    }
+}
+
+private actor DeferredOnboardingAuthClient: AuthAPIClient {
+    private var responseContinuation: CheckedContinuation<AuthStatusResponse, Error>?
+    private var startContinuation: CheckedContinuation<Void, Never>?
+    private var didStart = false
+
+    func health() async throws -> HealthResponse {
+        HealthResponse(status: "ok", sessions: nil, activeStreams: nil, uptimeSeconds: nil)
+    }
+
+    func authStatus() async throws -> AuthStatusResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            responseContinuation = continuation
+            didStart = true
+            startContinuation?.resume()
+            startContinuation = nil
+        }
+    }
+
+    func login(password: String) async throws -> LoginResponse {
+        LoginResponse(ok: true, message: nil, error: nil)
+    }
+
+    func logout() async throws -> LoginResponse {
+        LoginResponse(ok: true, message: nil, error: nil)
+    }
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    func complete(with result: Result<AuthStatusResponse, Error>) {
+        responseContinuation?.resume(with: result)
+        responseContinuation = nil
     }
 }
