@@ -303,6 +303,30 @@
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
+		C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000101 /* ChatScrollObserver.swift */; };
+		C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */; };
+		C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */; };
+		C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000104 /* BottomComposerMaterialFade.swift */; };
+		C107O0000000000000000005 /* StreamRecoveryStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000105 /* StreamRecoveryStatusView.swift */; };
+		C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */; };
+		C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */; };
+		C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */; };
+		C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */; };
+		C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */; };
+		C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */; };
+		C107O0000000000000000012 /* ComposerProfileSelectorMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */; };
+		C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000113 /* ComposerModelMenu.swift */; };
+		C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000114 /* ComposerReasoningMenu.swift */; };
+		C107O0000000000000000015 /* ComposerMetaControlLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000115 /* ComposerMetaControlLabel.swift */; };
+		C107O0000000000000000016 /* ComposerSecondaryBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */; };
+		C107O0000000000000000017 /* LucideBrainIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000117 /* LucideBrainIcon.swift */; };
+		C107O0000000000000000018 /* KanbanStatusFocusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000118 /* KanbanStatusFocusView.swift */; };
+		C107O0000000000000000019 /* KanbanBoardManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000119 /* KanbanBoardManagementView.swift */; };
+		C107O0000000000000000020 /* KanbanBoardEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000120 /* KanbanBoardEditorView.swift */; };
+		C107O0000000000000000021 /* KanbanBulkActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000121 /* KanbanBulkActionsView.swift */; };
+		C107O0000000000000000022 /* KanbanFiltersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000122 /* KanbanFiltersView.swift */; };
+		C107O0000000000000000023 /* KanbanCardSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000123 /* KanbanCardSummaryView.swift */; };
+		C107O0000000000000000024 /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000124 /* KanbanView.swift */; };
 		C107N0000000000000000001 /* HeroBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000101 /* HeroBadge.swift */; };
 		C107N0000000000000000002 /* OnboardingCommandPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000102 /* OnboardingCommandPill.swift */; };
 		C107N0000000000000000003 /* OnboardingField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000103 /* OnboardingField.swift */; };
@@ -840,6 +864,30 @@
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		C107O0000000000000000101 /* ChatScrollObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollObserver.swift; sourceTree = "<group>"; };
+		C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuard.swift; sourceTree = "<group>"; };
+		C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTypingIndicatorView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000104 /* BottomComposerMaterialFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomComposerMaterialFade.swift; sourceTree = "<group>"; };
+		C107O0000000000000000105 /* StreamRecoveryStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamRecoveryStatusView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonRow.swift; sourceTree = "<group>"; };
+		C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOfflineCacheBanner.swift; sourceTree = "<group>"; };
+		C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedLocalNoticeStack.swift; sourceTree = "<group>"; };
+		C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryControlsView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspaceSelectorButton.swift; sourceTree = "<group>"; };
+		C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerProfileSelectorMenu.swift; sourceTree = "<group>"; };
+		C107O0000000000000000113 /* ComposerModelMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelMenu.swift; sourceTree = "<group>"; };
+		C107O0000000000000000114 /* ComposerReasoningMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerReasoningMenu.swift; sourceTree = "<group>"; };
+		C107O0000000000000000115 /* ComposerMetaControlLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMetaControlLabel.swift; sourceTree = "<group>"; };
+		C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryBarLabel.swift; sourceTree = "<group>"; };
+		C107O0000000000000000117 /* LucideBrainIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucideBrainIcon.swift; sourceTree = "<group>"; };
+		C107O0000000000000000118 /* KanbanStatusFocusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanStatusFocusView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000119 /* KanbanBoardManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardManagementView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000120 /* KanbanBoardEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardEditorView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000121 /* KanbanBulkActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBulkActionsView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000122 /* KanbanFiltersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFiltersView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000123 /* KanbanCardSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardSummaryView.swift; sourceTree = "<group>"; };
+		C107O0000000000000000124 /* KanbanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000101 /* HeroBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeroBadge.swift; sourceTree = "<group>"; };
 		C107N0000000000000000102 /* OnboardingCommandPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCommandPill.swift; sourceTree = "<group>"; };
 		C107N0000000000000000103 /* OnboardingField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingField.swift; sourceTree = "<group>"; };
@@ -1409,6 +1457,13 @@
 			children = (
 				C14900000000000000000006 /* KanbanFeatureState.swift */,
 				C14900000000000000000008 /* KanbanLabView.swift */,
+				C107O0000000000000000118 /* KanbanStatusFocusView.swift */,
+				C107O0000000000000000119 /* KanbanBoardManagementView.swift */,
+				C107O0000000000000000120 /* KanbanBoardEditorView.swift */,
+				C107O0000000000000000121 /* KanbanBulkActionsView.swift */,
+				C107O0000000000000000122 /* KanbanFiltersView.swift */,
+				C107O0000000000000000123 /* KanbanCardSummaryView.swift */,
+				C107O0000000000000000124 /* KanbanView.swift */,
 				C15400000000000000000002 /* KanbanCardDetailState.swift */,
 				C15400000000000000000004 /* KanbanCardDetailView.swift */,
 				C107L0000000000000000126 /* KanbanCardDetailContent.swift */,
@@ -1513,6 +1568,23 @@
 				C05100000000000000000012 /* ChatMessageActions.swift */,
 				C05100000000000000000013 /* ChatGoalControls.swift */,
 				C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */,
+				C107O0000000000000000101 /* ChatScrollObserver.swift */,
+				C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */,
+				C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */,
+				C107O0000000000000000104 /* BottomComposerMaterialFade.swift */,
+				C107O0000000000000000105 /* StreamRecoveryStatusView.swift */,
+				C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */,
+				C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */,
+				C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */,
+				C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */,
+				C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */,
+				C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */,
+				C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */,
+				C107O0000000000000000113 /* ComposerModelMenu.swift */,
+				C107O0000000000000000114 /* ComposerReasoningMenu.swift */,
+				C107O0000000000000000115 /* ComposerMetaControlLabel.swift */,
+				C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */,
+				C107O0000000000000000117 /* LucideBrainIcon.swift */,
 				C0CAM000000000000000B002 /* CameraPickerView.swift */,
 				C0DEC0DE0000000000000002 /* ChatComposerView.swift */,
 				C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */,
@@ -2200,6 +2272,30 @@
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
 				C09200000000000000000001 /* AppFont.swift in Sources */,
 				1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */,
+				C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */,
+				C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */,
+				C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */,
+				C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */,
+				C107O0000000000000000005 /* StreamRecoveryStatusView.swift in Sources */,
+				C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */,
+				C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */,
+				C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */,
+				C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */,
+				C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */,
+				C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */,
+				C107O0000000000000000012 /* ComposerProfileSelectorMenu.swift in Sources */,
+				C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */,
+				C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */,
+				C107O0000000000000000015 /* ComposerMetaControlLabel.swift in Sources */,
+				C107O0000000000000000016 /* ComposerSecondaryBarLabel.swift in Sources */,
+				C107O0000000000000000017 /* LucideBrainIcon.swift in Sources */,
+				C107O0000000000000000018 /* KanbanStatusFocusView.swift in Sources */,
+				C107O0000000000000000019 /* KanbanBoardManagementView.swift in Sources */,
+				C107O0000000000000000020 /* KanbanBoardEditorView.swift in Sources */,
+				C107O0000000000000000021 /* KanbanBulkActionsView.swift in Sources */,
+				C107O0000000000000000022 /* KanbanFiltersView.swift in Sources */,
+				C107O0000000000000000023 /* KanbanCardSummaryView.swift in Sources */,
+				C107O0000000000000000024 /* KanbanView.swift in Sources */,
 				C107N0000000000000000001 /* HeroBadge.swift in Sources */,
 				C107N0000000000000000002 /* OnboardingCommandPill.swift in Sources */,
 				C107N0000000000000000003 /* OnboardingField.swift in Sources */,
