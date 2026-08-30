@@ -11,6 +11,8 @@ git init --bare --initial-branch=main "$remote" >/dev/null
 git clone "$remote" "$repo" >/dev/null 2>&1
 git -C "$repo" config user.name "Tag Test"
 git -C "$repo" config user.email "tag-test@example.invalid"
+git -C "$repo" config commit.gpgSign false
+git -C "$repo" config tag.gpgSign false
 mkdir -p "$repo/Talaria.xcodeproj"
 cat > "$repo/Talaria.xcodeproj/project.pbxproj" <<'PBXPROJ'
 MARKETING_VERSION = 1.6.0;

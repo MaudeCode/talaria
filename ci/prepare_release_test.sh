@@ -27,6 +27,8 @@ chmod +x "$seed/scripts/validate-release"
 
 git -C "$seed" config user.name "Release Test"
 git -C "$seed" config user.email "release-test@example.invalid"
+git -C "$seed" config commit.gpgSign false
+git -C "$seed" config tag.gpgSign false
 git -C "$seed" add .
 git -C "$seed" commit -m "Initial fixture" >/dev/null
 git -C "$seed" push origin main >/dev/null
