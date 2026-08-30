@@ -25,7 +25,8 @@ extension Data {
 
 private extension String {
     var multipartDispositionValue: String {
-        replacingOccurrences(of: "\\", with: "%5C")
+        replacingOccurrences(of: "%", with: "%25")
+            .replacingOccurrences(of: "\\", with: "%5C")
             .replacingOccurrences(of: "\"", with: "%22")
             .replacingOccurrences(of: "\r", with: "%0D")
             .replacingOccurrences(of: "\n", with: "%0A")

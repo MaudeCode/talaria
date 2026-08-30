@@ -4,17 +4,17 @@ import XCTest
 final class APIClientUploadTests: APIClientTestCase {
     func testMultipartDispositionEscapesHostileFieldNameAndFilename() {
         var body = Data()
-        body.appendMultipart(textField: "field\"\\\r\nInjected: yes", value: "value", boundary: "boundary")
+        body.appendMultipart(textField: "field%22\"\\\r\nInjected: yes", value: "value", boundary: "boundary")
         body.appendMultipart(
-            fileField: "file\"\\\r\nInjected: yes",
-            filename: "photo\"\\\r\nInjected: yes.jpg",
+            fileField: "file%22\"\\\r\nInjected: yes",
+            filename: "photo%22\"\\\r\nInjected: yes.jpg",
             data: Data(),
             boundary: "boundary"
         )
 
         let bodyString = String(decoding: body, as: UTF8.self)
-        XCTAssertTrue(bodyString.contains(#"name="field%22%5C%0D%0AInjected: yes""#))
-        XCTAssertTrue(bodyString.contains(#"name="file%22%5C%0D%0AInjected: yes"; filename="photo%22%5C%0D%0AInjected: yes.jpg""#))
+        XCTAssertTrue(bodyString.contains(#"name="field%2522%22%5C%0D%0AInjected: yes""#))
+        XCTAssertTrue(bodyString.contains(#"name="file%2522%22%5C%0D%0AInjected: yes"; filename="photo%2522%22%5C%0D%0AInjected: yes.jpg""#))
         XCTAssertFalse(bodyString.contains("\r\nInjected: yes"))
     }
 
