@@ -598,6 +598,61 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         }
     }
 
+    func testNativeOIDCExchangeRejectsInsecureOrInapplicableCookie() async throws {
+        for cookie in [
+            "hermes_session=value; Path=/; HttpOnly",
+            "hermes_session=value; Path=/other; Secure; HttpOnly"
+        ] {
+            let client = makeClient { request in
+                let response = try XCTUnwrap(HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Set-Cookie": cookie]
+                ))
+                return (response, Data(#"{"ok":true}"#.utf8))
+            }
+
+            do {
+                _ = try await client.exchangeNativeOIDC(
+                    flowID: "flow-1",
+                    code: "one-time-code",
+                    state: "app-state",
+                    codeVerifier: "verifier"
+                )
+                XCTFail("An insecure or inapplicable cookie must fail closed")
+            } catch APIError.unauthorized {
+                // Expected.
+            } catch {
+                XCTFail("Expected unauthorized, got \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    func testOIDCExchangeRejectsServerThatStillReportsLoggedOut() async throws {
+        let keychain = InMemoryKeychainStore()
+        let client = OIDCMockAuthAPIClient(reportsLoggedInAfterExchange: false)
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            serverRegistry: ServerRegistry.inMemory()
+        )
+
+        await manager.configureWithOIDC(serverURLString: "https://example.test")
+
+        XCTAssertEqual(client.exchangeCodes, ["exchange-code"])
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertEqual(manager.lastErrorMessage, APIError.unauthorized.localizedDescription)
+    }
+
     @MainActor
     func testAddServerOIDCKeepsActiveServerUntouchedUntilExchange() async throws {
         let activeURL = try XCTUnwrap(URL(string: "https://active.test"))
@@ -733,6 +788,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private let passwordAuthEnabled: Bool
     private let onExchange: () -> Void
     private let onLogout: () -> Void
+    private let reportsLoggedInAfterExchange: Bool
     private(set) var state: String?
     private(set) var codeChallenge: String?
     private(set) var exchangeCodes: [String] = []
@@ -745,12 +801,14 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
         authorizationBaseURL: URL = URL(string: "https://example.test")!,
         passwordAuthEnabled: Bool = false,
         onExchange: @escaping () -> Void = {},
-        onLogout: @escaping () -> Void = {}
+        onLogout: @escaping () -> Void = {},
+        reportsLoggedInAfterExchange: Bool = true
     ) {
         self.authorizationBaseURL = authorizationBaseURL
         self.passwordAuthEnabled = passwordAuthEnabled
         self.onExchange = onExchange
         self.onLogout = onLogout
+        self.reportsLoggedInAfterExchange = reportsLoggedInAfterExchange
     }
 
     func health() async throws -> HealthResponse {
@@ -760,7 +818,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     func authStatus() async throws -> AuthStatusResponse {
         AuthStatusResponse(
             authEnabled: true,
-            loggedIn: !exchangeCodes.isEmpty,
+            loggedIn: reportsLoggedInAfterExchange && !exchangeCodes.isEmpty,
             passwordAuthEnabled: passwordAuthEnabled,
             oidcEnabled: true,
             oidcNativeHandoffEnabled: true
