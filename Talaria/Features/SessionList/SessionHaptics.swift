@@ -1,10 +1,4 @@
-import UIKit
-
-enum SessionHapticFeedback: Equatable {
-    case lightImpact
-    case selection
-    case warning
-}
+typealias SessionHapticFeedback = AppHapticFeedback
 
 @MainActor
 enum SessionHaptics {
@@ -31,22 +25,6 @@ enum SessionHaptics {
     }
 
     private static func emit(_ feedback: SessionHapticFeedback, isEnabled: Bool, performer: Performer?) {
-        HapticEmitter.emit(
-            feedback,
-            isEnabled: isEnabled,
-            performer: performer,
-            defaultPerformer: perform
-        )
-    }
-
-    private static func perform(_ feedback: SessionHapticFeedback) {
-        switch feedback {
-        case .lightImpact:
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        case .selection:
-            UISelectionFeedbackGenerator().selectionChanged()
-        case .warning:
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-        }
+        HapticEmitter.emit(feedback, isEnabled: isEnabled, performer: performer)
     }
 }

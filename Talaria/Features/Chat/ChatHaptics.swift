@@ -1,12 +1,4 @@
-import UIKit
-
-enum ChatHapticFeedback: Equatable {
-    case lightImpact
-    case mediumImpact
-    case selection
-    case success
-    case warning
-}
+typealias ChatHapticFeedback = AppHapticFeedback
 
 @MainActor
 enum ChatHaptics {
@@ -50,26 +42,6 @@ enum ChatHaptics {
     }
 
     private static func emit(_ feedback: ChatHapticFeedback, isEnabled: Bool, performer: Performer?) {
-        HapticEmitter.emit(
-            feedback,
-            isEnabled: isEnabled,
-            performer: performer,
-            defaultPerformer: perform
-        )
-    }
-
-    private static func perform(_ feedback: ChatHapticFeedback) {
-        switch feedback {
-        case .lightImpact:
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        case .mediumImpact:
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        case .selection:
-            UISelectionFeedbackGenerator().selectionChanged()
-        case .success:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        case .warning:
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-        }
+        HapticEmitter.emit(feedback, isEnabled: isEnabled, performer: performer)
     }
 }

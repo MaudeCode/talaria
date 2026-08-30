@@ -23,10 +23,7 @@ struct ServerIdentityEditor: View {
     }
 
     private var colorBinding: Binding<Color> {
-        Binding(
-            get: { HeaderLogoColor.color(for: colorHex) },
-            set: { if let hex = HeaderLogoColor.hexString(from: $0) { colorHex = hex } }
-        )
+        HeaderLogoColor.binding($colorHex)
     }
 
     var body: some View {

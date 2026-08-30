@@ -6,8 +6,24 @@ enum HapticButtonFeedbackStyle: Equatable {
     case medium
 }
 
+enum AppHapticFeedback: Equatable {
+    case lightImpact
+    case mediumImpact
+    case selection
+    case success
+    case warning
+}
+
 @MainActor
 enum HapticEmitter {
+    static func emit(
+        _ feedback: AppHapticFeedback,
+        isEnabled: Bool,
+        performer: (@MainActor (AppHapticFeedback) -> Void)? = nil
+    ) {
+        emit(feedback, isEnabled: isEnabled, performer: performer, defaultPerformer: perform)
+    }
+
     static func emit<Feedback>(
         _ feedback: Feedback,
         isEnabled: Bool,
@@ -16,6 +32,21 @@ enum HapticEmitter {
     ) {
         guard isEnabled else { return }
         (performer ?? defaultPerformer)(feedback)
+    }
+
+    private static func perform(_ feedback: AppHapticFeedback) {
+        switch feedback {
+        case .lightImpact:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .mediumImpact:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        case .selection:
+            UISelectionFeedbackGenerator().selectionChanged()
+        case .success:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .warning:
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        }
     }
 }
 

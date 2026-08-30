@@ -81,6 +81,17 @@ enum HeaderLogoColor {
         Color(hexRGB: normalizedHex(rawValue) ?? defaultHex) ?? Color(red: 1.0, green: 0.843, blue: 0.0)
     }
 
+    static func binding(_ hex: Binding<String>) -> Binding<Color> {
+        Binding(
+            get: { color(for: hex.wrappedValue) },
+            set: { color in
+                if let value = hexString(from: color) {
+                    hex.wrappedValue = value
+                }
+            }
+        )
+    }
+
     static func prefersDarkForeground(for rawValue: String) -> Bool {
         guard let components = rgbComponents(for: rawValue) else {
             return true

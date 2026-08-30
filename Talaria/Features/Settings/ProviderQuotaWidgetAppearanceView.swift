@@ -165,7 +165,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
 
                 if arcColor == .custom {
-                    ColorPicker("Custom Color", selection: colorBinding($customArcColorHex))
+                    ColorPicker("Custom Color", selection: HeaderLogoColor.binding($customArcColorHex))
                 }
 
                 Picker("Weight", selection: $arcWeightRawValue) {
@@ -228,7 +228,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
 
                 if trackColor == .custom {
-                    ColorPicker("Custom Track Color", selection: colorBinding($customTrackColorHex))
+                    ColorPicker("Custom Track Color", selection: HeaderLogoColor.binding($customTrackColorHex))
                 }
 
                 Stepper("Track Opacity: \(trackOpacityPercent)%", value: $trackOpacityPercent, in: 0...100, step: 5)
@@ -240,7 +240,7 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 }
 
                 if background == .custom {
-                    ColorPicker("Custom Background Color", selection: colorBinding($customBackgroundColorHex))
+                    ColorPicker("Custom Background Color", selection: HeaderLogoColor.binding($customBackgroundColorHex))
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -755,17 +755,6 @@ struct ProviderQuotaWidgetAppearanceView: View {
             )
                 .opacity(Double(backgroundOpacityPercent) / 100)
         }
-    }
-
-    private func colorBinding(_ hex: Binding<String>) -> Binding<Color> {
-        Binding(
-            get: { HeaderLogoColor.color(for: hex.wrappedValue) },
-            set: { color in
-                if let value = HeaderLogoColor.hexString(from: color) {
-                    hex.wrappedValue = value
-                }
-            }
-        )
     }
 
     private func reloadWidgets() {

@@ -128,19 +128,8 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
             }
         }
         if selection.wrappedValue == ProviderQuotaWidgetArcColor.custom.rawValue {
-            ColorPicker("Custom \(title) Color", selection: colorBinding(customHex))
+            ColorPicker("Custom \(title) Color", selection: HeaderLogoColor.binding(customHex))
         }
-    }
-
-    private func colorBinding(_ hex: Binding<String>) -> Binding<Color> {
-        Binding(
-            get: { HeaderLogoColor.color(for: hex.wrappedValue) },
-            set: { color in
-                if let value = HeaderLogoColor.hexString(from: color) {
-                    hex.wrappedValue = value
-                }
-            }
-        )
     }
 
     private var colorBasis: ProviderQuotaWidgetColorBasis {

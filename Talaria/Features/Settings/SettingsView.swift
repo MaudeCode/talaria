@@ -932,14 +932,7 @@ struct SettingsView: View {
     }
 
     private var headerLogoColorBinding: Binding<Color> {
-        Binding(
-            get: { HeaderLogoColor.color(for: headerLogoColorHex) },
-            set: { color in
-                if let hex = HeaderLogoColor.hexString(from: color) {
-                    headerLogoColorHex = hex
-                }
-            }
-        )
+        HeaderLogoColor.binding($headerLogoColorHex)
     }
 
     private var identityInitialsBinding: Binding<String> {
