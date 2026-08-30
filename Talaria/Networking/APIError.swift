@@ -128,6 +128,18 @@ enum APIError: LocalizedError {
         guard let urlError = underlying as? URLError else { return false }
         return urlError.code == .cancelled
     }
+
+    static func isDefinitiveWriteFailure(_ error: Error) -> Bool {
+        guard let apiError = error as? APIError else { return false }
+        switch apiError {
+        case .unauthorized, .invalidServerURL:
+            return true
+        case let .http(statusCode, _):
+            return (400..<500).contains(statusCode) && statusCode != 408
+        case .network, .decoding:
+            return false
+        }
+    }
 }
 
 private extension APIError {

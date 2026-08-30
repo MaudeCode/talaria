@@ -216,7 +216,7 @@ final class KanbanCardEditorState: Identifiable {
             if KanbanEndpointCompatibility.isMissingCapability(error) {
                 onCapabilityUnavailable(isEditing ? .editCard : .createCard)
             }
-            if isDefinitiveWriteFailure(error) {
+            if APIError.isDefinitiveWriteFailure(error) {
                 submission = .failed
                 activeAttemptID = nil
             } else {
@@ -430,18 +430,6 @@ final class KanbanCardEditorState: Identifiable {
 
     private func isCurrent(_ attemptID: UUID) -> Bool {
         activeAttemptID == attemptID
-    }
-
-    private func isDefinitiveWriteFailure(_ error: Error) -> Bool {
-        guard let apiError = error as? APIError else { return false }
-        switch apiError {
-        case .unauthorized, .invalidServerURL:
-            return true
-        case let .http(statusCode, _):
-            return (400..<500).contains(statusCode) && statusCode != 408
-        case .network, .decoding:
-            return false
-        }
     }
 
     private func normalized(_ value: String?) -> String? {
