@@ -306,9 +306,9 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let initialRequestArrived = expectation(description: "initial quota request arrived")
         let targetedRequestArrived = expectation(description: "targeted quota request arrived")
         let reloadRequestArrived = expectation(description: "quota reload request arrived")
-        let requests = DeferredProvidersRequests()
+        let requests = DeferredRequests()
 
-        DeferredProvidersMockURLProtocol.onRequest = { pendingRequest in
+        DeferredMockURLProtocol.onRequest = { pendingRequest in
             switch requests.append(pendingRequest) {
             case 1: initialRequestArrived.fulfill()
             case 2: targetedRequestArrived.fulfill()
@@ -316,10 +316,10 @@ final class ProvidersViewModelTests: APIClientTestCase {
             default: XCTFail("unexpected extra quota request")
             }
         }
-        defer { DeferredProvidersMockURLProtocol.onRequest = nil }
+        defer { DeferredMockURLProtocol.onRequest = nil }
 
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeferredProvidersMockURLProtocol.self]
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
         let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
 
@@ -426,19 +426,19 @@ final class ProvidersViewModelTests: APIClientTestCase {
     @MainActor
     func testCancelledQuotaLoadCannotRestoreClearedWidgetSnapshot() async throws {
         let requestArrived = expectation(description: "quota request arrived")
-        let requests = DeferredProvidersRequests()
-        DeferredProvidersMockURLProtocol.onRequest = { request in
+        let requests = DeferredRequests()
+        DeferredMockURLProtocol.onRequest = { request in
             _ = requests.append(request)
             requestArrived.fulfill()
         }
-        defer { DeferredProvidersMockURLProtocol.onRequest = nil }
+        defer { DeferredMockURLProtocol.onRequest = nil }
 
         let suite = "ProvidersViewModelCancelledWidgetSnapshot.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeferredProvidersMockURLProtocol.self]
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
         let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
         let model = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store)
 
@@ -584,19 +584,19 @@ final class ProvidersViewModelTests: APIClientTestCase {
     func testStaleOverlappingLoadDoesNotOverwriteNewerResponse() async throws {
         let firstRequestArrived = expectation(description: "stale request arrived")
         let secondRequestArrived = expectation(description: "fresh request arrived")
-        let requests = DeferredProvidersRequests()
+        let requests = DeferredRequests()
 
-        DeferredProvidersMockURLProtocol.onRequest = { pendingRequest in
+        DeferredMockURLProtocol.onRequest = { pendingRequest in
             switch requests.append(pendingRequest) {
             case 1: firstRequestArrived.fulfill()
             case 2: secondRequestArrived.fulfill()
             default: XCTFail("unexpected extra providers request")
             }
         }
-        defer { DeferredProvidersMockURLProtocol.onRequest = nil }
+        defer { DeferredMockURLProtocol.onRequest = nil }
 
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeferredProvidersMockURLProtocol.self]
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
         let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
 
@@ -723,67 +723,5 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let bare = ProviderSummary(id: "p")
         XCTAssertEqual(ProvidersViewModel.modelCount(for: bare), 0)
         XCTAssertNil(ProvidersViewModel.truncatedModelInfo(for: bare))
-    }
-}
-
-/// URLProtocol whose responses are completed manually by the test, so two
-/// in-flight requests can be answered out of order (the shared
-/// `MockURLProtocol` answers synchronously inside `startLoading`, which
-/// serializes responses in request order).
-private final class DeferredProvidersMockURLProtocol: URLProtocol {
-    /// Called (on a URLSession worker thread) whenever a request starts loading.
-    static var onRequest: ((DeferredProvidersMockURLProtocol) -> Void)?
-
-    override class func canInit(with request: URLRequest) -> Bool {
-        true
-    }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        guard let onRequest = Self.onRequest else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-
-        onRequest(self)
-    }
-
-    override func stopLoading() {}
-
-    func complete(withJSON json: String) {
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        )!
-
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(json.utf8))
-        client?.urlProtocolDidFinishLoading(self)
-    }
-}
-
-/// Thread-safe collector for the deferred requests above (`onRequest` fires on
-/// URLSession worker threads).
-private final class DeferredProvidersRequests: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending: [DeferredProvidersMockURLProtocol] = []
-
-    /// Appends the request and returns its 1-based arrival order.
-    func append(_ request: DeferredProvidersMockURLProtocol) -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        pending.append(request)
-        return pending.count
-    }
-
-    func request(at index: Int) -> DeferredProvidersMockURLProtocol {
-        lock.lock()
-        defer { lock.unlock() }
-        return pending[index]
     }
 }
