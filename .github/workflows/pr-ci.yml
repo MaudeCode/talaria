@@ -209,8 +209,11 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Prepare tool cache
-        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+      - name: Prepare tooling runtime
+        run: |
+          sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
