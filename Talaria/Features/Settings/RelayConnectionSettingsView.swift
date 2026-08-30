@@ -192,13 +192,21 @@ struct RelayConnectionManagementView: View {
         case allDevices
     }
 
+    private struct RelayPublisherRow: Identifiable {
+        let id: String
+        let server: URL
+        let displayName: String
+        let localAccount: ServerAccount?
+    }
+
     @Bindable var authManager: AuthManager
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var credentials: TalariaRelayCredentials?
+    @State private var publisherLabels: [String: String] = [:]
     @State private var connectingServerID: String?
     @State private var unenrollingServerID: String?
-    @State private var unenrollmentAccount: ServerAccount?
+    @State private var unenrollmentAccount: RelayPublisherRow?
     @State private var isPresentingUnenrollment = false
     @State private var failedServerID: String?
     @State private var errorMessage: String?
@@ -214,8 +222,8 @@ struct RelayConnectionManagementView: View {
             }
 
             Section("Servers") {
-                ForEach(authManager.servers) { account in
-                    serverRow(account)
+                ForEach(serverRows) { server in
+                    serverRow(server)
                 }
             }
 
@@ -264,34 +272,34 @@ struct RelayConnectionManagementView: View {
     }
 
     @ViewBuilder
-    private func serverRow(_ account: ServerAccount) -> some View {
-        let state = state(for: account)
+    private func serverRow(_ server: RelayPublisherRow) -> some View {
+        let state = state(for: server)
         Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 10) {
-                    serverDetails(account)
-                    serverStatus(account, state: state)
+                    serverDetails(server)
+                    serverStatus(server, state: state)
                 }
             } else {
                 HStack(spacing: 12) {
-                    serverDetails(account)
+                    serverDetails(server)
                     Spacer(minLength: 12)
-                    serverStatus(account, state: state)
+                    serverStatus(server, state: state)
                 }
             }
         }
         .padding(.vertical, 4)
-        .accessibilityIdentifier("settings-relay-server-\(account.id)")
+        .accessibilityIdentifier("settings-relay-server-\(server.id)")
     }
 
-    private func serverDetails(_ account: ServerAccount) -> some View {
-        let host = URL(string: account.urlString)?.host ?? account.urlString
+    private func serverDetails(_ server: RelayPublisherRow) -> some View {
+        let host = server.server.host ?? server.id
         return VStack(alignment: .leading, spacing: 3) {
-            Text(account.displayName)
+            Text(server.displayName)
                 .font(.body)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-            if host.localizedCaseInsensitiveCompare(account.displayName) != .orderedSame {
+            if host.localizedCaseInsensitiveCompare(server.displayName) != .orderedSame {
                 Text(host)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -302,13 +310,14 @@ struct RelayConnectionManagementView: View {
     }
 
     @ViewBuilder
-    private func serverStatus(_ account: ServerAccount, state: TalariaRelayConnectionState) -> some View {
-        if connectingServerID == account.id || unenrollingServerID == account.id {
+    private func serverStatus(_ server: RelayPublisherRow, state: TalariaRelayConnectionState) -> some View {
+        if connectingServerID == server.id || unenrollingServerID == server.id {
             ProgressView()
-                .accessibilityLabel(connectingServerID == account.id ? "Connecting" : "Unenrolling")
-        } else if state == .unpaired || failedServerID == account.id {
-            Button(failedServerID == account.id ? "Retry" : "Connect") {
-                Task { await pair(account) }
+                .accessibilityLabel(connectingServerID == server.id ? "Connecting" : "Unenrolling")
+        } else if let account = server.localAccount,
+                  (state == .unpaired || failedServerID == server.id) {
+            Button(failedServerID == server.id ? "Retry" : "Connect") {
+                Task { await pair(server, account: account) }
             }
             .buttonStyle(.borderless)
             .font(.subheadline.weight(.semibold))
@@ -325,7 +334,7 @@ struct RelayConnectionManagementView: View {
                 .fixedSize(horizontal: true, vertical: false)
 
                 Button {
-                    unenrollmentAccount = account
+                    unenrollmentAccount = server
                     isPresentingUnenrollment = true
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -335,8 +344,8 @@ struct RelayConnectionManagementView: View {
                 .buttonStyle(.borderless)
                 .frame(width: 44, height: 44)
                 .disabled(isBusy)
-                .accessibilityLabel("Enrollment options for \(account.displayName)")
-                .accessibilityIdentifier("settings-unenroll-server-\(account.id)")
+                .accessibilityLabel("Enrollment options for \(server.displayName)")
+                .accessibilityIdentifier("settings-unenroll-server-\(server.id)")
             }
             .layoutPriority(1)
         } else {
@@ -350,9 +359,35 @@ struct RelayConnectionManagementView: View {
         connectingServerID != nil || unenrollingServerID != nil || isDisconnecting
     }
 
-    private func state(for account: ServerAccount) -> TalariaRelayConnectionState {
-        guard let server = URL(string: account.urlString) else { return .unpaired }
-        return TalariaRelayConfigurationStore.connectionState(for: server, credentials: credentials)
+    private var serverRows: [RelayPublisherRow] {
+        let localRows = authManager.servers.compactMap { account -> RelayPublisherRow? in
+            guard let server = URL(string: account.urlString),
+                  let publisherID = TalariaRelayClient.originURL(server)?.absoluteString else { return nil }
+            return RelayPublisherRow(
+                id: publisherID,
+                server: server,
+                displayName: account.displayName,
+                localAccount: account
+            )
+        }
+        let localIDs = Set(localRows.map(\.id))
+        let removedRows = (credentials?.pairedPublisherIDs ?? []).compactMap { value -> RelayPublisherRow? in
+            guard let publisherID = TalariaRelayClient.originIdentifier(value),
+                  !localIDs.contains(publisherID),
+                  let server = URL(string: publisherID) else { return nil }
+            let label = publisherLabels[publisherID]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return RelayPublisherRow(
+                id: publisherID,
+                server: server,
+                displayName: label.flatMap { $0.isEmpty ? nil : $0 } ?? server.host ?? publisherID,
+                localAccount: nil
+            )
+        }
+        return localRows + removedRows
+    }
+
+    private func state(for server: RelayPublisherRow) -> TalariaRelayConnectionState {
+        TalariaRelayConfigurationStore.connectionState(for: server.server, credentials: credentials)
     }
 
     @MainActor
@@ -367,6 +402,11 @@ struct RelayConnectionManagementView: View {
         guard let subscriptions = try? await TalariaRelayClient(credentials: credentials).publisherSubscriptions() else {
             return
         }
+        publisherLabels = subscriptions.reduce(into: [:]) { labels, subscription in
+            guard subscription.subscribed,
+                  let publisherID = TalariaRelayClient.originIdentifier(subscription.publisherId) else { return }
+            labels[publisherID] = subscription.label
+        }
         try? TalariaRelayConfigurationStore.replacePairedPublishers(
             subscriptions.filter(\.subscribed).map(\.publisherId)
         )
@@ -374,46 +414,44 @@ struct RelayConnectionManagementView: View {
     }
 
     @MainActor
-    private func pair(_ account: ServerAccount) async {
+    private func pair(_ server: RelayPublisherRow, account: ServerAccount) async {
         guard connectingServerID == nil,
               !isBusy,
-              let credentials,
-              let server = URL(string: account.urlString) else { return }
-        connectingServerID = account.id
+              let credentials else { return }
+        connectingServerID = server.id
         failedServerID = nil
         errorMessage = nil
         defer { connectingServerID = nil }
         do {
             try await RelayConnectionOperations.pair(
-                server: server,
+                server: server.server,
                 credentials: credentials,
                 headers: authManager.customHeaders(for: account)
             )
             self.credentials = TalariaRelayConfigurationStore.load()
         } catch {
-            failedServerID = account.id
+            failedServerID = server.id
             errorMessage = error.localizedDescription
         }
     }
 
     @MainActor
-    private func unenroll(_ account: ServerAccount, scope: UnenrollmentScope) async {
+    private func unenroll(_ server: RelayPublisherRow, scope: UnenrollmentScope) async {
         guard !isBusy,
-              let credentials,
-              let server = URL(string: account.urlString),
-              let publisherID = TalariaRelayClient.originURL(server) else { return }
-        unenrollingServerID = account.id
+              let credentials else { return }
+        unenrollingServerID = server.id
         errorMessage = nil
         defer { unenrollingServerID = nil }
         do {
             let client = TalariaRelayClient(credentials: credentials)
             switch scope {
             case .thisIPhone:
-                try await client.setPublisherSubscription(publisherID, subscribed: false)
+                try await client.setPublisherSubscription(server.server, subscribed: false)
             case .allDevices:
-                try await client.revokePublisher(publisherID)
+                try await client.revokePublisher(server.server)
             }
-            try TalariaRelayConfigurationStore.removePairedPublisher(publisherID)
+            try TalariaRelayConfigurationStore.removePairedPublisher(server.server)
+            publisherLabels.removeValue(forKey: server.id)
             self.credentials = TalariaRelayConfigurationStore.load()
             try await TalariaAggregateLiveActivityManager.shared.refresh()
         } catch {

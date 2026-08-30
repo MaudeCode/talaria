@@ -14,7 +14,10 @@ struct UITestFixtureEnvironment {
             appleUserID: "apple-ui-fixture",
             sessionToken: "session-ui-fixture",
             expiresAt: .distantFuture,
-            pairedPublisherIDs: [TalariaRelayClient.originURL(serverURL)!.absoluteString]
+            pairedPublisherIDs: [
+                TalariaRelayClient.originURL(serverURL)!.absoluteString,
+                "https://removed.ui-test.invalid"
+            ]
         )
     }
 

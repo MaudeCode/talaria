@@ -234,10 +234,9 @@ final class ComposerNavigationUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Talaria Relay"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://ui-test.talaria.invalid"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://removed.ui-test.invalid"].exists)
         XCTAssertFalse(app.buttons["Connect"].exists)
-        let unenroll = app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Enrollment options")
-        ).firstMatch
+        let unenroll = app.buttons["Enrollment options for removed.ui-test.invalid"]
         XCTAssertTrue(unenroll.waitForExistence(timeout: 3))
         app.coordinate(withNormalizedOffset: CGVector(
             dx: unenroll.frame.midX / app.frame.width,
