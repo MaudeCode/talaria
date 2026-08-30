@@ -10,7 +10,7 @@ final class TalariaAggregateLiveActivityManager {
     }
 
     private static let seedLeaseInterval: TimeInterval = 30
-    private static let staleInterval: TimeInterval = 150
+    static let staleInterval: TimeInterval = 10 * 60
     private var tokenTasks: [String: Task<Void, Never>] = [:]
     private var pushToStartTask: Task<Void, Never>?
     private var activityUpdatesTask: Task<Void, Never>?
