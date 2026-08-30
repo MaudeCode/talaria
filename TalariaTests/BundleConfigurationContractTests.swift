@@ -67,6 +67,17 @@ final class BundleConfigurationContractTests: XCTestCase {
                 "\(name) entitlements have a mismatched app group"
             )
         }
+
+        let project = try projectFile()
+        let sharedSettings = try sourceFile("Config/Shared.xcconfig")
+        assertOccurrences(
+            of: "APP_GROUP_IDENTIFIER = group.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)",
+            count: 1,
+            in: sharedSettings
+        )
+        assertOccurrences(of: "Shared.xcconfig */;", count: 2, in: project)
+        assertOccurrences(of: "APP_GROUP_IDENTIFIER =", count: 0, in: project)
+        assertOccurrences(of: "APP_IDENTIFIER_SUFFIX =", count: 0, in: project)
     }
 
     func testPrivacyManifestsAndExtensionsRemainInBuildProducts() throws {
@@ -151,7 +162,11 @@ final class BundleConfigurationContractTests: XCTestCase {
     }
 
     private func projectFile() throws -> String {
-        try String(contentsOf: repositoryRoot.appendingPathComponent("Talaria.xcodeproj/project.pbxproj"), encoding: .utf8)
+        try sourceFile("Talaria.xcodeproj/project.pbxproj")
+    }
+
+    private func sourceFile(_ relativePath: String) throws -> String {
+        try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 
     private func assertOccurrences(
