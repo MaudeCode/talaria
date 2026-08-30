@@ -77,15 +77,19 @@ final class PerSessionRelayActivityRegistration {
         activityID: String,
         fallbackCredentials: TalariaRelayCredentials? = nil
     ) async {
-        tokenTask?.cancel()
-        tokenTask = nil
-        let client = client ?? fallbackCredentials.map { TalariaRelayClient(credentials: $0) }
-        if let client {
-            try? await client.unregister(activityID: activityID)
-        }
-        if self.activityID == activityID {
+        let ownsActivity = self.activityID == activityID
+        let fallbackClient = fallbackCredentials.map { TalariaRelayClient(credentials: $0) }
+        let client = ownsActivity
+            ? (self.client ?? fallbackClient)
+            : fallbackClient
+        if ownsActivity {
+            tokenTask?.cancel()
+            tokenTask = nil
             self.activityID = nil
             self.client = nil
+        }
+        if let client {
+            try? await client.unregister(activityID: activityID)
         }
     }
 

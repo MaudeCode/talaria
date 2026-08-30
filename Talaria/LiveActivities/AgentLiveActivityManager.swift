@@ -332,16 +332,17 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 activity: activityLine,
                 state: persisted.content.state
             )
-            await relayRegistration.unregister(
-                activityID: persisted.id,
-                fallbackCredentials: TalariaRelayConfigurationStore.load()
-            )
+            let fallbackCredentials = TalariaRelayConfigurationStore.load()
             // `end(content:)` sets the final content directly and there is no
             // intervening render delay here, so a preceding `update` is redundant
             // (PR #266 review).
             await persisted.end(
                 ActivityContent(state: finalState, staleDate: nil),
                 dismissalPolicy: dismissalPolicy(for: status)
+            )
+            unregisterRelayInBackground(
+                activityID: persisted.id,
+                fallbackCredentials: fallbackCredentials
             )
             didEndRunningActivity = true
         }
@@ -522,24 +523,38 @@ private extension AgentLiveActivityManager {
         }
 
         let policy = dismissalPolicy(for: status)
-
-        await relayRegistration.unregister(activityID: endingActivity.id)
+        let fallbackCredentials = TalariaRelayConfigurationStore.load()
 
         await endingActivity.update(ActivityContent(state: finalState, staleDate: nil))
         if status == .complete {
             try? await Task.sleep(nanoseconds: 600_000_000)
         }
 
-        guard lifecycle == lifecycleGeneration else {
+        if lifecycle != lifecycleGeneration {
             await endingActivity.end(nil, dismissalPolicy: .immediate)
-            return
+        } else {
+            await endingActivity.end(
+                ActivityContent(state: finalState, staleDate: nil),
+                dismissalPolicy: policy
+            )
+            resetIfStillCurrent(endingSessionID: endingSessionID, finalState: finalState)
         }
-
-        await endingActivity.end(
-            ActivityContent(state: finalState, staleDate: nil),
-            dismissalPolicy: policy
+        unregisterRelayInBackground(
+            activityID: endingActivity.id,
+            fallbackCredentials: fallbackCredentials
         )
-        resetIfStillCurrent(endingSessionID: endingSessionID, finalState: finalState)
+    }
+
+    private func unregisterRelayInBackground(
+        activityID: String,
+        fallbackCredentials: TalariaRelayCredentials?
+    ) {
+        Task { [weak self, fallbackCredentials] in
+            await self?.relayRegistration.unregister(
+                activityID: activityID,
+                fallbackCredentials: fallbackCredentials
+            )
+        }
     }
 
     private func dismissalPolicy(for status: AgentRunActivityStatus) -> ActivityUIDismissalPolicy {

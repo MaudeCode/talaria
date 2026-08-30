@@ -430,7 +430,8 @@ struct RelayConnectionManagementView: View {
             )
             self.credentials = TalariaRelayConfigurationStore.load()
         } catch {
-            failedServerID = server.id
+            self.credentials = TalariaRelayConfigurationStore.load()
+            failedServerID = state(for: server) == .connected ? nil : server.id
             errorMessage = error.localizedDescription
         }
     }
