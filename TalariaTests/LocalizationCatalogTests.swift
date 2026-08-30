@@ -255,10 +255,20 @@ final class LocalizationCatalogTests: XCTestCase {
         resourceURL("Talaria/Resources/Localizable.xcstrings")
     }
 
-    private func catalogLanguages(at relativePath: String) throws -> Set<String> {
-        let data = try Data(contentsOf: resourceURL(relativePath))
+    private func catalogStrings(from data: Data) throws -> [String: Any] {
         let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        XCTAssertEqual(root["sourceLanguage"] as? String, "en", "Development language should remain English.")
+        return try XCTUnwrap(root["strings"] as? [String: Any])
+    }
+
+    private func catalogStrings(
+        at relativePath: String = "Talaria/Resources/Localizable.xcstrings"
+    ) throws -> [String: Any] {
+        try catalogStrings(from: Data(contentsOf: resourceURL(relativePath)))
+    }
+
+    private func catalogLanguages(at relativePath: String) throws -> Set<String> {
+        let strings = try catalogStrings(at: relativePath)
         var languages = Set<String>()
         for case let entry as [String: Any] in strings.values {
             if let localizations = entry["localizations"] as? [String: Any] {
@@ -308,9 +318,7 @@ final class LocalizationCatalogTests: XCTestCase {
         guard let data = try? Data(contentsOf: url) else {
             throw XCTSkip("Could not read String Catalog at \(url.path); skipping — the source tree is not present in this environment (e.g. on a physical device or a remote test runner). Runs on the simulator/CI where the checkout exists.")
         }
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(root["sourceLanguage"] as? String, "en", "Development language should remain English.")
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings(from: data)
         XCTAssertGreaterThan(strings.count, 200, "Catalog is unexpectedly small — string extraction may have regressed.")
 
         for language in Self.shippedLanguages {
@@ -337,9 +345,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testKeysWithoutShippedTranslationsMatchExplicitStagingAllowlist() throws {
-        let data = try Data(contentsOf: catalogURL())
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings()
         let stagedKeys = Set(strings.compactMap { key, rawEntry -> String? in
             guard let entry = rawEntry as? [String: Any],
                   entry["shouldTranslate"] as? Bool != false else {
@@ -369,12 +375,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testAppShortcutPhrasesHaveDedicatedCatalogEntries() throws {
-        let url = resourceURL("Talaria/Resources/AppShortcuts.xcstrings")
-        let data = try Data(contentsOf: url)
-
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(root["sourceLanguage"] as? String, "en")
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings(at: "Talaria/Resources/AppShortcuts.xcstrings")
         let expectedPhrases = [
             "New chat in ${applicationName}",
             "New ${applicationName} chat",
@@ -400,9 +401,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testKanbanCardDetailCopyIsLocalizedInEveryShippedLanguage() throws {
-        let data = try Data(contentsOf: catalogURL())
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings()
         let detailKeys = [
             "Card ID", "Comment", "Comment cannot be blank.", "Created", "Dependencies",
             "Description", "Dispatch Runs", "Events", "Maximum Runtime", "Metadata",
@@ -426,9 +425,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testKanbanCardEditorCopyIsLocalizedInEveryShippedLanguage() throws {
-        let data = try Data(contentsOf: catalogURL())
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings()
         let editorKeys = [
             "Edit Card", "New Card", "Title", "Title is required.", "Assignment", "Execution",
             "Prerequisite", "Create Ready, Unassigned Card?", "Reload Server Version",
@@ -452,9 +449,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testKanbanBulkActionNamesAreLocalizedInEveryShippedLanguage() throws {
-        let data = try Data(contentsOf: catalogURL())
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings()
         let bulkActionKeys = [
             "Archive Cards", "Assign Profile", "Bulk Actions", "Change Status",
             "Retry Failed", "Select Cards", "Set Priority", "Unknown Status",
@@ -479,9 +474,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testKanbanBoardManagementCopyIsLocalizedInEveryShippedLanguage() throws {
-        let data = try Data(contentsOf: catalogURL())
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings()
         let boardKeys = [
             "Board actions for %@",
             "Browse Board",
@@ -518,9 +511,7 @@ final class LocalizationCatalogTests: XCTestCase {
     }
 
     func testKanbanDispatcherCopyIsLocalizedInEveryShippedLanguage() throws {
-        let data = try Data(contentsOf: catalogURL())
-        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let strings = try catalogStrings()
         let dispatcherKeys = [
             "Another Board action is in progress.",
             "Auto-blocked",
