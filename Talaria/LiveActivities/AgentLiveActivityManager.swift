@@ -165,8 +165,11 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             let endingActivity = activity
             activity = nil
             if let endingActivity {
-                await relayRegistration.unregister(activityID: endingActivity.id)
                 await endingActivity.end(nil, dismissalPolicy: .immediate)
+                unregisterRelayInBackground(
+                    activityID: endingActivity.id,
+                    fallbackCredentials: TalariaRelayConfigurationStore.load()
+                )
             }
         case .perSession:
             guard let state = currentState,
@@ -393,11 +396,11 @@ private extension AgentLiveActivityManager {
                     continue
                 }
 
-                await relayRegistration.unregister(
+                await staleActivity.end(nil, dismissalPolicy: .immediate)
+                unregisterRelayInBackground(
                     activityID: staleActivity.id,
                     fallbackCredentials: relayContext?.credentials
                 )
-                await staleActivity.end(nil, dismissalPolicy: .immediate)
             }
             guard lifecycle == lifecycleGeneration else { return }
 
