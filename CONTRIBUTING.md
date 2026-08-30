@@ -102,9 +102,9 @@ fork's web UI against the same server:
    itself built with coding agents, so it's normal context for review — not a
    gate.
 
-`main` is the protected release branch. Releases and TestFlight
-uploads (`.github/workflows/*-testflight.yml`) are maintainer-only operations —
-contributors never need App Store Connect access.
+`main` is the release branch. Signed release tags trigger the maintainer-only
+TestFlight workflow in `.github/workflows/release.yml`; contributors never need
+App Store Connect access.
 
 ## Questions
 
