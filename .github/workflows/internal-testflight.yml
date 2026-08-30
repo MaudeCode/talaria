@@ -20,6 +20,7 @@ on:
 run-name: "Internal TestFlight from ${{ github.ref_name }}"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -75,6 +76,11 @@ jobs:
 
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Verify exact commit passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/require_successful_main_ci
 
       - name: Set output paths
         run: |

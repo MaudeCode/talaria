@@ -1,6 +1,6 @@
-# Contributor CI: build and run the full XCTest suite on every pull request
-# that touches app code. Docs-only PRs (markdown, docs/, community files) skip
-# the macOS runner entirely and pass via the cheap gate job.
+# Build and run the full XCTest suite on every push to main and every pull
+# request that touches app code. Docs-only PRs (markdown, docs/, community
+# files) skip the macOS runner entirely and pass via the cheap gate job.
 #
 # The required branch-protection check is "CI Gate", not "Build and Test":
 # a skipped required check would block merges forever, so the gate always
@@ -12,17 +12,19 @@
 # runs per TESTFLIGHT.md; the "simulator installs must be signed" rule applies
 # to manual simulator testing, not CI.
 
-name: PR CI
+name: CI
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: pr-ci-${{ github.event.pull_request.number }}
+  group: pr-ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +41,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            echo "Push to main — running the full suite."
+            echo "run_ios=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --paginate --jq '.[].filename')
           echo "Changed files:"
@@ -72,6 +80,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v7
+
+      - name: Test CI helpers
+        run: ci/require_successful_main_ci_test.sh
 
       - name: Show Xcode version
         run: xcodebuild -version
