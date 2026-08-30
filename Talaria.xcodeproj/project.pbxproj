@@ -263,6 +263,13 @@
 		C03120000000000000B006 /* APIClientGitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F006 /* APIClientGitTests.swift */; };
 		C03120000000000000B007 /* GitWorkspaceViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F007 /* GitWorkspaceViewModelTests.swift */; };
 		C012400000000000000004 /* AppIconSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000003 /* AppIconSettingsSection.swift */; };
+		C107I000000000000000001 /* AppIconDisclosureLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000011 /* AppIconDisclosureLabel.swift */; };
+		C107I000000000000000002 /* AppIconChoiceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000012 /* AppIconChoiceRow.swift */; };
+		C107I000000000000000003 /* AppIconChoicePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000013 /* AppIconChoicePreview.swift */; };
+		C107I000000000000000004 /* AppIconPreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000014 /* AppIconPreviewImage.swift */; };
+		C107I000000000000000005 /* ArchivedStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000015 /* ArchivedStatusRow.swift */; };
+		C107I000000000000000006 /* ProviderRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000016 /* ProviderRow.swift */; };
+		C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000017 /* ProvidersStatusRow.swift */; };
 		1A2B3C4D5E6F700000000102 /* AppThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */; };
 		C012400000000000000006 /* AppIconChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000005 /* AppIconChoiceTests.swift */; };
 		1A2B3C4D5E6F70000000110 /* ArchivedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */; };
@@ -653,6 +660,13 @@
 		C03120000000000000F006 /* APIClientGitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientGitTests.swift; sourceTree = "<group>"; };
 		C03120000000000000F007 /* GitWorkspaceViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceViewModelTests.swift; sourceTree = "<group>"; };
 		C012400000000000000003 /* AppIconSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconSettingsSection.swift; sourceTree = "<group>"; };
+		C107I000000000000000011 /* AppIconDisclosureLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconDisclosureLabel.swift; sourceTree = "<group>"; };
+		C107I000000000000000012 /* AppIconChoiceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoiceRow.swift; sourceTree = "<group>"; };
+		C107I000000000000000013 /* AppIconChoicePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoicePreview.swift; sourceTree = "<group>"; };
+		C107I000000000000000014 /* AppIconPreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconPreviewImage.swift; sourceTree = "<group>"; };
+		C107I000000000000000015 /* ArchivedStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedStatusRow.swift; sourceTree = "<group>"; };
+		C107I000000000000000016 /* ProviderRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRow.swift; sourceTree = "<group>"; };
+		C107I000000000000000017 /* ProvidersStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersStatusRow.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppThemeTests.swift; sourceTree = "<group>"; };
 		C012400000000000000005 /* AppIconChoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoiceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedSessionsView.swift; sourceTree = "<group>"; };
@@ -1249,6 +1263,10 @@
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
 				A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
+				C107I000000000000000011 /* AppIconDisclosureLabel.swift */,
+				C107I000000000000000012 /* AppIconChoiceRow.swift */,
+				C107I000000000000000013 /* AppIconChoicePreview.swift */,
+				C107I000000000000000014 /* AppIconPreviewImage.swift */,
 				1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */,
 				103200000000000000000001 /* DefaultProfilePickerView.swift */,
 				C107B000000000000000011 /* SettingsPickerSearchField.swift */,
@@ -1257,10 +1275,13 @@
 				C107B000000000000000014 /* CreateProfileSheet.swift */,
 				C107B000000000000000015 /* ProfileStatusBadge.swift */,
 				1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */,
+				C107I000000000000000015 /* ArchivedStatusRow.swift */,
 				C23400000000000000000002 /* StreamingLabReplay.swift */,
 				C23400000000000000000004 /* StreamingLabView.swift */,
 				1A2B3C4D5E6F70000000113 /* ArchivedSessionsViewModel.swift */,
 				26AB000000000000000000F2 /* ProvidersView.swift */,
+				C107I000000000000000016 /* ProviderRow.swift */,
+				C107I000000000000000017 /* ProvidersStatusRow.swift */,
 				26AB000000000000000000F1 /* ProvidersViewModel.swift */,
 			);
 			path = Settings;
@@ -1705,6 +1726,10 @@
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
 				A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */,
 				C012400000000000000004 /* AppIconSettingsSection.swift in Sources */,
+				C107I000000000000000001 /* AppIconDisclosureLabel.swift in Sources */,
+				C107I000000000000000002 /* AppIconChoiceRow.swift in Sources */,
+				C107I000000000000000003 /* AppIconChoicePreview.swift in Sources */,
+				C107I000000000000000004 /* AppIconPreviewImage.swift in Sources */,
 				1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */,
 				103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */,
 				C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */,
@@ -1713,6 +1738,7 @@
 				C107B000000000000000004 /* CreateProfileSheet.swift in Sources */,
 				C107B000000000000000005 /* ProfileStatusBadge.swift in Sources */,
 				1A2B3C4D5E6F70000000110 /* ArchivedSessionsView.swift in Sources */,
+				C107I000000000000000005 /* ArchivedStatusRow.swift in Sources */,
 				C23400000000000000000001 /* StreamingLabReplay.swift in Sources */,
 				C23400000000000000000003 /* StreamingLabView.swift in Sources */,
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
@@ -1837,6 +1863,8 @@
 				05814DEA5DE4690F730B1E15 /* InsightsViewModel.swift in Sources */,
 				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,
+				C107I000000000000000006 /* ProviderRow.swift in Sources */,
+				C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */,
 				B5A100000000000000000001 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000008 /* ShareInputReader.swift in Sources */,
 			);
