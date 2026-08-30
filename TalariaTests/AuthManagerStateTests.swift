@@ -241,6 +241,27 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(registry.activeServerID, "https://a.test")
     }
 
+    func testSwitchUsesRegistryWhenLegacyURLMirrorFails() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let (manager, _, bAccount) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        keychain.saveErrors[.serverURL] = PreconditionFailure()
+
+        manager.switchActiveServer(to: bAccount)
+
+        XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://b.test"))))
+        XCTAssertEqual(registry.activeServerID, "https://b.test")
+        XCTAssertEqual(keychain.savedValues[.serverURL], "https://a.test")
+
+        let restored = AuthManager(
+            keychain: keychain,
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
+            serverRegistry: registry
+        )
+        XCTAssertEqual(restored.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://b.test"))))
+    }
+
     func testRemoveActiveServerAutoSwitchesToRemaining() async throws {
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry.inMemory(keychain: keychain)
@@ -300,6 +321,20 @@ final class AuthManagerStateTests: XCTestCase {
 
         XCTAssertEqual(cookieStorage.cookies(for: serverA)?.map(\.value), ["a-cookie"])
         XCTAssertTrue(cookieStorage.cookies(for: serverB)?.isEmpty ?? true)
+    }
+
+    func testRemoveFailureReturnsFalseAndKeepsServerState() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let (manager, _, bAccount) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        keychain.saveErrors[.servers] = PreconditionFailure()
+
+        let removed = await manager.removeServer(bAccount)
+
+        XCTAssertFalse(removed)
+        XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://a.test"))))
+        XCTAssertEqual(registry.servers.map(\.id), ["https://b.test", "https://a.test"])
+        XCTAssertNotNil(manager.lastErrorMessage)
     }
 
     func testSignOutWithRemainingServerAutoSwitches() async throws {
@@ -433,6 +468,28 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.servers.map(\.id), ["https://a.test"])
         XCTAssertEqual(manager.currentCustomHeaders.map(\.name), ["X-A"])
         XCTAssertEqual(manager.currentCustomHeaders.map(\.value), ["a-token"])
+    }
+
+    func testAddServerRegistryFailureKeepsSavedAndActiveServer() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            probeClientFactory: { _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache,
+            serverRegistry: registry
+        )
+        await manager.configure(serverURLString: "https://a.test", password: "")
+        keychain.saveErrors[.servers] = PreconditionFailure()
+
+        let outcome = await manager.addServer(serverURLString: "https://b.test", password: "")
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertEqual(keychain.savedValues[.serverURL], "https://a.test")
+        XCTAssertEqual(registry.activeServerID, "https://a.test")
+        XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://a.test"))))
     }
 
     func testServersSnapshotMirrorsRegistry() async throws {

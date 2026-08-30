@@ -190,12 +190,10 @@ final class AuthManager {
                 }
             }
 
-            // Persist only on success: the server URL and the headers that reached it.
-            try keychain.save(serverURL.absoluteString, forKey: .serverURL)
-            // Record (or re-activate) this server in the multi-server registry,
-            // shadowing the Keychain `server_url` write above (#15). Dedupes by
-            // normalized URL.
+            // The registry is the source of truth. Update it first, then mirror the
+            // active URL for older installs and App Intent compatibility.
             try serverRegistry.activate(url: serverURL)
+            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
             // Persist the headers that reached this server under its own scoped key
             // so they never apply to a different server (#16).
             persistCustomHeaders(for: serverURL)
@@ -280,10 +278,11 @@ final class AuthManager {
             // own scoped key (#16). The previous active server's headers were never
             // disturbed, and stay safe in their own scoped Keychain entry.
             //
-            // Do the throwing Keychain write first so a write failure leaves the
-            // live header store (and the active server) completely untouched.
-            try keychain.save(serverURL.absoluteString, forKey: .serverURL)
+            // Commit the authoritative registry first. The legacy single-URL key
+            // is only a compatibility mirror, so its failure cannot split routing
+            // state from the registry.
             try serverRegistry.activate(url: serverURL)
+            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
             headerStore.replace(with: newHeaders)
             persistCustomHeaders(for: serverURL)
             refreshServers()
@@ -339,8 +338,9 @@ final class AuthManager {
     /// `signOut` (best-effort server logout + auto-switch / onboarding). A
     /// non-active server is just dropped locally — its registry row, scoped
     /// headers, and cookies — leaving the active server's auth untouched (#17).
-    func removeServer(_ account: ServerAccount) async {
-        guard let serverURL = URL(string: account.urlString) else { return }
+    @discardableResult
+    func removeServer(_ account: ServerAccount) async -> Bool {
+        guard let serverURL = URL(string: account.urlString) else { return false }
         let isActive = state.server?.absoluteString == account.id
 
         do {
@@ -354,8 +354,10 @@ final class AuthManager {
                 clearLocalArtifacts(for: serverURL)
                 refreshServers()
             }
+            return true
         } catch {
             lastErrorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -370,11 +372,11 @@ final class AuthManager {
 
         do {
             try serverRegistry.setActive(id: account.id)
-            try keychain.save(serverURL.absoluteString, forKey: .serverURL)
         } catch {
             lastErrorMessage = error.localizedDescription
             return
         }
+        try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         refreshServers()
         hydrateCustomHeaders(for: serverURL)
         // Drop the App Intents profile picker cache (#339): it holds the previous server's
@@ -588,25 +590,29 @@ final class AuthManager {
     }
 
     private func restoreSavedServer() {
-        guard
-            let savedValue = try? keychain.load(.serverURL),
-            let savedURL = URL(string: savedValue)
-        else {
-            // No saved server: nothing is active, so no scoped headers apply.
-            state = .unconfigured
-            return
-        }
+        let savedURL: URL
+        if let active = serverRegistry.activeServer,
+           let activeURL = URL(string: active.urlString) {
+            savedURL = activeURL
+        } else {
+            guard
+                let savedValue = try? keychain.load(.serverURL),
+                let legacyURL = URL(string: savedValue)
+            else {
+                // No saved server: nothing is active, so no scoped headers apply.
+                state = .unconfigured
+                return
+            }
 
-        // One-time migration of the saved single server into the multi-server
-        // registry (#15). Idempotent: an already-registered server is just
-        // re-activated, and its per-server identity is only seeded on first
-        // insert, so #17 edits survive relaunch.
-        do {
-            try serverRegistry.activate(url: savedURL)
-        } catch {
-            lastErrorMessage = error.localizedDescription
-            state = .unconfigured
-            return
+            // One-time migration of the legacy single-server key into the registry.
+            do {
+                try serverRegistry.activate(url: legacyURL)
+            } catch {
+                lastErrorMessage = error.localizedDescription
+                state = .unconfigured
+                return
+            }
+            savedURL = legacyURL
         }
         // Hydrate this server's headers (migrating the pre-#16 global blob on the
         // first launch after the split) before any client is built, so the first

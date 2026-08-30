@@ -126,6 +126,7 @@ final class DeferredRequests: @unchecked Sendable {
 final class InMemoryKeychainStore: KeychainStoring {
     private(set) var savedValues: [KeychainStore.Key: String] = [:]
     var saveError: Error?
+    var saveErrors: [KeychainStore.Key: Error] = [:]
     /// Per-key write count, so tests can assert no redundant writes occur.
     private(set) var saveCounts: [KeychainStore.Key: Int] = [:]
     /// Per-server-scoped storage, keyed by the same "raw::scope" string the real
@@ -133,7 +134,7 @@ final class InMemoryKeychainStore: KeychainStoring {
     private(set) var scopedValues: [String: String] = [:]
 
     func save(_ value: String, forKey key: KeychainStore.Key) throws {
-        if let saveError { throw saveError }
+        if let error = saveErrors[key] ?? saveError { throw error }
         savedValues[key] = value
         saveCounts[key, default: 0] += 1
     }
@@ -147,7 +148,7 @@ final class InMemoryKeychainStore: KeychainStoring {
     }
 
     func save(_ value: String, forKey key: KeychainStore.Key, scope: String) throws {
-        if let saveError { throw saveError }
+        if let error = saveErrors[key] ?? saveError { throw error }
         scopedValues[KeychainStore.scopedKey(key, scope: scope)] = value
     }
 

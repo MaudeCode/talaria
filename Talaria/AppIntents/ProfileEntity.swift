@@ -112,11 +112,13 @@ enum ProfileEntityProvider {
     }
 
     private static func savedServerURL() -> URL? {
-        guard let raw = try? KeychainStore().load(.serverURL),
-              let url = URL(string: raw) else {
-            return nil
+        if let raw = ServerRegistry.shared.activeServer?.urlString,
+           let url = URL(string: raw) {
+            return url
         }
-        return url
+        // Pre-registry installs are migrated by AuthManager on the next app launch.
+        guard let raw = try? KeychainStore().load(.serverURL) else { return nil }
+        return URL(string: raw)
     }
 
     @MainActor private static var didRefreshAppShortcutsThisLaunch = false
