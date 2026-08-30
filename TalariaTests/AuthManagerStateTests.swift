@@ -184,7 +184,7 @@ final class AuthManagerStateTests: XCTestCase {
         let registry = ServerRegistry.inMemory()
         // Pre-seed server B: a registry entry plus its scoped custom headers.
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
-        registry.activate(url: serverB)
+        try registry.activate(url: serverB)
         let bHeaders = try XCTUnwrap([CustomHeader(name: "X-B", value: "b-token")].encodedForStorage())
         try keychain.save(bHeaders, forKey: .customHeaders, scope: "https://b.test")
 
@@ -496,7 +496,7 @@ final class AuthManagerStateTests: XCTestCase {
         registry: ServerRegistry
     ) async throws -> (AuthManager, ServerAccount, ServerAccount) {
         // Pre-seed B (becomes inactive once A signs in), then sign in to A.
-        registry.activate(url: try XCTUnwrap(URL(string: "https://b.test")))
+        try registry.activate(url: try XCTUnwrap(URL(string: "https://b.test")))
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },

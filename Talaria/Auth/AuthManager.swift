@@ -195,7 +195,7 @@ final class AuthManager {
             // Record (or re-activate) this server in the multi-server registry,
             // shadowing the Keychain `server_url` write above (#15). Dedupes by
             // normalized URL.
-            serverRegistry.activate(url: serverURL)
+            try serverRegistry.activate(url: serverURL)
             // Persist the headers that reached this server under its own scoped key
             // so they never apply to a different server (#16).
             persistCustomHeaders(for: serverURL)
@@ -283,8 +283,8 @@ final class AuthManager {
             // Do the throwing Keychain write first so a write failure leaves the
             // live header store (and the active server) completely untouched.
             try keychain.save(serverURL.absoluteString, forKey: .serverURL)
+            try serverRegistry.activate(url: serverURL)
             headerStore.replace(with: newHeaders)
-            serverRegistry.activate(url: serverURL)
             persistCustomHeaders(for: serverURL)
             refreshServers()
             clearQuotaWidgetSnapshot()
@@ -328,7 +328,11 @@ final class AuthManager {
             await attemptBestEffortServerLogout(server: active)
         }
 
-        advanceAfterRemoving(activeServer: active)
+        do {
+            try advanceAfterRemoving(activeServer: active)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
     }
 
     /// Removes a configured server. When it's the active one this behaves like
@@ -339,15 +343,19 @@ final class AuthManager {
         guard let serverURL = URL(string: account.urlString) else { return }
         let isActive = state.server?.absoluteString == account.id
 
-        if isActive {
-            if case .loggedIn = state {
-                await attemptBestEffortServerLogout(server: serverURL)
+        do {
+            if isActive {
+                if case .loggedIn = state {
+                    await attemptBestEffortServerLogout(server: serverURL)
+                }
+                try advanceAfterRemoving(activeServer: serverURL)
+            } else {
+                try serverRegistry.remove(id: account.id)
+                clearLocalArtifacts(for: serverURL)
+                refreshServers()
             }
-            advanceAfterRemoving(activeServer: serverURL)
-        } else {
-            clearLocalArtifacts(for: serverURL)
-            serverRegistry.remove(id: account.id)
-            refreshServers()
+        } catch {
+            lastErrorMessage = error.localizedDescription
         }
     }
 
@@ -360,9 +368,14 @@ final class AuthManager {
         guard account.id != state.server?.absoluteString,
               let serverURL = URL(string: account.urlString) else { return }
 
-        serverRegistry.setActive(id: account.id)
+        do {
+            try serverRegistry.setActive(id: account.id)
+            try keychain.save(serverURL.absoluteString, forKey: .serverURL)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return
+        }
         refreshServers()
-        try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         hydrateCustomHeaders(for: serverURL)
         // Drop the App Intents profile picker cache (#339): it holds the previous server's
         // profiles, which would leak into Shortcuts / Siri if the new server's fetch is
@@ -387,14 +400,20 @@ final class AuthManager {
         updated.displayName = displayName
         updated.initials = initials
         updated.headerLogoColorHex = headerLogoColorHex
-        serverRegistry.update(updated)
-        refreshServers()
+        do {
+            try serverRegistry.update(updated)
+            refreshServers()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
     }
 
     /// Drops the active server locally + from the registry, then auto-switches to
     /// the next remaining server, or returns to onboarding when none remain. The
     /// shared core of `signOut` and active-server `removeServer` (#17).
-    private func advanceAfterRemoving(activeServer server: URL) {
+    private func advanceAfterRemoving(activeServer server: URL) throws {
+        let nextActive = try serverRegistry.remove(id: server.absoluteString)
+
         // Always drop any pre-#16 global header remnant on a sign-out path.
         try? keychain.delete(.customHeaders)
         clearLocalArtifacts(for: server)
@@ -404,7 +423,6 @@ final class AuthManager {
         profileEntityCache.save([])
         clearQuotaWidgetSnapshot()
 
-        let nextActive = serverRegistry.remove(id: server.absoluteString)
         refreshServers()
 
         if let nextActive, let nextURL = URL(string: nextActive.urlString) {
@@ -501,7 +519,12 @@ final class AuthManager {
         }
 
         // Forget the active server in the registry (leaves other servers intact).
-        serverRegistry.forgetActiveServer()
+        do {
+            try serverRegistry.forgetActiveServer()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return
+        }
         refreshServers()
         headerStore.replace(with: [])
         // Drop the App Intents profile picker cache (#339) so a signed-out user doesn't see
@@ -578,7 +601,13 @@ final class AuthManager {
         // registry (#15). Idempotent: an already-registered server is just
         // re-activated, and its per-server identity is only seeded on first
         // insert, so #17 edits survive relaunch.
-        serverRegistry.activate(url: savedURL)
+        do {
+            try serverRegistry.activate(url: savedURL)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            state = .unconfigured
+            return
+        }
         // Hydrate this server's headers (migrating the pre-#16 global blob on the
         // first launch after the split) before any client is built, so the first
         // request after launch carries the saved headers (#255/#16).
