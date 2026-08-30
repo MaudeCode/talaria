@@ -750,7 +750,7 @@ Document it as the recommended path.
 | 5 | **SSE not WebSocket.** | Use LDSwiftEventSource. Handle heartbeat comment lines. |
 | 6 | **Cloudflare ~100s idle timeout on free plan.** | 30s server heartbeats keep streams alive; gaps >100s with no events will cut the connection. Reconnect logic must handle this. |
 | 7 | **App Store review for "remote shell" apps** can be sensitive. | Position as "mobile client for your own developer agent server." Prior art: Blink Shell, Working Copy, Termius. |
-| 8 | **TestFlight release automation can publish unreviewed work too easily.** | Use short feature branches and only upload owner-verified `master` builds to internal TestFlight. Promote selected builds to external testers manually. |
+| 8 | **TestFlight release automation can publish unreviewed work too easily.** | Use short feature branches and only upload owner-verified `main` builds to internal TestFlight. Promote selected builds to external testers manually. |
 | 9 | Server may return new SSE event types we don't handle. | Default case in event-decoding switch logs and ignores — never crash. |
 | 10 | Long agent runs may exceed iOS background time when app is backgrounded. | Don't try to keep streams alive in background for v1. On foreground, reconnect via `/api/chat/stream/status`. |
 | 11 | **The server is typically a personal machine.** If it is asleep, off, or offline, the app shows network errors. | Document in onboarding: "If you can't connect, check that your server machine is awake and your tunnel is running." Add a clear error message that distinguishes "tunnel down" (DNS resolves, connection refused) from "machine asleep" (timeout) where possible. |
@@ -1070,7 +1070,7 @@ generic error text.
 
 ### 17.8 Delivery, testing, and activation gates
 
-Incomplete Kanban must remain hidden from normal navigation on `master`. Intermediate
+Incomplete Kanban must remain hidden from normal navigation on `main`. Intermediate
 slices are reachable only in Debug builds through `--kanban-lab`, following the
 existing Streaming Lab launch-argument pattern. The final parity slice removes the
 temporary gate and adds the normal Kanban utility destination only after all blockers

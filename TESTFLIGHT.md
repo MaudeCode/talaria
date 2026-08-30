@@ -24,7 +24,7 @@ As of 2026-08-04:
 Do not invite external testers if any of these are true:
 
 - `git status --short --branch` is not clean on the RC branch.
-- The intended RC commit has not been pushed to `origin/master`.
+- The intended RC commit has not been pushed to `origin/main`.
 - Full `xcodebuild test` has not passed on the intended RC commit.
 - The owner has not installed and manually smoke-tested the exact RC build from internal TestFlight on a physical iPhone.
 - App Store Connect TestFlight test information is incomplete.
@@ -41,7 +41,7 @@ Purpose: make sure the source tree has one clear release candidate.
 Owner/Codex tasks:
 
 1. Review `codex/i-013-record-permission-deprecation`.
-2. Either merge it into local `master` after review, or explicitly defer it and leave it out of the RC.
+2. Either merge it into local `main` after review, or explicitly defer it and leave it out of the RC.
 3. Confirm paused issues remain unreproduced:
    - `I-002`: active session can show blank transcript after sleep/return.
    - `I-004`: thinking card spacing inconsistency.
@@ -51,14 +51,14 @@ Owner/Codex tasks:
 Validation:
 
 ```zsh
-git switch master
+git switch main
 git status --short --branch
 git log --oneline --decorate --max-count=12
 ```
 
 Exit criteria:
 
-- `master` contains the selected RC fixes.
+- `main` contains the selected RC fixes.
 - `git status --short --branch` is clean.
 - Any excluded issue is intentionally deferred or paused in GitHub Issues.
 
@@ -113,7 +113,7 @@ Preferred implementation:
    - `uploadSymbols = true`
    - no `testFlightInternalTestingOnly` key
 3. Add a separate manual workflow, for example `.github/workflows/external-testflight.yml`, with stronger gates:
-   - only runs on `master`;
+   - only runs on `main`;
    - requires an explicit input such as `confirm_external_review = EXTERNAL_REVIEW`;
    - uses a separate GitHub environment such as `external-testflight`;
    - does not auto-invite testers;
@@ -415,14 +415,14 @@ Purpose: ensure the upload workflow uses the audited source.
 Owner task:
 
 ```zsh
-git switch master
+git switch main
 git status --short --branch
-git push origin master
+git push origin main
 ```
 
 Exit criteria:
 
-- `origin/master` points to the intended RC commit.
+- `origin/main` points to the intended RC commit.
 - App Store Connect upload workflow will build the audited source, not an older commit.
 
 Current Step 9 status as of 2026-05-17:
@@ -437,7 +437,7 @@ Purpose: test the exact RC through Apple's distribution path before external rev
 Use the existing internal-only workflow:
 
 1. Run `Internal TestFlight` from GitHub Actions.
-2. Select `master`.
+2. Select `main`.
 3. Set `confirm_internal_only = INTERNAL`.
 4. Leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
 5. Wait for App Store Connect processing.
@@ -517,13 +517,13 @@ Use the new external-capable workflow or manual Xcode upload. The build must not
 
 Version-train rule (bitten 2026-06-02 with `1.0` → `1.0.1` and 2026-08-04 with `1.4` → `1.5`): once a version is approved for the App Store, Apple closes its pre-release train and rejects any upload with that `CFBundleShortVersionString` (ASC errors 90186/90062). Two defenses:
 
-- Bump `MARKETING_VERSION` (in `Talaria.xcodeproj/project.pbxproj`, all entries) on `master` right after each App Store release goes live, so the next upload always targets an open train.
+- Bump `MARKETING_VERSION` (in `Talaria.xcodeproj/project.pbxproj`, all entries) on `main` right after each App Store release goes live, so the next upload always targets an open train.
 - The workflow preflights the train against App Store Connect before archiving (`ENFORCE_OPEN_TRAIN` in `ci/select_testflight_build_number.rb`) and fails in seconds with a bump instruction if the train is closed.
 
 Workflow path, if implemented:
 
 1. Run `External TestFlight` from GitHub Actions.
-2. Select `master`.
+2. Select `main`.
 3. Set `confirm_external_review = EXTERNAL_REVIEW`.
 4. Leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
 5. Wait for App Store Connect processing.
@@ -731,7 +731,7 @@ Track these during launch:
 
 External TestFlight is ready when all are true:
 
-- `master` is clean, validated, and pushed.
+- `main` is clean, validated, and pushed.
 - A fresh internal TestFlight RC from that commit passed owner device regression.
 - An external-capable build from the same approved RC is uploaded and not marked internal-only.
 - Privacy policy URL is live and entered in App Store Connect.
