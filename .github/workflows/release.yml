@@ -81,13 +81,13 @@ jobs:
     needs: validate-release
     uses: ./.github/workflows/repository-tooling.yml
     with:
-      ref: ${{ needs.validate-release.outputs.ref }}
+      ref: ${{ needs.validate-release.outputs.sha }}
 
   ios-build:
     needs: [validate-release, tooling]
     uses: ./.github/workflows/ios-release-build.yml
     with:
-      ref: ${{ needs.validate-release.outputs.ref }}
+      ref: ${{ needs.validate-release.outputs.sha }}
     secrets: inherit
 
   validate-artifacts:
