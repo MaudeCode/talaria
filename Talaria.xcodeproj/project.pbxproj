@@ -110,6 +110,10 @@
 		C04800000000000000000003 /* ChatAttachmentCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */; };
 		1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BD /* Workspace.swift */; };
 		1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */; };
+		C107G000000000000000001 /* ChatControlResponses.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000011 /* ChatControlResponses.swift */; };
+		C107G000000000000000002 /* ServerSettingsUpdates.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000012 /* ServerSettingsUpdates.swift */; };
+		C107G000000000000000003 /* ServerProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000013 /* ServerProfiles.swift */; };
+		C107G000000000000000004 /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000014 /* ModelCatalog.swift */; };
 		A06100000000000000000001 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000005 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */; };
@@ -501,6 +505,10 @@
 		C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentCoordinatorTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BD /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCatalog.swift; sourceTree = "<group>"; };
+		C107G000000000000000011 /* ChatControlResponses.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatControlResponses.swift; sourceTree = "<group>"; };
+		C107G000000000000000012 /* ServerSettingsUpdates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsUpdates.swift; sourceTree = "<group>"; };
+		C107G000000000000000013 /* ServerProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerProfiles.swift; sourceTree = "<group>"; };
+		C107G000000000000000014 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
 		A06100000000000000000002 /* ProviderQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuota.swift; sourceTree = "<group>"; };
 		A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSupport.swift; sourceTree = "<group>"; };
 		C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSnapshot.swift; sourceTree = "<group>"; };
@@ -1009,6 +1017,10 @@
 				1A2B3C4D5E6F7000000000BD /* Workspace.swift */,
 				C03120000000000000F001 /* GitWorkspace.swift */,
 				1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */,
+				C107G000000000000000011 /* ChatControlResponses.swift */,
+				C107G000000000000000012 /* ServerSettingsUpdates.swift */,
+				C107G000000000000000013 /* ServerProfiles.swift */,
+				C107G000000000000000014 /* ModelCatalog.swift */,
 				A06100000000000000000002 /* ProviderQuota.swift */,
 				A06100000000000000000007 /* ProviderQuotaWidgetSupport.swift */,
 				C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */,
@@ -1660,6 +1672,10 @@
 				1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */,
 				1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */,
 				1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */,
+				C107G000000000000000001 /* ChatControlResponses.swift in Sources */,
+				C107G000000000000000002 /* ServerSettingsUpdates.swift in Sources */,
+				C107G000000000000000003 /* ServerProfiles.swift in Sources */,
+				C107G000000000000000004 /* ModelCatalog.swift in Sources */,
 				A06100000000000000000001 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000006 /* ProviderQuotaWidgetSupport.swift in Sources */,
 				C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
