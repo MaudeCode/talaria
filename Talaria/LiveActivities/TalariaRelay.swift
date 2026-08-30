@@ -37,9 +37,10 @@ enum TalariaRelayConfigurationStore {
     static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains(UITestFixtureEnvironment.launchArgument),
-           arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
-            return UITestFixtureEnvironment.relayCredentials
+        if arguments.contains(UITestFixtureEnvironment.launchArgument) {
+            return arguments.contains(UITestFixtureEnvironment.relayConnectedArgument)
+                ? UITestFixtureEnvironment.relayCredentials
+                : nil
         }
         #endif
         guard let encoded = try? keychain.load(.talariaRelay),

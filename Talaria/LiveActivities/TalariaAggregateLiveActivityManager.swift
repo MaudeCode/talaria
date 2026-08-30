@@ -28,8 +28,7 @@ final class TalariaAggregateLiveActivityManager {
     func armForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
         guard TalariaLiveActivityMode.current == .allRunning,
               ActivityAuthorizationInfo().areActivitiesEnabled,
-              TalariaRelayConfigurationStore.ownsCompletionAlerts(for: publisherURL),
-              let credentials = TalariaRelayConfigurationStore.load(),
+              let credentials = TalariaRelayConfigurationStore.operationalCredentials(for: publisherURL),
               let state = TalariaAggregateActivitySeed.make(
                   sessionID: sessionID,
                   sessionTitle: sessionTitle,

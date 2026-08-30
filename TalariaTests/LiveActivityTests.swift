@@ -90,6 +90,10 @@ final class LiveActivityTests: XCTestCase {
             keychain: keychain,
             defaults: defaults
         ))
+        XCTAssertNotNil(TalariaRelayConfigurationStore.operationalCredentials(
+            for: pairedServer,
+            keychain: keychain
+        ))
         defaults.set("push-token", forKey: TalariaRelayNotifications.pushTokenKey)
         XCTAssertFalse(TalariaRelayConfigurationStore.ownsCompletionAlerts(
             for: try XCTUnwrap(URL(string: "https://other.example")),

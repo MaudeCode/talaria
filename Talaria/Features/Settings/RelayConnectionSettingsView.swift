@@ -156,7 +156,11 @@ struct RelayAccountSettingsSection: View {
         do {
             let previous = TalariaRelayConfigurationStore.load()
             if let previous, previous.pendingRevocation == true {
-                try await RelayConnectionOperations.disconnect(credentials: previous)
+                if previous.isExpired {
+                    try TalariaRelayConfigurationStore.clear()
+                } else {
+                    try await RelayConnectionOperations.disconnect(credentials: previous)
+                }
             }
             var signedIn = try await TalariaRelayClient.signIn(
                 identityToken: identityToken,
@@ -457,6 +461,7 @@ enum RelayConnectionOperations {
             subscribed: true
         )
         try TalariaRelayConfigurationStore.recordPairedPublisher(publisherID)
+        await AgentLiveActivityManager.shared.refreshForCurrentMode()
         try await TalariaAggregateLiveActivityManager.shared.refresh()
     }
 
