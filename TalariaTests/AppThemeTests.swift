@@ -88,6 +88,33 @@ final class AppThemeTests: XCTestCase {
     }
 }
 
+final class SettingsNavigationTests: XCTestCase {
+    func testRootContainsOnlyCategoryDestinations() {
+        var expected: [SettingsCategory] = [
+            .profileAndAppearance,
+            .notificationsAndHaptics,
+            .chatAndComposer,
+            .chatsAndSessions,
+            .serversAndProviders,
+            .liveActivitiesAndWidgets,
+            .siriAndShortcuts,
+            .storage,
+            .about,
+        ]
+        #if DEBUG
+        expected.append(.developer)
+        #endif
+
+        XCTAssertEqual(SettingsCategory.rootCategories, expected)
+        XCTAssertFalse(SettingsCategory.rootCategories.contains(.providerQuotas))
+    }
+
+    func testExternalSettingsDestinationsOpenTheirOwningCategory() {
+        XCTAssertEqual(SettingsScrollAnchor.servers.category, .serversAndProviders)
+        XCTAssertEqual(SettingsScrollAnchor.providerQuotas.category, .providerQuotas)
+    }
+}
+
 final class PrimaryActionTintSettingsTests: XCTestCase {
     func testStorageKeyIsStable() {
         XCTAssertEqual(

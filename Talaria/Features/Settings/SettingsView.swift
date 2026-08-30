@@ -3,16 +3,90 @@ import SwiftData
 import UIKit
 import UserNotifications
 
+enum SettingsCategory: String, Identifiable {
+    case profileAndAppearance
+    case notificationsAndHaptics
+    case chatAndComposer
+    case chatsAndSessions
+    case serversAndProviders
+    case liveActivitiesAndWidgets
+    case siriAndShortcuts
+    case storage
+    case about
+    case developer
+    case providerQuotas
+
+    var id: String { rawValue }
+
+    static var rootCategories: [Self] {
+        var categories: [Self] = [
+            .profileAndAppearance,
+            .notificationsAndHaptics,
+            .chatAndComposer,
+            .chatsAndSessions,
+            .serversAndProviders,
+            .liveActivitiesAndWidgets,
+            .siriAndShortcuts,
+            .storage,
+            .about,
+        ]
+        #if DEBUG
+        categories.append(.developer)
+        #endif
+        return categories
+    }
+
+    var title: String {
+        switch self {
+        case .profileAndAppearance: String(localized: "Profile & Appearance")
+        case .notificationsAndHaptics: String(localized: "Notifications & Haptics")
+        case .chatAndComposer: String(localized: "Chat & Composer")
+        case .chatsAndSessions: String(localized: "Chats & Sessions")
+        case .serversAndProviders: String(localized: "Servers & Providers")
+        case .liveActivitiesAndWidgets: String(localized: "Live Activities & Widgets")
+        case .siriAndShortcuts: String(localized: "Siri & Shortcuts")
+        case .storage: String(localized: "Storage")
+        case .about: String(localized: "About")
+        case .developer: String(localized: "Developer")
+        case .providerQuotas: String(localized: "Provider Quotas")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .profileAndAppearance: "person.crop.circle"
+        case .notificationsAndHaptics: "bell.badge"
+        case .chatAndComposer: "bubble.left.and.text.bubble.right"
+        case .chatsAndSessions: "list.bullet.rectangle"
+        case .serversAndProviders: "server.rack"
+        case .liveActivitiesAndWidgets: "bolt.horizontal.circle"
+        case .siriAndShortcuts: "sparkles"
+        case .storage: "internaldrive"
+        case .about: "info.circle"
+        case .developer: "hammer"
+        case .providerQuotas: "gauge.open.with.lines.needle.33percent"
+        }
+    }
+}
+
 struct SettingsView: View {
     @Bindable var authManager: AuthManager
     let server: URL
-    /// When set, Settings scrolls to this section once on first appear (#283).
+    /// When set, Settings opens the category that owns this destination.
     let initialScrollTarget: SettingsScrollAnchor?
+    private let category: SettingsCategory?
 
-    init(authManager: AuthManager, server: URL, initialScrollTarget: SettingsScrollAnchor? = nil) {
+    init(
+        authManager: AuthManager,
+        server: URL,
+        initialScrollTarget: SettingsScrollAnchor? = nil,
+        category: SettingsCategory? = nil
+    ) {
         self.authManager = authManager
         self.server = server
         self.initialScrollTarget = initialScrollTarget
+        self.category = category
+        _isPresentingInitialCategory = State(initialValue: initialScrollTarget != nil)
         _showsCliSessions = AppStorage(
             wrappedValue: SessionRowDisplaySettings.showsCliSessions(for: server),
             SessionRowDisplaySettings.showCliSessionsKey(for: server)
@@ -25,7 +99,7 @@ struct SettingsView: View {
 
     @ScaledMetric(relativeTo: .body) private var settingsCardSpacing: CGFloat = 18
     @State private var isConfirmingReconfigure = false
-    @State private var didScrollToInitialTarget = false
+    @State private var isPresentingInitialCategory: Bool
     @State private var isPresentingAddServer = false
     @State private var isConfirmingClearCache = false
     @State private var isClearingCache = false
@@ -101,9 +175,39 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollViewReader { proxy in
+        if let category {
+            categoryDestination(category)
+        } else {
+            settingsRoot
+        }
+    }
+
+    private var settingsRoot: some View {
+        List(SettingsCategory.rootCategories) { category in
+            NavigationLink {
+                SettingsView(authManager: authManager, server: server, category: category)
+            } label: {
+                Label(category.title, systemImage: category.systemImage)
+            }
+            .accessibilityIdentifier("settings-category-\(category.id)")
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Settings")
+        .navigationDestination(isPresented: $isPresentingInitialCategory) {
+            if let initialScrollTarget {
+                SettingsView(
+                    authManager: authManager,
+                    server: server,
+                    category: initialScrollTarget.category
+                )
+            }
+        }
+    }
+
+    private func categoryDestination(_ category: SettingsCategory) -> some View {
         ScrollView {
             VStack(spacing: settingsCardSpacing) {
+                if category == .profileAndAppearance {
                 SettingsCard(title: String(localized: "Identity")) {
                     SessionIdentitySettingsEditor(
                         displayName: $identityDisplayName,
@@ -113,7 +217,9 @@ struct SettingsView: View {
                         previewForeground: HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
                     )
                 }
+                }
 
+                if category == .chatsAndSessions {
                 SettingsCard(title: String(localized: "Archived Sessions")) {
                     NavigationLink {
                         ArchivedSessionsView(server: server, onAPIError: authManager.handleAPIError)
@@ -122,7 +228,9 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                }
 
+                if category == .profileAndAppearance {
                 SettingsCard(title: String(localized: "Appearance")) {
                     SettingsPickerRow(
                         title: String(localized: "Theme"),
@@ -155,7 +263,9 @@ struct SettingsView: View {
 
                     AppIconSettingsSection()
                 }
+                }
 
+                if category == .notificationsAndHaptics {
                 SettingsCard(title: String(localized: "Interaction")) {
                     SettingsToggleRow(
                         title: String(localized: "Haptic Feedback"),
@@ -175,9 +285,13 @@ struct SettingsView: View {
                         SettingsFootnote(notificationStatusText)
                     }
                 }
+                }
 
+                if category == .liveActivitiesAndWidgets {
                 RelayLiveActivitySettingsCard(server: server)
+                }
 
+                if category == .chatAndComposer {
                 SettingsCard(title: String(localized: "Composer")) {
                     SettingsPickerRow(
                         title: String(localized: "Send While Responding"),
@@ -347,7 +461,9 @@ struct SettingsView: View {
 
                     SettingsFootnote(String(localized: "Covers both the git menu in the chat toolbar and the branch picker in the composer."))
                 }
+                }
 
+                if category == .chatsAndSessions {
                 SettingsCard(title: String(localized: "Chats")) {
                     SettingsToggleRow(
                         title: String(localized: "Active Profile"),
@@ -423,7 +539,9 @@ struct SettingsView: View {
                     )
 
                 }
+                }
 
+                if category == .siriAndShortcuts {
                 SettingsCard(title: String(localized: "Siri & Shortcuts")) {
                     if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                         Link(destination: settingsURL) {
@@ -439,9 +557,10 @@ struct SettingsView: View {
 
                     SettingsFootnote(String(localized: "Run Talaria actions like New Chat from Siri, Spotlight, the Lock Screen, or the iPhone Action button. Open Talaria Settings to manage its Siri & Search options. To assign an action to the Action button, open the iOS Settings app, choose Action Button, then Shortcut, and pick a Talaria action."))
                 }
+                }
 
+                if category == .serversAndProviders {
                 serversCard
-                    .id(SettingsScrollAnchor.servers)
 
                 SettingsCard(title: String(localized: "Active Server")) {
                     HapticButton {
@@ -497,7 +616,9 @@ struct SettingsView: View {
                     serverUpdateNote
                     serverUpdateAction
                 }
+                }
 
+                if category == .serversAndProviders || category == .providerQuotas {
                 SettingsCard(title: String(localized: "Provider Quotas")) {
                     NavigationLink {
                         ProvidersView(server: server)
@@ -572,8 +693,9 @@ struct SettingsView: View {
                         SettingsFootnote(notificationStatusText)
                     }
                 }
-                .id(SettingsScrollAnchor.providerQuotas)
+                }
 
+                if category == .liveActivitiesAndWidgets {
                 SettingsCard(title: String(localized: "Widgets")) {
                     NavigationLink {
                         ProviderQuotaWidgetAppearanceView()
@@ -586,7 +708,9 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens provider quota widget appearance settings.")
                 }
+                }
 
+                if category == .about {
                 SettingsCard(title: String(localized: "App")) {
                     SettingsInfoRow(title: String(localized: "Version"), value: appVersion)
                     SettingsInfoRow(title: String(localized: "Build"), value: appBuild)
@@ -615,8 +739,10 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Support")
                 }
+                }
 
                 #if DEBUG
+                if category == .developer {
                 SettingsCard(title: String(localized: "Developer")) {
                     NavigationLink {
                         StreamingLabView()
@@ -627,8 +753,10 @@ struct SettingsView: View {
 
                     SettingsFootnote(String(localized: "Debug builds only. Replay a canned reply and tune the streamed-text fade feel live."))
                 }
+                }
                 #endif
 
+                if category == .storage {
                 SettingsCard(title: String(localized: "Offline Data")) {
                     SettingsFootnote(cacheStatusMessage ?? String(localized: "Cached sessions and messages are kept for offline viewing. Clearing removes this server's cache only — other servers and the Hermes server are not affected."))
 
@@ -637,13 +765,16 @@ struct SettingsView: View {
                     }
                     .disabled(isClearingCache)
                 }
+                }
 
+                if category == .serversAndProviders {
                 SettingsCard(title: String(localized: "Account")) {
                     SettingsFootnote(signOutFootnote)
 
                     SettingsButton(String(localized: "Sign Out of This Server"), role: .destructive) {
                         isConfirmingReconfigure = true
                     }
+                }
                 }
             }
             .padding(.horizontal, 16)
@@ -652,10 +783,16 @@ struct SettingsView: View {
             .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
         }
         .background(Color(.systemBackground))
-        .navigationTitle("Settings")
+        .navigationTitle(category.title)
         .task {
-            await loadServerSettings()
-            await refreshNotificationPermissionStatus()
+            if category == .serversAndProviders {
+                await loadServerSettings()
+            }
+            if category == .notificationsAndHaptics
+                || category == .serversAndProviders
+                || category == .providerQuotas {
+                await refreshNotificationPermissionStatus()
+            }
         }
         .alert("Clear this server's cache?", isPresented: $isConfirmingClearCache) {
             Button("Cancel", role: .cancel) {}
@@ -751,17 +888,6 @@ struct SettingsView: View {
                     }
                 }
             )
-        }
-        .onAppear {
-            // Land on the requested section once when opened via a deep link
-            // (the avatar's "Manage Servers" → Servers card), not on every
-            // re-appear after popping back from a sub-screen (#283).
-            guard let initialScrollTarget, !didScrollToInitialTarget else { return }
-            didScrollToInitialTarget = true
-            DispatchQueue.main.async {
-                proxy.scrollTo(initialScrollTarget, anchor: .top)
-            }
-        }
         }
     }
 

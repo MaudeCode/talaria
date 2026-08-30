@@ -4,6 +4,30 @@
     "" : {
       "shouldTranslate" : false
     },
+    "About" : {
+
+    },
+    "Chat & Composer" : {
+
+    },
+    "Chats & Sessions" : {
+
+    },
+    "Live Activities & Widgets" : {
+
+    },
+    "Notifications & Haptics" : {
+
+    },
+    "Profile & Appearance" : {
+
+    },
+    "Servers & Providers" : {
+
+    },
+    "Storage" : {
+
+    },
     "%lld active sessions" : {
 
     },
