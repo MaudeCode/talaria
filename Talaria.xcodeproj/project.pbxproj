@@ -324,6 +324,9 @@
 		A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000002 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000012 /* AgentLiveActivityManager.swift */; };
+		C107E000000000000000001 /* TalariaRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000011 /* TalariaRelay.swift */; };
+		C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */; };
+		C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000013 /* LiveActivityReconciler.swift */; };
 		A04500000000000000000004 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000005 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */; };
@@ -723,6 +726,9 @@
 		A04500000000000000000010 /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
 		A04500000000000000000011 /* TalariaDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaDeepLink.swift; sourceTree = "<group>"; };
 		A04500000000000000000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
+		C107E000000000000000011 /* TalariaRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaRelay.swift; sourceTree = "<group>"; };
+		C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateLiveActivityManager.swift; sourceTree = "<group>"; };
+		C107E000000000000000013 /* LiveActivityReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityReconciler.swift; sourceTree = "<group>"; };
 		A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivityWidget.swift; sourceTree = "<group>"; };
 		A04500000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A04500000000000000000017 /* TalariaLiveActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TalariaLiveActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1281,6 +1287,9 @@
 				A04500000000000000000010 /* AgentRunActivityAttributes.swift */,
 				A04500000000000000000011 /* TalariaDeepLink.swift */,
 				A04500000000000000000012 /* AgentLiveActivityManager.swift */,
+				C107E000000000000000011 /* TalariaRelay.swift */,
+				C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */,
+				C107E000000000000000013 /* LiveActivityReconciler.swift */,
 			);
 			path = LiveActivities;
 			sourceTree = "<group>";
@@ -1583,6 +1592,9 @@
 				A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */,
 				A04500000000000000000002 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */,
+				C107E000000000000000001 /* TalariaRelay.swift in Sources */,
+				C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */,
+				C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */,
 				1A2B3C4D5E6F7000000000A2 /* APIClient.swift in Sources */,
 				C04000000000000000000001 /* APIClient+Sessions.swift in Sources */,
 				C04000000000000000000002 /* APIClient+Projects.swift in Sources */,
