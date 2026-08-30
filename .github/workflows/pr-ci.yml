@@ -81,6 +81,9 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
+      - name: Test local XCTest admission
+        run: scripts/test-test-ios 20
+
       - name: Test CI helpers
         run: ci/require_successful_main_ci_test.sh
 
