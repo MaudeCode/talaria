@@ -2,6 +2,74 @@ import XCTest
 @testable import Talaria
 
 final class APIClientSessionListTests: APIClientTestCase {
+    func testSessionStatusDecodesPinnedAgentRunningShape() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session/status")
+            return apiTestJSONResponse(
+                #"{"session_id":"contract-session","agent_running":true}"#,
+                for: request
+            )
+        }
+
+        let response = try await client.sessionStatus(id: "contract-session")
+
+        XCTAssertEqual(response.sessionId, "contract-session")
+        XCTAssertEqual(response.isStreaming, true)
+    }
+
+    func testLiveUpstreamContractResponsesDecodeWhenSupplied() throws {
+        let encoded = Bundle(for: APIClientSessionListTests.self)
+            .object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+#if TALARIA_LIVE_CONTRACT
+        guard let encoded, encoded.hasPrefix("base64:")
+        else {
+            XCTFail("The contract runner did not provide live upstream responses")
+            return
+        }
+#else
+        guard let encoded, encoded.hasPrefix("base64:")
+        else {
+            return
+        }
+#endif
+
+        let manifestData = try XCTUnwrap(Data(base64Encoded: String(encoded.dropFirst(7))))
+        let manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        func decode<T: Decodable>(_ type: T.Type, fixture: String) throws {
+            let object = try XCTUnwrap(manifest[fixture], "Missing live fixture: \(fixture)")
+            let data = try JSONSerialization.data(withJSONObject: object)
+            _ = try decoder.decode(type, from: data)
+        }
+
+        try decode(HealthResponse.self, fixture: "health")
+        try decode(AuthStatusResponse.self, fixture: "auth_status")
+        try decode(SessionsResponse.self, fixture: "sessions")
+        try decode(ProjectsResponse.self, fixture: "projects")
+        try decode(WorkspacesResponse.self, fixture: "workspaces")
+        try decode(WorkspaceSuggestionsResponse.self, fixture: "workspace_suggestions")
+        try decode(ModelsResponse.self, fixture: "models")
+        try decode(ProvidersResponse.self, fixture: "providers")
+        try decode(SettingsResponse.self, fixture: "settings")
+        try decode(ReasoningStatusResponse.self, fixture: "reasoning")
+        try decode(ProfilesResponse.self, fixture: "profiles")
+        try decode(PersonalitiesResponse.self, fixture: "personalities")
+        try decode(CommandsResponse.self, fixture: "commands")
+        try decode(MemoryResponse.self, fixture: "memory")
+        try decode(SessionMutationResponse.self, fixture: "session_new")
+        try decode(SessionResponse.self, fixture: "session_detail")
+        try decode(SessionStatusResponse.self, fixture: "session_status")
+        try decode(DirectoryListResponse.self, fixture: "directory_list")
+        try decode(FileResponse.self, fixture: "file")
+        try decode(SessionMutationResponse.self, fixture: "session_mutation")
+        try decode(SessionBranchResponse.self, fixture: "session_branch")
+        try decode(ChatStreamStatusResponse.self, fixture: "stream_status")
+    }
+
     func testSessionsDecodesSnakeCaseResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/sessions")

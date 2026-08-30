@@ -64,9 +64,9 @@ Exit criteria:
 
 Current result as of 2026-05-15:
 
-- Complete. `codex/i-013-record-permission-deprecation` is merged into local `master`.
+- Complete. `codex/i-013-record-permission-deprecation` is merged into the release branch.
 - `I-002`, `I-004`, and `I-005` remain paused (legacy tracker notes; see GitHub Issues).
-- `master` remains ahead of `origin/master`; do not upload or invite testers until the intended RC is validated and pushed.
+- The release branch was ahead of its remote; do not upload or invite testers until the intended RC is validated and pushed.
 
 ### 2. Reconcile Handoff Docs Before RC
 
@@ -139,7 +139,7 @@ Exit criteria:
 Current result as of 2026-05-15:
 
 - Complete locally on `codex/testflight-doc-reconcile`.
-- `.github/workflows/external-testflight.yml` adds a manually gated `External TestFlight` upload workflow with `confirm_external_review = EXTERNAL_REVIEW`, `external-testflight` environment gating, `master`-only enforcement, and no tester invites.
+- `.github/workflows/external-testflight.yml` adds a manually gated `External TestFlight` upload workflow with `confirm_external_review = EXTERNAL_REVIEW`, `external-testflight` environment gating, `main`-only enforcement, and no tester invites.
 - `ci/ExternalTestFlightExportOptions.plist` uploads to App Store Connect without `testFlightInternalTestingOnly`.
 - The existing `Internal TestFlight` workflow and `ci/TestFlightExportOptions.plist` remain internal-only.
 
@@ -427,7 +427,7 @@ Exit criteria:
 
 Current Step 9 status as of 2026-05-17:
 
-- Complete. `master` was pushed for the internal TestFlight RC path.
+- Complete. The release branch was pushed for the internal TestFlight RC path.
 - The latest local and remote commit before this Step 11 handoff was `cebdb38` (`Issues: Capture owner-observed polish items`).
 
 ### 10. Upload Fresh Internal TestFlight Build
@@ -722,7 +722,7 @@ Track these during launch:
 
 - Share extension automatic app launch may be rejected by Beta App Review.
 - Upstream API has no stability guarantee; current pin is recorded in `UPSTREAM_TESTED_SHA`.
-- Full Docker-backed contract tests are future hardening; current gate is request-shape coverage plus URLProtocol-backed decoding tests.
+- The disposable fork-server contract command and full XCTest suite are the current gate.
 - Cloudflare long-stream behavior can still fail if no bytes are emitted for longer than Cloudflare's idle tolerance.
 - Owner-hosted backend availability affects review and tester experience.
 - Privacy policy and App Store Connect privacy answers must stay aligned with share/import behavior.

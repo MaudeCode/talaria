@@ -1,10 +1,10 @@
 <!-- Thanks for contributing! Please read CONTRIBUTING.md before opening a PR. -->
 
-## Linked issue
+## Linked work
 
-<!-- Every PR should close an issue, e.g. "Fixes #123". If there is no issue yet, open one first. -->
+<!-- Every PR must reference its canonical Kaneo task. -->
 
-Fixes #
+TAL-
 
 ## What changed
 
@@ -16,7 +16,7 @@ Fixes #
 
 ## Checklist
 
-- [ ] The full test suite passes locally (`xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'`)
+- [ ] The full test suite passes locally (`scripts/test-ios`)
 - [ ] New/changed `Codable` models decode tolerantly (optionals for fields the server might add or rename)
 - [ ] No new third-party dependencies (the list in `PROJECT_SPEC.md` is locked)
 - [ ] No invented API endpoints or JSON shapes (verified against upstream source or a running server)
