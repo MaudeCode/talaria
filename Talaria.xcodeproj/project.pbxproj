@@ -217,6 +217,10 @@
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
 		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
+		C107D000000000000000001 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000011 /* AppSettings.swift */; };
+		C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000012 /* ChatActiveRunStatus.swift */; };
+		C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000013 /* ResponseCompletionNotifications.swift */; };
+		C107D000000000000000004 /* ComposerBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000014 /* ComposerBehavior.swift */; };
 		1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C012400000000000000002 /* AppIconChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000001 /* AppIconChoice.swift */; };
@@ -591,6 +595,10 @@
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		C107D000000000000000011 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		C107D000000000000000012 /* ChatActiveRunStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatActiveRunStatus.swift; sourceTree = "<group>"; };
+		C107D000000000000000013 /* ResponseCompletionNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseCompletionNotifications.swift; sourceTree = "<group>"; };
+		C107D000000000000000014 /* ComposerBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerBehavior.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
 		C012400000000000000001 /* AppIconChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoice.swift; sourceTree = "<group>"; };
@@ -1230,6 +1238,10 @@
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C09200000000000000000002 /* AppFont.swift */,
 				1A2B3C4D5E6F700000000101 /* AppTheme.swift */,
+				C107D000000000000000011 /* AppSettings.swift */,
+				C107D000000000000000012 /* ChatActiveRunStatus.swift */,
+				C107D000000000000000013 /* ResponseCompletionNotifications.swift */,
+				C107D000000000000000014 /* ComposerBehavior.swift */,
 				C012400000000000000001 /* AppIconChoice.swift */,
 			);
 			path = Config;
@@ -1656,6 +1668,10 @@
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
 				C09200000000000000000001 /* AppFont.swift in Sources */,
 				1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */,
+				C107D000000000000000001 /* AppSettings.swift in Sources */,
+				C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */,
+				C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */,
+				C107D000000000000000004 /* ComposerBehavior.swift in Sources */,
 				1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */,
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,
 				C012400000000000000002 /* AppIconChoice.swift in Sources */,
