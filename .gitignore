@@ -2,7 +2,6 @@
 DerivedData/
 build/
 *.xcworkspace/xcuserdata/
-*.xcodeproj/project.xcworkspace/
 *.xcodeproj/xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
@@ -10,6 +9,7 @@ build/
 # Swift Package Manager
 .build/
 Package.resolved
+!Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 .swiftpm/
 
 # macOS

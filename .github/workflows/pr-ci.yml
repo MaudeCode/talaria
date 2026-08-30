@@ -112,6 +112,7 @@ jobs:
             -scheme "${SCHEME}" \
             -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
             -derivedDataPath "${DERIVED_DATA_PATH}" \
+            -disableAutomaticPackageResolution \
             -showBuildTimingSummary \
             APP_IDENTIFIER_SUFFIX=.xctest \
             CODE_SIGNING_ALLOWED=NO
@@ -132,6 +133,7 @@ jobs:
             -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
             -derivedDataPath "${DERIVED_DATA_PATH}" \
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
+            -disableAutomaticPackageResolution \
             -parallel-testing-enabled YES \
             -parallel-testing-worker-count "${TEST_WORKER_COUNT}" \
             APP_IDENTIFIER_SUFFIX=.xctest \
