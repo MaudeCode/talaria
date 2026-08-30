@@ -8,6 +8,7 @@ struct AddServerView: View {
     @State private var password = ""
     @State private var customHeaders: [CustomHeader] = []
     @State private var needsPassword = false
+    @State private var canUseOIDC = false
     @State private var isWorking = false
     @State private var errorMessage: String?
     @State private var displayName = ""
@@ -51,6 +52,19 @@ struct AddServerView: View {
                                 submitLabel: .go,
                                 onSubmit: { Task { await submit() } }
                             )
+                        }
+
+                        if canUseOIDC {
+                            SettingsDivider()
+
+                            Button {
+                                Task { await submitOIDC() }
+                            } label: {
+                                Label("Continue with SSO", systemImage: "person.badge.key.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!canSubmit)
                         }
                     }
 
@@ -119,12 +133,40 @@ struct AddServerView: View {
         switch outcome {
         case .needsPassword:
             needsPassword = true
+            canUseOIDC = false
+        case .needsOIDC:
+            needsPassword = false
+            canUseOIDC = true
+        case .needsPasswordOrOIDC:
+            needsPassword = true
+            canUseOIDC = true
         case .failed:
             errorMessage = authManager.lastErrorMessage
         case let .added(url):
-            applyIdentity(to: url)
-            dismiss()
+            finishAdding(url)
         }
+    }
+
+    private func submitOIDC() async {
+        guard canSubmit else { return }
+        errorMessage = nil
+        isWorking = true
+        let outcome = await authManager.addServerWithOIDC(
+            serverURLString: serverURLString,
+            customHeaders: customHeaders
+        )
+        isWorking = false
+
+        if case let .added(url) = outcome {
+            finishAdding(url)
+        } else {
+            errorMessage = authManager.lastErrorMessage
+        }
+    }
+
+    private func finishAdding(_ url: URL) {
+        applyIdentity(to: url)
+        dismiss()
     }
 
     /// Overrides the new server's seeded identity (the registry seeds it from the

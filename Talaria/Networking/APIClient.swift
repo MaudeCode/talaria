@@ -17,6 +17,7 @@ actor APIClient {
     private let ownedSessions: [URLSession]
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
+    private let cookieStorage: HTTPCookieStorage?
     /// Read when building each request so live edits apply without rebuilding the
     /// client. Defaults to the process-wide store; tests inject a fixed list (#255).
     /// Internal, not private, because the upload and transcribe extensions build
@@ -27,6 +28,7 @@ actor APIClient {
         baseURL: URL,
         session: URLSession? = nil,
         publicMediaSession: URLSession? = nil,
+        cookieStorage: HTTPCookieStorage? = nil,
         customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() }
     ) {
         self.baseURL = baseURL
@@ -47,6 +49,7 @@ actor APIClient {
             ?? Self.makeDefaultPublicMediaSession(delegate: redirectHeaderStripper)
         self.session = resolvedSession
         self.publicMediaSession = resolvedPublicMediaSession
+        self.cookieStorage = cookieStorage ?? resolvedSession.configuration.httpCookieStorage
         // Only the sessions we created carry our delegate and must be invalidated;
         // an injected session is the caller's to manage.
         var ownedSessions: [URLSession] = []
@@ -91,6 +94,63 @@ actor APIClient {
 
     func logout() async throws -> LoginResponse {
         try await send(endpoint: .logout, method: "POST", body: EmptyBody())
+    }
+
+    func beginNativeOIDC(
+        callbackURL: URL,
+        state: String,
+        codeChallenge: String
+    ) async throws -> NativeOIDCStartResponse {
+        try await send(
+            endpoint: .nativeOIDCStart,
+            method: "POST",
+            body: NativeOIDCStartRequest(
+                callbackUrl: callbackURL.absoluteString,
+                state: state,
+                codeChallenge: codeChallenge,
+                codeChallengeMethod: "S256"
+            )
+        )
+    }
+
+    func exchangeNativeOIDC(
+        flowID: String,
+        code: String,
+        state: String,
+        codeVerifier: String
+    ) async throws -> LoginResponse {
+        let body = NativeOIDCExchangeRequest(
+            flowId: flowID,
+            code: code,
+            state: state,
+            codeVerifier: codeVerifier
+        )
+        let (data, response) = try await sendDataReturningResponse(
+            endpoint: .nativeOIDCExchange,
+            method: "POST",
+            encodedBody: encoder.encode(body)
+        )
+        let headerFields = response.allHeaderFields.reduce(into: [String: String]()) {
+            $0[String(describing: $1.key)] = String(describing: $1.value)
+        }
+        guard let responseURL = response.url, let cookieStorage else {
+            throw APIError.unauthorized
+        }
+        let responseCookies = HTTPCookie.cookies(
+            withResponseHeaderFields: headerFields,
+            for: responseURL
+        )
+        guard !responseCookies.isEmpty else { throw APIError.unauthorized }
+        responseCookies.forEach(cookieStorage.setCookie)
+        return try decode(LoginResponse.self, from: data)
+    }
+
+    func cancelNativeOIDC(flowID: String, state: String) async throws -> LoginResponse {
+        try await send(
+            endpoint: .nativeOIDCCancel,
+            method: "POST",
+            body: NativeOIDCCancelRequest(flowId: flowID, state: state)
+        )
     }
 
     func send<Response: Decodable>(
@@ -305,6 +365,25 @@ private extension APIClient {
 
 private struct LoginRequest: Encodable {
     let password: String
+}
+
+private struct NativeOIDCStartRequest: Encodable {
+    let callbackUrl: String
+    let state: String
+    let codeChallenge: String
+    let codeChallengeMethod: String
+}
+
+private struct NativeOIDCExchangeRequest: Encodable {
+    let flowId: String
+    let code: String
+    let state: String
+    let codeVerifier: String
+}
+
+private struct NativeOIDCCancelRequest: Encodable {
+    let flowId: String
+    let state: String
 }
 
 private struct EmptyBody: Encodable {}

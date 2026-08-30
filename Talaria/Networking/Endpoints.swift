@@ -5,6 +5,9 @@ enum Endpoint {
     case authStatus
     case login
     case logout
+    case nativeOIDCStart
+    case nativeOIDCExchange
+    case nativeOIDCCancel
     case sessions(
         includeArchived: Bool = false,
         archivedLimit: Int? = nil,
@@ -145,6 +148,12 @@ enum Endpoint {
             return "/api/auth/login"
         case .logout:
             return "/api/auth/logout"
+        case .nativeOIDCStart:
+            return "/api/auth/oidc/native/start"
+        case .nativeOIDCExchange:
+            return "/api/auth/oidc/native/exchange"
+        case .nativeOIDCCancel:
+            return "/api/auth/oidc/native/cancel"
         case .sessions:
             return "/api/sessions"
         case .sessionsSearch:

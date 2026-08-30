@@ -151,15 +151,32 @@ struct OnboardingView: View {
     }
 
     private var connectActionButtons: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                testConnectionButton
-                connectButton
+        VStack(spacing: 10) {
+            if viewModel.canSignInWithOIDC {
+                Button {
+                    Task { await viewModel.signInWithOIDC(authManager: authManager) }
+                } label: {
+                    Label("Continue with SSO", systemImage: "person.badge.key.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(OnboardingPrimaryButtonStyle())
+                .disabled(viewModel.isWorking || !canSubmitConnection)
             }
 
-            VStack(spacing: 10) {
-                testConnectionButton
-                connectButton
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    testConnectionButton
+                    if viewModel.isPasswordRequired || !viewModel.canSignInWithOIDC {
+                        connectButton
+                    }
+                }
+
+                VStack(spacing: 10) {
+                    testConnectionButton
+                    if viewModel.isPasswordRequired || !viewModel.canSignInWithOIDC {
+                        connectButton
+                    }
+                }
             }
         }
     }

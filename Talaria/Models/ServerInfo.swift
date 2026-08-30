@@ -21,6 +21,9 @@ struct AuthStatusResponse: Decodable {
     /// covers password, OIDC *and* trusted-header, so "auth on, password off"
     /// on its own never meant passkeys.
     let oidcEnabled: Bool?
+    /// A newer OIDC server can exchange a system-browser login for the normal
+    /// HttpOnly WebUI session cookie without placing that cookie in a callback.
+    let oidcNativeHandoffEnabled: Bool?
     /// Set when an identity proxy in front of the server authenticates the
     /// request (Cloudflare Access, Authentik). Present only when that mode is
     /// on, so nil means "not that kind of server".
@@ -38,6 +41,7 @@ struct AuthStatusResponse: Decodable {
         passkeysEnabled: Bool? = nil,
         passwordlessEnabled: Bool? = nil,
         oidcEnabled: Bool? = nil,
+        oidcNativeHandoffEnabled: Bool? = nil,
         trustedAuthEnabled: Bool? = nil
     ) {
         self.authEnabled = authEnabled
@@ -46,8 +50,16 @@ struct AuthStatusResponse: Decodable {
         self.passkeysEnabled = passkeysEnabled
         self.passwordlessEnabled = passwordlessEnabled
         self.oidcEnabled = oidcEnabled
+        self.oidcNativeHandoffEnabled = oidcNativeHandoffEnabled
         self.trustedAuthEnabled = trustedAuthEnabled
     }
+}
+
+struct NativeOIDCStartResponse: Decodable {
+    let flowId: String
+    let authorizationUrl: URL
+    let serverId: String
+    let expiresIn: Int
 }
 
 struct LoginResponse: Decodable {

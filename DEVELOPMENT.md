@@ -358,6 +358,7 @@ Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://githu
 ### Onboarding/Auth
 - Fresh install opens onboarding.
 - Valid server URL + password logs in.
+- A compatible OIDC-only server offers Continue with SSO and returns to the app with a server/state/PKCE-bound session.
 - Wrong password shows clear error.
 - Server/tunnel down shows useful error.
 - Sign out and reconfigure returns to onboarding.

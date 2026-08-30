@@ -139,6 +139,39 @@
     "Agent work failed" : {
 
     },
+    "Another SSO sign-in is already in progress." : {
+
+    },
+    "Connection ok. Continue with SSO." : {
+
+    },
+    "Connection ok. Password or SSO available." : {
+
+    },
+    "Continue with SSO" : {
+
+    },
+    "SSO sign-in was cancelled." : {
+
+    },
+    "Talaria couldn't open the SSO sign-in window. Try again." : {
+
+    },
+    "Talaria couldn't start a secure SSO flow. Try again." : {
+
+    },
+    "The SSO provider couldn't complete sign-in. Try again." : {
+
+    },
+    "The SSO response didn't match this server. Try signing in again." : {
+
+    },
+    "This server doesn't offer single sign-on." : {
+
+    },
+    "This server needs a newer secure SSO handoff before Talaria can sign in." : {
+
+    },
     "Approval needed" : {
 
     },

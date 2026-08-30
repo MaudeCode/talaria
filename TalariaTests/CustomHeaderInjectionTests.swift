@@ -99,7 +99,8 @@ final class CustomHeaderAuthStatusDecodeTests: XCTestCase {
               "auth_enabled": true,
               "password_auth_enabled": false,
               "passkeys_enabled": true,
-              "passwordless_enabled": true
+              "passwordless_enabled": true,
+              "oidc_native_handoff_enabled": true
             }
             """
         )
@@ -108,6 +109,7 @@ final class CustomHeaderAuthStatusDecodeTests: XCTestCase {
         XCTAssertEqual(status.passwordAuthEnabled, false)
         XCTAssertEqual(status.passkeysEnabled, true)
         XCTAssertEqual(status.passwordlessEnabled, true)
+        XCTAssertEqual(status.oidcNativeHandoffEnabled, true)
     }
 
     func testMissingNewFlagsDecodeToNil() throws {
@@ -117,6 +119,7 @@ final class CustomHeaderAuthStatusDecodeTests: XCTestCase {
         XCTAssertNil(status.passwordAuthEnabled)
         XCTAssertNil(status.passkeysEnabled)
         XCTAssertNil(status.passwordlessEnabled)
+        XCTAssertNil(status.oidcNativeHandoffEnabled)
     }
 
     func testUnknownFieldsAreIgnored() throws {
