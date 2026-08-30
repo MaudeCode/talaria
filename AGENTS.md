@@ -26,6 +26,8 @@ explicitly adopted it.
 - `main` is the default release branch. Keep it buildable. For one issue, name the
   tracked-work branch `<type>/TAL-<number>-<slug>`. A human-selected issue batch
   may share one branch named for its lead issue or the batch.
+- The current private-repository plan cannot enforce branch protection. CI must
+  validate every push to `main`; require the `CI Gate` check when protection is available.
 - Commit each coherent, verified slice as it is completed so it has a rollback
   point. Start every tracked-work commit subject with the Kaneo key it addresses,
   for example `TAL-29: require ticket keys`; include every addressed key if a
