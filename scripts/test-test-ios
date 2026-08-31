@@ -11,6 +11,7 @@ rounds=${1:-20}
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/talaria-test-ios.XXXXXX")
 
 cleanup() {
+    local exit_status=$?
     set +e
     for pid in $(jobs -pr); do
         kill "$pid" 2>/dev/null || true
@@ -20,6 +21,7 @@ cleanup() {
     elif [[ -d "$test_root" ]]; then
         rm -rf -- "$test_root"
     fi
+    return "$exit_status"
 }
 trap cleanup EXIT
 
@@ -29,11 +31,12 @@ fake_bin="$test_root/bin"
 state="$test_root/state"
 mkdir -p "$repo/scripts" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
 cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
+cp "$source_root/scripts/load-env" "$repo/scripts/load-env"
 # Keep the base revision's pool state synthetic when reproducing the pre-fix overlap.
 if ! rg -q TALARIA_XCTEST_POOL_DIR "$repo/scripts/test-ios"; then
     sed -i '' 's|pool_runtime_dir="/tmp/talaria-xctest-$EUID"|pool_runtime_dir="${TALARIA_XCTEST_POOL_DIR:-/tmp/talaria-xctest-$EUID}"|' "$repo/scripts/test-ios"
 fi
-chmod +x "$repo/scripts/test-ios"
+chmod +x "$repo/scripts/test-ios" "$repo/scripts/load-env"
 
 cat > "$repo/scripts/assert-no-skipped-ui-tests" <<'EOF'
 #!/bin/zsh
