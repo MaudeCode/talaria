@@ -75,7 +75,7 @@ jobs:
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
-      TEST_WORKER_COUNT: 4
+      TEST_WORKER_COUNT: 3
 
     steps:
       - name: Check out
