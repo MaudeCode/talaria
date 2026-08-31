@@ -1,8 +1,8 @@
 import XCTest
 import UIKit
 
-final class ChatUITests: TalariaUITestCase {
-    private var fixtureTrace: String?
+class ChatUITestCase: TalariaUITestCase {
+    fileprivate var fixtureTrace: String?
 
     override func tearDownWithError() throws {
         if let fixtureTrace {
@@ -18,8 +18,11 @@ final class ChatUITests: TalariaUITestCase {
         }
         try super.tearDownWithError()
     }
+}
 
+final class ChatNavigationUITests: ChatUITestCase {
     func testChatListScrolls() throws {
+        launchFixture()
         let session = fixtureSessionButton
         XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
 
@@ -33,15 +36,18 @@ final class ChatUITests: TalariaUITestCase {
     }
 
     func testChatSessionOpensFromList() throws {
+        launchFixture()
         let session = fixtureSessionButton
         XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
 
         tapFixtureSession(session)
         XCTAssertTrue(waitForComposer(timeout: 15) != nil)
     }
+}
 
+final class ChatPrimaryStreamUITests: ChatUITestCase {
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
-        relaunchChatFixture(
+        launchChatFixture(
             argument: "--ui-test-chat-full",
             trace: "start -> token -> reasoning -> token -> tool -> approval -> tool_complete -> token -> clarify -> title -> metering -> done -> stream_end -> reload"
         )
@@ -106,9 +112,11 @@ final class ChatUITests: TalariaUITestCase {
         XCTAssertEqual(countElements(label: "Fixture finished."), 1)
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
+}
 
+final class ChatRecoveryUITests: ChatUITestCase {
     func testChatStreamSupportsSteeringAndCancellation() throws {
-        relaunchChatFixture(
+        launchChatFixture(
             argument: "--ui-test-chat-controls",
             trace: "start -> token -> steer request -> steer_consumed -> cancel request -> cancel"
         )
@@ -137,7 +145,7 @@ final class ChatUITests: TalariaUITestCase {
     }
 
     func testChatStreamSurfacesTerminalErrorAndRestoresComposer() throws {
-        relaunchChatFixture(
+        launchChatFixture(
             argument: "--ui-test-chat-error",
             trace: "start -> token -> error"
         )
@@ -150,7 +158,7 @@ final class ChatUITests: TalariaUITestCase {
     }
 
     func testChatStreamReconnectsAfterTransportLoss() throws {
-        relaunchChatFixture(
+        launchChatFixture(
             argument: "--ui-test-chat-reconnect",
             trace: "start -> token -> transport error -> status(active) -> session reload -> reconnect -> token -> done -> stream_end"
         )
@@ -163,8 +171,11 @@ final class ChatUITests: TalariaUITestCase {
         XCTAssertEqual(countElements(containing: "After reconnect."), 1)
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
+}
 
+final class ChatComposerUITests: ChatUITestCase {
     func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
+        launchFixture()
         let idleComposer = try openFixtureSession()
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
         XCTAssertTrue(app.buttons["Choose profile"].exists)
@@ -225,8 +236,11 @@ final class ChatUITests: TalariaUITestCase {
 
 }
 
-final class SettingsUITests: TalariaUITestCase {
+class SettingsUITestCase: TalariaUITestCase {}
+
+final class SettingsConfigurationUITests: SettingsUITestCase {
     func testComposerSettingsAreGroupedAndConfigurable() throws {
+        launchFixture()
         openSettings()
         tapSettingsCategory(id: "chats", title: "Chats")
 
@@ -272,13 +286,19 @@ final class SettingsUITests: TalariaUITestCase {
 
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
     }
+}
 
+final class SettingsStructureUITests: SettingsUITestCase {
     func testSettingsRootContainsCategoriesInsteadOfLeafControls() throws {
+        launchFixture()
         openSettings()
 
         XCTAssertTrue(app.buttons["settings-user-profile"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["settings-apple-account"].exists)
         XCTAssertTrue(app.buttons["settings-sign-in-with-apple"].exists)
+        for categoryID in ["appearance", "notificationsAndHaptics", "chats"] {
+            XCTAssertTrue(app.buttons["settings-category-\(categoryID)"].exists)
+        }
         XCTAssertFalse(app.descendants(matching: .any)["Haptic Feedback"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Default Model"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Clear Offline Cache"].exists)
@@ -286,26 +306,10 @@ final class SettingsUITests: TalariaUITestCase {
         rootScreenshot.name = "Settings category root"
         rootScreenshot.lifetime = .keepAlways
         add(rootScreenshot)
-
-        for category in [
-            ("appearance", "Appearance"),
-            ("notificationsAndHaptics", "Notifications & Haptics"),
-            ("chats", "Chats"),
-            ("liveActivitiesAndWidgets", "Live Activities & Widgets"),
-            ("siriAndShortcuts", "Siri & Shortcuts"),
-            ("servers", "Servers"),
-            ("providers", "Providers"),
-            ("dataAndStorage", "Data & Storage"),
-            ("about", "About"),
-            ("developer", "Developer"),
-        ] {
-            tapSettingsCategory(id: category.0, title: category.1)
-            app.navigationBars[category.1].buttons["Settings"].tap()
-            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
-        }
     }
 
     func testSettingsTaxonomyKeepsMovedControlsWithTheirOwners() throws {
+        launchFixture()
         openSettings()
 
         let profile = app.buttons["settings-user-profile"]
@@ -336,11 +340,38 @@ final class SettingsUITests: TalariaUITestCase {
             XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         }
     }
+}
 
+final class SettingsGeneralRoutingUITests: SettingsUITestCase {
+    func testAppearanceAndSiriCategoriesRouteCorrectly() {
+        assertSettingsCategoryRoutes([
+            ("appearance", "Appearance"),
+            ("siriAndShortcuts", "Siri & Shortcuts"),
+        ])
+    }
+}
+
+final class SettingsServerRoutingUITests: SettingsUITestCase {
+    func testServerAndDataCategoriesRouteCorrectly() {
+        assertSettingsCategoryRoutes([
+            ("servers", "Servers"),
+            ("dataAndStorage", "Data & Storage"),
+        ])
+    }
+}
+
+final class SettingsInfoRoutingUITests: SettingsUITestCase {
+    func testAboutAndDeveloperCategoriesRouteCorrectly() {
+        assertSettingsCategoryRoutes([
+            ("about", "About"),
+            ("developer", "Developer"),
+        ])
+    }
+}
+
+final class RelaySettingsUITests: SettingsUITestCase {
     func testConnectedRelaySettingsUsePassiveStatusAndManagedDisconnect() throws {
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments + ["--ui-test-relay-connected"]
-        app.launch()
+        launchFixture(additionalArguments: ["--ui-test-relay-connected"])
         openSettings()
 
         XCTAssertFalse(app.buttons["settings-sign-in-with-apple"].exists)
@@ -372,11 +403,11 @@ final class SettingsUITests: TalariaUITestCase {
 
 }
 
-final class QuotaWidgetUITests: TalariaUITestCase {
+class QuotaWidgetUITestCase: TalariaUITestCase {}
+
+final class QuotaInsightsUITests: QuotaWidgetUITestCase {
     func testInsightsShowsQuotaSurface() throws {
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments + ["--provider-quotas"]
-        app.launch()
+        launchFixture(additionalArguments: ["--provider-quotas"])
 
         XCTAssertTrue(app.staticTexts["Provider quotas"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Refresh all provider quotas"].exists)
@@ -409,22 +440,21 @@ final class QuotaWidgetUITests: TalariaUITestCase {
     }
 
     func testProviderQuotaWidgetFixturePreparesPreview() throws {
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments + ["--provider-quota-widget-fixture"]
-        app.launch()
+        launchFixture(additionalArguments: ["--provider-quota-widget-fixture"])
 
         XCTAssertTrue(app.staticTexts["Widget fixture ready"].waitForExistence(timeout: 10))
         XCTAssertTrue(
             app.staticTexts["Add or edit the Talaria Provider quotas widget to inspect its configured states."].exists
         )
     }
+}
 
-    func testWidgetCustomizationShowsSharedLockScreenPreviews() throws {
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments + ["--provider-quota-widget-customization"]
-        app.launch()
+final class QuotaCustomizationUITests: QuotaWidgetUITestCase {
+    func testWidgetCustomizationShowsSharedAndDenseLayouts() throws {
+        launch(arguments: ["--provider-quota-widget-customization"])
 
         XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
+        assertPreviewVisible(identifier: "provider-quota-widget-bars")
         app.buttons["Lock %"].tap()
         XCTAssertTrue(
             app.descendants(matching: .any)["provider-quota-lock-percentage"]
@@ -436,16 +466,8 @@ final class QuotaWidgetUITests: TalariaUITestCase {
             app.descendants(matching: .any)["provider-quota-lock-pace"]
                 .waitForExistence(timeout: 3)
         )
-    }
 
-    func testWidgetCustomizationShowsDenseLargeQuotaLayouts() throws {
-        app.terminate()
-        app.launchArguments = ["--provider-quota-widget-customization"]
-        app.launch()
-
-        XCTAssertTrue(app.navigationBars["Customization"].waitForExistence(timeout: 10))
-        assertPreviewVisible(identifier: "provider-quota-widget-bars")
-
+        app.buttons["Home"].tap()
         app.buttons["Medium"].tap()
         app.buttons["2"].tap()
         XCTAssertTrue(app.buttons["2"].isSelected)
@@ -498,8 +520,11 @@ final class QuotaWidgetUITests: TalariaUITestCase {
 
 }
 
-final class SidebarUITests: TalariaUITestCase {
-    func testSidebarReplacesRootTabs() throws {
+class SidebarUITestCase: TalariaUITestCase {}
+
+final class SidebarPresentationUITests: SidebarUITestCase {
+    func testSidebarPresentationAndAccessibility() throws {
+        launchFixture()
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
@@ -522,6 +547,7 @@ final class SidebarUITests: TalariaUITestCase {
         XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
         let closeNavigation = app.buttons["Close navigation"]
         XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
+        XCTAssertEqual(sidebar.elementType, .alert)
         XCTAssertFalse(app.buttons["Pin"].exists)
         for destination in ["Chats", "Tasks", "Kanban", "Skills", "Memory", "Insights", "Settings"] {
             XCTAssertTrue(
@@ -529,20 +555,6 @@ final class SidebarUITests: TalariaUITestCase {
                 "Missing sidebar destination: \(destination)"
             )
         }
-
-        closeNavigation.tap()
-        XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
-        XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
-        XCTAssertEqual(navigationTitle.frame.minX, initialTitleFrame.minX, accuracy: 1)
-        XCTAssertFalse(sidebar.isHittable)
-    }
-
-    func testSidebarSurfaceExtendsThroughSafeAreas() throws {
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
-
-        openNavigation.tap()
-        XCTAssertTrue(app.buttons["Close navigation"].waitForExistence(timeout: 3))
 
         let screenshot = XCUIScreen.main.screenshot()
         let topEdgeDifference = abs(
@@ -555,42 +567,23 @@ final class SidebarUITests: TalariaUITestCase {
         )
         XCTAssertGreaterThan(topEdgeDifference, 0.05)
         XCTAssertGreaterThan(bottomEdgeDifference, 0.05)
-    }
-
-    func testSidebarIsAccessibilityModalUntilClosed() throws {
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
-
-        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
-        XCTAssertTrue(mainSurface.exists)
-        openNavigation.tap()
-
-        let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
-        XCTAssertEqual(sidebar.elementType, .alert)
-        let closeNavigation = app.buttons["Close navigation"]
-        XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
-
-        closeNavigation.tap()
-        XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
-        XCTAssertTrue(openNavigation.exists)
-    }
-
-    func testSidebarHeaderRespectsTopSafeArea() throws {
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
-
-        openNavigation.tap()
-        let closeNavigation = app.buttons["Close navigation"]
-        XCTAssertTrue(closeNavigation.waitForExistence(timeout: 3))
 
         let statusBar = app.statusBars.firstMatch
         if statusBar.exists {
             XCTAssertGreaterThanOrEqual(closeNavigation.frame.minY, statusBar.frame.maxY)
         }
-    }
 
+        closeNavigation.tap()
+        XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
+        XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
+        XCTAssertEqual(navigationTitle.frame.minX, initialTitleFrame.minX, accuracy: 1)
+        XCTAssertFalse(sidebar.isHittable)
+    }
+}
+
+final class SidebarInteractionUITests: SidebarUITestCase {
     func testSidebarNewChatOpensExistingComposer() throws {
+        launchFixture()
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
@@ -605,6 +598,7 @@ final class SidebarUITests: TalariaUITestCase {
     }
 
     func testFullyOpenSidebarClosesWithSlowDiagonalSwipe() throws {
+        launchFixture()
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
@@ -623,9 +617,12 @@ final class SidebarUITests: TalariaUITestCase {
         XCTAssertTrue(mainSurface.waitForExistence(timeout: 3))
         XCTAssertEqual(mainSurface.frame.minX, app.frame.minX, accuracy: 1)
     }
+}
 
+final class SidebarPerformanceUITests: SidebarUITestCase {
     @available(iOS 26.0, *)
     func testSidebarCloseHitchPerformance() throws {
+        launchFixture()
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
 
@@ -670,17 +667,24 @@ class TalariaUITestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = fixtureLaunchArguments
-        app.launch()
     }
 
     override func tearDownWithError() throws {
         app.terminate()
         app = nil
     }
+
+    fileprivate func launch(arguments: [String]) {
+        app.launchArguments = arguments
+        app.launch()
+    }
+
+    fileprivate func launchFixture(additionalArguments: [String] = []) {
+        launch(arguments: fixtureLaunchArguments + additionalArguments)
+    }
 }
 
-private extension ChatUITests {
+fileprivate extension ChatUITestCase {
     func openFixtureSession() throws -> XCUIElement {
         if let composer = waitForComposer(timeout: 3) {
             return composer
@@ -694,11 +698,9 @@ private extension ChatUITests {
         return try XCTUnwrap(composer)
     }
 
-    func relaunchChatFixture(argument: String, trace: String) {
+    func launchChatFixture(argument: String, trace: String) {
         fixtureTrace = trace
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments + [argument]
-        app.launch()
+        launchFixture(additionalArguments: [argument])
     }
 
     func sendFixtureMessage(_ message: String) throws {
@@ -742,7 +744,17 @@ private extension ChatUITests {
     }
 }
 
-private extension SettingsUITests {
+fileprivate extension SettingsUITestCase {
+    func assertSettingsCategoryRoutes(_ categories: [(id: String, title: String)]) {
+        launchFixture()
+        openSettings()
+        for category in categories {
+            tapSettingsCategory(id: category.id, title: category.title)
+            app.navigationBars[category.title].buttons["Settings"].tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        }
+    }
+
     func openSettings() {
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
@@ -785,7 +797,7 @@ private extension SettingsUITests {
     }
 }
 
-private extension ChatUITests {
+fileprivate extension ChatUITestCase {
     var fixtureSessionTitle: String { "UI Fixture Session" }
 
     var fixtureSessionButton: XCUIElement {
@@ -837,7 +849,7 @@ private extension ChatUITests {
     }
 }
 
-private extension QuotaWidgetUITests {
+fileprivate extension QuotaWidgetUITestCase {
     func assertPreviewVisible(identifier: String) {
         XCTAssertTrue(
             app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3)
@@ -845,7 +857,7 @@ private extension QuotaWidgetUITests {
     }
 }
 
-private extension SidebarUITests {
+fileprivate extension SidebarUITestCase {
     func brightness(
         in screenshot: XCUIScreenshot,
         x normalizedX: CGFloat,

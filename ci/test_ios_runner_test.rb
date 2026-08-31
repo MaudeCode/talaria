@@ -21,7 +21,7 @@ class TestIOSRunnerTest < Minitest::Test
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
 
-  def test_pr_ci_runs_ui_tests_with_two_workers
+  def test_pr_ci_runs_ui_tests_with_four_workers
     workflow = File.read(
       File.expand_path("../.github/workflows/pr-ci.yml", __dir__),
       encoding: "UTF-8"
@@ -39,8 +39,9 @@ class TestIOSRunnerTest < Minitest::Test
       testable.include?('BlueprintName = "TalariaUITests"')
     end
 
-    assert_includes(workflow, "TEST_WORKER_COUNT: 2")
+    assert_includes(workflow, "TEST_WORKER_COUNT: 4")
     assert_includes(ui_testable, 'parallelizable = "YES"')
-    assert_equal(4, ui_tests.scan(/final class \w+UITests: TalariaUITestCase/).length)
+    assert_equal(15, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
+    assert_includes(workflow, "-skip-testing:TalariaUITests/SidebarPerformanceUITests")
   end
 end
