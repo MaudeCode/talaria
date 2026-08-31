@@ -21,15 +21,17 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Running tests
 
-The full XCTest suite is the repo's green bar — it must pass before any PR:
+The full XCTest suite is the repo's local green bar — it must pass before any PR:
 
 ```zsh
 xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 If that simulator name isn't installed, pick a nearby iPhone from
-`xcrun simctl list devices available`. The same suite runs in CI on every pull
-request with code signing disabled, so forks get green CI without any secrets.
+`xcrun simctl list devices available`. PR CI runs the complete functional suite
+with code signing disabled, so forks get green CI without any secrets. Dedicated
+performance measurements may run on `main` instead when their runtime would slow
+every PR without improving functional regression coverage.
 
 ## Code signing for contributors
 
