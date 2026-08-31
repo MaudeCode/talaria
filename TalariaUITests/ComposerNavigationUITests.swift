@@ -61,7 +61,7 @@ final class ComposerNavigationUITests: XCTestCase {
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
         relaunchChatFixture(
             argument: "--ui-test-chat-full",
-            trace: "start -> token -> reasoning -> tool -> approval -> tool_complete -> token -> clarify -> title -> metering -> done -> stream_end -> reload"
+            trace: "start -> token -> reasoning -> token -> tool -> approval -> tool_complete -> token -> clarify -> title -> metering -> done -> stream_end -> reload"
         )
         try sendFixtureMessage("Run the deterministic fixture")
 
@@ -71,6 +71,15 @@ final class ComposerNavigationUITests: XCTestCase {
 
         let opening = app.staticTexts["Fixture opening."]
         XCTAssertTrue(opening.exists)
+        let liveThinking = element(labelContaining: "Thinking, Inspecting fixture")
+        let liveProgress = app.staticTexts["Fixture progress."]
+        let liveTool = element(labelContaining: "Calling a tool, Running")
+        XCTAssertTrue(liveThinking.exists)
+        XCTAssertTrue(liveProgress.exists)
+        XCTAssertTrue(liveTool.exists)
+        XCTAssertLessThan(opening.frame.minY, liveThinking.frame.minY)
+        XCTAssertLessThan(liveThinking.frame.minY, liveProgress.frame.minY)
+        XCTAssertLessThan(liveProgress.frame.minY, liveTool.frame.minY)
 
         app.buttons["Allow once"].tap()
         XCTAssertTrue(app.staticTexts["Clarification Required"].waitForExistence(timeout: 5))
@@ -94,23 +103,24 @@ final class ComposerNavigationUITests: XCTestCase {
         let worked = app.buttons["Worked"]
         XCTAssertTrue(worked.waitForExistence(timeout: 5))
         tapCenter(of: worked)
-        let completedActivity = element(labelContaining: "Completed activity")
-        XCTAssertTrue(completedActivity.waitForExistence(timeout: 5))
-        tapCenter(of: completedActivity)
 
         let reloadedOpening = app.staticTexts["Fixture opening."]
         let reloadedThinking = element(labelContaining: "Thinking, Inspecting fixture")
+        let reloadedProgress = app.staticTexts["Fixture progress."]
         let reloadedTool = element(labelContaining: "Called a tool, Completed")
         let reloadedFinished = app.staticTexts["Fixture finished."]
         XCTAssertTrue(reloadedOpening.waitForExistence(timeout: 5))
         XCTAssertTrue(reloadedThinking.exists)
+        XCTAssertTrue(reloadedProgress.exists)
         XCTAssertTrue(reloadedTool.exists)
         XCTAssertTrue(reloadedFinished.exists)
         XCTAssertLessThan(reloadedOpening.frame.minY, reloadedThinking.frame.minY)
-        XCTAssertLessThan(reloadedThinking.frame.minY, reloadedTool.frame.minY)
+        XCTAssertLessThan(reloadedThinking.frame.minY, reloadedProgress.frame.minY)
+        XCTAssertLessThan(reloadedProgress.frame.minY, reloadedTool.frame.minY)
         XCTAssertLessThan(reloadedTool.frame.minY, reloadedFinished.frame.minY)
         XCTAssertEqual(countElements(label: "Run the deterministic fixture"), 1)
         XCTAssertEqual(countElements(label: "Fixture opening."), 1)
+        XCTAssertEqual(countElements(label: "Fixture progress."), 1)
         XCTAssertEqual(countElements(label: "Fixture finished."), 1)
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
@@ -134,6 +144,7 @@ final class ComposerNavigationUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Keep the fixture concise"].waitForExistence(timeout: 5))
         XCTAssertTrue(element(labelContaining: "Steering hint").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(label: "Steering hint").waitForExistence(timeout: 5))
         let stop = app.buttons["Stop response"]
         XCTAssertTrue(stop.waitForExistence(timeout: 5))
         stop.tap()
@@ -692,6 +703,12 @@ final class ComposerNavigationUITests: XCTestCase {
     private func element(labelContaining text: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
+            .firstMatch
+    }
+
+    private func element(label: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label))
             .firstMatch
     }
 

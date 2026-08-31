@@ -404,7 +404,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         if state.settled, UITestChatScenario.current == .full {
             messages.append([
                 "role": "assistant",
-                "content": "Fixture opening. Fixture finished.",
+                "content": "Fixture opening. Fixture progress. Fixture finished.",
                 "message_id": "ui-fixture-assistant",
                 "_ts": 2_000_000_101,
                 "_anchor_activity_scene": [
@@ -418,9 +418,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                             "role": "thinking",
                             "thinking": ["text": "Inspect the fixture.", "titles": ["Inspecting fixture"]]
                         ],
+                        ["row_id": "prose-2", "order_index": 2, "role": "prose", "text": "Fixture progress."],
                         [
                             "row_id": "tool-1",
-                            "order_index": 2,
+                            "order_index": 3,
                             "role": "tool",
                             "status": "completed",
                             "tool": [
@@ -430,7 +431,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                                 "snippet": "fixture result"
                             ]
                         ],
-                        ["row_id": "prose-2", "order_index": 3, "role": "prose", "text": "Fixture finished."]
+                        ["row_id": "prose-3", "order_index": 4, "role": "prose", "text": "Fixture finished."]
                     ]
                 ]
             ])
@@ -520,6 +521,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             send(events: [
                 ("token", ["text": "Fixture opening."]),
                 ("reasoning", ["text": "Inspect the fixture.", "titles": ["Inspecting fixture"]]),
+                ("token", ["text": " Fixture progress."]),
                 ("tool", [
                     "event_type": "tool.started",
                     "name": "fixture_tool",
