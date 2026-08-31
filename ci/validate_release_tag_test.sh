@@ -13,11 +13,7 @@ git -C "$repo" config user.name "Tag Test"
 git -C "$repo" config user.email "tag-test@example.invalid"
 git -C "$repo" config commit.gpgSign false
 git -C "$repo" config tag.gpgSign false
-mkdir -p "$repo/Talaria.xcodeproj"
-cat > "$repo/Talaria.xcodeproj/project.pbxproj" <<'PBXPROJ'
-MARKETING_VERSION = 1.6.0;
-CURRENT_PROJECT_VERSION = 9;
-PBXPROJ
+printf 'release fixture\n' > "$repo/release-fixture.txt"
 git -C "$repo" add .
 git -C "$repo" commit -m "Release fixture" >/dev/null
 git -C "$repo" push origin main >/dev/null
@@ -71,8 +67,7 @@ if (
 fi
 
 git -C "$repo" switch -c side >/dev/null
-sed -i.bak 's/1\.6\.0/1.7.0/' "$repo/Talaria.xcodeproj/project.pbxproj"
-rm "$repo/Talaria.xcodeproj/project.pbxproj.bak"
+printf 'off-main\n' >> "$repo/release-fixture.txt"
 git -C "$repo" add .
 git -C "$repo" commit -m "Off-main fixture" >/dev/null
 git -C "$repo" tag -a -m "Off-main fixture" v1.7.0

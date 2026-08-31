@@ -142,7 +142,7 @@ class TestFlightBuildNumberSelector
     if blocking
       raise SelectionError,
             "The #{marketing_version} pre-release train is closed: App Store version #{blocking} is already approved. " \
-            "Prepare a version above #{blocking} with scripts/prepare-release and publish a new signed tag."
+            "Push a signed semantic release tag above #{blocking}."
     end
 
     warn "Pre-release train #{marketing_version} is open: no approved App Store version at or above it."
