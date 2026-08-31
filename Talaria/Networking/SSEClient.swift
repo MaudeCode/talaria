@@ -39,7 +39,12 @@ final class SSEClient: SSEStreamingClient {
             onEvent: onEvent
         )
         var config = EventSource.Config(handler: handler, url: url)
-        config.connectionErrorHandler = { _ in .shutdown }
+        // `.shutdown` suppresses EventHandler.onError inside LDSwiftEventSource;
+        // forward once so ChatStreamCoordinator can own status-based recovery.
+        config.connectionErrorHandler = { error in
+            handler.onError(error: error)
+            return .shutdown
+        }
         // Custom headers merged underneath the built-ins so the built-ins win on
         // collision; an empty list leaves the built-in three unchanged (#255).
         let builtInHeaders = [

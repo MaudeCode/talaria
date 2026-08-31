@@ -4,6 +4,7 @@ import UIKit
 final class ComposerNavigationUITests: XCTestCase {
     private let fixtureSessionTitle = "UI Fixture Session"
     private var app: XCUIApplication!
+    private var fixtureTrace: String?
 
     private var fixtureLaunchArguments: [String] {
         ["--ui-test-fixture"]
@@ -21,6 +22,17 @@ final class ComposerNavigationUITests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        if let fixtureTrace {
+            let trace = XCTAttachment(string: fixtureTrace)
+            trace.name = "Scripted chat event trace"
+            trace.lifetime = .deleteOnSuccess
+            add(trace)
+
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "Chat streaming failure"
+            screenshot.lifetime = .deleteOnSuccess
+            add(screenshot)
+        }
         app.terminate()
         app = nil
     }
@@ -44,6 +56,130 @@ final class ComposerNavigationUITests: XCTestCase {
 
         tapFixtureSession(session)
         XCTAssertTrue(waitForComposer(timeout: 15) != nil)
+    }
+
+    func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
+        relaunchChatFixture(
+            argument: "--ui-test-chat-full",
+            trace: "start -> token -> reasoning -> token -> tool -> approval -> tool_complete -> token -> clarify -> title -> metering -> done -> stream_end -> reload"
+        )
+        try sendFixtureMessage("Run the deterministic fixture")
+
+        let optimisticMessage = app.staticTexts["Run the deterministic fixture"]
+        XCTAssertTrue(optimisticMessage.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Approval required"].waitForExistence(timeout: 5))
+
+        let opening = app.staticTexts["Fixture opening."]
+        XCTAssertTrue(opening.exists)
+        let liveThinking = element(labelContaining: "Thinking, Inspecting fixture")
+        let liveProgress = app.staticTexts["Fixture progress."]
+        let liveTool = element(labelContaining: "Calling a tool, Running")
+        XCTAssertTrue(liveThinking.exists)
+        XCTAssertTrue(liveProgress.exists)
+        XCTAssertTrue(liveTool.exists)
+        XCTAssertLessThan(opening.frame.minY, liveThinking.frame.minY)
+        XCTAssertLessThan(liveThinking.frame.minY, liveProgress.frame.minY)
+        XCTAssertLessThan(liveProgress.frame.minY, liveTool.frame.minY)
+
+        app.buttons["Allow once"].tap()
+        XCTAssertTrue(app.staticTexts["Clarification Required"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Which deterministic path should continue?"].exists)
+
+        let finished = app.staticTexts["Fixture finished."]
+        XCTAssertTrue(finished.exists)
+
+        let clarificationChoice = app.buttons["Use the deterministic path"]
+        XCTAssertTrue(clarificationChoice.exists)
+        tapCenter(of: clarificationChoice)
+        XCTAssertTrue(app.navigationBars["Deterministic Stream Complete"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Stop response"].waitForNonExistence(timeout: 5))
+
+        let back = app.buttons["BackButton"]
+        XCTAssertTrue(back.exists)
+        tapCenter(of: back)
+        XCTAssertTrue(fixtureSessionButton.waitForExistence(timeout: 5))
+        tapCenter(of: fixtureSessionButton)
+        XCTAssertTrue(app.navigationBars["Deterministic Stream Complete"].waitForExistence(timeout: 5))
+        let worked = app.buttons["Worked"]
+        XCTAssertTrue(worked.waitForExistence(timeout: 5))
+        tapCenter(of: worked)
+
+        let reloadedOpening = app.staticTexts["Fixture opening."]
+        let reloadedThinking = element(labelContaining: "Thinking, Inspecting fixture")
+        let reloadedProgress = app.staticTexts["Fixture progress."]
+        let reloadedTool = element(labelContaining: "Called a tool, Completed")
+        let reloadedFinished = app.staticTexts["Fixture finished."]
+        XCTAssertTrue(reloadedOpening.waitForExistence(timeout: 5))
+        XCTAssertTrue(reloadedThinking.exists)
+        XCTAssertTrue(reloadedProgress.exists)
+        XCTAssertTrue(reloadedTool.exists)
+        XCTAssertTrue(reloadedFinished.exists)
+        XCTAssertLessThan(reloadedOpening.frame.minY, reloadedThinking.frame.minY)
+        XCTAssertLessThan(reloadedThinking.frame.minY, reloadedProgress.frame.minY)
+        XCTAssertLessThan(reloadedProgress.frame.minY, reloadedTool.frame.minY)
+        XCTAssertLessThan(reloadedTool.frame.minY, reloadedFinished.frame.minY)
+        XCTAssertEqual(countElements(label: "Run the deterministic fixture"), 1)
+        XCTAssertEqual(countElements(label: "Fixture opening."), 1)
+        XCTAssertEqual(countElements(label: "Fixture progress."), 1)
+        XCTAssertEqual(countElements(label: "Fixture finished."), 1)
+        XCTAssertNotNil(waitForComposer(timeout: 5))
+    }
+
+    func testChatStreamSupportsSteeringAndCancellation() throws {
+        relaunchChatFixture(
+            argument: "--ui-test-chat-controls",
+            trace: "start -> token -> steer request -> steer_consumed -> cancel request -> cancel"
+        )
+        try sendFixtureMessage("Run the deterministic fixture")
+
+        XCTAssertTrue(app.staticTexts["Waiting for control input."].waitForExistence(timeout: 5))
+        let composer = try XCTUnwrap(waitForComposer(timeout: 5))
+        let input = app.textViews.firstMatch
+        if !input.waitForExistence(timeout: 2) {
+            composer.tap()
+            XCTAssertTrue(input.waitForExistence(timeout: 5))
+        }
+        input.typeText("Keep the fixture concise")
+        tapCenter(of: app.buttons["Send"])
+
+        XCTAssertTrue(app.staticTexts["Keep the fixture concise"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element(labelContaining: "Steering hint").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(label: "Steering hint").waitForExistence(timeout: 5))
+        let stop = app.buttons["Stop response"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5))
+        stop.tap()
+
+        XCTAssertTrue(stop.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Waiting for control input."].exists)
+        XCTAssertNotNil(waitForComposer(timeout: 5))
+    }
+
+    func testChatStreamSurfacesTerminalErrorAndRestoresComposer() throws {
+        relaunchChatFixture(
+            argument: "--ui-test-chat-error",
+            trace: "start -> token -> error"
+        )
+        try sendFixtureMessage("Run the deterministic fixture")
+
+        XCTAssertTrue(app.staticTexts["Partial fixture response."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Synthetic fixture failure"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Stop response"].waitForNonExistence(timeout: 5))
+        XCTAssertNotNil(waitForComposer(timeout: 5))
+    }
+
+    func testChatStreamReconnectsAfterTransportLoss() throws {
+        relaunchChatFixture(
+            argument: "--ui-test-chat-reconnect",
+            trace: "start -> token -> transport error -> status(active) -> session reload -> reconnect -> token -> done -> stream_end"
+        )
+        try sendFixtureMessage("Run the deterministic fixture")
+        XCTAssertTrue(element(labelContaining: "Before reconnect.").waitForExistence(timeout: 5))
+
+        XCTAssertTrue(element(labelContaining: "After reconnect.").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Stop response"].waitForNonExistence(timeout: 5))
+        XCTAssertEqual(countElements(containing: "Before reconnect."), 1)
+        XCTAssertEqual(countElements(containing: "After reconnect."), 1)
+        XCTAssertNotNil(waitForComposer(timeout: 5))
     }
 
     func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
@@ -542,6 +678,53 @@ final class ComposerNavigationUITests: XCTestCase {
         let composer = waitForComposer(timeout: 15)
         XCTAssertNotNil(composer)
         return try XCTUnwrap(composer)
+    }
+
+    private func relaunchChatFixture(argument: String, trace: String) {
+        fixtureTrace = trace
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments + [argument]
+        app.launch()
+    }
+
+    private func sendFixtureMessage(_ message: String) throws {
+        let composer = try openFixtureSession()
+        let input = app.textViews.firstMatch
+        if !input.waitForExistence(timeout: 2) {
+            composer.tap()
+            XCTAssertTrue(input.waitForExistence(timeout: 5))
+        }
+        input.typeText(message)
+        let send = app.buttons["Send"]
+        XCTAssertTrue(send.waitForExistence(timeout: 3))
+        tapCenter(of: send)
+    }
+
+    private func element(labelContaining text: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
+            .firstMatch
+    }
+
+    private func element(label: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
+    }
+
+    private func countElements(label: String) -> Int {
+        app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count
+    }
+
+    private func countElements(containing text: String) -> Int {
+        app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).count
+    }
+
+    private func tapCenter(of element: XCUIElement) {
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: element.frame.midX / app.frame.width,
+            dy: element.frame.midY / app.frame.height
+        )).tap()
     }
 
     private func openSettings() {

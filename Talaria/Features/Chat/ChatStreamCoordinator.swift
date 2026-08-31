@@ -300,6 +300,12 @@ final class ChatStreamCoordinator {
                 return
             }
             delegate?.streamCoordinatorDidReceiveRecoveryError(error)
+            guard self.activeStreamID == activeStreamID, isConnectionSuspended else { return }
+            let retryDelay = UInt64(max(timing.statusPollCooldown, 0.01) * 1_000_000_000)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: retryDelay)
+                await self?.reconnectIfNeeded(modelContext: modelContext)
+            }
         }
     }
 
