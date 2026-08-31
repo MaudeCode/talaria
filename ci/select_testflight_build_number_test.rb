@@ -165,8 +165,8 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
     end
 
     assert_includes(error.message, "train is closed")
-    assert_includes(error.message, "Bump MARKETING_VERSION")
-    assert_includes(error.message, "land it on main")
+    assert_includes(error.message, "scripts/prepare-release")
+    assert_includes(error.message, "signed tag")
   end
 
   def test_app_lookup_uses_supported_bundle_id_filter_only

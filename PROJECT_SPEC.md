@@ -68,7 +68,7 @@ The server owns execution. The app owns mobile interaction quality.
 | 8 | Terminal feature | **Skip for v1** |
 | 9 | Offline behavior | **Read-only cache** of session list and recent messages |
 | 10 | App name | **Talaria** in App Store Connect, on the Home Screen, and as the Xcode target/module |
-| 11 | Apple Developer account | **Enrolled** — Team ID `Q28NF3NH3D`; development provisioning active for bundle ID `dev.kil.talaria`; App Store Connect record and SKU pending |
+| 11 | Apple Developer account | **Enrolled** — Team ID `Q28NF3NH3D`; development and App Store Connect distribution active for bundle ID `dev.kil.talaria` |
 
 ---
 
@@ -689,9 +689,9 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 ### Phase 13 — TestFlight prep (½ day)
 - [x] **Owner creates Apple Developer account** ($99/yr).
 - [x] Configure signing in Xcode for Team ID `Q28NF3NH3D`.
-- [ ] Create App Store Connect app record for `Talaria` when TestFlight distribution is needed; bundle ID `dev.kil.talaria`, SKU to be chosen then.
+- [x] Create the App Store Connect `Talaria` record for bundle ID `dev.kil.talaria`.
 - [x] Answer export compliance: `None of the algorithms mentioned above`; repo declares `ITSAppUsesNonExemptEncryption = NO`.
-- [ ] Add an internal TestFlight path after the App Store Connect record exists.
+- [x] Add a TestFlight upload path after the App Store Connect record exists.
 - [x] Document the install/release process in `DEVELOPMENT.md`.
 - [ ] Reconfigure and verify the inherited CI/TestFlight upload workflow for the Talaria App Store Connect record.
 - [ ] Add external testers after owner verifies an internal build; first external build requires Beta App Review.
@@ -753,7 +753,7 @@ Document it as the recommended path.
 | 5 | **SSE not WebSocket.** | Use LDSwiftEventSource. Handle heartbeat comment lines. |
 | 6 | **Cloudflare ~100s idle timeout on free plan.** | 30s server heartbeats keep streams alive; gaps >100s with no events will cut the connection. Reconnect logic must handle this. |
 | 7 | **App Store review for "remote shell" apps** can be sensitive. | Position as "mobile client for your own developer agent server." Prior art: Blink Shell, Working Copy, Termius. |
-| 8 | **TestFlight release automation can publish unreviewed work too easily.** | Use short feature branches and only upload owner-verified `main` builds to internal TestFlight. Promote selected builds to external testers manually. |
+| 8 | **TestFlight release automation can publish unreviewed work too easily.** | Require an explicitly authorized signed `vX.Y.Z` tag on validated `main`. Upload one external-capable build, then assign testers and request Beta App Review manually. |
 | 9 | Server may return new SSE event types we don't handle. | Default case in event-decoding switch logs and ignores — never crash. |
 | 10 | Long agent runs may exceed iOS background time when app is backgrounded. | Don't try to keep streams alive in background for v1. On foreground, reconnect via `/api/chat/stream/status`. |
 | 11 | **The server is typically a personal machine.** If it is asleep, off, or offline, the app shows network errors. | Document in onboarding: "If you can't connect, check that your server machine is awake and your tunnel is running." Add a clear error message that distinguishes "tunnel down" (DNS resolves, connection refused) from "machine asleep" (timeout) where possible. |

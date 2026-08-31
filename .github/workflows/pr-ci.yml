@@ -217,61 +217,7 @@ jobs:
           if-no-files-found: ignore
 
   tooling:
-    name: Repository Tooling
-    runs-on: ["ghar-set-maudecode"]
-    timeout-minutes: 5
-    steps:
-      - name: Check out
-        uses: actions/checkout@v7
-
-      - name: Prepare tooling runtime
-        run: |
-          sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zsh
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-
-      - name: Run actionlint
-        env:
-          ACTIONLINT_VERSION: 1.7.12
-          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-        run: |
-          set -euo pipefail
-          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
-          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check
-          tar -xzf "${archive}" actionlint
-          ./actionlint
-
-      - name: Test repository tooling
-        run: |
-          python3 ci/load_env_test.py
-          ruby ci/select_testflight_build_number_test.rb
-          ruby ci/test_ios_runner_test.rb
-
-      - name: Validate property lists
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from plistlib import load
-
-          for path in Path(".").rglob("*.plist"):
-              if ".git" not in path.parts:
-                  with path.open("rb") as stream:
-                      load(stream)
-          PY
-
-      - name: Check script syntax
-        run: |
-          set -euo pipefail
-          bash -n scripts/check-swift-file-sizes scripts/webui-json
-          zsh -n scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/setup-ios-test-pool scripts/test-ios scripts/test-test-ios scripts/validate-upstream-contract
-          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
-          for file in ci/*.rb; do ruby -c "${file}"; done
+    uses: ./.github/workflows/repository-tooling.yml
 
   gate:
     name: CI Gate

@@ -2,17 +2,37 @@
 
 > **Maintainer-only ops.** Everything in this file requires the maintainer's Apple Developer account, App Store Connect access, and signing credentials. Contributors never need this runbook to build, test, or contribute to the app.
 
-This is the step-by-step checklist for getting Talaria ready for external TestFlight testers. The App Store Connect record has not been created yet; development signing is ready, but distribution steps remain pending. Work through this checklist in order.
+This is the maintainer runbook for Talaria's existing App Store Connect record.
 
 Goal: invite external testers only after a clean release-candidate build has been uploaded, owner-verified internally on device, submitted to Beta App Review, and approved.
 
+## Supported release path
+
+- Use `$talaria-release` with an explicit `X.Y.Z` version.
+- Review `scripts/prepare-release <version> --dry-run` before authorizing the tag
+  push.
+- `scripts/prepare-release <version> --publish` is the only supported version,
+  commit, and tag path. It creates a signed `vX.Y.Z` tag and atomically pushes it
+  with the prepared `main` commit.
+- `.github/workflows/release.yml` validates the signed tag, exact-SHA main CI,
+  version/build agreement, and App Store Connect state. It then builds one
+  external-capable IPA and uploads it to TestFlight.
+- Use the manual workflow with `upload = false` to prove an existing signed tag
+  through artifact creation without uploading it.
+- App Store Connect agreements, processing or compliance prompts, tester-group
+  assignment, external tester selection, and Beta App Review remain manual.
+
+The dated launch checklist below records prior releases. Where it names retired
+manual workflows, this section is authoritative until TAL-22 removes that
+history.
+
 ## Current Readiness Snapshot
 
-As of 2026-08-04:
+As of 2026-08-30:
 
-- This file remains the external TestFlight mechanics runbook (the separate full App Store release checklist doc was retired during open-source prep).
+- Signed semantic-version tags are the supported release trigger.
 - Version `1.4` is the approved App Store release; App Store Connect has closed the `1.4` pre-release train, so external-capable uploads now require a higher marketing version (this forced the bump to `1.5` in #223).
-- Current external-capable upload: version `1.5`, build `1`.
+- The last verified external-capable upload remains version `1.5`, build `1`.
 - Verified workflow evidence: run `30888612331` / `External TestFlight from master` completed successfully from `master` at `a4adf347b00a925b168245287e80a0f2b889cc55`.
 - Run `30888612331` selected build number `1`, used `ci/ExternalTestFlightExportOptions.plist`, archived successfully, and uploaded to App Store Connect successfully.
 - Owner still needs to wait for App Store Connect processing, confirm build `1.5 (1)` appears and is not internal-only, and resolve any compliance prompts before using it for external testing or App Review replacement.

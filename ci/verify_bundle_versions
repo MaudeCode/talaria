@@ -1,0 +1,23 @@
+#!/bin/zsh
+set -euo pipefail
+
+app_path="${1:?app path is required}"
+expected_version="${2:?marketing version is required}"
+expected_build="${3:?build number is required}"
+
+plists=("${app_path}/Info.plist" "${app_path}"/PlugIns/*.appex/Info.plist(N))
+if (( ${#plists} < 3 )); then
+  echo "Expected the Talaria app and both embedded extensions, found ${#plists} bundles." >&2
+  exit 1
+fi
+
+for plist in "${plists[@]}"; do
+  version="$(plutil -extract CFBundleShortVersionString raw -o - "${plist}")"
+  build="$(plutil -extract CFBundleVersion raw -o - "${plist}")"
+  if [[ "${version}" != "${expected_version}" || "${build}" != "${expected_build}" ]]; then
+    echo "${plist}: expected ${expected_version} (${expected_build}), found ${version} (${build})." >&2
+    exit 1
+  fi
+done
+
+echo "Verified ${expected_version} (${expected_build}) in ${#plists} release bundles."

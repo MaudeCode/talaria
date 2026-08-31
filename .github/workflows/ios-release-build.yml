@@ -1,0 +1,152 @@
+name: iOS Release Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build signed iOS release
+    runs-on: maude-mac
+    environment: testflight
+    timeout-minutes: 60
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      PROJECT_PATH: Talaria.xcodeproj
+      SCHEME: Talaria
+      TEAM_ID: Q28NF3NH3D
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Check required secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required secret: ${name}" >&2
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
+      - name: Set output paths
+        run: |
+          {
+            echo "ARCHIVE_PATH=${RUNNER_TEMP}/Talaria.xcarchive"
+            echo "DERIVED_DATA_PATH=${RUNNER_TEMP}/TalariaDerivedData"
+            echo "EXPORT_PATH=${RUNNER_TEMP}/TalariaExport"
+          } >> "${GITHUB_ENV}"
+
+      - name: Resolve release metadata
+        run: |
+          set -euo pipefail
+          read -r marketing_version build_number <<< "$(ruby -Ici -rrelease_project -e 'state = TalariaReleaseProject.new.read_state; puts "#{state.fetch(:marketing_version)} #{state.fetch(:build_number)}"')"
+          echo "MARKETING_VERSION=${marketing_version}" >> "${GITHUB_ENV}"
+          echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
+          echo "Building ${marketing_version} (${build_number}) from ${{ inputs.ref }}."
+
+      - name: Write App Store Connect key
+        run: |
+          set -euo pipefail
+          key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          if [[ "${APP_STORE_CONNECT_PRIVATE_KEY}" == *"\\n"* ]]; then
+            printf "%s" "${APP_STORE_CONNECT_PRIVATE_KEY}" | perl -pe 's/\\n/\n/g' > "${key_path}"
+          else
+            printf "%s" "${APP_STORE_CONNECT_PRIVATE_KEY}" > "${key_path}"
+          fi
+          chmod 600 "${key_path}"
+          echo "APP_STORE_CONNECT_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
+
+      - name: Reconcile App Store Connect build
+        env:
+          BUNDLE_ID: dev.kil.talaria
+          ENFORCE_OPEN_TRAIN: "1"
+        run: |
+          set -euo pipefail
+          selected="$(REQUESTED_BUILD_NUMBER="${BUILD_NUMBER}" ruby ci/select_testflight_build_number.rb)"
+          if [[ "${selected}" != "${BUILD_NUMBER}" ]]; then
+            echo "Prepared build ${BUILD_NUMBER} changed during App Store Connect reconciliation." >&2
+            exit 1
+          fi
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project "${PROJECT_PATH}" \
+            -scheme "${SCHEME}" \
+            -disableAutomaticPackageResolution
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project "${PROJECT_PATH}" \
+            -scheme "${SCHEME}" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "${ARCHIVE_PATH}" \
+            -derivedDataPath "${DERIVED_DATA_PATH}" \
+            -disableAutomaticPackageResolution \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${APP_STORE_CONNECT_KEY_PATH}" \
+            -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}" \
+            DEVELOPMENT_TEAM="${TEAM_ID}" \
+            MARKETING_VERSION="${MARKETING_VERSION}" \
+            CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
+
+      - name: Verify archive versions
+        run: ci/verify_bundle_versions "${ARCHIVE_PATH}/Products/Applications/Talaria.app" "${MARKETING_VERSION}" "${BUILD_NUMBER}"
+
+      - name: Export IPA
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "${ARCHIVE_PATH}" \
+            -exportPath "${EXPORT_PATH}" \
+            -exportOptionsPlist ci/ExternalTestFlightExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${APP_STORE_CONNECT_KEY_PATH}" \
+            -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-ipa
+          path: ${{ env.EXPORT_PATH }}/*.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload dSYM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dsyms
+          path: ${{ env.ARCHIVE_PATH }}/dSYMs
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove App Store Connect key
+        if: always()
+        run: |
+          if [[ -n "${APP_STORE_CONNECT_KEY_PATH:-}" ]]; then
+            rm -f "${APP_STORE_CONNECT_KEY_PATH}"
+          fi
