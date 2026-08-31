@@ -26,6 +26,18 @@ struct UITestFixtureEnvironment {
     let draftStore: ChatDraftStore
 
     static func make() -> UITestFixtureEnvironment {
+        let chatScenario = UITestChatScenario.current
+        UserDefaults.standard.set(
+            StreamingSendBehavior.steer.rawValue,
+            forKey: StreamingSendBehavior.storageKey
+        )
+        UserDefaults.standard.set(chatScenario == nil, forKey: StreamedTextAnimationSettings.isEnabledKey)
+        UserDefaults.standard.set(true, forKey: ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey)
+        UserDefaults.standard.set(
+            chatScenario != nil,
+            forKey: ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey
+        )
+
         let keychain = UITestFixtureKeychainStore(serverURL: serverURL)
         let defaultsName = "dev.kil.talaria.ui-test-fixture"
         let defaults = UserDefaults(suiteName: defaultsName)!
@@ -90,9 +102,120 @@ private actor UITestFixtureDraftPersistence: ChatDraftPersisting {
     }
 }
 
-final class UITestFixtureURLProtocol: URLProtocol {
+private enum UITestChatScenario: String, CaseIterable {
+    case full = "--ui-test-chat-full"
+    case controls = "--ui-test-chat-controls"
+    case error = "--ui-test-chat-error"
+    case reconnect = "--ui-test-chat-reconnect"
+
+    static var current: Self? {
+        let arguments = ProcessInfo.processInfo.arguments
+        return allCases.first { arguments.contains($0.rawValue) }
+    }
+}
+
+private final class UITestChatFixtureState: @unchecked Sendable {
+    static let shared = UITestChatFixtureState()
+
+    private let condition = NSCondition()
+    private var started = false
+    private var settled = false
+    private var approvalAnswered = false
+    private var clarificationAnswered = false
+    private var steerID: String?
+    private var cancelled = false
+    private var streamConnectionCount = 0
+
+    func startChat() {
+        condition.lock()
+        started = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func settle() {
+        condition.lock()
+        settled = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func answerApproval() {
+        condition.lock()
+        approvalAnswered = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func answerClarification() {
+        condition.lock()
+        clarificationAnswered = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func acceptSteer(id: String?) {
+        condition.lock()
+        steerID = id
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func cancel() {
+        condition.lock()
+        cancelled = true
+        settled = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func nextStreamConnection() -> Int {
+        condition.lock()
+        defer { condition.unlock() }
+        streamConnectionCount += 1
+        return streamConnectionCount
+    }
+
+    func snapshot() -> (
+        started: Bool,
+        settled: Bool,
+        approvalAnswered: Bool,
+        clarificationAnswered: Bool,
+        steerID: String?,
+        cancelled: Bool
+    ) {
+        condition.lock()
+        defer { condition.unlock() }
+        return (started, settled, approvalAnswered, clarificationAnswered, steerID, cancelled)
+    }
+
+    func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool, stopped: () -> Bool) {
+        condition.lock()
+        while !predicate(self), !stopped() {
+            condition.wait()
+        }
+        condition.unlock()
+    }
+
+    func wakeWaiters() {
+        condition.lock()
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    fileprivate var approvalWasAnswered: Bool { approvalAnswered }
+    fileprivate var clarificationWasAnswered: Bool { clarificationAnswered }
+    fileprivate var acceptedSteerID: String? { steerID }
+    fileprivate var wasCancelled: Bool { cancelled }
+}
+
+final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionID = "ui-fixture-session"
     static let sessionTitle = "UI Fixture Session"
+    private static let chatStreamID = "ui-fixture-stream"
+    private static let chatState = UITestChatFixtureState.shared
+    private let lifecycleLock = NSLock()
+    private var stopped = false
 
     static func configure(_ configuration: URLSessionConfiguration) {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
@@ -112,6 +235,11 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return
         }
 
+        if UITestChatScenario.current != nil, url.path == "/api/chat/stream" {
+            startScriptedChatStream(url: url)
+            return
+        }
+
         let isEventStream = url.path.hasSuffix("/stream")
         let response = HTTPURLResponse(
             url: url,
@@ -120,13 +248,22 @@ final class UITestFixtureURLProtocol: URLProtocol {
             headerFields: ["Content-Type": isEventStream ? "text/event-stream" : "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Self.responseData(for: url))
+        if UITestChatScenario.current != nil,
+           url.path == "/api/approval/stream" || url.path == "/api/clarify/stream" {
+            client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
+            return
+        }
+        client?.urlProtocol(self, didLoad: Self.responseData(for: request))
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        lifecycleLock.withLock { stopped = true }
+        Self.chatState.wakeWaiters()
+    }
 
-    private static func responseData(for url: URL) -> Data {
+    private static func responseData(for request: URLRequest) -> Data {
+        guard let url = request.url else { return json([:]) }
         switch url.path {
         case "/health":
             return json(["status": "ok"])
@@ -137,7 +274,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/sessions/search":
             return json(["sessions": [], "query": "", "count": 0])
         case "/api/session":
-            return sessionResponse()
+            return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
         case "/api/session/new":
             return json(["session": session(id: "ui-fixture-new-session", title: "New Fixture Chat")])
         case "/api/projects":
@@ -183,6 +320,38 @@ final class UITestFixtureURLProtocol: URLProtocol {
             return json(["personalities": []])
         case "/api/skills":
             return json(["skills": []])
+        case "/api/chat/start":
+            chatState.startChat()
+            return json(["stream_id": chatStreamID, "session_id": sessionID])
+        case "/api/chat/cancel":
+            chatState.cancel()
+            return json(["ok": true, "cancelled": true, "stream_id": chatStreamID])
+        case "/api/chat/stream/status":
+            return json([
+                "active": !chatState.snapshot().settled,
+                "stream_id": chatStreamID,
+                "replay_available": false
+            ])
+        case "/api/chat/steer":
+            let steerID = requestJSON(request)["steer_id"] as? String
+            chatState.acceptSteer(id: steerID)
+            return json([
+                "accepted": true,
+                "stream_id": chatStreamID,
+                "steer_id": steerID ?? "ui-fixture-steer"
+            ])
+        case "/api/approval/respond":
+            chatState.answerApproval()
+            return json(["ok": true, "choice": "once"])
+        case "/api/approval/pending":
+            return json(["pending_count": 0])
+        case "/api/clarify/respond":
+            chatState.answerClarification()
+            return json(["ok": true, "response": "Use the deterministic path"])
+        case "/api/clarify/pending":
+            return json(["pending_count": 0])
+        case "/api/session/yolo":
+            return json(["ok": true, "yolo_enabled": false])
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:
@@ -210,6 +379,73 @@ final class UITestFixtureURLProtocol: URLProtocol {
         }
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
+        return json(["session": detail])
+    }
+
+    private static func chatSessionResponse() -> Data {
+        let state = chatState.snapshot()
+        var detail = session(
+            id: sessionID,
+            title: state.settled && UITestChatScenario.current == .full
+                ? "Deterministic Stream Complete"
+                : sessionTitle
+        )
+        var messages: [[String: Any]] = []
+
+        if state.started {
+            messages.append([
+                "role": "user",
+                "content": "Run the deterministic fixture",
+                "message_id": "ui-fixture-user",
+                "_ts": 2_000_000_100
+            ])
+        }
+
+        if state.settled, UITestChatScenario.current == .full {
+            messages.append([
+                "role": "assistant",
+                "content": "Fixture opening. Fixture finished.",
+                "message_id": "ui-fixture-assistant",
+                "_ts": 2_000_000_101,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1",
+                    "final_answer": "Fixture finished.",
+                    "activity_rows": [
+                        ["row_id": "prose-1", "order_index": 0, "role": "prose", "text": "Fixture opening."],
+                        [
+                            "row_id": "thinking-1",
+                            "order_index": 1,
+                            "role": "thinking",
+                            "thinking": ["text": "Inspect the fixture.", "titles": ["Inspecting fixture"]]
+                        ],
+                        [
+                            "row_id": "tool-1",
+                            "order_index": 2,
+                            "role": "tool",
+                            "status": "completed",
+                            "tool": [
+                                "id": "ui-fixture-tool",
+                                "name": "fixture_tool",
+                                "done": true,
+                                "snippet": "fixture result"
+                            ]
+                        ],
+                        ["row_id": "prose-2", "order_index": 3, "role": "prose", "text": "Fixture finished."]
+                    ]
+                ]
+            ])
+        } else if state.started, UITestChatScenario.current == .reconnect {
+            messages.append([
+                "role": "assistant",
+                "content": "Before reconnect.",
+                "message_id": "ui-fixture-assistant",
+                "_ts": 2_000_000_101
+            ])
+        }
+
+        detail["messages"] = messages
+        detail["message_count"] = messages.count
+        detail["active_stream_id"] = state.started && !state.settled ? chatStreamID : NSNull()
         return json(["session": detail])
     }
 
@@ -253,6 +489,150 @@ final class UITestFixtureURLProtocol: URLProtocol {
 
     private static func json(_ object: Any) -> Data {
         try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private static func requestJSON(_ request: URLRequest) -> [String: Any] {
+        guard let body = request.httpBody,
+              let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else { return [:] }
+        return object
+    }
+
+    private func startScriptedChatStream(url: URL) {
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/event-stream"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+
+        let connection = Self.chatState.nextStreamConnection()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.runChatScript(connection: connection)
+        }
+    }
+
+    private func runChatScript(connection: Int) {
+        guard let scenario = UITestChatScenario.current else { return }
+        switch scenario {
+        case .full:
+            send(events: [
+                ("token", ["text": "Fixture opening."]),
+                ("reasoning", ["text": "Inspect the fixture.", "titles": ["Inspecting fixture"]]),
+                ("tool", [
+                    "event_type": "tool.started",
+                    "name": "fixture_tool",
+                    "preview": "fixture input",
+                    "args": ["target": "synthetic"],
+                    "tid": "ui-fixture-tool"
+                ]),
+                ("approval", [
+                    "approval_id": "ui-fixture-approval",
+                    "command": "fixture-tool --synthetic",
+                    "description": "Allow the deterministic fixture to continue."
+                ])
+            ])
+            wait { $0.approvalWasAnswered }
+            guard !isStopped else { return }
+            send(events: [
+                ("tool_complete", [
+                    "event_type": "tool.completed",
+                    "name": "fixture_tool",
+                    "preview": "fixture result",
+                    "duration": 0.1,
+                    "tid": "ui-fixture-tool"
+                ]),
+                ("token", ["text": " Fixture finished."]),
+                ("clarify", [
+                    "clarify_id": "ui-fixture-clarify",
+                    "question": "Which deterministic path should continue?",
+                    "choices_offered": ["Use the deterministic path"],
+                    "session_id": Self.sessionID,
+                    "kind": "clarify"
+                ])
+            ])
+            wait { $0.clarificationWasAnswered }
+            guard !isStopped else { return }
+            Self.chatState.settle()
+            send(events: [
+                ("title", ["session_id": Self.sessionID, "title": "Deterministic Stream Complete"]),
+                ("metering", [
+                    "session_id": Self.sessionID,
+                    "tokens_per_second": 12.5,
+                    "tps_available": true,
+                    "estimated": false
+                ]),
+                ("done", [:]),
+                ("stream_end", [:])
+            ])
+            finish()
+        case .controls:
+            send(events: [("token", ["text": "Waiting for control input."])])
+            wait { $0.acceptedSteerID != nil || $0.wasCancelled }
+            guard !isStopped else { return }
+            if let steerID = Self.chatState.snapshot().steerID {
+                send(events: [("steer_consumed", [
+                    "session_id": Self.sessionID,
+                    "stream_id": Self.chatStreamID,
+                    "steer_id": steerID,
+                    "text": "Keep the fixture concise"
+                ])])
+            }
+            wait { $0.wasCancelled }
+            guard !isStopped else { return }
+            send(events: [("cancel", [:])])
+            finish()
+        case .error:
+            send(events: [
+                ("token", ["text": "Partial fixture response."]),
+                ("error", ["message": "Synthetic fixture failure"])
+            ])
+            Self.chatState.settle()
+            finish()
+        case .reconnect:
+            if connection == 1 {
+                send(events: [("token", ["text": "Before reconnect."])])
+                fail(with: URLError(.networkConnectionLost))
+                return
+            }
+            Self.chatState.settle()
+            send(events: [
+                ("token", ["text": " After reconnect."]),
+                ("done", [:]),
+                ("stream_end", [:])
+            ])
+            finish()
+        }
+    }
+
+    private func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool) {
+        Self.chatState.wait(until: predicate, stopped: { [weak self] in self?.isStopped != false })
+    }
+
+    private var isStopped: Bool {
+        lifecycleLock.withLock { stopped }
+    }
+
+    private func send(events: [(String, [String: Any])]) {
+        guard !isStopped else { return }
+        let data = events.reduce(into: Data()) { result, event in
+            let payload = Self.json(event.1)
+            result.append(Data("event: \(event.0)\ndata: ".utf8))
+            result.append(payload)
+            result.append(Data("\n\n".utf8))
+        }
+        client?.urlProtocol(self, didLoad: data)
+    }
+
+    private func finish() {
+        guard !isStopped else { return }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private func fail(with error: Error) {
+        guard !isStopped else { return }
+        client?.urlProtocol(self, didFailWithError: error)
     }
 }
 #endif
