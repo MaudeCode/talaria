@@ -17,6 +17,8 @@ actor APIClient {
     private let ownedSessions: [URLSession]
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
+    private let cookieStorage: HTTPCookieStorage?
+    let persistCookies: @Sendable () throws -> Void
     /// Read when building each request so live edits apply without rebuilding the
     /// client. Defaults to the process-wide store; tests inject a fixed list (#255).
     /// Internal, not private, because the upload and transcribe extensions build
@@ -27,6 +29,8 @@ actor APIClient {
         baseURL: URL,
         session: URLSession? = nil,
         publicMediaSession: URLSession? = nil,
+        cookieStorage: HTTPCookieStorage? = nil,
+        cookiePersistence: (@Sendable () throws -> Void)? = nil,
         customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() }
     ) {
         self.baseURL = baseURL
@@ -42,11 +46,25 @@ actor APIClient {
         )
         self.redirectHeaderStripper = redirectHeaderStripper
 
-        let resolvedSession = session ?? Self.makeDefaultSession(delegate: redirectHeaderStripper)
+        let resolvedCookieStorage = cookieStorage
+            ?? session?.configuration.httpCookieStorage
+            ?? ServerCookieStore.shared.storage(for: baseURL)
+        let resolvedSession = session ?? Self.makeDefaultSession(
+            delegate: redirectHeaderStripper,
+            cookieStorage: resolvedCookieStorage
+        )
         let resolvedPublicMediaSession = publicMediaSession
             ?? Self.makeDefaultPublicMediaSession(delegate: redirectHeaderStripper)
         self.session = resolvedSession
         self.publicMediaSession = resolvedPublicMediaSession
+        self.cookieStorage = resolvedCookieStorage
+        if let cookiePersistence {
+            persistCookies = cookiePersistence
+        } else if session == nil, cookieStorage == nil {
+            persistCookies = { try ServerCookieStore.shared.persist(for: baseURL) }
+        } else {
+            persistCookies = {}
+        }
         // Only the sessions we created carry our delegate and must be invalidated;
         // an injected session is the caller's to manage.
         var ownedSessions: [URLSession] = []
@@ -91,6 +109,83 @@ actor APIClient {
 
     func logout() async throws -> LoginResponse {
         try await send(endpoint: .logout, method: "POST", body: EmptyBody())
+    }
+
+    func beginNativeOIDC(
+        callbackURL: URL,
+        state: String,
+        codeChallenge: String
+    ) async throws -> NativeOIDCStartResponse {
+        try await send(
+            endpoint: .nativeOIDCStart,
+            method: "POST",
+            body: NativeOIDCStartRequest(
+                callbackUrl: callbackURL.absoluteString,
+                state: state,
+                codeChallenge: codeChallenge,
+                codeChallengeMethod: "S256"
+            )
+        )
+    }
+
+    func exchangeNativeOIDC(
+        flowID: String,
+        code: String,
+        state: String,
+        codeVerifier: String
+    ) async throws -> LoginResponse {
+        let body = NativeOIDCExchangeRequest(
+            flowId: flowID,
+            code: code,
+            state: state,
+            codeVerifier: codeVerifier
+        )
+        let (data, response) = try await sendDataReturningResponse(
+            endpoint: .nativeOIDCExchange,
+            method: "POST",
+            encodedBody: encoder.encode(body)
+        )
+        let headerFields = response.allHeaderFields.reduce(into: [String: String]()) {
+            $0[String(describing: $1.key)] = String(describing: $1.value)
+        }
+        guard let responseURL = response.url, let cookieStorage else {
+            throw APIError.unauthorized
+        }
+        let responseCookies = HTTPCookie.cookies(
+            withResponseHeaderFields: headerFields,
+            for: responseURL
+        )
+        let requiresSecureCookie = responseURL.scheme?.lowercased() == "https"
+        let secureSessionCookies = responseCookies.filter {
+            $0.isHTTPOnly && (!requiresSecureCookie || $0.isSecure)
+        }
+        guard !secureSessionCookies.isEmpty else {
+            responseCookies.forEach(cookieStorage.deleteCookie)
+            throw APIError.unauthorized
+        }
+        responseCookies.forEach(cookieStorage.setCookie)
+        let authStatusURL = Endpoint.authStatus.url(relativeTo: baseURL)
+        let applicable = cookieStorage.cookies(for: authStatusURL) ?? []
+        guard secureSessionCookies.contains(where: { candidate in
+            applicable.contains(where: {
+                $0.name == candidate.name
+                    && $0.domain == candidate.domain
+                    && $0.path == candidate.path
+                    && $0.value == candidate.value
+            })
+        }) else {
+            responseCookies.forEach(cookieStorage.deleteCookie)
+            throw APIError.unauthorized
+        }
+        return try decode(LoginResponse.self, from: data)
+    }
+
+    func cancelNativeOIDC(flowID: String, state: String) async throws -> LoginResponse {
+        try await send(
+            endpoint: .nativeOIDCCancel,
+            method: "POST",
+            body: NativeOIDCCancelRequest(flowId: flowID, state: state)
+        )
     }
 
     func send<Response: Decodable>(
@@ -280,12 +375,15 @@ actor APIClient {
 }
 
 private extension APIClient {
-    static func makeDefaultSession(delegate: URLSessionDelegate?) -> URLSession {
+    static func makeDefaultSession(
+        delegate: URLSessionDelegate?,
+        cookieStorage: HTTPCookieStorage
+    ) -> URLSession {
         let configuration = URLSessionConfiguration.default
         #if DEBUG
         UITestFixtureURLProtocol.configure(configuration)
         #endif
-        configuration.httpCookieStorage = .shared
+        configuration.httpCookieStorage = cookieStorage
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
@@ -305,6 +403,25 @@ private extension APIClient {
 
 private struct LoginRequest: Encodable {
     let password: String
+}
+
+private struct NativeOIDCStartRequest: Encodable {
+    let callbackUrl: String
+    let state: String
+    let codeChallenge: String
+    let codeChallengeMethod: String
+}
+
+private struct NativeOIDCExchangeRequest: Encodable {
+    let flowId: String
+    let code: String
+    let state: String
+    let codeVerifier: String
+}
+
+private struct NativeOIDCCancelRequest: Encodable {
+    let flowId: String
+    let state: String
 }
 
 private struct EmptyBody: Encodable {}
@@ -363,7 +480,8 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         // slip through unstripped (a sub-second live-edit race; see #277 review).
         // Accepted as a known narrow gap; closing it would require carrying the
         // applied-name set through the redirect.
-        let namesToStrip = Set(
+        var namesToStrip: Set<String> = ["cookie"]
+        namesToStrip.formUnion(
             customHeaderProvider()
                 .filter { $0.isApplicable }
                 .map { $0.sanitizedName.lowercased() }

@@ -47,18 +47,24 @@ final class SSEClient: SSEStreamingClient {
         }
         // Custom headers merged underneath the built-ins so the built-ins win on
         // collision; an empty list leaves the built-in three unchanged (#255).
-        let builtInHeaders = [
+        let cookieStorage = ServerCookieStore.shared.storage(for: url)
+        var builtInHeaders = [
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
             "Accept-Encoding": "identity"
         ]
+        if let cookie = HTTPCookie.requestHeaderFields(
+            with: cookieStorage.cookies(for: url) ?? []
+        )["Cookie"] {
+            builtInHeaders["Cookie"] = cookie
+        }
         config.headers = customHeaders.merged(under: builtInHeaders)
 
         let configuration = baseConfiguration.copy() as? URLSessionConfiguration ?? .default
         #if DEBUG
         UITestFixtureURLProtocol.configure(configuration)
         #endif
-        configuration.httpCookieStorage = .shared
+        configuration.httpCookieStorage = cookieStorage
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData

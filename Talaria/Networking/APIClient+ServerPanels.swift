@@ -75,8 +75,11 @@ extension APIClient {
             method: "POST",
             body: ProfileSwitchRequest(name: name)
         )
-        if response.error == nil, ProviderQuotaWidgetSnapshotStore().clear() {
-            ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+        if response.error == nil {
+            try persistCookies()
+            if ProviderQuotaWidgetSnapshotStore().clear() {
+                ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+            }
         }
         return response
     }

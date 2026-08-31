@@ -237,7 +237,7 @@ final class ProvidersViewModel {
                 value: header.sanitizedValue
             )
         }
-        let cookies = (HTTPCookieStorage.shared.cookies(for: quotaServer) ?? [])
+        let cookies = (ServerCookieStore.shared.storage(for: quotaServer).cookies(for: quotaServer) ?? [])
             .map(ProviderQuotaWidgetRefreshCookie.init)
         let refreshInterval = UserDefaults.standard.object(
             forKey: ProviderQuotaRefreshInterval.storageKey

@@ -1,5 +1,9 @@
 import Foundation
+import AuthenticationServices
+import CryptoKit
 import Observation
+import Security
+import UIKit
 
 @MainActor
 @Observable
@@ -48,7 +52,9 @@ final class AuthManager {
         // through to the password path rather than block a working user.
         guard status.passwordAuthEnabled == false else { return nil }
 
-        if status.oidcEnabled == true { return oidcOnlyMessage }
+        if status.oidcEnabled == true {
+            return status.oidcNativeHandoffEnabled == true ? nil : oidcOnlyMessage
+        }
         if status.trustedAuthEnabled == true { return trustedAuthNotSignedInMessage }
         return passkeyOnlyMessage
     }
@@ -67,21 +73,33 @@ final class AuthManager {
     /// Builds a client bound to explicit headers (not the shared `CustomHeaderStore`)
     /// — used by `addServer` to probe a new server without disturbing the active
     /// server's live headers (#17).
-    private let probeClientFactory: (URL, [CustomHeader]) -> any AuthAPIClient
+    private let probeClientFactory: (URL, [CustomHeader], HTTPCookieStorage) -> any AuthAPIClient
+    private let webAuthenticator: (URL, String) async throws -> URL
     private let headerStore: CustomHeaderStore
-    private let cookieStorage: HTTPCookieStorage
+    private let cookieStorageProvider: (URL) -> HTTPCookieStorage
+    private let persistSessionCookies: (URL) throws -> Void
+    private let clearStoredSessionCookies: (URL) -> Void
+    private let fallbackCookieStorage: HTTPCookieStorage?
     private let profileEntityCache: ProfileEntityCache
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
+    private var isOIDCSignInActive = false
 
     init(
         keychain: any KeychainStoring = KeychainStore(),
         clientFactory: @escaping (URL) -> any AuthAPIClient = { APIClient(baseURL: $0) },
-        probeClientFactory: @escaping (URL, [CustomHeader]) -> any AuthAPIClient = { url, headers in
-            APIClient(baseURL: url, customHeaderProvider: { headers })
+        probeClientFactory: @escaping (URL, [CustomHeader], HTTPCookieStorage) -> any AuthAPIClient = { url, headers, cookies in
+            APIClient(baseURL: url, cookieStorage: cookies, customHeaderProvider: { headers })
+        },
+        webAuthenticator: @escaping (URL, String) async throws -> URL = { url, scheme in
+            try await OIDCWebAuthenticationPresenter.shared.authenticate(
+                url: url,
+                callbackScheme: scheme
+            )
         },
         headerStore: CustomHeaderStore = .shared,
-        cookieStorage: HTTPCookieStorage = .shared,
+        cookieStorage: HTTPCookieStorage? = nil,
+        cookieStore: ServerCookieStore? = nil,
         profileEntityCache: ProfileEntityCache = .shared,
         logoutTimeout: Duration = .seconds(5),
         serverRegistry: ServerRegistry = .shared
@@ -89,8 +107,29 @@ final class AuthManager {
         self.keychain = keychain
         self.clientFactory = clientFactory
         self.probeClientFactory = probeClientFactory
+        self.webAuthenticator = webAuthenticator
         self.headerStore = headerStore
-        self.cookieStorage = cookieStorage
+        if let cookieStorage {
+            fallbackCookieStorage = cookieStorage
+            cookieStorageProvider = { _ in cookieStorage }
+            persistSessionCookies = { _ in }
+            clearStoredSessionCookies = { server in
+                cookieStorage.cookies(for: server)?.forEach(cookieStorage.deleteCookie)
+            }
+        } else {
+            let resolvedCookieStore = cookieStore ?? (
+                keychain is KeychainStore
+                    ? .shared
+                    : ServerCookieStore(
+                        keychain: keychain,
+                        legacyStorage: ServerCookieStore.makeIsolatedStorage()
+                    )
+            )
+            fallbackCookieStorage = nil
+            cookieStorageProvider = resolvedCookieStore.storage(for:)
+            persistSessionCookies = resolvedCookieStore.persist(for:)
+            clearStoredSessionCookies = resolvedCookieStore.clear(for:)
+        }
         self.profileEntityCache = profileEntityCache
         self.logoutTimeout = logoutTimeout
         self.serverRegistry = serverRegistry
@@ -193,21 +232,64 @@ final class AuthManager {
                 }
             }
 
-            // The registry is the source of truth. Update it first, then mirror the
-            // active URL for older installs and App Intent compatibility.
-            try serverRegistry.activate(url: serverURL)
-            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
-            // Persist the headers that reached this server under its own scoped key
-            // so they never apply to a different server (#16).
-            persistCustomHeaders(for: serverURL)
-            refreshServers()
-            if previousServerID != serverURL.absoluteString {
-                clearQuotaWidgetSnapshot()
+            do {
+                try completeConfiguration(serverURL, previousServerID: previousServerID)
+            } catch {
+                _ = try? await client.logout()
+                clearSessionCookies(for: serverURL)
+                throw error
             }
-            state = .loggedIn(server: serverURL)
         } catch {
             guard canCommit() else { return }
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func configureWithOIDC(
+        serverURLString: String,
+        customHeaders: [CustomHeader]? = nil,
+        canCommit: @escaping @MainActor () -> Bool = { true }
+    ) async {
+        lastErrorMessage = nil
+        guard !isOIDCSignInActive else {
+            lastErrorMessage = OIDCSignInError.alreadyInProgress.localizedDescription
+            return
+        }
+        isOIDCSignInActive = true
+        defer { isOIDCSignInActive = false }
+
+        if let customHeaders {
+            headerStore.replace(with: customHeaders.sanitizedForStorage())
+        }
+
+        do {
+            let serverURL = try Self.normalizedServerURL(from: serverURLString)
+            let client = clientFactory(serverURL)
+            let cookies = cookieStorageProvider(serverURL)
+            try await authenticateWithOIDC(
+                client: client,
+                serverURL: serverURL,
+                cookieStorage: cookies
+            )
+            guard canCommit() else {
+                _ = try? await client.logout()
+                clearSessionCookies(for: serverURL)
+                return
+            }
+            do {
+                try completeConfiguration(
+                    serverURL,
+                    previousServerID: state.server?.absoluteString
+                )
+            } catch {
+                _ = try? await client.logout()
+                clearSessionCookies(for: serverURL)
+                throw error
+            }
+            lastErrorMessage = nil
+        } catch {
+            guard canCommit() else { return }
+            lastErrorMessage = Self.oidcErrorMessage(error)
         }
     }
 
@@ -216,6 +298,8 @@ final class AuthManager {
     enum AddServerOutcome: Equatable {
         case added(URL)
         case needsPassword
+        case needsOIDC
+        case needsPasswordOrOIDC
         case failed
     }
 
@@ -254,7 +338,8 @@ final class AuthManager {
         let newHeaders = customHeaders.sanitizedForStorage()
         // Probe with a client scoped to the NEW server's headers, leaving the live
         // header store (and the active server's in-flight/SSE requests) untouched.
-        let client = probeClientFactory(serverURL, newHeaders)
+        let probeCookies = ServerCookieStore.makeIsolatedStorage()
+        let client = probeClientFactory(serverURL, newHeaders, probeCookies)
 
         do {
             let authStatus = try await testConnection(client: client)
@@ -266,7 +351,13 @@ final class AuthManager {
 
             if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
-                    // Not an error — the UI reveals the password field and retries.
+                    let oidcAvailable = authStatus.oidcEnabled == true
+                        && authStatus.oidcNativeHandoffEnabled == true
+                    if oidcAvailable {
+                        return authStatus.passwordAuthEnabled == true
+                            ? .needsPasswordOrOIDC
+                            : .needsOIDC
+                    }
                     return .needsPassword
                 }
 
@@ -277,26 +368,169 @@ final class AuthManager {
                 }
             }
 
-            // Commit only now that the add succeeded: the new server becomes
-            // active, so its headers move into the live store and persist under its
-            // own scoped key (#16). The previous active server's headers were never
-            // disturbed, and stay safe in their own scoped Keychain entry.
-            //
-            // Commit the authoritative registry first. The legacy single-URL key
-            // is only a compatibility mirror, so its failure cannot split routing
-            // state from the registry.
-            try serverRegistry.activate(url: serverURL)
-            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
-            headerStore.replace(with: newHeaders)
-            persistCustomHeaders(for: serverURL)
-            refreshServers()
-            clearQuotaWidgetSnapshot()
-            state = .loggedIn(server: serverURL)
+            try completeAddedServer(
+                serverURL,
+                headers: newHeaders,
+                cookies: probeCookies.cookies(for: serverURL) ?? []
+            )
+            probeCookies.cookies?.forEach(probeCookies.deleteCookie)
             return .added(serverURL)
         } catch {
+            probeCookies.cookies?.forEach(probeCookies.deleteCookie)
             lastErrorMessage = error.localizedDescription
             return .failed
         }
+    }
+
+    @discardableResult
+    func addServerWithOIDC(
+        serverURLString: String,
+        customHeaders: [CustomHeader] = []
+    ) async -> AddServerOutcome {
+        lastErrorMessage = nil
+        guard !isOIDCSignInActive else {
+            lastErrorMessage = OIDCSignInError.alreadyInProgress.localizedDescription
+            return .failed
+        }
+        isOIDCSignInActive = true
+        defer { isOIDCSignInActive = false }
+
+        do {
+            let serverURL = try Self.normalizedServerURL(from: serverURLString)
+            guard !serverRegistry.servers.contains(where: { $0.id == serverURL.absoluteString }) else {
+                throw OIDCSignInError.alreadyConfigured
+            }
+
+            let newHeaders = customHeaders.sanitizedForStorage()
+            let probeCookies = ServerCookieStore.makeIsolatedStorage()
+            let client = probeClientFactory(serverURL, newHeaders, probeCookies)
+            try await authenticateWithOIDC(
+                client: client,
+                serverURL: serverURL,
+                cookieStorage: probeCookies
+            )
+            do {
+                try completeAddedServer(
+                    serverURL,
+                    headers: newHeaders,
+                    cookies: probeCookies.cookies(for: serverURL) ?? []
+                )
+                probeCookies.cookies?.forEach(probeCookies.deleteCookie)
+            } catch {
+                _ = try? await client.logout()
+                probeCookies.cookies?.forEach(probeCookies.deleteCookie)
+                throw error
+            }
+            return .added(serverURL)
+        } catch {
+            lastErrorMessage = Self.oidcErrorMessage(error)
+            return .failed
+        }
+    }
+
+    private func authenticateWithOIDC(
+        client: any AuthAPIClient,
+        serverURL: URL,
+        cookieStorage: HTTPCookieStorage
+    ) async throws {
+        var startedFlow: (id: String, state: String)?
+        do {
+            let status = try await testConnection(client: client)
+            guard status.oidcEnabled == true else { throw OIDCSignInError.unavailable }
+            guard status.oidcNativeHandoffEnabled == true else {
+                throw OIDCSignInError.incompatibleServer
+            }
+            guard !status.isAlreadySignedIn else { throw OIDCSignInError.unavailable }
+
+            let callbackScheme = TalariaDeepLink.scheme
+            var flow = try NativeOIDCFlow.make(callbackScheme: callbackScheme)
+            let start = try await client.beginNativeOIDC(
+                callbackURL: flow.callbackURL,
+                state: flow.state,
+                codeChallenge: flow.codeChallenge
+            )
+            startedFlow = (start.flowId, flow.state)
+            guard start.expiresIn > 0 else { throw OIDCSignInError.expired }
+            let expiresAt = Date().addingTimeInterval(TimeInterval(start.expiresIn))
+            guard APIClient.isSameOrigin(start.authorizationUrl, as: serverURL) else {
+                throw OIDCSignInError.invalidAuthorizationURL
+            }
+
+            let callback = try await webAuthenticator(start.authorizationUrl, callbackScheme)
+            let code = try flow.exchangeCode(
+                from: callback,
+                expectedFlowID: start.flowId,
+                expectedServerID: start.serverId,
+                expiresAt: expiresAt
+            )
+            let response = try await client.exchangeNativeOIDC(
+                flowID: start.flowId,
+                code: code,
+                state: flow.state,
+                codeVerifier: flow.codeVerifier
+            )
+            guard response.ok == true else { throw APIError.unauthorized }
+            guard try await client.authStatus().isAlreadySignedIn else {
+                throw APIError.unauthorized
+            }
+            startedFlow = nil
+        } catch {
+            if let startedFlow {
+                _ = try? await client.cancelNativeOIDC(
+                    flowID: startedFlow.id,
+                    state: startedFlow.state
+                )
+            }
+            _ = try? await client.logout()
+            cookieStorage.cookies?.forEach(cookieStorage.deleteCookie)
+            throw error
+        }
+    }
+
+    private func completeAddedServer(
+        _ serverURL: URL,
+        headers: [CustomHeader],
+        cookies: [HTTPCookie]
+    ) throws {
+        // The only throwing mutation happens first, while the old active server
+        // and its cookie jar are still untouched.
+        let targetStorage = cookieStorageProvider(serverURL)
+        targetStorage.cookies?.forEach(targetStorage.deleteCookie)
+        cookies.forEach(targetStorage.setCookie)
+        do {
+            try persistSessionCookies(serverURL)
+            try serverRegistry.activate(url: serverURL)
+        } catch {
+            clearStoredSessionCookies(serverURL)
+            throw error
+        }
+        try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
+        headerStore.replace(with: headers)
+        persistCustomHeaders(for: serverURL)
+        refreshServers()
+        clearQuotaWidgetSnapshot()
+        state = .loggedIn(server: serverURL)
+    }
+
+    private func completeConfiguration(_ serverURL: URL, previousServerID: String?) throws {
+        // Nothing durable is written until authentication has completed.
+        try persistSessionCookies(serverURL)
+        try serverRegistry.activate(url: serverURL)
+        try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
+        persistCustomHeaders(for: serverURL)
+        refreshServers()
+        if previousServerID != serverURL.absoluteString {
+            clearQuotaWidgetSnapshot()
+        }
+        state = .loggedIn(server: serverURL)
+    }
+
+    private nonisolated static func oidcErrorMessage(_ error: Error) -> String {
+        if let webError = error as? ASWebAuthenticationSessionError,
+           webError.code == .canceledLogin {
+            return OIDCSignInError.cancelled.localizedDescription
+        }
+        return error.localizedDescription
     }
 
     /// Updates the in-effect headers from the Settings editor while signed in. The
@@ -573,24 +807,22 @@ final class AuthManager {
         headerStore.replace(with: [CustomHeader].decodeFromStorage(stored))
     }
 
-    /// Deletes only the cookies that would be sent to `server` (matched by host,
-    /// path, and security via `HTTPCookieStorage.cookies(for:)`), so signing out of
-    /// or expiring one server leaves other servers' cookies intact (#16).
-    ///
-    /// Different-host servers are fully isolated this way. Two servers that share a
-    /// host but differ only by port still share a cookie jar (cookies aren't
-    /// port-scoped) — a documented limitation; closing it would need the per-server
-    /// cookie snapshot/restore deferred to the #17 switcher.
+    /// Clears one exact server's independent cookie jar and persisted snapshot.
+    /// Cookie identity includes the normalized scheme/host/port server URL, so a
+    /// sibling server on another port remains untouched.
     private func clearSessionCookies(for server: URL) {
-        cookieStorage.cookies(for: server)?.forEach { cookieStorage.deleteCookie($0) }
+        clearStoredSessionCookies(server)
     }
 
     /// Clears the entire configured cookie jar. Used only as a fallback when there's no
     /// active server to scope to (a 401 while unconfigured).
     private func clearAllSessionCookies() {
-        cookieStorage.cookies?.forEach {
-            cookieStorage.deleteCookie($0)
+        for account in serverRegistry.servers {
+            if let server = URL(string: account.urlString) {
+                clearStoredSessionCookies(server)
+            }
         }
+        fallbackCookieStorage?.cookies?.forEach { fallbackCookieStorage?.deleteCookie($0) }
     }
 
     private func restoreSavedServer() {
@@ -689,6 +921,216 @@ protocol AuthAPIClient: Sendable {
     func authStatus() async throws -> AuthStatusResponse
     func login(password: String) async throws -> LoginResponse
     func logout() async throws -> LoginResponse
+    func beginNativeOIDC(
+        callbackURL: URL,
+        state: String,
+        codeChallenge: String
+    ) async throws -> NativeOIDCStartResponse
+    func exchangeNativeOIDC(
+        flowID: String,
+        code: String,
+        state: String,
+        codeVerifier: String
+    ) async throws -> LoginResponse
+    func cancelNativeOIDC(flowID: String, state: String) async throws -> LoginResponse
 }
 
 extension APIClient: AuthAPIClient {}
+
+extension AuthAPIClient {
+    func beginNativeOIDC(
+        callbackURL: URL,
+        state: String,
+        codeChallenge: String
+    ) async throws -> NativeOIDCStartResponse {
+        throw OIDCSignInError.incompatibleServer
+    }
+
+    func exchangeNativeOIDC(
+        flowID: String,
+        code: String,
+        state: String,
+        codeVerifier: String
+    ) async throws -> LoginResponse {
+        throw OIDCSignInError.incompatibleServer
+    }
+
+    func cancelNativeOIDC(flowID: String, state: String) async throws -> LoginResponse {
+        throw OIDCSignInError.incompatibleServer
+    }
+}
+
+enum OIDCSignInError: LocalizedError, Equatable {
+    case alreadyInProgress
+    case alreadyConfigured
+    case unavailable
+    case incompatibleServer
+    case invalidAuthorizationURL
+    case invalidCallback
+    case providerFailed
+    case cancelled
+    case presentationFailed
+    case securityFailure
+    case expired
+    case replayed
+
+    var errorDescription: String? {
+        switch self {
+        case .alreadyInProgress:
+            String(localized: "Another SSO sign-in is already in progress.")
+        case .alreadyConfigured:
+            String(localized: "This server is already configured.")
+        case .unavailable:
+            String(localized: "This server doesn't offer single sign-on.")
+        case .incompatibleServer:
+            String(localized: "This server needs a newer secure SSO handoff before Talaria can sign in.")
+        case .invalidAuthorizationURL, .invalidCallback:
+            String(localized: "The SSO response didn't match this server. Try signing in again.")
+        case .providerFailed:
+            String(localized: "The SSO provider couldn't complete sign-in. Try again.")
+        case .cancelled:
+            String(localized: "SSO sign-in was cancelled.")
+        case .presentationFailed:
+            String(localized: "Talaria couldn't open the SSO sign-in window. Try again.")
+        case .securityFailure:
+            String(localized: "Talaria couldn't start a secure SSO flow. Try again.")
+        case .expired:
+            String(localized: "The SSO sign-in expired. Start again.")
+        case .replayed:
+            String(localized: "That SSO response was already used. Start again.")
+        }
+    }
+}
+
+struct NativeOIDCFlow {
+    let callbackScheme: String
+    let callbackURL: URL
+    let state: String
+    let codeVerifier: String
+    let codeChallenge: String
+    private var didConsumeCallback = false
+
+    static func make(callbackScheme: String) throws -> NativeOIDCFlow {
+        let state = try randomValue()
+        let verifier = try randomValue()
+        guard let callbackURL = URL(string: "\(callbackScheme)://oidc-callback") else {
+            throw OIDCSignInError.invalidCallback
+        }
+        return NativeOIDCFlow(
+            callbackScheme: callbackScheme.lowercased(),
+            callbackURL: callbackURL,
+            state: state,
+            codeVerifier: verifier,
+            codeChallenge: Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncodedString()
+        )
+    }
+
+    mutating func exchangeCode(
+        from callback: URL,
+        expectedFlowID: String,
+        expectedServerID: String,
+        expiresAt: Date,
+        now: Date = Date()
+    ) throws -> String {
+        guard !didConsumeCallback else { throw OIDCSignInError.replayed }
+        guard now < expiresAt else { throw OIDCSignInError.expired }
+        guard let components = URLComponents(url: callback, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == callbackScheme,
+              components.host?.lowercased() == "oidc-callback",
+              components.user == nil,
+              components.password == nil,
+              components.port == nil,
+              components.path.isEmpty,
+              components.fragment == nil,
+              value(named: "state", in: components) == state,
+              value(named: "flow_id", in: components) == expectedFlowID,
+              value(named: "server_id", in: components) == expectedServerID
+        else {
+            throw OIDCSignInError.invalidCallback
+        }
+        let names = Set((components.queryItems ?? []).map(\.name))
+        if value(named: "error", in: components) != nil {
+            guard names == ["error", "state", "flow_id", "server_id"] else {
+                throw OIDCSignInError.invalidCallback
+            }
+            throw OIDCSignInError.providerFailed
+        }
+        guard names == ["code", "state", "flow_id", "server_id"] else {
+            throw OIDCSignInError.invalidCallback
+        }
+        guard let code = value(named: "code", in: components) else {
+            throw OIDCSignInError.invalidCallback
+        }
+        didConsumeCallback = true
+        return code
+    }
+
+    private func value(named name: String, in components: URLComponents) -> String? {
+        let values = (components.queryItems ?? []).filter { $0.name == name }
+        guard values.count == 1,
+              let value = values[0].value,
+              !value.isEmpty
+        else { return nil }
+        return value
+    }
+
+    private static func randomValue() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw OIDCSignInError.securityFailure
+        }
+        return Data(bytes).base64URLEncodedString()
+    }
+}
+
+extension Data {
+    func base64URLEncodedString() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}
+
+@MainActor
+private final class OIDCWebAuthenticationPresenter: NSObject,
+    ASWebAuthenticationPresentationContextProviding {
+    static let shared = OIDCWebAuthenticationPresenter()
+
+    private var session: ASWebAuthenticationSession?
+
+    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
+        guard session == nil else { throw OIDCSignInError.alreadyInProgress }
+        return try await withCheckedThrowingContinuation { continuation in
+            let session = ASWebAuthenticationSession(
+                url: url,
+                callbackURLScheme: callbackScheme
+            ) { [weak self] callback, error in
+                Task { @MainActor in
+                    self?.session = nil
+                    if let callback {
+                        continuation.resume(returning: callback)
+                    } else if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(throwing: OIDCSignInError.invalidCallback)
+                    }
+                }
+            }
+            session.presentationContextProvider = self
+            self.session = session
+            guard session.start() else {
+                self.session = nil
+                continuation.resume(throwing: OIDCSignInError.presentationFailed)
+                return
+            }
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        return windows.first(where: \.isKeyWindow) ?? windows.first ?? ASPresentationAnchor()
+    }
+}

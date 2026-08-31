@@ -50,7 +50,7 @@ The server owns execution. The app owns mobile interaction quality.
 - Activity: very high — daily commits, 67+ open issues, 5,200+ stars, 660+ forks
 - The server is essentially a thin `http.server.ThreadingHTTPServer` shell in `server.py` that delegates to `api/routes.py` (~3000 LOC of route handlers).
 - Real-time updates use **Server-Sent Events (SSE)**, not WebSockets.
-- Auth: optional HMAC-signed HTTP-only cookie set via `HERMES_WEBUI_PASSWORD` env var, with a `/login` page and 24h TTL.
+- Auth: optional HTTP-only WebUI session cookie established by password or native OIDC handoff.
 
 ---
 
@@ -61,7 +61,7 @@ The server owns execution. The app owns mobile interaction quality.
 | 1 | v1 feature scope | **Expanded pre-polish scope** (login, sessions, chat with streaming, conversation actions, composer attachments/config, read-only tasks/skills/memory, limited usage analytics, workspace browser, file viewer with syntax highlighting, settings; **no push, no terminal, no file editing in v1**) |
 | 2 | Hosting models documented | **Cloudflare Tunnel (primary)** and **Tailscale (secondary)** |
 | 3 | Upstream strategy | **Pin to upstream tags** for v1; revisit forking later if API churn becomes painful |
-| 4 | Auth method | **Password only** for v1 (no OAuth) |
+| 4 | Auth method | **Password plus capability-gated native WebUI OIDC**; passkeys remain unsupported in Talaria |
 | 5 | Target | iOS 18+, iPhone only, portrait + landscape |
 | 6 | Distribution | **TestFlight first**, App Store later |
 | 7 | Push notifications | **Skip for v1** |
@@ -127,7 +127,7 @@ This is a design direction, not a dependency. Do not add third-party UI packages
 ### Why this shape
 - The iOS app cannot run the server — iOS sandboxing forbids spawning processes, `pip install`, and binding ports in the background. The Python server stays where it is.
 - We talk to the server's existing HTTP+SSE API — the same endpoints the bundled browser UI uses.
-- Cloudflare Tunnel handles network reachability and TLS; the app just takes a URL and a password.
+- Cloudflare Tunnel handles network reachability and TLS; the app takes a URL and completes an available WebUI login method.
 
 ---
 
@@ -184,6 +184,9 @@ These are the endpoints we know we need. Verify each one against your running se
 | GET | `/api/auth/status` | Determine whether the server requires a password |
 | POST | `/api/auth/login` | Body `{"password": "..."}` → sets cookie. Save cookie via `URLSession`'s default `HTTPCookieStorage`. |
 | POST | `/api/auth/logout` | Sign out |
+| POST | `/api/auth/oidc/native/start` | Start a state- and PKCE-bound native OIDC handoff |
+| POST | `/api/auth/oidc/native/exchange` | Exchange the one-time callback code for the normal HttpOnly session cookie |
+| POST | `/api/auth/oidc/native/cancel` | Invalidate an abandoned native flow |
 
 **CSRF note:** the server validates the `Origin` / `Referer` header on POSTs against the request `Host`. From a non-browser client, omit both `Origin` and `Referer` and the server treats it as a non-browser (curl-equivalent) call — that's the supported path. **Do NOT set `Origin` to anything.**
 
@@ -293,7 +296,7 @@ There is no verified full `/insights` dashboard REST endpoint in the pinned upst
 - Timeframe filtering is local to the fetched session metadata. Label this as **Usage Analytics** rather than claiming full parity with the CLI/WebUI `/insights` command.
 
 ### 6.8 Endpoints we deliberately skip in v1
-Terminal (`/api/terminal/*`), cron create/edit/delete/run/pause/resume, skills save/delete, memory write/edit, profile create/delete, file editing/deletion/rename/create, OAuth, approvals, clarify prompts. Architect the code so these can slot in later (use a `Feature` enum or similar).
+Terminal (`/api/terminal/*`), cron create/edit/delete/run/pause/resume, skills save/delete, memory write/edit, profile create/delete, file editing/deletion/rename/create, model-provider OAuth, approvals, clarify prompts. Architect the code so these can slot in later (use a `Feature` enum or similar).
 
 ---
 
@@ -387,8 +390,9 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 - [x] `OnboardingView`: form with **Server URL** (default placeholder `https://hermes.yourdomain.com`) and **Password** (optional).
 - [x] "Test connection" button hits `GET /health` → green check or red error.
 - [x] On success, save server URL to Keychain (yes, the URL too — it's effectively a credential combined with the password) and call `POST /api/auth/login` if password provided.
-- [x] Persist auth cookie via `URLSession.shared.configuration.httpCookieStorage`.
+- [x] Persist auth cookies in server-scoped `HTTPCookieStorage` jars backed by Keychain snapshots, including same-host servers on different ports.
 - [x] If `/api/auth/status` says auth not enabled, skip the password field gracefully.
+- [x] If `/api/auth/status` reports compatible native OIDC, offer system-browser SSO and exchange its short-lived state/PKCE-bound code into the shared cookie jar.
 - [x] App opens to Onboarding when not configured, otherwise to SessionList.
 
 ### Phase 2 — Networking core (2–3 days)

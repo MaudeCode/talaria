@@ -22,9 +22,9 @@ curl https://<your-server>/health
 
 ## Upstream Contract Pin
 
-The app is currently tested against `hermes-webui` tag `v0.51.85`, peeled commit `f1d399b437c1ca7fe4b6d2093aebe334c32f34a3`. The root [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA) file is the machine-readable pin for future drift checks and contract tests.
+The app is currently tested against the untagged `hermes-webui` `master` merge commit `141056992d6d9b72636f02cac9ae91b6649cea9c`, which includes the native OIDC handoff from Hermes WebUI PR #15. The root [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA) file is the machine-readable pin for future drift checks and contract tests.
 
-The pin was last verified against the upstream GitHub tag source during the 2026-05-05 audit slice; authenticated settings/version checks require server credentials.
+The pin was reviewed and merged on 2026-08-31. WebUI focused auth tests and five-shard CI passed; the disposable candidate runner stopped at a held CSRF-probe expectation before its Swift phase, and the operator directed that no additional validation run be performed. Authenticated settings/version checks require server credentials.
 
 Run `scripts/validate-upstream-contract` for the complete disposable fork-server,
 HTTP/SSE, and focused Swift contract check. [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md)
@@ -358,6 +358,7 @@ Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://githu
 ### Onboarding/Auth
 - Fresh install opens onboarding.
 - Valid server URL + password logs in.
+- A compatible OIDC-only server offers Continue with SSO and returns to the app with a server/state/PKCE-bound session.
 - Wrong password shows clear error.
 - Server/tunnel down shows useful error.
 - Sign out and reconfigure returns to onboarding.

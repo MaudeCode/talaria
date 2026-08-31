@@ -8,6 +8,9 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "auth status", method: "GET", endpoint: .authStatus, path: "/api/auth/status"),
             .init(name: "login", method: "POST", endpoint: .login, path: "/api/auth/login"),
             .init(name: "logout", method: "POST", endpoint: .logout, path: "/api/auth/logout"),
+            .init(name: "native OIDC start", method: "POST", endpoint: .nativeOIDCStart, path: "/api/auth/oidc/native/start"),
+            .init(name: "native OIDC exchange", method: "POST", endpoint: .nativeOIDCExchange, path: "/api/auth/oidc/native/exchange"),
+            .init(name: "native OIDC cancel", method: "POST", endpoint: .nativeOIDCCancel, path: "/api/auth/oidc/native/cancel"),
             .init(name: "sessions", method: "GET", endpoint: .sessions(), path: "/api/sessions"),
             .init(
                 name: "sessions including archived",

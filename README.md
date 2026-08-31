@@ -51,7 +51,7 @@ Talaria is a client only — it does not ship with, host, or provision a backend
 
 1. **Run the server.** Install and start `hermes-webui` on macOS, Linux, or Windows/WSL2 (Python 3.11+). Set `HERMES_WEBUI_PASSWORD`.
 2. **Make it reachable from your phone** (see options below).
-3. **Connect.** Build and install Talaria, enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
+3. **Connect.** Build and install Talaria, enter your server URL (e.g. `https://hermes.yourdomain.com`), then use its password or a compatible WebUI OIDC provider.
 
 Self-hosting the server, securing it, and keeping it reachable are your responsibility.
 

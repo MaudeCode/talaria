@@ -115,6 +115,13 @@ final class SSEClientTests: XCTestCase {
     }
 
     func testSSEClientProtectsHeadersOnCrossOriginRedirect() async throws {
+        let streamURL = try XCTUnwrap(URL(string: "https://example.test/api/chat/stream"))
+        let cookieStorage = ServerCookieStore.shared.storage(for: streamURL)
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: "example.test", .path: "/", .name: "hermes_session", .value: "secret-cookie"
+        ]))
+        cookieStorage.setCookie(cookie)
+        defer { cookieStorage.deleteCookie(cookie) }
         RedirectingMockURLProtocol.redirect = .init(
             fromPath: "/api/chat/stream",
             to: URL(string: "https://third-party.example/final")!
@@ -134,7 +141,7 @@ final class SSEClientTests: XCTestCase {
         )
         let received = expectation(description: "received redirected stream")
 
-        client.start(url: URL(string: "https://example.test/api/chat/stream")!) { event in
+        client.start(url: streamURL) { event in
             if event == .streamEnd { received.fulfill() }
         }
 
@@ -145,6 +152,7 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "Accept"), "text/event-stream")
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Api-Key"), "secret")
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Talaria-Redirect-Policy"), "user-value")
+        XCTAssertEqual(firstHop.value(forHTTPHeaderField: "Cookie"), "hermes_session=secret-cookie")
         XCTAssertFalse(firstHop.hasInternalRedirectPolicyHeader)
 
         let secondHop = try XCTUnwrap(RedirectingMockURLProtocol.secondHopRequest)
@@ -152,6 +160,7 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(secondHop.value(forHTTPHeaderField: "Accept"), "text/event-stream")
         XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Api-Key"))
         XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Talaria-Redirect-Policy"))
+        XCTAssertNil(secondHop.value(forHTTPHeaderField: "Cookie"))
         XCTAssertFalse(secondHop.hasInternalRedirectPolicyHeader)
     }
 

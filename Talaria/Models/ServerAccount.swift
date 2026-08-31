@@ -7,8 +7,8 @@ import os
 /// foundation the rest of the multi-server epic (#16/#17/#18) builds on. The
 /// server URL is treated as a credential (PROJECT_SPEC Phase 1), so the whole
 /// registry is persisted in the Keychain (see `ServerRegistry`), alongside the
-/// existing `server_url` and `custom_headers` entries. The auth cookie still
-/// lives in `HTTPCookieStorage`. This model is an additive shadow of the
+/// existing `server_url` and `custom_headers` entries. Auth cookies live in
+/// per-server `HTTPCookieStorage` jars with Keychain-backed snapshots. This model is an additive shadow of the
 /// single-server state; nothing in this slice reads it for routing yet.
 ///
 /// Decoding is tolerant (CLAUDE.md rule 3): missing fields fall back to sensible
