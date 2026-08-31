@@ -5,18 +5,27 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 [[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/test-ios" "$@"
 runtime_dir="$repo_root/.codex-tmp/xctest"
-lock_file="$runtime_dir/runner.lock"
-pool_runtime_dir="/tmp/talaria-xctest-$EUID"
+git_common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)
+lock_file="$git_common_dir/talaria-xctest-runner.lock"
+owner_file="$lock_file.owner"
+pool_runtime_dir="${TALARIA_XCTEST_POOL_DIR:-/tmp/talaria-xctest-$EUID}"
 pool_lock="$pool_runtime_dir/pool.lock"
 lease_dir="$pool_runtime_dir/leases"
 lease_file=""
 simulator_id=""
+xcodebuild_pid=""
 shutdown_on_release=false
 pool_lock_held=false
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
+exec 9>"$lock_file"
 
 cleanup() {
+    if [[ -n "$xcodebuild_pid" ]]; then
+        kill -TERM "$xcodebuild_pid" 2>/dev/null || true
+        wait "$xcodebuild_pid" 2>/dev/null || true
+        xcodebuild_pid=""
+    fi
     if [[ "$shutdown_on_release" == true && -n "$simulator_id" ]]; then
         xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
     fi
@@ -25,15 +34,29 @@ cleanup() {
         pool_lock_held=false
         unlink "$pool_lock" 2>/dev/null || true
     fi
-    unlink "$lock_file" 2>/dev/null || true
+    current_owner_pid=$(sed -n '1p' "$owner_file" 2>/dev/null || true)
+    [[ "$current_owner_pid" != $$ ]] || unlink "$owner_file" 2>/dev/null || true
 }
 
-if ! /usr/bin/shlock -f "$lock_file" -p $$; then
-    print -u2 "Talaria tests are already running (PID $(<"$lock_file")). Wait for that run to finish."
-    exit 75
-fi
 trap cleanup EXIT
 trap 'exit 130' INT TERM
+
+wait_started=$SECONDS
+lock_timeout=0
+while true; do
+    if /usr/bin/lockf -s -t "$lock_timeout" 9; then
+        break
+    else
+        admission_status=$?
+    fi
+    [[ "$admission_status" == 75 ]] || exit "$admission_status"
+    now=$SECONDS
+    owner_pid=$(sed -n '1p' "$owner_file" 2>/dev/null || true)
+    [[ -n "$owner_pid" ]] || owner_pid=unknown
+    print -u2 "Waiting for Talaria XCTest admission: owner PID $owner_pid, elapsed $(( now - wait_started ))s."
+    lock_timeout=5
+done
+print -r -- $$ > "$owner_file"
 
 if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
     print -u2 "The Talaria simulator pool is being configured. Retry when it finishes."
@@ -45,8 +68,9 @@ typeset -a simulator_ids=()
 if [[ -n "${TALARIA_SIMULATOR_ID:-}" ]]; then
     simulator_ids=("$TALARIA_SIMULATOR_ID")
 else
+    available_devices=$(xcrun simctl list devices available)
     pool_ids=$(
-        xcrun simctl list devices available | awk '
+        print -r -- "$available_devices" | awk '
             /^-- iOS / { in_ios = 1; next }
             /^-- / { in_ios = 0 }
             in_ios && /^[[:space:]]+Talaria Test [0-9]+ \([0-9A-F-]+\)/ {
@@ -63,16 +87,22 @@ else
     if (( ${#simulator_ids} == 0 )); then
         preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
             "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
-        preferred_id=$(xcrun simctl list devices available | awk -v wanted="$preferred_simulator" '
+        preferred_id=$(print -r -- "$available_devices" | awk -v wanted="$preferred_simulator" '
             /^-- iOS / { in_ios = 1; next }
             /^-- / { in_ios = 0 }
             in_ios {
                 line = $0
                 sub(/^[[:space:]]*/, "", line)
                 if (index(line, wanted " (") == 1) {
-                    match($0, /\([0-9A-F-]+\)/)
-                    print substr($0, RSTART + 1, RLENGTH - 2)
-                    exit
+                    preferred = $0
+                } else if (fallback == "" && index(line, "iPhone ") == 1) {
+                    fallback = $0
+                }
+            }
+            END {
+                selected = preferred != "" ? preferred : fallback
+                if (match(selected, /\([0-9A-F-]+\)/)) {
+                    print substr(selected, RSTART + 1, RLENGTH - 2)
                 }
             }
         ')
@@ -139,6 +169,14 @@ xcodebuild test -quiet \
     -resultBundlePath "$result_bundle" \
     APP_IDENTIFIER_SUFFIX=.xctest \
     "${contract_settings[@]}" \
-    "${test_filters[@]}"
+    "${test_filters[@]}" &
+xcodebuild_pid=$!
+if wait "$xcodebuild_pid"; then
+    xcodebuild_pid=""
+else
+    xcodebuild_status=$?
+    xcodebuild_pid=""
+    exit "$xcodebuild_status"
+fi
 
 scripts/assert-no-skipped-ui-tests "$result_bundle"
