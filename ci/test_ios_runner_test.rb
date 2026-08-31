@@ -31,7 +31,7 @@ class TestIOSRunnerTest < Minitest::Test
       encoding: "UTF-8"
     )
     ui_tests = File.read(
-      File.expand_path("../TalariaUITests/ComposerNavigationUITests.swift", __dir__),
+      File.expand_path("../TalariaUITests/TalariaUITests.swift", __dir__),
       encoding: "UTF-8"
     )
 

@@ -2,6 +2,22 @@ import XCTest
 import UIKit
 
 final class ChatUITests: TalariaUITestCase {
+    private var fixtureTrace: String?
+
+    override func tearDownWithError() throws {
+        if let fixtureTrace {
+            let trace = XCTAttachment(string: fixtureTrace)
+            trace.name = "Scripted chat event trace"
+            trace.lifetime = .deleteOnSuccess
+            add(trace)
+
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "Chat streaming failure"
+            screenshot.lifetime = .deleteOnSuccess
+            add(screenshot)
+        }
+        try super.tearDownWithError()
+    }
 
     func testChatListScrolls() throws {
         let session = fixtureSessionButton
@@ -645,16 +661,10 @@ final class SidebarUITests: TalariaUITestCase {
 }
 
 class TalariaUITestCase: XCTestCase {
-    fileprivate let fixtureSessionTitle = "UI Fixture Session"
     fileprivate var app: XCUIApplication!
-    fileprivate var fixtureTrace: String?
 
     fileprivate var fixtureLaunchArguments: [String] {
         ["--ui-test-fixture"]
-    }
-
-    fileprivate var fixtureSessionButton: XCUIElement {
-        app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
     }
 
     override func setUpWithError() throws {
@@ -665,22 +675,13 @@ class TalariaUITestCase: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        if let fixtureTrace {
-            let trace = XCTAttachment(string: fixtureTrace)
-            trace.name = "Scripted chat event trace"
-            trace.lifetime = .deleteOnSuccess
-            add(trace)
-
-            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            screenshot.name = "Chat streaming failure"
-            screenshot.lifetime = .deleteOnSuccess
-            add(screenshot)
-        }
         app.terminate()
         app = nil
     }
+}
 
-    fileprivate func openFixtureSession() throws -> XCUIElement {
+private extension ChatUITests {
+    func openFixtureSession() throws -> XCUIElement {
         if let composer = waitForComposer(timeout: 3) {
             return composer
         }
@@ -693,14 +694,14 @@ class TalariaUITestCase: XCTestCase {
         return try XCTUnwrap(composer)
     }
 
-    fileprivate func relaunchChatFixture(argument: String, trace: String) {
+    func relaunchChatFixture(argument: String, trace: String) {
         fixtureTrace = trace
         app.terminate()
         app.launchArguments = fixtureLaunchArguments + [argument]
         app.launch()
     }
 
-    fileprivate func sendFixtureMessage(_ message: String) throws {
+    func sendFixtureMessage(_ message: String) throws {
         let composer = try openFixtureSession()
         let input = app.textViews.firstMatch
         if !input.waitForExistence(timeout: 2) {
@@ -713,34 +714,36 @@ class TalariaUITestCase: XCTestCase {
         tapCenter(of: send)
     }
 
-    fileprivate func element(labelContaining text: String) -> XCUIElement {
+    func element(labelContaining text: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
             .firstMatch
     }
 
-    fileprivate func element(label: String) -> XCUIElement {
+    func element(label: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", label))
             .firstMatch
     }
 
-    fileprivate func countElements(label: String) -> Int {
+    func countElements(label: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count
     }
 
-    fileprivate func countElements(containing text: String) -> Int {
+    func countElements(containing text: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).count
     }
 
-    fileprivate func tapCenter(of element: XCUIElement) {
+    func tapCenter(of element: XCUIElement) {
         app.coordinate(withNormalizedOffset: CGVector(
             dx: element.frame.midX / app.frame.width,
             dy: element.frame.midY / app.frame.height
         )).tap()
     }
+}
 
-    fileprivate func openSettings() {
+private extension SettingsUITests {
+    func openSettings() {
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
         openNavigation.tap()
@@ -756,7 +759,7 @@ class TalariaUITestCase: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [sidebarHidden], timeout: 3), .completed)
     }
 
-    fileprivate func tapSettingsCategory(id: String, title: String) {
+    func tapSettingsCategory(id: String, title: String) {
         let category = app.buttons["settings-category-\(id)"]
         for _ in 0..<10 where !category.exists {
             app.swipeUp()
@@ -780,8 +783,16 @@ class TalariaUITestCase: XCTestCase {
         )).tap()
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
     }
+}
 
-    fileprivate func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
+private extension ChatUITests {
+    var fixtureSessionTitle: String { "UI Fixture Session" }
+
+    var fixtureSessionButton: XCUIElement {
+        app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
+    }
+
+    func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
         let idleComposer = app.buttons["Message"]
         let expandedComposer = app.textViews.firstMatch
         let deadline = Date().addingTimeInterval(timeout)
@@ -795,7 +806,7 @@ class TalariaUITestCase: XCTestCase {
         return nil
     }
 
-    fileprivate func tapFixtureSession(_ session: XCUIElement) {
+    func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
         let viewportBottom = app.searchFields["Search sessions"].frame.minY
@@ -824,14 +835,18 @@ class TalariaUITestCase: XCTestCase {
         XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
+}
 
-    fileprivate func assertPreviewVisible(identifier: String) {
+private extension QuotaWidgetUITests {
+    func assertPreviewVisible(identifier: String) {
         XCTAssertTrue(
             app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3)
         )
     }
+}
 
-    fileprivate func brightness(
+private extension SidebarUITests {
+    func brightness(
         in screenshot: XCUIScreenshot,
         x normalizedX: CGFloat,
         y normalizedY: CGFloat
