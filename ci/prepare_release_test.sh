@@ -84,7 +84,14 @@ set -e
 
 one_status="$(cat "$test_root/one.status")"
 two_status="$(cat "$test_root/two.status")"
-[[ $((one_status + two_status)) -eq 1 ]]
+if [[ $((one_status + two_status)) -ne 1 ]]; then
+  echo "Expected exactly one publisher to succeed; statuses: one=${one_status}, two=${two_status}." >&2
+  echo "Publisher one:" >&2
+  cat "$test_root/one.log" >&2
+  echo "Publisher two:" >&2
+  cat "$test_root/two.log" >&2
+  exit 1
+fi
 
 [[ "$(git --git-dir="$remote" for-each-ref --format='%(objecttype)' refs/tags/v1.6.0)" == "tag" ]]
 [[ "$(git --git-dir="$remote" show main:Talaria.xcodeproj/project.pbxproj | grep -c 'MARKETING_VERSION = 1.6.0;')" -eq 2 ]]

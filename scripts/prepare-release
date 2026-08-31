@@ -3,6 +3,7 @@
 
 require "open3"
 require "optparse"
+require "securerandom"
 require_relative "../ci/release_project"
 
 class TalariaReleaseCommand
@@ -109,6 +110,7 @@ class TalariaReleaseCommand
 
   def publish(plan, tag, original_project)
     original_head = capture("git", "rev-parse", "HEAD").strip
+    tag_message = "Talaria #{tag}\n\nRelease-Reservation: #{SecureRandom.uuid}"
     tag_created = false
     pushed = false
 
@@ -126,10 +128,10 @@ class TalariaReleaseCommand
       run!("git", "add", "--", TalariaReleaseProject::PROJECT_PATH)
       if test_mode?
         run!("git", "-c", "commit.gpgSign=false", "commit", "-m", "Release: prepare #{tag}")
-        run!("git", "-c", "tag.gpgSign=false", "tag", "-a", "-m", "Talaria #{tag}", tag)
+        run!("git", "-c", "tag.gpgSign=false", "tag", "-a", "-m", tag_message, tag)
       else
         run!("git", "commit", "-S", "-m", "Release: prepare #{tag}")
-        run!("git", "tag", "-s", "-m", "Talaria #{tag}", tag)
+        run!("git", "tag", "-s", "-m", tag_message, tag)
       end
       tag_created = true
       run!(
