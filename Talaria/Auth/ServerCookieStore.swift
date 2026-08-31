@@ -32,9 +32,14 @@ final class ServerCookieStore: @unchecked Sendable {
                 // server URL to claim a host gets its old cookie; a second port
                 // fails closed instead of inheriting that credential.
                 let legacy = legacyStorage.cookies(for: server) ?? []
-                legacy.forEach {
-                    storage.setCookie($0)
-                    legacyStorage.deleteCookie($0)
+                legacy.forEach(storage.setCookie)
+                if !legacy.isEmpty {
+                    do {
+                        try persist(legacy, for: server)
+                        legacy.forEach(legacyStorage.deleteCookie)
+                    } catch {
+                        // Keep the legacy source intact so migration can retry.
+                    }
                 }
             }
             storages[scope] = storage
@@ -44,7 +49,11 @@ final class ServerCookieStore: @unchecked Sendable {
 
     func persist(for server: URL) throws {
         let server = Self.scopeURL(for: server)
-        let cookies = (storage(for: server).cookies(for: server) ?? []).map(StoredCookie.init)
+        try persist(storage(for: server).cookies(for: server) ?? [], for: server)
+    }
+
+    private func persist(_ cookies: [HTTPCookie], for server: URL) throws {
+        let cookies = cookies.map(StoredCookie.init)
         guard !cookies.isEmpty,
               let data = try? JSONEncoder().encode(cookies),
               let encoded = String(data: data, encoding: .utf8)

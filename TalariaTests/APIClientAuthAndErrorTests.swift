@@ -775,6 +775,39 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(restored.storage(for: second).cookies(for: second)?.map(\.value), ["second"])
     }
 
+    func testServerCookieStorePersistsLegacyCookieBeforeDeletingSource() throws {
+        let keychain = InMemoryKeychainStore()
+        let legacy = try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        legacy.cookies?.forEach(legacy.deleteCookie)
+        let server = try XCTUnwrap(URL(string: "https://same.test"))
+        legacy.setCookie(try makeSessionCookie(value: "legacy"))
+
+        let store = ServerCookieStore(keychain: keychain, legacyStorage: legacy)
+
+        XCTAssertEqual(store.storage(for: server).cookies(for: server)?.map(\.value), ["legacy"])
+        XCTAssertTrue(legacy.cookies(for: server)?.isEmpty ?? true)
+
+        let restored = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        )
+        XCTAssertEqual(restored.storage(for: server).cookies(for: server)?.map(\.value), ["legacy"])
+    }
+
+    func testServerCookieStoreKeepsLegacyCookieWhenMigrationPersistenceFails() throws {
+        let keychain = InMemoryKeychainStore()
+        keychain.saveError = NSError(domain: "ServerCookieStoreTests", code: 1)
+        let legacy = try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        legacy.cookies?.forEach(legacy.deleteCookie)
+        let server = try XCTUnwrap(URL(string: "https://same.test"))
+        legacy.setCookie(try makeSessionCookie(value: "legacy"))
+
+        let store = ServerCookieStore(keychain: keychain, legacyStorage: legacy)
+
+        XCTAssertEqual(store.storage(for: server).cookies(for: server)?.map(\.value), ["legacy"])
+        XCTAssertEqual(legacy.cookies(for: server)?.map(\.value), ["legacy"])
+    }
+
     @MainActor
     func testSessionExpiryClearsOnlyExactSameHostServerCookieJar() throws {
         let keychain = InMemoryKeychainStore()
