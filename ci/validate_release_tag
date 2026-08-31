@@ -6,12 +6,17 @@ release_ci_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tag_signature_verified() {
   local tag="$1"
   local repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-  local ref_json object_type object_sha verified
+  local ref_json object_type object_sha local_object_sha verified
 
   ref_json="$(gh api "repos/${repository}/git/ref/tags/${tag}")"
   object_type="$(printf '%s' "$ref_json" | ruby -rjson -e 'puts JSON.parse($stdin.read).dig("object", "type")')"
   object_sha="$(printf '%s' "$ref_json" | ruby -rjson -e 'puts JSON.parse($stdin.read).dig("object", "sha")')"
   [[ "$object_type" == "tag" ]] || return 1
+  local_object_sha="$(git rev-parse "refs/tags/${tag}^{tag}")"
+  if [[ "$object_sha" != "$local_object_sha" ]]; then
+    echo "Release tag ${tag} changed after checkout: local object ${local_object_sha}, remote object ${object_sha}." >&2
+    return 1
+  fi
 
   verified="$(gh api "repos/${repository}/git/tags/${object_sha}" --jq '.verification.verified')"
   [[ "$verified" == "true" ]]

@@ -26,6 +26,32 @@ git -C "$repo" tag -a -m "Release fixture" v1.6.0
 (
   cd "$repo"
   source "$source_root/ci/validate_release_tag"
+  export GITHUB_REPOSITORY=synthetic/release
+  local_tag_sha="$(git rev-parse 'refs/tags/v1.6.0^{tag}')"
+  gh() {
+    if [[ "$*" == *"/git/ref/tags/v1.6.0"* ]]; then
+      printf '{"object":{"type":"tag","sha":"%s"}}\n' "$local_tag_sha"
+    else
+      printf 'true\n'
+    fi
+  }
+  tag_signature_verified v1.6.0
+)
+
+if (
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
+  export GITHUB_REPOSITORY=synthetic/release
+  gh() { printf '{"object":{"type":"tag","sha":"0000000000000000000000000000000000000000"}}\n'; }
+  tag_signature_verified v1.6.0 >/dev/null 2>&1
+); then
+  echo "Expected a moved remote tag object to fail verification." >&2
+  exit 1
+fi
+
+(
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
   tag_signature_verified() { return 0; }
   export RELEASE_TAG=v1.6.0
   export EXPECTED_SHA="$(git rev-parse HEAD)"
