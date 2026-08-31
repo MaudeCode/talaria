@@ -1,41 +1,7 @@
 import XCTest
 import UIKit
 
-final class ComposerNavigationUITests: XCTestCase {
-    private let fixtureSessionTitle = "UI Fixture Session"
-    private var app: XCUIApplication!
-    private var fixtureTrace: String?
-
-    private var fixtureLaunchArguments: [String] {
-        ["--ui-test-fixture"]
-    }
-
-    private var fixtureSessionButton: XCUIElement {
-        app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
-    }
-
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = fixtureLaunchArguments
-        app.launch()
-    }
-
-    override func tearDownWithError() throws {
-        if let fixtureTrace {
-            let trace = XCTAttachment(string: fixtureTrace)
-            trace.name = "Scripted chat event trace"
-            trace.lifetime = .deleteOnSuccess
-            add(trace)
-
-            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            screenshot.name = "Chat streaming failure"
-            screenshot.lifetime = .deleteOnSuccess
-            add(screenshot)
-        }
-        app.terminate()
-        app = nil
-    }
+final class ChatUITests: TalariaUITestCase {
 
     func testChatListScrolls() throws {
         let session = fixtureSessionButton
@@ -241,6 +207,9 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertFalse(app.tabBars.firstMatch.exists)
     }
 
+}
+
+final class SettingsUITests: TalariaUITestCase {
     func testComposerSettingsAreGroupedAndConfigurable() throws {
         openSettings()
         tapSettingsCategory(id: "chats", title: "Chats")
@@ -385,6 +354,9 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
     }
 
+}
+
+final class QuotaWidgetUITests: TalariaUITestCase {
     func testInsightsShowsQuotaSurface() throws {
         app.terminate()
         app.launchArguments = fixtureLaunchArguments + ["--provider-quotas"]
@@ -508,6 +480,9 @@ final class ComposerNavigationUITests: XCTestCase {
         add(bars)
     }
 
+}
+
+final class SidebarUITests: TalariaUITestCase {
     func testSidebarReplacesRootTabs() throws {
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
@@ -667,7 +642,45 @@ final class ComposerNavigationUITests: XCTestCase {
         }
     }
 
-    private func openFixtureSession() throws -> XCUIElement {
+}
+
+class TalariaUITestCase: XCTestCase {
+    fileprivate let fixtureSessionTitle = "UI Fixture Session"
+    fileprivate var app: XCUIApplication!
+    fileprivate var fixtureTrace: String?
+
+    fileprivate var fixtureLaunchArguments: [String] {
+        ["--ui-test-fixture"]
+    }
+
+    fileprivate var fixtureSessionButton: XCUIElement {
+        app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
+    }
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = fixtureLaunchArguments
+        app.launch()
+    }
+
+    override func tearDownWithError() throws {
+        if let fixtureTrace {
+            let trace = XCTAttachment(string: fixtureTrace)
+            trace.name = "Scripted chat event trace"
+            trace.lifetime = .deleteOnSuccess
+            add(trace)
+
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "Chat streaming failure"
+            screenshot.lifetime = .deleteOnSuccess
+            add(screenshot)
+        }
+        app.terminate()
+        app = nil
+    }
+
+    fileprivate func openFixtureSession() throws -> XCUIElement {
         if let composer = waitForComposer(timeout: 3) {
             return composer
         }
@@ -680,14 +693,14 @@ final class ComposerNavigationUITests: XCTestCase {
         return try XCTUnwrap(composer)
     }
 
-    private func relaunchChatFixture(argument: String, trace: String) {
+    fileprivate func relaunchChatFixture(argument: String, trace: String) {
         fixtureTrace = trace
         app.terminate()
         app.launchArguments = fixtureLaunchArguments + [argument]
         app.launch()
     }
 
-    private func sendFixtureMessage(_ message: String) throws {
+    fileprivate func sendFixtureMessage(_ message: String) throws {
         let composer = try openFixtureSession()
         let input = app.textViews.firstMatch
         if !input.waitForExistence(timeout: 2) {
@@ -700,34 +713,34 @@ final class ComposerNavigationUITests: XCTestCase {
         tapCenter(of: send)
     }
 
-    private func element(labelContaining text: String) -> XCUIElement {
+    fileprivate func element(labelContaining text: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
             .firstMatch
     }
 
-    private func element(label: String) -> XCUIElement {
+    fileprivate func element(label: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", label))
             .firstMatch
     }
 
-    private func countElements(label: String) -> Int {
+    fileprivate func countElements(label: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count
     }
 
-    private func countElements(containing text: String) -> Int {
+    fileprivate func countElements(containing text: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).count
     }
 
-    private func tapCenter(of element: XCUIElement) {
+    fileprivate func tapCenter(of element: XCUIElement) {
         app.coordinate(withNormalizedOffset: CGVector(
             dx: element.frame.midX / app.frame.width,
             dy: element.frame.midY / app.frame.height
         )).tap()
     }
 
-    private func openSettings() {
+    fileprivate func openSettings() {
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
         openNavigation.tap()
@@ -743,7 +756,7 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [sidebarHidden], timeout: 3), .completed)
     }
 
-    private func tapSettingsCategory(id: String, title: String) {
+    fileprivate func tapSettingsCategory(id: String, title: String) {
         let category = app.buttons["settings-category-\(id)"]
         for _ in 0..<10 where !category.exists {
             app.swipeUp()
@@ -768,7 +781,7 @@ final class ComposerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
     }
 
-    private func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
+    fileprivate func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
         let idleComposer = app.buttons["Message"]
         let expandedComposer = app.textViews.firstMatch
         let deadline = Date().addingTimeInterval(timeout)
@@ -782,7 +795,7 @@ final class ComposerNavigationUITests: XCTestCase {
         return nil
     }
 
-    private func tapFixtureSession(_ session: XCUIElement) {
+    fileprivate func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
         let viewportBottom = app.searchFields["Search sessions"].frame.minY
@@ -812,13 +825,13 @@ final class ComposerNavigationUITests: XCTestCase {
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
-    private func assertPreviewVisible(identifier: String) {
+    fileprivate func assertPreviewVisible(identifier: String) {
         XCTAssertTrue(
             app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3)
         )
     }
 
-    private func brightness(
+    fileprivate func brightness(
         in screenshot: XCUIScreenshot,
         x normalizedX: CGFloat,
         y normalizedY: CGFloat
