@@ -861,8 +861,9 @@ UPSTREAM_TESTED_SHA / UPSTREAM_TESTED_TAG / TESTED_AGAINST_VERSION:
   human-readable tag in `CONTRACT_TESTS.md` / `DEVELOPMENT.md`. Do not
   duplicate the values here — they rot.
 APP_VERSION / APP_BUILD:
-  read MARKETING_VERSION / CURRENT_PROJECT_VERSION from
-  `Talaria.xcodeproj/project.pbxproj`.
+  project values in `Talaria.xcodeproj/project.pbxproj` are development defaults.
+  Production releases use the signed `vX.Y.Z` tag as MARKETING_VERSION and the
+  next App Store Connect build number as CURRENT_PROJECT_VERSION.
 ```
 
 ---

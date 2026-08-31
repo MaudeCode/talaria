@@ -8,15 +8,12 @@ Goal: invite external testers only after a clean release-candidate build has bee
 
 ## Supported release path
 
-- Use `$talaria-release` with an explicit `X.Y.Z` version.
-- Review `scripts/prepare-release <version> --dry-run` before authorizing the tag
-  push.
-- `scripts/prepare-release <version> --publish` is the only supported version,
-  commit, and tag path. It creates a signed `vX.Y.Z` tag and atomically pushes it
-  with the prepared `main` commit.
+- From clean, validated `main`, create and push an explicitly authorized signed
+  `vX.Y.Z` tag. No App Store Connect credential is needed locally.
 - `.github/workflows/release.yml` validates the signed tag, exact-SHA main CI,
-  version/build agreement, and App Store Connect state. It then builds one
-  external-capable IPA and uploads it to TestFlight.
+  main ancestry, and App Store Connect state. The tag supplies the marketing
+  version and App Store Connect supplies the next build number. The workflow
+  builds one external-capable IPA and uploads it to TestFlight.
 - Use the manual workflow with `upload = false` to prove an existing signed tag
   through artifact creation without uploading it.
 - App Store Connect agreements, processing or compliance prompts, tester-group
@@ -537,16 +534,14 @@ Use the new external-capable workflow or manual Xcode upload. The build must not
 
 Version-train rule (bitten 2026-06-02 with `1.0` → `1.0.1` and 2026-08-04 with `1.4` → `1.5`): once a version is approved for the App Store, Apple closes its pre-release train and rejects any upload with that `CFBundleShortVersionString` (ASC errors 90186/90062). Two defenses:
 
-- Bump `MARKETING_VERSION` (in `Talaria.xcodeproj/project.pbxproj`, all entries) on `main` right after each App Store release goes live, so the next upload always targets an open train.
-- The workflow preflights the train against App Store Connect before archiving (`ENFORCE_OPEN_TRAIN` in `ci/select_testflight_build_number.rb`) and fails in seconds with a bump instruction if the train is closed.
+- Choose a signed release tag whose semantic version is above the approved App Store version.
+- The workflow preflights that tag-derived version against App Store Connect before archiving (`ENFORCE_OPEN_TRAIN` in `ci/select_testflight_build_number.rb`) and fails in seconds with a higher-tag instruction if the train is closed.
 
-Workflow path, if implemented:
+Current workflow path:
 
-1. Run `External TestFlight` from GitHub Actions.
-2. Select `main`.
-3. Set `confirm_external_review = EXTERNAL_REVIEW`.
-4. Leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
-5. Wait for App Store Connect processing.
+1. Create an explicitly authorized signed `vX.Y.Z` tag on clean, validated `main`.
+2. Push the tag. GitHub Actions selects the next App Store Connect build number and uploads the exact tagged SHA.
+3. Wait for App Store Connect processing.
 
 Manual path, if chosen instead:
 
