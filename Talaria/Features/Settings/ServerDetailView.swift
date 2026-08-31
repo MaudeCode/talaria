@@ -12,6 +12,7 @@ struct ServerDetailView: View {
     @State private var colorHex: String
     @State private var isConfirmingRemove = false
     @State private var isRemoving = false
+    @State private var errorMessage: String?
 
     init(authManager: AuthManager, account: ServerAccount) {
         self.authManager = authManager
@@ -65,6 +66,13 @@ struct ServerDetailView: View {
                     }
                     .disabled(isRemoving)
                 }
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(AppFont.footnote())
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 18)
@@ -85,17 +93,21 @@ struct ServerDetailView: View {
                 Task {
                     let wasActive = isActive
                     isRemoving = true
-                    // Purge this server's offline cache *before* removing it, while
-                    // the view (and its modelContext) is still alive — removing the
-                    // active server flips auth state and tears this stack down on
-                    // its own. Best-effort: the cache is server-keyed, so a leftover
-                    // row can never surface as another server's content (#18, PR
-                    // #286 W2).
-                    if let removedServerURL = URL(string: account.urlString) {
-                        try? CacheStore.clearCache(for: removedServerURL, in: modelContext)
+                    errorMessage = nil
+                    let removedServerURL = URL(string: account.urlString)
+                    let context = modelContext
+                    guard await authManager.removeServer(account) else {
+                        errorMessage = authManager.lastErrorMessage
+                        isRemoving = false
+                        return
+                    }
+                    // Purge only after the registry removal commits. Best-effort:
+                    // cache and drafts are server-keyed, so leftovers cannot surface
+                    // under another server (#18, PR #286 W2).
+                    if let removedServerURL {
+                        try? CacheStore.clearCache(for: removedServerURL, in: context)
                         await ChatDraftStore.shared.discardDrafts(for: removedServerURL)
                     }
-                    await authManager.removeServer(account)
                     // Only a non-active removal leaves this view alive to reset its
                     // state and pop; the active-server case is already torn down.
                     if !wasActive {

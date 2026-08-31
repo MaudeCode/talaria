@@ -80,6 +80,7 @@
 		C03910000000000000000004 /* APIClientSessionMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000004 /* APIClientSessionMutationTests.swift */; };
 		C03910000000000000000005 /* APIClientWorkspaceFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */; };
 		C03910000000000000000006 /* APIClientChatEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000006 /* APIClientChatEndpointTests.swift */; };
+		C06510000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06500000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift */; };
 		C03910000000000000000007 /* APIClientAuthAndErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000007 /* APIClientAuthAndErrorTests.swift */; };
 		C03910000000000000000008 /* APIClientAgentControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000008 /* APIClientAgentControlTests.swift */; };
 		C03910000000000000000009 /* APIClientConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000009 /* APIClientConfigurationTests.swift */; };
@@ -510,6 +511,7 @@
 		C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107I000000000000000017 /* ProvidersStatusRow.swift */; };
 		1A2B3C4D5E6F700000000102 /* AppThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */; };
 		C012400000000000000006 /* AppIconChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000005 /* AppIconChoiceTests.swift */; };
+		C06600000000000000000002 /* BundleConfigurationContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06600000000000000000001 /* BundleConfigurationContractTests.swift */; };
 		1A2B3C4D5E6F70000000110 /* ArchivedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */; };
 		1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000113 /* ArchivedSessionsViewModel.swift */; };
 		1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */; };
@@ -737,6 +739,7 @@
 		C03900000000000000000004 /* APIClientSessionMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionMutationTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientWorkspaceFileTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000006 /* APIClientChatEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientChatEndpointTests.swift; sourceTree = "<group>"; };
+		C06500000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000007 /* APIClientAuthAndErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientAuthAndErrorTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000008 /* APIClientAgentControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientAgentControlTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000009 /* APIClientConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientConfigurationTests.swift; sourceTree = "<group>"; };
@@ -1150,6 +1153,7 @@
 		C107I000000000000000017 /* ProvidersStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersStatusRow.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppThemeTests.swift; sourceTree = "<group>"; };
 		C012400000000000000005 /* AppIconChoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoiceTests.swift; sourceTree = "<group>"; };
+		C06600000000000000000001 /* BundleConfigurationContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleConfigurationContractTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000111 /* ArchivedSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedSessionsView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000113 /* ArchivedSessionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedSessionsViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultModelPickerView.swift; sourceTree = "<group>"; };
@@ -1405,6 +1409,7 @@
 				C03900000000000000000004 /* APIClientSessionMutationTests.swift */,
 				C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */,
 				C03900000000000000000006 /* APIClientChatEndpointTests.swift */,
+				C06500000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift */,
 				C03900000000000000000007 /* APIClientAuthAndErrorTests.swift */,
 				C03900000000000000000008 /* APIClientAgentControlTests.swift */,
 				C03900000000000000000009 /* APIClientConfigurationTests.swift */,
@@ -1474,6 +1479,7 @@
 				C04400000000000000000004 /* CacheFallbackPolicyTests.swift */,
 				1A2B3C4D5E6F700000000103 /* AppThemeTests.swift */,
 				C012400000000000000005 /* AppIconChoiceTests.swift */,
+				C06600000000000000000001 /* BundleConfigurationContractTests.swift */,
 				C03120000000000000F006 /* APIClientGitTests.swift */,
 				C03120000000000000F007 /* GitWorkspaceViewModelTests.swift */,
 				C03120000000000000F008 /* TurnFileChangeAggregatorTests.swift */,
@@ -2829,6 +2835,7 @@
 				C03910000000000000000004 /* APIClientSessionMutationTests.swift in Sources */,
 				C03910000000000000000005 /* APIClientWorkspaceFileTests.swift in Sources */,
 				C03910000000000000000006 /* APIClientChatEndpointTests.swift in Sources */,
+				C06510000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift in Sources */,
 				C03910000000000000000007 /* APIClientAuthAndErrorTests.swift in Sources */,
 				C03910000000000000000008 /* APIClientAgentControlTests.swift in Sources */,
 				C03910000000000000000009 /* APIClientConfigurationTests.swift in Sources */,
@@ -2898,6 +2905,7 @@
 				C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */,
 				1A2B3C4D5E6F700000000102 /* AppThemeTests.swift in Sources */,
 				C012400000000000000006 /* AppIconChoiceTests.swift in Sources */,
+				C06600000000000000000002 /* BundleConfigurationContractTests.swift in Sources */,
 				C03120000000000000B006 /* APIClientGitTests.swift in Sources */,
 				C03120000000000000B007 /* GitWorkspaceViewModelTests.swift in Sources */,
 				C03120000000000000B008 /* TurnFileChangeAggregatorTests.swift in Sources */,

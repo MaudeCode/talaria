@@ -2,14 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-env_file="${HERMES_WEBUI_ENV_FILE:-"$repo_root/.env.local"}"
-
-if [[ -f "$env_file" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$env_file"
-  set +a
-fi
+[[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/webui-json" "$@"
 
 : "${HERMES_WEBUI_BASE_URL:?Set HERMES_WEBUI_BASE_URL (e.g. https://your-server.example) in .env.local or the environment.}"
 base_url="$HERMES_WEBUI_BASE_URL"

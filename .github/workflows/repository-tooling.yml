@@ -53,6 +53,7 @@ jobs:
 
       - name: Test repository tooling
         run: |
+          python3 ci/load_env_test.py
           ruby ci/select_testflight_build_number_test.rb
           ruby ci/release_project_test.rb
           ruby ci/test_ios_runner_test.rb
@@ -77,5 +78,5 @@ jobs:
           set -euo pipefail
           bash -n ci/prepare_release_test.sh ci/require_successful_main_ci ci/require_successful_main_ci_test.sh ci/validate_release_tag ci/validate_release_tag_test.sh scripts/check-swift-file-sizes scripts/webui-json
           zsh -n ci/verify_bundle_versions scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/setup-ios-test-pool scripts/test-ios scripts/validate-release scripts/validate-upstream-contract
-          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
           for file in ci/*.rb scripts/prepare-release; do ruby -c "${file}"; done

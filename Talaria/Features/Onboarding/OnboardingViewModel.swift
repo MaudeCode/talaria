@@ -6,13 +6,20 @@ import Observation
 final class OnboardingViewModel {
     nonisolated static let emptyPasswordMessage = String(localized: "Enter the server password.")
 
-    var serverURLString = ""
-    var password = ""
-    var customHeaders: [CustomHeader] = []
+    var serverURLString = "" {
+        didSet { if serverURLString != oldValue { invalidateConnectionState() } }
+    }
+    var password = "" {
+        didSet { if password != oldValue { invalidateConnectionState() } }
+    }
+    var customHeaders: [CustomHeader] = [] {
+        didSet { if customHeaders != oldValue { invalidateConnectionState() } }
+    }
     var authStatus: AuthStatusResponse?
     var connectionMessage: String?
     var errorMessage: String?
     var isWorking = false
+    private var connectionInputRevision = 0
 
     init(
         savedServer: URL? = nil,
@@ -37,16 +44,24 @@ final class OnboardingViewModel {
     }
 
     func testConnection(authManager: AuthManager) async {
+        let revision = connectionInputRevision
+        let serverURLString = serverURLString
+        let customHeaders = customHeaders
         errorMessage = nil
         connectionMessage = nil
         isWorking = true
-        defer { isWorking = false }
+        defer {
+            if revision == connectionInputRevision {
+                isWorking = false
+            }
+        }
 
         do {
             let status = try await authManager.testConnection(
                 serverURLString: serverURLString,
                 customHeaders: customHeaders
             )
+            guard revision == connectionInputRevision else { return }
             authStatus = status
             if let message = AuthManager.unsupportedSignInMessage(for: status) {
                 errorMessage = message
@@ -58,11 +73,16 @@ final class OnboardingViewModel {
                     : String(localized: "Connection ok. Password not required.")
             }
         } catch {
+            guard revision == connectionInputRevision else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func connect(authManager: AuthManager) async {
+        let revision = connectionInputRevision
+        let serverURLString = serverURLString
+        let password = password
+        let customHeaders = customHeaders
         errorMessage = nil
         connectionMessage = nil
 
@@ -72,15 +92,22 @@ final class OnboardingViewModel {
         }
 
         isWorking = true
-        defer { isWorking = false }
+        defer {
+            if revision == connectionInputRevision {
+                isWorking = false
+            }
+        }
 
         if authStatus == nil {
             do {
-                authStatus = try await authManager.testConnection(
+                let status = try await authManager.testConnection(
                     serverURLString: serverURLString,
                     customHeaders: customHeaders
                 )
+                guard revision == connectionInputRevision else { return }
+                authStatus = status
             } catch {
+                guard revision == connectionInputRevision else { return }
                 errorMessage = error.localizedDescription
                 return
             }
@@ -94,9 +121,19 @@ final class OnboardingViewModel {
         await authManager.configure(
             serverURLString: serverURLString,
             password: password,
-            customHeaders: customHeaders
+            customHeaders: customHeaders,
+            canCommit: { revision == self.connectionInputRevision }
         )
+        guard revision == connectionInputRevision else { return }
         errorMessage = authManager.lastErrorMessage
+    }
+
+    private func invalidateConnectionState() {
+        connectionInputRevision &+= 1
+        authStatus = nil
+        connectionMessage = nil
+        errorMessage = nil
+        isWorking = false
     }
 
     nonisolated static func passwordValidationMessage(authStatus: AuthStatusResponse?, password: String) -> String? {

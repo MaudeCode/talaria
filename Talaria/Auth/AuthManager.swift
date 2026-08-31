@@ -154,7 +154,8 @@ final class AuthManager {
     func configure(
         serverURLString: String,
         password: String,
-        customHeaders: [CustomHeader]? = nil
+        customHeaders: [CustomHeader]? = nil,
+        canCommit: @escaping @MainActor () -> Bool = { true }
     ) async {
         lastErrorMessage = nil
         let previousServerID = state.server?.absoluteString
@@ -167,6 +168,7 @@ final class AuthManager {
             let serverURL = try Self.normalizedServerURL(from: serverURLString)
             let client = clientFactory(serverURL)
             let authStatus = try await testConnection(client: client)
+            guard canCommit() else { return }
 
             if let message = Self.unsupportedSignInMessage(for: authStatus) {
                 lastErrorMessage = message
@@ -183,6 +185,7 @@ final class AuthManager {
                 }
 
                 let loginResponse = try await client.login(password: password)
+                guard canCommit() else { return }
                 guard loginResponse.ok == true else {
                     state = .loggedOut(server: serverURL)
                     lastErrorMessage = APIError.unauthorized.localizedDescription
@@ -190,12 +193,10 @@ final class AuthManager {
                 }
             }
 
-            // Persist only on success: the server URL and the headers that reached it.
-            try keychain.save(serverURL.absoluteString, forKey: .serverURL)
-            // Record (or re-activate) this server in the multi-server registry,
-            // shadowing the Keychain `server_url` write above (#15). Dedupes by
-            // normalized URL.
-            serverRegistry.activate(url: serverURL)
+            // The registry is the source of truth. Update it first, then mirror the
+            // active URL for older installs and App Intent compatibility.
+            try serverRegistry.activate(url: serverURL)
+            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
             // Persist the headers that reached this server under its own scoped key
             // so they never apply to a different server (#16).
             persistCustomHeaders(for: serverURL)
@@ -205,6 +206,7 @@ final class AuthManager {
             }
             state = .loggedIn(server: serverURL)
         } catch {
+            guard canCommit() else { return }
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -280,11 +282,12 @@ final class AuthManager {
             // own scoped key (#16). The previous active server's headers were never
             // disturbed, and stay safe in their own scoped Keychain entry.
             //
-            // Do the throwing Keychain write first so a write failure leaves the
-            // live header store (and the active server) completely untouched.
-            try keychain.save(serverURL.absoluteString, forKey: .serverURL)
+            // Commit the authoritative registry first. The legacy single-URL key
+            // is only a compatibility mirror, so its failure cannot split routing
+            // state from the registry.
+            try serverRegistry.activate(url: serverURL)
+            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
             headerStore.replace(with: newHeaders)
-            serverRegistry.activate(url: serverURL)
             persistCustomHeaders(for: serverURL)
             refreshServers()
             clearQuotaWidgetSnapshot()
@@ -328,26 +331,37 @@ final class AuthManager {
             await attemptBestEffortServerLogout(server: active)
         }
 
-        advanceAfterRemoving(activeServer: active)
+        do {
+            try advanceAfterRemoving(activeServer: active)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
     }
 
     /// Removes a configured server. When it's the active one this behaves like
     /// `signOut` (best-effort server logout + auto-switch / onboarding). A
     /// non-active server is just dropped locally — its registry row, scoped
     /// headers, and cookies — leaving the active server's auth untouched (#17).
-    func removeServer(_ account: ServerAccount) async {
-        guard let serverURL = URL(string: account.urlString) else { return }
+    @discardableResult
+    func removeServer(_ account: ServerAccount) async -> Bool {
+        guard let serverURL = URL(string: account.urlString) else { return false }
         let isActive = state.server?.absoluteString == account.id
 
-        if isActive {
-            if case .loggedIn = state {
-                await attemptBestEffortServerLogout(server: serverURL)
+        do {
+            if isActive {
+                if case .loggedIn = state {
+                    await attemptBestEffortServerLogout(server: serverURL)
+                }
+                try advanceAfterRemoving(activeServer: serverURL)
+            } else {
+                try serverRegistry.remove(id: account.id)
+                clearLocalArtifacts(for: serverURL)
+                refreshServers()
             }
-            advanceAfterRemoving(activeServer: serverURL)
-        } else {
-            clearLocalArtifacts(for: serverURL)
-            serverRegistry.remove(id: account.id)
-            refreshServers()
+            return true
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -360,9 +374,14 @@ final class AuthManager {
         guard account.id != state.server?.absoluteString,
               let serverURL = URL(string: account.urlString) else { return }
 
-        serverRegistry.setActive(id: account.id)
-        refreshServers()
+        do {
+            try serverRegistry.setActive(id: account.id)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return
+        }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
+        refreshServers()
         hydrateCustomHeaders(for: serverURL)
         // Drop the App Intents profile picker cache (#339): it holds the previous server's
         // profiles, which would leak into Shortcuts / Siri if the new server's fetch is
@@ -387,14 +406,20 @@ final class AuthManager {
         updated.displayName = displayName
         updated.initials = initials
         updated.headerLogoColorHex = headerLogoColorHex
-        serverRegistry.update(updated)
-        refreshServers()
+        do {
+            try serverRegistry.update(updated)
+            refreshServers()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
     }
 
     /// Drops the active server locally + from the registry, then auto-switches to
     /// the next remaining server, or returns to onboarding when none remain. The
     /// shared core of `signOut` and active-server `removeServer` (#17).
-    private func advanceAfterRemoving(activeServer server: URL) {
+    private func advanceAfterRemoving(activeServer server: URL) throws {
+        let nextActive = try serverRegistry.remove(id: server.absoluteString)
+
         // Always drop any pre-#16 global header remnant on a sign-out path.
         try? keychain.delete(.customHeaders)
         clearLocalArtifacts(for: server)
@@ -404,7 +429,6 @@ final class AuthManager {
         profileEntityCache.save([])
         clearQuotaWidgetSnapshot()
 
-        let nextActive = serverRegistry.remove(id: server.absoluteString)
         refreshServers()
 
         if let nextActive, let nextURL = URL(string: nextActive.urlString) {
@@ -501,7 +525,12 @@ final class AuthManager {
         }
 
         // Forget the active server in the registry (leaves other servers intact).
-        serverRegistry.forgetActiveServer()
+        do {
+            try serverRegistry.forgetActiveServer()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return
+        }
         refreshServers()
         headerStore.replace(with: [])
         // Drop the App Intents profile picker cache (#339) so a signed-out user doesn't see
@@ -565,20 +594,30 @@ final class AuthManager {
     }
 
     private func restoreSavedServer() {
-        guard
-            let savedValue = try? keychain.load(.serverURL),
-            let savedURL = URL(string: savedValue)
-        else {
-            // No saved server: nothing is active, so no scoped headers apply.
-            state = .unconfigured
-            return
-        }
+        let savedURL: URL
+        if let active = serverRegistry.activeServer,
+           let activeURL = URL(string: active.urlString) {
+            savedURL = activeURL
+        } else {
+            guard
+                let savedValue = try? keychain.load(.serverURL),
+                let legacyURL = URL(string: savedValue)
+            else {
+                // No saved server: nothing is active, so no scoped headers apply.
+                state = .unconfigured
+                return
+            }
 
-        // One-time migration of the saved single server into the multi-server
-        // registry (#15). Idempotent: an already-registered server is just
-        // re-activated, and its per-server identity is only seeded on first
-        // insert, so #17 edits survive relaunch.
-        serverRegistry.activate(url: savedURL)
+            // One-time migration of the legacy single-server key into the registry.
+            do {
+                try serverRegistry.activate(url: legacyURL)
+            } catch {
+                lastErrorMessage = error.localizedDescription
+                state = .unconfigured
+                return
+            }
+            savedURL = legacyURL
+        }
         // Hydrate this server's headers (migrating the pre-#16 global blob on the
         // first launch after the split) before any client is built, so the first
         // request after launch carries the saved headers (#255/#16).

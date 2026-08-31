@@ -1056,7 +1056,7 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testStaleActiveStreamReplayDeduplicatesReasoningAndCompletedToolEvents() async throws {
+    func testStaleActiveStreamReplayDeduplicatesMixedTokenToolAndReasoningEvents() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
@@ -1099,21 +1099,34 @@ extension ChatViewModelSendTests {
 
         let didStart = await viewModel.sendMessage("Inspect logs")
         XCTAssertTrue(didStart)
-        streamClient.emit(.reasoning("Plan."))
+        let titleEvent = TitleStreamEvent(sessionId: "session-abc", title: "Inspect logs")
+        streamClient.emit(.title(titleEvent))
+        streamClient.emit(.token("Checking. "))
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
+        streamClient.emit(.reasoning("Plan."))
 
         await viewModel.recoverStaleActiveStreamIfNeeded(now: Date().addingTimeInterval(20))
-        streamClient.emit(.reasoning("Plan."))
+        streamClient.emit(.title(titleEvent))
+        streamClient.emit(.token("Checking. "))
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
+        streamClient.emit(.reasoning("Plan."))
 
-        XCTAssertEqual(viewModel.activeStreamRecoveryState, .reconnecting)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Inspect logs", "Checking. "])
         XCTAssertEqual(viewModel.liveReasoningText, "Plan.")
         XCTAssertEqual(viewModel.liveToolCalls.count, 1)
         XCTAssertEqual(viewModel.liveToolCalls.first?.name, "run_command")
         XCTAssertEqual(viewModel.liveToolCalls.first?.preview, "Passed tests")
         XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
+
+        streamClient.emit(.token("Checking. "))
+        streamClient.emit(.toolStarted(startedTool))
+        streamClient.emit(.toolCompleted(completedTool))
+
+        XCTAssertEqual(viewModel.activeStreamRecoveryState, .idle)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Inspect logs", "Checking. Checking. "])
+        XCTAssertEqual(viewModel.liveToolCalls.count, 2)
     }
 
     @MainActor
