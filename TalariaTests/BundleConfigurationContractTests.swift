@@ -33,6 +33,18 @@ final class BundleConfigurationContractTests: XCTestCase {
         let schemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
         XCTAssertEqual(schemes, ["$(TALARIA_URL_SCHEME)"], "Talaria URL scheme is missing or duplicated")
 
+        for (name, path) in [
+            ("share extension", "TalariaShareExtension/Resources/Info.plist"),
+            ("Live Activity widget", "TalariaLiveActivityWidget/Resources/Info.plist")
+        ] {
+            let bundleInfo = try propertyList(path)
+            XCTAssertEqual(
+                bundleInfo["TalariaURLScheme"] as? String,
+                info["TalariaURLScheme"] as? String,
+                "\(name) has a mismatched TalariaURLScheme"
+            )
+        }
+
         let project = try projectFile()
         assertOccurrences(of: "TALARIA_URL_SCHEME = \"talaria$(APP_URL_SCHEME_SUFFIX)\";", count: 2, in: project)
     }
@@ -106,7 +118,35 @@ final class BundleConfigurationContractTests: XCTestCase {
         XCTAssertEqual(shareManifest["NSPrivacyAccessedAPITypes"] as? [AnyHashable], [], "Share extension declares accessed APIs")
 
         let project = try projectFile()
-        assertOccurrences(of: "PrivacyInfo.xcprivacy in Resources", count: 6, in: project)
+        let privacyResources = [
+            ("app", "1A2B3C4D5E6F700000000060", "1A2B3C4D5E6F70000000300", "1A2B3C4D5E6F70000000301"),
+            ("share extension", "B5A100000000000000000022", "B5A100000000000000000004", "B5A100000000000000000014"),
+            ("Live Activity widget", "A04500000000000000000060", "A0610000000000000000000B", "1A2B3C4D5E6F70000000301")
+        ]
+        for (name, phaseID, buildFileID, fileReferenceID) in privacyResources {
+            let buildFileMapping = """
+            \(buildFileID) /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = \(fileReferenceID) /* PrivacyInfo.xcprivacy */; };
+            """
+            XCTAssertTrue(
+                project.contains(buildFileMapping),
+                "\(name) privacy manifest build-file mapping is missing or mismatched"
+            )
+            let phaseStart = try XCTUnwrap(
+                project.range(of: "\(phaseID) /* Resources */ = {"),
+                "\(name) resource phase is missing"
+            )
+            let phaseRemainder = project[phaseStart.lowerBound...]
+            let phaseEnd = try XCTUnwrap(
+                phaseRemainder.range(of: "\n\t\t};"),
+                "\(name) resource phase is malformed"
+            )
+            XCTAssertTrue(
+                phaseRemainder[..<phaseEnd.upperBound].contains(
+                    "\(buildFileID) /* PrivacyInfo.xcprivacy in Resources */"
+                ),
+                "\(name) does not embed its required privacy manifest"
+            )
+        }
         assertOccurrences(of: "TalariaShareExtension.appex in Embed App Extensions", count: 2, in: project)
         assertOccurrences(of: "TalariaLiveActivityWidget.appex in Embed App Extensions", count: 2, in: project)
 
