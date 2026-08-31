@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-release_ci_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 tag_signature_verified() {
   local tag="$1"
   local repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
@@ -25,7 +23,7 @@ tag_signature_verified() {
 validate_release_tag() {
   local tag="${RELEASE_TAG:?RELEASE_TAG is required}"
   local expected_sha="${EXPECTED_SHA:-}"
-  local version commit project_state project_version project_build
+  local version commit
 
   if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     echo "Release tag must use vX.Y.Z numeric semantic versioning. Received: ${tag}" >&2
@@ -52,14 +50,7 @@ validate_release_tag() {
     return 1
   fi
 
-  project_state="$(ruby -I"$release_ci_dir" -rrelease_project -e 'state = TalariaReleaseProject.new.read_state; puts "#{state.fetch(:marketing_version)} #{state.fetch(:build_number)}"')"
-  read -r project_version project_build <<< "$project_state"
-  if [[ "$project_version" != "$version" ]]; then
-    echo "Release tag ${tag} does not match project MARKETING_VERSION ${project_version}." >&2
-    return 1
-  fi
-
-  echo "Verified signed release tag ${tag} at ${commit}, version ${project_version}, build ${project_build}."
+  echo "Verified signed release tag ${tag} at ${commit}, marketing version ${version}."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

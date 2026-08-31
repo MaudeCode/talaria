@@ -32,6 +32,7 @@ jobs:
     outputs:
       ref: ${{ steps.release.outputs.ref }}
       sha: ${{ steps.tag.outputs.sha }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - name: Resolve release tag
         id: release
@@ -67,6 +68,7 @@ jobs:
           ci/validate_release_tag
           sha="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
           echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
         id: tag
 
       - name: Verify exact commit passed main CI
@@ -88,6 +90,7 @@ jobs:
     uses: ./.github/workflows/ios-release-build.yml
     with:
       ref: ${{ needs.validate-release.outputs.sha }}
+      version: ${{ needs.validate-release.outputs.version }}
     secrets: inherit
 
   validate-artifacts:

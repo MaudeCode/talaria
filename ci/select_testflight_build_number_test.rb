@@ -165,8 +165,8 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
     end
 
     assert_includes(error.message, "train is closed")
-    assert_includes(error.message, "scripts/prepare-release")
-    assert_includes(error.message, "signed tag")
+    assert_includes(error.message, "release tag")
+    assert_includes(error.message, "signed semantic release tag")
   end
 
   def test_app_lookup_uses_supported_bundle_id_filter_only

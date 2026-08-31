@@ -6,6 +6,9 @@ on:
       ref:
         required: true
         type: string
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -54,10 +57,13 @@ jobs:
       - name: Resolve release metadata
         run: |
           set -euo pipefail
-          read -r marketing_version build_number <<< "$(ruby -Ici -rrelease_project -e 'state = TalariaReleaseProject.new.read_state; puts "#{state.fetch(:marketing_version)} #{state.fetch(:build_number)}"')"
+          marketing_version="${{ inputs.version }}"
+          if [[ ! "${marketing_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release version must use X.Y.Z numeric semantic versioning: ${marketing_version}" >&2
+            exit 1
+          fi
           echo "MARKETING_VERSION=${marketing_version}" >> "${GITHUB_ENV}"
-          echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
-          echo "Building ${marketing_version} (${build_number}) from ${{ inputs.ref }}."
+          echo "Building version ${marketing_version} from ${{ inputs.ref }}."
 
       - name: Write App Store Connect key
         run: |
@@ -71,17 +77,15 @@ jobs:
           chmod 600 "${key_path}"
           echo "APP_STORE_CONNECT_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
 
-      - name: Reconcile App Store Connect build
+      - name: Select App Store Connect build number
         env:
           BUNDLE_ID: dev.kil.talaria
           ENFORCE_OPEN_TRAIN: "1"
         run: |
           set -euo pipefail
-          selected="$(REQUESTED_BUILD_NUMBER="${BUILD_NUMBER}" ruby ci/select_testflight_build_number.rb)"
-          if [[ "${selected}" != "${BUILD_NUMBER}" ]]; then
-            echo "Prepared build ${BUILD_NUMBER} changed during App Store Connect reconciliation." >&2
-            exit 1
-          fi
+          build_number="$(REQUESTED_BUILD_NUMBER='' ruby ci/select_testflight_build_number.rb)"
+          echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
+          echo "Building ${MARKETING_VERSION} (${build_number}) from ${{ inputs.ref }}."
 
       - name: Show Xcode version
         run: xcodebuild -version

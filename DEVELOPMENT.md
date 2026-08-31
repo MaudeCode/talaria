@@ -328,22 +328,21 @@ testing. There is no separate internal-only archive.
 1. Configure the `testflight` GitHub environment with
    `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and
    `APP_STORE_CONNECT_PRIVATE_KEY`.
-2. Invoke `$talaria-release` with the requested `X.Y.Z` version. It first runs
-   `scripts/prepare-release <version> --dry-run`.
-3. After explicit approval to publish the tag, the skill runs
-   `scripts/prepare-release <version> --publish`. The command fetches current
-   `origin/main`, updates all target versions, validates the release, creates a
-   signed commit and `vX.Y.Z` tag, and pushes both atomically.
+2. From clean current `main` with successful exact-SHA CI, create a signed
+   semantic tag such as `git tag -s v1.6.0 -m "Talaria v1.6.0"`.
+3. Push that tag with `git push origin v1.6.0`. No App Store Connect credential
+   is needed locally.
 4. `.github/workflows/release.yml` verifies the signed tag, main ancestry,
-   exact-SHA CI, repository tooling, version/build agreement, and the current
-   App Store Connect train before producing a signed IPA and uploading it.
+   exact-SHA CI, repository tooling, and the current App Store Connect train.
+   The tag supplies `MARKETING_VERSION`; App Store Connect supplies the next
+   collision-free `CURRENT_PROJECT_VERSION` before the signed archive/upload.
 5. Wait for App Store Connect processing, add the build to the internal group,
    and test it on the owner's iPhone. External group assignment and Beta App
    Review remain manual choices in App Store Connect.
 
 Use the workflow's manual `workflow_dispatch` path with `upload = false` to
 build and inspect an existing signed release tag without uploading it. Missing
-secrets, a stale or unsigned tag, a closed train, a build-number collision, or
+secrets, a stale or unsigned tag, a closed train, or
 missing exact-SHA CI all fail before upload.
 
 ## Full-App Manual Regression Checklist
