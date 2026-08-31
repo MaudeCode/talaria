@@ -180,6 +180,7 @@ final class OnboardingViewModel {
         errorMessage = nil
         isWorking = false
     }
+
     nonisolated static func passwordValidationMessage(authStatus: AuthStatusResponse?, password: String) -> String? {
         guard authStatus?.authEnabled == true else { return nil }
         // A server that already signed this client in (trusted-header proxy)

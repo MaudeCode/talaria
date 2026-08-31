@@ -426,7 +426,8 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             onExchange: { cookies.setCookie(cookie) },
             onLogout: { logoutSawCookie = cookies.cookies?.contains(cookie) == true }
         )
-        let keychain = ServerURLFailingKeychain()
+        let keychain = InMemoryKeychainStore()
+        let registryKeychain = RegistryFailingKeychain()
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
@@ -436,7 +437,10 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
                 ))
             },
             cookieStorage: cookies,
-            serverRegistry: ServerRegistry.inMemory()
+            serverRegistry: ServerRegistry(
+                keychain: registryKeychain,
+                identityDefaults: .ephemeral()
+            )
         )
 
         await manager.configureWithOIDC(serverURLString: "https://example.test")
@@ -485,6 +489,34 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(client.beginCount, 1)
         XCTAssertEqual(client.exchangeCodes, ["exchange-code"])
         XCTAssertNil(manager.lastErrorMessage)
+    }
+
+    @MainActor
+    func testStaleOIDCFlowLogsOutWithoutCommittingServer() async throws {
+        let keychain = InMemoryKeychainStore()
+        let client = OIDCMockAuthAPIClient(
+            authorizationBaseURL: try XCTUnwrap(URL(string: "https://stale.example.test"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+
+        await manager.configureWithOIDC(
+            serverURLString: "https://stale.example.test",
+            canCommit: { false }
+        )
+
+        XCTAssertEqual(client.exchangeCodes, ["exchange-code"])
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertEqual(manager.state, .unconfigured)
     }
 
     func testNativeOIDCExchangePersistsHttpOnlyCookieInClientSessionJar() async throws {
@@ -660,7 +692,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let keychain = InMemoryKeychainStore()
         try keychain.save(activeURL.absoluteString, forKey: .serverURL)
         let registry = ServerRegistry.inMemory()
-        registry.activate(url: activeURL)
+        try registry.activate(url: activeURL)
         let client = OIDCMockAuthAPIClient(authorizationBaseURL: newURL)
         var manager: AuthManager!
         manager = AuthManager(
@@ -750,8 +782,8 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let second = try XCTUnwrap(URL(string: "https://same.test:9443"))
         try keychain.save(first.absoluteString, forKey: .serverURL)
         let registry = ServerRegistry.inMemory()
-        registry.activate(url: second)
-        registry.activate(url: first)
+        try registry.activate(url: second)
+        try registry.activate(url: first)
         let store = ServerCookieStore(
             keychain: keychain,
             legacyStorage: try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
@@ -874,11 +906,11 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     }
 }
 
-private final class ServerURLFailingKeychain: KeychainStoring {
+private final class RegistryFailingKeychain: KeychainStoring {
     private let storage = InMemoryKeychainStore()
 
     func save(_ value: String, forKey key: KeychainStore.Key) throws {
-        if key == .serverURL { throw CocoaError(.fileWriteNoPermission) }
+        if key == .servers { throw CocoaError(.fileWriteNoPermission) }
         try storage.save(value, forKey: key)
     }
 

@@ -515,12 +515,7 @@ final class AuthManager {
     private func completeConfiguration(_ serverURL: URL, previousServerID: String?) throws {
         // Nothing durable is written until authentication has completed.
         try persistSessionCookies(serverURL)
-        do {
-            try serverRegistry.activate(url: serverURL)
-        } catch {
-            clearStoredSessionCookies(serverURL)
-            throw error
-        }
+        try serverRegistry.activate(url: serverURL)
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         persistCustomHeaders(for: serverURL)
         refreshServers()

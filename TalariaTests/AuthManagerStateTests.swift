@@ -476,7 +476,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
-            probeClientFactory: { _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            probeClientFactory: { _, _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
             cookieStorage: cookieStorage,
             profileEntityCache: profileEntityCache,
             serverRegistry: registry

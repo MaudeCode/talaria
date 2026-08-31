@@ -40,6 +40,7 @@ or stream boundary that failed.
 | Live response values decoded by Talaria's real `Codable` models | `TalariaTests/APIClientSessionListTests.swift` through `scripts/validate-upstream-contract` |
 | Every app endpoint's method, path, and query shape | `TalariaTests/APIEndpointContractTests.swift` |
 | Auth/error decoding and native POST headers | `TalariaTests/APIClientAuthAndErrorTests.swift` |
+| Native OIDC capability, callback/state/PKCE/server binding, exchange cookies, expiry, replay, cancellation, and server isolation | `TalariaTests/APIClientAuthAndErrorTests.swift`, `TalariaTests/AuthManagerStateTests.swift` |
 | Session status and mutation response decoding | `TalariaTests/APIClientSessionListTests.swift`, `TalariaTests/APIClientSessionMutationTests.swift` |
 | Chat SSE parsing, heartbeats, redirects, and reconnect status | `TalariaTests/SSEClientTests.swift`, `TalariaTests/StreamReconnectContractTests.swift` |
 | Fork drift, route/request-key/SSE changes, and machine-readable feature-gap classifications | `scripts/upstream-watch` |
@@ -47,6 +48,13 @@ or stream boundary that failed.
 The fork-only plural provider quota endpoint is newer than the current pin. Its
 path and decoding stay covered by the Swift contract tests until a reviewed pin
 advance brings it into the disposable live-server baseline.
+
+Native WebUI OIDC is also capability-gated beyond the current pin. Compatible
+servers report `oidc_native_handoff_enabled` and expose
+`POST /api/auth/oidc/native/start`, `/exchange`, and `/cancel`. Talaria completes
+that flow through `ASWebAuthenticationSession` and exact-server cookie jars.
+The pin remains unchanged until the candidate passes the disposable contract
+runner and signed-device OIDC validation.
 
 ## Pin advance
 
