@@ -8,6 +8,7 @@ class APIClientTestCase: XCTestCase {
     }
 
     func makeClient(
+        cookiePersistence: (@Sendable () throws -> Void)? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> APIClient {
         MockURLProtocol.requestHandler = handler
@@ -16,7 +17,11 @@ class APIClientTestCase: XCTestCase {
         configuration.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: configuration)
 
-        return APIClient(baseURL: URL(string: "https://example.test")!, session: session)
+        return APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: session,
+            cookiePersistence: cookiePersistence
+        )
     }
 
     func makeFilePreviewSession() throws -> SessionSummary {

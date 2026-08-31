@@ -18,6 +18,7 @@ actor APIClient {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
     private let cookieStorage: HTTPCookieStorage?
+    let persistCookies: @Sendable () throws -> Void
     /// Read when building each request so live edits apply without rebuilding the
     /// client. Defaults to the process-wide store; tests inject a fixed list (#255).
     /// Internal, not private, because the upload and transcribe extensions build
@@ -29,6 +30,7 @@ actor APIClient {
         session: URLSession? = nil,
         publicMediaSession: URLSession? = nil,
         cookieStorage: HTTPCookieStorage? = nil,
+        cookiePersistence: (@Sendable () throws -> Void)? = nil,
         customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() }
     ) {
         self.baseURL = baseURL
@@ -56,6 +58,13 @@ actor APIClient {
         self.session = resolvedSession
         self.publicMediaSession = resolvedPublicMediaSession
         self.cookieStorage = resolvedCookieStorage
+        if let cookiePersistence {
+            persistCookies = cookiePersistence
+        } else if session == nil, cookieStorage == nil {
+            persistCookies = { try ServerCookieStore.shared.persist(for: baseURL) }
+        } else {
+            persistCookies = {}
+        }
         // Only the sessions we created carry our delegate and must be invalidated;
         // an injected session is the caller's to manage.
         var ownedSessions: [URLSession] = []
