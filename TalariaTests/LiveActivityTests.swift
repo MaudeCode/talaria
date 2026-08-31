@@ -615,6 +615,10 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.colorHex(for: "running"), 0x0284C7)
     }
 
+    func testAggregateStaleWindowLeavesPriorityFiveDeliveryMargin() {
+        XCTAssertEqual(TalariaAggregateLiveActivityManager.staleInterval, 10 * 60)
+    }
+
     func testAggregatePresentationKeepsWorkingTintWhenLuminanceIsReduced() {
         XCTAssertEqual(
             TalariaAggregateLiveActivityPresentation.colorHex(
