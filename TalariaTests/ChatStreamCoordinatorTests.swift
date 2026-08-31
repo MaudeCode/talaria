@@ -684,6 +684,36 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testTransportErrorRetriesAfterTemporaryStatusFailure() async throws {
+        var statusAttempts = 0
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let timing = ChatStreamCoordinatorTiming(
+            checkingInterval: 5,
+            reconnectInterval: 18,
+            runningToolReconnectInterval: 25,
+            statusPollCooldown: 0.01,
+            transportFreshInterval: 12
+        )
+        let coordinator = makeCoordinator(streamClient: streamClient, timing: timing) { request in
+            statusAttempts += 1
+            if statusAttempts == 1 {
+                throw URLError(.notConnectedToInternet)
+            }
+            return apiTestJSONResponse(
+                #"{"active": true, "stream_id": "stream-123"}"#,
+                for: request
+            )
+        }
+
+        coordinator.start(streamID: "stream-123")
+        streamClient.emit(.transportError("lost connection"))
+
+        try await waitUntil { statusAttempts == 2 && streamClient.startedURLs.count == 2 }
+
+        XCTAssertFalse(coordinator.isConnectionSuspended)
+    }
+
+    @MainActor
     func testCancelDoesNotFinishReplacementStreamWhenResponseReturnsLate() async throws {
         let cancelRequestStarted = expectation(description: "cancel request started")
         let releaseCancelResponse = DispatchSemaphore(value: 0)
