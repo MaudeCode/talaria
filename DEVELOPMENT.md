@@ -160,6 +160,33 @@ scripts/run-ios
 
 If the configured simulator is not installed, choose a nearby available iPhone simulator and update `.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
 
+## Local Script Environment
+
+Configurable commands under `scripts/` load the optional repository-root `.env`
+and then `.env.local`. Set `TALARIA_ENV_FILE` to load one additional file after
+those defaults; a relative path is resolved from the command's working directory.
+An explicitly requested file must exist.
+
+Precedence is: exported process environment, `TALARIA_ENV_FILE`, `.env.local`,
+`.env`, then each script's built-in default. This keeps values supplied by CI or
+the invoking shell authoritative. `scripts/webui-json` also accepts
+`HERMES_WEBUI_ENV_FILE` as a compatibility alias when `TALARIA_ENV_FILE` is not
+set.
+
+Environment files support blank lines, comments, `KEY=value`,
+`export KEY=value`, CRLF line endings, and single- or double-quoted values. They
+are parsed as data and never executed as shell commands. The repository ignores
+local environment files; do not commit credentials.
+
+Recognized variables:
+
+- `TALARIA_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
+- `TALARIA_SIMULATOR_ID` — simulator selection for `scripts/test-ios`.
+- `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
+- `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`.
+- `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
+- `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
+
 ## Swift package updates
 
 Normal CI, test, and release builds use the versions in
@@ -199,6 +226,9 @@ You can override the warning threshold for local experiments:
 ```zsh
 TALARIA_SWIFT_FILE_SIZE_LIMIT=300 scripts/check-swift-file-sizes
 ```
+
+To keep that override local between shells, put
+`TALARIA_SWIFT_FILE_SIZE_LIMIT=300` in `.env.local` instead.
 
 ## Raw xcodebuild Fallback
 

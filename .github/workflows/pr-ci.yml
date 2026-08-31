@@ -244,8 +244,9 @@ jobs:
           tar -xzf "${archive}" actionlint
           ./actionlint
 
-      - name: Test Ruby tooling
+      - name: Test repository tooling
         run: |
+          python3 ci/load_env_test.py
           ruby ci/select_testflight_build_number_test.rb
           ruby ci/test_ios_runner_test.rb
 
@@ -266,7 +267,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/check-swift-file-sizes scripts/webui-json
           zsh -n scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/setup-ios-test-pool scripts/test-ios scripts/validate-upstream-contract
-          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
           for file in ci/*.rb; do ruby -c "${file}"; done
 
   gate:
