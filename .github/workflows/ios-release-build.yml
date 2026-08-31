@@ -61,6 +61,7 @@ jobs:
             echo "ARCHIVE_PATH=${RUNNER_TEMP}/Talaria.xcarchive"
             echo "DERIVED_DATA_PATH=${RUNNER_TEMP}/TalariaDerivedData"
             echo "EXPORT_PATH=${RUNNER_TEMP}/TalariaExport"
+            echo "EXPORT_OPTIONS_PATH=${RUNNER_TEMP}/ExportOptions.plist"
           } >> "${GITHUB_ENV}"
 
       - name: Resolve release metadata
@@ -167,17 +168,16 @@ jobs:
           LIVE_ACTIVITY_PROFILES_JSON: ${{ steps.live-activity-profile.outputs.profiles }}
         run: |
           set -euo pipefail
-          for name in APP_PROFILES_JSON SHARE_PROFILES_JSON LIVE_ACTIVITY_PROFILES_JSON; do
-            if ! jq -e 'any(.[]; .type == "IOS_APP_STORE")' <<< "${!name}" >/dev/null; then
-              echo "No iOS App Store provisioning profile was downloaded for ${name}." >&2
-              exit 1
-            fi
-          done
+          app_profile="$(jq -er 'map(select(.type == "IOS_APP_STORE")) | first | .name' <<< "${APP_PROFILES_JSON}")"
+          share_profile="$(jq -er 'map(select(.type == "IOS_APP_STORE")) | first | .name' <<< "${SHARE_PROFILES_JSON}")"
+          live_activity_profile="$(jq -er 'map(select(.type == "IOS_APP_STORE")) | first | .name' <<< "${LIVE_ACTIVITY_PROFILES_JSON}")"
+          {
+            echo "TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER=${app_profile}"
+            echo "TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER=${share_profile}"
+            echo "TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER=${live_activity_profile}"
+          } >> "${GITHUB_ENV}"
 
       - name: Archive
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -188,33 +188,61 @@ jobs:
             -archivePath "${ARCHIVE_PATH}" \
             -derivedDataPath "${DERIVED_DATA_PATH}" \
             -disableAutomaticPackageResolution \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "${APP_STORE_CONNECT_KEY_PATH}" \
-            -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
-            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}" \
             DEVELOPMENT_TEAM="${TEAM_ID}" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
+            TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER="${TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER}" \
+            TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER="${TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER}" \
+            TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER="${TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER}" \
             MARKETING_VERSION="${MARKETING_VERSION}" \
             CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 
       - name: Verify archive versions
         run: ci/verify_bundle_versions "${ARCHIVE_PATH}/Products/Applications/Talaria.app" "${MARKETING_VERSION}" "${BUILD_NUMBER}"
 
+      - name: Write export options
+        run: |
+          cat > "${EXPORT_OPTIONS_PATH}" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>dev.kil.talaria</key>
+              <string>${TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER}</string>
+              <key>dev.kil.talaria.shareextension</key>
+              <string>${TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER}</string>
+              <key>dev.kil.talaria.liveactivitywidget</key>
+              <string>${TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER}</string>
+            </dict>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
       - name: Export IPA
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild -exportArchive \
             -archivePath "${ARCHIVE_PATH}" \
             -exportPath "${EXPORT_PATH}" \
-            -exportOptionsPlist ci/ExternalTestFlightExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "${APP_STORE_CONNECT_KEY_PATH}" \
-            -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
-            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}"
+            -exportOptionsPlist "${EXPORT_OPTIONS_PATH}"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v7

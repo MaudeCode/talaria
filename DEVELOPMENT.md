@@ -339,8 +339,8 @@ testing. There is no separate internal-only archive.
    exact-SHA CI, repository tooling, and the current App Store Connect train.
    The tag supplies `MARKETING_VERSION`; App Store Connect supplies the next
    collision-free `CURRENT_PROJECT_VERSION`. The build job imports the encrypted
-   distribution identity and downloads App Store profiles for the app, share
-   extension, and Live Activity widget before the signed archive/upload.
+   distribution identity, downloads each target's active App Store profile, and
+   manually signs the app, share extension, and Live Activity widget before upload.
 5. Wait for App Store Connect processing, add the build to the internal group,
    and test it on the owner's iPhone. External group assignment and Beta App
    Review remain manual choices in App Store Connect.
