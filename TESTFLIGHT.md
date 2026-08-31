@@ -173,9 +173,11 @@ Owner task in Apple Developer / App Store Connect:
 3. Confirm App Group exists:
    - `group.dev.kil.talaria`
 4. Confirm the App Group is enabled for both the app and share-extension bundle IDs.
-5. Confirm automatic signing can create/update App Store provisioning profiles for both targets.
-6. Confirm Apple Developer Program agreements are accepted.
-7. Confirm App Store Connect API key used by GitHub has enough access for upload/provisioning.
+5. Confirm the Live Activity widget bundle ID exists:
+   - `dev.kil.talaria.liveactivitywidget`
+6. Confirm automatic signing can create/update App Store provisioning profiles for all three targets.
+7. Confirm Apple Developer Program agreements are accepted.
+8. Confirm App Store Connect API key used by GitHub has enough access for upload/provisioning.
 
 Local validation:
 

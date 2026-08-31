@@ -20,9 +20,6 @@ jobs:
     environment: testflight
     timeout-minutes: 60
     env:
-      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
       TEAM_ID: Q28NF3NH3D
@@ -35,10 +32,22 @@ jobs:
           fetch-depth: 0
 
       - name: Check required secrets
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
           missing=0
-          for name in APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY; do
+          for name in \
+            APP_STORE_CONNECT_KEY_ID \
+            APP_STORE_CONNECT_ISSUER_ID \
+            APP_STORE_CONNECT_PRIVATE_KEY \
+            IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD
+          do
             if [[ -z "${!name}" ]]; then
               echo "Missing required secret: ${name}" >&2
               missing=1
@@ -66,6 +75,9 @@ jobs:
           echo "Building version ${marketing_version} from ${{ inputs.ref }}."
 
       - name: Write App Store Connect key
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
@@ -79,6 +91,9 @@ jobs:
 
       - name: Select App Store Connect build number
         env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           BUNDLE_ID: dev.kil.talaria
           ENFORCE_OPEN_TRAIN: "1"
         run: |
@@ -98,7 +113,71 @@ jobs:
             -scheme "${SCHEME}" \
             -disableAutomaticPackageResolution
 
+      - name: Install Apple signing intermediates
+        run: |
+          for certificate in \
+            /Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/AppleWWDRCA-2030.cer \
+            /Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/AppleWWDRCAG6.cer
+          do
+            if [[ -f "${certificate}" ]]; then
+              security import "${certificate}" -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign || true
+            fi
+          done
+
+      - name: Import iOS distribution certificate
+        uses: apple-actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+
+      - name: Download app provisioning profile
+        id: app-profile
+        uses: apple-actions/download-provisioning-profiles@v6
+        with:
+          bundle-id: dev.kil.talaria
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - name: Download share extension provisioning profile
+        id: share-profile
+        uses: apple-actions/download-provisioning-profiles@v6
+        with:
+          bundle-id: dev.kil.talaria.shareextension
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - name: Download Live Activity provisioning profile
+        id: live-activity-profile
+        uses: apple-actions/download-provisioning-profiles@v6
+        with:
+          bundle-id: dev.kil.talaria.liveactivitywidget
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - name: Verify provisioning profiles
+        env:
+          APP_PROFILES_JSON: ${{ steps.app-profile.outputs.profiles }}
+          SHARE_PROFILES_JSON: ${{ steps.share-profile.outputs.profiles }}
+          LIVE_ACTIVITY_PROFILES_JSON: ${{ steps.live-activity-profile.outputs.profiles }}
+        run: |
+          set -euo pipefail
+          for name in APP_PROFILES_JSON SHARE_PROFILES_JSON LIVE_ACTIVITY_PROFILES_JSON; do
+            if ! jq -e 'any(.[]; .type == "IOS_APP_STORE")' <<< "${!name}" >/dev/null; then
+              echo "No iOS App Store provisioning profile was downloaded for ${name}." >&2
+              exit 1
+            fi
+          done
+
       - name: Archive
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -114,6 +193,8 @@ jobs:
             -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
             -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}" \
             DEVELOPMENT_TEAM="${TEAM_ID}" \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             MARKETING_VERSION="${MARKETING_VERSION}" \
             CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 
@@ -121,6 +202,9 @@ jobs:
         run: ci/verify_bundle_versions "${ARCHIVE_PATH}/Products/Applications/Talaria.app" "${MARKETING_VERSION}" "${BUILD_NUMBER}"
 
       - name: Export IPA
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild -exportArchive \
