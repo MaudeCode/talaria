@@ -2,7 +2,8 @@
 
 Talaria's server contract is the fork and branch in `UPSTREAM_REPOSITORY` and
 `UPSTREAM_BRANCH`. `UPSTREAM_TESTED_SHA` is the reviewed commit the app supports.
-The current pin is tagged `v0.51.85` in that fork.
+The current pin is the untagged `master` merge commit `14105699`, which includes
+the native OIDC handoff from Hermes WebUI PR #15.
 
 ## One command
 
@@ -45,16 +46,20 @@ or stream boundary that failed.
 | Chat SSE parsing, heartbeats, redirects, and reconnect status | `TalariaTests/SSEClientTests.swift`, `TalariaTests/StreamReconnectContractTests.swift` |
 | Fork drift, route/request-key/SSE changes, and machine-readable feature-gap classifications | `scripts/upstream-watch` |
 
-The fork-only plural provider quota endpoint is newer than the current pin. Its
-path and decoding stay covered by the Swift contract tests until a reviewed pin
-advance brings it into the disposable live-server baseline.
+The fork-only plural provider quota endpoint remains covered by the Swift
+contract tests and is included in the current fork pin.
 
-Native WebUI OIDC is also capability-gated beyond the current pin. Compatible
-servers report `oidc_native_handoff_enabled` and expose
+Native WebUI OIDC is capability-gated in the current pin. Compatible servers
+report `oidc_native_handoff_enabled` and expose
 `POST /api/auth/oidc/native/start`, `/exchange`, and `/cancel`. Talaria completes
 that flow through `ASWebAuthenticationSession` and exact-server cookie jars.
-The pin remains unchanged until the candidate passes the disposable contract
-runner and signed-device OIDC validation.
+
+The 2026-08-31 advance was explicitly accepted after the WebUI focused auth
+suite, five-shard CI, two bot-review passes, and Talaria's focused/full XCTest
+runs. The disposable candidate runner stopped before its Swift phase because
+the existing CSRF probe expected `POST /api/auth/login` to reject a request that
+the merged server accepts. The operator directed that no additional validation
+run be performed; the preserved artifact records that held probe mismatch.
 
 ## Pin advance
 
