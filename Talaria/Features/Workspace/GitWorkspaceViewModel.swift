@@ -190,6 +190,10 @@ final class GitWorkspaceAvailabilityViewModel {
             } else {
                 try await apiClient.gitCheckout(sessionID: sessionID, target: target)
             }
+            guard response.ok != false else {
+                actionErrorMessage = gitSemanticFailureMessage(response.message)
+                return .failure
+            }
             apply(response)
             await refreshGitInfo()
             // Reload the branch list so the picker + composer pill reflect the new
@@ -220,6 +224,10 @@ final class GitWorkspaceAvailabilityViewModel {
             case .fetch: try await apiClient.gitFetch(sessionID: sessionID)
             case .pull: try await apiClient.gitPull(sessionID: sessionID)
             case .push: try await apiClient.gitPush(sessionID: sessionID)
+            }
+            guard response.ok != false else {
+                actionErrorMessage = gitSemanticFailureMessage(response.message)
+                return false
             }
             status = response.status ?? status
             lastActionMessage = response.message
@@ -265,7 +273,11 @@ final class GitWorkspaceAvailabilityViewModel {
         do {
             // Stage everything first so this one-tap action commits all local changes,
             // then generate the message from that staged diff.
-            _ = try await apiClient.gitStage(sessionID: sessionID, paths: pathsToStage)
+            let stage = try await apiClient.gitStage(sessionID: sessionID, paths: pathsToStage)
+            guard stage.ok != false else {
+                actionErrorMessage = gitSemanticFailureMessage(stage.message)
+                return .failure
+            }
 
             let suggestion = try await apiClient.gitCommitMessage(sessionID: sessionID)
             let message = (suggestion.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -276,6 +288,10 @@ final class GitWorkspaceAvailabilityViewModel {
 
             setCommitPhase(.committing, notify: onPhase)
             let commit = try await apiClient.gitCommit(sessionID: sessionID, message: message)
+            guard commit.ok != false else {
+                actionErrorMessage = gitSemanticFailureMessage(commit.message)
+                return .failure
+            }
             status = commit.resolvedStatus ?? status
 
             // The commit has already landed on the server. A push failure from here must
@@ -287,9 +303,14 @@ final class GitWorkspaceAvailabilityViewModel {
                 setCommitPhase(.pushing, notify: onPhase)
                 do {
                     let pushResponse = try await apiClient.gitPush(sessionID: sessionID)
-                    status = pushResponse.status ?? status
-                    lastActionMessage = pushResponse.message
-                    didPush = pushResponse.ok != false
+                    if pushResponse.ok == false {
+                        pushFailureMessage = gitSemanticFailureMessage(pushResponse.message)
+                        actionErrorMessage = pushFailureMessage
+                    } else {
+                        status = pushResponse.status ?? status
+                        lastActionMessage = pushResponse.message
+                        didPush = true
+                    }
                 } catch {
                     pushFailureMessage = friendlyMessage(for: error)
                     actionErrorMessage = pushFailureMessage
@@ -367,6 +388,13 @@ func gitWriteFriendlyMessage(for error: Error) -> String {
     default:
         return apiError.serverMessage ?? apiError.localizedDescription
     }
+}
+
+private func gitSemanticFailureMessage(_ message: String?) -> String {
+    if let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+        return trimmed
+    }
+    return String(localized: "The server rejected the request.")
 }
 
 enum GitRemoteAction: String, Equatable, Identifiable {
@@ -614,7 +642,8 @@ final class GitCommitViewModel {
             // destructive confirmation copy. (A staged-new file then becomes untracked and
             // is removed via deleteUntracked, which the sheet's confirmation accounts for.)
             if !stagedPaths.isEmpty {
-                _ = try await self.apiClient.gitUnstage(sessionID: sessionID, paths: stagedPaths)
+                let unstage = try await self.apiClient.gitUnstage(sessionID: sessionID, paths: stagedPaths)
+                guard unstage.ok != false else { return unstage }
             }
             return try await self.apiClient.gitDiscard(sessionID: sessionID, paths: paths, deleteUntracked: deleteUntracked)
         }
@@ -678,6 +707,10 @@ final class GitCommitViewModel {
         defer { busyOperation = nil }
         do {
             let response = try await commitCall(sessionID, messageToSend)
+            guard response.ok != false else {
+                actionErrorMessage = gitSemanticFailureMessage(response.message)
+                return false
+            }
             status = response.resolvedStatus ?? status
             lastCommitSHA = response.shortSHA
             // The commit has already landed. If a requested push then fails, still run the
@@ -686,7 +719,12 @@ final class GitCommitViewModel {
             if push {
                 do {
                     let pushResponse = try await apiClient.gitPush(sessionID: sessionID)
-                    status = pushResponse.status ?? status
+                    if pushResponse.ok == false {
+                        actionErrorMessage = String(localized: "Committed, but the push failed.")
+                            + " " + gitSemanticFailureMessage(pushResponse.message)
+                    } else {
+                        status = pushResponse.status ?? status
+                    }
                 } catch {
                     // The commit already landed; only the push failed. Phrase it as a
                     // partial success so the banner doesn't read as a failed commit.
@@ -716,6 +754,10 @@ final class GitCommitViewModel {
         defer { busyOperation = nil }
         do {
             let response = try await call(sessionID, paths)
+            guard response.ok != false else {
+                actionErrorMessage = gitSemanticFailureMessage(response.message)
+                return
+            }
             status = response.resolvedStatus ?? status
             pruneSelectionToCurrentFiles()
         } catch {
