@@ -1118,6 +1118,7 @@ private final class CoordinatorSpySSEStreamingClient: SSEStreamingClient {
 
     func stop() {
         stopCount += 1
+        onEvent = nil
     }
 
     func emit(_ event: SSEEvent, lastEventID: String? = nil) {
