@@ -6,14 +6,17 @@ import UIKit
 import UniformTypeIdentifiers
 @testable import Talaria
 
-@MainActor
-extension ChatViewModelSendTests {
+extension XCTestCase {
+    /// Lets every main-actor task queued before this call run.
     @MainActor
     func drainMainActor() async {
         for _ in 0..<3 { await Task.yield() }
         await Task { @MainActor in }.value
     }
+}
 
+@MainActor
+extension ChatViewModelSendTests {
     /// A `503 {"error": ...}` for `/api/tts` — the canonical "server TTS refused,
     /// use the on-device fallback" stimulus for Listen tests (#15).
     static func ttsUnavailableResponse(for request: URLRequest) -> (HTTPURLResponse, Data) {
@@ -449,6 +452,7 @@ final class SpySSEStreamingClient: SSEStreamingClient {
 
     func stop() {
         stopCount += 1
+        onEvent = nil
     }
 
     @MainActor

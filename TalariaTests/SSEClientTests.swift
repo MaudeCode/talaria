@@ -1,3 +1,4 @@
+import LDSwiftEventSource
 import XCTest
 @testable import Talaria
 
@@ -112,6 +113,66 @@ final class SSEClientTests: XCTestCase {
 
         await fulfillment(of: [heartbeat], timeout: 5)
         client.stop()
+    }
+
+    func testStaleConnectionCallbacksCannotReachReplacementConnection() async throws {
+        let client = makeHangingClient()
+        let url = try XCTUnwrap(URL(string: "https://example.test/api/chat/stream?stream_id=stream-a"))
+        var staleEvents: [SSEEvent] = []
+        var activeEvents: [SSEEvent] = []
+
+        client.start(url: url) { staleEvents.append($0) }
+        let staleHandler = try XCTUnwrap(client.eventHandler)
+        client.start(url: url) { activeEvents.append($0) }
+        let activeHandler = try XCTUnwrap(client.eventHandler)
+
+        activeHandler.onMessage(
+            eventType: "token",
+            messageEvent: MessageEvent(data: #"{"text":"first"}"#, lastEventId: "session-b:1")
+        )
+        activeHandler.onMessage(
+            eventType: "token",
+            messageEvent: MessageEvent(data: #"{"text":"second"}"#, lastEventId: "session-b:2")
+        )
+        // Connection A's callbacks land after B has started and delivered.
+        staleHandler.onMessage(
+            eventType: "token",
+            messageEvent: MessageEvent(data: #"{"text":"stale"}"#, lastEventId: "session-a:9")
+        )
+        staleHandler.onMessage(eventType: "reasoning", messageEvent: MessageEvent(data: #"{"text":"stale"}"#))
+        staleHandler.onMessage(eventType: "tool", messageEvent: MessageEvent(data: #"{"name":"stale"}"#))
+        staleHandler.onMessage(eventType: "done", messageEvent: MessageEvent(data: "{}"))
+        staleHandler.onMessage(eventType: "stream_end", messageEvent: MessageEvent(data: "{}"))
+        staleHandler.onMessage(eventType: "cancel", messageEvent: MessageEvent(data: "{}"))
+        staleHandler.onComment(comment: "heartbeat")
+        staleHandler.onError(error: URLError(.networkConnectionLost))
+        await drainMainActor()
+        client.stop()
+
+        XCTAssertEqual(staleEvents, [])
+        XCTAssertEqual(activeEvents, [.token("first"), .token("second")])
+        XCTAssertEqual(client.lastEventID, "session-b:2")
+    }
+
+    func testStopSuppressesQueuedCallbacksFromStoppedConnection() async throws {
+        let client = makeHangingClient()
+        let url = try XCTUnwrap(URL(string: "https://example.test/api/chat/stream?stream_id=stream-a"))
+        var events: [SSEEvent] = []
+
+        client.start(url: url) { events.append($0) }
+        let handler = try XCTUnwrap(client.eventHandler)
+        client.stop()
+
+        handler.onMessage(
+            eventType: "done",
+            messageEvent: MessageEvent(data: "{}", lastEventId: "session-a:3")
+        )
+        handler.onComment(comment: "heartbeat")
+        handler.onError(error: URLError(.networkConnectionLost))
+        await drainMainActor()
+
+        XCTAssertEqual(events, [])
+        XCTAssertNil(client.lastEventID)
     }
 
     func testSSEClientProtectsHeadersOnCrossOriginRedirect() async throws {
@@ -805,6 +866,33 @@ final class SSEClientTests: XCTestCase {
         )
 
         XCTAssertEqual(event, .ignored)
+    }
+
+    func testDeallocatedClientDropsQueuedCallbacks() async throws {
+        var client: SSEClient? = makeHangingClient()
+        let url = try XCTUnwrap(URL(string: "https://example.test/api/chat/stream?stream_id=stream-a"))
+        var events: [SSEEvent] = []
+
+        client?.start(url: url) { events.append($0) }
+        let handler = try XCTUnwrap(client?.eventHandler)
+        client = nil
+
+        handler.onMessage(eventType: "token", messageEvent: MessageEvent(data: #"{"text":"stale"}"#))
+        handler.onError(error: URLError(.networkConnectionLost))
+        await drainMainActor()
+
+        XCTAssertEqual(events, [])
+    }
+
+    /// A client whose transport opens but never emits, so only the handler
+    /// calls made by the test reach the callback.
+    private func makeHangingClient() -> SSEClient {
+        DelayedSSEURLProtocol.configure(chunks: [
+            DelayedSSEChunk(text: ": keepalive\n\n", delayNanoseconds: 60_000_000_000)
+        ])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DelayedSSEURLProtocol.self]
+        return SSEClient(urlSessionConfiguration: configuration)
     }
 }
 

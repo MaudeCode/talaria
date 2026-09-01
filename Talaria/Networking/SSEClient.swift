@@ -2,6 +2,10 @@ import Foundation
 import LDSwiftEventSource
 import OSLog
 
+/// A conforming client must deliver events only for its current connection:
+/// callbacks a superseded or stopped connection already queued are dropped.
+/// `ChatStreamCoordinator` installs one bare `handle` closure per start and
+/// relies on this instead of fencing per connection itself (TAL-115).
 @MainActor
 protocol SSEStreamingClient: AnyObject {
     var lastEventID: String? { get }
@@ -14,6 +18,13 @@ protocol SSEStreamingClient: AnyObject {
 final class SSEClient: SSEStreamingClient {
     private let baseConfiguration: URLSessionConfiguration
     private var eventSource: EventSource?
+    /// Handler behind the current `EventSource`; exposed so tests can replay a
+    /// superseded connection's callbacks without a live server.
+    private(set) var eventHandler: EventHandler?
+    /// Bumped by every `stop()` (and therefore every `start()`). Callbacks a
+    /// connection queued on the main actor before it was superseded compare
+    /// their captured value against this and drop themselves.
+    private var connectionGeneration = 0
     private var redirectPolicyHeader: String?
     private(set) var lastEventID: String?
     /// Read at stream start so a new stream picks up the latest headers (#255).
@@ -30,13 +41,18 @@ final class SSEClient: SSEStreamingClient {
     func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
         stop()
         lastEventID = nil
+        let generation = connectionGeneration
         let customHeaders = customHeaderProvider()
 
         let handler = SSEEventHandler(
             onEventID: { [weak self] eventID in
-                self?.lastEventID = eventID
+                guard let self, self.connectionGeneration == generation else { return }
+                self.lastEventID = eventID
             },
-            onEvent: onEvent
+            onEvent: { [weak self] event in
+                guard let self, self.connectionGeneration == generation else { return }
+                onEvent(event)
+            }
         )
         var config = EventSource.Config(handler: handler, url: url)
         // `.shutdown` suppresses EventHandler.onError inside LDSwiftEventSource;
@@ -81,13 +97,16 @@ final class SSEClient: SSEStreamingClient {
         config.urlSessionConfiguration = configuration
 
         let source = EventSource(config: config)
+        eventHandler = handler
         eventSource = source
         source.start()
     }
 
     func stop() {
+        connectionGeneration &+= 1
         eventSource?.stop()
         eventSource = nil
+        eventHandler = nil
         CrossOriginRedirectGuardURLProtocol.unregister(redirectPolicyHeader)
         redirectPolicyHeader = nil
     }
