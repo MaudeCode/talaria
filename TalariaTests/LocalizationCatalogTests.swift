@@ -220,6 +220,7 @@ final class LocalizationCatalogTests: XCTestCase {
         "The SSO provider couldn't complete sign-in. Try again.",
         "The SSO response didn't match this server. Try signing in again.",
         "The SSO sign-in expired. Start again.",
+        "The server didn't confirm which profile this sign-in uses. Try again.",
         "The Kanban server is unavailable.",
         "There are no changes to commit.",
         "Thinking & Tools",

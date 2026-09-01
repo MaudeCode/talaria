@@ -142,6 +142,9 @@
     "Another SSO sign-in is already in progress." : {
 
     },
+    "The server didn't confirm which profile this sign-in uses. Try again." : {
+
+    },
     "Connection ok. Continue with SSO." : {
 
     },

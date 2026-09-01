@@ -28,6 +28,10 @@ struct KeychainStore: KeychainStoring {
         // URL is treated as a credential (PROJECT_SPEC Phase 1), so the registry
         // lives in the Keychain, not UserDefaults (#15).
         case servers = "servers"
+        // The server-authorized profile name adopted by the last native OIDC
+        // sign-in, scoped by normalized server URL (TAL-131). Compared on the next
+        // sign-in so a different identity never sees the previous one's cache.
+        case authenticatedProfile = "authenticated_profile"
         // Relay URL plus the one-time device id and bearer credential returned
         // by Talaria Relay enrollment.
         case talariaRelay = "talaria_relay"
