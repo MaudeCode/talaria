@@ -984,9 +984,11 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             in: context
         )
         SessionNavigationPersistence.save("stale-default", for: server, defaults: defaults)
-        let draftStore = ChatDraftStore(persistence: InMemoryChatDraftPersistence(), debounceDuration: .seconds(10))
+        let draftPersistence = InMemoryChatDraftPersistence()
+        let draftStore = ChatDraftStore(persistence: draftPersistence, debounceDuration: .seconds(10))
         draftStore.setDraft("unsent by default", for: .newChat(server: server))
         draftStore.setDraft("unsent in thread", for: .session(server: server, sessionID: "stale-default"))
+        try await draftStore.flush()
         let keychain = InMemoryKeychainStore()
         try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
         let client = OIDCMockAuthAPIClient(profilesResult: .success(.synthetic(active: "member")))
@@ -1024,6 +1026,57 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertNil(newChatDraft)
         let threadDraft = await draftStore.draft(for: .session(server: server, sessionID: "stale-default"))
         XCTAssertNil(threadDraft)
+        // Removal is flushed to the persisted document (the debounce is 10s here),
+        // so a relaunch cannot bring the previous profile's drafts back.
+        let persistedDrafts = await draftPersistence.load()
+        XCTAssertTrue(persistedDrafts.isEmpty)
+    }
+
+    @MainActor
+    func testNativeOIDCAbandonsAttemptSupersededDuringProfileReset() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        var inputRevision = 0
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            // The user edits the connect form while the purge is suspended.
+            resetProfileScopedState: { _ in inputRevision += 1 },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(
+            serverURLString: server.absoluteString,
+            canCommit: { inputRevision == 0 }
+        )
+
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNil(manager.lastErrorMessage)
+        XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true)
+        XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+        XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertTrue(registry.servers.isEmpty)
     }
 
     @MainActor

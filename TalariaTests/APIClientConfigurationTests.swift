@@ -596,9 +596,11 @@ final class APIClientConfigurationTests: APIClientTestCase {
         )
         defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
-        let client = makeClient(cookiePersistence: {
-            persistenceCount.withLock { $0 += 1 }
-        }) { request in
+        let recordedProfiles = OSAllocatedUnfairLock(initialState: [String]())
+        let client = makeClient(
+            cookiePersistence: { persistenceCount.withLock { $0 += 1 } },
+            recordActiveProfile: { profile in recordedProfiles.withLock { $0.append(profile) } }
+        ) { request in
             XCTAssertEqual(request.url?.path, "/api/profile/switch")
             XCTAssertEqual(request.httpMethod, "POST")
 
@@ -626,6 +628,8 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(response.defaultWorkspace, "/Users/test/work")
         XCTAssertEqual(response.profiles?.last?.isActive, true)
         XCTAssertEqual(persistenceCount.withLock { $0 }, 1)
+        // The switched-to profile now owns this server's cache and drafts (TAL-131).
+        XCTAssertEqual(recordedProfiles.withLock { $0 }, ["work"])
         XCTAssertNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 
@@ -636,9 +640,11 @@ final class APIClientConfigurationTests: APIClientTestCase {
         )
         defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
-        let client = makeClient(cookiePersistence: {
-            persistenceCount.withLock { $0 += 1 }
-        }) { request in
+        let recordedProfiles = OSAllocatedUnfairLock(initialState: [String]())
+        let client = makeClient(
+            cookiePersistence: { persistenceCount.withLock { $0 += 1 } },
+            recordActiveProfile: { profile in recordedProfiles.withLock { $0.append(profile) } }
+        ) { request in
             apiTestJSONResponse(#"{"error":"profile unavailable"}"#, for: request)
         }
 
@@ -646,6 +652,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
         XCTAssertEqual(response.error, "profile unavailable")
         XCTAssertEqual(persistenceCount.withLock { $0 }, 0)
+        XCTAssertEqual(recordedProfiles.withLock { $0 }, [])
         XCTAssertNotNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 

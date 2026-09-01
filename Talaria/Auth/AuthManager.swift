@@ -148,8 +148,9 @@ final class AuthManager {
 
     /// The production `resetProfileScopedState`: clears the server's stored
     /// selection, its composer drafts, and its offline cache in the app's
-    /// SwiftData container. A cache purge failure propagates so the sign-in
-    /// fails closed instead of exposing the previous profile's data.
+    /// SwiftData container. Draft removal is flushed to disk rather than left
+    /// to the debounced write, and any failure propagates so the sign-in fails
+    /// closed instead of exposing the previous profile's data.
     static func profileScopedStateReset(
         cacheContainer: ModelContainer,
         draftStore: ChatDraftStore = .shared,
@@ -158,6 +159,7 @@ final class AuthManager {
         { server in
             SessionNavigationPersistence.save(nil, for: server, defaults: defaults)
             await draftStore.discardDrafts(for: server)
+            try await draftStore.flush()
             try CacheStore.clearCache(for: server, in: cacheContainer.mainContext)
         }
     }
@@ -296,21 +298,25 @@ final class AuthManager {
                 serverURL: serverURL,
                 cookieStorage: cookies
             )
-            guard canCommit() else {
+            func abandonSession() async {
                 _ = try? await client.logout()
                 clearSessionCookies(for: serverURL)
-                return
             }
             do {
                 try await resetProfileScopedStateIfChanged(activeProfile, for: serverURL)
+                // Re-checked after the last suspension point so an attempt the
+                // user has since edited or dismissed can never commit.
+                guard canCommit() else {
+                    await abandonSession()
+                    return
+                }
                 try completeConfiguration(
                     serverURL,
                     previousServerID: state.server?.absoluteString,
                     authenticatedProfile: activeProfile
                 )
             } catch {
-                _ = try? await client.logout()
-                clearSessionCookies(for: serverURL)
+                await abandonSession()
                 throw error
             }
             lastErrorMessage = nil
