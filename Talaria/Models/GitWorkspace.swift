@@ -275,6 +275,7 @@ struct GitRestoredStash: Decodable, Equatable {
 /// the `git` key (the commit endpoints return it under `status` instead — see below).
 struct GitMutationResponse: Decodable, Equatable {
     let ok: Bool?
+    let message: String?
     let git: GitStatus?
 
     var resolvedStatus: GitStatus? { git }
@@ -284,6 +285,7 @@ struct GitMutationResponse: Decodable, Equatable {
 /// (`{ok,commit,paths,status}`). Tolerant: `status` is decoded from either key.
 struct GitCommitResponse: Decodable, Equatable {
     let ok: Bool?
+    let message: String?
     let commit: String?
     let paths: [String]?
     let status: GitStatus?

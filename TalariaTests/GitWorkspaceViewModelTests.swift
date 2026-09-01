@@ -416,6 +416,78 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(viewModel.actionErrorMessage, "CONFLICT: stash could not be restored")
     }
 
+    @MainActor
+    func testCheckoutSemanticFailurePreservesBranchStateAndSkipsRefresh() async throws {
+        var calls: [String] = []
+        let client = makeClient { request in
+            let path = request.url?.path ?? ""
+            calls.append(path)
+            switch path {
+            case "/api/git-info":
+                return apiTestJSONResponse(#"{"git":{"is_git":true,"branch":"main"}}"#, for: request)
+            case "/api/git/status":
+                return apiTestJSONResponse(#"{"git":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
+            case "/api/git/branches":
+                return apiTestJSONResponse(#"{"branches":{"is_git":true,"current":"main"}}"#, for: request)
+            case "/api/git/checkout":
+                return apiTestJSONResponse(#"{"ok":false,"message":"Checkout rejected","status":{"is_git":true,"branch":"feature"},"branches":{"is_git":true,"current":"feature"}}"#, for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = GitWorkspaceAvailabilityViewModel(
+            session: try session(id: "s1"),
+            server: URL(string: "https://example.test")!,
+            apiClient: client
+        )
+        await viewModel.load()
+        calls.removeAll()
+
+        let outcome = await viewModel.checkout(GitCheckoutTarget(ref: "feature", mode: .local))
+
+        XCTAssertEqual(outcome, .failure)
+        XCTAssertEqual(calls, ["/api/git/checkout"])
+        XCTAssertEqual(viewModel.currentBranchName, "main")
+        XCTAssertEqual(viewModel.status?.branch, "main")
+        XCTAssertEqual(viewModel.actionErrorMessage, "Checkout rejected")
+    }
+
+    @MainActor
+    func testRemotePushSemanticFailurePreservesStateAndSkipsRefresh() async throws {
+        var calls: [String] = []
+        let client = makeClient { request in
+            let path = request.url?.path ?? ""
+            calls.append(path)
+            switch path {
+            case "/api/git-info":
+                return apiTestJSONResponse(#"{"git":{"is_git":true,"branch":"main"}}"#, for: request)
+            case "/api/git/status":
+                return apiTestJSONResponse(Self.statusWithOneFile, for: request)
+            case "/api/git/branches":
+                return apiTestJSONResponse(#"{"branches":{"is_git":true,"current":"main"}}"#, for: request)
+            case "/api/git/push":
+                return apiTestJSONResponse(#"{"ok":false,"message":"Push rejected","status":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = GitWorkspaceAvailabilityViewModel(
+            session: try session(id: "s1"),
+            server: URL(string: "https://example.test")!,
+            apiClient: client
+        )
+        await viewModel.load()
+        calls.removeAll()
+
+        let succeeded = await viewModel.performRemoteAction(.push)
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(calls, ["/api/git/push"])
+        XCTAssertEqual(viewModel.status?.branch, "main")
+        XCTAssertNil(viewModel.lastActionMessage)
+        XCTAssertEqual(viewModel.actionErrorMessage, "Push rejected")
+    }
+
     func testWriteAvailabilityDisablesWritesDuringStreamAndCachedMode() {
         XCTAssertFalse(GitWriteAvailability(isStreaming: false, isViewingCachedData: false).writesDisabled)
         XCTAssertTrue(GitWriteAvailability(isStreaming: true, isViewingCachedData: false).writesDisabled)
@@ -545,6 +617,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     private func commitPipelineClient(
         stageStatus: Int = 200,
         pushStatus: Int = 200,
+        semanticFailurePath: String? = nil,
         truncated: Bool = false,
         record: ((String) -> Void)? = nil
     ) -> APIClient {
@@ -563,15 +636,24 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                     let response = HTTPURLResponse(url: request.url!, statusCode: stageStatus, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
                     return (response, Data(#"{"error":"Destructive git writes are disabled","code":"destructive_git_disabled"}"#.utf8))
                 }
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Stage rejected","git":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                }
                 return apiTestJSONResponse(#"{"ok":true,"git":{"is_git":true,"branch":"main","totals":{"staged":1}}}"#, for: request)
             case "/api/git/commit-message":
                 return apiTestJSONResponse(#"{"ok":true,"message":"Generated message","truncated":false}"#, for: request)
             case "/api/git/commit":
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Commit rejected","status":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                }
                 return apiTestJSONResponse(#"{"ok":true,"commit":"abc1234","status":{"is_git":true,"branch":"main","totals":{"changed":0},"files":[]}}"#, for: request)
             case "/api/git/push":
                 if pushStatus != 200 {
                     let response = HTTPURLResponse(url: request.url!, statusCode: pushStatus, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
                     return (response, Data(#"{"error":"Remote rejected the push","code":"push_failed"}"#.utf8))
+                }
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Push rejected","status":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
                 }
                 return apiTestJSONResponse(#"{"ok":true,"message":"pushed","status":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
             default:
@@ -692,6 +774,53 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testQuickCommitStopsOnSemanticStageFailure() async throws {
+        var paths: [String] = []
+        let client = commitPipelineClient(semanticFailurePath: "/api/git/stage") { paths.append($0) }
+        let vm = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
+        await vm.load()
+        paths.removeAll()
+
+        let outcome = await vm.quickCommit(push: true)
+
+        XCTAssertEqual(outcome, .failure)
+        XCTAssertEqual(paths, ["/api/git/stage"])
+        XCTAssertEqual(vm.status?.branch, "main")
+        XCTAssertEqual(vm.actionErrorMessage, "Stage rejected")
+    }
+
+    @MainActor
+    func testQuickCommitStopsOnSemanticCommitFailure() async throws {
+        var paths: [String] = []
+        let client = commitPipelineClient(semanticFailurePath: "/api/git/commit") { paths.append($0) }
+        let vm = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
+        await vm.load()
+        paths.removeAll()
+
+        let outcome = await vm.quickCommit(push: true)
+
+        XCTAssertEqual(outcome, .failure)
+        XCTAssertEqual(paths, ["/api/git/stage", "/api/git/commit-message", "/api/git/commit"])
+        XCTAssertEqual(vm.status?.branch, "main")
+        XCTAssertEqual(vm.actionErrorMessage, "Commit rejected")
+    }
+
+    @MainActor
+    func testQuickCommitReportsSemanticPushFailureAsPartialSuccess() async throws {
+        let client = commitPipelineClient(semanticFailurePath: "/api/git/push")
+        let vm = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
+        await vm.load()
+
+        let outcome = await vm.quickCommit(push: true)
+
+        guard case .success(let result) = outcome else { return XCTFail("Expected partial success, got \(outcome)") }
+        XCTAssertEqual(result.shortSHA, "abc1234")
+        XCTAssertFalse(result.didPush)
+        XCTAssertEqual(result.pushFailureMessage, "Push rejected")
+        XCTAssertEqual(vm.actionErrorMessage, "Push rejected")
+    }
+
+    @MainActor
     func testRefreshAfterExternalMutationPicksUpNewStatus() async throws {
         var changed = true
         let client = makeClient { request in
@@ -720,7 +849,8 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     private func commitSheetClient(
         suggestSelectedMessage: String = "selected msg",
         discardStatus: Int = 200,
-        pushStatus: Int = 200
+        pushStatus: Int = 200,
+        semanticFailurePath: String? = nil
     ) -> APIClient {
         makeClient { request in
             let path = request.url?.path ?? ""
@@ -730,6 +860,9 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                     let response = HTTPURLResponse(url: request.url!, statusCode: pushStatus, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
                     return (response, Data(#"{"error":"Remote rejected the push","code":"push_failed"}"#.utf8))
                 }
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Push rejected","status":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                }
                 return apiTestJSONResponse(#"{"ok":true,"message":"pushed","status":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
             case "/api/git/status":
                 return apiTestJSONResponse(Self.statusWithOneFile, for: request)
@@ -738,15 +871,27 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
             case "/api/git/commit-message-selected":
                 return apiTestJSONResponse(#"{"ok":true,"message":"\#(suggestSelectedMessage)","truncated":false}"#, for: request)
             case "/api/git/commit":
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Commit rejected","status":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                }
                 return apiTestJSONResponse(#"{"ok":true,"commit":"abc1234","status":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
             case "/api/git/commit-selected":
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Commit rejected","status":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                }
                 return apiTestJSONResponse(#"{"ok":true,"commit":"deadbee","paths":["a.swift"],"status":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
-            case "/api/git/stage":
+            case "/api/git/stage", "/api/git/unstage":
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Mutation rejected","git":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                }
                 return apiTestJSONResponse(#"{"ok":true,"git":{"is_git":true,"branch":"main"}}"#, for: request)
             case "/api/git/discard":
                 if discardStatus != 200 {
                     let response = HTTPURLResponse(url: request.url!, statusCode: discardStatus, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
                     return (response, Data(#"{"error":"Destructive git writes are disabled","code":"destructive_git_disabled"}"#.utf8))
+                }
+                if semanticFailurePath == path {
+                    return apiTestJSONResponse(#"{"ok":false,"message":"Mutation rejected","git":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
                 }
                 return apiTestJSONResponse(#"{"ok":true,"git":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
             default:
@@ -840,6 +985,107 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertTrue(ok)
         XCTAssertEqual(vm.lastCommitSHA, "deadbee")
         XCTAssertFalse(vm.hasSelection, "Selection clears after committing it.")
+    }
+
+    @MainActor
+    func testCommitSheetSemanticCommitFailuresPreserveInputAndSelection() async throws {
+        for selected in [false, true] {
+            let path = selected ? "/api/git/commit-selected" : "/api/git/commit"
+            let vm = GitCommitViewModel(
+                session: try session(id: "s1"),
+                server: URL(string: "https://example.test")!,
+                apiClient: commitSheetClient(semanticFailurePath: path)
+            )
+            await vm.load()
+            if selected { vm.toggleSelection(try XCTUnwrap(vm.trackedFiles.first)) }
+            vm.message = "Keep me"
+
+            let succeeded = selected ? await vm.commitSelected(push: false) : await vm.commit(push: false)
+
+            XCTAssertFalse(succeeded, "path=\(path)")
+            XCTAssertEqual(vm.message, "Keep me", "path=\(path)")
+            XCTAssertEqual(vm.hasSelection, selected, "path=\(path)")
+            XCTAssertEqual(vm.status?.branch, "main", "path=\(path)")
+            XCTAssertEqual(vm.committedRevision, 0, "path=\(path)")
+            XCTAssertEqual(vm.actionErrorMessage, "Commit rejected", "path=\(path)")
+        }
+    }
+
+    @MainActor
+    func testCommitSheetSemanticMutationFailuresPreserveStatusAndSelection() async throws {
+        for path in ["/api/git/stage", "/api/git/unstage", "/api/git/discard"] {
+            let vm = GitCommitViewModel(
+                session: try session(id: "s1"),
+                server: URL(string: "https://example.test")!,
+                apiClient: commitSheetClient(semanticFailurePath: path)
+            )
+            await vm.load()
+            vm.toggleSelection(try XCTUnwrap(vm.trackedFiles.first))
+
+            switch path {
+            case "/api/git/stage": await vm.stageSelectedOrAll()
+            case "/api/git/unstage": await vm.unstageSelectedOrAll()
+            default: await vm.discardSelectedOrAll(deleteUntracked: false)
+            }
+
+            XCTAssertEqual(vm.status?.branch, "main", "path=\(path)")
+            XCTAssertEqual(vm.trackedFiles.count, 1, "path=\(path)")
+            XCTAssertTrue(vm.hasSelection, "path=\(path)")
+            XCTAssertEqual(vm.actionErrorMessage, "Mutation rejected", "path=\(path)")
+        }
+    }
+
+    @MainActor
+    func testDiscardStopsWhenSemanticUnstageFails() async throws {
+        var calls: [String] = []
+        let stagedStatus = """
+        {"git":{"is_git":true,"branch":"main","totals":{"changed":1},"files":[
+          {"path":"a.swift","status":"M","staged":true,"additions":3,"deletions":1}
+        ]}}
+        """
+        let client = makeClient { request in
+            let path = request.url?.path ?? ""
+            calls.append(path)
+            switch path {
+            case "/api/git/status":
+                return apiTestJSONResponse(stagedStatus, for: request)
+            case "/api/git/unstage":
+                return apiTestJSONResponse(#"{"ok":false,"message":"Unstage rejected","git":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+            case "/api/git/discard":
+                return apiTestJSONResponse(#"{"ok":true,"git":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let vm = GitCommitViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
+        await vm.load()
+        calls.removeAll()
+
+        await vm.discardSelectedOrAll(deleteUntracked: false)
+
+        XCTAssertEqual(calls, ["/api/git/unstage"])
+        XCTAssertEqual(vm.trackedFiles.count, 1)
+        XCTAssertEqual(vm.actionErrorMessage, "Unstage rejected")
+    }
+
+    @MainActor
+    func testCommitSheetSemanticPushFailureRemainsPartialSuccess() async throws {
+        let vm = GitCommitViewModel(
+            session: try session(id: "s1"),
+            server: URL(string: "https://example.test")!,
+            apiClient: commitSheetClient(semanticFailurePath: "/api/git/push")
+        )
+        await vm.load()
+        vm.message = "Real commit"
+
+        let succeeded = await vm.commit(push: true)
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(vm.lastCommitSHA, "abc1234")
+        XCTAssertTrue(vm.message.isEmpty)
+        XCTAssertEqual(vm.committedRevision, 1)
+        XCTAssertEqual(vm.status?.branch, "main")
+        XCTAssertEqual(vm.actionErrorMessage, "Committed, but the push failed. Push rejected")
     }
 
     @MainActor
