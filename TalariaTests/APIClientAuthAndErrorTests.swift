@@ -770,12 +770,10 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             profileEntityCache: ProfileEntityCache(defaults: nil),
             resetProfileScopedState: { url in
                 resets.append(url)
-                // Cookies (including the profile cookie) are already persisted, but
-                // the logged-in UI has not been entered yet.
-                XCTAssertEqual(
-                    keychain.scopedValue(.sessionCookies, scope: server.absoluteString)?.contains("hermes_profile"),
-                    true
-                )
+                // The purge runs after reconciliation but before anything durable
+                // is written or the logged-in UI is entered.
+                XCTAssertEqual(client.callLog.last, "profiles")
+                XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
                 XCTAssertNotEqual(manager.state, .loggedIn(server: server))
             },
             serverRegistry: ServerRegistry.inMemory(keychain: keychain)
@@ -986,6 +984,9 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             in: context
         )
         SessionNavigationPersistence.save("stale-default", for: server, defaults: defaults)
+        let draftStore = ChatDraftStore(persistence: InMemoryChatDraftPersistence(), debounceDuration: .seconds(10))
+        draftStore.setDraft("unsent by default", for: .newChat(server: server))
+        draftStore.setDraft("unsent in thread", for: .session(server: server, sessionID: "stale-default"))
         let keychain = InMemoryKeychainStore()
         try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
         let client = OIDCMockAuthAPIClient(profilesResult: .success(.synthetic(active: "member")))
@@ -1004,6 +1005,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             profileEntityCache: ProfileEntityCache(defaults: nil),
             resetProfileScopedState: AuthManager.profileScopedStateReset(
                 cacheContainer: container,
+                draftStore: draftStore,
                 defaults: defaults
             ),
             serverRegistry: ServerRegistry.inMemory(keychain: keychain)
@@ -1018,6 +1020,56 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             try CacheStore.cachedMessages(serverURL: server, sessionID: "stale-default", in: context).isEmpty
         )
         XCTAssertNil(SessionNavigationPersistence.load(for: server, defaults: defaults))
+        let newChatDraft = await draftStore.draft(for: .newChat(server: server))
+        XCTAssertNil(newChatDraft)
+        let threadDraft = await draftStore.draft(for: .session(server: server, sessionID: "stale-default"))
+        XCTAssertNil(threadDraft)
+    }
+
+    @MainActor
+    func testNativeOIDCFailsClosedWhenProfileScopedPurgeFails() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { _ in throw CocoaError(.fileWriteUnknown) },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+        // The previous profile's data could not be purged, so nothing is committed
+        // and the old marker stays so the next sign-in retries the purge.
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNotNil(manager.lastErrorMessage)
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true)
+        XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+        XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertTrue(registry.servers.isEmpty)
+        XCTAssertEqual(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString), "default")
     }
 
     private static func makeCookie(name: String, value: String, for server: URL) -> HTTPCookie {
@@ -1149,6 +1201,16 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             .secure: "TRUE",
             .expires: Date().addingTimeInterval(600)
         ]))
+    }
+}
+
+private actor InMemoryChatDraftPersistence: ChatDraftPersisting {
+    private var drafts: [ChatDraftKey: ChatDraft] = [:]
+
+    func load() async -> [ChatDraftKey: ChatDraft] { drafts }
+
+    func write(_ drafts: [ChatDraftKey: ChatDraft]) async throws {
+        self.drafts = drafts
     }
 }
 

@@ -83,10 +83,11 @@ final class AuthManager {
     private let fallbackCookieStorage: HTTPCookieStorage?
     private let profileEntityCache: ProfileEntityCache
     /// Drops local state that belongs to one authenticated profile on a server:
-    /// the stored session selection and the offline session/message cache. Runs
-    /// before the logged-in UI can render whenever native OIDC reconciles a
-    /// different server-authorized profile than the last sign-in there (TAL-131).
-    private let resetProfileScopedState: @MainActor (URL) -> Void
+    /// the stored session selection, composer drafts, and the offline
+    /// session/message cache. Runs before anything durable is written whenever
+    /// native OIDC reconciles a different server-authorized profile than the
+    /// last sign-in there; a thrown error aborts that sign-in (TAL-131).
+    private let resetProfileScopedState: @MainActor (URL) async throws -> Void
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
     private var isOIDCSignInActive = false
@@ -107,7 +108,7 @@ final class AuthManager {
         cookieStorage: HTTPCookieStorage? = nil,
         cookieStore: ServerCookieStore? = nil,
         profileEntityCache: ProfileEntityCache = .shared,
-        resetProfileScopedState: @escaping @MainActor (URL) -> Void = { _ in },
+        resetProfileScopedState: @escaping @MainActor (URL) async throws -> Void = { _ in },
         logoutTimeout: Duration = .seconds(5),
         serverRegistry: ServerRegistry = .shared
     ) {
@@ -146,14 +147,18 @@ final class AuthManager {
     }
 
     /// The production `resetProfileScopedState`: clears the server's stored
-    /// selection and its offline cache in the app's SwiftData container.
+    /// selection, its composer drafts, and its offline cache in the app's
+    /// SwiftData container. A cache purge failure propagates so the sign-in
+    /// fails closed instead of exposing the previous profile's data.
     static func profileScopedStateReset(
         cacheContainer: ModelContainer,
+        draftStore: ChatDraftStore = .shared,
         defaults: UserDefaults = .standard
-    ) -> @MainActor (URL) -> Void {
+    ) -> @MainActor (URL) async throws -> Void {
         { server in
             SessionNavigationPersistence.save(nil, for: server, defaults: defaults)
-            try? CacheStore.clearCache(for: server, in: cacheContainer.mainContext)
+            await draftStore.discardDrafts(for: server)
+            try CacheStore.clearCache(for: server, in: cacheContainer.mainContext)
         }
     }
 
@@ -297,6 +302,7 @@ final class AuthManager {
                 return
             }
             do {
+                try await resetProfileScopedStateIfChanged(activeProfile, for: serverURL)
                 try completeConfiguration(
                     serverURL,
                     previousServerID: state.server?.absoluteString,
@@ -431,6 +437,7 @@ final class AuthManager {
                 cookieStorage: probeCookies
             )
             do {
+                try await resetProfileScopedStateIfChanged(activeProfile, for: serverURL)
                 try completeAddedServer(
                     serverURL,
                     headers: newHeaders,
@@ -529,25 +536,30 @@ final class AuthManager {
         return active
     }
 
-    /// Records the server-authorized profile for `server`. When it differs from
-    /// the last sign-in there, every profile-scoped local artifact is dropped
-    /// before the logged-in UI can render it: the offline cache and stored
-    /// selection, the App Intents profile picker cache, and the quota widget
-    /// snapshot (TAL-131). A sign-in without a reconciled profile (password)
-    /// forgets the marker, so the next OIDC sign-in cannot mistake that
-    /// session's cache for its own.
-    private func adoptAuthenticatedProfile(_ profile: String?, for server: URL) {
+    /// When `profile` differs from the last sign-in on `server`, drops every
+    /// profile-scoped local artifact before anything durable is written: the
+    /// offline cache, stored selection, and drafts (via
+    /// `resetProfileScopedState`), the App Intents profile picker cache, and the
+    /// quota widget snapshot (TAL-131). A purge failure propagates so the caller
+    /// aborts the sign-in; the old marker stays, so the next sign-in retries.
+    private func resetProfileScopedStateIfChanged(_ profile: String, for server: URL) async throws {
         let scope = server.absoluteString
-        guard let profile else {
+        guard (try? keychain.load(.authenticatedProfile, scope: scope)) != profile else { return }
+        try await resetProfileScopedState(server)
+        profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
+    }
+
+    /// Records the server-authorized profile for `server`. A sign-in without a
+    /// reconciled profile (password) forgets the marker, so the next OIDC
+    /// sign-in cannot mistake that session's cache for its own.
+    private func recordAuthenticatedProfile(_ profile: String?, for server: URL) {
+        let scope = server.absoluteString
+        if let profile {
+            try? keychain.save(profile, forKey: .authenticatedProfile, scope: scope)
+        } else {
             try? keychain.delete(.authenticatedProfile, scope: scope)
-            return
         }
-        if (try? keychain.load(.authenticatedProfile, scope: scope)) != profile {
-            resetProfileScopedState(server)
-            profileEntityCache.save([])
-            clearQuotaWidgetSnapshot()
-        }
-        try? keychain.save(profile, forKey: .authenticatedProfile, scope: scope)
     }
 
     private func completeAddedServer(
@@ -573,7 +585,7 @@ final class AuthManager {
         persistCustomHeaders(for: serverURL)
         refreshServers()
         clearQuotaWidgetSnapshot()
-        adoptAuthenticatedProfile(authenticatedProfile, for: serverURL)
+        recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         state = .loggedIn(server: serverURL)
     }
 
@@ -591,7 +603,7 @@ final class AuthManager {
         if previousServerID != serverURL.absoluteString {
             clearQuotaWidgetSnapshot()
         }
-        adoptAuthenticatedProfile(authenticatedProfile, for: serverURL)
+        recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         state = .loggedIn(server: serverURL)
     }
 
