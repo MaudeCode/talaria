@@ -394,7 +394,7 @@ private func gitSemanticFailureMessage(_ message: String?) -> String {
     if let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
         return trimmed
     }
-    return String(localized: "The Git operation failed. Try again.")
+    return String(localized: "The server rejected the request.")
 }
 
 enum GitRemoteAction: String, Equatable, Identifiable {

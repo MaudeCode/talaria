@@ -637,7 +637,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                     return (response, Data(#"{"error":"Destructive git writes are disabled","code":"destructive_git_disabled"}"#.utf8))
                 }
                 if semanticFailurePath == path {
-                    return apiTestJSONResponse(#"{"ok":false,"message":"Stage rejected","git":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
+                    return apiTestJSONResponse(#"{"ok":false,"git":{"is_git":true,"branch":"other","files":[]}}"#, for: request)
                 }
                 return apiTestJSONResponse(#"{"ok":true,"git":{"is_git":true,"branch":"main","totals":{"staged":1}}}"#, for: request)
             case "/api/git/commit-message":
@@ -786,7 +786,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(outcome, .failure)
         XCTAssertEqual(paths, ["/api/git/stage"])
         XCTAssertEqual(vm.status?.branch, "main")
-        XCTAssertEqual(vm.actionErrorMessage, "Stage rejected")
+        XCTAssertEqual(vm.actionErrorMessage, "The server rejected the request.")
     }
 
     @MainActor
@@ -807,9 +807,11 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
 
     @MainActor
     func testQuickCommitReportsSemanticPushFailureAsPartialSuccess() async throws {
-        let client = commitPipelineClient(semanticFailurePath: "/api/git/push")
+        var paths: [String] = []
+        let client = commitPipelineClient(semanticFailurePath: "/api/git/push") { paths.append($0) }
         let vm = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
         await vm.load()
+        paths.removeAll()
 
         let outcome = await vm.quickCommit(push: true)
 
@@ -818,6 +820,10 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertFalse(result.didPush)
         XCTAssertEqual(result.pushFailureMessage, "Push rejected")
         XCTAssertEqual(vm.actionErrorMessage, "Push rejected")
+        XCTAssertEqual(paths, [
+            "/api/git/stage", "/api/git/commit-message", "/api/git/commit",
+            "/api/git/push", "/api/git/branches", "/api/git-info",
+        ])
     }
 
     @MainActor
@@ -850,10 +856,12 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         suggestSelectedMessage: String = "selected msg",
         discardStatus: Int = 200,
         pushStatus: Int = 200,
-        semanticFailurePath: String? = nil
+        semanticFailurePath: String? = nil,
+        record: ((String) -> Void)? = nil
     ) -> APIClient {
         makeClient { request in
             let path = request.url?.path ?? ""
+            record?(path)
             switch path {
             case "/api/git/push":
                 if pushStatus != 200 {
@@ -991,12 +999,14 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     func testCommitSheetSemanticCommitFailuresPreserveInputAndSelection() async throws {
         for selected in [false, true] {
             let path = selected ? "/api/git/commit-selected" : "/api/git/commit"
+            var calls: [String] = []
             let vm = GitCommitViewModel(
                 session: try session(id: "s1"),
                 server: URL(string: "https://example.test")!,
-                apiClient: commitSheetClient(semanticFailurePath: path)
+                apiClient: commitSheetClient(semanticFailurePath: path) { calls.append($0) }
             )
             await vm.load()
+            calls.removeAll()
             if selected { vm.toggleSelection(try XCTUnwrap(vm.trackedFiles.first)) }
             vm.message = "Keep me"
 
@@ -1008,18 +1018,21 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
             XCTAssertEqual(vm.status?.branch, "main", "path=\(path)")
             XCTAssertEqual(vm.committedRevision, 0, "path=\(path)")
             XCTAssertEqual(vm.actionErrorMessage, "Commit rejected", "path=\(path)")
+            XCTAssertEqual(calls, [path])
         }
     }
 
     @MainActor
     func testCommitSheetSemanticMutationFailuresPreserveStatusAndSelection() async throws {
         for path in ["/api/git/stage", "/api/git/unstage", "/api/git/discard"] {
+            var calls: [String] = []
             let vm = GitCommitViewModel(
                 session: try session(id: "s1"),
                 server: URL(string: "https://example.test")!,
-                apiClient: commitSheetClient(semanticFailurePath: path)
+                apiClient: commitSheetClient(semanticFailurePath: path) { calls.append($0) }
             )
             await vm.load()
+            calls.removeAll()
             vm.toggleSelection(try XCTUnwrap(vm.trackedFiles.first))
 
             switch path {
@@ -1032,6 +1045,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
             XCTAssertEqual(vm.trackedFiles.count, 1, "path=\(path)")
             XCTAssertTrue(vm.hasSelection, "path=\(path)")
             XCTAssertEqual(vm.actionErrorMessage, "Mutation rejected", "path=\(path)")
+            XCTAssertEqual(calls, [path])
         }
     }
 
@@ -1070,12 +1084,14 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
 
     @MainActor
     func testCommitSheetSemanticPushFailureRemainsPartialSuccess() async throws {
+        var calls: [String] = []
         let vm = GitCommitViewModel(
             session: try session(id: "s1"),
             server: URL(string: "https://example.test")!,
-            apiClient: commitSheetClient(semanticFailurePath: "/api/git/push")
+            apiClient: commitSheetClient(semanticFailurePath: "/api/git/push") { calls.append($0) }
         )
         await vm.load()
+        calls.removeAll()
         vm.message = "Real commit"
 
         let succeeded = await vm.commit(push: true)
@@ -1086,6 +1102,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(vm.committedRevision, 1)
         XCTAssertEqual(vm.status?.branch, "main")
         XCTAssertEqual(vm.actionErrorMessage, "Committed, but the push failed. Push rejected")
+        XCTAssertEqual(calls, ["/api/git/commit", "/api/git/push"])
     }
 
     @MainActor
