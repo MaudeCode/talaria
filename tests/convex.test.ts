@@ -363,6 +363,44 @@ describe("Convex relay state", () => {
       keyId: "key-2",
     });
     expect(replacementKey).not.toHaveProperty("revokedAt");
+
+    await backend.mutation(internal.subscriptions.revokePublisher, {
+      userId: "user-1",
+      publisherId: redemption.publisherId,
+      now: now + 3,
+    });
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-1",
+      tokenHash: "recovery-invitation",
+      expiresAt: now + 60_000,
+      now: now + 4,
+    });
+    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
+      ...redemption,
+      tokenHash: "recovery-invitation",
+      profileId: "recovered-profile",
+      keyId: "key-3",
+      now: now + 4,
+    })).resolves.toMatchObject({ ok: true, profileId: "recovered-profile" });
+    await expect(backend.mutation(internal.publishers.acceptState, {
+      publisherOwnerUserId: "user-1",
+      publisherId: redemption.publisherId,
+      profileId: "recovered-profile",
+      keyId: "key-3",
+      nonce: "activate-key-3",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 5,
+      sessionId: "session-1",
+      eventId: "event-1",
+      revision: 1,
+      state: {
+        sessionId: "session-1",
+        title: "Recovered",
+        phase: "running",
+        updatedAt: now + 5,
+        deepLink: "/sessions/session-1",
+      },
+    })).resolves.toEqual({ status: "accepted" });
   });
 
   it("keeps one server publisher while isolating enrolled profile state", async () => {

@@ -102,26 +102,30 @@ export const redeemPublisherInvitation = internalMutation({
     });
     const preservesGrant = ownerGrant?.publisherOwnerUserId === invitation.userId;
     const profileId = preservesGrant ? ownerGrant.profileId : args.profileId;
-    if (ownerGrant && !preservesGrant) {
+    if (!preservesGrant) {
       const states = await ctx.db.query("sessionStates")
         .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
           query.eq("version", 2).eq("userId", invitation.userId).eq("publisherId", args.publisherId),
         ).take(501);
       if (states.length > 500) return { ok: false as const, reason: "too_many_states" };
       for (const state of states) await ctx.db.delete(state._id);
-      await ctx.db.patch(ownerGrant._id, {
-        publisherOwnerUserId: invitation.userId,
-        profileId,
-        updatedAt: args.now,
-      });
-    } else if (!ownerGrant) await ctx.db.insert("publisherGrants", {
-      userId: invitation.userId,
-      publisherOwnerUserId: invitation.userId,
-      publisherId: args.publisherId,
-      profileId,
-      createdAt: args.now,
-      updatedAt: args.now,
-    });
+      if (ownerGrant) {
+        await ctx.db.patch(ownerGrant._id, {
+          publisherOwnerUserId: invitation.userId,
+          profileId,
+          updatedAt: args.now,
+        });
+      } else {
+        await ctx.db.insert("publisherGrants", {
+          userId: invitation.userId,
+          publisherOwnerUserId: invitation.userId,
+          publisherId: args.publisherId,
+          profileId,
+          createdAt: args.now,
+          updatedAt: args.now,
+        });
+      }
+    }
     await ctx.db.patch(invitation._id, { consumedAt: args.now });
     return {
       ok: true as const,
