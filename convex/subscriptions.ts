@@ -144,10 +144,13 @@ export const revokePublisher = internalMutation({
         )
         .take(MAX_PUBLISHERS + 1),
       ctx.db.query("devicePublisherExclusions")
-        .withIndex("by_user_id_and_device_id_and_publisher_id", (query) => query.eq("userId", args.userId))
+        .withIndex("by_user_id_and_publisher_id_and_device_id", (query) =>
+          query.eq("userId", args.userId).eq("publisherId", args.publisherId),
+        )
         .take(MAX_PUBLISHERS + 1),
     ]);
     if (states.length > MAX_PUBLISHERS) return { ok: false, reason: "too_many_states" };
+    if (exclusions.length > MAX_PUBLISHERS) return { ok: false, reason: "too_many_exclusions" };
     await ctx.db.delete(grant._id);
     for (const exclusion of exclusions) {
       if (exclusion.publisherId === args.publisherId) await ctx.db.delete(exclusion._id);

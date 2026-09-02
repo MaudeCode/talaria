@@ -291,10 +291,12 @@ describe("Convex relay state", () => {
     };
     await expect(
       backend.mutation(internal.pairing.redeemPublisherInvitation, redemption),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       ok: true,
+      protocolVersion: 2,
       userId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
     });
     await expect(
@@ -314,8 +316,14 @@ describe("Convex relay state", () => {
       ...redemption,
       tokenHash: "replacement-invitation-hash",
       keyId: "key-2",
+      profileId: "different-profile",
       now: now + 1,
-    })).resolves.toMatchObject({ ok: true, keyId: "key-2" });
+    })).resolves.toMatchObject({ ok: true, keyId: "key-2", profileId: "profile-1" });
+    const ownerGrant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", "user-1").eq("publisherId", redemption.publisherId),
+      ).unique());
+    expect(ownerGrant?.profileId).toBe("profile-1");
     const stillActive = await backend.query(internal.pairing.getPublisherKey, {
       publisherId: redemption.publisherId,
       keyId: "key-1",
@@ -920,6 +928,39 @@ describe("Convex relay state", () => {
       publisherId: "https://hermes.example",
       now,
     })).resolves.toEqual({ ok: false, reason: "too_many_states" });
+    const grant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),
+      ).unique());
+    expect(grant).not.toBeNull();
+  });
+
+  it("keeps the grant when bounded revocation cannot clear every exclusion", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publisherGrants", {
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (let index = 0; index < 501; index += 1) {
+        await ctx.db.insert("devicePublisherExclusions", {
+          userId: "user-1",
+          publisherId: "https://hermes.example",
+          deviceId: `device-${index}`,
+          createdAt: now,
+        });
+      }
+    });
+
+    await expect(backend.mutation(internal.subscriptions.revokePublisher, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      now,
+    })).resolves.toEqual({ ok: false, reason: "too_many_exclusions" });
     const grant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
       .withIndex("by_user_id_and_publisher_id", (query) =>
         query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),

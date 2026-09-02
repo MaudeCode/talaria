@@ -140,7 +140,9 @@ export default defineSchema({
     deviceId: v.string(),
     publisherId: v.string(),
     createdAt: v.number(),
-  }).index("by_user_id_and_device_id_and_publisher_id", ["userId", "deviceId", "publisherId"]),
+  })
+    .index("by_user_id_and_device_id_and_publisher_id", ["userId", "deviceId", "publisherId"])
+    .index("by_user_id_and_publisher_id_and_device_id", ["userId", "publisherId", "deviceId"]),
 
   sessionStates: defineTable({
     version: v.optional(v.number()),

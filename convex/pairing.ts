@@ -39,7 +39,14 @@ export const redeemPublisherInvitation = internalMutation({
   },
   returns: v.union(
     v.object({ ok: v.literal(false), reason: v.string() }),
-    v.object({ ok: v.literal(true), userId: v.string(), publisherId: v.string(), keyId: v.string() }),
+    v.object({
+      ok: v.literal(true),
+      protocolVersion: v.literal(2),
+      userId: v.string(),
+      publisherId: v.string(),
+      profileId: v.string(),
+      keyId: v.string(),
+    }),
   ),
   handler: async (ctx, args) => {
     const invitation = await ctx.db
@@ -58,12 +65,16 @@ export const redeemPublisherInvitation = internalMutation({
       return { ok: false as const, reason: "unauthorized" };
     }
 
-    const publisher = await ctx.db
-      .query("publishers")
-      .withIndex("by_version_and_publisher_id", (query) =>
-        query.eq("version", 2).eq("publisherId", args.publisherId),
-      )
-      .unique();
+    const [publisher, ownerGrant] = await Promise.all([
+      ctx.db.query("publishers")
+        .withIndex("by_version_and_publisher_id", (query) =>
+          query.eq("version", 2).eq("publisherId", args.publisherId),
+        ).unique(),
+      ctx.db.query("publisherGrants")
+        .withIndex("by_user_id_and_publisher_id", (query) =>
+          query.eq("userId", invitation.userId).eq("publisherId", args.publisherId),
+        ).unique(),
+    ]);
     if (publisher && publisher.ownerUserId !== invitation.userId) {
       return { ok: false as const, reason: "publisher_already_registered" };
     }
@@ -87,34 +98,21 @@ export const redeemPublisherInvitation = internalMutation({
       publicKey: args.publicKey,
       createdAt: args.now,
     });
-    const ownerGrant = await ctx.db
-      .query("publisherGrants")
-      .withIndex("by_user_id_and_publisher_id", (query) =>
-        query.eq("userId", invitation.userId).eq("publisherId", args.publisherId),
-      )
-      .unique();
-    if (ownerGrant) {
-      if (ownerGrant.profileId !== args.profileId) {
-        const states = await ctx.db.query("sessionStates")
-          .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
-            query.eq("version", 2).eq("userId", invitation.userId).eq("publisherId", args.publisherId),
-          ).take(501);
-        if (states.length > 500) throw new Error("too_many_states");
-        for (const state of states) await ctx.db.delete(state._id);
-      }
-      await ctx.db.patch(ownerGrant._id, { profileId: args.profileId, updatedAt: args.now });
-    } else await ctx.db.insert("publisherGrants", {
-        userId: invitation.userId,
-        publisherId: args.publisherId,
-        profileId: args.profileId,
-        createdAt: args.now,
-        updatedAt: args.now,
-      });
+    const profileId = ownerGrant?.profileId ?? args.profileId;
+    if (!ownerGrant) await ctx.db.insert("publisherGrants", {
+      userId: invitation.userId,
+      publisherId: args.publisherId,
+      profileId,
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
     await ctx.db.patch(invitation._id, { consumedAt: args.now });
     return {
       ok: true as const,
+      protocolVersion: 2 as const,
       userId: invitation.userId,
       publisherId: args.publisherId,
+      profileId,
       keyId: args.keyId,
     };
   },
@@ -129,7 +127,13 @@ export const redeemProfileInvitation = internalMutation({
   },
   returns: v.union(
     v.object({ ok: v.literal(false), reason: v.string() }),
-    v.object({ ok: v.literal(true), userId: v.string(), publisherId: v.string(), profileId: v.string() }),
+    v.object({
+      ok: v.literal(true),
+      protocolVersion: v.literal(2),
+      userId: v.string(),
+      publisherId: v.string(),
+      profileId: v.string(),
+    }),
   ),
   handler: async (ctx, args) => {
     const invitation = await ctx.db
@@ -186,6 +190,7 @@ export const redeemProfileInvitation = internalMutation({
     await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: invitation.userId });
     return {
       ok: true as const,
+      protocolVersion: 2 as const,
       userId: invitation.userId,
       publisherId: args.publisherId,
       profileId: args.profileId,
