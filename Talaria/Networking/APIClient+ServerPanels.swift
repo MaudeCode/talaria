@@ -77,8 +77,7 @@ extension APIClient {
         )
         if response.error == nil {
             try persistCookies()
-            let active = response.active?.trimmingCharacters(in: .whitespacesAndNewlines)
-            recordActiveProfile(active.flatMap { $0.isEmpty ? nil : $0 } ?? name)
+            forgetProfileOwner()
             if ProviderQuotaWidgetSnapshotStore().clear() {
                 ProviderQuotaWidgetSnapshotStore.reloadTimelines()
             }
