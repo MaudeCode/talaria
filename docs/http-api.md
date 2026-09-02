@@ -37,7 +37,7 @@ The Hermes owner registers the server once. Hermes generates an Ed25519 key loca
 
 The private key never leaves the Hermes machine.
 Repeating server registration with an invitation from the publisher's original relay owner creates a replacement key. The relay activates it on first signed publication and then revokes the previous key without changing profile grants.
-Successful registration and enrollment responses include `protocolVersion: 2`; Hermes rejects responses without that version before treating local configuration as valid.
+Successful registration and enrollment responses include `protocolVersion: 2`. Registration also returns `profileIdPreserved`: `false` requires an exact echo of the requested scope, while `true` tells Hermes that owner key recovery retained the existing owner grant. Hermes rejects any unmarked scope mismatch before treating local configuration as valid.
 
 After registration, any authenticated Hermes profile can enroll. Hermes resolves the profile from its trusted session, never from a client-supplied profile name, and signs:
 

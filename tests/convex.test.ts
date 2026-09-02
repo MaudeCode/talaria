@@ -297,6 +297,7 @@ describe("Convex relay state", () => {
       userId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
+      profileIdPreserved: false,
       keyId: "key-1",
     });
     await expect(
@@ -318,7 +319,12 @@ describe("Convex relay state", () => {
       keyId: "key-2",
       profileId: "different-profile",
       now: now + 1,
-    })).resolves.toMatchObject({ ok: true, keyId: "key-2", profileId: "profile-1" });
+    })).resolves.toMatchObject({
+      ok: true,
+      keyId: "key-2",
+      profileId: "profile-1",
+      profileIdPreserved: true,
+    });
     const ownerGrant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
       .withIndex("by_user_id_and_publisher_id", (query) =>
         query.eq("userId", "user-1").eq("publisherId", redemption.publisherId),

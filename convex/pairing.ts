@@ -45,6 +45,7 @@ export const redeemPublisherInvitation = internalMutation({
       userId: v.string(),
       publisherId: v.string(),
       profileId: v.string(),
+      profileIdPreserved: v.boolean(),
       keyId: v.string(),
     }),
   ),
@@ -113,6 +114,7 @@ export const redeemPublisherInvitation = internalMutation({
       userId: invitation.userId,
       publisherId: args.publisherId,
       profileId,
+      profileIdPreserved: ownerGrant !== null,
       keyId: args.keyId,
     };
   },
