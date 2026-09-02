@@ -77,6 +77,7 @@ extension APIClient {
         )
         if response.error == nil {
             try persistCookies()
+            try forgetProfileOwner()
             if ProviderQuotaWidgetSnapshotStore().clear() {
                 ProviderQuotaWidgetSnapshotStore.reloadTimelines()
             }

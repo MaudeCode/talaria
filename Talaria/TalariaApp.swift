@@ -92,6 +92,10 @@ struct TalariaApp: App {
     @State private var authManager: AuthManager
     @AppStorage(AppTheme.storageKey) private var appThemeRawValue = AppTheme.system.rawValue
     private let usesUITestFixture: Bool
+    /// Offline session/message cache. Held explicitly (not just via the
+    /// `modelContainer(for:)` modifier) so `AuthManager` can drop a server's
+    /// cache when a sign-in reconciles to a different profile (TAL-131).
+    private let cacheContainer: ModelContainer
     #if DEBUG
     private let uiTestFixture: UITestFixtureEnvironment?
     #endif
@@ -105,10 +109,26 @@ struct TalariaApp: App {
             : nil
         uiTestFixture = fixture
         usesUITestFixture = fixture != nil
-        _authManager = State(initialValue: fixture?.authManager ?? AuthManager())
         #else
         usesUITestFixture = false
-        _authManager = State(initialValue: AuthManager())
+        #endif
+
+        // Same store the `modelContainer(for:)` modifier would open; failure is
+        // fatal there too.
+        let cacheContainer = try! ModelContainer(
+            for: CachedSession.self, CachedMessage.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture)
+        )
+        self.cacheContainer = cacheContainer
+        let liveAuthManager = {
+            AuthManager(
+                resetProfileScopedState: AuthManager.profileScopedStateReset(cacheContainer: cacheContainer)
+            )
+        }
+        #if DEBUG
+        _authManager = State(initialValue: fixture?.authManager ?? liveAuthManager())
+        #else
+        _authManager = State(initialValue: liveAuthManager())
         #endif
 
         if !usesUITestFixture {
@@ -164,10 +184,7 @@ struct TalariaApp: App {
                 .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
             #endif
         }
-        .modelContainer(
-            for: [CachedSession.self, CachedMessage.self],
-            inMemory: usesUITestFixture
-        )
+        .modelContainer(cacheContainer)
         .commands {
             TalariaCommands()
             SidebarCommands()

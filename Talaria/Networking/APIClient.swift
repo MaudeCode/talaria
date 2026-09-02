@@ -19,6 +19,14 @@ actor APIClient {
     private let encoder: JSONEncoder
     private let cookieStorage: HTTPCookieStorage?
     let persistCookies: @Sendable () throws -> Void
+    /// Forgets which OIDC-bound profile owns this server's local cache and
+    /// drafts after a successful in-app profile switch. Switching is only
+    /// possible for an unbound session, whose cache may then hold state of a
+    /// profile that another identity is bound to, so the next native OIDC
+    /// sign-in on this server must purge regardless of which profile it maps
+    /// to (TAL-131). Defaults follow `persistCookies`: the Keychain marker in
+    /// production, a no-op for injected sessions.
+    let forgetProfileOwner: @Sendable () throws -> Void
     /// Read when building each request so live edits apply without rebuilding the
     /// client. Defaults to the process-wide store; tests inject a fixed list (#255).
     /// Internal, not private, because the upload and transcribe extensions build
@@ -31,6 +39,7 @@ actor APIClient {
         publicMediaSession: URLSession? = nil,
         cookieStorage: HTTPCookieStorage? = nil,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
+        forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
         customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() }
     ) {
         self.baseURL = baseURL
@@ -64,6 +73,15 @@ actor APIClient {
             persistCookies = { try ServerCookieStore.shared.persist(for: baseURL) }
         } else {
             persistCookies = {}
+        }
+        if let forgetProfileOwner {
+            self.forgetProfileOwner = forgetProfileOwner
+        } else if session == nil, cookieStorage == nil {
+            self.forgetProfileOwner = {
+                try KeychainStore().delete(.authenticatedProfile, scope: baseURL.absoluteString)
+            }
+        } else {
+            self.forgetProfileOwner = {}
         }
         // Only the sessions we created carry our delegate and must be invalidated;
         // an injected session is the caller's to manage.

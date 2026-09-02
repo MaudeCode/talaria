@@ -3,6 +3,7 @@ import AuthenticationServices
 import CryptoKit
 import Observation
 import Security
+import SwiftData
 import UIKit
 
 @MainActor
@@ -81,6 +82,12 @@ final class AuthManager {
     private let clearStoredSessionCookies: (URL) -> Void
     private let fallbackCookieStorage: HTTPCookieStorage?
     private let profileEntityCache: ProfileEntityCache
+    /// Drops local state that belongs to one authenticated profile on a server:
+    /// the stored session selection, composer drafts, and the offline
+    /// session/message cache. Runs before anything durable is written whenever
+    /// native OIDC reconciles a different server-authorized profile than the
+    /// last sign-in there; a thrown error aborts that sign-in (TAL-131).
+    private let resetProfileScopedState: @MainActor (URL) async throws -> Void
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
     private var isOIDCSignInActive = false
@@ -101,6 +108,7 @@ final class AuthManager {
         cookieStorage: HTTPCookieStorage? = nil,
         cookieStore: ServerCookieStore? = nil,
         profileEntityCache: ProfileEntityCache = .shared,
+        resetProfileScopedState: @escaping @MainActor (URL) async throws -> Void = { _ in },
         logoutTimeout: Duration = .seconds(5),
         serverRegistry: ServerRegistry = .shared
     ) {
@@ -131,10 +139,29 @@ final class AuthManager {
             clearStoredSessionCookies = resolvedCookieStore.clear(for:)
         }
         self.profileEntityCache = profileEntityCache
+        self.resetProfileScopedState = resetProfileScopedState
         self.logoutTimeout = logoutTimeout
         self.serverRegistry = serverRegistry
         restoreSavedServer()
         refreshServers()
+    }
+
+    /// The production `resetProfileScopedState`: clears the server's stored
+    /// selection, its composer drafts, and its offline cache in the app's
+    /// SwiftData container. Draft removal is flushed to disk rather than left
+    /// to the debounced write, and any failure propagates so the sign-in fails
+    /// closed instead of exposing the previous profile's data.
+    static func profileScopedStateReset(
+        cacheContainer: ModelContainer,
+        draftStore: ChatDraftStore = .shared,
+        defaults: UserDefaults = .standard
+    ) -> @MainActor (URL) async throws -> Void {
+        { server in
+            SessionNavigationPersistence.save(nil, for: server, defaults: defaults)
+            await draftStore.discardDrafts(for: server)
+            try await draftStore.flush()
+            try CacheStore.clearCache(for: server, in: cacheContainer.mainContext)
+        }
     }
 
     /// The active server's id (its normalized URL string), or nil when
@@ -266,24 +293,36 @@ final class AuthManager {
             let serverURL = try Self.normalizedServerURL(from: serverURLString)
             let client = clientFactory(serverURL)
             let cookies = cookieStorageProvider(serverURL)
-            try await authenticateWithOIDC(
+            let activeProfile = try await authenticateWithOIDC(
                 client: client,
                 serverURL: serverURL,
                 cookieStorage: cookies
             )
-            guard canCommit() else {
+            func abandonSession() async {
                 _ = try? await client.logout()
                 clearSessionCookies(for: serverURL)
-                return
             }
             do {
+                // Checked before the destructive purge so an attempt the user
+                // edited or dismissed during the browser handoff never drops
+                // drafts or cache, and again after the purge's suspension
+                // point so a superseded attempt can never commit.
+                guard canCommit() else {
+                    await abandonSession()
+                    return
+                }
+                try await resetProfileScopedStateIfChanged(activeProfile, for: serverURL)
+                guard canCommit() else {
+                    await abandonSession()
+                    return
+                }
                 try completeConfiguration(
                     serverURL,
-                    previousServerID: state.server?.absoluteString
+                    previousServerID: state.server?.absoluteString,
+                    authenticatedProfile: activeProfile
                 )
             } catch {
-                _ = try? await client.logout()
-                clearSessionCookies(for: serverURL)
+                await abandonSession()
                 throw error
             }
             lastErrorMessage = nil
@@ -404,16 +443,18 @@ final class AuthManager {
             let newHeaders = customHeaders.sanitizedForStorage()
             let probeCookies = ServerCookieStore.makeIsolatedStorage()
             let client = probeClientFactory(serverURL, newHeaders, probeCookies)
-            try await authenticateWithOIDC(
+            let activeProfile = try await authenticateWithOIDC(
                 client: client,
                 serverURL: serverURL,
                 cookieStorage: probeCookies
             )
             do {
+                try await resetProfileScopedStateIfChanged(activeProfile, for: serverURL)
                 try completeAddedServer(
                     serverURL,
                     headers: newHeaders,
-                    cookies: probeCookies.cookies(for: serverURL) ?? []
+                    cookies: probeCookies.cookies(for: serverURL) ?? [],
+                    authenticatedProfile: activeProfile
                 )
                 probeCookies.cookies?.forEach(probeCookies.deleteCookie)
             } catch {
@@ -428,11 +469,14 @@ final class AuthManager {
         }
     }
 
+    /// Runs the native OIDC handoff and returns the profile the server bound the
+    /// new session to. Any failure — including a missing or inconsistent active
+    /// profile — logs the partial session out and clears its cookies.
     private func authenticateWithOIDC(
         client: any AuthAPIClient,
         serverURL: URL,
         cookieStorage: HTTPCookieStorage
-    ) async throws {
+    ) async throws -> String {
         var startedFlow: (id: String, state: String)?
         do {
             let status = try await testConnection(client: client)
@@ -474,6 +518,11 @@ final class AuthManager {
                 throw APIError.unauthorized
             }
             startedFlow = nil
+            // The server binds an OIDC session to a mapped profile; adopt exactly
+            // that before anything is committed, never a local default or cached
+            // selection (TAL-131). This response may also set `hermes_profile`,
+            // so callers persist cookies only after it returns.
+            return try Self.authorizedProfileName(from: try await client.profiles())
         } catch {
             if let startedFlow {
                 _ = try? await client.cancelNativeOIDC(
@@ -487,10 +536,49 @@ final class AuthManager {
         }
     }
 
+    /// The `active` profile from `GET /api/profiles`, accepted only when it is a
+    /// non-blank name that also appears in the response's profile list.
+    nonisolated static func authorizedProfileName(from response: ProfilesResponse) throws -> String {
+        guard let active = response.active?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !active.isEmpty,
+              response.profiles?.contains(where: { $0.normalizedName == active }) == true
+        else {
+            throw OIDCSignInError.profileUnavailable
+        }
+        return active
+    }
+
+    /// When `profile` differs from the last sign-in on `server`, drops every
+    /// profile-scoped local artifact before anything durable is written: the
+    /// offline cache, stored selection, and drafts (via
+    /// `resetProfileScopedState`), the App Intents profile picker cache, and the
+    /// quota widget snapshot (TAL-131). A purge failure propagates so the caller
+    /// aborts the sign-in; the old marker stays, so the next sign-in retries.
+    private func resetProfileScopedStateIfChanged(_ profile: String, for server: URL) async throws {
+        let scope = server.absoluteString
+        guard (try? keychain.load(.authenticatedProfile, scope: scope)) != profile else { return }
+        try await resetProfileScopedState(server)
+        profileEntityCache.save([])
+        clearQuotaWidgetSnapshot()
+    }
+
+    /// Records the server-authorized profile for `server`. A sign-in without a
+    /// reconciled profile (password) forgets the marker, so the next OIDC
+    /// sign-in cannot mistake that session's cache for its own.
+    private func recordAuthenticatedProfile(_ profile: String?, for server: URL) {
+        let scope = server.absoluteString
+        if let profile {
+            try? keychain.save(profile, forKey: .authenticatedProfile, scope: scope)
+        } else {
+            try? keychain.delete(.authenticatedProfile, scope: scope)
+        }
+    }
+
     private func completeAddedServer(
         _ serverURL: URL,
         headers: [CustomHeader],
-        cookies: [HTTPCookie]
+        cookies: [HTTPCookie],
+        authenticatedProfile: String? = nil
     ) throws {
         // The only throwing mutation happens first, while the old active server
         // and its cookie jar are still untouched.
@@ -509,10 +597,15 @@ final class AuthManager {
         persistCustomHeaders(for: serverURL)
         refreshServers()
         clearQuotaWidgetSnapshot()
+        recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         state = .loggedIn(server: serverURL)
     }
 
-    private func completeConfiguration(_ serverURL: URL, previousServerID: String?) throws {
+    private func completeConfiguration(
+        _ serverURL: URL,
+        previousServerID: String?,
+        authenticatedProfile: String? = nil
+    ) throws {
         // Nothing durable is written until authentication has completed.
         try persistSessionCookies(serverURL)
         try serverRegistry.activate(url: serverURL)
@@ -522,6 +615,7 @@ final class AuthManager {
         if previousServerID != serverURL.absoluteString {
             clearQuotaWidgetSnapshot()
         }
+        recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         state = .loggedIn(server: serverURL)
     }
 
@@ -681,6 +775,7 @@ final class AuthManager {
     /// its cookies — without touching the registry or the global `server_url` key.
     private func clearLocalArtifacts(for server: URL) {
         try? keychain.delete(.customHeaders, scope: server.absoluteString)
+        try? keychain.delete(.authenticatedProfile, scope: server.absoluteString)
         clearSessionCookies(for: server)
     }
 
@@ -753,6 +848,7 @@ final class AuthManager {
 
         if let server {
             try? keychain.delete(.customHeaders, scope: server.absoluteString)
+            try? keychain.delete(.authenticatedProfile, scope: server.absoluteString)
             clearSessionCookies(for: server)
         } else {
             clearAllSessionCookies()
@@ -933,11 +1029,17 @@ protocol AuthAPIClient: Sendable {
         codeVerifier: String
     ) async throws -> LoginResponse
     func cancelNativeOIDC(flowID: String, state: String) async throws -> LoginResponse
+    /// `GET /api/profiles`; native OIDC adopts its `active` profile (TAL-131).
+    func profiles() async throws -> ProfilesResponse
 }
 
 extension APIClient: AuthAPIClient {}
 
 extension AuthAPIClient {
+    func profiles() async throws -> ProfilesResponse {
+        throw OIDCSignInError.incompatibleServer
+    }
+
     func beginNativeOIDC(
         callbackURL: URL,
         state: String,
@@ -973,6 +1075,7 @@ enum OIDCSignInError: LocalizedError, Equatable {
     case securityFailure
     case expired
     case replayed
+    case profileUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -998,6 +1101,8 @@ enum OIDCSignInError: LocalizedError, Equatable {
             String(localized: "The SSO sign-in expired. Start again.")
         case .replayed:
             String(localized: "That SSO response was already used. Start again.")
+        case .profileUnavailable:
+            String(localized: "The server didn't confirm which profile this sign-in uses. Try again.")
         }
     }
 }

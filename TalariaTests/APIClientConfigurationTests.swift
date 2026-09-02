@@ -596,9 +596,11 @@ final class APIClientConfigurationTests: APIClientTestCase {
         )
         defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
-        let client = makeClient(cookiePersistence: {
-            persistenceCount.withLock { $0 += 1 }
-        }) { request in
+        let ownerResets = OSAllocatedUnfairLock(initialState: 0)
+        let client = makeClient(
+            cookiePersistence: { persistenceCount.withLock { $0 += 1 } },
+            forgetProfileOwner: { ownerResets.withLock { $0 += 1 } }
+        ) { request in
             XCTAssertEqual(request.url?.path, "/api/profile/switch")
             XCTAssertEqual(request.httpMethod, "POST")
 
@@ -626,6 +628,9 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(response.defaultWorkspace, "/Users/test/work")
         XCTAssertEqual(response.profiles?.last?.isActive, true)
         XCTAssertEqual(persistenceCount.withLock { $0 }, 1)
+        // The cache no longer belongs to one OIDC-bound profile; the next OIDC
+        // sign-in on this server must purge it (TAL-131).
+        XCTAssertEqual(ownerResets.withLock { $0 }, 1)
         XCTAssertNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 
@@ -636,9 +641,11 @@ final class APIClientConfigurationTests: APIClientTestCase {
         )
         defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
-        let client = makeClient(cookiePersistence: {
-            persistenceCount.withLock { $0 += 1 }
-        }) { request in
+        let ownerResets = OSAllocatedUnfairLock(initialState: 0)
+        let client = makeClient(
+            cookiePersistence: { persistenceCount.withLock { $0 += 1 } },
+            forgetProfileOwner: { ownerResets.withLock { $0 += 1 } }
+        ) { request in
             apiTestJSONResponse(#"{"error":"profile unavailable"}"#, for: request)
         }
 
@@ -646,6 +653,32 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
         XCTAssertEqual(response.error, "profile unavailable")
         XCTAssertEqual(persistenceCount.withLock { $0 }, 0)
+        XCTAssertEqual(ownerResets.withLock { $0 }, 0)
+        XCTAssertNotNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
+    }
+
+    func testSwitchProfileSurfacesFailureToForgetProfileOwner() async throws {
+        struct OwnerForgetFailure: Error {}
+        let widgetDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
+        )
+        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
+        let client = makeClient(
+            cookiePersistence: {},
+            forgetProfileOwner: { throw OwnerForgetFailure() }
+        ) { request in
+            apiTestJSONResponse(#"{"active":"work","profiles":[]}"#, for: request)
+        }
+
+        // A stale OIDC owner marker would let the next OIDC sign-in skip the
+        // purge, so the switch must not report success when it cannot be
+        // cleared (TAL-131).
+        do {
+            _ = try await client.switchProfile(name: "work")
+            XCTFail("Expected the switch to surface the marker failure")
+        } catch is OwnerForgetFailure {
+        }
         XCTAssertNotNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 

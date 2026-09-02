@@ -1,5 +1,6 @@
 import XCTest
 import CryptoKit
+import SwiftData
 @testable import Talaria
 
 final class APIClientAuthAndErrorTests: APIClientTestCase {
@@ -724,6 +725,464 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(client.beginCount, 1)
         XCTAssertEqual(manager.state, .loggedIn(server: newURL))
         XCTAssertEqual(keychain.savedValues[.serverURL], newURL.absoluteString)
+        XCTAssertEqual(keychain.scopedValue(.authenticatedProfile, scope: newURL.absoluteString), "member")
+    }
+
+    // MARK: - Server-bound profile reconciliation (TAL-131)
+
+    @MainActor
+    func testNativeOIDCReconcilesServerActiveProfileBeforeCommittingLogin() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        // Stale local identity left by a previous sign-in on the same server.
+        try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
+        var resets: [URL] = []
+        var manager: AuthManager!
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            onProfiles: {
+                // The profile response is what carries `hermes_profile`; nothing
+                // may have been persisted before it arrives.
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_profile", value: "member", for: server)
+                )
+                XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+            },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { url in
+                resets.append(url)
+                // The purge runs after reconciliation but before anything durable
+                // is written or the logged-in UI is entered.
+                XCTAssertEqual(client.callLog.last, "profiles")
+                XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+                XCTAssertNotEqual(manager.state, .loggedIn(server: server))
+            },
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+        XCTAssertEqual(client.callLog, ["authStatus", "exchange", "authStatus", "profiles"])
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertNil(manager.lastErrorMessage)
+        XCTAssertEqual(resets, [server])
+        XCTAssertEqual(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString), "member")
+        let persisted = try XCTUnwrap(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+        XCTAssertTrue(persisted.contains("hermes_session"))
+        XCTAssertTrue(persisted.contains("hermes_profile"))
+    }
+
+    @MainActor
+    func testNativeOIDCKeepsProfileScopedStateWhenTheSameProfileSignsInAgain() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        try keychain.save("member", forKey: .authenticatedProfile, scope: server.absoluteString)
+        var resets: [URL] = []
+        let client = OIDCMockAuthAPIClient(profilesResult: .success(.synthetic(active: "member")))
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            ),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { resets.append($0) },
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertTrue(resets.isEmpty)
+        XCTAssertEqual(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString), "member")
+    }
+
+    @MainActor
+    func testPasswordSignInForgetsThePreviousOIDCProfileMarker() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        try keychain.save("member", forKey: .authenticatedProfile, scope: server.absoluteString)
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in
+                MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
+            },
+            cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+
+        await manager.configure(serverURLString: server.absoluteString, password: "secret")
+
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        // The next OIDC sign-in as "member" must reset, not trust this session's cache.
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString))
+    }
+
+    @MainActor
+    func testNativeOIDCFailsClosedWithoutUsableActiveProfile() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let cases: [(String, Result<ProfilesResponse, Error>)] = [
+            ("request failed", .failure(APIError.unauthorized)),
+            ("missing active", .success(.synthetic(active: nil))),
+            ("blank active", .success(.synthetic(active: "  "))),
+            ("active not listed", .success(.synthetic(active: "ghost"))),
+            ("no profile list", .success(ProfilesResponse(profiles: nil, active: "member"))),
+        ]
+
+        for (label, result) in cases {
+            let keychain = InMemoryKeychainStore()
+            let cookieStore = ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            )
+            let registry = ServerRegistry.inMemory(keychain: keychain)
+            var resets: [URL] = []
+            let client = OIDCMockAuthAPIClient(
+                onExchange: {
+                    cookieStore.storage(for: server).setCookie(
+                        Self.makeCookie(name: "hermes_session", value: "partial-session", for: server)
+                    )
+                },
+                profilesResult: result
+            )
+            let manager = AuthManager(
+                keychain: keychain,
+                clientFactory: { _ in client },
+                webAuthenticator: { _, scheme in
+                    try XCTUnwrap(URL(
+                        string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                    ))
+                },
+                cookieStore: cookieStore,
+                profileEntityCache: ProfileEntityCache(defaults: nil),
+                resetProfileScopedState: { resets.append($0) },
+                serverRegistry: registry
+            )
+
+            await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+            XCTAssertEqual(client.exchangeCodes, ["exchange-code"], label)
+            XCTAssertEqual(client.logoutCount, 1, label)
+            XCTAssertEqual(client.cancelledFlowIDs, [], label)
+            XCTAssertEqual(manager.state, .unconfigured, label)
+            XCTAssertNotNil(manager.lastErrorMessage, label)
+            XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true, label)
+            XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString), label)
+            XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString), label)
+            XCTAssertNil(keychain.savedValues[.serverURL], label)
+            XCTAssertTrue(registry.servers.isEmpty, label)
+            XCTAssertTrue(resets.isEmpty, label)
+        }
+    }
+
+    @MainActor
+    func testAddServerOIDCFailsClosedWithoutActiveProfileAndKeepsActiveServer() async throws {
+        let activeURL = try XCTUnwrap(URL(string: "https://active.test"))
+        let newURL = try XCTUnwrap(URL(string: "https://new.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        try registry.activate(url: activeURL)
+        try keychain.save(activeURL.absoluteString, forKey: .serverURL)
+        try keychain.save("owner", forKey: .authenticatedProfile, scope: activeURL.absoluteString)
+        cookieStore.storage(for: activeURL).setCookie(
+            Self.makeCookie(name: "hermes_session", value: "active-session", for: activeURL)
+        )
+        try cookieStore.persist(for: activeURL)
+        var resets: [URL] = []
+        let client = OIDCMockAuthAPIClient(
+            authorizationBaseURL: newURL,
+            profilesResult: .success(.synthetic(active: "ghost"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { resets.append($0) },
+            serverRegistry: registry
+        )
+
+        let result = await manager.addServerWithOIDC(serverURLString: newURL.absoluteString)
+
+        XCTAssertEqual(result, .failed)
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertNotNil(manager.lastErrorMessage)
+        // The previously active server, its cookies, and its profile are untouched.
+        XCTAssertEqual(manager.state, .loggedIn(server: activeURL))
+        XCTAssertEqual(registry.servers.map(\.id), [activeURL.absoluteString])
+        XCTAssertEqual(keychain.savedValues[.serverURL], activeURL.absoluteString)
+        XCTAssertEqual(
+            cookieStore.storage(for: activeURL).cookies(for: activeURL)?.map(\.value),
+            ["active-session"]
+        )
+        XCTAssertNotNil(keychain.scopedValue(.sessionCookies, scope: activeURL.absoluteString))
+        XCTAssertEqual(keychain.scopedValue(.authenticatedProfile, scope: activeURL.absoluteString), "owner")
+        // Nothing was committed for the attempted server.
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: newURL.absoluteString))
+        XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: newURL.absoluteString))
+        XCTAssertTrue(cookieStore.storage(for: newURL).cookies?.isEmpty ?? true)
+        XCTAssertTrue(resets.isEmpty)
+    }
+
+    @MainActor
+    func testNativeOIDCProfileChangeDropsCachedSessionsMessagesAndSelection() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let container = try ModelContainer(
+            for: CachedSession.self, CachedMessage.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let defaults = UserDefaults.ephemeral()
+        // Offline data and a stored selection left by the previous identity.
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let staleSession = try decoder.decode(
+            SessionSummary.self,
+            from: Data(#"{"session_id": "stale-default", "title": "Old thread", "archived": false}"#.utf8)
+        )
+        try CacheStore.cacheSessions([staleSession], serverURL: server, in: context)
+        try CacheStore.cacheMessages(
+            [ChatMessage(role: "user", content: "hello", timestamp: 1, messageId: "m1")],
+            serverURL: server,
+            sessionID: "stale-default",
+            in: context
+        )
+        SessionNavigationPersistence.save("stale-default", for: server, defaults: defaults)
+        let draftPersistence = InMemoryChatDraftPersistence()
+        let draftStore = ChatDraftStore(persistence: draftPersistence, debounceDuration: .seconds(10))
+        draftStore.setDraft("unsent by default", for: .newChat(server: server))
+        draftStore.setDraft("unsent in thread", for: .session(server: server, sessionID: "stale-default"))
+        try await draftStore.flush()
+        let keychain = InMemoryKeychainStore()
+        try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
+        let client = OIDCMockAuthAPIClient(profilesResult: .success(.synthetic(active: "member")))
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            ),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: AuthManager.profileScopedStateReset(
+                cacheContainer: container,
+                draftStore: draftStore,
+                defaults: defaults
+            ),
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        // Even a failed first session-list request can no longer surface "default"'s data.
+        XCTAssertTrue(try CacheStore.cachedSessions(serverURL: server, in: context).isEmpty)
+        XCTAssertTrue(
+            try CacheStore.cachedMessages(serverURL: server, sessionID: "stale-default", in: context).isEmpty
+        )
+        XCTAssertNil(SessionNavigationPersistence.load(for: server, defaults: defaults))
+        let newChatDraft = await draftStore.draft(for: .newChat(server: server))
+        XCTAssertNil(newChatDraft)
+        let threadDraft = await draftStore.draft(for: .session(server: server, sessionID: "stale-default"))
+        XCTAssertNil(threadDraft)
+        // Removal is flushed to the persisted document (the debounce is 10s here),
+        // so a relaunch cannot bring the previous profile's drafts back.
+        let persistedDrafts = await draftPersistence.load()
+        XCTAssertTrue(persistedDrafts.isEmpty)
+    }
+
+    @MainActor
+    func testNativeOIDCSupersededBeforeProfileResetNeverPurgesLocalState() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        var inputRevision = 0
+        var resetCount = 0
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            // The user edits the connect form while the profile fetch is suspended.
+            onProfiles: { inputRevision += 1 },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { _ in resetCount += 1 },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(
+            serverURLString: server.absoluteString,
+            canCommit: { inputRevision == 0 }
+        )
+
+        // An abandoned attempt must not destroy drafts or cache for that server.
+        XCTAssertEqual(resetCount, 0)
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNil(manager.lastErrorMessage)
+        XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true)
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString))
+        XCTAssertTrue(registry.servers.isEmpty)
+    }
+
+    @MainActor
+    func testNativeOIDCAbandonsAttemptSupersededDuringProfileReset() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        var inputRevision = 0
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            // The user edits the connect form while the purge is suspended.
+            resetProfileScopedState: { _ in inputRevision += 1 },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(
+            serverURLString: server.absoluteString,
+            canCommit: { inputRevision == 0 }
+        )
+
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNil(manager.lastErrorMessage)
+        XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true)
+        XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+        XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertTrue(registry.servers.isEmpty)
+    }
+
+    @MainActor
+    func testNativeOIDCFailsClosedWhenProfileScopedPurgeFails() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { _ in throw CocoaError(.fileWriteUnknown) },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+        // The previous profile's data could not be purged, so nothing is committed
+        // and the old marker stays so the next sign-in retries the purge.
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNotNil(manager.lastErrorMessage)
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true)
+        XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: server.absoluteString))
+        XCTAssertNil(keychain.savedValues[.serverURL])
+        XCTAssertTrue(registry.servers.isEmpty)
+        XCTAssertEqual(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString), "default")
+    }
+
+    private static func makeCookie(name: String, value: String, for server: URL) -> HTTPCookie {
+        HTTPCookie(properties: [
+            .name: name,
+            .value: value,
+            .domain: server.host ?? "",
+            .path: "/",
+            .secure: "TRUE",
+        ])!
     }
 
     @MainActor
@@ -848,12 +1307,49 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 }
 
+private actor InMemoryChatDraftPersistence: ChatDraftPersisting {
+    private var drafts: [ChatDraftKey: ChatDraft] = [:]
+
+    func load() async -> [ChatDraftKey: ChatDraft] { drafts }
+
+    func write(_ drafts: [ChatDraftKey: ChatDraft]) async throws {
+        self.drafts = drafts
+    }
+}
+
+private extension ProfilesResponse {
+    /// `GET /api/profiles` for a server with synthetic `default` and `member`
+    /// profiles, with `active` set verbatim so blank or unlisted names can be
+    /// exercised.
+    static func synthetic(active: String?) -> ProfilesResponse {
+        ProfilesResponse(
+            profiles: ["default", "member"].map { name in
+                ProfileSummary(
+                    name: name,
+                    path: nil,
+                    isDefault: name == "default",
+                    isActive: name == active,
+                    gatewayRunning: nil,
+                    model: nil,
+                    provider: nil,
+                    hasEnv: nil,
+                    skillCount: nil
+                )
+            },
+            active: active,
+            singleProfileMode: false
+        )
+    }
+}
+
 private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private let authorizationBaseURL: URL
     private let passwordAuthEnabled: Bool
     private let onExchange: () -> Void
     private let onLogout: () -> Void
+    private let onProfiles: () -> Void
     private let reportsLoggedInAfterExchange: Bool
+    private let profilesResult: Result<ProfilesResponse, Error>
     private(set) var state: String?
     private(set) var codeChallenge: String?
     private(set) var exchangeCodes: [String] = []
@@ -861,27 +1357,40 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private(set) var cancelledFlowIDs: [String] = []
     private(set) var beginCount = 0
     private(set) var logoutCount = 0
+    /// Auth-relevant calls in order: `authStatus`, `exchange`, `profiles`.
+    private(set) var callLog: [String] = []
 
     init(
         authorizationBaseURL: URL = URL(string: "https://example.test")!,
         passwordAuthEnabled: Bool = false,
         onExchange: @escaping () -> Void = {},
         onLogout: @escaping () -> Void = {},
-        reportsLoggedInAfterExchange: Bool = true
+        onProfiles: @escaping () -> Void = {},
+        reportsLoggedInAfterExchange: Bool = true,
+        profilesResult: Result<ProfilesResponse, Error> = .success(.synthetic(active: "member"))
     ) {
         self.authorizationBaseURL = authorizationBaseURL
         self.passwordAuthEnabled = passwordAuthEnabled
         self.onExchange = onExchange
         self.onLogout = onLogout
+        self.onProfiles = onProfiles
         self.reportsLoggedInAfterExchange = reportsLoggedInAfterExchange
+        self.profilesResult = profilesResult
     }
 
     func health() async throws -> HealthResponse {
         HealthResponse(status: "ok", sessions: nil, activeStreams: nil, uptimeSeconds: nil)
     }
 
+    func profiles() async throws -> ProfilesResponse {
+        callLog.append("profiles")
+        onProfiles()
+        return try profilesResult.get()
+    }
+
     func authStatus() async throws -> AuthStatusResponse {
-        AuthStatusResponse(
+        callLog.append("authStatus")
+        return AuthStatusResponse(
             authEnabled: true,
             loggedIn: reportsLoggedInAfterExchange && !exchangeCodes.isEmpty,
             passwordAuthEnabled: passwordAuthEnabled,
@@ -926,6 +1435,7 @@ private final class OIDCMockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     ) async throws -> LoginResponse {
         XCTAssertEqual(flowID, "flow-1")
         XCTAssertEqual(state, self.state)
+        callLog.append("exchange")
         exchangeCodes.append(code)
         exchangeVerifiers.append(codeVerifier)
         onExchange()
