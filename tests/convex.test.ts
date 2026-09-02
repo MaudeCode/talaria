@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
-import { sha256 } from "../convex/lib/crypto";
+import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
 
@@ -118,6 +118,12 @@ describe("Convex relay state", () => {
         expiresAt: now + 60_000,
         createdAt: now,
       });
+      await ctx.db.insert("publisherInvitations", {
+        userId: "user-1",
+        tokenHash: await sha256("invalid-origin-invitation"),
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
     });
 
     const pairing = await backend.fetch("/v1/pairings/publisher/redeem", {
@@ -126,6 +132,7 @@ describe("Convex relay state", () => {
       body: JSON.stringify({
         invitation: "publisher-invitation",
         publisherId: "https://Hermes.Example:443",
+        profileId: "profile-1",
         label: "Home",
         publicKey: Buffer.alloc(32).toString("base64url"),
       }),
@@ -137,13 +144,26 @@ describe("Convex relay state", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        invitation: "publisher-invitation",
+        invitation: "invalid-origin-invitation",
         publisherId: "https://hermes.example/path",
+        profileId: "profile-1",
         label: "Home",
         publicKey: Buffer.alloc(32).toString("base64url"),
       }),
     });
     expect(invalidOrigin.status).toBe(400);
+    const retryAfterInvalidOrigin = await backend.fetch("/v1/pairings/publisher/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        invitation: "invalid-origin-invitation",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        label: "Home",
+        publicKey: Buffer.alloc(32, 1).toString("base64url"),
+      }),
+    });
+    expect(retryAfterInvalidOrigin.status).toBe(201);
 
     const deviceBody = {
       label: "iPhone",
@@ -263,6 +283,7 @@ describe("Convex relay state", () => {
     const redemption = {
       tokenHash: "invitation-hash",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       label: "Home",
       publicKey: "public-key",
@@ -270,10 +291,13 @@ describe("Convex relay state", () => {
     };
     await expect(
       backend.mutation(internal.pairing.redeemPublisherInvitation, redemption),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       ok: true,
+      protocolVersion: 2,
       userId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
+      profileIdPreserved: false,
       keyId: "key-1",
     });
     await expect(
@@ -289,20 +313,32 @@ describe("Convex relay state", () => {
       expiresAt: now + 60_000,
       now: now + 1,
     });
-    await backend.mutation(internal.pairing.redeemPublisherInvitation, {
+    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
       ...redemption,
       tokenHash: "replacement-invitation-hash",
       keyId: "key-2",
+      profileId: "different-profile",
       now: now + 1,
+    })).resolves.toMatchObject({
+      ok: true,
+      keyId: "key-2",
+      profileId: "profile-1",
+      profileIdPreserved: true,
     });
+    const ownerGrant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", "user-1").eq("publisherId", redemption.publisherId),
+      ).unique());
+    expect(ownerGrant?.profileId).toBe("profile-1");
     const stillActive = await backend.query(internal.pairing.getPublisherKey, {
       publisherId: redemption.publisherId,
       keyId: "key-1",
     });
     expect(stillActive).not.toHaveProperty("revokedAt");
     await backend.mutation(internal.publishers.acceptState, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: redemption.publisherId,
+      profileId: "profile-1",
       keyId: "key-2",
       nonce: "activate-key-2",
       nonceExpiresAt: now + 60_000,
@@ -327,16 +363,142 @@ describe("Convex relay state", () => {
       keyId: "key-2",
     });
     expect(replacementKey).not.toHaveProperty("revokedAt");
+
+    await backend.mutation(internal.subscriptions.revokePublisher, {
+      userId: "user-1",
+      publisherId: redemption.publisherId,
+      now: now + 3,
+    });
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-1",
+      tokenHash: "recovery-invitation",
+      expiresAt: now + 60_000,
+      now: now + 4,
+    });
+    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
+      ...redemption,
+      tokenHash: "recovery-invitation",
+      profileId: "recovered-profile",
+      keyId: "key-3",
+      now: now + 4,
+    })).resolves.toMatchObject({ ok: true, profileId: "recovered-profile" });
+    await expect(backend.mutation(internal.publishers.acceptState, {
+      publisherOwnerUserId: "user-1",
+      publisherId: redemption.publisherId,
+      profileId: "recovered-profile",
+      keyId: "key-3",
+      nonce: "activate-key-3",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 5,
+      sessionId: "session-1",
+      eventId: "event-1",
+      revision: 1,
+      state: {
+        sessionId: "session-1",
+        title: "Recovered",
+        phase: "running",
+        updatedAt: now + 5,
+        deepLink: "/sessions/session-1",
+      },
+    })).resolves.toEqual({ status: "accepted" });
   });
 
-  it("preserves snapshot phase transitions for alert delivery", async () => {
+  it("keeps one server publisher while isolating enrolled profile state", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
+      for (const userId of ["user-a", "user-b"]) {
+        await ctx.db.insert("relayUsers", {
+          userId,
+          appleSubjectHash: `apple-${userId}`,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-a",
+      tokenHash: "invite-a",
+      expiresAt: now + 60_000,
+      now,
+    });
+    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
+      tokenHash: "invite-a",
+      publisherId: "https://hermes.example",
+      profileId: "profile-a",
+      keyId: "key-1",
+      label: "Home",
+      publicKey: "public-key",
+      now,
+    })).resolves.toMatchObject({ ok: true, publisherId: "https://hermes.example" });
+
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-b",
+      tokenHash: "invite-b",
+      expiresAt: now + 60_000,
+      now,
+    });
+    await expect(backend.mutation(internal.pairing.redeemProfileInvitation, {
+      publisherOwnerUserId: "user-a",
+      tokenHash: "invite-b",
+      publisherId: "https://hermes.example",
+      profileId: "profile-b",
+      now: now + 1,
+    })).resolves.toMatchObject({ ok: true, userId: "user-b" });
+
+    const publish = (profileId: string, sessionId: string, nonce: string) =>
+      backend.mutation(internal.publishers.acceptSnapshot, {
+        publisherOwnerUserId: "user-a",
+        publisherId: "https://hermes.example",
+        profileId,
+        keyId: "key-1",
+        nonce,
+        nonceExpiresAt: now + 60_000,
+        receivedAt: now + 2,
+        snapshotId: `snapshot-${profileId}`,
+        states: [{
+          sessionId,
+          eventId: `event-${sessionId}`,
+          revision: 1,
+          title: `Title ${sessionId}`,
+          phase: "running" as const,
+          updatedAt: now + 2,
+          deepLink: `/sessions/${sessionId}`,
+        }],
+      });
+    await publish("profile-a", "session-a", "nonce-a");
+    await publish("profile-b", "session-b", "nonce-b");
+
+    await expect(backend.query(internal.publishers.listCurrentStates, {
+      userId: "user-a",
+      now,
+    })).resolves.toEqual([expect.objectContaining({ sessionId: "session-a" })]);
+    await expect(backend.query(internal.publishers.listCurrentStates, {
+      userId: "user-b",
+      now,
+    })).resolves.toEqual([expect.objectContaining({ sessionId: "session-b" })]);
+    const counts = await backend.run(async (ctx) => ({
+      publishers: (await ctx.db.query("publishers").collect()).length,
+      keys: (await ctx.db.query("publisherKeys").collect()).length,
+      grants: (await ctx.db.query("publisherGrants").collect()).length,
+    }));
+    expect(counts).toEqual({ publishers: 1, keys: 1, grants: 2 });
+  });
+
+  it("ignores v1 relay rows and requires a fresh v2 registration", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", {
+        userId: "user-1",
+        appleSubjectHash: "apple-1",
+        createdAt: now,
+        updatedAt: now,
+      });
       await ctx.db.insert("publishers", {
         userId: "user-1",
         publisherId: "https://hermes.example",
-        label: "Home",
+        label: "Legacy",
         enabled: true,
         createdAt: now,
         updatedAt: now,
@@ -344,13 +506,226 @@ describe("Convex relay state", () => {
       await ctx.db.insert("publisherKeys", {
         userId: "user-1",
         publisherId: "https://hermes.example",
+        keyId: "legacy-key",
+        publicKey: "legacy-public-key",
+        createdAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        userId: "user-1",
+        deleted: false,
+        publisherId: "https://hermes.example",
+        publisherLabel: "Legacy",
+        sessionId: "legacy-session",
+        eventId: "legacy-event",
+        revision: 1,
+        title: "Legacy state",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/legacy-session",
+        expiresAt: now + 60_000,
+        receivedAt: now,
+      });
+      await ctx.db.insert("publisherInvitations", {
+        userId: "user-1",
+        tokenHash: "fresh-invitation",
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
+    });
+
+    await expect(backend.query(internal.pairing.getPublisherKey, {
+      publisherId: "https://hermes.example",
+      keyId: "legacy-key",
+    })).resolves.toBeNull();
+    await expect(backend.query(internal.publishers.listCurrentStates, {
+      userId: "user-1",
+      now,
+    })).resolves.toEqual([]);
+    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
+      tokenHash: "fresh-invitation",
+      publisherId: "https://hermes.example",
+      profileId: "profile-1",
+      keyId: "v2-key",
+      label: "Home",
+      publicKey: "v2-public-key",
+      now,
+    })).resolves.toMatchObject({ ok: true, keyId: "v2-key" });
+  });
+
+  it("does not let another relay user reserve a Hermes origin", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    for (const userId of ["attacker", "owner"]) {
+      await backend.run(async (ctx) => {
+        await ctx.db.insert("relayUsers", {
+          userId,
+          appleSubjectHash: `apple-${userId}`,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+      await backend.mutation(internal.pairing.createPublisherInvitation, {
+        userId,
+        tokenHash: `invite-${userId}`,
+        expiresAt: now + 60_000,
+        now,
+      });
+      await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
+        tokenHash: `invite-${userId}`,
+        publisherId: "https://hermes.example",
+        profileId: `profile-${userId}`,
+        keyId: `key-${userId}`,
+        label: "Home",
+        publicKey: `public-key-${userId}`,
+        now,
+      })).resolves.toMatchObject({ ok: true, userId });
+    }
+
+    const owners = await backend.run(async (ctx) => (await ctx.db.query("publishers").collect())
+      .map((publisher) => publisher.ownerUserId)
+      .sort());
+    expect(owners).toEqual(["attacker", "owner"]);
+  });
+
+  it("requires the registered publisher signature for profile enrollment", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
+    const publicKey = bytesToBase64Url(
+      new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)),
+    );
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", {
+        userId: "user-b",
+        appleSubjectHash: "apple-b",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publishers", {
+        version: 2,
+        ownerUserId: "user-a",
+        publisherId: "https://hermes.example",
+        label: "Home",
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherKeys", {
+        version: 2,
+        ownerUserId: "user-a",
+        publisherId: "https://hermes.example",
+        keyId: "key-1",
+        publicKey,
+        activatedAt: now,
+        createdAt: now,
+      });
+      await ctx.db.insert("publisherInvitations", {
+        userId: "user-b",
+        tokenHash: await sha256("invite-b"),
+        expiresAt: now + 60_000,
+        createdAt: now,
+      });
+    });
+    const path = "/v1/pairings/profile/redeem";
+    const body = JSON.stringify({
+      invitation: "invite-b",
+      publisherId: "https://hermes.example",
+      profileId: "profile-b",
+    });
+    const unsigned = await backend.fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    expect(unsigned.status).toBe(401);
+
+    const signedHeaders = async (method: string, signedPath: string, signedBody: string, nonce: string) => {
+      const timestamp = String(Math.floor(now / 1_000));
+      const message = [method, signedPath, timestamp, nonce, await sha256(signedBody)].join("\n");
+      const signature = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.sign(
+        "Ed25519",
+        keys.privateKey,
+        new TextEncoder().encode(message),
+      )));
+      return {
+        "content-type": "application/json",
+        "x-talaria-key-id": "key-1",
+        "x-talaria-timestamp": timestamp,
+        "x-talaria-nonce": nonce,
+        "x-talaria-signature": signature,
+      };
+    };
+    const response = await backend.fetch(path, {
+      method: "POST",
+      headers: await signedHeaders("POST", path, body, "grant-nonce"),
+      body,
+    });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({ userId: "user-b", profileId: "profile-b" });
+
+    const snapshotPath = `/v1/publishers/${encodeURIComponent("https://hermes.example")}/profiles/profile-b/snapshot`;
+    const snapshotBody = JSON.stringify({
+      snapshotId: "snapshot-b",
+      states: [{
+        sessionId: "session-b",
+        eventId: "event-b",
+        revision: 1,
+        title: "Private B",
+        phase: "running",
+        updatedAt: now,
+        deepLink: "/sessions/session-b",
+      }],
+    });
+    const snapshot = await backend.fetch(snapshotPath, {
+      method: "PUT",
+      headers: await signedHeaders("PUT", snapshotPath, snapshotBody, "snapshot-nonce"),
+      body: snapshotBody,
+    });
+    expect(snapshot.status).toBe(200);
+    await expect(backend.query(internal.publishers.listCurrentStates, {
+      userId: "user-b",
+      now,
+    })).resolves.toEqual([expect.objectContaining({ sessionId: "session-b", title: "Private B" })]);
+    await expect(backend.query(internal.publishers.listCurrentStates, {
+      userId: "user-a",
+      now,
+    })).resolves.toEqual([]);
+  });
+
+  it("preserves snapshot phase transitions for alert delivery", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publishers", {
+        version: 2,
+        ownerUserId: "user-1",
+        publisherId: "https://hermes.example",
+        label: "Home",
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherKeys", {
+        version: 2,
+        ownerUserId: "user-1",
+        publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
         activatedAt: now,
         createdAt: now,
       });
-      await ctx.db.insert("sessionStates", {
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        version: 2,
+        userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -366,8 +741,9 @@ describe("Convex relay state", () => {
       });
     });
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "nonce-snapshot",
       nonceExpiresAt: now + 60_000,
@@ -400,8 +776,9 @@ describe("Convex relay state", () => {
       }],
     }]);
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "nonce-heartbeat",
       nonceExpiresAt: now + 120_000,
@@ -458,16 +835,26 @@ describe("Convex relay state", () => {
       }
       for (const publisherId of ["https://hermes.example", "https://other.example"]) {
         await ctx.db.insert("publishers", {
-          userId: "user-1",
+          version: 2,
+          ownerUserId: "user-1",
           publisherId,
           label: publisherId,
           enabled: true,
           createdAt: now,
           updatedAt: now,
         });
+        await ctx.db.insert("publisherGrants", {
+          publisherOwnerUserId: "user-1",
+          userId: "user-1",
+          publisherId,
+          profileId: "profile-1",
+          createdAt: now,
+          updatedAt: now,
+        });
       }
       await ctx.db.insert("publisherKeys", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
@@ -475,7 +862,9 @@ describe("Convex relay state", () => {
         createdAt: now,
       });
       await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -543,12 +932,18 @@ describe("Convex relay state", () => {
     expect(revoke.status).toBe(200);
     const revokedState = await backend.run(async (ctx) => ({
       publisher: await ctx.db.query("publishers").withIndex(
-        "by_user_id_and_publisher_id",
-        (query) => query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),
+        "by_version_and_owner_user_id_and_publisher_id",
+        (query) => query.eq("version", 2).eq("ownerUserId", "user-1")
+          .eq("publisherId", "https://hermes.example"),
       ).unique(),
       otherPublisher: await ctx.db.query("publishers").withIndex(
+        "by_version_and_owner_user_id_and_publisher_id",
+        (query) => query.eq("version", 2).eq("ownerUserId", "user-1")
+          .eq("publisherId", "https://other.example"),
+      ).unique(),
+      grant: await ctx.db.query("publisherGrants").withIndex(
         "by_user_id_and_publisher_id",
-        (query) => query.eq("userId", "user-1").eq("publisherId", "https://other.example"),
+        (query) => query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),
       ).unique(),
       key: await ctx.db.query("publisherKeys").withIndex(
         "by_key_id",
@@ -562,13 +957,15 @@ describe("Convex relay state", () => {
           .eq("sessionId", "session-1"),
       ).unique(),
     }));
-    expect(revokedState.publisher?.enabled).toBe(false);
+    expect(revokedState.publisher?.enabled).toBe(true);
     expect(revokedState.otherPublisher?.enabled).toBe(true);
-    expect(revokedState.key?.revokedAt).toEqual(expect.any(Number));
+    expect(revokedState.grant).toBeNull();
+    expect(revokedState.key?.revokedAt).toBeUndefined();
     expect(revokedState.state?.deleted).toBe(true);
     await expect(backend.mutation(internal.publishers.acceptState, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "after-revoke",
       nonceExpiresAt: now + 60_000,
@@ -583,7 +980,124 @@ describe("Convex relay state", () => {
         updatedAt: now + 1,
         deepLink: "/sessions/session-1",
       },
-    })).resolves.toEqual({ status: "unauthorized" });
+    })).resolves.toEqual({ status: "stale" });
+
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-1",
+      tokenHash: "reenroll-invitation",
+      expiresAt: now + 60_000,
+      now: now + 2,
+    });
+    await expect(backend.mutation(internal.pairing.redeemProfileInvitation, {
+      publisherOwnerUserId: "user-1",
+      tokenHash: "reenroll-invitation",
+      publisherId: "https://hermes.example",
+      profileId: "profile-1",
+      now: now + 2,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(backend.mutation(internal.publishers.acceptState, {
+      publisherOwnerUserId: "user-1",
+      publisherId: "https://hermes.example",
+      profileId: "profile-1",
+      keyId: "key-1",
+      nonce: "after-reenroll",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 3,
+      sessionId: "session-1",
+      eventId: "event-1",
+      revision: 1,
+      state: {
+        sessionId: "session-1",
+        title: "Working again",
+        phase: "running",
+        updatedAt: now + 3,
+        deepLink: "/sessions/session-1",
+      },
+    })).resolves.toEqual({ status: "accepted" });
+    await expect(backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    })).resolves.toMatchObject({ deleted: false, title: "Working again" });
+  });
+
+  it("keeps the grant when bounded revocation cannot retire every state", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (let index = 0; index < 501; index += 1) {
+        await ctx.db.insert("sessionStates", {
+          version: 2,
+          userId: "user-1",
+          profileId: "profile-1",
+          deleted: false,
+          publisherId: "https://hermes.example",
+          publisherLabel: "Home",
+          sessionId: `session-${index}`,
+          eventId: `event-${index}`,
+          revision: 1,
+          title: "State",
+          phase: "running",
+          updatedAt: now,
+          deepLink: `/sessions/session-${index}`,
+          expiresAt: now + 60_000,
+          receivedAt: now,
+        });
+      }
+    });
+
+    await expect(backend.mutation(internal.subscriptions.revokePublisher, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      now,
+    })).resolves.toEqual({ ok: false, reason: "too_many_states" });
+    const grant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),
+      ).unique());
+    expect(grant).not.toBeNull();
+  });
+
+  it("keeps the grant when bounded revocation cannot clear every exclusion", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
+        userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (let index = 0; index < 501; index += 1) {
+        await ctx.db.insert("devicePublisherExclusions", {
+          userId: "user-1",
+          publisherId: "https://hermes.example",
+          deviceId: `device-${index}`,
+          createdAt: now,
+        });
+      }
+    });
+
+    await expect(backend.mutation(internal.subscriptions.revokePublisher, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      now,
+    })).resolves.toEqual({ ok: false, reason: "too_many_exclusions" });
+    const grant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", "user-1").eq("publisherId", "https://hermes.example"),
+      ).unique());
+    expect(grant).not.toBeNull();
   });
 
   it("does not renew terminal retention on equal-revision heartbeats", async () => {
@@ -592,7 +1106,8 @@ describe("Convex relay state", () => {
     const terminalExpiresAt = now + 15 * 60_000;
     await backend.run(async (ctx) => {
       await ctx.db.insert("publishers", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         label: "Home",
         enabled: true,
@@ -600,15 +1115,26 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       await ctx.db.insert("publisherKeys", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
         activatedAt: now,
         createdAt: now,
       });
-      await ctx.db.insert("sessionStates", {
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        version: 2,
+        userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -626,8 +1152,9 @@ describe("Convex relay state", () => {
     });
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "nonce-heartbeat",
       nonceExpiresAt: now + 120_000,
@@ -659,7 +1186,8 @@ describe("Convex relay state", () => {
     const terminalExpiresAt = now + 15 * 60_000;
     await backend.run(async (ctx) => {
       await ctx.db.insert("publishers", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         label: "Home",
         enabled: true,
@@ -667,15 +1195,26 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       await ctx.db.insert("publisherKeys", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
         activatedAt: now,
         createdAt: now,
       });
-      await ctx.db.insert("sessionStates", {
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
+        publisherId: "https://hermes.example",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", {
+        version: 2,
+        userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -694,8 +1233,9 @@ describe("Convex relay state", () => {
     });
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "nonce-heartbeat",
       nonceExpiresAt: now + 120_000,
@@ -721,8 +1261,9 @@ describe("Convex relay state", () => {
     expect(refreshed?.terminalExpiresAt).toBe(terminalExpiresAt);
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "nonce-new-stream",
       nonceExpiresAt: now + 180_000,
@@ -747,8 +1288,9 @@ describe("Convex relay state", () => {
     expect(refreshed?.terminalExpiresAt).toBe(now + 120_000 + 15 * 60_000);
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      userId: "user-1",
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
+      profileId: "profile-1",
       keyId: "key-1",
       nonce: "nonce-unknown-stream",
       nonceExpiresAt: now + 240_000,
@@ -788,7 +1330,9 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       stateId = await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -945,7 +1489,8 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       await ctx.db.insert("publishers", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "publisher-1",
         label: "Home",
         enabled: true,
@@ -953,11 +1498,20 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       await ctx.db.insert("publisherKeys", {
-        userId: "user-1",
+        version: 2,
+        ownerUserId: "user-1",
         publisherId: "publisher-1",
         keyId: "key-1",
         publicKey: "public-key",
         createdAt: now,
+      });
+      await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
+        userId: "user-1",
+        publisherId: "publisher-1",
+        profileId: "profile-1",
+        createdAt: now,
+        updatedAt: now,
       });
     });
     const state = {
@@ -971,8 +1525,9 @@ describe("Convex relay state", () => {
 
     await expect(
       backend.mutation(internal.publishers.acceptState, {
-        userId: "user-1",
+        publisherOwnerUserId: "user-1",
         publisherId: "publisher-1",
+        profileId: "profile-1",
         keyId: "key-1",
         nonce: "nonce-1",
         nonceExpiresAt: now + 60_000,
@@ -985,8 +1540,9 @@ describe("Convex relay state", () => {
     ).resolves.toEqual({ status: "accepted" });
     await expect(
       backend.mutation(internal.publishers.acceptState, {
-        userId: "user-1",
+        publisherOwnerUserId: "user-1",
         publisherId: "publisher-1",
+        profileId: "profile-1",
         keyId: "key-1",
         nonce: "nonce-2",
         nonceExpiresAt: now + 60_000,
@@ -999,8 +1555,9 @@ describe("Convex relay state", () => {
     ).resolves.toEqual({ status: "stale" });
     await expect(
       backend.mutation(internal.publishers.acceptState, {
-        userId: "user-1",
+        publisherOwnerUserId: "user-1",
         publisherId: "publisher-1",
+        profileId: "profile-1",
         keyId: "key-1",
         nonce: "nonce-2",
         nonceExpiresAt: now + 60_000,
@@ -1212,6 +1769,23 @@ describe("Convex relay state", () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
+      await ctx.db.insert("publishers", {
+        version: 2,
+        ownerUserId: "user-1",
+        publisherId: "https://hermes.example",
+        label: "Home",
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("publisherKeys", {
+        version: 2,
+        ownerUserId: "user-1",
+        publisherId: "https://hermes.example",
+        keyId: "key-1",
+        publicKey: "public-key",
+        createdAt: now,
+      });
       for (const userId of ["user-1", "user-2"]) {
         await ctx.db.insert("relayUsers", {
           userId,
@@ -1219,20 +1793,13 @@ describe("Convex relay state", () => {
           createdAt: now,
           updatedAt: now,
         });
-        await ctx.db.insert("publishers", {
+        await ctx.db.insert("publisherGrants", {
+          publisherOwnerUserId: "user-1",
           userId,
           publisherId: "https://hermes.example",
-          label: userId,
-          enabled: true,
+          profileId: `profile-${userId}`,
           createdAt: now,
           updatedAt: now,
-        });
-        await ctx.db.insert("publisherKeys", {
-          userId,
-          publisherId: "https://hermes.example",
-          keyId: `key-${userId}`,
-          publicKey: "public-key",
-          createdAt: now,
         });
         await ctx.db.insert("devices", {
           userId,
@@ -1253,9 +1820,10 @@ describe("Convex relay state", () => {
     };
     for (const userId of ["user-1", "user-2"]) {
       await backend.mutation(internal.publishers.acceptState, {
-        userId,
+        publisherOwnerUserId: "user-1",
         publisherId: "https://hermes.example",
-        keyId: `key-${userId}`,
+        profileId: `profile-${userId}`,
+        keyId: "key-1",
         nonce: `nonce-${userId}`,
         nonceExpiresAt: now + 60_000,
         receivedAt: now,
@@ -1273,8 +1841,8 @@ describe("Convex relay state", () => {
       userId: "user-2",
       now,
     });
-    expect(first.map((item) => item.publisherLabel)).toEqual(["user-1"]);
-    expect(second.map((item) => item.publisherLabel)).toEqual(["user-2"]);
+    expect(first.map((item) => item.eventId)).toEqual(["event-user-1"]);
+    expect(second.map((item) => item.eventId)).toEqual(["event-user-2"]);
 
     const registered = await backend.mutation(internal.devices.registerActivity, {
       userId: "user-1",
@@ -1319,7 +1887,9 @@ describe("Convex relay state", () => {
           updatedAt: now,
         });
         await ctx.db.insert("sessionStates", {
+          version: 2,
           userId,
+          profileId: `profile-${userId}`,
           deleted: false,
           publisherId: "https://hermes.example",
           publisherLabel: userId,
@@ -1480,7 +2050,9 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -1659,7 +2231,9 @@ describe("Convex relay state", () => {
     expect(outstandingDevice?.pushToStartIssuedAt).toBeDefined();
     await backend.run(async (ctx) => {
       await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -1733,7 +2307,9 @@ describe("Convex relay state", () => {
         updatedAt: now,
       });
       await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -1749,7 +2325,9 @@ describe("Convex relay state", () => {
         receivedAt: now,
       });
       await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",
@@ -1946,7 +2524,9 @@ describe("Convex relay state", () => {
 
     await backend.run(async (ctx) => {
       await ctx.db.insert("sessionStates", {
+        version: 2,
         userId: "user-1",
+        profileId: "profile-1",
         deleted: false,
         publisherId: "https://hermes.example",
         publisherLabel: "Home",

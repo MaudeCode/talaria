@@ -91,24 +91,13 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
 }
 
 async function currentStates(ctx: MutationCtx, userId: string, now: number): Promise<SessionState[]> {
-  const [states, publishers] = await Promise.all([
-    ctx.db
-      .query("sessionStates")
-      .withIndex("by_user_id_and_expires_at", (query) =>
-        query.eq("userId", userId).gt("expiresAt", now),
-      )
-      .take(MAX_STATE_ROWS),
-    ctx.db
-      .query("publishers")
-      .withIndex("by_user_id_and_publisher_id", (query) => query.eq("userId", userId))
-      .take(MAX_STATE_ROWS),
-  ]);
-  const disabledPublisherIds = new Set(
-    publishers.filter((publisher) => !publisher.enabled).map((publisher) => publisher.publisherId),
-  );
-  return states
-    .map(asSessionState)
-    .filter((state) => !state.deleted && !disabledPublisherIds.has(state.publisherId));
+  const states = await ctx.db
+    .query("sessionStates")
+    .withIndex("by_version_and_user_id_and_expires_at", (query) =>
+      query.eq("version", 2).eq("userId", userId).gt("expiresAt", now),
+    )
+    .take(MAX_STATE_ROWS);
+  return states.map(asSessionState).filter((state) => !state.deleted);
 }
 
 async function excludedPublisherIds(
@@ -684,17 +673,18 @@ export const claimJob = internalMutation({
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           return { status: "stale" as const };
         }
-        const [publisher, state] = await Promise.all([
+        const [grant, state] = await Promise.all([
           ctx.db
-            .query("publishers")
+            .query("publisherGrants")
             .withIndex("by_user_id_and_publisher_id", (query) =>
               query.eq("userId", job.userId).eq("publisherId", job.sourcePublisherId!),
             )
             .unique(),
           ctx.db
             .query("sessionStates")
-            .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
+            .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
               query
+                .eq("version", 2)
                 .eq("userId", job.userId)
                 .eq("publisherId", job.sourcePublisherId!)
                 .eq("sessionId", job.sourceSessionId!),
@@ -702,7 +692,7 @@ export const claimJob = internalMutation({
             .unique(),
         ]);
         if (
-          !publisher?.enabled ||
+          !grant ||
           !state ||
           state.deleted ||
           !job.stateFingerprint.includes(`:${state.eventId}:`)

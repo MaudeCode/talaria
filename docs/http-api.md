@@ -15,11 +15,13 @@ All bodies are JSON. User-authenticated routes use `Authorization: Bearer <relay
 
 The relay verifies the ES256 signature against Apple's JWKS plus issuer, audience, expiry, nonce, and token replay. It returns an opaque 30-day relay session token. End it with `DELETE /v1/auth/session`.
 
-## Automatic Hermes pairing
+## Server registration and profile enrollment
+
+This is the v2 contract. The relay ignores v1 publishers, keys, nonces, and session states rather than migrating or authorizing them. Re-registration creates v2 records alongside any inert v1 rows.
 
 Talaria creates a ten-minute invitation with authenticated `POST /v1/pairings/publisher` and passes it through the authenticated Hermes API.
 
-Hermes generates an Ed25519 key locally and redeems the invitation once:
+The Hermes owner registers the server once. Hermes generates an Ed25519 key locally and redeems the invitation with an opaque profile scope:
 
 `POST /v1/pairings/publisher/redeem`
 
@@ -27,12 +29,31 @@ Hermes generates an Ed25519 key locally and redeems the invitation once:
 {
   "invitation": "one-time invitation",
   "publisherId": "https://hermes.example.com",
+  "profileId": "opaque-server-generated-profile-scope",
   "label": "Home Hermes",
   "publicKey": "base64url raw Ed25519 public key"
 }
 ```
 
 The private key never leaves the Hermes machine.
+Repeating server registration with an invitation from the publisher's original relay owner creates a replacement key. The relay activates it on first signed publication and then revokes the previous key without changing profile grants.
+Successful registration and enrollment responses include `protocolVersion: 2`. Registration also returns `profileIdPreserved`: `false` requires an exact echo of the requested scope, while `true` tells Hermes that owner key recovery retained the existing owner grant. Hermes rejects any unmarked scope mismatch before treating local configuration as valid.
+
+Registrations are keyed by relay owner plus server origin. Another relay user can claim the same public origin only inside their own account; that claim cannot reserve the origin, block the legitimate owner, authenticate the legitimate publisher, or receive its profile grants.
+
+After registration, any authenticated Hermes profile can enroll. Hermes resolves the profile from its trusted session, never from a client-supplied profile name, and signs:
+
+`POST /v1/pairings/profile/redeem`
+
+```json
+{
+  "invitation": "one-time invitation",
+  "publisherId": "https://hermes.example.com",
+  "profileId": "opaque-server-generated-profile-scope"
+}
+```
+
+The request uses publisher authentication below. One relay user receives one profile grant for a publisher. Re-enrollment may replace that user's old profile grant without rotating or replacing the server key.
 
 ## Publisher authentication
 
@@ -57,7 +78,7 @@ BASE64URL_SHA256_OF_EXACT_BODY
 
 ## Publish a complete snapshot
 
-`PUT /v1/publishers/{publisherId}/snapshot`
+`PUT /v1/publishers/{publisherId}/profiles/{profileId}/snapshot`
 
 ```json
 {
@@ -79,7 +100,7 @@ BASE64URL_SHA256_OF_EXACT_BODY
 
 Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Non-terminal rows are three-minute leases refreshed by the WebUI heartbeat. Missing rows expire instead of being immediately tombstoned, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
 
-The per-session route remains available at `PUT /v1/publishers/{publisherId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
+The per-session route remains available at `PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
 
 ## Device and Live Activity routes
 
@@ -136,7 +157,7 @@ Subscribe or unsubscribe only that device with authenticated `PUT /v1/devices/{d
 
 An unsubscribed publisher is excluded from that device's aggregate snapshots, ActivityKit delivery, and notifications. Other devices remain subscribed.
 
-Revoke a publisher for the whole relay account with authenticated `DELETE /v1/publisher-enrollment?publisherId=https%3A%2F%2Fhermes.example.com`. Revocation disables the publisher, revokes its keys, retires its current states, and recomputes delivery for every device. Pairing it again creates a new publisher key.
+Revoke the signed-in relay account's profile grant with authenticated `DELETE /v1/publisher-enrollment?publisherId=https%3A%2F%2Fhermes.example.com`. Revocation retires only that account's states and recomputes its devices. The registered publisher, signing key, and other profile grants remain active.
 
 ## Foreground snapshot
 
