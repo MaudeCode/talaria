@@ -64,17 +64,20 @@ export default defineSchema({
     .index("by_expires_at", ["expiresAt"]),
 
   publishers: defineTable({
-    userId: v.string(),
+    version: v.optional(v.number()),
+    userId: v.optional(v.string()),
+    ownerUserId: v.optional(v.string()),
     publisherId: v.string(),
     label: v.string(),
     enabled: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_user_id_and_publisher_id", ["userId", "publisherId"]),
+    .index("by_version_and_publisher_id", ["version", "publisherId"]),
 
   publisherKeys: defineTable({
-    userId: v.string(),
+    version: v.optional(v.number()),
+    userId: v.optional(v.string()),
     publisherId: v.string(),
     keyId: v.string(),
     publicKey: v.string(),
@@ -82,20 +85,32 @@ export default defineSchema({
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
-    .index("by_user_id_and_publisher_id", ["userId", "publisherId"])
+    .index("by_version_and_publisher_id", ["version", "publisherId"])
     .index("by_activated_at_and_created_at", ["activatedAt", "createdAt"])
     .index("by_revoked_at", ["revokedAt"])
+    .index("by_version_and_key_id", ["version", "keyId"])
     .index("by_key_id", ["keyId"]),
 
   publisherNonces: defineTable({
-    userId: v.string(),
+    version: v.optional(v.number()),
+    userId: v.optional(v.string()),
     publisherId: v.string(),
     nonce: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),
   })
-    .index("by_user_id_and_publisher_id_and_nonce", ["userId", "publisherId", "nonce"])
+    .index("by_version_and_publisher_id_and_nonce", ["version", "publisherId", "nonce"])
     .index("by_expires_at", ["expiresAt"]),
+
+  publisherGrants: defineTable({
+    userId: v.string(),
+    publisherId: v.string(),
+    profileId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id_and_publisher_id", ["userId", "publisherId"])
+    .index("by_publisher_id_and_profile_id", ["publisherId", "profileId"]),
 
   devices: defineTable({
     userId: v.string(),
@@ -128,7 +143,9 @@ export default defineSchema({
   }).index("by_user_id_and_device_id_and_publisher_id", ["userId", "deviceId", "publisherId"]),
 
   sessionStates: defineTable({
+    version: v.optional(v.number()),
     userId: v.string(),
+    profileId: v.optional(v.string()),
     deleted: v.boolean(),
     publisherId: v.string(),
     publisherLabel: v.string(),
@@ -145,7 +162,9 @@ export default defineSchema({
     receivedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])
+    .index("by_version_and_user_id_and_publisher_id_and_session_id", ["version", "userId", "publisherId", "sessionId"])
     .index("by_user_id_and_expires_at", ["userId", "expiresAt"])
+    .index("by_version_and_user_id_and_expires_at", ["version", "userId", "expiresAt"])
     .index("by_expires_at", ["expiresAt"]),
 
   liveActivities: defineTable({

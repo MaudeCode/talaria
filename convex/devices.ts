@@ -122,15 +122,17 @@ export const registerActivity = internalMutation({
       return { ok: false, reason: "session_required" };
     }
     if (args.mode === "per_session") {
-      const exclusion = await ctx.db
-        .query("devicePublisherExclusions")
-        .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
-          query
-            .eq("userId", args.userId)
-            .eq("deviceId", args.deviceId)
-            .eq("publisherId", args.publisherId!),
-        )
-        .unique();
+      const [grant, exclusion] = await Promise.all([
+        ctx.db.query("publisherGrants")
+          .withIndex("by_user_id_and_publisher_id", (query) =>
+            query.eq("userId", args.userId).eq("publisherId", args.publisherId!),
+          ).unique(),
+        ctx.db.query("devicePublisherExclusions")
+          .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
+            query.eq("userId", args.userId).eq("deviceId", args.deviceId).eq("publisherId", args.publisherId!),
+          ).unique(),
+      ]);
+      if (!grant) return { ok: false, reason: "publisher_not_enrolled" };
       if (exclusion) return { ok: false, reason: "publisher_unsubscribed" };
     }
 

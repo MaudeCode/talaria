@@ -4,7 +4,6 @@ import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
 
 const MAX_PUBLISHERS = 500;
-const MAX_PUBLISHER_KEYS = 100;
 
 const subscriptionValidator = v.object({
   publisherId: v.string(),
@@ -26,9 +25,9 @@ export const listForDevice = internalQuery({
       )
       .unique();
     if (!device || device.revokedAt !== undefined) return null;
-    const [publishers, exclusions] = await Promise.all([
+    const [grants, exclusions] = await Promise.all([
       ctx.db
-        .query("publishers")
+        .query("publisherGrants")
         .withIndex("by_user_id_and_publisher_id", (query) => query.eq("userId", args.userId))
         .take(MAX_PUBLISHERS),
       ctx.db
@@ -39,13 +38,17 @@ export const listForDevice = internalQuery({
         .take(MAX_PUBLISHERS),
     ]);
     const excluded = new Set(exclusions.map((item) => item.publisherId));
-    return publishers
-      .filter((publisher) => publisher.enabled)
-      .map((publisher) => ({
-        publisherId: publisher.publisherId,
-        label: publisher.label,
-        subscribed: !excluded.has(publisher.publisherId),
-      }));
+    const publishers = await Promise.all(grants.map((grant) =>
+      ctx.db.query("publishers")
+        .withIndex("by_version_and_publisher_id", (query) =>
+          query.eq("version", 2).eq("publisherId", grant.publisherId),
+        ).unique(),
+    ));
+    return publishers.flatMap((publisher) => publisher?.enabled ? [{
+      publisherId: publisher.publisherId,
+      label: publisher.label,
+      subscribed: !excluded.has(publisher.publisherId),
+    }] : []);
   },
 });
 
@@ -80,7 +83,7 @@ export const setForDevice = internalMutation({
   },
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
-    const [device, publisher, exclusion] = await Promise.all([
+    const [device, grant, publisher, exclusion] = await Promise.all([
       ctx.db
         .query("devices")
         .withIndex("by_user_id_and_device_id", (query) =>
@@ -88,11 +91,15 @@ export const setForDevice = internalMutation({
         )
         .unique(),
       ctx.db
-        .query("publishers")
+        .query("publisherGrants")
         .withIndex("by_user_id_and_publisher_id", (query) =>
           query.eq("userId", args.userId).eq("publisherId", args.publisherId),
         )
         .unique(),
+      ctx.db.query("publishers")
+        .withIndex("by_version_and_publisher_id", (query) =>
+          query.eq("version", 2).eq("publisherId", args.publisherId),
+        ).unique(),
       ctx.db
         .query("devicePublisherExclusions")
         .withIndex("by_user_id_and_device_id_and_publisher_id", (query) =>
@@ -103,7 +110,7 @@ export const setForDevice = internalMutation({
         )
         .unique(),
     ]);
-    if (!device || device.revokedAt !== undefined || !publisher?.enabled) return { ok: false };
+    if (!device || device.revokedAt !== undefined || !grant || !publisher?.enabled) return { ok: false };
     if (args.subscribed) {
       if (exclusion) await ctx.db.delete(exclusion._id);
     } else if (!exclusion) {
@@ -123,30 +130,27 @@ export const revokePublisher = internalMutation({
   args: { userId: v.string(), publisherId: v.string(), now: v.number() },
   returns: v.object({ ok: v.boolean(), reason: v.optional(v.string()) }),
   handler: async (ctx, args) => {
-    const publisher = await ctx.db
-      .query("publishers")
+    const grant = await ctx.db
+      .query("publisherGrants")
       .withIndex("by_user_id_and_publisher_id", (query) =>
         query.eq("userId", args.userId).eq("publisherId", args.publisherId),
       )
       .unique();
-    if (!publisher) return { ok: false };
-    const [keys, states] = await Promise.all([
-      ctx.db
-        .query("publisherKeys")
-        .withIndex("by_user_id_and_publisher_id", (query) =>
-          query.eq("userId", args.userId).eq("publisherId", args.publisherId),
-        )
-        .take(MAX_PUBLISHER_KEYS + 1),
-      ctx.db
-        .query("sessionStates")
-        .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
-          query.eq("userId", args.userId).eq("publisherId", args.publisherId),
+    if (!grant) return { ok: false };
+    const [states, exclusions] = await Promise.all([
+      ctx.db.query("sessionStates")
+        .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
+          query.eq("version", 2).eq("userId", args.userId).eq("publisherId", args.publisherId),
         )
         .take(MAX_PUBLISHERS + 1),
+      ctx.db.query("devicePublisherExclusions")
+        .withIndex("by_user_id_and_device_id_and_publisher_id", (query) => query.eq("userId", args.userId))
+        .take(MAX_PUBLISHERS + 1),
     ]);
-    await ctx.db.patch(publisher._id, { enabled: false, updatedAt: args.now });
-    for (const key of keys) {
-      if (key.revokedAt === undefined) await ctx.db.patch(key._id, { revokedAt: args.now });
+    if (states.length > MAX_PUBLISHERS) return { ok: false, reason: "too_many_states" };
+    await ctx.db.delete(grant._id);
+    for (const exclusion of exclusions) {
+      if (exclusion.publisherId === args.publisherId) await ctx.db.delete(exclusion._id);
     }
     for (const state of states) {
       if (!state.deleted) {

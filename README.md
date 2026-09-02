@@ -1,8 +1,10 @@
 # Talaria Relay
 
-Tenant-isolated Convex relay for Talaria notifications and aggregate Live Activities.
+Profile-isolated Convex relay for Talaria notifications and aggregate Live Activities.
 
-Talaria signs in natively with Apple and receives a relay session. It creates a short-lived publisher invitation and sends it through the already-authenticated Hermes WebUI API. Hermes redeems the invitation, stores its Ed25519 signing key locally, and publishes complete session snapshots. The relay scopes publishers, devices, session state, ActivityKit tokens, and APNs jobs to the Apple-backed relay user.
+Talaria signs in natively with Apple and receives a relay session. An owner registers each Hermes server once, and Hermes stores its Ed25519 signing key locally. Any authenticated Hermes profile can then redeem its relay invitation through that registered publisher. Hermes publishes a separate signed snapshot for each opaque profile scope, and the relay copies state only into relay accounts granted that scope.
+
+The v2 enrollment model intentionally does not accept v1 publisher credentials. Existing v1 rows remain inert so the schema can deploy without destructive cleanup; servers and users must register and enroll again.
 
 The relay accepts bounded semantic state only. It does not accept transcripts, commands, tool arguments, file paths, provider credentials, or Hermes authentication secrets.
 
@@ -44,7 +46,7 @@ The production HTTP origin is `https://relay.talaria.kil.dev`.
 After Apple enables Sign in with Apple for the Talaria App ID and production configuration is installed:
 
 1. Sign in from a physical iPhone.
-2. Pair an authenticated Hermes server from Talaria Settings.
+2. Register an authenticated Hermes server as its owner, then enroll each Hermes profile from Talaria Settings.
 3. Start concurrent Hermes sessions and arm the aggregate Live Activity.
 4. Lock the phone and verify APNs update/end plus approval/input notification fallback.
 

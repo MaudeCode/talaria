@@ -233,7 +233,7 @@ async function authenticatePublisher(
   rawBody: string,
   publisherId: string,
 ): Promise<
-  | { userId: string; keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
+  | { keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
   | null
 > {
   const keyId = request.headers.get("x-talaria-key-id")?.trim();
@@ -259,7 +259,7 @@ async function authenticatePublisher(
       body: rawBody,
     });
     return valid
-      ? { userId: key.userId, keyId, nonce, nonceExpiresAt: receivedAt + 10 * 60 * 1_000, receivedAt }
+      ? { keyId, nonce, nonceExpiresAt: receivedAt + 10 * 60 * 1_000, receivedAt }
       : null;
   } catch {
     return null;
@@ -389,9 +389,10 @@ http.route({
     if (!body) return json(400, { error: "invalid_json" });
     const invitation = stringField(body, "invitation", 256);
     const publisherId = canonicalHttpOrigin(stringField(body, "publisherId", 191) ?? "");
+    const profileId = stringField(body, "profileId", 128);
     const label = stringField(body, "label", 80);
     const publicKey = stringField(body, "publicKey", 128);
-    if (!invitation || !publisherId || !label || !publicKey) {
+    if (!invitation || !publisherId || !profileId || !label || !publicKey) {
       return json(400, { error: "invalid_pairing" });
     }
     try {
@@ -404,9 +405,40 @@ http.route({
     const result = await ctx.runMutation(internal.pairing.redeemPublisherInvitation, {
       tokenHash: await sha256(invitation),
       publisherId,
+      profileId,
       keyId: `key_${randomToken(8)}`,
       label,
       publicKey,
+      now: Date.now(),
+    });
+    return result.ok ? json(201, result) : json(400, { error: result.reason });
+  }),
+});
+
+http.route({
+  path: "/v1/pairings/profile/redeem",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const rawBody = await request.text();
+    if (rawBody.length > maximumBodyCharacters) return json(413, { error: "body_too_large" });
+    let body: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(rawBody) as unknown;
+      if (!isRecord(parsed)) throw new Error("invalid");
+      body = parsed;
+    } catch {
+      return json(400, { error: "invalid_json" });
+    }
+    const invitation = stringField(body, "invitation", 256);
+    const publisherId = canonicalHttpOrigin(stringField(body, "publisherId", 191) ?? "");
+    const profileId = stringField(body, "profileId", 128);
+    if (!invitation || !publisherId || !profileId) return json(400, { error: "invalid_pairing" });
+    const auth = await authenticatePublisher(ctx, request, rawBody, publisherId);
+    if (!auth) return json(401, { error: "unauthorized" });
+    const result = await ctx.runMutation(internal.pairing.redeemProfileInvitation, {
+      tokenHash: await sha256(invitation),
+      publisherId,
+      profileId,
       now: Date.now(),
     });
     return result.ok ? json(201, result) : json(400, { error: result.reason });
@@ -433,8 +465,11 @@ http.route({
       return json(400, { error: "invalid_json" });
     }
 
-    if (parts.length === 6 && parts[3] === "sessions" && parts[5] === "activity") {
-      const sessionId = parts[4];
+    const profileId = parts[3] === "profiles" ? parts[4] : null;
+    if (!profileId) return json(404, { error: "not_found" });
+
+    if (parts.length === 8 && parts[5] === "sessions" && parts[7] === "activity") {
+      const sessionId = parts[6];
       const eventId = stringField(body, "eventId", 191);
       const revision = numberField(body, "revision");
       const state =
@@ -447,6 +482,7 @@ http.route({
       if (state && state.sessionId !== sessionId) return json(400, { error: "session_mismatch" });
       const result = await ctx.runMutation(internal.publishers.acceptState, {
         publisherId,
+        profileId,
         ...auth,
         sessionId,
         eventId,
@@ -466,7 +502,7 @@ http.route({
       return json(status, result);
     }
 
-    if (parts.length === 4 && parts[3] === "snapshot") {
+    if (parts.length === 6 && parts[5] === "snapshot") {
       const snapshotId = stringField(body, "snapshotId", 191);
       const rawStates = body.states;
       if (!snapshotId || !Array.isArray(rawStates) || rawStates.length > 500) {
@@ -476,6 +512,7 @@ http.route({
       if (states.some((state) => state === null)) return json(400, { error: "invalid_snapshot" });
       const result = await ctx.runMutation(internal.publishers.acceptSnapshot, {
         publisherId,
+        profileId,
         ...auth,
         snapshotId,
         states: states as Exclude<(typeof states)[number], null>[],
