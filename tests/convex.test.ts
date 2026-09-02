@@ -889,6 +889,42 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       },
     })).resolves.toEqual({ status: "stale" });
+
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-1",
+      tokenHash: "reenroll-invitation",
+      expiresAt: now + 60_000,
+      now: now + 2,
+    });
+    await expect(backend.mutation(internal.pairing.redeemProfileInvitation, {
+      tokenHash: "reenroll-invitation",
+      publisherId: "https://hermes.example",
+      profileId: "profile-1",
+      now: now + 2,
+    })).resolves.toMatchObject({ ok: true });
+    await expect(backend.mutation(internal.publishers.acceptState, {
+      publisherId: "https://hermes.example",
+      profileId: "profile-1",
+      keyId: "key-1",
+      nonce: "after-reenroll",
+      nonceExpiresAt: now + 60_000,
+      receivedAt: now + 3,
+      sessionId: "session-1",
+      eventId: "event-1",
+      revision: 1,
+      state: {
+        sessionId: "session-1",
+        title: "Working again",
+        phase: "running",
+        updatedAt: now + 3,
+        deepLink: "/sessions/session-1",
+      },
+    })).resolves.toEqual({ status: "accepted" });
+    await expect(backend.query(internal.publishers.getState, {
+      userId: "user-1",
+      publisherId: "https://hermes.example",
+      sessionId: "session-1",
+    })).resolves.toMatchObject({ deleted: false, title: "Working again" });
   });
 
   it("keeps the grant when bounded revocation cannot retire every state", async () => {
