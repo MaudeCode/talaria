@@ -9,7 +9,7 @@ class APIClientTestCase: XCTestCase {
 
     func makeClient(
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
-        forgetProfileOwner: (@Sendable () -> Void)? = nil,
+        forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> APIClient {
         MockURLProtocol.requestHandler = handler

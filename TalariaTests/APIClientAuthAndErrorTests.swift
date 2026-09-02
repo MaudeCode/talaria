@@ -1033,6 +1033,56 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testNativeOIDCSupersededBeforeProfileResetNeverPurgesLocalState() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        let cookieStore = ServerCookieStore(
+            keychain: keychain,
+            legacyStorage: ServerCookieStore.makeIsolatedStorage()
+        )
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        var inputRevision = 0
+        var resetCount = 0
+        let client = OIDCMockAuthAPIClient(
+            onExchange: {
+                cookieStore.storage(for: server).setCookie(
+                    Self.makeCookie(name: "hermes_session", value: "member-session", for: server)
+                )
+            },
+            // The user edits the connect form while the profile fetch is suspended.
+            onProfiles: { inputRevision += 1 },
+            profilesResult: .success(.synthetic(active: "member"))
+        )
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: cookieStore,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetProfileScopedState: { _ in resetCount += 1 },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(
+            serverURLString: server.absoluteString,
+            canCommit: { inputRevision == 0 }
+        )
+
+        // An abandoned attempt must not destroy drafts or cache for that server.
+        XCTAssertEqual(resetCount, 0)
+        XCTAssertEqual(client.logoutCount, 1)
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNil(manager.lastErrorMessage)
+        XCTAssertTrue(cookieStore.storage(for: server).cookies?.isEmpty ?? true)
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString))
+        XCTAssertTrue(registry.servers.isEmpty)
+    }
+
+    @MainActor
     func testNativeOIDCAbandonsAttemptSupersededDuringProfileReset() async throws {
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let keychain = InMemoryKeychainStore()

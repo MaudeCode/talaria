@@ -657,6 +657,31 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertNotNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
     }
 
+    func testSwitchProfileSurfacesFailureToForgetProfileOwner() async throws {
+        struct OwnerForgetFailure: Error {}
+        let widgetDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
+        )
+        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
+        let client = makeClient(
+            cookiePersistence: {},
+            forgetProfileOwner: { throw OwnerForgetFailure() }
+        ) { request in
+            apiTestJSONResponse(#"{"active":"work","profiles":[]}"#, for: request)
+        }
+
+        // A stale OIDC owner marker would let the next OIDC sign-in skip the
+        // purge, so the switch must not report success when it cannot be
+        // cleared (TAL-131).
+        do {
+            _ = try await client.switchProfile(name: "work")
+            XCTFail("Expected the switch to surface the marker failure")
+        } catch is OwnerForgetFailure {
+        }
+        XCTAssertNotNil(widgetDefaults.object(forKey: ProviderQuotaWidgetSnapshotStore.storageKey))
+    }
+
     func testCreateProfileBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/profile/create")

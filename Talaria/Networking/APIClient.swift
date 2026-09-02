@@ -26,7 +26,7 @@ actor APIClient {
     /// sign-in on this server must purge regardless of which profile it maps
     /// to (TAL-131). Defaults follow `persistCookies`: the Keychain marker in
     /// production, a no-op for injected sessions.
-    let forgetProfileOwner: @Sendable () -> Void
+    let forgetProfileOwner: @Sendable () throws -> Void
     /// Read when building each request so live edits apply without rebuilding the
     /// client. Defaults to the process-wide store; tests inject a fixed list (#255).
     /// Internal, not private, because the upload and transcribe extensions build
@@ -39,7 +39,7 @@ actor APIClient {
         publicMediaSession: URLSession? = nil,
         cookieStorage: HTTPCookieStorage? = nil,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
-        forgetProfileOwner: (@Sendable () -> Void)? = nil,
+        forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
         customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() }
     ) {
         self.baseURL = baseURL
@@ -78,7 +78,7 @@ actor APIClient {
             self.forgetProfileOwner = forgetProfileOwner
         } else if session == nil, cookieStorage == nil {
             self.forgetProfileOwner = {
-                try? KeychainStore().delete(.authenticatedProfile, scope: baseURL.absoluteString)
+                try KeychainStore().delete(.authenticatedProfile, scope: baseURL.absoluteString)
             }
         } else {
             self.forgetProfileOwner = {}

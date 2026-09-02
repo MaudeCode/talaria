@@ -303,9 +303,15 @@ final class AuthManager {
                 clearSessionCookies(for: serverURL)
             }
             do {
+                // Checked before the destructive purge so an attempt the user
+                // edited or dismissed during the browser handoff never drops
+                // drafts or cache, and again after the purge's suspension
+                // point so a superseded attempt can never commit.
+                guard canCommit() else {
+                    await abandonSession()
+                    return
+                }
                 try await resetProfileScopedStateIfChanged(activeProfile, for: serverURL)
-                // Re-checked after the last suspension point so an attempt the
-                // user has since edited or dismissed can never commit.
                 guard canCommit() else {
                     await abandonSession()
                     return
