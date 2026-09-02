@@ -233,7 +233,7 @@ async function authenticatePublisher(
   rawBody: string,
   publisherId: string,
 ): Promise<
-  | { keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
+  | { publisherOwnerUserId: string; keyId: string; nonce: string; nonceExpiresAt: number; receivedAt: number }
   | null
 > {
   const keyId = request.headers.get("x-talaria-key-id")?.trim();
@@ -259,7 +259,13 @@ async function authenticatePublisher(
       body: rawBody,
     });
     return valid
-      ? { keyId, nonce, nonceExpiresAt: receivedAt + 10 * 60 * 1_000, receivedAt }
+      ? {
+          publisherOwnerUserId: key.ownerUserId,
+          keyId,
+          nonce,
+          nonceExpiresAt: receivedAt + 10 * 60 * 1_000,
+          receivedAt,
+        }
       : null;
   } catch {
     return null;
@@ -437,6 +443,7 @@ http.route({
     if (!auth) return json(401, { error: "unauthorized" });
     const result = await ctx.runMutation(internal.pairing.redeemProfileInvitation, {
       tokenHash: await sha256(invitation),
+      publisherOwnerUserId: auth.publisherOwnerUserId,
       publisherId,
       profileId,
       now: Date.now(),

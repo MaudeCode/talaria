@@ -11,6 +11,7 @@ import {
 } from "./lib/validators";
 
 const publisherRequestArgs = {
+  publisherOwnerUserId: v.string(),
   publisherId: v.string(),
   profileId: v.string(),
   keyId: v.string(),
@@ -78,6 +79,7 @@ function exposedState(state: Doc<"sessionStates">) {
 async function authorizePublisherMutation(
   ctx: MutationCtx,
   args: {
+    publisherOwnerUserId: string;
     publisherId: string;
     keyId: string;
     nonce: string;
@@ -87,26 +89,33 @@ async function authorizePublisherMutation(
 ): Promise<{ label: string } | null | "replay"> {
   const [publisher, key, nonce] = await Promise.all([
     ctx.db.query("publishers")
-      .withIndex("by_version_and_publisher_id", (query) =>
-        query.eq("version", 2).eq("publisherId", args.publisherId),
+      .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
+        query.eq("version", 2).eq("ownerUserId", args.publisherOwnerUserId).eq("publisherId", args.publisherId),
       ).unique(),
     ctx.db.query("publisherKeys")
       .withIndex("by_version_and_key_id", (query) =>
         query.eq("version", 2).eq("keyId", args.keyId),
       ).unique(),
     ctx.db.query("publisherNonces")
-      .withIndex("by_version_and_publisher_id_and_nonce", (query) =>
-        query.eq("version", 2).eq("publisherId", args.publisherId).eq("nonce", args.nonce),
+      .withIndex("by_version_and_owner_user_id_and_publisher_id_and_nonce", (query) =>
+        query.eq("version", 2).eq("ownerUserId", args.publisherOwnerUserId)
+          .eq("publisherId", args.publisherId).eq("nonce", args.nonce),
       ).unique(),
   ]);
-  if (!publisher?.enabled || !key || key.publisherId !== args.publisherId || key.revokedAt !== undefined) {
+  if (
+    !publisher?.enabled
+    || !key
+    || key.ownerUserId !== args.publisherOwnerUserId
+    || key.publisherId !== args.publisherId
+    || key.revokedAt !== undefined
+  ) {
     return null;
   }
   if (nonce) return "replay";
   if (key.activatedAt === undefined) {
     const keys = await ctx.db.query("publisherKeys")
-      .withIndex("by_version_and_publisher_id", (query) =>
-        query.eq("version", 2).eq("publisherId", args.publisherId),
+      .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
+        query.eq("version", 2).eq("ownerUserId", args.publisherOwnerUserId).eq("publisherId", args.publisherId),
       ).take(500);
     for (const candidate of keys) {
       if (candidate._id === key._id) await ctx.db.patch(candidate._id, { activatedAt: args.receivedAt });
@@ -115,6 +124,7 @@ async function authorizePublisherMutation(
   }
   await ctx.db.insert("publisherNonces", {
     version: 2,
+    ownerUserId: args.publisherOwnerUserId,
     publisherId: args.publisherId,
     nonce: args.nonce,
     expiresAt: args.nonceExpiresAt,
@@ -123,10 +133,16 @@ async function authorizePublisherMutation(
   return { label: publisher.label };
 }
 
-async function grantsForProfile(ctx: MutationCtx, publisherId: string, profileId: string) {
+async function grantsForProfile(
+  ctx: MutationCtx,
+  publisherOwnerUserId: string,
+  publisherId: string,
+  profileId: string,
+) {
   return await ctx.db.query("publisherGrants")
-    .withIndex("by_publisher_id_and_profile_id", (query) =>
-      query.eq("publisherId", publisherId).eq("profileId", profileId),
+    .withIndex("by_publisher_owner_user_id_and_publisher_id_and_profile_id", (query) =>
+      query.eq("publisherOwnerUserId", publisherOwnerUserId)
+        .eq("publisherId", publisherId).eq("profileId", profileId),
     ).take(500);
 }
 
@@ -146,7 +162,12 @@ export const acceptState = internalMutation({
 
     let accepted = false;
     let duplicate = false;
-    for (const grant of await grantsForProfile(ctx, args.publisherId, args.profileId)) {
+    for (const grant of await grantsForProfile(
+      ctx,
+      args.publisherOwnerUserId,
+      args.publisherId,
+      args.profileId,
+    )) {
       const existing = await ctx.db.query("sessionStates")
         .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
           query.eq("version", 2).eq("userId", grant.userId)
@@ -227,7 +248,12 @@ export const acceptSnapshot = internalMutation({
     if (authorization === null) return { status: "unauthorized" as const };
     if (authorization === "replay") return { status: "replay" as const };
 
-    for (const grant of await grantsForProfile(ctx, args.publisherId, args.profileId)) {
+    for (const grant of await grantsForProfile(
+      ctx,
+      args.publisherOwnerUserId,
+      args.publisherId,
+      args.profileId,
+    )) {
       const existing = await ctx.db.query("sessionStates")
         .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
           query.eq("version", 2).eq("userId", grant.userId).eq("publisherId", args.publisherId),

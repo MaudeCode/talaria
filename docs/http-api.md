@@ -39,6 +39,8 @@ The private key never leaves the Hermes machine.
 Repeating server registration with an invitation from the publisher's original relay owner creates a replacement key. The relay activates it on first signed publication and then revokes the previous key without changing profile grants.
 Successful registration and enrollment responses include `protocolVersion: 2`. Registration also returns `profileIdPreserved`: `false` requires an exact echo of the requested scope, while `true` tells Hermes that owner key recovery retained the existing owner grant. Hermes rejects any unmarked scope mismatch before treating local configuration as valid.
 
+Registrations are keyed by relay owner plus server origin. Another relay user can claim the same public origin only inside their own account; that claim cannot reserve the origin, block the legitimate owner, authenticate the legitimate publisher, or receive its profile grants.
+
 After registration, any authenticated Hermes profile can enroll. Hermes resolves the profile from its trusted session, never from a client-supplied profile name, and signs:
 
 `POST /v1/pairings/profile/redeem`

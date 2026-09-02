@@ -73,11 +73,12 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_version_and_publisher_id", ["version", "publisherId"]),
+    .index("by_version_and_owner_user_id_and_publisher_id", ["version", "ownerUserId", "publisherId"]),
 
   publisherKeys: defineTable({
     version: v.optional(v.number()),
     userId: v.optional(v.string()),
+    ownerUserId: v.optional(v.string()),
     publisherId: v.string(),
     keyId: v.string(),
     publicKey: v.string(),
@@ -85,7 +86,7 @@ export default defineSchema({
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
-    .index("by_version_and_publisher_id", ["version", "publisherId"])
+    .index("by_version_and_owner_user_id_and_publisher_id", ["version", "ownerUserId", "publisherId"])
     .index("by_activated_at_and_created_at", ["activatedAt", "createdAt"])
     .index("by_revoked_at", ["revokedAt"])
     .index("by_version_and_key_id", ["version", "keyId"])
@@ -94,23 +95,25 @@ export default defineSchema({
   publisherNonces: defineTable({
     version: v.optional(v.number()),
     userId: v.optional(v.string()),
+    ownerUserId: v.optional(v.string()),
     publisherId: v.string(),
     nonce: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),
   })
-    .index("by_version_and_publisher_id_and_nonce", ["version", "publisherId", "nonce"])
+    .index("by_version_and_owner_user_id_and_publisher_id_and_nonce", ["version", "ownerUserId", "publisherId", "nonce"])
     .index("by_expires_at", ["expiresAt"]),
 
   publisherGrants: defineTable({
     userId: v.string(),
+    publisherOwnerUserId: v.string(),
     publisherId: v.string(),
     profileId: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id", ["userId", "publisherId"])
-    .index("by_publisher_id_and_profile_id", ["publisherId", "profileId"]),
+    .index("by_publisher_owner_user_id_and_publisher_id_and_profile_id", ["publisherOwnerUserId", "publisherId", "profileId"]),
 
   devices: defineTable({
     userId: v.string(),

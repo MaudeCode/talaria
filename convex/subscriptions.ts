@@ -40,8 +40,9 @@ export const listForDevice = internalQuery({
     const excluded = new Set(exclusions.map((item) => item.publisherId));
     const publishers = await Promise.all(grants.map((grant) =>
       ctx.db.query("publishers")
-        .withIndex("by_version_and_publisher_id", (query) =>
-          query.eq("version", 2).eq("publisherId", grant.publisherId),
+        .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
+          query.eq("version", 2).eq("ownerUserId", grant.publisherOwnerUserId)
+            .eq("publisherId", grant.publisherId),
         ).unique(),
     ));
     return publishers.flatMap((publisher) => publisher?.enabled ? [{
@@ -83,22 +84,24 @@ export const setForDevice = internalMutation({
   },
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
-    const [device, grant, publisher, exclusion] = await Promise.all([
+    const grant = await ctx.db
+      .query("publisherGrants")
+      .withIndex("by_user_id_and_publisher_id", (query) =>
+        query.eq("userId", args.userId).eq("publisherId", args.publisherId),
+      )
+      .unique();
+    if (!grant) return { ok: false };
+    const [device, publisher, exclusion] = await Promise.all([
       ctx.db
         .query("devices")
         .withIndex("by_user_id_and_device_id", (query) =>
           query.eq("userId", args.userId).eq("deviceId", args.deviceId),
         )
         .unique(),
-      ctx.db
-        .query("publisherGrants")
-        .withIndex("by_user_id_and_publisher_id", (query) =>
-          query.eq("userId", args.userId).eq("publisherId", args.publisherId),
-        )
-        .unique(),
       ctx.db.query("publishers")
-        .withIndex("by_version_and_publisher_id", (query) =>
-          query.eq("version", 2).eq("publisherId", args.publisherId),
+        .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
+          query.eq("version", 2).eq("ownerUserId", grant.publisherOwnerUserId)
+            .eq("publisherId", args.publisherId),
         ).unique(),
       ctx.db
         .query("devicePublisherExclusions")
@@ -110,7 +113,7 @@ export const setForDevice = internalMutation({
         )
         .unique(),
     ]);
-    if (!device || device.revokedAt !== undefined || !grant || !publisher?.enabled) return { ok: false };
+    if (!device || device.revokedAt !== undefined || !publisher?.enabled) return { ok: false };
     if (args.subscribed) {
       if (exclusion) await ctx.db.delete(exclusion._id);
     } else if (!exclusion) {

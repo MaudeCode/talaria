@@ -336,6 +336,7 @@ describe("Convex relay state", () => {
     });
     expect(stillActive).not.toHaveProperty("revokedAt");
     await backend.mutation(internal.publishers.acceptState, {
+      publisherOwnerUserId: "user-1",
       publisherId: redemption.publisherId,
       profileId: "profile-1",
       keyId: "key-2",
@@ -400,6 +401,7 @@ describe("Convex relay state", () => {
       now,
     });
     await expect(backend.mutation(internal.pairing.redeemProfileInvitation, {
+      publisherOwnerUserId: "user-a",
       tokenHash: "invite-b",
       publisherId: "https://hermes.example",
       profileId: "profile-b",
@@ -408,6 +410,7 @@ describe("Convex relay state", () => {
 
     const publish = (profileId: string, sessionId: string, nonce: string) =>
       backend.mutation(internal.publishers.acceptSnapshot, {
+        publisherOwnerUserId: "user-a",
         publisherId: "https://hermes.example",
         profileId,
         keyId: "key-1",
@@ -511,6 +514,41 @@ describe("Convex relay state", () => {
     })).resolves.toMatchObject({ ok: true, keyId: "v2-key" });
   });
 
+  it("does not let another relay user reserve a Hermes origin", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    for (const userId of ["attacker", "owner"]) {
+      await backend.run(async (ctx) => {
+        await ctx.db.insert("relayUsers", {
+          userId,
+          appleSubjectHash: `apple-${userId}`,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+      await backend.mutation(internal.pairing.createPublisherInvitation, {
+        userId,
+        tokenHash: `invite-${userId}`,
+        expiresAt: now + 60_000,
+        now,
+      });
+      await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
+        tokenHash: `invite-${userId}`,
+        publisherId: "https://hermes.example",
+        profileId: `profile-${userId}`,
+        keyId: `key-${userId}`,
+        label: "Home",
+        publicKey: `public-key-${userId}`,
+        now,
+      })).resolves.toMatchObject({ ok: true, userId });
+    }
+
+    const owners = await backend.run(async (ctx) => (await ctx.db.query("publishers").collect())
+      .map((publisher) => publisher.ownerUserId)
+      .sort());
+    expect(owners).toEqual(["attacker", "owner"]);
+  });
+
   it("requires the registered publisher signature for profile enrollment", async () => {
     const backend = testBackend();
     const now = Date.now();
@@ -536,6 +574,7 @@ describe("Convex relay state", () => {
       });
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-a",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey,
@@ -630,6 +669,7 @@ describe("Convex relay state", () => {
       });
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
@@ -637,6 +677,7 @@ describe("Convex relay state", () => {
         createdAt: now,
       });
       await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
         publisherId: "https://hermes.example",
         profileId: "profile-1",
@@ -662,6 +703,7 @@ describe("Convex relay state", () => {
       });
     });
     await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -696,6 +738,7 @@ describe("Convex relay state", () => {
       }],
     }]);
     await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -763,6 +806,7 @@ describe("Convex relay state", () => {
           updatedAt: now,
         });
         await ctx.db.insert("publisherGrants", {
+          publisherOwnerUserId: "user-1",
           userId: "user-1",
           publisherId,
           profileId: "profile-1",
@@ -772,6 +816,7 @@ describe("Convex relay state", () => {
       }
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
@@ -849,12 +894,14 @@ describe("Convex relay state", () => {
     expect(revoke.status).toBe(200);
     const revokedState = await backend.run(async (ctx) => ({
       publisher: await ctx.db.query("publishers").withIndex(
-        "by_version_and_publisher_id",
-        (query) => query.eq("version", 2).eq("publisherId", "https://hermes.example"),
+        "by_version_and_owner_user_id_and_publisher_id",
+        (query) => query.eq("version", 2).eq("ownerUserId", "user-1")
+          .eq("publisherId", "https://hermes.example"),
       ).unique(),
       otherPublisher: await ctx.db.query("publishers").withIndex(
-        "by_version_and_publisher_id",
-        (query) => query.eq("version", 2).eq("publisherId", "https://other.example"),
+        "by_version_and_owner_user_id_and_publisher_id",
+        (query) => query.eq("version", 2).eq("ownerUserId", "user-1")
+          .eq("publisherId", "https://other.example"),
       ).unique(),
       grant: await ctx.db.query("publisherGrants").withIndex(
         "by_user_id_and_publisher_id",
@@ -878,6 +925,7 @@ describe("Convex relay state", () => {
     expect(revokedState.key?.revokedAt).toBeUndefined();
     expect(revokedState.state?.deleted).toBe(true);
     await expect(backend.mutation(internal.publishers.acceptState, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -903,12 +951,14 @@ describe("Convex relay state", () => {
       now: now + 2,
     });
     await expect(backend.mutation(internal.pairing.redeemProfileInvitation, {
+      publisherOwnerUserId: "user-1",
       tokenHash: "reenroll-invitation",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       now: now + 2,
     })).resolves.toMatchObject({ ok: true });
     await expect(backend.mutation(internal.publishers.acceptState, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -938,6 +988,7 @@ describe("Convex relay state", () => {
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
       await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
         publisherId: "https://hermes.example",
         profileId: "profile-1",
@@ -982,6 +1033,7 @@ describe("Convex relay state", () => {
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
       await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
         publisherId: "https://hermes.example",
         profileId: "profile-1",
@@ -1026,6 +1078,7 @@ describe("Convex relay state", () => {
       });
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
@@ -1033,6 +1086,7 @@ describe("Convex relay state", () => {
         createdAt: now,
       });
       await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
         publisherId: "https://hermes.example",
         profileId: "profile-1",
@@ -1060,6 +1114,7 @@ describe("Convex relay state", () => {
     });
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -1103,6 +1158,7 @@ describe("Convex relay state", () => {
       });
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
@@ -1110,6 +1166,7 @@ describe("Convex relay state", () => {
         createdAt: now,
       });
       await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
         publisherId: "https://hermes.example",
         profileId: "profile-1",
@@ -1138,6 +1195,7 @@ describe("Convex relay state", () => {
     });
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -1165,6 +1223,7 @@ describe("Convex relay state", () => {
     expect(refreshed?.terminalExpiresAt).toBe(terminalExpiresAt);
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -1191,6 +1250,7 @@ describe("Convex relay state", () => {
     expect(refreshed?.terminalExpiresAt).toBe(now + 120_000 + 15 * 60_000);
 
     await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
       profileId: "profile-1",
       keyId: "key-1",
@@ -1401,12 +1461,14 @@ describe("Convex relay state", () => {
       });
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-1",
         publisherId: "publisher-1",
         keyId: "key-1",
         publicKey: "public-key",
         createdAt: now,
       });
       await ctx.db.insert("publisherGrants", {
+        publisherOwnerUserId: "user-1",
         userId: "user-1",
         publisherId: "publisher-1",
         profileId: "profile-1",
@@ -1425,6 +1487,7 @@ describe("Convex relay state", () => {
 
     await expect(
       backend.mutation(internal.publishers.acceptState, {
+        publisherOwnerUserId: "user-1",
         publisherId: "publisher-1",
         profileId: "profile-1",
         keyId: "key-1",
@@ -1439,6 +1502,7 @@ describe("Convex relay state", () => {
     ).resolves.toEqual({ status: "accepted" });
     await expect(
       backend.mutation(internal.publishers.acceptState, {
+        publisherOwnerUserId: "user-1",
         publisherId: "publisher-1",
         profileId: "profile-1",
         keyId: "key-1",
@@ -1453,6 +1517,7 @@ describe("Convex relay state", () => {
     ).resolves.toEqual({ status: "stale" });
     await expect(
       backend.mutation(internal.publishers.acceptState, {
+        publisherOwnerUserId: "user-1",
         publisherId: "publisher-1",
         profileId: "profile-1",
         keyId: "key-1",
@@ -1677,6 +1742,7 @@ describe("Convex relay state", () => {
       });
       await ctx.db.insert("publisherKeys", {
         version: 2,
+        ownerUserId: "user-1",
         publisherId: "https://hermes.example",
         keyId: "key-1",
         publicKey: "public-key",
@@ -1690,6 +1756,7 @@ describe("Convex relay state", () => {
           updatedAt: now,
         });
         await ctx.db.insert("publisherGrants", {
+          publisherOwnerUserId: "user-1",
           userId,
           publisherId: "https://hermes.example",
           profileId: `profile-${userId}`,
@@ -1715,6 +1782,7 @@ describe("Convex relay state", () => {
     };
     for (const userId of ["user-1", "user-2"]) {
       await backend.mutation(internal.publishers.acceptState, {
+        publisherOwnerUserId: "user-1",
         publisherId: "https://hermes.example",
         profileId: `profile-${userId}`,
         keyId: "key-1",
