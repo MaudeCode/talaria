@@ -724,6 +724,79 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testStreamEndDoesNotInvalidateCompletionTranscriptReload() async throws {
+        let requests = DeferredRequests()
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        let sessionRequestStarted = expectation(description: "session request started")
+        DeferredMockURLProtocol.onRequest = { request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            case "/api/session": sessionRequestStarted.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }
+        defer { DeferredMockURLProtocol.onRequest = nil }
+
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Partial response"))
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        XCTAssertTrue(viewModel.responseCompletionNeedsTranscriptRefresh)
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        streamClient.emit(.streamEnd)
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Question",
+                "timestamp": 1770000001,
+                "message_id": "user-1"
+              },
+              {
+                "role": "assistant",
+                "content": "Final response",
+                "timestamp": 1770000002,
+                "message_id": "assistant-1"
+              }
+            ]
+          }
+        }
+        """)
+        await loadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question", "Final response"])
+        XCTAssertFalse(viewModel.responseCompletionNeedsTranscriptRefresh)
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
     func testReloadDoesNotDuplicateCachedOptimisticAttachmentMessageWhenServerReturnsIt() async throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

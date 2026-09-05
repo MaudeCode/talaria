@@ -29,7 +29,7 @@ struct ChatStreamCoordinatorTiming: Equatable {
 struct ChatStreamLoadPreparation: Equatable {
     let activeStreamIDBeforeLoad: String?
     let shouldPrepareSuspendedStreamResume: Bool
-    let runGeneration: Int
+    let responseGeneration: Int
 }
 
 @MainActor
@@ -101,9 +101,12 @@ final class ChatStreamCoordinator {
     private(set) var liveTokensPerSecond: Double?
     private var lastRecoveryStatusCheckDate: Date?
     private(set) var isReplayConnection = false
-    // Bumped whenever response ownership changes. Captured before async work so
-    // an older load cannot mutate or finalize a newer run.
+    // Bumped whenever the active run starts or finalizes. Captured before async
+    // finalization work so stale tasks cannot finalize a newer run.
     private var runGeneration = 0
+    // Unlike runGeneration, terminal cleanup does not bump this value: a
+    // completion-triggered transcript load still belongs to the same response.
+    private var responseGeneration = 0
 
     init(
         client: APIClient,
@@ -147,6 +150,7 @@ final class ChatStreamCoordinator {
         hasCompletedCurrentResponse = false
         liveTokensPerSecond = nil
         runGeneration &+= 1
+        responseGeneration &+= 1
         activeStreamID = streamID
         isConnectionSuspended = false
         if replayAfterSeq == nil {
@@ -205,12 +209,12 @@ final class ChatStreamCoordinator {
         return ChatStreamLoadPreparation(
             activeStreamIDBeforeLoad: activeStreamIDBeforeLoad,
             shouldPrepareSuspendedStreamResume: activeStreamID == nil || isConnectionSuspended,
-            runGeneration: runGeneration
+            responseGeneration: responseGeneration
         )
     }
 
     func canApplySessionLoad(_ preparation: ChatStreamLoadPreparation) -> Bool {
-        runGeneration == preparation.runGeneration
+        responseGeneration == preparation.responseGeneration
     }
 
     func reconcileSessionLoad(
