@@ -126,14 +126,13 @@ Agent/MCP flow:
 
 - Call `session_show_defaults` before the first local build/run/test.
 - If defaults are missing, copy them from `.xcodebuildmcp/config.yaml`.
-- Run `scripts/setup-ios-test-pool --refresh` to replace the four disposable test
-  simulators with clean devices matching the configured simulator's model and
-  runtime. Setup warms each new device once; no application data is copied. Plain
-  `scripts/setup-ios-test-pool` keeps an existing pool and fills missing slots.
-  Refresh aborts instead of replacing a simulator leased by another worktree.
+- Run `scripts/setup-ios-test-pool` to fill the shared six-device iOS pool.
+  It reuses the pool's runtime/model. `--refresh` replaces the whole pool only
+  when every device is unleased and shut down. See the
+  [shared pool guide](docs/ios-simulator-pool.md) for cross-project adoption.
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
-  each worktree and leases separate simulators across worktrees. XCUI launches a
-  DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
+  XCTest across Talaria worktrees and leases from the cross-project pool.
+  XCUI launches a DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
   with in-memory authentication, draft, and cache state. It does not read simulator
   login state or contact an external server. A skipped functional `TalariaUITests`
   test fails the run. Performance-only UI measurements may run on `main` CI instead
@@ -179,10 +178,14 @@ Environment files support blank lines, comments, `KEY=value`,
 are parsed as data and never executed as shell commands. The repository ignores
 local environment files; do not commit credentials.
 
+The portable `scripts/setup-ios-test-pool` reads exported environment variables
+only. To apply Talaria's local files to setup, run
+`scripts/load-env scripts/setup-ios-test-pool`.
+
 Recognized variables:
 
-- `TALARIA_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
-- `TALARIA_SIMULATOR_ID` — simulator selection for `scripts/test-ios`.
+- `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
+- `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
 - `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`.
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.

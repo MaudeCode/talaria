@@ -1,0 +1,26 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+selection=$(
+    xcrun simctl list devices available --json |
+        /usr/bin/jq -r --arg requested "${IOS_SIMULATOR_RUNTIME:-}" '
+            first(
+                .devices | to_entries |
+                map(select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))) |
+                sort_by(.key | split("iOS-")[1] | split("-") | map(tonumber)) | reverse[] |
+                select($requested == "" or .key == $requested) |
+                .key as $runtime |
+                .value[] |
+                select(.deviceTypeIdentifier | contains(".iPhone-")) |
+                [.udid, $runtime, .deviceTypeIdentifier] | @tsv
+            ) // empty
+        '
+)
+
+[[ -n "$selection" ]] || {
+    print -u2 "No available iPhone simulator was found."
+    exit 69
+}
+
+print -r -- "$selection"

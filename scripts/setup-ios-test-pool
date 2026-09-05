@@ -3,13 +3,32 @@
 set -euo pipefail
 
 repo_root=${0:A:h:h}
-[[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/setup-ios-test-pool" "$@"
-pool_size=${TALARIA_SIMULATOR_POOL_SIZE:-4}
-refresh=false
-pool_runtime_dir="/tmp/talaria-xctest-$EUID"
+pool_size=${IOS_SIMULATOR_POOL_SIZE:-6}
+pool_runtime_dir=${IOS_SIMULATOR_POOL_DIR:-/tmp/ios-simulator-pool-$EUID}
 pool_lock="$pool_runtime_dir/pool.lock"
 lease_dir="$pool_runtime_dir/leases"
+refresh=false
 typeset -a held_lease_files=()
+
+usage() {
+    print "Usage: scripts/setup-ios-test-pool [--refresh]"
+}
+
+if (( $# > 1 )); then
+    usage >&2
+    exit 64
+fi
+if (( $# == 1 )); then
+    [[ "$1" == "--refresh" ]] || {
+        usage >&2
+        exit 64
+    }
+    refresh=true
+fi
+if [[ "$pool_size" != <-> || "$pool_size" -lt 1 ]]; then
+    print -u2 "IOS_SIMULATOR_POOL_SIZE must be a positive integer."
+    exit 64
+fi
 
 mkdir -p "$lease_dir"
 
@@ -20,132 +39,83 @@ cleanup() {
     unlink "$pool_lock" 2>/dev/null || true
 }
 
-if (( $# > 1 )); then
-    print -u2 "Usage: scripts/setup-ios-test-pool [--refresh]"
-    exit 64
-fi
-
-if (( $# == 1 )); then
-    if [[ "$1" != "--refresh" ]]; then
-        print -u2 "Usage: scripts/setup-ios-test-pool [--refresh]"
-        exit 64
-    fi
-    refresh=true
-fi
-
-if [[ "$pool_size" != <-> || "$pool_size" -lt 1 ]]; then
-    print -u2 "TALARIA_SIMULATOR_POOL_SIZE must be a positive integer."
-    exit 64
-fi
-
 if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
-    print -u2 "The Talaria simulator pool is already being configured. Retry when it finishes."
+    print -u2 "The iOS simulator pool is already being configured. Retry when it finishes."
     exit 75
 fi
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
-    "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
-devices=$(xcrun simctl list devices available)
-source_metadata=$(
-    xcrun simctl list devices available --json |
-        /usr/bin/jq -c --arg name "$preferred_simulator" '
-            first(
-                .devices | to_entries[] |
-                .key as $runtime |
-                .value[] |
-                select(.name == $name) |
-                { runtime: $runtime, deviceType: .deviceTypeIdentifier }
-            )
-        '
-)
+# Reuse the existing shared pool's runtime/model, even when a newer SDK is installed.
+selection=$(xcrun simctl list devices available --json | /usr/bin/jq -r \
+    --arg requested "${IOS_SIMULATOR_RUNTIME:-}" '
+    [.devices | to_entries[] | .key as $runtime |
+     select($requested == "" or $requested == $runtime) | .value[] |
+     select(.name | test("^iOS Test [1-9][0-9]*$")) |
+     [.udid, $runtime, .deviceTypeIdentifier]] | first // [] | @tsv
+')
+[[ -n "$selection" ]] || selection=$("$repo_root/scripts/select-ios-simulator")
+IFS=$'\t' read -r _ runtime_id device_type_id <<< "$selection"
 
-if [[ -z "$source_metadata" || "$source_metadata" == null ]]; then
-    print -u2 "Configured simulator '$preferred_simulator' is not available."
-    exit 69
-fi
-
-runtime_id=$(print -r -- "$source_metadata" | /usr/bin/jq -r .runtime)
-device_type_id=$(print -r -- "$source_metadata" | /usr/bin/jq -r .deviceType)
-
-device_line_named() {
-    print -r -- "$devices" | awk -v wanted="$1" '
-        /^-- iOS / { in_ios = 1; next }
-        /^-- / { in_ios = 0 }
-        in_ios {
-            line = $0
-            sub(/^[[:space:]]*/, "", line)
-            if (index(line, wanted " (") == 1) {
-                print $0
-                exit
-            }
-        }
+pool_snapshot() {
+    xcrun simctl list devices --json | /usr/bin/jq -r '
+        [.devices[][] | select(.name | test("^iOS Test [0-9]+$"))] |
+        sort_by(.name, .udid) | .[] | [.name, .udid, .state] | @tsv
     '
 }
 
 if [[ "$refresh" == true ]]; then
-    typeset -a refresh_ids=()
-    for (( slot = 1; slot <= pool_size; slot++ )); do
-        simulator_name="Talaria Test $slot"
-        existing=$(device_line_named "$simulator_name")
-
-        if [[ -n "$existing" ]]; then
-            existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
-            lease_file="$lease_dir/$existing_id.lock"
-            if ! /usr/bin/shlock -f "$lease_file" -p $$; then
-                print -u2 "$simulator_name is leased by another worktree. Retry when it finishes."
-                exit 75
-            fi
-            held_lease_files+=("$lease_file")
-            refresh_ids[$slot]="$existing_id"
-        fi
-    done
-
-    devices=$(xcrun simctl list devices available)
-    for (( slot = 1; slot <= pool_size; slot++ )); do
-        simulator_name="Talaria Test $slot"
-        existing=$(device_line_named "$simulator_name")
-        existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
-
-        if [[ "$existing_id" != "${refresh_ids[$slot]:-}" ]]; then
-            print -u2 "$simulator_name changed while the refresh was being prepared. No devices were removed."
+    before=$(pool_snapshot)
+    while IFS=$'\t' read -r _ simulator_id _; do
+        [[ -n "$simulator_id" ]] || continue
+        lease_file="$lease_dir/$simulator_id.lock"
+        if ! /usr/bin/shlock -f "$lease_file" -p $$; then
+            print -u2 "An iOS pool simulator is leased. Retry when its test run finishes."
             exit 75
         fi
+        held_lease_files+=("$lease_file")
+    done <<< "$before"
 
-        if [[ -n "$existing" && "$existing" != *"(Shutdown)"* ]]; then
-            print -u2 "$simulator_name is in use. No devices were removed."
-            exit 75
-        fi
-    done
+    after=$(pool_snapshot)
+    [[ "$before" == "$after" ]] || {
+        print -u2 "The iOS simulator pool changed during refresh preflight. No devices were removed."
+        exit 75
+    }
+    if print -r -- "$after" | awk -F '\t' 'NF && $3 != "Shutdown" { found=1 } END { exit !found }'; then
+        print -u2 "An iOS pool simulator is active. No devices were removed."
+        exit 75
+    fi
+
+    while IFS=$'\t' read -r _ simulator_id _; do
+        [[ -n "$simulator_id" ]] || continue
+        xcrun simctl delete "$simulator_id"
+        print "Removed iOS pool simulator $simulator_id"
+    done <<< "$after"
 fi
 
 for (( slot = 1; slot <= pool_size; slot++ )); do
-    simulator_name="Talaria Test $slot"
-    existing=$(device_line_named "$simulator_name")
+    simulator_name="iOS Test $slot"
+    devices_json=$(xcrun simctl list devices --json)
+    match_count=$(print -r -- "$devices_json" | /usr/bin/jq --arg name "$simulator_name" \
+        '[.devices[][] | select(.name == $name)] | length')
 
-    if [[ -n "$existing" && "$refresh" == false ]]; then
+    if (( match_count > 1 )); then
+        print -u2 "Multiple simulators are named $simulator_name. Run with --refresh."
+        exit 69
+    fi
+    if (( match_count == 1 )); then
+        matches_source=$(print -r -- "$devices_json" | /usr/bin/jq -e \
+            --arg name "$simulator_name" --arg runtime "$runtime_id" --arg type "$device_type_id" '
+                any(.devices | to_entries[];
+                    .key == $runtime and any(.value[]; .name == $name and .deviceTypeIdentifier == $type)
+                )
+            ' >/dev/null && print yes || print no)
+        [[ "$matches_source" == yes ]] || {
+            print -u2 "$simulator_name uses a stale runtime or device type. Run with --refresh."
+            exit 69
+        }
         print "Reusing $simulator_name"
         continue
-    fi
-
-    if [[ -n "$existing" ]]; then
-        devices=$(xcrun simctl list devices available)
-        existing=$(device_line_named "$simulator_name")
-        existing_id=$(print -r -- "$existing" | sed -n 's/.*(\([0-9A-F-]*\)) (.*/\1/p')
-
-        if [[ -z "$existing" || "$existing_id" != "${refresh_ids[$slot]:-}" ]]; then
-            print -u2 "$simulator_name changed while the refresh was being prepared. No further devices were removed."
-            exit 75
-        fi
-
-        if [[ "$existing" != *"(Shutdown)"* ]]; then
-            print -u2 "$simulator_name is in use. Shut down the test pool before refreshing it."
-            exit 75
-        fi
-
-        xcrun simctl delete "$existing_id"
-        print "Removed stale $simulator_name ($existing_id)"
     fi
 
     simulator_id=$(xcrun simctl create "$simulator_name" "$device_type_id" "$runtime_id")
