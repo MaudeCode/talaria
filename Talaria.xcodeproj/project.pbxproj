@@ -431,7 +431,6 @@
 		C107N0000000000000000031 /* ComposerVoiceStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000131 /* ComposerVoiceStatusView.swift */; };
 		C107N0000000000000000032 /* ComposerVoiceControlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000132 /* ComposerVoiceControlButton.swift */; };
 		C107N0000000000000000033 /* ComposerVoiceRecordingBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */; };
-		C107N0000000000000000034 /* TranscriptStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000134 /* TranscriptStatusPill.swift */; };
 		C107N0000000000000000035 /* SwiftMathLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000135 /* SwiftMathLabelView.swift */; };
 		C107N0000000000000000036 /* GoalSubmissionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000136 /* GoalSubmissionSheet.swift */; };
 		C107N0000000000000000037 /* ComposerStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000137 /* ComposerStatusView.swift */; };
@@ -1074,7 +1073,6 @@
 		C107N0000000000000000131 /* ComposerVoiceStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceStatusView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000132 /* ComposerVoiceControlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceControlButton.swift; sourceTree = "<group>"; };
 		C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceRecordingBar.swift; sourceTree = "<group>"; };
-		C107N0000000000000000134 /* TranscriptStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptStatusPill.swift; sourceTree = "<group>"; };
 		C107N0000000000000000135 /* SwiftMathLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftMathLabelView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000136 /* GoalSubmissionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalSubmissionSheet.swift; sourceTree = "<group>"; };
 		C107N0000000000000000137 /* ComposerStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerStatusView.swift; sourceTree = "<group>"; };
@@ -1770,7 +1768,6 @@
 				C107N0000000000000000131 /* ComposerVoiceStatusView.swift */,
 				C107N0000000000000000132 /* ComposerVoiceControlButton.swift */,
 				C107N0000000000000000133 /* ComposerVoiceRecordingBar.swift */,
-				C107N0000000000000000134 /* TranscriptStatusPill.swift */,
 				C107N0000000000000000135 /* SwiftMathLabelView.swift */,
 				C107N0000000000000000136 /* GoalSubmissionSheet.swift */,
 				C107N0000000000000000137 /* ComposerStatusView.swift */,
@@ -2601,7 +2598,6 @@
 				C107N0000000000000000031 /* ComposerVoiceStatusView.swift in Sources */,
 				C107N0000000000000000032 /* ComposerVoiceControlButton.swift in Sources */,
 				C107N0000000000000000033 /* ComposerVoiceRecordingBar.swift in Sources */,
-				C107N0000000000000000034 /* TranscriptStatusPill.swift in Sources */,
 				C107N0000000000000000035 /* SwiftMathLabelView.swift in Sources */,
 				C107N0000000000000000036 /* GoalSubmissionSheet.swift in Sources */,
 				C107N0000000000000000037 /* ComposerStatusView.swift in Sources */,

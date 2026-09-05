@@ -3,21 +3,6 @@ import Observation
 import SwiftData
 import SwiftUI
 
-struct SessionListSection: Identifiable {
-    enum Kind: String {
-        case pinned
-        case today
-        case yesterday
-        case earlier
-    }
-
-    let kind: Kind
-    let title: String
-    let sessions: [SessionSummary]
-
-    var id: String { kind.rawValue }
-}
-
 struct ScheduledSessionGroups: Equatable {
     let ordinary: [SessionSummary]
     let scheduled: [SessionSummary]
@@ -128,36 +113,6 @@ final class SessionListViewModel {
     nonisolated private static let sweepLeakedExportsOnce: Void = {
         try? FileManager.default.removeItem(at: exportsRootDirectory)
     }()
-
-    var sections: [SessionListSection] {
-        let sortedSessions = sessions.sorted { left, right in
-            timestamp(for: left) > timestamp(for: right)
-        }
-        let pinned = sortedSessions.filter { $0.pinned == true }
-        let unpinned = sortedSessions.filter { $0.pinned != true }
-
-        let calendar = Calendar.current
-        let today = unpinned.filter { session in
-            guard let date = date(for: session) else { return false }
-            return calendar.isDateInToday(date)
-        }
-        let yesterday = unpinned.filter { session in
-            guard let date = date(for: session) else { return false }
-            return calendar.isDateInYesterday(date)
-        }
-        let earlier = unpinned.filter { session in
-            guard let date = date(for: session) else { return true }
-            return !calendar.isDateInToday(date) && !calendar.isDateInYesterday(date)
-        }
-
-        return [
-            SessionListSection(kind: .pinned, title: String(localized: "Pinned"), sessions: pinned),
-            SessionListSection(kind: .today, title: String(localized: "Today"), sessions: today),
-            SessionListSection(kind: .yesterday, title: String(localized: "Yesterday"), sessions: yesterday),
-            SessionListSection(kind: .earlier, title: String(localized: "Earlier"), sessions: earlier)
-        ]
-        .filter { !$0.sessions.isEmpty }
-    }
 
     func visibleSessions(
         searchText rawSearchText: String,
@@ -1073,16 +1028,6 @@ final class SessionListViewModel {
             seenSessionIDs.insert(sessionID)
             return sessionID
         }
-    }
-
-    private func timestamp(for session: SessionSummary) -> Double {
-        Self.timestamp(for: session)
-    }
-
-    private func date(for session: SessionSummary) -> Date? {
-        let value = timestamp(for: session)
-        guard value > 0 else { return nil }
-        return Date(timeIntervalSince1970: value)
     }
 
     private func beginSessionMutation(_ sessionId: String) -> Bool {

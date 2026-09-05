@@ -1,37 +1,6 @@
 import SwiftUI
-import UIKit
 
 #if DEBUG
-struct KanbanLabView: View {
-    @State private var scenario = KanbanLabScenario.dense
-    @State private var model = KanbanLabScenario.dense.makeModel()
-
-    var body: some View {
-        KanbanStatusFocusView(model: model)
-            .toolbar {
-                ToolbarItem(placement: .bottomBar) {
-                    Menu {
-                        Picker("Scenario", selection: $scenario) {
-                            ForEach(KanbanLabScenario.allCases) { scenario in
-                                Text(scenario.title).tag(scenario)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "testtube.2")
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel(Text("Kanban Lab Scenario"))
-                    .accessibilityHint(Text("Uses local fixtures and never contacts or changes a Kanban server."))
-                }
-            }
-            .task(id: scenario) {
-                model = scenario.makeModel()
-                await model.load()
-                if scenario == .filteredEmpty { model.searchText = "no matching fixture" }
-            }
-    }
-}
-
 enum KanbanLabScenario: String, CaseIterable, Identifiable {
     case firstLoad
     case dense
