@@ -812,7 +812,12 @@ extension ChatViewModelSendTests {
     @MainActor
     func testStaleActiveStreamReplayDedupSurvivesLoadOlderMessages() async throws {
         let streamClient = SpySSEStreamingClient()
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        // Hold received text in the pending buffers so pagination is what flushes it.
+        streamClient.automaticallyFlushPendingStreamingContent = false
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            streamingScrollCoalescingDelayNanoseconds: 60_000_000_000
+        ) { request in
             switch request.url?.path {
             case "/api/session":
                 let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
@@ -879,13 +884,15 @@ extension ChatViewModelSendTests {
         // Partial replay match keeps the replay connection armed mid-stride...
         streamClient.emit(.token("First "))
 
-        // ...then the user paginates older messages, which drops pending buffers.
+        // ...then the user paginates older messages, which flushes pending buffers.
         let didLoadOlder = await viewModel.loadOlderMessages()
         XCTAssertTrue(didLoadOlder)
+        XCTAssertEqual(viewModel.messages.last?.content, "First middle ")
 
         // Replay continues: the duplicate must still dedup, the new token must append.
         streamClient.emit(.token("middle "))
         streamClient.emit(.token("last."))
+        viewModel.flushPendingStreamingContent()
 
         XCTAssertEqual(viewModel.messages.compactMap(\.content), [
             "Old question",

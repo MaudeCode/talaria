@@ -512,8 +512,8 @@ final class ChatViewModel {
         pendingReasoningTitles = []
         // Text is deduplicated at append time, so the replay matched-prefix
         // counters can reference unflushed content; dropping the buffers makes them
-        // stale. Reset only the counters — the replay connection may still be live
-        // (e.g. loadOlderMessages pagination mid-catch-up), so dedup must stay armed.
+        // stale. Reset only the counters — the replay connection may still be live,
+        // so dedup must stay armed.
         activeStreamReplayMatchedPrefixLength = 0
         activeStreamReplayMatchedReasoningLength = 0
     }
@@ -1360,7 +1360,10 @@ final class ChatViewModel {
             return false
         }
 
-        resetPendingStreamingContentBuffers()
+        // Reveal already-received stream text instead of dropping it; the replay
+        // dedup counters stay valid because flushing only moves pending content
+        // into the transcript.
+        flushPendingStreamingContent()
         let messageBefore = messagesOffset
         isLoadingOlderMessages = true
         errorMessage = nil
