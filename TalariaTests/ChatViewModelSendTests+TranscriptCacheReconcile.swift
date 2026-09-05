@@ -605,6 +605,67 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testSuccessfulReloadDoesNotReplaceResponseStartedWhileRequestIsInFlight() async throws {
+        let sessionRequestStarted = expectation(description: "session request started")
+        let releaseSessionResponse = DispatchSemaphore(value: 0)
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/session":
+                sessionRequestStarted.fulfill()
+                XCTAssertEqual(releaseSessionResponse.wait(timeout: .now() + .seconds(5)), .success)
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Old question",
+                        "timestamp": 1770000001,
+                        "message_id": "old-user"
+                      }
+                    ]
+                  }
+                }
+                """, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        defer { releaseSessionResponse.signal() }
+
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("In-flight question")
+        }
+        try await waitUntil { viewModel.messages.compactMap(\.content).contains("In-flight question") }
+
+        releaseSessionResponse.signal()
+        await loadTask.value
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Partial response"))
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["In-flight question", "Partial response"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        XCTAssertNotNil(viewModel.streamingAssistantMessageID)
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+    }
+
+    @MainActor
     func testReloadDoesNotDuplicateCachedOptimisticAttachmentMessageWhenServerReturnsIt() async throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

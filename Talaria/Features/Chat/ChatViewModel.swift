@@ -1128,6 +1128,7 @@ final class ChatViewModel {
                 // tool-heavy session opens populated. "Load earlier" keeps the raw cap.
                 expandRenderable: true
             )
+            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             let session = response.session
             let loadedMessages = session?.messages ?? []
             let loadedActiveStreamID = session?.activeStreamId?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1203,6 +1204,7 @@ final class ChatViewModel {
                 usedCacheFallback: false
             )
         } catch {
+            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
             if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {

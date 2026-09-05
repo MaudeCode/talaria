@@ -29,6 +29,7 @@ struct ChatStreamCoordinatorTiming: Equatable {
 struct ChatStreamLoadPreparation: Equatable {
     let activeStreamIDBeforeLoad: String?
     let shouldPrepareSuspendedStreamResume: Bool
+    let runGeneration: Int
 }
 
 @MainActor
@@ -100,9 +101,8 @@ final class ChatStreamCoordinator {
     private(set) var liveTokensPerSecond: Double?
     private var lastRecoveryStatusCheckDate: Date?
     private(set) var isReplayConnection = false
-    // Bumped whenever the active run starts or finalizes. Captured before an async
-    // transcript load so a concurrent cancel/completion during the load can't be
-    // double-finalized (PR #266 review #2).
+    // Bumped whenever response ownership changes. Captured before async work so
+    // an older load cannot mutate or finalize a newer run.
     private var runGeneration = 0
 
     init(
@@ -133,6 +133,7 @@ final class ChatStreamCoordinator {
     }
 
     func prepareForNewResponse() {
+        runGeneration &+= 1
         hasCompletedCurrentResponse = false
         isConnectionSuspended = false
         liveTokensPerSecond = nil
@@ -204,8 +205,13 @@ final class ChatStreamCoordinator {
 
         return ChatStreamLoadPreparation(
             activeStreamIDBeforeLoad: activeStreamIDBeforeLoad,
-            shouldPrepareSuspendedStreamResume: activeStreamID == nil || isConnectionSuspended
+            shouldPrepareSuspendedStreamResume: activeStreamID == nil || isConnectionSuspended,
+            runGeneration: runGeneration
         )
+    }
+
+    func canApplySessionLoad(_ preparation: ChatStreamLoadPreparation) -> Bool {
+        runGeneration == preparation.runGeneration
     }
 
     func reconcileSessionLoad(
