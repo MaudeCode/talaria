@@ -14,14 +14,14 @@ import UniformTypeIdentifiers
 final class ShareInputReaderTests: XCTestCase {
     // MARK: - URLs
 
-    func testURLProviderVariantsLandInURLs() async {
+    func testURLProviderVariantsLandInURLs() async throws {
         let providers = [
             NSItemProvider(item: URL(string: "https://example.com/a")! as NSURL, typeIdentifier: UTType.url.identifier),
             NSItemProvider(item: "https://example.com/b" as NSString, typeIdentifier: UTType.url.identifier),
             NSItemProvider(item: Data("https://example.com/c".utf8) as NSData, typeIdentifier: UTType.url.identifier)
         ]
 
-        let input = await ShareInputReader.input(from: providers)
+        let input = try await ShareInputReader.input(from: providers)
 
         XCTAssertEqual(
             input.urls.map(\.absoluteString),
@@ -31,24 +31,24 @@ final class ShareInputReaderTests: XCTestCase {
         XCTAssertTrue(input.attachments.isEmpty)
     }
 
-    func testURLStringsAreTrimmed() async {
+    func testURLStringsAreTrimmed() async throws {
         let provider = NSItemProvider(
             item: "  https://example.com/trim  " as NSString,
             typeIdentifier: UTType.url.identifier
         )
 
-        let input = await ShareInputReader.input(from: [provider])
+        let input = try await ShareInputReader.input(from: [provider])
 
         XCTAssertEqual(input.urls.map(\.absoluteString), ["https://example.com/trim"])
     }
 
-    func testFileURLIsRejectedFromURLs() async {
+    func testFileURLIsRejectedFromURLs() async throws {
         let provider = NSItemProvider(
             item: URL(fileURLWithPath: "/tmp/example.txt") as NSURL,
             typeIdentifier: UTType.url.identifier
         )
 
-        let input = await ShareInputReader.input(from: [provider])
+        let input = try await ShareInputReader.input(from: [provider])
 
         XCTAssertTrue(input.urls.isEmpty)
         XCTAssertTrue(input.attachments.isEmpty)
@@ -56,14 +56,14 @@ final class ShareInputReaderTests: XCTestCase {
 
     // MARK: - Text
 
-    func testTextProviderVariantsLandInTextSnippets() async {
+    func testTextProviderVariantsLandInTextSnippets() async throws {
         let providers = [
             NSItemProvider(item: "plain string" as NSString, typeIdentifier: UTType.plainText.identifier),
             NSItemProvider(item: NSAttributedString(string: "attributed string"), typeIdentifier: UTType.plainText.identifier),
             NSItemProvider(item: Data("utf8 data".utf8) as NSData, typeIdentifier: UTType.plainText.identifier)
         ]
 
-        let input = await ShareInputReader.input(from: providers)
+        let input = try await ShareInputReader.input(from: providers)
 
         XCTAssertEqual(input.textSnippets, ["plain string", "attributed string", "utf8 data"])
         XCTAssertTrue(input.urls.isEmpty)
@@ -72,22 +72,22 @@ final class ShareInputReaderTests: XCTestCase {
 
     // MARK: - Attachments
 
-    func testOversizedImageDataProducesNoAttachment() async {
+    func testOversizedImageDataProducesNoAttachment() async throws {
         let oversized = Data(count: TalariaShareDraft.maximumSharedAttachmentBytes + 1)
         let provider = NSItemProvider(item: oversized as NSData, typeIdentifier: UTType.png.identifier)
 
-        let input = await ShareInputReader.input(from: [provider])
+        let input = try await ShareInputReader.input(from: [provider])
 
         XCTAssertTrue(input.attachments.isEmpty)
     }
 
-    func testAttachmentsCappedAtSharedLimit() async {
+    func testAttachmentsCappedAtSharedLimit() async throws {
         let providers = (0...TalariaShareDraft.maximumSharedAttachmentCount).map { index in
             NSItemProvider(item: Data([UInt8(index)]) as NSData, typeIdentifier: UTType.png.identifier)
         }
         XCTAssertEqual(providers.count, TalariaShareDraft.maximumSharedAttachmentCount + 1)
 
-        let input = await ShareInputReader.input(from: providers)
+        let input = try await ShareInputReader.input(from: providers)
 
         XCTAssertEqual(input.attachments.count, TalariaShareDraft.maximumSharedAttachmentCount)
     }
@@ -106,7 +106,7 @@ final class ShareInputReaderTests: XCTestCase {
 
         let provider = NSItemProvider(item: fileURL as NSURL, typeIdentifier: UTType.fileURL.identifier)
 
-        let input = await ShareInputReader.input(from: [provider])
+        let input = try await ShareInputReader.input(from: [provider])
 
         XCTAssertTrue(input.urls.isEmpty, "a file:// URL must not leak into web urls")
         XCTAssertEqual(input.attachments.count, 1)
@@ -117,32 +117,78 @@ final class ShareInputReaderTests: XCTestCase {
 
     // MARK: - Filename fallbacks
 
-    func testAttachmentFilenameFallsBackToTypeBasedName() async {
+    func testAttachmentFilenameFallsBackToTypeBasedName() async throws {
         // No suggestedName → fallbackFilename derives a name from the UTType.
         let provider = NSItemProvider(item: Data([0x01, 0x02]) as NSData, typeIdentifier: UTType.png.identifier)
 
-        let input = await ShareInputReader.input(from: [provider])
+        let input = try await ShareInputReader.input(from: [provider])
 
         XCTAssertEqual(input.attachments.first?.filename, "shared-image.png")
     }
 
-    func testAttachmentFilenameUsesSuggestedName() async {
+    func testAttachmentFilenameUsesSuggestedName() async throws {
         let withoutExtension = NSItemProvider(item: Data([0x01]) as NSData, typeIdentifier: UTType.png.identifier)
         withoutExtension.suggestedName = "vacation"
 
         let withExtension = NSItemProvider(item: Data([0x02]) as NSData, typeIdentifier: UTType.png.identifier)
         withExtension.suggestedName = "vacation.png"
 
-        let input = await ShareInputReader.input(from: [withoutExtension, withExtension])
+        let input = try await ShareInputReader.input(from: [withoutExtension, withExtension])
 
         // No extension → type's extension appended; already-extensioned name → kept verbatim.
         XCTAssertEqual(input.attachments.map(\.filename), ["vacation.png", "vacation.png"])
     }
 
+    // MARK: - Aggregate limit
+
+    /// Registers a PNG payload that is only materialized when the reader asks
+    /// for its bytes, so a test can prove later providers are never read.
+    private func lazyPNGProvider(count: Int, onLoad: @escaping @Sendable () -> Void = {}) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            onLoad()
+            completion(Data(count: count), nil)
+            return nil
+        }
+        return provider
+    }
+
+    func testAggregateOverflowThrowsBeforeLoadingLaterProviders() async {
+        let half = TalariaShareDraft.maximumSharedImportBytes / 2 + 1
+        let providers = [
+            lazyPNGProvider(count: half),
+            lazyPNGProvider(count: half),
+            lazyPNGProvider(count: 1) { XCTFail("reader must stop before loading providers after the limit is hit") }
+        ]
+
+        do {
+            _ = try await ShareInputReader.input(from: providers)
+            XCTFail("expected an aggregate size failure")
+        } catch {
+            XCTAssertEqual(
+                error as? SharedDraftStoreError,
+                .totalAttachmentBytesExceeded(maximumBytes: TalariaShareDraft.maximumSharedImportBytes)
+            )
+        }
+    }
+
+    func testAttachmentsWithinAggregateLimitAreRetainedInOrder() async throws {
+        let half = TalariaShareDraft.maximumSharedImportBytes / 2
+        let first = NSItemProvider(item: Data(count: half) as NSData, typeIdentifier: UTType.png.identifier)
+        first.suggestedName = "first.png"
+        let second = NSItemProvider(item: Data(count: half) as NSData, typeIdentifier: UTType.png.identifier)
+        second.suggestedName = "second.png"
+
+        let input = try await ShareInputReader.input(from: [first, second])
+
+        XCTAssertEqual(input.attachments.map(\.filename), ["first.png", "second.png"])
+        XCTAssertEqual(input.attachments.reduce(0) { $0 + $1.data.count }, TalariaShareDraft.maximumSharedImportBytes)
+    }
+
     // MARK: - Empty
 
-    func testEmptyProvidersProduceEmptyInput() async {
-        let input = await ShareInputReader.input(from: [])
+    func testEmptyProvidersProduceEmptyInput() async throws {
+        let input = try await ShareInputReader.input(from: [])
 
         XCTAssertTrue(input.urls.isEmpty)
         XCTAssertTrue(input.textSnippets.isEmpty)

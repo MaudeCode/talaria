@@ -8,18 +8,24 @@ struct ShareInput {
 }
 
 enum ShareInputReader {
-    static func input(from context: NSExtensionContext?) async -> ShareInput {
+    static func input(from context: NSExtensionContext?) async throws -> ShareInput {
         let providers = context?.inputItems
             .compactMap { $0 as? NSExtensionItem }
             .flatMap { $0.attachments ?? [] } ?? []
 
-        return await input(from: providers)
+        return try await input(from: providers)
     }
 
     // Provider-array entry point so unit tests can exercise parsing without an
     // NSExtensionContext (which can't be constructed outside an extension host).
-    static func input(from providers: [NSItemProvider]) async -> ShareInput {
+    //
+    // Throws `SharedDraftStoreError.totalAttachmentBytesExceeded` as soon as the
+    // retained attachments plus the one just read would exceed the aggregate
+    // limit, so the extension never holds the full oversized set in memory and
+    // never hands the app a silently partial draft.
+    static func input(from providers: [NSItemProvider]) async throws -> ShareInput {
         var input = ShareInput()
+        var remainingBytes = TalariaShareDraft.maximumSharedImportBytes
         for provider in providers {
             if let url = await loadURL(from: provider) {
                 input.urls.append(url)
@@ -31,6 +37,13 @@ enum ShareInputReader {
 
             if input.attachments.count < TalariaShareDraft.maximumSharedAttachmentCount,
                let attachment = await loadAttachment(from: provider) {
+                guard attachment.data.count <= remainingBytes else {
+                    throw SharedDraftStoreError.totalAttachmentBytesExceeded(
+                        maximumBytes: TalariaShareDraft.maximumSharedImportBytes
+                    )
+                }
+
+                remainingBytes -= attachment.data.count
                 input.attachments.append(attachment)
             }
         }
