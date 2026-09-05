@@ -133,7 +133,6 @@ final class ChatStreamCoordinator {
     }
 
     func prepareForNewResponse() {
-        runGeneration &+= 1
         hasCompletedCurrentResponse = false
         isConnectionSuspended = false
         liveTokensPerSecond = nil
