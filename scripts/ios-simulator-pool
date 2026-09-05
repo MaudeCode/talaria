@@ -69,7 +69,6 @@ ios_pool_acquire() {
     fi
     unlink "$pool_lock"
     pool_lock_held=false
-    export IOS_SIMULATOR_ID="$simulator_id"
     xcrun simctl bootstatus "$simulator_id" -b >/dev/null
 }
 
@@ -87,6 +86,8 @@ if [[ "$ZSH_EVAL_CONTEXT" == toplevel ]]; then
     trap cleanup EXIT
     trap 'exit 130' INT TERM
     ios_pool_acquire
+    # Sourced callers keep their original selector; only child commands get the result.
+    export IOS_SIMULATOR_ID="$simulator_id"
     "$@" &
     pool_command_pid=$!
     result=0
