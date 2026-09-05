@@ -140,7 +140,7 @@ jobs:
           echo "path=${ipa_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload to TestFlight
-        uses: apple-actions/upload-testflight-build@v4
+        uses: apple-actions/upload-testflight-build@v5
         with:
           app-path: ${{ steps.ipa.outputs.path }}
           app-type: ios
