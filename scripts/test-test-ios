@@ -32,10 +32,7 @@ state="$test_root/state"
 mkdir -p "$repo/scripts" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
 cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
 cp "$source_root/scripts/load-env" "$repo/scripts/load-env"
-# Keep the base revision's pool state synthetic when reproducing the pre-fix overlap.
-if ! rg -q TALARIA_XCTEST_POOL_DIR "$repo/scripts/test-ios"; then
-    sed -i '' 's|pool_runtime_dir="/tmp/talaria-xctest-$EUID"|pool_runtime_dir="${TALARIA_XCTEST_POOL_DIR:-/tmp/talaria-xctest-$EUID}"|' "$repo/scripts/test-ios"
-fi
+cp "$source_root/scripts/ios-simulator-pool" "$repo/scripts/ios-simulator-pool"
 chmod +x "$repo/scripts/test-ios" "$repo/scripts/load-env"
 
 cat > "$repo/scripts/assert-no-skipped-ui-tests" <<'EOF'
@@ -48,7 +45,7 @@ defaults:
 EOF
 cat > "$fake_bin/xcrun" <<'EOF'
 #!/bin/zsh
-if [[ "$*" == "simctl list devices available" ]]; then
+if [[ "$*" == "simctl list devices available --json" ]]; then
     <"${TALARIA_DEVICE_FIXTURE:?}"
 fi
 EOF
@@ -102,17 +99,10 @@ EOF
 chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
 
 cat > "$state/pool-devices" <<'EOF'
-== Devices ==
--- iOS 27.0 --
-    Talaria Test 1 (AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA) (Shutdown)
-    Talaria Test 2 (BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB) (Shutdown)
-    iPhone 17 (CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC) (Shutdown)
+{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"}]}}
 EOF
 cat > "$state/fallback-devices" <<'EOF'
-== Devices ==
--- iOS 27.0 --
-    iPad Pro (AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA) (Shutdown)
-    iPhone 16 (DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD) (Shutdown)
+{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iPhone 16","udid":"DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD","state":"Shutdown"}]}}
 EOF
 print 0 > "$state/active"
 print 0 > "$state/maximum"
@@ -126,7 +116,7 @@ git -C "$repo" worktree add -qb peer "$peer"
 export PATH="$fake_bin:$PATH"
 export TALARIA_TEST_STATE="$state"
 export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
-export TALARIA_XCTEST_POOL_DIR="$state/pool"
+export IOS_SIMULATOR_POOL_DIR="$state/pool"
 
 wait_until_active() {
     local pid=$1
@@ -161,8 +151,9 @@ rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" 
 
 print 'defaults:\n  simulatorName: "Missing simulator"' > "$repo/.xcodebuildmcp/config.yaml"
 export TALARIA_DEVICE_FIXTURE="$state/fallback-devices"
-"$repo/scripts/test-ios" TalariaTests/Fallback > "$state/fallback.log" 2>&1
+IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD "$repo/scripts/test-ios" TalariaTests/Fallback > "$state/fallback.log" 2>&1
 rg -q "platform=iOS Simulator,id=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD" "$state/fallback.log"
+export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
 if "$repo/scripts/test-ios" TalariaTests/Failure > "$state/failure.log" 2>&1; then
     print -u2 "Expected the synthetic xcodebuild failure to propagate."
     exit 1

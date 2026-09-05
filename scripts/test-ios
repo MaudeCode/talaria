@@ -8,14 +8,9 @@ runtime_dir="$repo_root/.codex-tmp/xctest"
 git_common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)
 lock_file="$git_common_dir/talaria-xctest-runner.lock"
 owner_file="$lock_file.owner"
-pool_runtime_dir="${TALARIA_XCTEST_POOL_DIR:-/tmp/talaria-xctest-$EUID}"
-pool_lock="$pool_runtime_dir/pool.lock"
-lease_dir="$pool_runtime_dir/leases"
-lease_file=""
-simulator_id=""
+source "$repo_root/scripts/ios-simulator-pool"
+IOS_SIMULATOR_ID=${IOS_SIMULATOR_ID:-${TALARIA_SIMULATOR_ID:-}}
 xcodebuild_pid=""
-shutdown_on_release=false
-pool_lock_held=false
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
 exec 9>"$lock_file"
@@ -26,14 +21,7 @@ cleanup() {
         wait "$xcodebuild_pid" 2>/dev/null || true
         xcodebuild_pid=""
     fi
-    if [[ "$shutdown_on_release" == true && -n "$simulator_id" ]]; then
-        xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
-    fi
-    [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
-    if [[ "$pool_lock_held" == true ]]; then
-        pool_lock_held=false
-        unlink "$pool_lock" 2>/dev/null || true
-    fi
+    ios_pool_release
     current_owner_pid=$(sed -n '1p' "$owner_file" 2>/dev/null || true)
     [[ "$current_owner_pid" != $$ ]] || unlink "$owner_file" 2>/dev/null || true
 }
@@ -58,84 +46,8 @@ while true; do
 done
 print -r -- $$ > "$owner_file"
 
-if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
-    print -u2 "The Talaria simulator pool is being configured. Retry when it finishes."
-    exit 75
-fi
-pool_lock_held=true
-
-typeset -a simulator_ids=()
-if [[ -n "${TALARIA_SIMULATOR_ID:-}" ]]; then
-    simulator_ids=("$TALARIA_SIMULATOR_ID")
-else
-    available_devices=$(xcrun simctl list devices available)
-    pool_ids=$(
-        print -r -- "$available_devices" | awk '
-            /^-- iOS / { in_ios = 1; next }
-            /^-- / { in_ios = 0 }
-            in_ios && /^[[:space:]]+Talaria Test [0-9]+ \([0-9A-F-]+\)/ {
-                match($0, /\([0-9A-F-]+\)/)
-                print substr($0, RSTART + 1, RLENGTH - 2)
-            }
-        '
-    )
-    if [[ -n "$pool_ids" ]]; then
-        simulator_ids=("${(@f)pool_ids}")
-        shutdown_on_release=true
-    fi
-
-    if (( ${#simulator_ids} == 0 )); then
-        preferred_simulator=$(sed -n 's/^[[:space:]]*simulatorName:[[:space:]]*"\(.*\)"/\1/p' \
-            "$repo_root/.xcodebuildmcp/config.yaml" | head -1)
-        preferred_id=$(print -r -- "$available_devices" | awk -v wanted="$preferred_simulator" '
-            /^-- iOS / { in_ios = 1; next }
-            /^-- / { in_ios = 0 }
-            in_ios {
-                line = $0
-                sub(/^[[:space:]]*/, "", line)
-                if (index(line, wanted " (") == 1) {
-                    preferred = $0
-                } else if (fallback == "" && index(line, "iPhone ") == 1) {
-                    fallback = $0
-                }
-            }
-            END {
-                selected = preferred != "" ? preferred : fallback
-                if (match(selected, /\([0-9A-F-]+\)/)) {
-                    print substr(selected, RSTART + 1, RLENGTH - 2)
-                }
-            }
-        ')
-        [[ -z "$preferred_id" ]] || simulator_ids=("$preferred_id")
-    fi
-fi
-
-for candidate_id in "${simulator_ids[@]}"; do
-    candidate_lease="$lease_dir/$candidate_id.lock"
-    if /usr/bin/shlock -f "$candidate_lease" -p $$; then
-        simulator_id="$candidate_id"
-        lease_file="$candidate_lease"
-        break
-    fi
-done
-
-if [[ -z "$simulator_id" ]]; then
-    if (( ${#simulator_ids} == 0 )); then
-        print -u2 "No Talaria test simulator is available."
-    else
-        print -u2 "Every Talaria test simulator is busy. Retry when another worktree finishes."
-    fi
-    exit 75
-fi
-
-pool_lock_held=false
-unlink "$pool_lock"
-
+ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
-
-if [[ "$shutdown_on_release" == true ]]; then
-    xcrun simctl bootstatus "$simulator_id" -b >/dev/null
-fi
 
 result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$.xcresult"
 typeset -a test_filters

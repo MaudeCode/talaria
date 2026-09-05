@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Synthetic cross-project lease checks; never touches real simulators."""
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+root = Path(__file__).resolve().parent
+with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
+    work = Path(directory)
+    tools = work / 'bin'
+    tools.mkdir()
+    for project in ('one', 'two'):
+        (work / project).mkdir()
+        shutil.copy(root / 'ios-simulator-pool', work / project / 'pool')
+    fixture = work / 'devices.json'
+    devices = [dict(name=f'iOS Test {n}', udid=f'00000000-0000-0000-0000-{n:012}',
+                    state='Shutdown', deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
+               for n in (1, 2)]
+    def save():
+        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices}}))
+    save()
+    fake = tools / 'xcrun'
+    fake.write_text('''#!/bin/zsh
+if [[ "$1 $2 $3" == "simctl list devices" ]]; then
+    cat "$POOL_FIXTURE"
+elif [[ "$1 $2" == "simctl delete" ]]; then
+    print "$3" >> "$POOL_DELETIONS"
+fi
+''')
+    fake.chmod(0o755)
+    env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
+               IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
+               POOL_DELETIONS=str(work / 'deletions'))
+    for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME'):
+        env.pop(key, None)
+    processes = []
+    def invoke(project='two', expected=0, **overrides):
+        result = subprocess.run([str(work / project / 'pool'), '/bin/zsh', '-c',
+                                 'print -r -- "$IOS_SIMULATOR_ID"'], env=dict(env, **overrides),
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
+        return result.stdout.strip()
+    def owner():
+        ready = work / 'ready'
+        ready.unlink(missing_ok=True)
+        command = 'import os,time,pathlib; pathlib.Path(os.environ["READY"]).write_text(str(os.getpid())); time.sleep(30)'
+        process = subprocess.Popen([str(work / 'one' / 'pool'), sys.executable, '-c', command],
+                                   env=dict(env, READY=str(ready)), stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.PIPE)
+        processes.append(process)
+        for _ in range(200):
+            if ready.exists():
+                return process, int(ready.read_text())
+            assert process.poll() is None, process.stderr.read().decode()
+            time.sleep(.02)
+        raise AssertionError('lease owner did not start')
+    try:
+        first, child = owner()
+        assert invoke() == devices[1]['udid']  # Independent checkout chooses another slot.
+        invoke(expected=75, IOS_SIMULATOR_ID=devices[0]['udid'])
+        assert invoke(IOS_SIMULATOR_ID=devices[1]['udid']) == devices[1]['udid']
+        invoke(expected=69, IOS_SIMULATOR_ID='missing')
+        invoke(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-18-0')
+        # Setup shares leases and cannot refresh beneath an active consumer.
+        result = subprocess.run([str(root / 'setup-ios-test-pool'), '--refresh'], env=env,
+                                capture_output=True, timeout=10)
+        assert result.returncode == 75, result.stderr
+        assert not (work / 'deletions').exists()
+        # Booted devices are never reused, even with a stale or absent owner lock.
+        devices[1]['state'] = 'Booted'
+        save()
+        invoke(expected=75)
+        first.terminate()
+        assert first.wait(timeout=10) == 130
+        assert invoke() == devices[0]['udid']
+        result = subprocess.run([str(root / 'setup-ios-test-pool'), '--refresh'], env=env,
+                                capture_output=True, timeout=10)
+        assert result.returncode == 75, result.stderr
+        assert not (work / 'deletions').exists()
+        crashed, orphan = owner()
+        devices[0]['state'] = 'Booted'
+        save()
+        crashed.kill()
+        crashed.wait(timeout=10)
+        invoke(expected=75)  # A surviving test process must not lose its simulator.
+        os.kill(orphan, signal.SIGTERM)
+        devices[0]['state'] = devices[1]['state'] = 'Shutdown'
+        save()
+        assert invoke() == devices[0]['udid']  # shlock recovers the dead PID.
+        result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'exit 42'], env=env)
+        assert result.returncode == 42
+        assert invoke() == devices[0]['udid']
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=10)
+print('Shared pool checks passed: independent callers, explicit IDs, exhaustion, runtime, refresh, cancellation, crash and exit status.')

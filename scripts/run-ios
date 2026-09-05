@@ -5,24 +5,17 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 runtime_dir="$repo_root/.codex-tmp/run-ios"
 lock_file="$runtime_dir/runner.lock"
-pool_runtime_dir="/tmp/talaria-xctest-$EUID"
-pool_lock="$pool_runtime_dir/pool.lock"
-lease_dir="$pool_runtime_dir/leases"
-lease_file=""
-simulator_id=""
-pool_lock_held=false
+source "$repo_root/scripts/ios-simulator-pool"
+xcodebuild_pid=""
 
 mkdir -p "$runtime_dir/derived-data" "$lease_dir"
 
 cleanup() {
-    if [[ -n "$simulator_id" ]]; then
-        xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+    if [[ -n "$xcodebuild_pid" ]]; then
+        kill -TERM "$xcodebuild_pid" 2>/dev/null || true
+        wait "$xcodebuild_pid" 2>/dev/null || true
     fi
-    [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
-    if [[ "$pool_lock_held" == true ]]; then
-        pool_lock_held=false
-        unlink "$pool_lock" 2>/dev/null || true
-    fi
+    ios_pool_release
     unlink "$lock_file" 2>/dev/null || true
 }
 
@@ -38,43 +31,7 @@ fi
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-if ! /usr/bin/shlock -f "$pool_lock" -p $$; then
-    print -u2 "The Talaria simulator pool is being configured. Retry when it finishes."
-    exit 75
-fi
-pool_lock_held=true
-
-pool_ids=$(
-    xcrun simctl list devices available | awk '
-        /^-- iOS / { in_ios = 1; next }
-        /^-- / { in_ios = 0 }
-        in_ios && /^[[:space:]]+Talaria Test [0-9]+ \([0-9A-F-]+\)/ {
-            match($0, /\([0-9A-F-]+\)/)
-            print substr($0, RSTART + 1, RLENGTH - 2)
-        }
-    '
-)
-
-for candidate_id in "${(@f)pool_ids}"; do
-    candidate_lease="$lease_dir/$candidate_id.lock"
-    if /usr/bin/shlock -f "$candidate_lease" -p $$; then
-        simulator_id="$candidate_id"
-        lease_file="$candidate_lease"
-        break
-    fi
-done
-
-if [[ -z "$simulator_id" ]]; then
-    if [[ -z "$pool_ids" ]]; then
-        print -u2 "No Talaria test simulator is available. Run scripts/setup-ios-test-pool first."
-    else
-        print -u2 "Every Talaria test simulator is busy. Retry when another worktree finishes."
-    fi
-    exit 75
-fi
-
-pool_lock_held=false
-unlink "$pool_lock"
+ios_pool_acquire
 
 destination="platform=iOS Simulator,id=$simulator_id"
 app_path="$runtime_dir/derived-data/Build/Products/Debug-iphonesimulator/Talaria.app"
@@ -87,7 +44,12 @@ xcodebuild build -quiet \
     -configuration Debug \
     -destination "$destination" \
     -derivedDataPath "$runtime_dir/derived-data" \
-    APP_IDENTIFIER_SUFFIX=.xctest
+    APP_IDENTIFIER_SUFFIX=.xctest &
+xcodebuild_pid=$!
+result=0
+wait "$xcodebuild_pid" || result=$?
+xcodebuild_pid=""
+(( result == 0 )) || exit "$result"
 
 bundle_identifier=$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app_path/Info.plist")
 if [[ "$bundle_identifier" != dev.kil.talaria.xctest ]]; then
