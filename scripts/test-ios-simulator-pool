@@ -118,6 +118,13 @@ fi
         (work / 'erase-fail').unlink()
         assert invoke() == devices[0]['udid']  # A successful erase on acquire clears the quarantine.
         assert not dirty.exists()
+        # A marker left by a device that has since left the pool is dropped, never erased.
+        stale = work / 'leases' / 'leases' / (personal['udid'] + '.dirty')
+        stale.touch()
+        before = erasures()
+        assert invoke(IOS_SIMULATOR_ID=personal['udid']) == personal['udid']
+        assert erasures() == before
+        assert not stale.exists()
         # Automatic reacquisition may move slots; explicit selection must stay pinned.
         for explicit in (False, True):
             repeated_env = dict(env, POOL_HELPER=str(work / 'one' / 'pool'))

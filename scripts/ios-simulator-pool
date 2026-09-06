@@ -72,7 +72,10 @@ ios_pool_acquire() {
         candidate_lease="$lease_dir/$candidate_id.lock"
         if /usr/bin/shlock -f "$candidate_lease" -p $$; then
             if [[ -e "$lease_dir/$candidate_id.dirty" ]]; then
-                if xcrun simctl erase "$candidate_id" >/dev/null 2>&1; then
+                if [[ "$candidate_disposable" != true ]]; then
+                    # A marker from before the device left the pool: never erase a non-pool device.
+                    rm -f "$lease_dir/$candidate_id.dirty"
+                elif xcrun simctl erase "$candidate_id" >/dev/null 2>&1; then
                     rm -f "$lease_dir/$candidate_id.dirty"
                 else
                     unlink "$candidate_lease" 2>/dev/null || true
