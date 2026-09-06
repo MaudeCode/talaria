@@ -313,6 +313,67 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(viewModel.sessions.first?.userMessageCount, 9)
     }
 
+    /// A `/api/sessions` response already in flight when the import lands must not
+    /// reinstate the pre-import row it captured.
+    @MainActor
+    func testInFlightListLoadDoesNotOverwriteImportedRow() async throws {
+        let firstListArrived = expectation(description: "first sessions load arrived")
+        let staleListArrived = expectation(description: "stale sessions load arrived")
+        let importArrived = expectation(description: "import arrived")
+        let requests = DeferredRequests()
+
+        DeferredMockURLProtocol.onRequest = { pending in
+            let index = requests.append(pending)
+            let path: String = pending.request.url?.path ?? ""
+            if path == "/api/sessions", index == 1 {
+                firstListArrived.fulfill()
+            } else if path == "/api/sessions", index == 2 {
+                staleListArrived.fulfill()
+            } else if path == "/api/session/import_cli", index == 3 {
+                importArrived.fulfill()
+            } else {
+                XCTFail("unexpected request \(path) at \(index)")
+            }
+        }
+        defer { DeferredMockURLProtocol.onRequest = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+
+        let writableRow = #"""
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "archived": false}]}
+        """#
+        let firstLoad = Task { await viewModel.load() }
+        await fulfillment(of: [firstListArrived], timeout: 5)
+        requests.request(at: 0).complete(withJSON: writableRow)
+        _ = await firstLoad.value
+
+        // A refresh captures the pre-import row, then the import claims it read-only
+        // before that refresh is delivered.
+        let staleLoad = Task { await viewModel.load() }
+        await fulfillment(of: [staleListArrived], timeout: 5)
+
+        let row = try XCTUnwrap(viewModel.sessions.first)
+        let open = Task { await viewModel.sessionToOpen(for: row) }
+        await fulfillment(of: [importArrived], timeout: 5)
+        requests.request(at: 2).complete(withJSON: #"""
+        {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true}, "imported": false}
+        """#)
+        let openedResult = await open.value
+        let opened = try XCTUnwrap(openedResult)
+        XCTAssertTrue(opened.isSessionReadOnly)
+
+        requests.request(at: 1).complete(withJSON: writableRow)
+        _ = await staleLoad.value
+
+        let refreshedRow = try XCTUnwrap(viewModel.sessions.first)
+        XCTAssertTrue(refreshedRow.isSessionReadOnly, "A stale list load must not reinstate pre-import metadata.")
+        XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: refreshedRow))
+    }
+
     @MainActor
     func testOpeningWebUIRowSkipsImport() async throws {
         let viewModel = try makeViewModel { _ in
@@ -368,7 +429,10 @@ final class SessionListMutationTests: XCTestCase {
 
         XCTAssertEqual(requestedPaths, ["/api/session/import_cli", "/api/session"])
         XCTAssertEqual(opened.title, "Already imported")
-        XCTAssertFalse(opened.isSessionReadOnly)
+        // The detail route answers for a foreign session the server has not
+        // claimed too, so a fallback open is view-only: only the import proves the
+        // server owns a continuable copy.
+        XCTAssertTrue(opened.isSessionReadOnly)
         XCTAssertNil(viewModel.actionErrorMessage)
     }
 

@@ -82,6 +82,10 @@ final class SessionListViewModel {
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
     private var openGeneration = 0
+    /// Rows an import claimed, with the open generation that claimed them, so a
+    /// `/api/sessions` response that was already in flight cannot reinstate the
+    /// pre-import metadata it captured.
+    private var importedRows: [String: (session: SessionSummary, generation: Int)] = [:]
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -185,6 +189,7 @@ final class SessionListViewModel {
     ) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
+        let openGenerationAtStart = openGeneration
 
         isLoading = true
         errorMessage = nil
@@ -206,7 +211,12 @@ final class SessionListViewModel {
                         && $0.archived != true
                         && $0.shouldAppearInSessionList
                 }
-            applySessions(visibleSessions, archivedCount: response.archivedCount, animation: animation)
+            applySessions(
+                visibleSessions,
+                archivedCount: response.archivedCount,
+                animation: animation,
+                openGenerationAtStart: openGenerationAtStart
+            )
             isViewingCachedData = false
 
             if let modelContext {
@@ -482,15 +492,27 @@ final class SessionListViewModel {
         lastError = nil
 
         do {
-            let detail = try await importedSessionDetail(id: sessionId)
+            let imported = try await importedSessionDetail(id: sessionId)
             guard generation == openGeneration else { return nil }
+            let detail = imported.detail
 
             // A list refresh can land while the import is in flight, so the merge
             // base is the current row rather than the pre-await snapshot — otherwise
             // `refreshRow` would roll the freshly loaded row back to stale list-only
             // metadata.
             let currentRow = sessions.first(where: { $0.sessionId == sessionId }) ?? session
-            let importedSession = SessionSummary(from: detail).merging(onto: currentRow)
+            var importedSession = SessionSummary(from: detail).merging(onto: currentRow)
+
+            if !imported.isAuthoritative {
+                // Only the import establishes that the server owns a continuable
+                // copy. The detail route also answers for a foreign session it has
+                // not claimed, and that stub is indistinguishable from a persisted
+                // one on the wire, so a fallback open is view-only rather than a
+                // composer that assumes a write will be accepted.
+                importedSession = SessionSummary(sessionId: sessionId, readOnly: true)
+                    .merging(onto: importedSession)
+            }
+
             refreshRow(with: importedSession, modelContext: modelContext)
             return importedSession
         } catch {
@@ -513,6 +535,7 @@ final class SessionListViewModel {
         else { return }
 
         sessions[index] = session
+        importedRows[sessionId] = (session, openGeneration)
 
         guard let modelContext, session.shouldAppearInSessionList else { return }
         do {
@@ -522,17 +545,24 @@ final class SessionListViewModel {
         }
     }
 
+    /// A resolved session and whether the import itself produced it. A fallback
+    /// answer opens, but does not prove the server owns a continuable copy.
+    private struct ImportedSessionDetail {
+        let detail: SessionDetail
+        let isAuthoritative: Bool
+    }
+
     /// Imports the session, falling back to the canonical detail route when the
     /// import itself fails: a session the server already owns can still be opened
     /// that way. The import error is what surfaces when the fallback fails too.
-    private func importedSessionDetail(id sessionId: String) async throws -> SessionDetail {
+    private func importedSessionDetail(id sessionId: String) async throws -> ImportedSessionDetail {
         do {
             guard let detail = try await client.importExternalSession(id: sessionId).session else {
                 // A 200 without a session is an unreadable answer, not a decided
                 // one, so it takes the same fallback as an outright failure.
                 throw APIError.http(statusCode: -1, body: nil)
             }
-            return detail
+            return ImportedSessionDetail(detail: detail, isAuthoritative: true)
         } catch {
             guard !APIError.isCancellation(error),
                   let detail = try? await client.session(
@@ -542,7 +572,7 @@ final class SessionListViewModel {
                   ).session
             else { throw error }
 
-            return detail
+            return ImportedSessionDetail(detail: detail, isAuthoritative: false)
         }
     }
 
@@ -1083,17 +1113,47 @@ final class SessionListViewModel {
     private func applySessions(
         _ newSessions: [SessionSummary],
         archivedCount newArchivedCount: Int?,
-        animation: Animation?
+        animation: Animation?,
+        openGenerationAtStart: Int = Int.max
     ) {
+        let reconciledSessions = reconcilingImportedRows(
+            in: newSessions,
+            openGenerationAtStart: openGenerationAtStart
+        )
+
         guard let animation else {
-            sessions = newSessions
+            sessions = reconciledSessions
             archivedCount = newArchivedCount
             return
         }
 
         withAnimation(animation) {
-            sessions = newSessions
+            sessions = reconciledSessions
             archivedCount = newArchivedCount
+        }
+    }
+
+    /// Keeps an import's authoritative row when the response being applied was
+    /// requested before that import claimed it. A load started afterwards already
+    /// reflects the import, so its rows win and the record is dropped.
+    private func reconcilingImportedRows(
+        in newSessions: [SessionSummary],
+        openGenerationAtStart: Int
+    ) -> [SessionSummary] {
+        guard !importedRows.isEmpty else { return newSessions }
+
+        for (sessionID, imported) in importedRows where imported.generation <= openGenerationAtStart {
+            importedRows.removeValue(forKey: sessionID)
+        }
+
+        guard !importedRows.isEmpty else { return newSessions }
+
+        return newSessions.map { session in
+            guard let sessionID = session.sessionId,
+                  let imported = importedRows[sessionID]
+            else { return session }
+
+            return imported.session.merging(onto: session)
         }
     }
 
