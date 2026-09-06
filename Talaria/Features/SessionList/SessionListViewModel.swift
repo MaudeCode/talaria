@@ -504,15 +504,20 @@ final class SessionListViewModel {
             // `refreshRow` would roll the freshly loaded row back to stale list-only
             // metadata.
             let currentRow = sessions.first(where: { $0.sessionId == sessionId }) ?? session
-            var importedSession = SessionSummary(from: detail).merging(onto: currentRow)
+            let importedSession = SessionSummary(from: detail).merging(onto: currentRow)
 
-            if !imported.isAuthoritative {
+            guard imported.isAuthoritative else {
                 // Only the import establishes that the server owns a continuable
                 // copy. The detail route also answers for a foreign session it has
                 // not claimed, and that stub is indistinguishable from a persisted
-                // one on the wire, so a fallback open is view-only rather than a
+                // one on the wire, so a fallback opens view-only rather than with a
                 // composer that assumes a write will be accepted.
-                importedSession = SessionSummary(sessionId: sessionId, readOnly: true)
+                //
+                // That view-only decision belongs to this navigation, not to the
+                // server's own view of the session, so it is deliberately not
+                // written back to the row or the cache — the list keeps reporting
+                // what the server reports, and the next open re-resolves it.
+                return SessionSummary(sessionId: sessionId, readOnly: true)
                     .merging(onto: importedSession)
             }
 

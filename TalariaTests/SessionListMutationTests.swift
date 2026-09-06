@@ -469,6 +469,9 @@ final class SessionListMutationTests: XCTestCase {
         // server owns a continuable copy.
         XCTAssertTrue(opened.isSessionReadOnly)
         XCTAssertNil(viewModel.actionErrorMessage)
+        // That decision belongs to this navigation, so it is not written back to
+        // the list, which keeps reporting what the server reports.
+        XCTAssertTrue(viewModel.sessions.isEmpty)
     }
 
     @MainActor
