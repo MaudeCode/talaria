@@ -26,6 +26,8 @@ ios_pool_release() {
     if [[ -n "$simulator_id" ]]; then
         # Keep a failed shutdown out of circulation: acquisition rejects booted devices.
         xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+        # Test hosts leak state into the device; the next lease starts clean.
+        xcrun simctl erase "$simulator_id" >/dev/null 2>&1 || true
     fi
     [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
     simulator_id=""

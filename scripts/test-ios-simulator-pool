@@ -31,12 +31,14 @@ if [[ "$1 $2 $3" == "simctl list devices" ]]; then
     cat "$POOL_FIXTURE"
 elif [[ "$1 $2" == "simctl delete" ]]; then
     print "$3" >> "$POOL_DELETIONS"
+elif [[ "$1 $2" == "simctl erase" ]]; then
+    print "$3" >> "$POOL_ERASURES"
 fi
 ''')
     fake.chmod(0o755)
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
                IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
-               POOL_DELETIONS=str(work / 'deletions'))
+               POOL_DELETIONS=str(work / 'deletions'), POOL_ERASURES=str(work / 'erasures'))
     for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME'):
         env.pop(key, None)
     processes = []
@@ -46,6 +48,9 @@ fi
                                 capture_output=True, text=True, timeout=10)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result.stdout.strip()
+    def erasures():
+        path = work / 'erasures'
+        return path.read_text().split() if path.exists() else []
     def owner():
         ready = work / 'ready'
         ready.unlink(missing_ok=True)
@@ -63,7 +68,9 @@ fi
     try:
         first, child = owner()
         assert invoke() == devices[1]['udid']  # Independent checkout chooses another slot.
+        assert erasures() == [devices[1]['udid']]  # Release wipes the device it leased.
         invoke(expected=75, IOS_SIMULATOR_ID=devices[0]['udid'])
+        assert erasures() == [devices[1]['udid']]  # A failed acquisition erases nothing.
         assert invoke(IOS_SIMULATOR_ID=devices[1]['udid']) == devices[1]['udid']
         invoke(expected=69, IOS_SIMULATOR_ID='missing')
         invoke(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-18-0')
@@ -124,4 +131,4 @@ fi
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-print('Shared pool checks passed: independent callers, explicit IDs, exhaustion, runtime, refresh, cancellation, crash, repeated acquire/release and exit status.')
+print('Shared pool checks passed: independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
