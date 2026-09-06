@@ -327,10 +327,10 @@ final class SessionListMutationTests: XCTestCase {
             let path: String = pending.request.url?.path ?? ""
             if path == "/api/sessions", index == 1 {
                 firstListArrived.fulfill()
-            } else if path == "/api/sessions", index == 2 {
-                staleListArrived.fulfill()
-            } else if path == "/api/session/import_cli", index == 3 {
+            } else if path == "/api/session/import_cli", index == 2 {
                 importArrived.fulfill()
+            } else if path == "/api/sessions", index == 3 {
+                staleListArrived.fulfill()
             } else {
                 XCTFail("unexpected request \(path) at \(index)")
             }
@@ -353,22 +353,24 @@ final class SessionListMutationTests: XCTestCase {
         requests.request(at: 0).complete(withJSON: writableRow)
         _ = await firstLoad.value
 
-        // A refresh captures the pre-import row, then the import claims it read-only
-        // before that refresh is delivered.
-        let staleLoad = Task { await viewModel.load(modelContext: context) }
-        await fulfillment(of: [staleListArrived], timeout: 5)
-
+        // The open starts first, then a refresh captures the pre-import row while
+        // the import is still pending, and the import claims it read-only before
+        // that refresh is delivered. The record must outlive a load that began
+        // before the claim completed, not merely before the open started.
         let row = try XCTUnwrap(viewModel.sessions.first)
         let open = Task { await viewModel.sessionToOpen(for: row, modelContext: context) }
         await fulfillment(of: [importArrived], timeout: 5)
-        requests.request(at: 2).complete(withJSON: #"""
+
+        let staleLoad = Task { await viewModel.load(modelContext: context) }
+        await fulfillment(of: [staleListArrived], timeout: 5)
+        requests.request(at: 1).complete(withJSON: #"""
         {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true}, "imported": false}
         """#)
         let openedResult = await open.value
         let opened = try XCTUnwrap(openedResult)
         XCTAssertTrue(opened.isSessionReadOnly)
 
-        requests.request(at: 1).complete(withJSON: writableRow)
+        requests.request(at: 2).complete(withJSON: writableRow)
         _ = await staleLoad.value
 
         let refreshedRow = try XCTUnwrap(viewModel.sessions.first)

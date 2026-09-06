@@ -82,10 +82,14 @@ final class SessionListViewModel {
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
     private var openGeneration = 0
-    /// Rows an import claimed, with the open generation that claimed them, so a
+    /// Counts completed import claims. A row is stamped with the value at the
+    /// moment it was claimed — not when its open began — so a load that started
+    /// while the import was still pending is correctly treated as older.
+    private var claimCount = 0
+    /// Rows an import claimed, with the claim they came from, so a
     /// `/api/sessions` response that was already in flight cannot reinstate the
     /// pre-import metadata it captured.
-    private var importedRows: [String: (session: SessionSummary, generation: Int)] = [:]
+    private var importedRows: [String: (session: SessionSummary, claim: Int)] = [:]
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -189,7 +193,7 @@ final class SessionListViewModel {
     ) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
-        let openGenerationAtStart = openGeneration
+        let claimCountAtStart = claimCount
 
         isLoading = true
         errorMessage = nil
@@ -215,7 +219,7 @@ final class SessionListViewModel {
                 visibleSessions,
                 archivedCount: response.archivedCount,
                 animation: animation,
-                openGenerationAtStart: openGenerationAtStart
+                claimCountAtStart: claimCountAtStart
             )
             isViewingCachedData = false
 
@@ -543,7 +547,8 @@ final class SessionListViewModel {
         else { return }
 
         sessions[index] = session
-        importedRows[sessionId] = (session, openGeneration)
+        claimCount += 1
+        importedRows[sessionId] = (session, claimCount)
 
         guard let modelContext, session.shouldAppearInSessionList else { return }
         do {
@@ -1131,11 +1136,11 @@ final class SessionListViewModel {
         _ newSessions: [SessionSummary],
         archivedCount newArchivedCount: Int?,
         animation: Animation?,
-        openGenerationAtStart: Int = Int.max
+        claimCountAtStart: Int = Int.max
     ) {
         let reconciledSessions = reconcilingImportedRows(
             in: newSessions,
-            openGenerationAtStart: openGenerationAtStart
+            claimCountAtStart: claimCountAtStart
         )
 
         guard let animation else {
@@ -1151,15 +1156,16 @@ final class SessionListViewModel {
     }
 
     /// Keeps an import's authoritative row when the response being applied was
-    /// requested before that import claimed it. A load started afterwards already
-    /// reflects the import, so its rows win and the record is dropped.
+    /// requested before that import claimed it. Only a load that started after the
+    /// claim completed already reflects it, so only then do its rows win and the
+    /// record get dropped.
     private func reconcilingImportedRows(
         in newSessions: [SessionSummary],
-        openGenerationAtStart: Int
+        claimCountAtStart: Int
     ) -> [SessionSummary] {
         guard !importedRows.isEmpty else { return newSessions }
 
-        for (sessionID, imported) in importedRows where imported.generation <= openGenerationAtStart {
+        for (sessionID, imported) in importedRows where imported.claim <= claimCountAtStart {
             importedRows.removeValue(forKey: sessionID)
         }
 
