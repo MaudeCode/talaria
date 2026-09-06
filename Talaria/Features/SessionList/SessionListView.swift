@@ -1284,7 +1284,7 @@ struct SessionListView: View {
 
     private func openDeepLinkedSession(id sessionID: String) async {
         if let loadedSession = viewModel.sessions.first(where: { $0.sessionId == sessionID }) {
-            selectSession(loadedSession)
+            await openSession(loadedSession)
             return
         }
 
@@ -1294,10 +1294,14 @@ struct SessionListView: View {
         // the network load was in flight. Selecting or persisting for a session
         // whose owning view no longer exists is stale work, not a real navigation.
         guard !Task.isCancelled else { return }
-        if let session {
-            selectSession(session)
+        guard let session else {
+            handleLastError()
+            return
         }
-        handleLastError()
+
+        // A deep-linked external session needs the same server-side import a
+        // tapped row does before it can be continued.
+        await openSession(session)
     }
 
     /// Opens the New Chat composer in response to the "New Chat" App Intents (#337/#338),
@@ -1332,12 +1336,22 @@ struct SessionListView: View {
         navigationState.select(PendingNewChatRoute())
     }
 
-    /// External rows are imported (or refreshed) server-side before navigation, so
-    /// the opened session carries the server's authoritative writability. A failed
+    /// External sessions are imported (or refreshed) server-side before navigation,
+    /// so the opened session carries the server's authoritative writability. A failed
     /// import stays on the list and surfaces through the action-error alert.
     private func openSession(_ session: SessionSummary) async {
-        guard let session = await viewModel.sessionToOpen(for: session) else { return }
-        selectSession(session)
+        let navigationRevision = navigationState.rootRevision
+        guard let resolvedSession = await viewModel.sessionToOpen(for: session) else {
+            // Forwards an expired session/cookie to the auth manager the same way
+            // every other network-backed session-list action does.
+            handleLastError()
+            return
+        }
+
+        // Any destination chosen while the import was in flight — New Chat, a
+        // utility, another row — is newer than this one and must not be replaced.
+        guard navigationRevision == navigationState.rootRevision else { return }
+        selectSession(resolvedSession)
     }
 
     private func selectSession(_ session: SessionSummary) {
