@@ -607,21 +607,23 @@ extension ChatViewModelSendTests {
     @MainActor
     func testSuccessfulReloadDoesNotReplaceResponseStartedWhileRequestIsInFlight() async throws {
         let requests = DeferredRequests()
+        let host = "tal116-stream-first.test"
         let sessionRequestStarted = expectation(description: "session request started")
         let chatStartRequestStarted = expectation(description: "chat start request started")
-        DeferredMockURLProtocol.onRequest = { request in
+        DeferredMockURLProtocol.setOnRequest({ request in
             _ = requests.append(request)
             switch request.request.url?.path {
             case "/api/session": sessionRequestStarted.fulfill()
             case "/api/chat/start": chatStartRequestStarted.fulfill()
             default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(
             streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
             protocolClasses: [DeferredMockURLProtocol.self]
         ) { request in
             XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
@@ -671,21 +673,90 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testSuccessfulReloadStillAppliesWhenConcurrentChatStartFails() async throws {
+    func testReloadPreservesOptimisticTurnWhileChatStartIsPending() async throws {
         let requests = DeferredRequests()
+        let host = "tal116-session-first.test"
         let sessionRequestStarted = expectation(description: "session request started")
         let chatStartRequestStarted = expectation(description: "chat start request started")
-        DeferredMockURLProtocol.onRequest = { request in
+        DeferredMockURLProtocol.setOnRequest({ request in
             _ = requests.append(request)
             switch request.request.url?.path {
             case "/api/session": sessionRequestStarted.fulfill()
             case "/api/chat/start": chatStartRequestStarted.fulfill()
             default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
-        let viewModel = try makeViewModel(protocolClasses: [DeferredMockURLProtocol.self]) { request in
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Pending question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Old question",
+                "timestamp": 1770000001,
+                "message_id": "old-user"
+              }
+            ]
+          }
+        }
+        """)
+        await loadTask.value
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Old question", "Pending question"])
+
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Old question", "Pending question"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+    }
+
+    @MainActor
+    func testSuccessfulReloadStillAppliesWhenConcurrentChatStartFails() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-start-failure.test"
+        let sessionRequestStarted = expectation(description: "session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session": sessionRequestStarted.fulfill()
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
             XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
         }
@@ -726,21 +797,23 @@ extension ChatViewModelSendTests {
     @MainActor
     func testStreamEndDoesNotInvalidateCompletionTranscriptReload() async throws {
         let requests = DeferredRequests()
+        let host = "tal116-completion.test"
         let chatStartRequestStarted = expectation(description: "chat start request started")
         let sessionRequestStarted = expectation(description: "session request started")
-        DeferredMockURLProtocol.onRequest = { request in
+        DeferredMockURLProtocol.setOnRequest({ request in
             _ = requests.append(request)
             switch request.request.url?.path {
             case "/api/chat/start": chatStartRequestStarted.fulfill()
             case "/api/session": sessionRequestStarted.fulfill()
             default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(
             streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
             protocolClasses: [DeferredMockURLProtocol.self]
         ) { request in
             XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")

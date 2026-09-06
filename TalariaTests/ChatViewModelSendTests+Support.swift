@@ -51,6 +51,7 @@ extension ChatViewModelSendTests {
         serverTTSAudioPlayerFactory: (@MainActor (Data) throws -> any ListenAudioPlaying)? = nil,
         draftAttachmentStore: any ChatDraftAttachmentStoring = RecordingSendDraftAttachmentStore(),
         userDefaults: UserDefaults = .standard,
+        server: URL = URL(string: "https://example.test")!,
         protocolClasses: [AnyClass] = [MockURLProtocol.self],
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
@@ -59,7 +60,6 @@ extension ChatViewModelSendTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = protocolClasses
         let urlSession = URLSession(configuration: configuration)
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
         let client = APIClient(baseURL: server, session: urlSession)
         let summary: SessionSummary
         if let sessionSummary {

@@ -1128,7 +1128,6 @@ final class ChatViewModel {
                 // tool-heavy session opens populated. "Load earlier" keeps the raw cap.
                 expandRenderable: true
             )
-            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             let session = response.session
             let loadedMessages = session?.messages ?? []
             let loadedActiveStreamID = session?.activeStreamId?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1152,6 +1151,26 @@ final class ChatViewModel {
             } else {
                 reloadedMessages = loadedMessages
             }
+            if isStartingChat {
+                let currentMessages = messages
+                let currentMessagesOffset = messagesOffset
+                applyReloadedMessages(
+                    Self.mergingLoadedMessages(
+                        reloadedMessages,
+                        withCachedLocalOptimisticMessages: currentMessages
+                    ),
+                    from: session,
+                    previousMessages: currentMessages,
+                    previousMessagesOffset: currentMessagesOffset
+                )
+                isViewingCachedData = false
+                cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
+                if renderedCacheFirst {
+                    cacheFirstReconcileScrollToken += 1
+                }
+                return
+            }
+            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             applyCompressionAnchorMetadata(from: session)
             applyReloadedMessages(
                 reloadedMessages,
@@ -1204,6 +1223,7 @@ final class ChatViewModel {
                 usedCacheFallback: false
             )
         } catch {
+            guard !isStartingChat else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
