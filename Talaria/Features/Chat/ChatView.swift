@@ -2338,10 +2338,27 @@ struct ChatView: View {
     }
 
     private func handleFollowEvent(_ event: ChatScrollPolicy.FollowEvent) {
+        // An explicit jump to the live edge — a send or a scroll-to-bottom tap —
+        // overrides a disclosure toggle that is still settling. The suspension
+        // exists to protect the position the reader just left, and they have now
+        // asked to leave it; without this, the edge-triggered follow that the
+        // send's own message fires is swallowed and never replayed.
+        if event == .reset {
+            endDisclosureSettling()
+        }
+
         let resolved = ChatScrollPolicy.resolveFollow(current: followLatch, event: event)
         if resolved != followLatch {
             followLatch = resolved
         }
+    }
+
+    private func endDisclosureSettling() {
+        guard isDisclosureSettling else { return }
+
+        // Outdate the pending release so it cannot clear a later suspension.
+        disclosureSettleGeneration += 1
+        isDisclosureSettling = false
     }
 
     /// Suspends follow scrolls and the bottom anchor through a disclosure
