@@ -44,22 +44,22 @@ final class ShareViewController: UIViewController {
     }
 
     private func saveDraftAndOpenTalaria() async {
-        let input = await ShareInputReader.input(from: extensionContext)
-        let draft = TalariaShareDraft.draftText(textSnippets: input.textSnippets, urls: input.urls)
-
-        guard !draft.isEmpty || !input.attachments.isEmpty else {
-            showStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
-            completeRequest(after: 0.8)
-            return
-        }
-
-        guard let directory = TalariaShareDraft.containerURL() else {
-            showStatus("Could not access Talaria storage.")
-            completeRequest(after: 0.8)
-            return
-        }
-
         do {
+            let input = try await ShareInputReader.input(from: extensionContext)
+            let draft = TalariaShareDraft.draftText(textSnippets: input.textSnippets, urls: input.urls)
+
+            guard !draft.isEmpty || !input.attachments.isEmpty else {
+                showStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
+                completeRequest(after: 0.8)
+                return
+            }
+
+            guard let directory = TalariaShareDraft.containerURL() else {
+                showStatus("Could not access Talaria storage.")
+                completeRequest(after: 0.8)
+                return
+            }
+
             try TalariaShareDraft.savePendingImport(draft: draft, attachments: input.attachments, in: directory)
         } catch let error as SharedDraftStoreError {
             showStatus(error.localizedDescription)

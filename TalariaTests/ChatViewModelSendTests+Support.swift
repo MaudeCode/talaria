@@ -444,17 +444,19 @@ final class SpySSEStreamingClient: SSEStreamingClient {
     private var onEvent: (@MainActor (SSEEvent) -> Void)?
     var automaticallyFlushPendingStreamingContent = true
     var flushPendingStreamingContent: (() -> Void)?
-    var eventOnStart: SSEEvent?
+    var eventsOnStart: [SSEEvent] = []
 
     func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
         startedURLs.append(url)
         lastEventID = nil
         self.onEvent = onEvent
-        if let eventOnStart {
+        if !eventsOnStart.isEmpty {
             MainActor.assumeIsolated {
-                onEvent(eventOnStart)
-                if automaticallyFlushPendingStreamingContent {
-                    flushPendingStreamingContent?()
+                for event in eventsOnStart {
+                    onEvent(event)
+                    if automaticallyFlushPendingStreamingContent {
+                        flushPendingStreamingContent?()
+                    }
                 }
             }
         }

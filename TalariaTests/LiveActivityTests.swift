@@ -401,6 +401,98 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
+    func testRelayRedirectGuardCancelsEveryCrossOriginRedirect() throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://relay.example.com"))
+        let guardDelegate = TalariaRelayRedirectGuard(baseURL: baseURL)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: baseURL)
+        for (statusCode, destination) in [
+            (301, "http://relay.example.com/capture"),
+            (302, "https://attacker.example/capture"),
+            (303, "https://relay.example.com:8443/capture"),
+            (307, "https://attacker.example/capture"),
+            (308, "https://attacker.example/capture")
+        ] {
+            var redirected = URLRequest(url: try XCTUnwrap(URL(string: destination)))
+            redirected.httpMethod = "POST"
+            redirected.httpBody = try JSONEncoder().encode([
+                "identityToken": "synthetic-apple-token",
+                "nonce": "synthetic-nonce"
+            ])
+            redirected.setValue("Bearer synthetic-session-token", forHTTPHeaderField: "Authorization")
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: baseURL,
+                    statusCode: statusCode,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: nil
+                )
+            )
+            var completionCalled = false
+            var outcome: URLRequest?
+
+            guardDelegate.urlSession(
+                session,
+                task: task,
+                willPerformHTTPRedirection: response,
+                newRequest: redirected
+            ) {
+                completionCalled = true
+                outcome = $0
+            }
+
+            XCTAssertTrue(completionCalled)
+            XCTAssertNil(outcome, "HTTP \(statusCode) authorized a cross-origin next hop")
+        }
+    }
+
+    func testRelayRedirectGuardKeepsSameOriginRequestAndBearerCredentials() throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://relay.example.com"))
+        let guardDelegate = TalariaRelayRedirectGuard(baseURL: baseURL)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: baseURL)
+        var redirected = URLRequest(url: try XCTUnwrap(URL(string: "https://RELAY.example.com:443/next")))
+        redirected.httpMethod = "POST"
+        redirected.httpBody = Data("synthetic-body".utf8)
+        redirected.setValue("Bearer synthetic-session-token", forHTTPHeaderField: "Authorization")
+        let response = try XCTUnwrap(
+            HTTPURLResponse(url: baseURL, statusCode: 307, httpVersion: "HTTP/1.1", headerFields: nil)
+        )
+        var outcome: URLRequest?
+
+        guardDelegate.urlSession(
+            session,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: redirected
+        ) { outcome = $0 }
+
+        XCTAssertEqual(outcome?.httpBody, Data("synthetic-body".utf8))
+        XCTAssertEqual(
+            outcome?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer synthetic-session-token"
+        )
+    }
+
+    func testRelayClientOwnsGuardedDefaultSessionAndPreservesInjection() throws {
+        let credentials = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example.com")),
+            deviceID: "synthetic-device",
+            userID: "synthetic-user",
+            appleUserID: "synthetic-apple-user",
+            sessionToken: "synthetic-session-token",
+            expiresAt: .distantFuture
+        )
+        let injected = URLSession(configuration: .ephemeral)
+        defer { injected.invalidateAndCancel() }
+
+        let owned = TalariaRelayClient(credentials: credentials)
+        XCTAssertTrue(owned.session.delegate is TalariaRelayRedirectGuard)
+        XCTAssertTrue(TalariaRelayClient(credentials: credentials, session: injected).session === injected)
+    }
+
     func testSanitizesLiveActivityText() {
         let title = AgentRunActivitySanitizer.sessionTitle("  A very long Hermes session title with\nmultiple lines and extra words  ")
         let activity = AgentRunActivitySanitizer.activityLine("Reading /Users/example/project/Secrets.swift\nwith details")

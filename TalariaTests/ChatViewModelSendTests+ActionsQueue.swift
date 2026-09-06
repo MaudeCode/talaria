@@ -1168,4 +1168,75 @@ extension ChatViewModelSendTests {
     /// Lets a `Task { @MainActor … }` enqueued by a delegate callback run to completion
     /// before assertions. Same-actor tasks run FIFO, so awaiting a task enqueued *after*
     /// the callback's drains it; the leading yields add slack.
+
+    @MainActor
+    func testQueuedSlashMessageDrainsAfterAFailedVoiceNoteReleasesThePipeline() async throws {
+        let streamClient = SpySSEStreamingClient()
+        // Hold transcription open so the voice note still owns the send pipeline
+        // when the active stream ends and fires the drain trigger.
+        let transcribeGate = DispatchSemaphore(value: 0)
+        defer { transcribeGate.signal() }
+        var chatStartCount = 0
+
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                chatStartCount += 1
+                return apiTestJSONResponse(
+                    """
+                    {"session_id":"session-abc","stream_id":"stream-\(chatStartCount)"}
+                    """,
+                    for: request
+                )
+            case "/api/transcribe":
+                transcribeGate.wait()
+                return apiTestJSONResponse(
+                    #"{"ok": false, "error": "transcription unavailable"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("first message")
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(chatStartCount, 1)
+
+        let queueCommand = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
+        let queued = await viewModel.executeSlashCommand(queueCommand, args: "queued message")
+        XCTAssertEqual(queued, .executed(message: "Queued for next turn (#1)."))
+
+        let voiceSend = Task { @MainActor in
+            await viewModel.sendVoiceNote(audioData: Data("fake-m4a-bytes".utf8), filename: "voice-note.m4a")
+        }
+        try await waitUntil { viewModel.isSendingVoiceNote }
+
+        // Stream completion is the drain trigger, but the voice note owns the send
+        // pipeline, so the queued message must stay queued instead of burning its
+        // single attempt on a send that `sendMessage` would reject.
+        streamClient.emit(.streamEnd)
+        XCTAssertNil(viewModel.activeStreamID)
+        await drainMainActor()
+        XCTAssertEqual(chatStartCount, 1)
+
+        // The voice note fails without starting a stream, so releasing the pipeline
+        // is the queued message's only remaining trigger.
+        transcribeGate.signal()
+        let didSendVoice = await voiceSend.value
+        XCTAssertFalse(didSendVoice)
+
+        try await waitUntil { chatStartCount == 2 }
+        XCTAssertEqual(chatStartCount, 2)
+
+        let status = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "status")))
+        guard case let .executed(message) = status, let statusText = message else {
+            return XCTFail("Expected /status to return an executed message, got \(status).")
+        }
+        XCTAssertTrue(
+            statusText.contains("Queued messages: 0"),
+            "The queued message should have drained once the voice note released the pipeline. Status was:\n\(statusText)"
+        )
+    }
 }

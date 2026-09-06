@@ -1032,4 +1032,168 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messagesOffset, 49)
         XCTAssertTrue(viewModel.hasOlderMessages)
     }
+
+    // MARK: - TAL-117: pagination keeps received-but-unrendered stream content
+
+    private enum OlderPageOutcome {
+        case success
+        case empty
+        case failure
+    }
+
+    /// Latest window: one recent message with an older page behind it. `/api/chat/start`
+    /// begins a stream so the test can buffer SSE content before paginating.
+    private static func paginatedStreamingSessionHandler(
+        olderPage: OlderPageOutcome
+    ) -> (URLRequest) throws -> (HTTPURLResponse, Data) {
+        { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/session":
+                let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+                let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+                guard query["msg_before"] == "2" else {
+                    return apiTestJSONResponse("""
+                    {
+                      "session": {
+                        "session_id": "session-abc",
+                        "messages": [
+                          {"role": "user", "content": "Recent question", "timestamp": 3, "message_id": "u-2"}
+                        ],
+                        "_messages_truncated": true,
+                        "_messages_offset": 2
+                      }
+                    }
+                    """, for: request)
+                }
+                switch olderPage {
+                case .success:
+                    return apiTestJSONResponse("""
+                    {
+                      "session": {
+                        "session_id": "session-abc",
+                        "messages": [
+                          {"role": "user", "content": "Old question", "timestamp": 1, "message_id": "u-0"},
+                          {"role": "assistant", "content": "Old answer", "timestamp": 2, "message_id": "a-1"},
+                          {"role": "user", "content": "Recent question", "timestamp": 3, "message_id": "u-2"}
+                        ],
+                        "_messages_truncated": false,
+                        "_messages_offset": 0
+                      }
+                    }
+                    """, for: request)
+                case .empty:
+                    return apiTestJSONResponse("""
+                    {
+                      "session": {
+                        "session_id": "session-abc",
+                        "messages": [],
+                        "_messages_truncated": false,
+                        "_messages_offset": 0
+                      }
+                    }
+                    """, for: request)
+                case .failure:
+                    throw URLError(.timedOut)
+                }
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+    }
+
+    /// Stream client that never auto-flushes, paired with a coalescing delay far
+    /// longer than the test, so emitted content stays in the pending buffers until
+    /// production code flushes it.
+    private func makePendingContentViewModel(
+        olderPage: OlderPageOutcome
+    ) async throws -> (ChatViewModel, SpySSEStreamingClient) {
+        let streamClient = SpySSEStreamingClient()
+        streamClient.automaticallyFlushPendingStreamingContent = false
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            streamingScrollCoalescingDelayNanoseconds: 60_000_000_000,
+            handler: Self.paginatedStreamingSessionHandler(olderPage: olderPage)
+        )
+
+        await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.hasOlderMessages)
+        let didStart = await viewModel.sendMessage("Keep working")
+        XCTAssertTrue(didStart)
+        return (viewModel, streamClient)
+    }
+
+    func testLoadOlderMessagesFlushesPendingAssistantTextBeforePrepend() async throws {
+        let (viewModel, streamClient) = try await makePendingContentViewModel(olderPage: .success)
+
+        streamClient.emit(.token("Partial "))
+        streamClient.emit(.token("answer"))
+        XCTAssertEqual(viewModel.messages.last?.content, "", "token must still be pending before pagination")
+
+        let didLoadOlder = await viewModel.loadOlderMessages()
+
+        XCTAssertTrue(didLoadOlder)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), [
+            "Old question",
+            "Old answer",
+            "Recent question",
+            "Keep working",
+            "Partial answer"
+        ])
+        XCTAssertEqual(viewModel.messagesOffset, 0)
+
+        // The stream continues into the same row without repeating flushed text.
+        streamClient.emit(.token(" done."))
+        viewModel.flushPendingStreamingContent()
+        XCTAssertEqual(viewModel.messages.last?.content, "Partial answer done.")
+    }
+
+    func testLoadOlderMessagesEmptyPageKeepsPendingReasoningAndTitles() async throws {
+        let (viewModel, streamClient) = try await makePendingContentViewModel(olderPage: .empty)
+
+        streamClient.emit(.reasoning(ReasoningStreamEvent(
+            text: "Plan the fix.",
+            titles: ["Planning"]
+        )))
+        XCTAssertEqual(viewModel.liveReasoningText, "", "reasoning must still be pending before pagination")
+
+        let didLoadOlder = await viewModel.loadOlderMessages()
+
+        XCTAssertFalse(didLoadOlder)
+        XCTAssertEqual(viewModel.liveReasoningText, "Plan the fix.")
+        guard case .reasoning(let reasoning) = viewModel.liveActivityRows.first?.content else {
+            return XCTFail("Expected live reasoning after pagination")
+        }
+        XCTAssertEqual(reasoning.titles, ["Planning"])
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Recent question", "Keep working", ""])
+
+        streamClient.emit(.reasoning(ReasoningStreamEvent(text: " Then verify.", titles: [])))
+        viewModel.flushPendingStreamingContent()
+        XCTAssertEqual(viewModel.liveReasoningText, "Plan the fix. Then verify.")
+    }
+
+    func testLoadOlderMessagesFailureKeepsFlushedAssistantText() async throws {
+        let (viewModel, streamClient) = try await makePendingContentViewModel(olderPage: .failure)
+
+        streamClient.emit(.token("Partial answer"))
+        XCTAssertEqual(viewModel.messages.last?.content, "")
+
+        let didLoadOlder = await viewModel.loadOlderMessages()
+
+        XCTAssertFalse(didLoadOlder)
+        XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertTrue(viewModel.hasOlderMessages)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Recent question", "Keep working", "Partial answer"])
+
+        streamClient.emit(.token(" done."))
+        viewModel.flushPendingStreamingContent()
+        XCTAssertEqual(viewModel.messages.last?.content, "Partial answer done.")
+    }
 }

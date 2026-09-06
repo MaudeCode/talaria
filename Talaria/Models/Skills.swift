@@ -295,8 +295,3 @@ struct SkillDetailResponse: Decodable, Equatable {
         }
     }
 }
-
-struct SkillLinkedFileResponse: Decodable, Equatable {
-    let content: String?
-    let path: String?
-}

@@ -85,10 +85,12 @@ struct ChatView: View {
     @State private var draftRevision = 0
     @State private var isScrolledNearBottom = true
     @State private var isReadingOlderTranscript = false
-    @State private var shouldFollowLatestMessage = true
+    @State private var followLatch = ChatScrollPolicy.FollowLatch()
     @State private var followScrollGeneration = 0
-    @State private var isUserInteractingWithScroll = false
-    @State private var userScrollCooldownUntil: Date?
+    /// While true the transcript's bottom size-change anchor and follow-driven
+    /// scrolls are suspended so a disclosure toggle grows or shrinks in place.
+    @State private var isDisclosureSettling = false
+    @State private var disclosureSettleGeneration = 0
     /// While set and in the future, auto-follow scrolls snap instead of animating, so
     /// the cache-first → network reconcile re-pins to the bottom without a jump (#289).
     @State private var cacheFirstSnapUntil: Date?
@@ -946,6 +948,7 @@ struct ChatView: View {
             showsAssistantTypingIndicator: showsAssistantTypingIndicator,
             showsScrollToBottomButton: showsScrollToBottomButton,
             shouldFollowLatestMessage: shouldFollowLatestMessage,
+            isDisclosureSettling: isDisclosureSettling,
             latestTranscriptMessageRole: latestTranscriptMessageRole,
             isScrolledNearBottom: isScrolledNearBottom,
             activeStreamID: viewModel.activeStreamID,
@@ -988,6 +991,8 @@ struct ChatView: View {
                 await loadOlderMessages()
             },
             onUpdateScrollMetrics: updateScrollMetrics,
+            onFollowEvent: handleFollowEvent,
+            onDisclosureToggle: suspendBottomAnchorForDisclosure,
             onDismissKeyboard: dismissKeyboard,
             onScrollToBottom: scrollToBottom,
             onScrollToLatestTranscriptMessage: { proxy in
@@ -1045,6 +1050,16 @@ struct ChatView: View {
     /// sidebar, settings, and navigation chrome stay in the default direction.
     private var chatLayoutDirection: LayoutDirection {
         ChatTranscriptDisplaySettings.chatLayoutDirection(rtlEnabled: rtlChatLayoutEnabled)
+    }
+
+    private var shouldFollowLatestMessage: Bool {
+        followLatch.isFollowing
+    }
+
+    /// Automatic follows run only while the latch is on and no disclosure
+    /// toggle is mid-animation.
+    private var isFollowingLatestContent: Bool {
+        shouldFollowLatestMessage && !isDisclosureSettling
     }
 
     private var showsScrollToBottomButton: Bool {
@@ -1317,7 +1332,7 @@ struct ChatView: View {
     }
 
     private func loadOlderMessages() async -> Bool {
-        shouldFollowLatestMessage = false
+        followLatch.isFollowing = false
         if !isReadingOlderTranscript {
             withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
                 isReadingOlderTranscript = true
@@ -2222,17 +2237,15 @@ struct ChatView: View {
         animated: Bool,
         isUserInitiated: Bool
     ) {
-        // Auto-follow (streaming tokens, new rows) must not override the user's
-        // scroll position while they are interacting or within the cooldown.
-        if !isUserInitiated, isAutoFollowScrollPaused {
+        // Explicit jumps re-arm the follow latch; automatic follows (streaming
+        // tokens, new rows) only run while the latch is already on and no
+        // disclosure toggle is settling.
+        if isUserInitiated {
+            handleFollowEvent(.reset)
+        } else if !isFollowingLatestContent {
             return
         }
 
-        if isUserInitiated {
-            userScrollCooldownUntil = nil
-        }
-
-        shouldFollowLatestMessage = true
         isReadingOlderTranscript = false
         followScrollGeneration += 1
         let generation = followScrollGeneration
@@ -2241,8 +2254,9 @@ struct ChatView: View {
             await Task.yield()
             try? await Task.sleep(nanoseconds: 16_000_000)
             guard !Task.isCancelled, generation == followScrollGeneration else { return }
-            // Re-check at fire time: a gesture may have begun during the delay.
-            if !isUserInitiated, isAutoFollowScrollPaused { return }
+            // Re-check at fire time: a drag or a disclosure toggle may have
+            // begun during the delay.
+            if !isUserInitiated, !isFollowingLatestContent { return }
 
             // Snap (no animation) while inside the cache-first reconcile window so the
             // taller server transcript replacing the cached one doesn't animate a jump
@@ -2323,30 +2337,71 @@ struct ChatView: View {
         }
     }
 
+    private func handleFollowEvent(_ event: ChatScrollPolicy.FollowEvent) {
+        // An explicit jump to the live edge — a send or a scroll-to-bottom tap —
+        // overrides a disclosure toggle that is still settling. The suspension
+        // exists to protect the position the reader just left, and they have now
+        // asked to leave it; without this, the edge-triggered follow that the
+        // send's own message fires is swallowed and never replayed.
+        if event == .reset {
+            endDisclosureSettling()
+        }
+
+        let resolved = ChatScrollPolicy.resolveFollow(current: followLatch, event: event)
+        if resolved != followLatch {
+            followLatch = resolved
+        }
+    }
+
+    private func endDisclosureSettling() {
+        guard isDisclosureSettling else { return }
+
+        // Outdate the pending release so it cannot clear a later suspension.
+        disclosureSettleGeneration += 1
+        isDisclosureSettling = false
+    }
+
+    /// Suspends follow scrolls and the bottom anchor through a disclosure
+    /// animation; the transcript view pins the offset itself. The latch is
+    /// untouched, so the next streaming trigger catches up once the toggle has
+    /// settled.
+    private func suspendBottomAnchorForDisclosure() {
+        disclosureSettleGeneration += 1
+        let generation = disclosureSettleGeneration
+        isDisclosureSettling = true
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(ChatScrollPolicy.disclosureAnchorSuspension))
+            guard generation == disclosureSettleGeneration else { return }
+            isDisclosureSettling = false
+        }
+    }
+
     private func updateScrollMetrics(_ metrics: ChatScrollMetrics) {
         let isStreaming = viewModel.activeStreamID != nil
         let isNearBottom = ChatScrollPolicy.isNearBottom(
             distanceFromBottom: metrics.distanceFromBottom,
             isStreaming: isStreaming
         )
+        let wasNearBottom = isScrolledNearBottom
         isScrolledNearBottom = isNearBottom
-        isUserInteractingWithScroll = metrics.isUserInteracting
-
-        // Touching the scroll view pauses auto-follow for a short window so
-        // streaming layout growth cannot yank the viewport mid-gesture.
-        if metrics.isUserInteracting {
-            userScrollCooldownUntil = ChatScrollPolicy.cooldownDeadline()
-        }
+        handleFollowEvent(.contentScrolled(
+            isAtBottom: ChatScrollPolicy.isAtBottom(distanceFromBottom: metrics.distanceFromBottom),
+            isUserScrolling: metrics.isUserInteracting,
+            movedAwayFromBottom: metrics.movedAwayFromBottom,
+            wasNearBottom: wasNearBottom
+        ))
 
         if isNearBottom {
-            shouldFollowLatestMessage = true
             if isReadingOlderTranscript {
                 withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
                     isReadingOlderTranscript = false
                 }
             }
-        } else if metrics.isUserInteracting {
-            shouldFollowLatestMessage = false
+        } else if metrics.isUserInteracting || metrics.movedAwayFromBottom {
+            // A status-bar tap, VoiceOver, or hardware-keyboard scroll carries the
+            // reader away without a touch. It already opts them out of follow, so
+            // the composer must collapse with it rather than wait for a drag.
             if !isReadingOlderTranscript,
                ChatScrollPolicy.shouldEnterReadingOlder(
                    distanceFromBottom: metrics.distanceFromBottom,
@@ -2359,16 +2414,8 @@ struct ChatView: View {
         }
     }
 
-    private var isAutoFollowScrollPaused: Bool {
-        ChatScrollPolicy.isAutoScrollPaused(
-            isUserInteracting: isUserInteractingWithScroll,
-            cooldownUntil: userScrollCooldownUntil
-        )
-    }
-
     private func prepareTranscriptForExplicitSend() {
-        shouldFollowLatestMessage = true
-        userScrollCooldownUntil = nil
+        handleFollowEvent(.reset)
         if isReadingOlderTranscript {
             withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
                 isReadingOlderTranscript = false

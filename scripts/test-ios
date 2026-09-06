@@ -49,7 +49,19 @@ print -r -- $$ > "$owner_file"
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
 
-result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$.xcresult"
+# True when the bundle's only failures are the pre-test runner hang (the test
+# host never connected to testmanagerd), so no test case failed and one clean
+# retry is safe (TAL-105 evidence, TAL-145).
+runner_hang_only() {
+    [[ -d "$1" ]] || return 1
+    xcrun xcresulttool get test-results summary --path "$1" 2>/dev/null |
+        /usr/bin/jq -e '
+            (.failedTests // 0) > 0 and
+            ([.testFailures[]?] | length) == .failedTests and
+            all(.testFailures[]?; (.failureText // "") | test("test runner hung before establishing connection"))
+        ' >/dev/null 2>&1
+}
+
 typeset -a test_filters
 for selector in "$@"; do
     test_filters+=("-only-testing:$selector")
@@ -65,30 +77,43 @@ if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
     )
 fi
 
-print "Simulator: $destination"
-print "Result bundle: $result_bundle"
-
 cd "$repo_root"
-xcodebuild test -quiet \
-    -project Talaria.xcodeproj \
-    -scheme Talaria \
-    -destination "$destination" \
-    -derivedDataPath "$runtime_dir/derived-data" \
-    -disableAutomaticPackageResolution \
-    -parallel-testing-enabled NO \
-    -enableCodeCoverage NO \
-    -collect-test-diagnostics never \
-    -resultBundlePath "$result_bundle" \
-    APP_IDENTIFIER_SUFFIX=.xctest \
-    "${contract_settings[@]}" \
-    "${test_filters[@]}" &
-xcodebuild_pid=$!
-if wait "$xcodebuild_pid"; then
+attempt=1
+while true; do
+    result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$-$attempt.xcresult"
+    print "Simulator: $destination"
+    print "Result bundle: $result_bundle"
+
+    xcodebuild test -quiet \
+        -project Talaria.xcodeproj \
+        -scheme Talaria \
+        -destination "$destination" \
+        -derivedDataPath "$runtime_dir/derived-data" \
+        -disableAutomaticPackageResolution \
+        -parallel-testing-enabled NO \
+        -enableCodeCoverage NO \
+        -collect-test-diagnostics never \
+        -resultBundlePath "$result_bundle" \
+        APP_IDENTIFIER_SUFFIX=.xctest \
+        "${contract_settings[@]}" \
+        "${test_filters[@]}" &
+    xcodebuild_pid=$!
+    if wait "$xcodebuild_pid"; then
+        xcodebuild_pid=""
+        break
+    else
+        xcodebuild_status=$?
+    fi
     xcodebuild_pid=""
-else
-    xcodebuild_status=$?
-    xcodebuild_pid=""
+    if (( attempt == 1 )) && runner_hang_only "$result_bundle"; then
+        print -u2 "The test runner hung before establishing connection and no test case failed; releasing $simulator_id and retrying once."
+        ios_pool_release
+        ios_pool_acquire || exit "$xcodebuild_status"
+        destination="platform=iOS Simulator,id=$simulator_id"
+        attempt=2
+        continue
+    fi
     exit "$xcodebuild_status"
-fi
+done
 
 scripts/assert-no-skipped-ui-tests "$result_bundle"

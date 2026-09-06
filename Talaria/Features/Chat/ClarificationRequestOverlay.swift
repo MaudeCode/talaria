@@ -1,34 +1,5 @@
 import SwiftUI
 
-struct ClarificationRequestOverlay: View {
-    let prompt: ClarificationPromptState
-    let isResponding: Bool
-    let errorMessage: String?
-    let bottomPadding: CGFloat
-    let onSubmit: (String) -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            Color.black.opacity(colorScheme == .dark ? 0.24 : 0.18)
-                .ignoresSafeArea()
-
-            ClarificationRequestCard(
-                prompt: prompt,
-                isResponding: isResponding,
-                errorMessage: errorMessage,
-                onSubmit: onSubmit
-            )
-                .padding(.horizontal, 16)
-                .padding(.bottom, bottomPadding)
-                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
 struct ClarificationRequestCard: View {
     let prompt: ClarificationPromptState
     let isResponding: Bool

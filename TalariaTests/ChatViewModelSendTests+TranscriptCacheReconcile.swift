@@ -674,8 +674,31 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testReloadPreservesOptimisticTurnWhileChatStartIsPending() async throws {
+        try await assertPendingStartReloadPreservesNewResponse(
+            host: "tal116-session-first.test",
+            eventsOnStart: [.token("Partial response")],
+            expectedMessages: ["Old question", "Pending question", "Partial response"],
+            expectedActiveStreamID: "stream-123"
+        )
+    }
+
+    @MainActor
+    func testReloadDoesNotReplaceResponseCompletedBeforeWaiterResumes() async throws {
+        try await assertPendingStartReloadPreservesNewResponse(
+            host: "tal116-fast-completion.test",
+            eventsOnStart: [.token("Partial response"), .done(DoneStreamEvent(session: nil))],
+            expectedMessages: ["Pending question", "Partial response"],
+            expectedActiveStreamID: nil
+        )
+    }
+
+    private func assertPendingStartReloadPreservesNewResponse(
+        host: String,
+        eventsOnStart: [SSEEvent],
+        expectedMessages: [String],
+        expectedActiveStreamID: String?
+    ) async throws {
         let requests = DeferredRequests()
-        let host = "tal116-session-first.test"
         let sessionRequestStarted = expectation(description: "session request started")
         let chatStartRequestStarted = expectation(description: "chat start request started")
         DeferredMockURLProtocol.setOnRequest({ request in
@@ -689,7 +712,7 @@ extension ChatViewModelSendTests {
         defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let streamClient = SpySSEStreamingClient()
-        streamClient.eventOnStart = .token("Partial response")
+        streamClient.eventsOnStart = eventsOnStart
         let viewModel = try makeViewModel(
             streamClient: streamClient,
             server: URL(string: "https://\(host)")!,
@@ -735,11 +758,8 @@ extension ChatViewModelSendTests {
         let didStart = await sendTask.value
         XCTAssertTrue(didStart)
         await loadTask.value
-        XCTAssertEqual(
-            viewModel.messages.compactMap(\.content),
-            ["Old question", "Pending question", "Partial response"]
-        )
-        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), expectedMessages)
+        XCTAssertEqual(viewModel.activeStreamID, expectedActiveStreamID)
     }
 
     @MainActor

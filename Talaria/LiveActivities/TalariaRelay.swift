@@ -123,7 +123,7 @@ enum TalariaRelayConfigurationStore {
     }
 }
 
-struct TalariaRelayClient {
+final class TalariaRelayClient {
     struct AppleAuthResponse: Decodable {
         var userId: String
         var sessionToken: String
@@ -166,7 +166,18 @@ struct TalariaRelayClient {
     }
 
     let credentials: TalariaRelayCredentials
-    var session: URLSession = .shared
+    let session: URLSession
+    private let ownsSession: Bool
+
+    init(credentials: TalariaRelayCredentials, session: URLSession? = nil) {
+        self.credentials = credentials
+        ownsSession = session == nil
+        self.session = session ?? Self.makeSession(baseURL: credentials.baseURL)
+    }
+
+    deinit {
+        if ownsSession { session.finishTasksAndInvalidate() }
+    }
 
     static func makeAppleNonce() -> String {
         UUID().uuidString.lowercased()
@@ -182,7 +193,7 @@ struct TalariaRelayClient {
         appleUserID: String,
         deviceID: String? = nil,
         baseURL: URL = defaultBaseURL,
-        session: URLSession = .shared
+        session: URLSession? = nil
     ) async throws -> TalariaRelayCredentials {
         guard let identityToken = String(data: identityToken, encoding: .utf8) else {
             throw ClientError.invalidResponse(-1, "Apple did not return a valid identity token.")
@@ -192,7 +203,11 @@ struct TalariaRelayClient {
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let data = try await responseData(for: request, session: session)
+        let requestSession = session ?? makeSession(baseURL: baseURL)
+        defer {
+            if session == nil { requestSession.finishTasksAndInvalidate() }
+        }
+        let data = try await responseData(for: request, session: requestSession)
         let response = try JSONDecoder().decode(AppleAuthResponse.self, from: data)
         return TalariaRelayCredentials(
             baseURL: baseURL,
@@ -438,12 +453,40 @@ struct TalariaRelayClient {
         return data
     }
 
+    private static func makeSession(baseURL: URL) -> URLSession {
+        URLSession(
+            configuration: .default,
+            delegate: TalariaRelayRedirectGuard(baseURL: baseURL),
+            delegateQueue: nil
+        )
+    }
+
     private static var apsEnvironment: String {
         #if DEBUG
         "sandbox"
         #else
         "production"
         #endif
+    }
+}
+
+final class TalariaRelayRedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let baseURL: URL
+
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(
+            request.url.map { APIClient.isSameOrigin($0, as: baseURL) } == true ? request : nil
+        )
     }
 }
 

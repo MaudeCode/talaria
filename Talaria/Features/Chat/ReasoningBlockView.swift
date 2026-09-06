@@ -6,6 +6,7 @@ struct ReasoningBlockView: View {
     let isActive: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var startsExpanded = false
     @State private var userToggledExpansion: Bool?
 
@@ -26,6 +27,7 @@ struct ReasoningBlockView: View {
         if let trimmedText {
             VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
                 Button {
+                    chatDisclosureToggled()
                     withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                         userToggledExpansion = !isExpanded
                     }

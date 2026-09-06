@@ -1,18 +1,25 @@
 import SwiftUI
 import UIKit
 
+/// Reports the transcript's scroll geometry and the gesture events that drive
+/// the follow latch (`ChatScrollPolicy.FollowEvent`). Metrics arrive on every
+/// offset or size change; follow events arrive only when a drag begins and when
+/// the gesture, including any momentum, has settled.
 struct ChatScrollObserver: UIViewRepresentable {
     let isStreaming: Bool
-    let prependScrollPositionController: ChatPrependScrollPositionController?
+    let scrollPositionController: ChatScrollPositionController?
+    let onFollowEvent: @MainActor (ChatScrollPolicy.FollowEvent) -> Void
     let onMetrics: @MainActor (ChatScrollMetrics) -> Void
 
     init(
         isStreaming: Bool,
-        prependScrollPositionController: ChatPrependScrollPositionController? = nil,
+        scrollPositionController: ChatScrollPositionController? = nil,
+        onFollowEvent: @escaping @MainActor (ChatScrollPolicy.FollowEvent) -> Void = { _ in },
         onMetrics: @escaping @MainActor (ChatScrollMetrics) -> Void
     ) {
         self.isStreaming = isStreaming
-        self.prependScrollPositionController = prependScrollPositionController
+        self.scrollPositionController = scrollPositionController
+        self.onFollowEvent = onFollowEvent
         self.onMetrics = onMetrics
     }
 
@@ -23,7 +30,8 @@ struct ChatScrollObserver: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             metricContext: metricContext,
-            prependScrollPositionController: prependScrollPositionController,
+            scrollPositionController: scrollPositionController,
+            onFollowEvent: onFollowEvent,
             onMetrics: onMetrics
         )
     }
@@ -34,7 +42,8 @@ struct ChatScrollObserver: UIViewRepresentable {
 
     func updateUIView(_ uiView: ObserverView, context: Context) {
         context.coordinator.onMetrics = onMetrics
-        context.coordinator.prependScrollPositionController = prependScrollPositionController
+        context.coordinator.onFollowEvent = onFollowEvent
+        context.coordinator.scrollPositionController = scrollPositionController
         uiView.coordinator = context.coordinator
         context.coordinator.updateMetricContext(metricContext)
 
@@ -90,30 +99,44 @@ struct ChatScrollObserver: UIViewRepresentable {
         }
 
         var onMetrics: @MainActor (ChatScrollMetrics) -> Void
+        var onFollowEvent: @MainActor (ChatScrollPolicy.FollowEvent) -> Void
 
         private weak var scrollView: UIScrollView?
+        private weak var observedPanGesture: UIPanGestureRecognizer?
         private var observations: [NSKeyValueObservation] = []
         private var metricContext: MetricContext
         private var lastMetrics: ChatScrollMetrics?
         private var pendingMetrics: ChatScrollMetrics?
+        /// Geometry behind the last report the transcript received. Reports
+        /// coalesce per run loop, so the away-from-bottom check compares
+        /// delivered states, not every intermediate KVO tick.
+        private var deliveredGeometry: ChatScrollPolicy.ScrollGeometry?
+        private var pendingGeometry: ChatScrollPolicy.ScrollGeometry?
         private var hasScheduledMetricDelivery = false
-        var prependScrollPositionController: ChatPrependScrollPositionController? {
+        /// True from the first drag movement until the gesture, including any
+        /// momentum, comes to rest. Mirrors the "user scroll session" the follow
+        /// latch reasons about.
+        private var isUserScrollSessionActive = false
+        private var settleWorkItem: DispatchWorkItem?
+        var scrollPositionController: ChatScrollPositionController? {
             didSet {
-                guard oldValue !== prependScrollPositionController else { return }
+                guard oldValue !== scrollPositionController else { return }
                 oldValue?.detach()
                 if let scrollView {
-                    prependScrollPositionController?.attach(to: scrollView)
+                    scrollPositionController?.attach(to: scrollView)
                 }
             }
         }
 
         init(
             metricContext: MetricContext,
-            prependScrollPositionController: ChatPrependScrollPositionController?,
+            scrollPositionController: ChatScrollPositionController?,
+            onFollowEvent: @escaping @MainActor (ChatScrollPolicy.FollowEvent) -> Void,
             onMetrics: @escaping @MainActor (ChatScrollMetrics) -> Void
         ) {
             self.metricContext = metricContext
-            self.prependScrollPositionController = prependScrollPositionController
+            self.scrollPositionController = scrollPositionController
+            self.onFollowEvent = onFollowEvent
             self.onMetrics = onMetrics
         }
 
@@ -128,15 +151,21 @@ struct ChatScrollObserver: UIViewRepresentable {
             guard let scrollView = enclosingScrollView(for: view) else { return }
 
             guard scrollView !== self.scrollView else {
-                prependScrollPositionController?.attach(to: scrollView)
+                scrollPositionController?.attach(to: scrollView)
                 reportMetrics(delivery: delivery)
                 return
             }
 
             observations.removeAll()
             lastMetrics = nil
+            deliveredGeometry = nil
+            endUserScrollSessionSilently()
             self.scrollView = scrollView
-            prependScrollPositionController?.attach(to: scrollView)
+            scrollPositionController?.attach(to: scrollView)
+
+            observedPanGesture?.removeTarget(self, action: nil)
+            scrollView.panGestureRecognizer.addTarget(self, action: #selector(handlePanGesture(_:)))
+            observedPanGesture = scrollView.panGestureRecognizer
 
             observations = [
                 scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
@@ -152,36 +181,143 @@ struct ChatScrollObserver: UIViewRepresentable {
 
         func detach() {
             observations.removeAll()
-            prependScrollPositionController?.detach()
+            observedPanGesture?.removeTarget(self, action: nil)
+            observedPanGesture = nil
+            endUserScrollSessionSilently()
+            scrollPositionController?.detach()
             lastMetrics = nil
+            deliveredGeometry = nil
             pendingMetrics = nil
+            pendingGeometry = nil
             hasScheduledMetricDelivery = false
             scrollView = nil
         }
 
-        func reportMetrics(delivery: MetricDelivery) {
-            guard let scrollView else { return }
+        // MARK: Follow latch events
 
+        @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                cancelSettle()
+                isUserScrollSessionActive = true
+                onFollowEvent(.userScrollBegin)
+            case .ended, .cancelled, .failed:
+                guard isUserScrollSessionActive, let scrollView else { return }
+                // Remember where the finger lifted: streaming growth during the
+                // momentum-detection window must not turn a release at the live
+                // edge into an opt-out from follow.
+                let releaseIsAtBottom = isAtBottom(scrollView)
+                scheduleSettle(after: ChatScrollPolicy.dragSettleDelay) { [weak self] in
+                    guard let self, let scrollView = self.scrollView else { return }
+                    // Momentum announced itself; its ticks now own the session.
+                    if scrollView.isDecelerating { return }
+                    self.finishUserScrollSession(isAtBottom: releaseIsAtBottom)
+                }
+            default:
+                break
+            }
+        }
+
+        /// Each momentum tick pushes the settle check out; the check that
+        /// survives runs once deceleration has stopped moving the content.
+        private func trackMomentum(_ scrollView: UIScrollView) {
+            guard isUserScrollSessionActive, scrollView.isDecelerating else { return }
+            scheduleSettle(after: ChatScrollPolicy.momentumSettleDelay) { [weak self] in
+                self?.finishUserScrollSessionIfSettled()
+            }
+        }
+
+        private func finishUserScrollSessionIfSettled() {
+            guard isUserScrollSessionActive, let scrollView else { return }
+            // A finger back on the glass either becomes a new drag (pan .began)
+            // or lifts without one (pan .failed); both paths re-enter above.
+            if scrollView.isDragging || scrollView.isTracking { return }
+            if scrollView.isDecelerating {
+                scheduleSettle(after: ChatScrollPolicy.momentumSettleDelay) { [weak self] in
+                    self?.finishUserScrollSessionIfSettled()
+                }
+                return
+            }
+            finishUserScrollSession(isAtBottom: isAtBottom(scrollView))
+        }
+
+        private func finishUserScrollSession(isAtBottom: Bool) {
+            cancelSettle()
+            isUserScrollSessionActive = false
+            onFollowEvent(.userScrollEnd(isAtBottom: isAtBottom))
+        }
+
+        private func endUserScrollSessionSilently() {
+            cancelSettle()
+            isUserScrollSessionActive = false
+        }
+
+        private func scheduleSettle(after delay: TimeInterval, _ body: @escaping @MainActor () -> Void) {
+            cancelSettle()
+            let workItem = DispatchWorkItem {
+                MainActor.assumeIsolated(body)
+            }
+            settleWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        }
+
+        private func cancelSettle() {
+            settleWorkItem?.cancel()
+            settleWorkItem = nil
+        }
+
+        private func isAtBottom(_ scrollView: UIScrollView) -> Bool {
+            guard let geometry = geometry(of: scrollView) else { return false }
+            return ChatScrollPolicy.isAtBottom(distanceFromBottom: geometry.distanceFromBottom)
+        }
+
+        private func geometry(of scrollView: UIScrollView) -> ChatScrollPolicy.ScrollGeometry? {
             let inset = scrollView.adjustedContentInset
             let visibleHeight = scrollView.bounds.height - inset.top - inset.bottom
-            guard visibleHeight > 0 else { return }
+            guard visibleHeight > 0 else { return nil }
 
-            let currentOffset = scrollView.contentOffset.y + inset.top
-            let maximumOffset = scrollView.contentSize.height - visibleHeight
-            let distanceFromBottom = max(0, maximumOffset - currentOffset)
-            let metrics = ChatScrollMetrics(
-                distanceFromBottom: distanceFromBottom,
-                isUserInteracting: scrollView.isDragging || scrollView.isTracking || scrollView.isDecelerating
+            return ChatScrollPolicy.ScrollGeometry(
+                offsetY: scrollView.contentOffset.y + inset.top,
+                contentHeight: scrollView.contentSize.height,
+                visibleHeight: visibleHeight
             )
-            guard metrics != lastMetrics else { return }
+        }
+
+        func reportMetrics(delivery: MetricDelivery) {
+            guard let scrollView else { return }
+            trackMomentum(scrollView)
+
+            guard let geometry = geometry(of: scrollView) else { return }
+            let isUserInteracting = scrollView.isDragging || scrollView.isTracking || scrollView.isDecelerating
+            // While a disclosure pin holds the offset, a toggled row growing
+            // below the reader increases the distance without anyone scrolling.
+            let isPinned = scrollPositionController?.isHoldingPosition == true
+            let metrics = ChatScrollMetrics(
+                distanceFromBottom: geometry.distanceFromBottom,
+                isUserInteracting: isUserInteracting,
+                movedAwayFromBottom: !isUserInteracting && !isPinned
+                    && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry)
+            )
+            // The transcript only needs a callback when the derived metrics move,
+            // but the away-from-bottom check compares viewports, so the geometry
+            // has to advance either way. Leaving it stale across a keyboard resize
+            // that stays bottom-pinned would make the next gesture-free scroll
+            // look like it happened in a different viewport, and be ignored.
+            guard metrics != lastMetrics else {
+                deliveredGeometry = geometry
+                pendingGeometry = hasScheduledMetricDelivery ? geometry : nil
+                return
+            }
 
             lastMetrics = metrics
 
             switch delivery {
             case .immediate:
+                deliveredGeometry = geometry
                 onMetrics(metrics)
             case .deferred:
                 pendingMetrics = metrics
+                pendingGeometry = geometry
                 guard !hasScheduledMetricDelivery else { return }
 
                 hasScheduledMetricDelivery = true
@@ -189,9 +325,12 @@ struct ChatScrollObserver: UIViewRepresentable {
                     MainActor.assumeIsolated {
                         guard let self else { return }
                         let metrics = self.pendingMetrics
+                        let geometry = self.pendingGeometry
                         self.pendingMetrics = nil
+                        self.pendingGeometry = nil
                         self.hasScheduledMetricDelivery = false
                         guard let metrics, self.lastMetrics == metrics else { return }
+                        self.deliveredGeometry = geometry
                         self.onMetrics(metrics)
                     }
                 }

@@ -22,8 +22,10 @@ with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
     devices = [dict(name=f'iOS Test {n}', udid=f'00000000-0000-0000-0000-{n:012}',
                     state='Shutdown', deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
                for n in (1, 2)]
+    personal = dict(name='Personal iPhone', udid='00000000-0000-0000-0000-000000000099', state='Shutdown',
+                    deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
     def save():
-        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices}}))
+        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices + [personal]}}))
     save()
     fake = tools / 'xcrun'
     fake.write_text('''#!/bin/zsh
@@ -31,12 +33,16 @@ if [[ "$1 $2 $3" == "simctl list devices" ]]; then
     cat "$POOL_FIXTURE"
 elif [[ "$1 $2" == "simctl delete" ]]; then
     print "$3" >> "$POOL_DELETIONS"
+elif [[ "$1 $2" == "simctl erase" ]]; then
+    print "$3" >> "$POOL_ERASURES"
+    [[ ! -e "$POOL_ERASE_FAIL" ]] || exit 1
 fi
 ''')
     fake.chmod(0o755)
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
                IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
-               POOL_DELETIONS=str(work / 'deletions'))
+               POOL_DELETIONS=str(work / 'deletions'), POOL_ERASURES=str(work / 'erasures'),
+               POOL_ERASE_FAIL=str(work / 'erase-fail'))
     for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME'):
         env.pop(key, None)
     processes = []
@@ -46,6 +52,9 @@ fi
                                 capture_output=True, text=True, timeout=10)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result.stdout.strip()
+    def erasures():
+        path = work / 'erasures'
+        return path.read_text().split() if path.exists() else []
     def owner():
         ready = work / 'ready'
         ready.unlink(missing_ok=True)
@@ -63,7 +72,11 @@ fi
     try:
         first, child = owner()
         assert invoke() == devices[1]['udid']  # Independent checkout chooses another slot.
+        assert erasures() == [devices[1]['udid']]  # Release wipes the device it leased.
         invoke(expected=75, IOS_SIMULATOR_ID=devices[0]['udid'])
+        assert erasures() == [devices[1]['udid']]  # A failed acquisition erases nothing.
+        assert invoke(IOS_SIMULATOR_ID=personal['udid']) == personal['udid']
+        assert erasures() == [devices[1]['udid']]  # An explicitly selected non-pool device is never erased.
         assert invoke(IOS_SIMULATOR_ID=devices[1]['udid']) == devices[1]['udid']
         invoke(expected=69, IOS_SIMULATOR_ID='missing')
         invoke(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-18-0')
@@ -96,6 +109,22 @@ fi
         result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'exit 42'], env=env)
         assert result.returncode == 42
         assert invoke() == devices[0]['udid']
+        # A device whose erase fails is quarantined until an erase succeeds.
+        dirty = work / 'leases' / 'leases' / (devices[0]['udid'] + '.dirty')
+        (work / 'erase-fail').touch()
+        assert invoke() == devices[0]['udid']
+        assert dirty.exists()
+        assert invoke() == devices[1]['udid']  # Acquisition retried the erase, failed, and skipped it.
+        (work / 'erase-fail').unlink()
+        assert invoke() == devices[0]['udid']  # A successful erase on acquire clears the quarantine.
+        assert not dirty.exists()
+        # A marker left by a device that has since left the pool is dropped, never erased.
+        stale = work / 'leases' / 'leases' / (personal['udid'] + '.dirty')
+        stale.touch()
+        before = erasures()
+        assert invoke(IOS_SIMULATOR_ID=personal['udid']) == personal['udid']
+        assert erasures() == before
+        assert not stale.exists()
         # Automatic reacquisition may move slots; explicit selection must stay pinned.
         for explicit in (False, True):
             repeated_env = dict(env, POOL_HELPER=str(work / 'one' / 'pool'))
@@ -124,4 +153,4 @@ fi
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-print('Shared pool checks passed: independent callers, explicit IDs, exhaustion, runtime, refresh, cancellation, crash, repeated acquire/release and exit status.')
+print('Shared pool checks passed: independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
