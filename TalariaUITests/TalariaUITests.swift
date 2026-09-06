@@ -668,8 +668,13 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
 
     /// One launch per variant; each launch walks every representative screen. Settings
     /// are bundled so the matrix stays at three launches instead of screens × settings.
+    /// Every variant pins its text size so a reused simulator cannot leak one in.
     static let variants = [
-        Variant(name: "portrait light", arguments: ["-appTheme", "light"], orientation: .portrait),
+        Variant(
+            name: "portrait light",
+            arguments: ["-appTheme", "light", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
+            orientation: .portrait
+        ),
         Variant(
             name: "portrait dark RTL AXXXL",
             arguments: [
@@ -682,7 +687,7 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
         ),
         Variant(
             name: "landscape dark reduce-motion",
-            arguments: ["-appTheme", "dark"],
+            arguments: ["-appTheme", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
             orientation: .landscapeLeft,
             reduceMotion: true
         ),
