@@ -2234,7 +2234,14 @@ final class ChatViewModel {
         setUploadAttachmentError(nil)
         sendErrorMessage = nil
         lastError = nil
-        defer { isSendingVoiceNote = false }
+        // Releasing the pipeline is the queue's natural trigger. A successful voice
+        // note starts a stream, so the drain no-ops and stream completion drives it
+        // as usual; a failed one leaves no stream behind, so without this a message
+        // queued during the voice note would wait for the next unrelated trigger.
+        defer {
+            isSendingVoiceNote = false
+            drainQueuedSlashMessageIfIdle()
+        }
 
         // 1. Transcribe via server STT. Any error or empty transcript aborts the
         //    whole send — no fallback, no partial message (per the issue).
@@ -4998,8 +5005,13 @@ final class ChatViewModel {
     }
 
     private func drainQueuedSlashMessageIfIdle() {
+        // `isSendingVoiceNote` belongs here alongside `isStartingChat`: `sendMessage`
+        // rejects while a voice note owns the pipeline, so draining then would only
+        // dequeue and immediately requeue. `sendVoiceNote` re-triggers the drain when
+        // it releases the pipeline, including when it fails without starting a stream.
         guard activeStreamID == nil,
               !isStartingChat,
+              !isSendingVoiceNote,
               !isDrainingQueuedSlashMessage,
               !queuedSlashMessages.isEmpty
         else { return }
