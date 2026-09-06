@@ -1009,4 +1009,200 @@ extension ChatViewModelSendTests {
         XCTAssertNil(viewModel.approvalPrompt)
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
     }
+    // MARK: - Overlapping sends (TAL-118)
+
+    @MainActor
+    func testConcurrentRegularSendsStartOneChatWithOneOptimisticMessage() async throws {
+        // Hold `/api/chat/start` open so the second send genuinely overlaps the
+        // first instead of depending on request timing.
+        let startGate = DispatchSemaphore(value: 0)
+        defer { startGate.signal() }
+        var startCount = 0
+        let streamClient = SpySSEStreamingClient()
+
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            startCount += 1
+            startGate.wait()
+
+            return apiTestJSONResponse("""
+            {
+              "session_id": "session-abc",
+              "stream_id": "stream-123"
+            }
+            """, for: request)
+        }
+
+        let firstSend = Task { @MainActor in await viewModel.sendMessage("First message") }
+        try await waitUntil { viewModel.isStartingChat }
+
+        let didStartSecond = await viewModel.sendMessage("Second message")
+        XCTAssertFalse(didStartSecond)
+        // The rejected caller must not clear the accepted send's busy flag.
+        XCTAssertTrue(viewModel.isStartingChat)
+
+        startGate.signal()
+        let didStartFirst = await firstSend.value
+
+        XCTAssertTrue(didStartFirst)
+        XCTAssertFalse(viewModel.isStartingChat)
+        XCTAssertEqual(startCount, 1)
+        XCTAssertEqual(viewModel.messages.map(\.content), ["First message"])
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+    }
+
+    @MainActor
+    func testSendMessageDuringVoiceNoteIsRejectedWithoutConsumingAttachments() async throws {
+        // Hold transcription open: a regular send attempted mid-voice-note must be
+        // rejected before it stages the composer's attachments.
+        let transcribeGate = DispatchSemaphore(value: 0)
+        defer { transcribeGate.signal() }
+        var uploadCount = 0
+        var startCount = 0
+
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/upload":
+                uploadCount += 1
+                if uploadCount == 1 {
+                    return apiTestJSONResponse("""
+                    {
+                      "filename": "photo.png",
+                      "path": "/tmp/workspace/photo.png",
+                      "size": 4,
+                      "mime": "image/png",
+                      "is_image": true
+                    }
+                    """, for: request)
+                }
+                return apiTestJSONResponse("""
+                {
+                  "filename": "voice-note.m4a",
+                  "path": "/tmp/workspace/voice-note.m4a",
+                  "size": 2048,
+                  "mime": "audio/m4a",
+                  "is_image": false
+                }
+                """, for: request)
+            case "/api/transcribe":
+                transcribeGate.wait()
+                return apiTestJSONResponse("""
+                {
+                  "ok": true,
+                  "transcript": "Hello there"
+                }
+                """, for: request)
+            case "/api/chat/start":
+                startCount += 1
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.uploadAttachment(
+            data: Data([0x00, 0x01, 0x02, 0x03]),
+            filename: "photo.png",
+            previewData: Data([0x99])
+        )
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["photo.png"])
+
+        let voiceSend = Task { @MainActor in
+            await viewModel.sendVoiceNote(audioData: Data("fake-m4a-bytes".utf8), filename: "voice-note.m4a")
+        }
+        try await waitUntil { viewModel.isSendingVoiceNote }
+
+        let didStart = await viewModel.sendMessage("Summarize this")
+
+        XCTAssertFalse(didStart)
+        XCTAssertTrue(viewModel.messages.isEmpty)
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["photo.png"])
+        XCTAssertTrue(viewModel.isSendingVoiceNote)
+
+        transcribeGate.signal()
+        let didSendVoice = await voiceSend.value
+
+        XCTAssertTrue(didSendVoice)
+        XCTAssertEqual(startCount, 1)
+        XCTAssertEqual(viewModel.messages.map(\.content), ["Hello there"])
+        // The rejected text send never consumed the composer's attachment.
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["photo.png"])
+    }
+
+    @MainActor
+    func testVoiceNoteDuringRegularStartIsRejectedAndFailedSendRestoresAttachments() async throws {
+        let startGate = DispatchSemaphore(value: 0)
+        defer { startGate.signal() }
+        var requestedPaths: [String] = []
+
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path
+            requestedPaths.append(path ?? "nil")
+            switch path {
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {
+                  "filename": "photo.png",
+                  "path": "/tmp/workspace/photo.png",
+                  "size": 4,
+                  "mime": "image/png",
+                  "is_image": true
+                }
+                """, for: request)
+            case "/api/chat/start":
+                startGate.wait()
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "error": "Could not start chat"
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.uploadAttachment(
+            data: Data([0x00, 0x01, 0x02, 0x03]),
+            filename: "photo.png",
+            previewData: Data([0x99])
+        )
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["photo.png"])
+
+        let textSend = Task { @MainActor in await viewModel.sendMessage("Summarize it") }
+        try await waitUntil { viewModel.isStartingChat }
+
+        // The in-flight send owns the attachment, so the composer is empty for now.
+        XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
+
+        let didSendVoice = await viewModel.sendVoiceNote(
+            audioData: Data("fake-m4a-bytes".utf8),
+            filename: "voice-note.m4a"
+        )
+
+        XCTAssertFalse(didSendVoice)
+        XCTAssertFalse(viewModel.isSendingVoiceNote)
+        XCTAssertTrue(viewModel.isStartingChat)
+
+        startGate.signal()
+        let didStart = await textSend.value
+
+        XCTAssertFalse(didStart)
+        XCTAssertFalse(viewModel.isStartingChat)
+        // The accepted send failed, so its attachment comes back to the composer
+        // and the optimistic row is rolled back.
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["photo.png"])
+        XCTAssertTrue(viewModel.messages.isEmpty)
+        XCTAssertTrue(viewModel.localAttachmentPreviews.isEmpty)
+        XCTAssertEqual(viewModel.sendErrorMessage, "Could not start chat")
+        // The rejected voice note never reached transcription or upload.
+        XCTAssertEqual(requestedPaths, ["/api/upload", "/api/chat/start"])
+    }
 }

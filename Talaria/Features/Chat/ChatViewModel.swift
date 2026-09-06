@@ -2160,6 +2160,11 @@ final class ChatViewModel {
     }
 
     func sendMessage(_ draft: String, modelContext: ModelContext? = nil) async -> Bool {
+        // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
+        // `prepareForSend` so a rejected send never consumes the composer's
+        // staged attachments, and before `performChatSend` so a rejected caller
+        // never reaches that method's `defer { isStartingChat = false }`.
+        guard !isStartingChat, !isSendingVoiceNote else { return false }
         guard !isViewingCachedData else {
             sendErrorMessage = String(localized: "Reconnect to the server to send a message.")
             return false
@@ -2203,7 +2208,9 @@ final class ChatViewModel {
     @discardableResult
     func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil) async -> Bool {
         // Reentrancy guard: bail if a voice note OR a regular chat send is already
-        // in flight. `performChatSend` has no internal guard, so two overlapping
+        // in flight. It has to live here rather than only in `performChatSend`,
+        // because transcription and upload run before that call and must not start
+        // at all while another send owns the pipeline. Without it two overlapping
         // sends would both flip `isStartingChat`/`isSendingVoiceNote` and race their
         // `defer { … = false }` (clearing the flag while the other still runs, and
         // firing two concurrent `startChat`s). The UI already blocks this; the guard
@@ -2303,6 +2310,17 @@ final class ChatViewModel {
         attachmentsToRestoreOnFailure: [PendingAttachment],
         modelContext: ModelContext?
     ) async -> Bool {
+        // Single-owner backstop for the shared start pipeline: only one caller may
+        // own the optimistic row, the `startChat` request, and `isStartingChat` at a
+        // time. Deliberately does not test `isSendingVoiceNote` — the voice pipeline
+        // sets that flag before calling in, so it would reject itself. `isStartingChat`
+        // is set below without an intervening suspension, so a second caller that
+        // reaches here while the first is awaiting its request is rejected here
+        // instead of racing the append and the `defer`.
+        guard !isStartingChat else {
+            restorePendingAttachments(attachmentsToRestoreOnFailure)
+            return false
+        }
         isStartingChat = true
         sendErrorMessage = nil
         lastError = nil
