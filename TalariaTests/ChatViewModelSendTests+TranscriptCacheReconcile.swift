@@ -763,6 +763,84 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testNewestReloadWinsWhenTwoLoadsWaitForTheSameChatStart() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-newest-load.test"
+        let firstSessionRequestStarted = expectation(description: "first session request started")
+        let secondSessionRequestStarted = expectation(description: "second session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let requestCount = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session":
+                (requestCount == 1 ? firstSessionRequestStarted : secondSessionRequestStarted).fulfill()
+            case "/api/chat/start":
+                chatStartRequestStarted.fulfill()
+            default:
+                XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let firstLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [firstSessionRequestStarted], timeout: 2)
+        let secondLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Pending question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {"role": "assistant", "content": "Older response", "timestamp": 1, "message_id": "old-1"}
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {"role": "assistant", "content": "Newest response", "timestamp": 2, "message_id": "new-1"}
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 2).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        await firstLoadTask.value
+        await secondLoadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Newest response", "Pending question"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+    }
+
+    @MainActor
     func testPendingSecondSendDoesNotMakeOlderReloadCurrentAgain() async throws {
         let requests = DeferredRequests()
         let host = "tal116-two-responses.test"

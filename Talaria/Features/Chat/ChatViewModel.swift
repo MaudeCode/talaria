@@ -26,7 +26,7 @@ final class ChatViewModel {
     private(set) var isStartingChat = false
     @ObservationIgnored private var isStartingMessageSend = false
     @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
-    @ObservationIgnored private var successfulSessionLoadGeneration = 0
+    @ObservationIgnored private var sessionLoadRequestGeneration = 0
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     private(set) var isSendingVoiceNote = false
@@ -1136,7 +1136,8 @@ final class ChatViewModel {
         resetPendingStreamingContentBuffers()
         latestServerLoadHadAssistantResponseAfterLatestUser = false
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
-        let successfulSessionLoadGenerationBeforeRequest = successfulSessionLoadGeneration
+        sessionLoadRequestGeneration &+= 1
+        let loadRequestGeneration = sessionLoadRequestGeneration
         isLoading = true
         errorMessage = nil
         cacheErrorMessage = nil
@@ -1217,11 +1218,9 @@ final class ChatViewModel {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
+            guard sessionLoadRequestGeneration == loadRequestGeneration else { return }
             if canMergePendingMessageSend,
                !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
-                guard successfulSessionLoadGeneration == successfulSessionLoadGenerationBeforeRequest else {
-                    return
-                }
                 guard let currentActiveStreamID = activeStreamID else { return }
                 saveActiveStreamSnapshotIfNeeded()
                 let currentMessages = messages
@@ -1241,7 +1240,6 @@ final class ChatViewModel {
                 if renderedCacheFirst {
                     cacheFirstReconcileScrollToken += 1
                 }
-                successfulSessionLoadGeneration &+= 1
                 return
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
@@ -1296,11 +1294,11 @@ final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false
             )
-            successfulSessionLoadGeneration &+= 1
         } catch {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
+            guard sessionLoadRequestGeneration == loadRequestGeneration else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
