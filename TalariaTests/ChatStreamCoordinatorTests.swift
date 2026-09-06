@@ -1059,6 +1059,55 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testTransportErrorReconnectAfterSameStreamReloadDoesNotReplayFromZero() async throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
+            apiTestJSONResponse(
+                #"{"active": true, "stream_id": "stream-123", "replay_available": true}"#,
+                for: request
+            )
+        }
+        // The recovery reload reconciles the same run back onto this coordinator,
+        // which is not a cold adoption even though the run emitted no event IDs.
+        delegate.onLoadMessages = { @MainActor in
+            let preparation = coordinator.prepareForSessionLoad()
+            coordinator.reconcileSessionLoad(
+                loadedActiveStreamID: "stream-123",
+                preparation: preparation,
+                usedCacheFallback: false
+            )
+        }
+
+        coordinator.start(streamID: "stream-123")
+        streamClient.emit(.token("Before reconnect."))
+        streamClient.emit(.transportError("Connection lost"))
+
+        try await waitUntil { streamClient.startedURLs.count == 2 }
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
+        XCTAssertFalse(coordinator.isReplayConnection)
+    }
+
+    @MainActor
+    func testHeartbeatOnResumedConnectionConfirmsRecovery() {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate)
+
+        coordinator.start(streamID: "stream-123")
+        XCTAssertEqual(delegate.confirmedRecoveryCount, 0)
+
+        // A heartbeat proves the transport is healthy even while the model is
+        // semantically quiet, which is all a recovery warning was about.
+        streamClient.emit(.heartbeat)
+
+        XCTAssertEqual(delegate.confirmedRecoveryCount, 1)
+    }
+
+    @MainActor
     func testActiveReconnectWithSurvivingCursorStillResumesWithoutReplay() async throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()

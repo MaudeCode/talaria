@@ -1471,7 +1471,9 @@ extension ChatViewModelSendTests {
                 """, for: request)
             case "/api/chat/stream/status":
                 if failsStatus {
-                    throw URLError(.timedOut)
+                    // Same error the failing send below raises, so only ownership
+                    // — never matching text — can tell the two warnings apart.
+                    throw URLError(.notConnectedToInternet)
                 }
                 return apiTestJSONResponse("""
                 {
@@ -1511,9 +1513,9 @@ extension ChatViewModelSendTests {
 
         failsStatus = false
         await viewModel.reconnectStreamIfNeeded()
-        streamClient.emit(.token("Back."))
+        streamClient.emit(.heartbeat)
 
-        // Stream activity proved recovery, so its transient warning is retracted.
+        // A healthy transport proved recovery, so its transient warning is retracted.
         XCTAssertNil(viewModel.sendErrorMessage)
         XCTAssertNil(viewModel.lastError)
 

@@ -110,6 +110,9 @@ final class ChatStreamCoordinator {
     // competing terminal events arriving on the dead connection can neither mutate
     // nor re-finalize the run. Only the next run start or a session load clears it.
     private var hasFinishedCurrentRun = false
+    // True when a session load adopted a run this process never held, so no
+    // snapshot or event cursor for it can have survived here.
+    private var isColdAdoptedRun = false
     private var sharedReconnect: SharedReconnect?
 
     /// Whether the current run already reached `.done` or finished teardown.
@@ -169,6 +172,7 @@ final class ChatStreamCoordinator {
     ) {
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
+        isColdAdoptedRun = false
         liveTokensPerSecond = nil
         runGeneration &+= 1
         cancelSharedReconnect()
@@ -240,6 +244,7 @@ final class ChatStreamCoordinator {
     ) {
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
+        isColdAdoptedRun = false
         liveTokensPerSecond = nil
 
         if usedCacheFallback {
@@ -257,6 +262,9 @@ final class ChatStreamCoordinator {
                 activeStreamID = streamID
                 delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 isConnectionSuspended = true
+                // Adopting a run this process was not already holding is the cold
+                // relaunch case: nothing local can carry its streamed prefix.
+                isColdAdoptedRun = preparation.activeStreamIDBeforeLoad != streamID
                 restoreSnapshotIfAvailable(streamID: streamID)
             } else {
                 activeStreamID = nil
@@ -346,12 +354,15 @@ final class ChatStreamCoordinator {
                     delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 }
                 isConnectionSuspended = false
-                // Cold relaunch: neither the live connection nor a process-local
-                // snapshot left an event cursor, so the prefix the server already
-                // streamed would never arrive. Replay it from the start when the
-                // run journal is still available; replay dedup drops whatever the
-                // transcript load above already rendered.
-                let coldReplayAfterSeq: Int? = lastEventID == nil && response.replayAvailable == true ? 0 : nil
+                // Cold relaunch: this process adopted the run without a snapshot,
+                // and no event cursor survived either, so the prefix the server
+                // already streamed would never arrive. Replay it from the start
+                // when the run journal is still available; replay dedup drops
+                // whatever the transcript load above already rendered.
+                let needsColdReplay = isColdAdoptedRun
+                    && lastEventID == nil
+                    && response.replayAvailable == true
+                let coldReplayAfterSeq: Int? = needsColdReplay ? 0 : nil
                 start(streamID: streamIDToResume, replayAfterSeq: coldReplayAfterSeq)
             } else if response.replayAvailable == true {
                 let replayAfterSeq = Self.runJournalReplayAfterSeq(from: lastEventID) ?? 0
@@ -637,6 +648,9 @@ final class ChatStreamCoordinator {
             if recoveryState == .checking {
                 recoveryState = .idle
             }
+            // The transport proved itself alive, which is all a recovery warning
+            // was ever about — retract it without waiting for semantic content.
+            delegate?.streamCoordinatorDidConfirmRecovery()
         case .ignored:
             break
         }

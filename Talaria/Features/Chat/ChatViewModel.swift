@@ -37,8 +37,15 @@ final class ChatViewModel {
     var activeStreamRecoveryState: ActiveStreamRecoveryState { streamCoordinator.recoveryState }
     var liveTokensPerSecond: Double? { streamCoordinator.liveTokensPerSecond }
     private(set) var errorMessage: String?
-    private(set) var sendErrorMessage: String?
-    private var recoveryErrorMessage: String?
+    private(set) var sendErrorMessage: String? {
+        didSet {
+            // Every other writer takes ownership of the banner, so stream recovery
+            // can no longer retract it. Identity, not matching text: a send that
+            // fails the same way as the recovery attempt is still its own error.
+            ownsSendErrorForRecovery = false
+        }
+    }
+    private var ownsSendErrorForRecovery = false
     private(set) var messageActionErrorMessage: String?
     private(set) var cacheErrorMessage: String?
     private(set) var lastError: Error?
@@ -5494,20 +5501,17 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error) {
         lastError = error
         sendErrorMessage = error.localizedDescription
-        recoveryErrorMessage = sendErrorMessage
+        ownsSendErrorForRecovery = true
     }
 
     func streamCoordinatorDidConfirmRecovery() {
-        guard let recoveryErrorMessage else { return }
-
         // Stream activity proved recovery, so retract the warning this coordinator
-        // raised — but only while it is still the visible one. A composer or send
-        // error that landed since then still belongs on screen.
-        if sendErrorMessage == recoveryErrorMessage {
-            sendErrorMessage = nil
-            lastError = nil
-        }
-        self.recoveryErrorMessage = nil
+        // raised — but only while it still owns the banner. A composer or send
+        // error that landed since then belongs on screen.
+        guard ownsSendErrorForRecovery else { return }
+
+        sendErrorMessage = nil
+        lastError = nil
     }
 
     func streamCoordinatorDidStartConnection(isReplay: Bool) {
