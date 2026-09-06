@@ -1341,7 +1341,10 @@ struct SessionListView: View {
     /// import stays on the list and surfaces through the action-error alert.
     private func openSession(_ session: SessionSummary) async {
         let navigationRevision = navigationState.rootRevision
-        guard let resolvedSession = await viewModel.sessionToOpen(for: session) else {
+        guard let resolvedSession = await viewModel.sessionToOpen(
+            for: session,
+            modelContext: modelContext
+        ) else {
             // Forwards an expired session/cookie to the auth manager the same way
             // every other network-backed session-list action does.
             handleLastError()

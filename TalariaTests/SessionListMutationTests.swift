@@ -213,6 +213,45 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(opened.isSessionReadOnly)
     }
 
+    /// `SessionRowActionPolicy` reads the row, not the opened destination, so a
+    /// regular-width sidebar would keep the pre-import actions without this.
+    @MainActor
+    func testImportRefreshesTheListRowSoItsActionsMatch() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "archived": false}]}
+                """, for: request)
+            default:
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "cli-1",
+                    "title": "CLI",
+                    "is_cli_session": true,
+                    "read_only": true
+                  },
+                  "imported": false
+                }
+                """, for: request)
+            }
+        }
+
+        let didLoad = await viewModel.load()
+        XCTAssertTrue(didLoad)
+        let row = try XCTUnwrap(viewModel.sessions.first)
+        XCTAssertTrue(SessionRowActionPolicy.offersMutationActions(for: row))
+
+        let resolved = await viewModel.sessionToOpen(for: row)
+        let opened = try XCTUnwrap(resolved)
+
+        XCTAssertTrue(opened.isSessionReadOnly)
+        let refreshedRow = try XCTUnwrap(viewModel.sessions.first)
+        XCTAssertTrue(refreshedRow.isSessionReadOnly)
+        XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: refreshedRow))
+    }
+
     @MainActor
     func testOpeningWebUIRowSkipsImport() async throws {
         let viewModel = try makeViewModel { _ in

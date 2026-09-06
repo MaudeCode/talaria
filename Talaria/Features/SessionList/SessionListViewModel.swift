@@ -466,7 +466,10 @@ final class SessionListViewModel {
     ///
     /// Returns nil when the import failed — the caller stays on the list and the
     /// row is left in place — or when a later tap superseded this one.
-    func sessionToOpen(for session: SessionSummary) async -> SessionSummary? {
+    func sessionToOpen(
+        for session: SessionSummary,
+        modelContext: ModelContext? = nil
+    ) async -> SessionSummary? {
         openGeneration += 1
         let generation = openGeneration
 
@@ -481,13 +484,36 @@ final class SessionListViewModel {
         do {
             let detail = try await importedSessionDetail(id: sessionId)
             guard generation == openGeneration else { return nil }
-            return SessionSummary(from: detail).merging(onto: session)
+
+            let importedSession = SessionSummary(from: detail).merging(onto: session)
+            refreshRow(with: importedSession, modelContext: modelContext)
+            return importedSession
         } catch {
             guard !APIError.isCancellation(error), generation == openGeneration else { return nil }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
             return nil
+        }
+    }
+
+    /// Keeps the list row in step with what the import authoritatively reported.
+    /// `SessionRowActionPolicy` reads the row's own read-only state, so on a
+    /// regular-width layout the still-visible sidebar would otherwise keep offering
+    /// the pre-import actions until the next load. Only an existing row is
+    /// replaced — opening a session never adds one to the list.
+    private func refreshRow(with session: SessionSummary, modelContext: ModelContext?) {
+        guard let sessionId = Self.nonEmpty(session.sessionId),
+              let index = sessions.firstIndex(where: { $0.sessionId == sessionId })
+        else { return }
+
+        sessions[index] = session
+
+        guard let modelContext, session.shouldAppearInSessionList else { return }
+        do {
+            try CacheStore.cacheSession(session, serverURL: server, in: modelContext)
+        } catch {
+            cacheErrorMessage = error.localizedDescription
         }
     }
 
