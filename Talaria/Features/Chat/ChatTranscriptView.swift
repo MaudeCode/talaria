@@ -200,7 +200,12 @@ struct ChatTranscriptView: View {
                     releasingHold { onScrollToBottom(proxy) }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                    if isScrolledNearBottom {
+                    // The keyboard shrinks the viewport, so keep a following
+                    // reader on the latest content. `isScrolledNearBottom` alone
+                    // is too loose: its 80/160pt band still covers a reader who
+                    // deliberately nudged up, and scrolling for them would reset
+                    // the latch they just set.
+                    if isFollowingLatestContent, isScrolledNearBottom {
                         releasingHold { onScrollToBottom(proxy) }
                     }
                 }
