@@ -42,7 +42,8 @@ from an adopting repository.
 The standalone helper leases and boots a device, exports `IOS_SIMULATOR_ID`, runs
 a command, and shuts down and releases the device when that command exits.
 Pool devices (`iOS Test N`) are also erased on release so no test-host state
-carries over; an explicitly selected non-pool simulator is never erased:
+carries over; a device whose erase fails is quarantined until a later erase
+succeeds, and an explicitly selected non-pool simulator is never erased:
 
 ```sh
 scripts/ios-simulator-pool zsh -c '

@@ -30,7 +30,13 @@ ios_pool_release() {
         # Test hosts leak state into the device; the next lease starts clean.
         # Only pool devices are disposable: an explicit ID may name a personal simulator.
         if [[ "$simulator_disposable" == true ]]; then
-            xcrun simctl erase "$simulator_id" >/dev/null 2>&1 || true
+            if xcrun simctl erase "$simulator_id" >/dev/null 2>&1; then
+                rm -f "$lease_dir/$simulator_id.dirty"
+            else
+                # Quarantine: acquisition must erase the device before reusing it.
+                : > "$lease_dir/$simulator_id.dirty"
+                print -u2 "Could not erase $simulator_id; it stays out of the pool until an erase succeeds."
+            fi
         fi
     fi
     [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
@@ -65,6 +71,14 @@ ios_pool_acquire() {
         [[ "$candidate_state" == Shutdown ]] || continue
         candidate_lease="$lease_dir/$candidate_id.lock"
         if /usr/bin/shlock -f "$candidate_lease" -p $$; then
+            if [[ -e "$lease_dir/$candidate_id.dirty" ]]; then
+                if xcrun simctl erase "$candidate_id" >/dev/null 2>&1; then
+                    rm -f "$lease_dir/$candidate_id.dirty"
+                else
+                    unlink "$candidate_lease" 2>/dev/null || true
+                    continue
+                fi
+            fi
             simulator_id="$candidate_id"
             simulator_disposable="$candidate_disposable"
             lease_file="$candidate_lease"
