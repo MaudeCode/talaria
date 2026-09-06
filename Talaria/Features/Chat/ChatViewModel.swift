@@ -24,7 +24,8 @@ final class ChatViewModel {
     private(set) var isLoading = false
     private(set) var isLoadingOlderMessages = false
     private(set) var isStartingChat = false
-    @ObservationIgnored private var chatStartWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var isStartingMessageSend = false
+    @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var successfulSessionLoadGeneration = 0
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
@@ -1087,7 +1088,7 @@ final class ChatViewModel {
 
     func loadMessages(
         modelContext: ModelContext? = nil,
-        waitsForPendingChatStart: Bool = true
+        waitsForPendingMessageSend: Bool = true
     ) async {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
@@ -1157,13 +1158,13 @@ final class ChatViewModel {
             } else {
                 reloadedMessages = loadedMessages
             }
-            let canMergePendingChatStart = waitsForPendingChatStart
-                && isStartingChat
+            let canMergePendingMessageSend = waitsForPendingMessageSend
+                && isStartingMessageSend
                 && streamCoordinator.canApplySessionLoad(streamLoadPreparation)
-            if waitsForPendingChatStart {
-                await waitForChatStartToFinish()
+            if waitsForPendingMessageSend {
+                await waitForMessageSendToFinish()
             }
-            if canMergePendingChatStart,
+            if canMergePendingMessageSend,
                !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
                 guard successfulSessionLoadGeneration == successfulSessionLoadGenerationBeforeRequest else {
                     return
@@ -1241,8 +1242,8 @@ final class ChatViewModel {
             )
             successfulSessionLoadGeneration &+= 1
         } catch {
-            if waitsForPendingChatStart {
-                await waitForChatStartToFinish()
+            if waitsForPendingMessageSend {
+                await waitForMessageSendToFinish()
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
@@ -2343,6 +2344,7 @@ final class ChatViewModel {
         modelContext: ModelContext?
     ) async -> Bool {
         isStartingChat = true
+        isStartingMessageSend = true
         sendErrorMessage = nil
         lastError = nil
         archiveLiveActivityIfNeeded()
@@ -2351,7 +2353,7 @@ final class ChatViewModel {
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
         responseCompletionNeedsTranscriptRefresh = false
-        defer { finishChatStart() }
+        defer { finishMessageSend() }
 
         let optimisticMessage = ChatMessage(
             role: "user",
@@ -2396,7 +2398,7 @@ final class ChatViewModel {
                 // The existing run may have started outside this view model. Reconcile
                 // the server transcript first so the SSE tokens attach to the persisted
                 // assistant turn instead of creating a second bubble with only the tail.
-                await loadMessages(modelContext: modelContext, waitsForPendingChatStart: false)
+                await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
                 _ = restoreActiveStreamSnapshotIfAvailable(streamID: streamID)
                 streamingAssistantMessageID = TranscriptTurnClassifier
                     .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
@@ -2416,22 +2418,23 @@ final class ChatViewModel {
         }
     }
 
-    private func waitForChatStartToFinish() async {
-        guard isStartingChat else { return }
+    private func waitForMessageSendToFinish() async {
+        guard isStartingMessageSend else { return }
 
         await withCheckedContinuation { continuation in
-            if isStartingChat {
-                chatStartWaiters.append(continuation)
+            if isStartingMessageSend {
+                messageSendWaiters.append(continuation)
             } else {
                 continuation.resume()
             }
         }
     }
 
-    private func finishChatStart() {
+    private func finishMessageSend() {
         isStartingChat = false
-        let waiters = chatStartWaiters
-        chatStartWaiters.removeAll()
+        isStartingMessageSend = false
+        let waiters = messageSendWaiters
+        messageSendWaiters.removeAll()
         for waiter in waiters {
             waiter.resume()
         }
@@ -3346,13 +3349,14 @@ final class ChatViewModel {
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
         responseCompletionNeedsTranscriptRefresh = false
-        defer { finishChatStart() }
+        defer { isStartingChat = false }
 
         do {
             let retryResponse = try await client.retrySession(id: sessionID)
             if let error = retryResponse.error {
                 return .unsupported(friendlyMessage: error)
             }
+            streamCoordinator.invalidateSessionLoads()
 
             let lastUserText = retryResponse.lastUserText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !lastUserText.isEmpty else {

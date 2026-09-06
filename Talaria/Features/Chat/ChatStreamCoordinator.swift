@@ -217,6 +217,10 @@ final class ChatStreamCoordinator {
         responseGeneration == preparation.responseGeneration
     }
 
+    func invalidateSessionLoads() {
+        responseGeneration &+= 1
+    }
+
     func reconcileSessionLoad(
         loadedActiveStreamID rawLoadedActiveStreamID: String?,
         preparation: ChatStreamLoadPreparation,
