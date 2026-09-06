@@ -2233,6 +2233,11 @@ final class ChatViewModel {
     }
 
     func sendMessage(_ draft: String, modelContext: ModelContext? = nil) async -> Bool {
+        // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
+        // `prepareForSend` so a rejected send never consumes the composer's
+        // staged attachments, and before `performChatSend` so a rejected caller
+        // never reaches that method's `defer { isStartingChat = false }`.
+        guard !isStartingChat, !isSendingVoiceNote else { return false }
         guard !isViewingCachedData else {
             sendErrorMessage = String(localized: "Reconnect to the server to send a message.")
             return false
@@ -2276,7 +2281,9 @@ final class ChatViewModel {
     @discardableResult
     func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil) async -> Bool {
         // Reentrancy guard: bail if a voice note OR a regular chat send is already
-        // in flight. `performChatSend` has no internal guard, so two overlapping
+        // in flight. It has to live here rather than only in `performChatSend`,
+        // because transcription and upload run before that call and must not start
+        // at all while another send owns the pipeline. Without it two overlapping
         // sends would both flip `isStartingChat`/`isSendingVoiceNote` and race their
         // `defer { … = false }` (clearing the flag while the other still runs, and
         // firing two concurrent `startChat`s). The UI already blocks this; the guard
@@ -2300,7 +2307,14 @@ final class ChatViewModel {
         setUploadAttachmentError(nil)
         sendErrorMessage = nil
         lastError = nil
-        defer { isSendingVoiceNote = false }
+        // Releasing the pipeline is the queue's natural trigger. A successful voice
+        // note starts a stream, so the drain no-ops and stream completion drives it
+        // as usual; a failed one leaves no stream behind, so without this a message
+        // queued during the voice note would wait for the next unrelated trigger.
+        defer {
+            isSendingVoiceNote = false
+            drainQueuedSlashMessageIfIdle()
+        }
 
         // 1. Transcribe via server STT. Any error or empty transcript aborts the
         //    whole send — no fallback, no partial message (per the issue).
@@ -2376,6 +2390,17 @@ final class ChatViewModel {
         attachmentsToRestoreOnFailure: [PendingAttachment],
         modelContext: ModelContext?
     ) async -> Bool {
+        // Single-owner backstop for the shared start pipeline: only one caller may
+        // own the optimistic row, the `startChat` request, and `isStartingChat` at a
+        // time. Deliberately does not test `isSendingVoiceNote` — the voice pipeline
+        // sets that flag before calling in, so it would reject itself. `isStartingChat`
+        // is set below without an intervening suspension, so a second caller that
+        // reaches here while the first is awaiting its request is rejected here
+        // instead of racing the append and the `defer`.
+        guard !isStartingChat else {
+            restorePendingAttachments(attachmentsToRestoreOnFailure)
+            return false
+        }
         isStartingChat = true
         sendErrorMessage = nil
         lastError = nil
@@ -5046,8 +5071,13 @@ final class ChatViewModel {
     }
 
     private func drainQueuedSlashMessageIfIdle() {
+        // `isSendingVoiceNote` belongs here alongside `isStartingChat`: `sendMessage`
+        // rejects while a voice note owns the pipeline, so draining then would only
+        // dequeue and immediately requeue. `sendVoiceNote` re-triggers the drain when
+        // it releases the pipeline, including when it fails without starting a stream.
         guard activeStreamID == nil,
               !isStartingChat,
+              !isSendingVoiceNote,
               !isDrainingQueuedSlashMessage,
               !queuedSlashMessages.isEmpty
         else { return }
