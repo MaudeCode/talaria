@@ -46,6 +46,10 @@ struct CustomHeadersEditor: View {
                 Label("Add Header", systemImage: "plus.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(style.accent)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    // A rendered backing view makes the 44pt row the accessibility hit area.
+                    .background(style.fieldBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Add header")

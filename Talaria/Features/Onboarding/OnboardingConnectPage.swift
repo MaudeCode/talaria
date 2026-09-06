@@ -43,6 +43,7 @@ struct OnboardingConnectPage: View {
                                 Text(verbatim: "https://server.tailnet-name.ts.net")
                                     .foregroundStyle(.white.opacity(0.38))
                                     .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
                             }
 
                             TextField("", text: $viewModel.serverURLString)
@@ -54,6 +55,7 @@ struct OnboardingConnectPage: View {
                                 .tint(Color(red: 1.0, green: 0.74, blue: 0.10))
                                 .focused($focusedField, equals: .serverURL)
                                 .onSubmit(submitConnection)
+                                .accessibilityLabel("Server URL")
                         }
                     }
 
@@ -69,6 +71,7 @@ struct OnboardingConnectPage: View {
                             .submitLabel(.go)
                             .focused($focusedField, equals: .password)
                             .onSubmit(submitConnection)
+                            .accessibilityLabel("Password")
                         }
                     }
                 }

@@ -16,5 +16,6 @@ struct OnboardingPageIndicator: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: currentPage)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Page \(currentPage + 1) of \(pageCount)"))
+        .accessibilityRespondsToUserInteraction(false)
     }
 }

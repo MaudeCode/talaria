@@ -657,6 +657,206 @@ final class SidebarPerformanceUITests: SidebarUITestCase {
 
 }
 
+class AdaptiveLayoutUITestCase: TalariaUITestCase {
+    struct Variant {
+        let name: String
+        let arguments: [String]
+        let orientation: UIDeviceOrientation
+        var reduceMotion = false
+        var isRightToLeft: Bool { arguments.contains("-AppleTextDirection") }
+    }
+
+    /// One launch per variant; each launch walks every representative screen. Settings
+    /// are bundled so the matrix stays at three launches instead of screens × settings.
+    /// Every variant pins its text size so a reused simulator cannot leak one in.
+    static let variants = [
+        Variant(
+            name: "portrait light",
+            arguments: ["-appTheme", "light", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
+            orientation: .portrait
+        ),
+        Variant(
+            name: "portrait dark RTL AXXXL",
+            arguments: [
+                "-appTheme", "dark",
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+                "-AppleTextDirection", "YES",
+                "-NSForceRightToLeftWritingDirection", "YES",
+            ],
+            orientation: .portrait
+        ),
+        Variant(
+            name: "landscape dark reduce-motion",
+            arguments: ["-appTheme", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
+            orientation: .landscapeLeft,
+            reduceMotion: true
+        ),
+    ]
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        // Audits are plain assertions, so one run reports every screen and variant.
+        continueAfterFailure = true
+    }
+
+    /// Simulator Reduce Motion value before this test touched it; restored in teardown.
+    private var savedReduceMotion: CFPropertyList?
+
+    override func tearDownWithError() throws {
+        XCUIDevice.shared.orientation = .portrait
+        if let savedReduceMotion {
+            Self.writeReduceMotion(savedReduceMotion)
+            self.savedReduceMotion = nil
+        }
+        try super.tearDownWithError()
+    }
+
+    /// The simulator's Reduce Motion switch has no launch-argument seam, so the runner
+    /// writes the system accessibility preference the app reads at launch. Every variant
+    /// writes its value explicitly so a reused simulator cannot leak state into the matrix.
+    func applyReduceMotion(_ enabled: Bool) {
+        if savedReduceMotion == nil {
+            savedReduceMotion = CFPreferencesCopyValue(
+                Self.reduceMotionKey, Self.accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+            ) ?? kCFBooleanFalse
+        }
+        Self.writeReduceMotion(enabled ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    private static let accessibilityDomain = "com.apple.Accessibility" as CFString
+    private static let reduceMotionKey = "ReduceMotionEnabled" as CFString
+
+    private static func writeReduceMotion(_ value: CFPropertyList?) {
+        CFPreferencesSetValue(reduceMotionKey, value, accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    }
+}
+
+final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
+    func testCoreScreensPassAccessibilityAuditsAcrossVariants() throws {
+        for variant in Self.variants {
+            try XCTContext.runActivity(named: variant.name) { _ in
+                launchFixture(variant: variant)
+                let openNavigation = app.buttons["Open navigation"]
+                XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
+                XCTAssertTrue(fixtureSessionButton.waitForExistence(timeout: 15), "Missing deterministic session fixture")
+                if variant.isRightToLeft {
+                    XCTAssertGreaterThan(
+                        openNavigation.frame.midX, app.frame.midX,
+                        "Leading toolbar item should mirror under RTL [\(variant.name)]"
+                    )
+                }
+                try audit("Chats dense list", variant: variant)
+
+                tapFixtureSession(fixtureSessionButton)
+                XCTAssertNotNil(waitForComposer(timeout: 15), "Composer missing [\(variant.name)]")
+                try audit("Chat transcript and composer", variant: variant)
+                app.buttons["BackButton"].tap()
+
+                openSettings()
+                let firstCategory = app.buttons["settings-category-appearance"]
+                XCTAssertTrue(firstCategory.waitForExistence(timeout: 3), "Settings categories missing [\(variant.name)]")
+                try audit("Settings root", variant: variant)
+
+                tapSettingsCategory(id: "servers", title: "Servers")
+                let addServer = app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label BEGINSWITH %@", "Add Server"))
+                    .firstMatch
+                XCTAssertTrue(addServer.waitForExistence(timeout: 3), "Add Server row missing [\(variant.name)]")
+                for _ in 0..<6 where addServer.frame.maxY > app.frame.maxY {
+                    app.swipeUp()
+                }
+                let serverRow = app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label CONTAINS %@", "ui-test.talaria.invalid"))
+                    .firstMatch
+                XCTAssertTrue(serverRow.exists, "Fixture server row missing [\(variant.name)]")
+                let coveredRowCenter = serverRow.frame.center
+                tap(at: addServer.frame.center)
+                let editor = app.navigationBars["Add Server"]
+                XCTAssertTrue(editor.waitForExistence(timeout: 5), "Add Server editor missing [\(variant.name)]")
+                try audit("Add Server editor", variant: variant)
+                // Modal isolation: a tap where the server row sits must not reach it.
+                tap(at: coveredRowCenter)
+                XCTAssertTrue(editor.exists, "Editor dismissed by a tap behind it [\(variant.name)]")
+                editor.buttons["Cancel"].tap()
+                XCTAssertTrue(editor.waitForNonExistence(timeout: 5), "Editor did not dismiss [\(variant.name)]")
+                XCTAssertTrue(
+                    app.navigationBars["Servers"].exists && addServer.waitForExistence(timeout: 3),
+                    "Dismissing the editor must return to its launching screen [\(variant.name)]"
+                )
+
+                app.navigationBars["Servers"].buttons["Settings"].tap()
+                XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+                openSidebarDestination("Kanban")
+                XCTAssertTrue(app.navigationBars["Kanban"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.staticTexts["Loading Kanban"].waitForNonExistence(timeout: 15))
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["KanbanStatusSelector"].waitForExistence(timeout: 5),
+                    "Kanban Board did not load [\(variant.name)]"
+                )
+                try audit("Kanban board", variant: variant)
+                app.terminate()
+            }
+        }
+    }
+}
+
+final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
+    func testOnboardingScalesTitleAndRetainsFocusAcrossVariants() throws {
+        var titleHeights: [String: CGFloat] = [:]
+        for variant in Self.variants {
+            try XCTContext.runActivity(named: variant.name) { _ in
+                launchFixture(variant: variant, additionalArguments: ["--ui-test-onboarding"])
+                let getStarted = app.buttons["Get Started"]
+                XCTAssertTrue(getStarted.waitForExistence(timeout: 15), "Missing onboarding fixture [\(variant.name)]")
+                try audit("Onboarding welcome", variant: variant)
+                getStarted.tap()
+                let setUp = app.buttons["Set Up"]
+                XCTAssertTrue(setUp.waitForExistence(timeout: 5), "Features page missing [\(variant.name)]")
+                setUp.tap()
+
+                let step = app.staticTexts["STEP 1"]
+                let title = app.staticTexts["Set up Hermes Web UI"]
+                let description = app.staticTexts
+                    .matching(NSPredicate(format: "label BEGINSWITH %@", "Send this prompt"))
+                    .firstMatch
+                XCTAssertTrue(title.waitForExistence(timeout: 5), "Step title missing [\(variant.name)]")
+                XCTAssertTrue(step.exists && description.exists, "Step header parts missing [\(variant.name)]")
+                XCTAssertGreaterThanOrEqual(title.frame.minX, app.frame.minX, "Title clipped [\(variant.name)]")
+                XCTAssertLessThanOrEqual(title.frame.maxX, app.frame.maxX, "Title clipped [\(variant.name)]")
+                XCTAssertLessThanOrEqual(step.frame.maxY, title.frame.minY + 1, "Title overlaps step label [\(variant.name)]")
+                XCTAssertLessThanOrEqual(title.frame.maxY, description.frame.minY + 1, "Title overlaps description [\(variant.name)]")
+                titleHeights[variant.name] = title.frame.height
+                try audit("Onboarding step", variant: variant)
+
+                app.buttons["Already have a server?"].tap()
+                let continueAnyway = app.buttons["Continue Anyway"]
+                XCTAssertTrue(continueAnyway.waitForExistence(timeout: 3), "Copy reminder missing [\(variant.name)]")
+                continueAnyway.tap()
+                XCTAssertTrue(app.staticTexts["STEP 2"].waitForExistence(timeout: 5), "Tailscale step missing [\(variant.name)]")
+                app.buttons["Already have a server?"].tap()
+                let serverField = app.textFields.firstMatch
+                XCTAssertTrue(serverField.waitForExistence(timeout: 5), "Server URL field missing [\(variant.name)]")
+                try audit("Onboarding connect", variant: variant)
+                // Focus retention: the audit walks the page, so focus the field only afterwards.
+                serverField.tap()
+                XCTAssertTrue(hasKeyboardFocus(serverField), "Server field did not take focus [\(variant.name)]")
+                XCUIDevice.shared.orientation = variant.orientation == .portrait ? .landscapeLeft : .portrait
+                XCTAssertTrue(serverField.waitForExistence(timeout: 5), "Server URL field lost on rotation [\(variant.name)]")
+                XCTAssertTrue(hasKeyboardFocus(serverField), "Rotation dropped field focus [\(variant.name)]")
+                app.terminate()
+            }
+        }
+
+        let defaultHeight = try XCTUnwrap(titleHeights[Self.variants[0].name])
+        let accessibilityHeight = try XCTUnwrap(titleHeights[Self.variants[1].name])
+        XCTAssertGreaterThan(
+            accessibilityHeight, defaultHeight * 1.4,
+            "Onboarding step title must scale with Dynamic Type"
+        )
+    }
+}
+
 class TalariaUITestCase: XCTestCase {
     fileprivate var app: XCUIApplication!
 
@@ -744,7 +944,7 @@ fileprivate extension ChatUITestCase {
     }
 }
 
-fileprivate extension SettingsUITestCase {
+fileprivate extension TalariaUITestCase {
     func assertSettingsCategoryRoutes(_ categories: [(id: String, title: String)]) {
         launchFixture()
         openSettings()
@@ -771,20 +971,26 @@ fileprivate extension SettingsUITestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [sidebarHidden], timeout: 3), .completed)
     }
 
+    /// Drags in the lower half of the screen: in landscape a horizontal card sits at the
+    /// centre and swallows `swipeUp()`.
+    func scrollSettingsRoot(up: Bool) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.85 : 0.4))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.4 : 0.85))
+            )
+    }
+
     func tapSettingsCategory(id: String, title: String) {
         let category = app.buttons["settings-category-\(id)"]
         for _ in 0..<10 where !category.exists {
-            app.swipeUp()
+            scrollSettingsRoot(up: true)
         }
         XCTAssertTrue(category.waitForExistence(timeout: 3), "Missing Settings category: \(title)")
         let viewportTop = app.navigationBars["Settings"].frame.maxY
         for _ in 0..<10
             where category.frame.minY < viewportTop || category.frame.maxY > app.frame.maxY {
-            if category.frame.maxY > app.frame.maxY {
-                app.swipeUp()
-            } else {
-                app.swipeDown()
-            }
+            scrollSettingsRoot(up: category.frame.maxY > app.frame.maxY)
         }
         let visibleTop = max(category.frame.minY, viewportTop)
         let visibleBottom = min(category.frame.maxY, app.frame.maxY)
@@ -797,7 +1003,7 @@ fileprivate extension SettingsUITestCase {
     }
 }
 
-fileprivate extension ChatUITestCase {
+fileprivate extension TalariaUITestCase {
     var fixtureSessionTitle: String { "UI Fixture Session" }
 
     var fixtureSessionButton: XCUIElement {
@@ -883,4 +1089,88 @@ fileprivate extension SidebarUITestCase {
         return CGFloat(pixel[0...2].max() ?? 0) / 255
     }
 
+}
+
+fileprivate extension AdaptiveLayoutUITestCase {
+    func launchFixture(variant: Variant, additionalArguments: [String] = []) {
+        XCUIDevice.shared.orientation = variant.orientation
+        applyReduceMotion(variant.reduceMotion)
+        launchFixture(additionalArguments: variant.arguments + additionalArguments)
+        XCTAssertEqual(
+            UIAccessibility.isReduceMotionEnabled, variant.reduceMotion,
+            "Reduce Motion preference did not apply [\(variant.name)]"
+        )
+    }
+
+    func audit(_ screen: String, variant: Variant) throws {
+        try XCTContext.runActivity(named: "Audit \(screen) [\(variant.name)]") { activity in
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "\(screen) [\(variant.name)]"
+            screenshot.lifetime = .deleteOnSuccess
+            activity.add(screenshot)
+
+            // Contrast is unreliable over blurred glass surfaces; the text-clipping audit
+            // predicts from `lineLimit` instead of measuring the rendered variant; element
+            // detection scans pixels and names no element to fix.
+            var issues: [String] = []
+            var unlocated: [String] = []
+            let auditTypes: XCUIAccessibilityAuditType = .all.subtracting([.contrast, .textClipped, .elementDetection])
+            try app.performAccessibilityAudit(for: auditTypes) { issue in
+                // A finding with no element names nothing to fix; keep it visible, not fatal.
+                guard issue.element != nil else {
+                    unlocated.append("\(issue.compactDescription) — \(issue.detailedDescription)")
+                    return true
+                }
+                // Generic containers (`Other`) carry no user-facing description; real controls
+                // keep their own element types and stay audited.
+                if issue.auditType == .sufficientElementDescription, issue.element?.elementType == .other {
+                    return true
+                }
+                // Text rows (transcript messages) are text-height by nature; their actions are
+                // reached through the rotor, not by tapping a 44pt target.
+                if issue.auditType == .hitRegion, issue.element?.elementType == .staticText {
+                    return true
+                }
+                // "Partially" flags text that scales less than the heuristic expects: caption
+                // styles that stay flat below Large, or nav-bar titles with a pinned height.
+                if issue.auditType == .dynamicType, issue.compactDescription.contains("partially") {
+                    return true
+                }
+                let element = issue.element.map {
+                    "\($0.elementType.rawValue) '\($0.label)' id='\($0.identifier)' \($0.frame)\n\($0.debugDescription)"
+                } ?? "no element"
+                issues.append("\(issue.compactDescription) — \(issue.detailedDescription) — \(element)")
+                return true
+            }
+            if !unlocated.isEmpty {
+                let note = XCTAttachment(string: unlocated.joined(separator: "\n"))
+                note.name = "Unlocated audit findings: \(screen) [\(variant.name)]"
+                activity.add(note)
+            }
+            XCTAssertTrue(
+                issues.isEmpty,
+                "Accessibility audit failed on \(screen) [\(variant.name)]:\n" + issues.joined(separator: "\n")
+            )
+        }
+    }
+
+    func openSidebarDestination(_ destination: String) {
+        app.buttons["Open navigation"].tap()
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        sidebar.descendants(matching: .any)[destination].firstMatch.tap()
+    }
+
+    /// Settings rows report `isHittable == false` to XCUI even when visible; tap by point.
+    func tap(at point: CGPoint) {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+    }
+
+    func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
+        element.value(forKey: "hasKeyboardFocus") as? Bool ?? false
+    }
+}
+
+private extension CGRect {
+    var center: CGPoint { CGPoint(x: midX, y: midY) }
 }

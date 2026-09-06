@@ -5,6 +5,8 @@ import Foundation
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = "--ui-test-fixture"
     nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
+    /// Launches with no saved server so the fixture lands on onboarding.
+    nonisolated static let onboardingArgument = "--ui-test-onboarding"
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
     nonisolated static var relayCredentials: TalariaRelayCredentials {
         TalariaRelayCredentials(
@@ -64,7 +66,9 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
     private var values: [String: String]
 
     init(serverURL: URL) {
-        values = [KeychainStore.Key.serverURL.rawValue: serverURL.absoluteString]
+        values = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.onboardingArgument)
+            ? [:]
+            : [KeychainStore.Key.serverURL.rawValue: serverURL.absoluteString]
     }
 
     func save(_ value: String, forKey key: KeychainStore.Key) throws {
@@ -355,7 +359,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:
-            return json([:])
+            return url.path.hasPrefix("/api/kanban/") ? kanbanResponseData(for: url) : json([:])
         }
     }
 
