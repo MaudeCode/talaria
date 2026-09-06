@@ -32,10 +32,11 @@ struct OnboardingStepHeader: View {
                     .kerning(1.5)
 
                 Text(title)
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.title.weight(.bold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
 
                 Text(description)
                     .font(.subheadline)
@@ -43,7 +44,6 @@ struct OnboardingStepHeader: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .accessibilityElement(children: .combine)
         }
     }
 }

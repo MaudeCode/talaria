@@ -116,8 +116,13 @@ struct OnboardingView: View {
                 .accessibilityLabel(OnboardingFlowPolicy.primaryButtonTitle(for: currentPage))
 
                 if OnboardingFlowPolicy.showsServerShortcut(for: currentPage) {
-                    Button("Already have a server?") {
+                    Button {
                         jumpToConnectPage()
+                    } label: {
+                        Text("Already have a server?")
+                            .frame(minHeight: 44)
+                            // A backing view makes the 44pt frame the accessibility hit area.
+                            .background(Color.black)
                     }
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.white.opacity(0.55))

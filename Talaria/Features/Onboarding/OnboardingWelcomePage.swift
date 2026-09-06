@@ -68,7 +68,7 @@ struct OnboardingWelcomePage: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Control your Hermes agent from iPhone or iPad.")
-                        .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 27 : 31, weight: .bold))
+                        .font(.largeTitle.weight(.bold))
                         .foregroundStyle(.white)
                         .lineLimit(3)
                         .minimumScaleFactor(0.86)
