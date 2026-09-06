@@ -689,6 +689,7 @@ extension ChatViewModelSendTests {
         defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let streamClient = SpySSEStreamingClient()
+        streamClient.eventOnStart = .token("Partial response")
         let viewModel = try makeViewModel(
             streamClient: streamClient,
             server: URL(string: "https://\(host)")!,
@@ -734,7 +735,10 @@ extension ChatViewModelSendTests {
         let didStart = await sendTask.value
         XCTAssertTrue(didStart)
         await loadTask.value
-        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Old question", "Pending question"])
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Old question", "Pending question", "Partial response"]
+        )
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
     }
 

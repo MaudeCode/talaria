@@ -1169,6 +1169,8 @@ final class ChatViewModel {
                 guard successfulSessionLoadGeneration == successfulSessionLoadGenerationBeforeRequest else {
                     return
                 }
+                let currentActiveStreamID = activeStreamID
+                saveActiveStreamSnapshotIfNeeded()
                 let currentMessages = messages
                 let currentMessagesOffset = messagesOffset
                 applyReloadedMessages(
@@ -1180,6 +1182,9 @@ final class ChatViewModel {
                     previousMessages: currentMessages,
                     previousMessagesOffset: currentMessagesOffset
                 )
+                if let currentActiveStreamID {
+                    restoreActiveStreamSnapshotIfAvailable(streamID: currentActiveStreamID)
+                }
                 isViewingCachedData = false
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
                 if renderedCacheFirst {
