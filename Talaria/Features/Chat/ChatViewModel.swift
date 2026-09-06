@@ -24,6 +24,7 @@ final class ChatViewModel {
     private(set) var isLoading = false
     private(set) var isLoadingOlderMessages = false
     private(set) var isStartingChat = false
+    @ObservationIgnored private var chatStartWaiters: [CheckedContinuation<Void, Never>] = []
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     private(set) var isSendingVoiceNote = false
@@ -1083,7 +1084,10 @@ final class ChatViewModel {
         await attachmentCoordinator.transcriptMediaData(for: reference)
     }
 
-    func loadMessages(modelContext: ModelContext? = nil) async {
+    func loadMessages(
+        modelContext: ModelContext? = nil,
+        waitsForPendingChatStart: Bool = true
+    ) async {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return
@@ -1151,7 +1155,14 @@ final class ChatViewModel {
             } else {
                 reloadedMessages = loadedMessages
             }
-            if isStartingChat {
+            let canMergePendingChatStart = waitsForPendingChatStart
+                && isStartingChat
+                && streamCoordinator.canApplySessionLoad(streamLoadPreparation)
+            if waitsForPendingChatStart {
+                await waitForChatStartToFinish()
+            }
+            if canMergePendingChatStart,
+               !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
                 let currentMessages = messages
                 let currentMessagesOffset = messagesOffset
                 applyReloadedMessages(
@@ -1223,7 +1234,9 @@ final class ChatViewModel {
                 usedCacheFallback: false
             )
         } catch {
-            guard !isStartingChat else { return }
+            if waitsForPendingChatStart {
+                await waitForChatStartToFinish()
+            }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
@@ -2331,7 +2344,7 @@ final class ChatViewModel {
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
         responseCompletionNeedsTranscriptRefresh = false
-        defer { isStartingChat = false }
+        defer { finishChatStart() }
 
         let optimisticMessage = ChatMessage(
             role: "user",
@@ -2376,7 +2389,7 @@ final class ChatViewModel {
                 // The existing run may have started outside this view model. Reconcile
                 // the server transcript first so the SSE tokens attach to the persisted
                 // assistant turn instead of creating a second bubble with only the tail.
-                await loadMessages(modelContext: modelContext)
+                await loadMessages(modelContext: modelContext, waitsForPendingChatStart: false)
                 _ = restoreActiveStreamSnapshotIfAvailable(streamID: streamID)
                 streamingAssistantMessageID = TranscriptTurnClassifier
                     .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
@@ -2393,6 +2406,27 @@ final class ChatViewModel {
             cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
             restorePendingAttachments(attachmentsToRestoreOnFailure)
             return false
+        }
+    }
+
+    private func waitForChatStartToFinish() async {
+        guard isStartingChat else { return }
+
+        await withCheckedContinuation { continuation in
+            if isStartingChat {
+                chatStartWaiters.append(continuation)
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func finishChatStart() {
+        isStartingChat = false
+        let waiters = chatStartWaiters
+        chatStartWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
         }
     }
 
@@ -3305,7 +3339,7 @@ final class ChatViewModel {
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
         responseCompletionNeedsTranscriptRefresh = false
-        defer { isStartingChat = false }
+        defer { finishChatStart() }
 
         do {
             let retryResponse = try await client.retrySession(id: sessionID)
