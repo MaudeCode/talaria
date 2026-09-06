@@ -244,11 +244,11 @@ final class ChatStreamCoordinator {
     ) {
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
-        isColdAdoptedRun = false
         liveTokensPerSecond = nil
 
         if usedCacheFallback {
             activeStreamID = nil
+            isColdAdoptedRun = false
             isConnectionSuspended = false
             delegate?.streamCoordinatorStreamingAssistantMessageID = nil
             resetRecoveryState()
@@ -263,11 +263,14 @@ final class ChatStreamCoordinator {
                 delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 isConnectionSuspended = true
                 // Adopting a run this process was not already holding is the cold
-                // relaunch case: nothing local can carry its streamed prefix.
-                isColdAdoptedRun = preparation.activeStreamIDBeforeLoad != streamID
+                // relaunch case: nothing local can carry its streamed prefix. Latch
+                // it until the run actually restarts — recovery reloads the session
+                // again with the run already adopted, and that must not look warm.
+                isColdAdoptedRun = isColdAdoptedRun || preparation.activeStreamIDBeforeLoad != streamID
                 restoreSnapshotIfAvailable(streamID: streamID)
             } else {
                 activeStreamID = nil
+                isColdAdoptedRun = false
                 isConnectionSuspended = false
                 resetRecoveryState()
             }
@@ -283,6 +286,8 @@ final class ChatStreamCoordinator {
                     delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 }
             }
+            // A live, unsuspended connection is holding this run locally.
+            isColdAdoptedRun = false
             isConnectionSuspended = false
         }
     }

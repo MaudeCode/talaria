@@ -1040,6 +1040,17 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             )
         }
 
+        // The recovery reload runs the same prepare/reconcile pair a second time
+        // with the run already adopted, exactly as `ChatViewModel.loadMessages` does.
+        delegate.onLoadMessages = { @MainActor in
+            let reloadPreparation = coordinator.prepareForSessionLoad()
+            coordinator.reconcileSessionLoad(
+                loadedActiveStreamID: "stream-cold",
+                preparation: reloadPreparation,
+                usedCacheFallback: false
+            )
+        }
+
         let preparation = coordinator.prepareForSessionLoad()
         coordinator.reconcileSessionLoad(
             loadedActiveStreamID: "stream-cold",
