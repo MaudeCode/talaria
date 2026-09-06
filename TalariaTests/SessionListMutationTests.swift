@@ -190,6 +190,29 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertTrue(opened.isSessionReadOnly)
     }
 
+    /// The list row and the import payload can use different historical read-only
+    /// spellings. An authoritative answer must clear the stale alias, or the
+    /// `isSessionReadOnly` OR keeps a writable import view-only.
+    @MainActor
+    func testWritableImportClearsStaleReadOnlyAliasFromTheRow() async throws {
+        let viewModel = try makeViewModel { request in
+            apiTestJSONResponse("""
+            {
+              "session": {"session_id": "cli-1", "title": "Writable now", "read_only": false},
+              "imported": false
+            }
+            """, for: request)
+        }
+        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, isReadOnly: true)
+
+        let resolved = await viewModel.sessionToOpen(for: row)
+        let opened = try XCTUnwrap(resolved)
+
+        XCTAssertEqual(opened.readOnly, false)
+        XCTAssertNil(opened.isReadOnly)
+        XCTAssertFalse(opened.isSessionReadOnly)
+    }
+
     @MainActor
     func testOpeningWebUIRowSkipsImport() async throws {
         let viewModel = try makeViewModel { _ in

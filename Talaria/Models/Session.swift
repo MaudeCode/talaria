@@ -551,7 +551,13 @@ extension SessionSummary {
     /// `match_type`) survives an import round trip. Update this when
     /// `SessionSummary` gains a new stored property.
     func merging(onto row: SessionSummary) -> SessionSummary {
-        SessionSummary(
+        // Upstream answers with one of the two historical read-only spellings, so an
+        // authoritative value in either replaces both. Falling back per-spelling
+        // would let a stale `is_read_only` on the list row keep a freshly imported
+        // writable session view-only.
+        let authoritativeReadOnly = readOnly ?? isReadOnly
+
+        return SessionSummary(
             sessionId: sessionId ?? row.sessionId,
             title: title ?? row.title,
             workspace: workspace ?? row.workspace,
@@ -581,8 +587,8 @@ extension SessionSummary {
             sourceLabel: sourceLabel ?? row.sourceLabel,
             parentSessionId: parentSessionId ?? row.parentSessionId,
             relationshipType: relationshipType ?? row.relationshipType,
-            readOnly: readOnly ?? row.readOnly,
-            isReadOnly: isReadOnly ?? row.isReadOnly,
+            readOnly: authoritativeReadOnly ?? row.readOnly,
+            isReadOnly: authoritativeReadOnly == nil ? row.isReadOnly : nil,
             matchType: matchType ?? row.matchType
         )
     }
