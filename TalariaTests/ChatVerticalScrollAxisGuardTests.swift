@@ -282,6 +282,23 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001)
     }
 
+    func testDisclosureHoldDoesNotInterruptActivePrependCompensation() {
+        // A toggle inside the post-prepend stabilization window must not strand
+        // late measurement of the rows inserted above the reader.
+        let scrollView = makeScrollView()
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+
+        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        controller.holdPosition {}
+
+        XCTAssertFalse(controller.isHoldingPosition)
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+    }
+
     func testReleaseHoldLeavesPrependPreservationAlone() {
         let scrollView = makeScrollView()
         scrollView.contentOffset = CGPoint(x: 0, y: 240)

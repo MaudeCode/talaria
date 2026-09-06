@@ -67,6 +67,14 @@ final class ChatScrollPositionController {
         mode == .hold && baselineOffsetY != nil
     }
 
+    /// True only while `restoreAfterPrepend()`'s bounded window is armed. A bare
+    /// `capture()` awaiting the server does not qualify: a toggle then invalidates
+    /// it, because the rows have not landed and its baseline no longer describes
+    /// the layout the reader is looking at.
+    private var isCompensatingPrepend: Bool {
+        mode == .prepend && contentSizeObservation != nil
+    }
+
     func attach(to scrollView: UIScrollView) {
         guard scrollView !== self.scrollView else { return }
         cancelPreservation()
@@ -122,6 +130,12 @@ final class ChatScrollPositionController {
     /// `disclosureHoldMaximum` at the latest. No-op while the user is moving the
     /// transcript; their gesture owns the position.
     func holdPosition(resync: @escaping () -> Void) {
+        // A prepend is still absorbing late measurement of the rows it inserted
+        // above the reader. Replacing it with a pin would freeze the offset while
+        // that growth pushes the transcript down, so let the bounded prepend
+        // window finish; the bottom size-change anchor is suspended for the
+        // toggle either way.
+        guard !isCompensatingPrepend else { return }
         cancelPreservation()
         guard let scrollView,
               !scrollView.isDragging,
