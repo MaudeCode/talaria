@@ -874,14 +874,17 @@ extension ChatViewModelSendTests {
         }
         await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
 
-        requests.request(at: 0).fail(with: URLError(.timedOut))
+        requests.request(at: 0).complete(withJSON: #"{"error":"older failure"}"#, statusCode: 500)
         await drainMainActor()
-        requests.request(at: 1).fail(with: URLError(.userAuthenticationRequired))
+        requests.request(at: 1).complete(withJSON: #"{"error":"newer failure"}"#, statusCode: 401)
         await firstLoadTask.value
         await secondLoadTask.value
 
-        XCTAssertEqual((viewModel.lastError as? URLError)?.code, .userAuthenticationRequired)
-        XCTAssertEqual(viewModel.errorMessage, URLError(.userAuthenticationRequired).localizedDescription)
+        guard let lastError = viewModel.lastError as? APIError,
+              case .unauthorized = lastError else {
+            return XCTFail("Expected the newer unauthorized error")
+        }
+        XCTAssertEqual(viewModel.errorMessage, APIError.unauthorized.localizedDescription)
     }
 
     @MainActor
@@ -1137,6 +1140,8 @@ extension ChatViewModelSendTests {
         )
         XCTAssertEqual(viewModel.activeStreamID, "stream-existing")
         XCTAssertEqual(streamClient.startedURLs.count, 1)
+        XCTAssertNil(viewModel.lastError)
+        XCTAssertNil(viewModel.errorMessage)
     }
 
     @MainActor

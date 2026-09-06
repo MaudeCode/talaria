@@ -1250,6 +1250,8 @@ final class ChatViewModel {
                 )
                 restoreActiveStreamSnapshotIfAvailable(streamID: currentActiveStreamID)
                 isViewingCachedData = false
+                lastError = nil
+                errorMessage = nil
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
                 if renderedCacheFirst {
                     cacheFirstReconcileScrollToken += 1
@@ -1275,6 +1277,8 @@ final class ChatViewModel {
             )
             responseCompletionNeedsTranscriptRefresh = false
             isViewingCachedData = false
+            lastError = nil
+            errorMessage = nil
             contextWindowSnapshot = ContextWindowSnapshot(
                 contextLength: session?.contextLength,
                 thresholdTokens: session?.thresholdTokens,
