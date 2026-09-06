@@ -476,6 +476,8 @@ final class SharedDraftStoreTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Leaked directories accumulate on shared pool simulators (TAL-145).
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return directory
     }
 
