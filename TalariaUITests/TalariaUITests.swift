@@ -707,12 +707,15 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
     }
 
     /// The simulator's Reduce Motion switch has no launch-argument seam, so the runner
-    /// writes the system accessibility preference the app reads at launch.
-    func enableReduceMotion() {
-        savedReduceMotion = CFPreferencesCopyValue(
-            Self.reduceMotionKey, Self.accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
-        ) ?? kCFBooleanFalse
-        Self.writeReduceMotion(kCFBooleanTrue)
+    /// writes the system accessibility preference the app reads at launch. Every variant
+    /// writes its value explicitly so a reused simulator cannot leak state into the matrix.
+    func applyReduceMotion(_ enabled: Bool) {
+        if savedReduceMotion == nil {
+            savedReduceMotion = CFPreferencesCopyValue(
+                Self.reduceMotionKey, Self.accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+            ) ?? kCFBooleanFalse
+        }
+        Self.writeReduceMotion(enabled ? kCFBooleanTrue : kCFBooleanFalse)
     }
 
     private static let accessibilityDomain = "com.apple.Accessibility" as CFString
@@ -1086,16 +1089,12 @@ fileprivate extension SidebarUITestCase {
 fileprivate extension AdaptiveLayoutUITestCase {
     func launchFixture(variant: Variant, additionalArguments: [String] = []) {
         XCUIDevice.shared.orientation = variant.orientation
-        if variant.reduceMotion {
-            enableReduceMotion()
-        }
+        applyReduceMotion(variant.reduceMotion)
         launchFixture(additionalArguments: variant.arguments + additionalArguments)
-        if variant.reduceMotion {
-            XCTAssertTrue(
-                UIAccessibility.isReduceMotionEnabled,
-                "Reduce Motion preference did not apply [\(variant.name)]"
-            )
-        }
+        XCTAssertEqual(
+            UIAccessibility.isReduceMotionEnabled, variant.reduceMotion,
+            "Reduce Motion preference did not apply [\(variant.name)]"
+        )
     }
 
     func audit(_ screen: String, variant: Variant) throws {
