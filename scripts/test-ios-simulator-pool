@@ -22,8 +22,10 @@ with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
     devices = [dict(name=f'iOS Test {n}', udid=f'00000000-0000-0000-0000-{n:012}',
                     state='Shutdown', deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
                for n in (1, 2)]
+    personal = dict(name='Personal iPhone', udid='00000000-0000-0000-0000-000000000099', state='Shutdown',
+                    deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
     def save():
-        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices}}))
+        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices + [personal]}}))
     save()
     fake = tools / 'xcrun'
     fake.write_text('''#!/bin/zsh
@@ -71,6 +73,8 @@ fi
         assert erasures() == [devices[1]['udid']]  # Release wipes the device it leased.
         invoke(expected=75, IOS_SIMULATOR_ID=devices[0]['udid'])
         assert erasures() == [devices[1]['udid']]  # A failed acquisition erases nothing.
+        assert invoke(IOS_SIMULATOR_ID=personal['udid']) == personal['udid']
+        assert erasures() == [devices[1]['udid']]  # An explicitly selected non-pool device is never erased.
         assert invoke(IOS_SIMULATOR_ID=devices[1]['udid']) == devices[1]['udid']
         invoke(expected=69, IOS_SIMULATOR_ID='missing')
         invoke(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-18-0')

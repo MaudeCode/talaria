@@ -40,8 +40,9 @@ just the standalone helper with `install -m 755 scripts/ios-simulator-pool
 from an adopting repository.
 
 The standalone helper leases and boots a device, exports `IOS_SIMULATOR_ID`, runs
-a command, and shuts down, erases and releases the device when that command
-exits, so no test-host state carries over to the next lease:
+a command, and shuts down and releases the device when that command exits.
+Pool devices (`iOS Test N`) are also erased on release so no test-host state
+carries over; an explicitly selected non-pool simulator is never erased:
 
 ```sh
 scripts/ios-simulator-pool zsh -c '

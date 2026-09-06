@@ -7,6 +7,7 @@ pool_lock="$pool_runtime_dir/pool.lock"
 lease_dir="$pool_runtime_dir/leases"
 lease_file=""
 simulator_id=""
+simulator_disposable=false
 pool_lock_held=false
 
 ios_pool_lock() {
@@ -27,10 +28,14 @@ ios_pool_release() {
         # Keep a failed shutdown out of circulation: acquisition rejects booted devices.
         xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
         # Test hosts leak state into the device; the next lease starts clean.
-        xcrun simctl erase "$simulator_id" >/dev/null 2>&1 || true
+        # Only pool devices are disposable: an explicit ID may name a personal simulator.
+        if [[ "$simulator_disposable" == true ]]; then
+            xcrun simctl erase "$simulator_id" >/dev/null 2>&1 || true
+        fi
     fi
     [[ -z "$lease_file" ]] || unlink "$lease_file" 2>/dev/null || true
     simulator_id=""
+    simulator_disposable=false
     lease_file=""
     if [[ "$pool_lock_held" == true ]]; then
         unlink "$pool_lock" 2>/dev/null || true
@@ -40,7 +45,7 @@ ios_pool_release() {
 
 ios_pool_acquire() {
     ios_pool_lock || return $?
-    local devices_json candidates candidate_id candidate_state candidate_lease candidate
+    local devices_json candidates candidate_id candidate_state candidate_disposable candidate_lease candidate
     devices_json=$(xcrun simctl list devices available --json) || return $?
     candidates=$(print -r -- "$devices_json" | /usr/bin/jq -r \
         --arg id "${IOS_SIMULATOR_ID:-}" --arg runtime "${IOS_SIMULATOR_RUNTIME:-}" '
@@ -48,19 +53,20 @@ ios_pool_acquire() {
          select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-")) |
          select($runtime == "" or .key == $runtime) | .value[] |
          select(if $id != "" then .udid == $id else (.name | test("^iOS Test [1-9][0-9]*$")) end)] |
-        sort_by(.name) | .[] | [.udid, .state] | @tsv
+        sort_by(.name) | .[] | [.udid, .state, (.name | test("^iOS Test [1-9][0-9]*$"))] | @tsv
     ') || return $?
     if [[ -z "$candidates" ]]; then
         print -u2 "No idle compatible iOS pool device is available. Run scripts/setup-ios-test-pool or inspect booted devices."
         return 69
     fi
     for candidate in "${(@f)candidates}"; do
-        IFS=$'\t' read -r candidate_id candidate_state <<< "$candidate"
+        IFS=$'\t' read -r candidate_id candidate_state candidate_disposable <<< "$candidate"
         # A crashed owner may leave children running. Never reuse its booted device.
         [[ "$candidate_state" == Shutdown ]] || continue
         candidate_lease="$lease_dir/$candidate_id.lock"
         if /usr/bin/shlock -f "$candidate_lease" -p $$; then
             simulator_id="$candidate_id"
+            simulator_disposable="$candidate_disposable"
             lease_file="$candidate_lease"
             break
         fi
