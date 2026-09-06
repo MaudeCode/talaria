@@ -221,7 +221,10 @@ final class SessionListViewModel {
 
             if let modelContext {
                 do {
-                    try CacheStore.cacheSessions(visibleSessions, serverURL: server, in: modelContext)
+                    // The applied rows, not the raw response: a stale list must not
+                    // put pre-import metadata back into the cache the offline
+                    // fallback reads.
+                    try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext)
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -564,15 +567,24 @@ final class SessionListViewModel {
             }
             return ImportedSessionDetail(detail: detail, isAuthoritative: true)
         } catch {
-            guard !APIError.isCancellation(error),
-                  let detail = try? await client.session(
-                      id: sessionId,
-                      includeMessages: false,
-                      messageLimit: nil
-                  ).session
-            else { throw error }
+            guard !APIError.isCancellation(error) else { throw error }
 
-            return ImportedSessionDetail(detail: detail, isAuthoritative: false)
+            do {
+                guard let detail = try await client.session(
+                    id: sessionId,
+                    includeMessages: false,
+                    messageLimit: nil
+                ).session
+                else { throw error }
+
+                return ImportedSessionDetail(detail: detail, isAuthoritative: false)
+            } catch let fallbackError {
+                // An expired login has to reach the auth manager even when the
+                // import failed for an unrelated reason first; every other
+                // fallback failure keeps the import's own error.
+                guard case APIError.unauthorized = fallbackError else { throw error }
+                throw fallbackError
+            }
         }
     }
 

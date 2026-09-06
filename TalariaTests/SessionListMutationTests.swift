@@ -343,21 +343,23 @@ final class SessionListMutationTests: XCTestCase {
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
         let viewModel = SessionListViewModel(server: server, client: client)
 
+        let context = try makeContext()
+
         let writableRow = #"""
         {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "archived": false}]}
         """#
-        let firstLoad = Task { await viewModel.load() }
+        let firstLoad = Task { await viewModel.load(modelContext: context) }
         await fulfillment(of: [firstListArrived], timeout: 5)
         requests.request(at: 0).complete(withJSON: writableRow)
         _ = await firstLoad.value
 
         // A refresh captures the pre-import row, then the import claims it read-only
         // before that refresh is delivered.
-        let staleLoad = Task { await viewModel.load() }
+        let staleLoad = Task { await viewModel.load(modelContext: context) }
         await fulfillment(of: [staleListArrived], timeout: 5)
 
         let row = try XCTUnwrap(viewModel.sessions.first)
-        let open = Task { await viewModel.sessionToOpen(for: row) }
+        let open = Task { await viewModel.sessionToOpen(for: row, modelContext: context) }
         await fulfillment(of: [importArrived], timeout: 5)
         requests.request(at: 2).complete(withJSON: #"""
         {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true}, "imported": false}
@@ -372,6 +374,39 @@ final class SessionListMutationTests: XCTestCase {
         let refreshedRow = try XCTUnwrap(viewModel.sessions.first)
         XCTAssertTrue(refreshedRow.isSessionReadOnly, "A stale list load must not reinstate pre-import metadata.")
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: refreshedRow))
+
+        // The offline cache has to hold the applied row too, or the next cached
+        // browse restores the pre-import writability.
+        let cachedRow = try XCTUnwrap(
+            CacheStore.cachedSessions(serverURL: server, in: context).first
+        )
+        XCTAssertTrue(cachedRow.isSessionReadOnly)
+    }
+
+    /// An expired login on the fallback must reach the auth manager even when the
+    /// import failed first for an unrelated reason.
+    @MainActor
+    func testFallbackAuthenticationFailureIsSurfacedOverTheImportError() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path ?? "nil"
+            requestedPaths.append(path)
+
+            if path == "/api/session/import_cli" {
+                return apiTestJSONResponse(#"{"error": "no such route"}"#, statusCode: 404, for: request)
+            }
+
+            return apiTestJSONResponse(#"{"error": "unauthorized"}"#, statusCode: 401, for: request)
+        }
+
+        let opened = await viewModel.sessionToOpen(for: SessionSummary(sessionId: "cli-1", isCliSession: true))
+
+        XCTAssertNil(opened)
+        XCTAssertEqual(requestedPaths, ["/api/session/import_cli", "/api/session"])
+        let lastError = try XCTUnwrap(viewModel.lastError)
+        guard case APIError.unauthorized = lastError else {
+            return XCTFail("expected unauthorized, got \(lastError)")
+        }
     }
 
     @MainActor
