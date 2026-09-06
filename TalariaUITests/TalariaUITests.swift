@@ -694,24 +694,33 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
         continueAfterFailure = true
     }
 
+    /// Simulator Reduce Motion value before this test touched it; restored in teardown.
+    private var savedReduceMotion: CFPropertyList?
+
     override func tearDownWithError() throws {
         XCUIDevice.shared.orientation = .portrait
-        Self.setReduceMotion(false)
+        if let savedReduceMotion {
+            Self.writeReduceMotion(savedReduceMotion)
+            self.savedReduceMotion = nil
+        }
         try super.tearDownWithError()
     }
 
     /// The simulator's Reduce Motion switch has no launch-argument seam, so the runner
     /// writes the system accessibility preference the app reads at launch.
-    static func setReduceMotion(_ enabled: Bool) {
-        let domain = "com.apple.Accessibility" as CFString
-        CFPreferencesSetValue(
-            "ReduceMotionEnabled" as CFString,
-            enabled ? kCFBooleanTrue : kCFBooleanFalse,
-            domain,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost
-        )
-        CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    func enableReduceMotion() {
+        savedReduceMotion = CFPreferencesCopyValue(
+            Self.reduceMotionKey, Self.accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+        ) ?? kCFBooleanFalse
+        Self.writeReduceMotion(kCFBooleanTrue)
+    }
+
+    private static let accessibilityDomain = "com.apple.Accessibility" as CFString
+    private static let reduceMotionKey = "ReduceMotionEnabled" as CFString
+
+    private static func writeReduceMotion(_ value: CFPropertyList?) {
+        CFPreferencesSetValue(reduceMotionKey, value, accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(accessibilityDomain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
     }
 }
 
@@ -820,12 +829,13 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 app.buttons["Already have a server?"].tap()
                 let serverField = app.textFields.firstMatch
                 XCTAssertTrue(serverField.waitForExistence(timeout: 5), "Server URL field missing [\(variant.name)]")
+                try audit("Onboarding connect", variant: variant)
+                // Focus retention: the audit walks the page, so focus the field only afterwards.
                 serverField.tap()
                 XCTAssertTrue(hasKeyboardFocus(serverField), "Server field did not take focus [\(variant.name)]")
                 XCUIDevice.shared.orientation = variant.orientation == .portrait ? .landscapeLeft : .portrait
                 XCTAssertTrue(serverField.waitForExistence(timeout: 5), "Server URL field lost on rotation [\(variant.name)]")
                 XCTAssertTrue(hasKeyboardFocus(serverField), "Rotation dropped field focus [\(variant.name)]")
-                try audit("Onboarding connect", variant: variant)
                 app.terminate()
             }
         }
@@ -1076,7 +1086,9 @@ fileprivate extension SidebarUITestCase {
 fileprivate extension AdaptiveLayoutUITestCase {
     func launchFixture(variant: Variant, additionalArguments: [String] = []) {
         XCUIDevice.shared.orientation = variant.orientation
-        Self.setReduceMotion(variant.reduceMotion)
+        if variant.reduceMotion {
+            enableReduceMotion()
+        }
         launchFixture(additionalArguments: variant.arguments + additionalArguments)
         if variant.reduceMotion {
             XCTAssertTrue(
@@ -1097,8 +1109,14 @@ fileprivate extension AdaptiveLayoutUITestCase {
             // predicts from `lineLimit` instead of measuring the rendered variant; element
             // detection scans pixels and names no element to fix.
             var issues: [String] = []
+            var unlocated: [String] = []
             let auditTypes: XCUIAccessibilityAuditType = .all.subtracting([.contrast, .textClipped, .elementDetection])
             try app.performAccessibilityAudit(for: auditTypes) { issue in
+                // A finding with no element names nothing to fix; keep it visible, not fatal.
+                guard issue.element != nil else {
+                    unlocated.append("\(issue.compactDescription) — \(issue.detailedDescription)")
+                    return true
+                }
                 // Generic containers (`Other`) carry no user-facing description; real controls
                 // keep their own element types and stay audited.
                 if issue.auditType == .sufficientElementDescription, issue.element?.elementType == .other {
@@ -1119,6 +1137,11 @@ fileprivate extension AdaptiveLayoutUITestCase {
                 } ?? "no element"
                 issues.append("\(issue.compactDescription) — \(issue.detailedDescription) — \(element)")
                 return true
+            }
+            if !unlocated.isEmpty {
+                let note = XCTAttachment(string: unlocated.joined(separator: "\n"))
+                note.name = "Unlocated audit findings: \(screen) [\(variant.name)]"
+                activity.add(note)
             }
             XCTAssertTrue(
                 issues.isEmpty,

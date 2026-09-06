@@ -71,7 +71,9 @@ struct OnboardingWelcomePage: View {
                         .font(.largeTitle.weight(.bold))
                         .foregroundStyle(.white)
                         .lineLimit(3)
-                        .minimumScaleFactor(0.86)
+                        // The page does not scroll, so accessibility sizes shrink the headline
+                        // to fit three lines instead of truncating it.
+                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.5 : 0.86)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text("Connect to your self-hosted Web UI over Tailscale.")
