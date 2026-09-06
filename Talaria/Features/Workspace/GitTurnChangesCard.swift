@@ -7,6 +7,7 @@ import SwiftUI
 /// and each file row opens that file's diff. The host owns the actual sheet presentation.
 struct GitTurnChangesCard: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @State private var isExpanded = true
 
@@ -71,6 +72,7 @@ struct GitTurnChangesCard: View {
                     : String(localized: "Expand file changes"),
                 rotation: isExpanded ? 0 : -90
             ) {
+                chatDisclosureToggled()
                 withAnimation(.easeInOut(duration: 0.18)) { isExpanded.toggle() }
             }
         }

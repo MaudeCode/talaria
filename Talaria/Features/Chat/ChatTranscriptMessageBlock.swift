@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatTranscriptMessageBlock: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @State private var expandedCompletedActivityIDs = Set<String>()
 
     let transcriptMessage: TranscriptMessage
@@ -209,6 +210,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         isExpanded: Bool
     ) -> some View {
         Button {
+            chatDisclosureToggled()
             withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                 if isExpanded {
                     expandedCompletedActivityIDs.remove(disclosureID)
@@ -261,6 +263,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                             let titles = AssistantActivityHeaderSummary.titles(for: visibleRows, isActive: isActive)
                             VStack(alignment: .leading, spacing: 0) {
                                 Button {
+                                    chatDisclosureToggled()
                                     withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                                         if isExpanded {
                                             expandedCompletedActivityIDs.remove(disclosureID)
