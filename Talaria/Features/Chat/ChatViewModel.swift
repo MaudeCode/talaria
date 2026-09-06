@@ -27,6 +27,7 @@ final class ChatViewModel {
     @ObservationIgnored private var isStartingMessageSend = false
     @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var sessionLoadRequestGeneration = 0
+    @ObservationIgnored private var latestAppliedSessionLoadRequestGeneration = 0
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     private(set) var isSendingVoiceNote = false
@@ -1218,7 +1219,7 @@ final class ChatViewModel {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
-            guard sessionLoadRequestGeneration == loadRequestGeneration else { return }
+            guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
             if canMergePendingMessageSend,
                !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
                 guard let currentActiveStreamID = activeStreamID else { return }
@@ -1240,6 +1241,7 @@ final class ChatViewModel {
                 if renderedCacheFirst {
                     cacheFirstReconcileScrollToken += 1
                 }
+                latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
                 return
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
@@ -1294,11 +1296,12 @@ final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false
             )
+            latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
         } catch {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
-            guard sessionLoadRequestGeneration == loadRequestGeneration else { return }
+            guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
