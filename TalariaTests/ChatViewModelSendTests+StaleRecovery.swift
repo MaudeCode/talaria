@@ -743,6 +743,50 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testStaleActiveStreamReplayReasoningDoesNotDisarmTokenDeduplication() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse("""
+                {
+                  "active": true,
+                  "stream_id": "stream-123",
+                  "replay_available": true
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Keep working")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("First "))
+        streamClient.emit(.token("middle "))
+
+        await viewModel.recoverStaleActiveStreamIfNeeded(now: Date().addingTimeInterval(20))
+
+        // The journal replays a reasoning segment this transcript never showed, so
+        // that channel is genuinely new. Replay dedup is armed per channel, so the
+        // replayed tokens behind it must still be recognised as already rendered.
+        streamClient.emit(.reasoning(ReasoningStreamEvent(text: "Thinking it through.", titles: [])))
+        streamClient.emit(.token("First "))
+        streamClient.emit(.token("middle "))
+        streamClient.emit(.token("last."))
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Keep working", "First middle last."])
+    }
+
+    @MainActor
     func testStaleActiveStreamReplayBatchedTokensMatchLiveModeFinalContent() async throws {
         let tokens = ["Alpha ", "beta ", "gamma ", "delta."]
 
@@ -1402,5 +1446,139 @@ extension ChatViewModelSendTests {
             ["Tell me a tiger story", "Once Raj reached the river. The snare broke."]
         )
         XCTAssertEqual(reopenedViewModel.messages.filter { $0.role == "assistant" }.count, 1)
+    }
+}
+
+extension ChatViewModelSendTests {
+    @MainActor
+    func testSameStreamReloadWithoutPersistenceContextKeepsUncachedOptimisticPrompt() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var reloadedActiveStreamID = "stream-123"
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "title": "Planning",
+                    "active_stream_id": "\(reloadedActiveStreamID)",
+                    "messages": []
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Keep working")
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Keep working"])
+
+        // No ModelContext, so the optimistic prompt was never cached, and the server
+        // has not persisted it yet — but the same run is still authoritative.
+        await viewModel.loadMessages()
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Keep working"])
+        XCTAssertEqual(viewModel.messages.filter { $0.role == "user" }.count, 1)
+
+        // A different run owns the transcript now, so its rows win.
+        reloadedActiveStreamID = "stream-999"
+        await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.messages.isEmpty)
+    }
+
+    @MainActor
+    func testRecoveryWarningClearsOnStreamActivityButLeavesSendErrorAlone() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var failsStatus = true
+        var failsStart = false
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                if failsStart {
+                    throw URLError(.notConnectedToInternet)
+                }
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/chat/stream/status":
+                if failsStatus {
+                    // Same error the failing send below raises, so only ownership
+                    // — never matching text — can tell the two warnings apart.
+                    throw URLError(.notConnectedToInternet)
+                }
+                return apiTestJSONResponse("""
+                {
+                  "active": true,
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "title": "Planning",
+                    "active_stream_id": "stream-123",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Keep working",
+                        "timestamp": 1770000100,
+                        "message_id": "user-1"
+                      }
+                    ]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Keep working")
+        XCTAssertTrue(didStart)
+        viewModel.suspendStreamForBackground()
+        await viewModel.reconnectStreamIfNeeded()
+        XCTAssertNotNil(viewModel.sendErrorMessage)
+
+        failsStatus = false
+        await viewModel.reconnectStreamIfNeeded()
+        streamClient.emit(.heartbeat)
+
+        // A healthy transport proved recovery, so its transient warning is retracted.
+        XCTAssertNil(viewModel.sendErrorMessage)
+        XCTAssertNil(viewModel.lastError)
+
+        // A recovery warning that a later send failure replaced is no longer
+        // recovery-owned, so the next burst of stream activity must leave it alone.
+        failsStatus = true
+        viewModel.suspendStreamForBackground()
+        await viewModel.reconnectStreamIfNeeded()
+        XCTAssertNotNil(viewModel.sendErrorMessage)
+
+        failsStart = true
+        let didStartSecondSend = await viewModel.sendMessage("Another prompt")
+        XCTAssertFalse(didStartSecondSend)
+        let sendError = try XCTUnwrap(viewModel.sendErrorMessage)
+
+        failsStatus = false
+        await viewModel.reconnectStreamIfNeeded()
+        streamClient.emit(.token(" More."))
+
+        XCTAssertEqual(viewModel.sendErrorMessage, sendError)
     }
 }

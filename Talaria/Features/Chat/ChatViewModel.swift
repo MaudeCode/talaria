@@ -37,7 +37,15 @@ final class ChatViewModel {
     var activeStreamRecoveryState: ActiveStreamRecoveryState { streamCoordinator.recoveryState }
     var liveTokensPerSecond: Double? { streamCoordinator.liveTokensPerSecond }
     private(set) var errorMessage: String?
-    private(set) var sendErrorMessage: String?
+    private(set) var sendErrorMessage: String? {
+        didSet {
+            // Every other writer takes ownership of the banner, so stream recovery
+            // can no longer retract it. Identity, not matching text: a send that
+            // fails the same way as the recovery attempt is still its own error.
+            ownsSendErrorForRecovery = false
+        }
+    }
+    private var ownsSendErrorForRecovery = false
     private(set) var messageActionErrorMessage: String?
     private(set) var cacheErrorMessage: String?
     private(set) var lastError: Error?
@@ -265,7 +273,7 @@ final class ChatViewModel {
     private var backgroundPromptsByTaskID: [String: String] = [:]
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
-    private var isActiveStreamReplayConnection: Bool { streamCoordinator.isReplayConnection }
+    private var activeStreamReplayChannels = ActiveStreamReplayChannels()
     private var activeStreamReplayMatchedPrefixLength = 0
     private var activeStreamReplayMatchedInterimLength = 0
     private var activeStreamReplayMatchedReasoningLength = 0
@@ -503,6 +511,36 @@ final class ChatViewModel {
     private func cancelPendingStreamingContentFlush() {
         pendingStreamingContentFlushTask?.cancel()
         pendingStreamingContentFlushTask = nil
+    }
+
+    /// Replay dedup is armed per event channel. A token, interim, reasoning or
+    /// tool event that turns out to be genuinely new only proves *its* channel has
+    /// caught up with the run journal. One shared flag let the first new reasoning
+    /// or tool event disarm token dedup, so the rest of a replayed answer appended
+    /// on top of the copy the transcript load had already rendered.
+    private struct ActiveStreamReplayChannels {
+        var token = false
+        var interim = false
+        var reasoning = false
+        var tool = false
+
+        var isAnyArmed: Bool { token || interim || reasoning || tool }
+
+        mutating func arm(_ armed: Bool) {
+            token = armed
+            interim = armed
+            reasoning = armed
+            tool = armed
+        }
+    }
+
+    private func disarmReplayChannel(_ channel: WritableKeyPath<ActiveStreamReplayChannels, Bool>) {
+        guard activeStreamReplayChannels[keyPath: channel] else { return }
+
+        activeStreamReplayChannels[keyPath: channel] = false
+        guard !activeStreamReplayChannels.isAnyArmed else { return }
+
+        streamCoordinator.clearReplayConnection()
     }
 
     private func resetPendingStreamingContentBuffers() {
@@ -1148,6 +1186,21 @@ final class ChatViewModel {
                     cacheErrorMessage = error.localizedDescription
                     reloadedMessages = loadedMessages
                 }
+            } else if let activeStreamIDBeforeLoad = streamLoadPreparation.activeStreamIDBeforeLoad,
+                      loadedActiveStreamID == activeStreamIDBeforeLoad {
+                // No persistence context, so the cache merge above cannot run and an
+                // optimistic prompt the server has not persisted yet would vanish.
+                // The same run is still authoritative, so carry it across the reload.
+                // Without a cache there is nothing to tell a fresh prompt from an old
+                // identical one, so any equivalent user message counts as confirmation:
+                // dropping a duplicate is what this path already did, showing one twice
+                // is not. A different (or finished) run owns the transcript, so its
+                // rows win instead.
+                reloadedMessages = Self.insertingUnconfirmedLocalUserMessages(
+                    from: previousMessages,
+                    into: loadedMessages,
+                    requiresRecentTimestamp: false
+                )
             } else {
                 reloadedMessages = loadedMessages
             }
@@ -1496,17 +1549,35 @@ final class ChatViewModel {
             serverMergedMessages,
             cachedMessages: cachedMessages
         )
-        let localUserMessages = cachedMessages.filter { cachedMessage in
-            isLocalOptimisticUserMessage(cachedMessage)
-                && !cachedMessage.isLocalSteeringHint
-                && !loadedMessagesContainEquivalentUserMessage(mergedMessages, localMessage: cachedMessage)
+        return insertingUnconfirmedLocalUserMessages(
+            from: cachedMessages,
+            into: mergedMessages,
+            requiresRecentTimestamp: true
+        )
+    }
+
+    /// Re-inserts the local optimistic user rows the reloaded transcript has not
+    /// confirmed yet, so a prompt in flight renders exactly once.
+    nonisolated private static func insertingUnconfirmedLocalUserMessages(
+        from localMessages: [ChatMessage],
+        into loadedMessages: [ChatMessage],
+        requiresRecentTimestamp: Bool
+    ) -> [ChatMessage] {
+        let unconfirmedMessages = localMessages.filter { localMessage in
+            isLocalOptimisticUserMessage(localMessage)
+                && !localMessage.isLocalSteeringHint
+                && !loadedMessagesContainEquivalentUserMessage(
+                    loadedMessages,
+                    localMessage: localMessage,
+                    requiresRecentTimestamp: requiresRecentTimestamp
+                )
         }
 
-        guard !localUserMessages.isEmpty else {
-            return mergedMessages
+        guard !unconfirmedMessages.isEmpty else {
+            return loadedMessages
         }
 
-        return localUserMessages.reduce(into: mergedMessages) { partialMessages, localMessage in
+        return unconfirmedMessages.reduce(into: loadedMessages) { partialMessages, localMessage in
             insertLocalOptimisticMessage(localMessage, into: &partialMessages)
         }
     }
@@ -2038,7 +2109,8 @@ final class ChatViewModel {
 
     nonisolated private static func loadedMessagesContainEquivalentUserMessage(
         _ loadedMessages: [ChatMessage],
-        localMessage: ChatMessage
+        localMessage: ChatMessage,
+        requiresRecentTimestamp: Bool = true
     ) -> Bool {
         let localContent = normalizedUserMessageContent(localMessage.content)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
@@ -2063,7 +2135,8 @@ final class ChatViewModel {
                 }
             }
 
-            guard let localTimestamp = localMessage.timestamp,
+            guard requiresRecentTimestamp,
+                  let localTimestamp = localMessage.timestamp,
                   let loadedTimestamp = loadedMessage.timestamp
             else {
                 return true
@@ -4284,14 +4357,13 @@ final class ChatViewModel {
             let textToAppend = deduplicatedReplayText(
                 text,
                 existingContent: currentContent,
+                isArmed: activeStreamReplayChannels.interim,
                 matchedPrefixLength: &activeStreamReplayMatchedInterimLength
             )
             guard !textToAppend.isEmpty else { return false }
 
-            let shouldAppendReplaySuffixDirectly = isActiveStreamReplayConnection && textToAppend != text
-            if isActiveStreamReplayConnection {
-                streamCoordinator.clearReplayConnection()
-            }
+            let shouldAppendReplaySuffixDirectly = activeStreamReplayChannels.interim && textToAppend != text
+            disarmReplayChannel(\.interim)
             let shouldUseSeparator = currentContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 && !shouldAppendReplaySuffixDirectly
             let separator = shouldUseSeparator ? "\n\n" : ""
@@ -4535,10 +4607,11 @@ final class ChatViewModel {
         // the event contributed new content, mutate only via the coalesced flush.
         _ = ensureStreamingAssistantMessage()
         let remainder: String
-        if isActiveStreamReplayConnection {
+        if activeStreamReplayChannels.reasoning {
             remainder = deduplicatedReplayText(
                 text,
                 existingContent: liveReasoningText + pendingReasoningText,
+                isArmed: true,
                 matchedPrefixLength: &activeStreamReplayMatchedReasoningLength
             )
         } else {
@@ -4546,9 +4619,7 @@ final class ChatViewModel {
         }
         guard !remainder.isEmpty else { return false }
 
-        if isActiveStreamReplayConnection {
-            streamCoordinator.clearReplayConnection()
-        }
+        disarmReplayChannel(\.reasoning)
         pendingReasoningText.append(contentsOf: remainder)
         scheduleStreamingContentFlush()
         return true
@@ -4601,9 +4672,7 @@ final class ChatViewModel {
             return false
         }
 
-        if isActiveStreamReplayConnection {
-            streamCoordinator.clearReplayConnection()
-        }
+        disarmReplayChannel(\.tool)
         liveAssistantActivity.appendTool(
             ToolCall(
                 id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
@@ -4638,9 +4707,7 @@ final class ChatViewModel {
         }
 
         activeStreamReplayPendingToolMatchIndex = nil
-        if isActiveStreamReplayConnection {
-            streamCoordinator.clearReplayConnection()
-        }
+        disarmReplayChannel(\.tool)
 
         guard let index = liveToolCallCompletionIndex(for: payload) else {
             flushPendingStreamingContent()
@@ -4667,7 +4734,7 @@ final class ChatViewModel {
     }
 
     private func duplicateReplayToolStartIndex(for payload: ToolStreamEvent) -> Int? {
-        guard isActiveStreamReplayConnection else { return nil }
+        guard activeStreamReplayChannels.tool else { return nil }
 
         if let stableIndex = stableReplayToolIndex(for: payload) {
             return stableIndex
@@ -4680,7 +4747,7 @@ final class ChatViewModel {
     }
 
     private func duplicateReplayToolCompletionIndex(for payload: ToolStreamEvent) -> Int? {
-        guard isActiveStreamReplayConnection else { return nil }
+        guard activeStreamReplayChannels.tool else { return nil }
 
         if let stableIndex = stableReplayToolIndex(for: payload) {
             return stableIndex
@@ -4738,7 +4805,7 @@ final class ChatViewModel {
         // streaming skips that full-string construction and appends directly.
         let messageID = ensureStreamingAssistantMessage()
         let remainder: String
-        if isActiveStreamReplayConnection {
+        if activeStreamReplayChannels.token {
             let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
             remainder = deduplicatedReplayToken(
                 token,
@@ -4749,9 +4816,7 @@ final class ChatViewModel {
         }
         guard !remainder.isEmpty else { return false }
 
-        if isActiveStreamReplayConnection {
-            streamCoordinator.clearReplayConnection()
-        }
+        disarmReplayChannel(\.token)
         pendingAssistantTokenText.append(contentsOf: remainder)
         scheduleStreamingContentFlush()
         return true
@@ -4854,7 +4919,7 @@ final class ChatViewModel {
     }
 
     private func deduplicatedReplayToken(_ token: String, existingContent: String) -> String {
-        guard isActiveStreamReplayConnection, !existingContent.isEmpty else {
+        guard activeStreamReplayChannels.token, !existingContent.isEmpty else {
             resetActiveStreamReplayTokenState()
             return token
         }
@@ -4903,9 +4968,10 @@ final class ChatViewModel {
     private func deduplicatedReplayText(
         _ text: String,
         existingContent: String,
+        isArmed: Bool,
         matchedPrefixLength: inout Int
     ) -> String {
-        guard isActiveStreamReplayConnection, !existingContent.isEmpty else {
+        guard isArmed, !existingContent.isEmpty else {
             matchedPrefixLength = 0
             return text
         }
@@ -4952,7 +5018,7 @@ final class ChatViewModel {
     }
 
     private func resetActiveStreamReplayTokenState() {
-        streamCoordinator.clearReplayConnection()
+        disarmReplayChannel(\.token)
         activeStreamReplayMatchedPrefixLength = 0
     }
 
@@ -5458,9 +5524,21 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error) {
         lastError = error
         sendErrorMessage = error.localizedDescription
+        ownsSendErrorForRecovery = true
+    }
+
+    func streamCoordinatorDidConfirmRecovery() {
+        // Stream activity proved recovery, so retract the warning this coordinator
+        // raised — but only while it still owns the banner. A composer or send
+        // error that landed since then belongs on screen.
+        guard ownsSendErrorForRecovery else { return }
+
+        sendErrorMessage = nil
+        lastError = nil
     }
 
     func streamCoordinatorDidStartConnection(isReplay: Bool) {
+        activeStreamReplayChannels.arm(isReplay)
         activeStreamReplayMatchedPrefixLength = 0
         activeStreamReplayMatchedInterimLength = 0
         activeStreamReplayMatchedReasoningLength = 0
@@ -5469,6 +5547,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorDidResetRecoveryState() {
+        activeStreamReplayChannels.arm(false)
         activeStreamReplayMatchedPrefixLength = 0
         activeStreamReplayMatchedInterimLength = 0
         activeStreamReplayMatchedReasoningLength = 0
