@@ -2381,7 +2381,10 @@ struct ChatView: View {
                     isReadingOlderTranscript = false
                 }
             }
-        } else if metrics.isUserInteracting {
+        } else if metrics.isUserInteracting || metrics.movedAwayFromBottom {
+            // A status-bar tap, VoiceOver, or hardware-keyboard scroll carries the
+            // reader away without a touch. It already opts them out of follow, so
+            // the composer must collapse with it rather than wait for a drag.
             if !isReadingOlderTranscript,
                ChatScrollPolicy.shouldEnterReadingOlder(
                    distanceFromBottom: metrics.distanceFromBottom,

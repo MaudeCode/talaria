@@ -298,7 +298,16 @@ struct ChatScrollObserver: UIViewRepresentable {
                 movedAwayFromBottom: !isUserInteracting && !isPinned
                     && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry)
             )
-            guard metrics != lastMetrics else { return }
+            // The transcript only needs a callback when the derived metrics move,
+            // but the away-from-bottom check compares viewports, so the geometry
+            // has to advance either way. Leaving it stale across a keyboard resize
+            // that stays bottom-pinned would make the next gesture-free scroll
+            // look like it happened in a different viewport, and be ignored.
+            guard metrics != lastMetrics else {
+                deliveredGeometry = geometry
+                pendingGeometry = hasScheduledMetricDelivery ? geometry : nil
+                return
+            }
 
             lastMetrics = metrics
 
