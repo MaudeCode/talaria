@@ -743,6 +743,50 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testStaleActiveStreamReplayReasoningDoesNotDisarmTokenDeduplication() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-123"
+                }
+                """, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse("""
+                {
+                  "active": true,
+                  "stream_id": "stream-123",
+                  "replay_available": true
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Keep working")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("First "))
+        streamClient.emit(.token("middle "))
+
+        await viewModel.recoverStaleActiveStreamIfNeeded(now: Date().addingTimeInterval(20))
+
+        // The journal replays a reasoning segment this transcript never showed, so
+        // that channel is genuinely new. Replay dedup is armed per channel, so the
+        // replayed tokens behind it must still be recognised as already rendered.
+        streamClient.emit(.reasoning(ReasoningStreamEvent(text: "Thinking it through.", titles: [])))
+        streamClient.emit(.token("First "))
+        streamClient.emit(.token("middle "))
+        streamClient.emit(.token("last."))
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Keep working", "First middle last."])
+    }
+
+    @MainActor
     func testStaleActiveStreamReplayBatchedTokensMatchLiveModeFinalContent() async throws {
         let tokens = ["Alpha ", "beta ", "gamma ", "delta."]
 
