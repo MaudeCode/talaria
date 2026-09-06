@@ -81,6 +81,7 @@ final class SessionListViewModel {
     private(set) var remoteContentSearchSessionIDs: [String] = []
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
+    private var openGeneration = 0
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -452,6 +453,65 @@ final class SessionListViewModel {
             lastError = error
             actionErrorMessage = error.localizedDescription
             return nil
+        }
+    }
+
+    /// Resolves the session a tapped row should actually open.
+    ///
+    /// External rows (CLI/TUI bridges and messaging channels) must pass through
+    /// `POST /api/session/import_cli` first: upstream only owns a continuable copy
+    /// of them once imported, and the import response is the authority on whether
+    /// the session is writable. WebUI rows and cached (offline) browsing skip the
+    /// request and open directly.
+    ///
+    /// Returns nil when the import failed — the caller stays on the list and the
+    /// row is left in place — or when a later tap superseded this one.
+    func sessionToOpen(for session: SessionSummary) async -> SessionSummary? {
+        openGeneration += 1
+        let generation = openGeneration
+
+        guard !isViewingCachedData,
+              session.isExternalSourceSession,
+              let sessionId = Self.nonEmpty(session.sessionId)
+        else { return session }
+
+        actionErrorMessage = nil
+        lastError = nil
+
+        do {
+            let detail = try await importedSessionDetail(id: sessionId)
+            guard generation == openGeneration else { return nil }
+            return SessionSummary(from: detail).merging(onto: session)
+        } catch {
+            guard !APIError.isCancellation(error), generation == openGeneration else { return nil }
+
+            lastError = error
+            actionErrorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Imports the session, falling back to the canonical detail route when the
+    /// import itself fails: a session the server already owns can still be opened
+    /// that way. The import error is what surfaces when the fallback fails too.
+    private func importedSessionDetail(id sessionId: String) async throws -> SessionDetail {
+        do {
+            guard let detail = try await client.importExternalSession(id: sessionId).session else {
+                // A 200 without a session is an unreadable answer, not a decided
+                // one, so it takes the same fallback as an outright failure.
+                throw APIError.http(statusCode: -1, body: nil)
+            }
+            return detail
+        } catch {
+            guard !APIError.isCancellation(error),
+                  let detail = try? await client.session(
+                      id: sessionId,
+                      includeMessages: false,
+                      messageLimit: nil
+                  ).session
+            else { throw error }
+
+            return detail
         }
     }
 

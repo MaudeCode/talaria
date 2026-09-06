@@ -191,6 +191,7 @@ struct ChatView: View {
             isWaitingForStream: viewModel.activeStreamID != nil,
             isCancellingStream: viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
+            isSessionReadOnly: session.isSessionReadOnly,
             isChromeCompact: isComposerChromeCompact,
             hidesSecondaryChrome: false,
             joinsSecondaryChrome: !usesCompactComposer && composerSecondaryControlsState.hasControls,

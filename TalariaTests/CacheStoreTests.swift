@@ -101,6 +101,54 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertTrue(AutomatedSessionVisibility.showAll.shows(cached))
     }
 
+    func testCachedSessionsPreserveExternalSourceAndReadOnlyMetadata() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let now = cachedAt.addingTimeInterval(60)
+        let response = try decodeSessions("""
+        {
+          "sessions": [
+            {
+              "session_id": "telegram-1",
+              "title": "Telegram thread",
+              "is_cli_session": true,
+              "session_source": "messaging",
+              "raw_source": "telegram",
+              "source_label": "Telegram",
+              "read_only": "true",
+              "archived": false
+            },
+            {
+              "session_id": "webui-1",
+              "title": "Browser chat",
+              "is_cli_session": true,
+              "session_source": "webui",
+              "archived": false
+            }
+          ]
+        }
+        """)
+
+        try CacheStore.cacheSessions(
+            try XCTUnwrap(response.sessions),
+            serverURL: serverURL,
+            in: context,
+            cachedAt: cachedAt
+        )
+
+        let cached = try CacheStore.cachedSessions(serverURL: serverURL, in: context, now: now)
+        let messaging = try XCTUnwrap(cached.first(where: { $0.sessionId == "telegram-1" }))
+        let webUI = try XCTUnwrap(cached.first(where: { $0.sessionId == "webui-1" }))
+
+        XCTAssertEqual(messaging.sessionSource, "messaging")
+        XCTAssertEqual(messaging.sourceLabel, "Telegram")
+        XCTAssertTrue(messaging.isExternalSourceSession)
+        XCTAssertTrue(messaging.isSessionReadOnly)
+        // An explicit WebUI source still wins over the stale CLI flag after caching.
+        XCTAssertFalse(webUI.isExternalSourceSession)
+    }
+
     func testCachedSessionsPreserveClaudeCodeClassificationAndVisibility() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

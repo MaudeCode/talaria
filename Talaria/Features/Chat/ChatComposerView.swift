@@ -22,6 +22,10 @@ struct MessageComposerView: View {
     let isWaitingForStream: Bool
     let isCancellingStream: Bool
     let isOfflineReadOnly: Bool
+    /// The server reports this session as view-only (a delegated subagent
+    /// transcript, or an external source the server imported read-only), so the
+    /// composer stays disabled even while online.
+    let isSessionReadOnly: Bool
     let isChromeCompact: Bool
     let hidesSecondaryChrome: Bool
     let joinsSecondaryChrome: Bool
@@ -357,7 +361,7 @@ struct MessageComposerView: View {
                 workspaceRoots: workspaceRoots,
                 selectedWorkspacePath: displayedWorkspacePath,
                 suggestions: workspaceSuggestions,
-                managementServer: isOfflineReadOnly ? nil : workspaceManagementServer,
+                managementServer: isReadOnly ? nil : workspaceManagementServer,
                 onLoadSuggestions: onLoadWorkspaceSuggestions,
                 onSelect: { path in
                     optimisticWorkspacePath = path
@@ -510,7 +514,7 @@ struct MessageComposerView: View {
                     isFocused: $isFocused,
                     inputHeight: $textInputHeight,
                     measuredHeight: $textFieldHeight,
-                    isDisabled: isOfflineReadOnly,
+                    isDisabled: isReadOnly,
                     isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
                     verticalPadding: textFieldVerticalPadding,
                     onKeyboardSend: actionButtonTapped,
@@ -791,9 +795,17 @@ struct MessageComposerView: View {
         onSelectModel(option)
     }
 
+    /// Either reason the composer cannot send: offline cache browsing, or a
+    /// session the server owns as view-only.
+    private var isReadOnly: Bool {
+        isOfflineReadOnly || isSessionReadOnly
+    }
+
     private var composerStatus: (text: String, isError: Bool, isDismissible: Bool)? {
         if isOfflineReadOnly {
             return (String(localized: "Reconnect to send messages."), false, false)
+        } else if isSessionReadOnly {
+            return (String(localized: "This session is read-only."), false, false)
         } else if isWaitingForStream && isCancellingStream {
             return (String(localized: "Stopping response..."), false, false)
         } else if isCompressingSession {
@@ -892,7 +904,7 @@ struct MessageComposerView: View {
     }
 
     private var isConfigurationControlDisabled: Bool {
-        isOfflineReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
+        isReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
     }
 
     private var isVoiceInputDisabled: Bool {
@@ -900,7 +912,7 @@ struct MessageComposerView: View {
             return false
         }
 
-        return isOfflineReadOnly
+        return isReadOnly
             || isSending
             || isCompressingSession
             || isWaitingForStream
@@ -913,7 +925,7 @@ struct MessageComposerView: View {
     /// Recording mid-stream is fine (it queues like any send), so unlike dictation
     /// this does not block on `isWaitingForStream`.
     private var isVoiceNoteRecordingDisabled: Bool {
-        isOfflineReadOnly
+        isReadOnly
             || isSending
             || isSendingVoiceNote
             || isCompressingSession
@@ -1003,7 +1015,7 @@ struct MessageComposerView: View {
     }
 
     private var isActionButtonDisabled: Bool {
-        if isOfflineReadOnly {
+        if isReadOnly {
             return true
         }
 
@@ -1093,7 +1105,7 @@ struct MessageComposerView: View {
     }
 
     private var canFocusTextView: Bool {
-        !isOfflineReadOnly && !isUploadingAttachment && uploadAttachmentErrorMessage == nil
+        !isReadOnly && !isUploadingAttachment && uploadAttachmentErrorMessage == nil
     }
 
     private func prepareForComposerPresentation() {

@@ -1029,7 +1029,7 @@ struct SessionListView: View {
                 Task { await refreshSessionsAndActiveProfile() }
             },
             open: { session in
-                selectSession(session)
+                Task { await openSession(session) }
             },
             togglePinned: { session in
                 Task { await togglePinned(session) }
@@ -1330,6 +1330,14 @@ struct SessionListView: View {
 
     private func openNewChat() {
         navigationState.select(PendingNewChatRoute())
+    }
+
+    /// External rows are imported (or refreshed) server-side before navigation, so
+    /// the opened session carries the server's authoritative writability. A failed
+    /// import stays on the list and surfaces through the action-error alert.
+    private func openSession(_ session: SessionSummary) async {
+        guard let session = await viewModel.sessionToOpen(for: session) else { return }
+        selectSession(session)
     }
 
     private func selectSession(_ session: SessionSummary) {

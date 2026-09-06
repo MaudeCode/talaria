@@ -65,6 +65,27 @@ struct SessionMutationResponse: Decodable {
     let error: String?
 }
 
+/// `POST /api/session/import_cli`. `imported` is false when the session was
+/// already present and was only refreshed, and when the server answers a
+/// read-only source with a view-only payload instead of materializing a
+/// writable session.
+struct SessionImportResponse: Decodable, Equatable {
+    let session: SessionDetail?
+    let imported: Bool?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case session, imported, error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        session = try? container.decodeIfPresent(SessionDetail.self, forKey: .session)
+        imported = container.decodeLossyBoolIfPresent(forKey: .imported)
+        error = container.decodeLossyStringIfPresent(forKey: .error)
+    }
+}
+
 struct ProjectsResponse: Decodable, Equatable {
     let projects: [ProjectSummary]?
 
@@ -487,6 +508,83 @@ extension SessionSummary {
         [sourceTag, rawSource]
             .compactMap(Self.normalizedSourceMarker)
             .contains("claude_code")
+    }
+
+    /// Messaging-channel rows (Discord, Telegram, WeChat, …). Mirrors upstream
+    /// `_isMessagingSession` in `static/sessions.js`: the normalized
+    /// `session_source`, else the first present raw source marker.
+    var isMessagingSession: Bool {
+        if Self.normalizedSourceMarker(sessionSource) == "messaging" { return true }
+
+        guard let raw = [rawSource, sourceTag].compactMap(Self.normalizedSourceMarker).first else {
+            return false
+        }
+        return Self.messagingRawSources.contains(raw)
+    }
+
+    /// True when the row came from outside the WebUI — a CLI/TUI bridge or a
+    /// messaging channel — so the server must import or refresh it through
+    /// `POST /api/session/import_cli` before the app can continue it.
+    ///
+    /// Mirrors upstream `_isExternalSession`: an explicit `webui` source marker
+    /// wins over a stale `is_cli_session` flag.
+    var isExternalSourceSession: Bool {
+        guard !isWebUISourceSession else { return false }
+        return isCliSession == true || isMessagingSession
+    }
+
+    /// Upstream `_isWebUiSourceSession`: the first present source marker, in
+    /// `session_source` → `raw_source` → `source_tag` order, is `webui`.
+    private var isWebUISourceSession: Bool {
+        [sessionSource, rawSource, sourceTag]
+            .compactMap(Self.normalizedSourceMarker)
+            .first == "webui"
+    }
+
+    private static let messagingRawSources: Set<String> = [
+        "weixin", "telegram", "discord", "slack", "email", "wecom", "wecom_callback", "matrix"
+    ]
+
+    /// Overlays this server-authoritative row onto the list row it was opened
+    /// from: every field the authoritative payload omits keeps the list value, so
+    /// list-only metadata (streaming state, `user_message_count`, search
+    /// `match_type`) survives an import round trip. Update this when
+    /// `SessionSummary` gains a new stored property.
+    func merging(onto row: SessionSummary) -> SessionSummary {
+        SessionSummary(
+            sessionId: sessionId ?? row.sessionId,
+            title: title ?? row.title,
+            workspace: workspace ?? row.workspace,
+            model: model ?? row.model,
+            modelProvider: modelProvider ?? row.modelProvider,
+            messageCount: messageCount ?? row.messageCount,
+            createdAt: createdAt ?? row.createdAt,
+            updatedAt: updatedAt ?? row.updatedAt,
+            lastMessageAt: lastMessageAt ?? row.lastMessageAt,
+            pinned: pinned ?? row.pinned,
+            archived: archived ?? row.archived,
+            projectId: projectId ?? row.projectId,
+            profile: profile ?? row.profile,
+            inputTokens: inputTokens ?? row.inputTokens,
+            outputTokens: outputTokens ?? row.outputTokens,
+            estimatedCost: estimatedCost ?? row.estimatedCost,
+            activeStreamId: activeStreamId ?? row.activeStreamId,
+            isStreaming: isStreaming ?? row.isStreaming,
+            isCliSession: isCliSession ?? row.isCliSession,
+            userMessageCount: userMessageCount ?? row.userMessageCount,
+            hasPendingUserMessage: hasPendingUserMessage ?? row.hasPendingUserMessage,
+            pendingStartedAt: pendingStartedAt ?? row.pendingStartedAt,
+            worktreePath: worktreePath ?? row.worktreePath,
+            sourceTag: sourceTag ?? row.sourceTag,
+            rawSource: rawSource ?? row.rawSource,
+            sessionSource: sessionSource ?? row.sessionSource,
+            sourceLabel: sourceLabel ?? row.sourceLabel,
+            parentSessionId: parentSessionId ?? row.parentSessionId,
+            relationshipType: relationshipType ?? row.relationshipType,
+            readOnly: readOnly ?? row.readOnly,
+            isReadOnly: isReadOnly ?? row.isReadOnly,
+            matchType: matchType ?? row.matchType
+        )
     }
 
     /// Delegated children are runner-owned and view-only. Upstream has also
