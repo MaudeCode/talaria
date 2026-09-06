@@ -8,6 +8,11 @@ import SwiftData
 final class ChatViewModel {
     private static let messagePageLimit = 50
 
+    private struct SessionLoadWaiter {
+        let requestGeneration: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private(set) var messages: [ChatMessage] = [] {
         didSet {
             if !isUpdatingStreamingAssistantContent {
@@ -28,6 +33,8 @@ final class ChatViewModel {
     @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var sessionLoadRequestGeneration = 0
     @ObservationIgnored private var latestAppliedSessionLoadRequestGeneration = 0
+    @ObservationIgnored private var activeSessionLoadRequestGenerations: Set<Int> = []
+    @ObservationIgnored private var sessionLoadWaiters: [SessionLoadWaiter] = []
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     private(set) var isSendingVoiceNote = false
@@ -1139,11 +1146,15 @@ final class ChatViewModel {
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
         sessionLoadRequestGeneration &+= 1
         let loadRequestGeneration = sessionLoadRequestGeneration
+        activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
         isLoading = true
         errorMessage = nil
         cacheErrorMessage = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            finishSessionLoadRequest(loadRequestGeneration)
+        }
 
         // Cache-first render (#289): capture the pre-reload window *before* painting
         // any cached transcript, so the network reconcile below replaces it cleanly
@@ -1219,6 +1230,7 @@ final class ChatViewModel {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
+            await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
             guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
             if canMergePendingMessageSend,
                !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
@@ -1301,6 +1313,7 @@ final class ChatViewModel {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
+            await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
             guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
@@ -2542,6 +2555,41 @@ final class ChatViewModel {
         messageSendWaiters.removeAll()
         for waiter in waiters {
             waiter.resume()
+        }
+    }
+
+    private func waitForNewerSessionLoadRequests(after requestGeneration: Int) async {
+        guard activeSessionLoadRequestGenerations.contains(where: { $0 > requestGeneration }) else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if activeSessionLoadRequestGenerations.contains(where: { $0 > requestGeneration }) {
+                sessionLoadWaiters.append(SessionLoadWaiter(
+                    requestGeneration: requestGeneration,
+                    continuation: continuation
+                ))
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func finishSessionLoadRequest(_ requestGeneration: Int) {
+        activeSessionLoadRequestGenerations.remove(requestGeneration)
+
+        var pending: [SessionLoadWaiter] = []
+        var ready: [CheckedContinuation<Void, Never>] = []
+        for waiter in sessionLoadWaiters {
+            if activeSessionLoadRequestGenerations.contains(where: { $0 > waiter.requestGeneration }) {
+                pending.append(waiter)
+            } else {
+                ready.append(waiter.continuation)
+            }
+        }
+        sessionLoadWaiters = pending
+        for continuation in ready {
+            continuation.resume()
         }
     }
 
