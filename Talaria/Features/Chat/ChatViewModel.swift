@@ -25,6 +25,7 @@ final class ChatViewModel {
     private(set) var isLoadingOlderMessages = false
     private(set) var isStartingChat = false
     @ObservationIgnored private var chatStartWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var successfulSessionLoadGeneration = 0
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     private(set) var isSendingVoiceNote = false
@@ -1096,6 +1097,7 @@ final class ChatViewModel {
         resetPendingStreamingContentBuffers()
         latestServerLoadHadAssistantResponseAfterLatestUser = false
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
+        let successfulSessionLoadGenerationBeforeRequest = successfulSessionLoadGeneration
         isLoading = true
         errorMessage = nil
         cacheErrorMessage = nil
@@ -1163,6 +1165,9 @@ final class ChatViewModel {
             }
             if canMergePendingChatStart,
                !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
+                guard successfulSessionLoadGeneration == successfulSessionLoadGenerationBeforeRequest else {
+                    return
+                }
                 let currentMessages = messages
                 let currentMessagesOffset = messagesOffset
                 applyReloadedMessages(
@@ -1179,6 +1184,7 @@ final class ChatViewModel {
                 if renderedCacheFirst {
                     cacheFirstReconcileScrollToken += 1
                 }
+                successfulSessionLoadGeneration &+= 1
                 return
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
@@ -1233,6 +1239,7 @@ final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false
             )
+            successfulSessionLoadGeneration &+= 1
         } catch {
             if waitsForPendingChatStart {
                 await waitForChatStartToFinish()

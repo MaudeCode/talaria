@@ -109,10 +109,10 @@ final class DeferredMockURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 
-    func complete(withJSON json: String) {
+    func complete(withJSON json: String, statusCode: Int = 200) {
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: statusCode,
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!

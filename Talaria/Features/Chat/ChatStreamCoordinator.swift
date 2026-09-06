@@ -709,8 +709,11 @@ final class ChatStreamCoordinator {
     }
 
     private func finishStream() {
-        runGeneration &+= 1
         let completedNormally = hasCompletedCurrentResponse
+        runGeneration &+= 1
+        if !completedNormally {
+            responseGeneration &+= 1
+        }
         let finishedStreamID = activeStreamID
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
