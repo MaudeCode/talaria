@@ -33,6 +33,7 @@ final class ChatViewModel {
     @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var sessionLoadRequestGeneration = 0
     @ObservationIgnored private var latestAppliedSessionLoadRequestGeneration = 0
+    @ObservationIgnored private var latestHandledSessionLoadFailureGeneration = 0
     @ObservationIgnored private var activeSessionLoadRequestGenerations: Set<Int> = []
     @ObservationIgnored private var sessionLoadWaiters: [SessionLoadWaiter] = []
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
@@ -1315,6 +1316,7 @@ final class ChatViewModel {
             }
             await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
             guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
+            guard loadRequestGeneration > latestHandledSessionLoadFailureGeneration else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
@@ -1385,6 +1387,7 @@ final class ChatViewModel {
                 isViewingCachedData = false
                 errorMessage = error.localizedDescription
             }
+            latestHandledSessionLoadFailureGeneration = loadRequestGeneration
         }
     }
 

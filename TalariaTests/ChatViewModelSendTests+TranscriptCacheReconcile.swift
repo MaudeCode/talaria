@@ -846,6 +846,45 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testNewestReloadFailureWinsWhenTwoLoadsFail() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-newest-failure.test"
+        let firstSessionRequestStarted = expectation(description: "first session request started")
+        let secondSessionRequestStarted = expectation(description: "second session request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            XCTAssertEqual(request.request.url?.path, "/api/session")
+            let requestCount = requests.append(request)
+            (requestCount == 1 ? firstSessionRequestStarted : secondSessionRequestStarted).fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let firstLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [firstSessionRequestStarted], timeout: 2)
+        let secondLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
+
+        requests.request(at: 0).fail(with: URLError(.timedOut))
+        await drainMainActor()
+        requests.request(at: 1).fail(with: URLError(.userAuthenticationRequired))
+        await firstLoadTask.value
+        await secondLoadTask.value
+
+        XCTAssertEqual((viewModel.lastError as? URLError)?.code, .userAuthenticationRequired)
+        XCTAssertEqual(viewModel.errorMessage, URLError(.userAuthenticationRequired).localizedDescription)
+    }
+
+    @MainActor
     func testPendingSecondSendDoesNotMakeOlderReloadCurrentAgain() async throws {
         let requests = DeferredRequests()
         let host = "tal116-two-responses.test"
