@@ -252,6 +252,67 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: refreshedRow))
     }
 
+    /// A `/api/sessions` refresh can land while the import is in flight. The
+    /// import's own fields still win, but list-only metadata must come from the
+    /// row as it stands when the import returns, not the tapped snapshot.
+    @MainActor
+    func testImportMergesOntoTheCurrentRowNotThePreAwaitSnapshot() async throws {
+        let firstListArrived = expectation(description: "first sessions load arrived")
+        let importArrived = expectation(description: "import arrived")
+        let secondListArrived = expectation(description: "second sessions load arrived")
+        let requests = DeferredRequests()
+
+        DeferredMockURLProtocol.onRequest = { pending in
+            let index = requests.append(pending)
+            let path: String = pending.request.url?.path ?? ""
+            if path == "/api/sessions", index == 1 {
+                firstListArrived.fulfill()
+            } else if path == "/api/session/import_cli", index == 2 {
+                importArrived.fulfill()
+            } else if path == "/api/sessions", index == 3 {
+                secondListArrived.fulfill()
+            } else {
+                XCTFail("unexpected request \(path) at \(index)")
+            }
+        }
+        defer { DeferredMockURLProtocol.onRequest = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+
+        let firstLoad = Task { await viewModel.load() }
+        await fulfillment(of: [firstListArrived], timeout: 5)
+        requests.request(at: 0).complete(withJSON: #"""
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 1, "archived": false}]}
+        """#)
+        _ = await firstLoad.value
+
+        let row = try XCTUnwrap(viewModel.sessions.first)
+        let open = Task { await viewModel.sessionToOpen(for: row) }
+        await fulfillment(of: [importArrived], timeout: 5)
+
+        // The list refreshes with newer list-only metadata while the import is still out.
+        let secondLoad = Task { await viewModel.load() }
+        await fulfillment(of: [secondListArrived], timeout: 5)
+        requests.request(at: 2).complete(withJSON: #"""
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 9, "archived": false}]}
+        """#)
+        _ = await secondLoad.value
+
+        requests.request(at: 1).complete(withJSON: #"""
+        {"session": {"session_id": "cli-1", "title": "Imported", "read_only": false}, "imported": true}
+        """#)
+        let openedResult = await open.value
+        let opened = try XCTUnwrap(openedResult)
+
+        XCTAssertEqual(opened.title, "Imported")
+        XCTAssertEqual(opened.userMessageCount, 9)
+        XCTAssertEqual(viewModel.sessions.first?.userMessageCount, 9)
+    }
+
     @MainActor
     func testOpeningWebUIRowSkipsImport() async throws {
         let viewModel = try makeViewModel { _ in

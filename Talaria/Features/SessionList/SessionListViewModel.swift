@@ -485,7 +485,12 @@ final class SessionListViewModel {
             let detail = try await importedSessionDetail(id: sessionId)
             guard generation == openGeneration else { return nil }
 
-            let importedSession = SessionSummary(from: detail).merging(onto: session)
+            // A list refresh can land while the import is in flight, so the merge
+            // base is the current row rather than the pre-await snapshot — otherwise
+            // `refreshRow` would roll the freshly loaded row back to stale list-only
+            // metadata.
+            let currentRow = sessions.first(where: { $0.sessionId == sessionId }) ?? session
+            let importedSession = SessionSummary(from: detail).merging(onto: currentRow)
             refreshRow(with: importedSession, modelContext: modelContext)
             return importedSession
         } catch {
