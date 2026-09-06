@@ -38,6 +38,7 @@ final class ChatViewModel {
     var liveTokensPerSecond: Double? { streamCoordinator.liveTokensPerSecond }
     private(set) var errorMessage: String?
     private(set) var sendErrorMessage: String?
+    private var recoveryErrorMessage: String?
     private(set) var messageActionErrorMessage: String?
     private(set) var cacheErrorMessage: String?
     private(set) var lastError: Error?
@@ -1148,6 +1149,21 @@ final class ChatViewModel {
                     cacheErrorMessage = error.localizedDescription
                     reloadedMessages = loadedMessages
                 }
+            } else if let activeStreamIDBeforeLoad = streamLoadPreparation.activeStreamIDBeforeLoad,
+                      loadedActiveStreamID == activeStreamIDBeforeLoad {
+                // No persistence context, so the cache merge above cannot run and an
+                // optimistic prompt the server has not persisted yet would vanish.
+                // The same run is still authoritative, so carry it across the reload.
+                // Without a cache there is nothing to tell a fresh prompt from an old
+                // identical one, so any equivalent user message counts as confirmation:
+                // dropping a duplicate is what this path already did, showing one twice
+                // is not. A different (or finished) run owns the transcript, so its
+                // rows win instead.
+                reloadedMessages = Self.insertingUnconfirmedLocalUserMessages(
+                    from: previousMessages,
+                    into: loadedMessages,
+                    requiresRecentTimestamp: false
+                )
             } else {
                 reloadedMessages = loadedMessages
             }
@@ -1496,17 +1512,35 @@ final class ChatViewModel {
             serverMergedMessages,
             cachedMessages: cachedMessages
         )
-        let localUserMessages = cachedMessages.filter { cachedMessage in
-            isLocalOptimisticUserMessage(cachedMessage)
-                && !cachedMessage.isLocalSteeringHint
-                && !loadedMessagesContainEquivalentUserMessage(mergedMessages, localMessage: cachedMessage)
+        return insertingUnconfirmedLocalUserMessages(
+            from: cachedMessages,
+            into: mergedMessages,
+            requiresRecentTimestamp: true
+        )
+    }
+
+    /// Re-inserts the local optimistic user rows the reloaded transcript has not
+    /// confirmed yet, so a prompt in flight renders exactly once.
+    nonisolated private static func insertingUnconfirmedLocalUserMessages(
+        from localMessages: [ChatMessage],
+        into loadedMessages: [ChatMessage],
+        requiresRecentTimestamp: Bool
+    ) -> [ChatMessage] {
+        let unconfirmedMessages = localMessages.filter { localMessage in
+            isLocalOptimisticUserMessage(localMessage)
+                && !localMessage.isLocalSteeringHint
+                && !loadedMessagesContainEquivalentUserMessage(
+                    loadedMessages,
+                    localMessage: localMessage,
+                    requiresRecentTimestamp: requiresRecentTimestamp
+                )
         }
 
-        guard !localUserMessages.isEmpty else {
-            return mergedMessages
+        guard !unconfirmedMessages.isEmpty else {
+            return loadedMessages
         }
 
-        return localUserMessages.reduce(into: mergedMessages) { partialMessages, localMessage in
+        return unconfirmedMessages.reduce(into: loadedMessages) { partialMessages, localMessage in
             insertLocalOptimisticMessage(localMessage, into: &partialMessages)
         }
     }
@@ -2038,7 +2072,8 @@ final class ChatViewModel {
 
     nonisolated private static func loadedMessagesContainEquivalentUserMessage(
         _ loadedMessages: [ChatMessage],
-        localMessage: ChatMessage
+        localMessage: ChatMessage,
+        requiresRecentTimestamp: Bool = true
     ) -> Bool {
         let localContent = normalizedUserMessageContent(localMessage.content)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
@@ -2063,7 +2098,8 @@ final class ChatViewModel {
                 }
             }
 
-            guard let localTimestamp = localMessage.timestamp,
+            guard requiresRecentTimestamp,
+                  let localTimestamp = localMessage.timestamp,
                   let loadedTimestamp = loadedMessage.timestamp
             else {
                 return true
@@ -5458,6 +5494,20 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error) {
         lastError = error
         sendErrorMessage = error.localizedDescription
+        recoveryErrorMessage = sendErrorMessage
+    }
+
+    func streamCoordinatorDidConfirmRecovery() {
+        guard let recoveryErrorMessage else { return }
+
+        // Stream activity proved recovery, so retract the warning this coordinator
+        // raised — but only while it is still the visible one. A composer or send
+        // error that landed since then still belongs on screen.
+        if sendErrorMessage == recoveryErrorMessage {
+            sendErrorMessage = nil
+            lastError = nil
+        }
+        self.recoveryErrorMessage = nil
     }
 
     func streamCoordinatorDidStartConnection(isReplay: Bool) {
