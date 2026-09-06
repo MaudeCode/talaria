@@ -47,6 +47,19 @@ cat > "$fake_bin/xcrun" <<'EOF'
 #!/bin/zsh
 if [[ "$*" == "simctl list devices available --json" ]]; then
     <"${TALARIA_DEVICE_FIXTURE:?}"
+elif [[ "$1 $2 $3 $4" == "xcresulttool get test-results summary" ]]; then
+    bundle=""
+    for (( index = 1; index <= $#; index++ )); do
+        [[ "${@[index]}" == --path ]] && bundle="${@[index + 1]}"
+    done
+    hang='{"failureText":"The test runner hung before establishing connection.","testName":"Talaria (1) encountered an error"}'
+    if [[ -e "$bundle/hang-with-failure" ]]; then
+        print -r -- "{\"failedTests\":2,\"testFailures\":[$hang,{\"failureText\":\"XCTAssertTrue failed\",\"testName\":\"testSomething()\"}]}"
+    elif [[ -e "$bundle/hang" ]]; then
+        print -r -- "{\"failedTests\":1,\"testFailures\":[$hang]}"
+    else
+        print -r -- '{"failedTests":0,"testFailures":[]}'
+    fi
 fi
 EOF
 cat > "$fake_bin/xcodebuild" <<'EOF'
@@ -89,6 +102,14 @@ rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
 mkdir -p "$result_bundle"
+# Synthetic pre-test runner hangs: HangOnce recovers on its second run,
+# HangTwice never does, HangWithFailure also carries a real test failure.
+previous_runs=$(grep -c -- "${selectors[1]:-}" "$state/runs" || true)
+case "${selectors[1]:-}" in
+    *HangWithFailure*) touch "$result_bundle/hang-with-failure"; exit_status=65 ;;
+    *HangTwice*) touch "$result_bundle/hang"; exit_status=65 ;;
+    *HangOnce*) (( previous_runs > 1 )) || { touch "$result_bundle/hang"; exit_status=65; } ;;
+esac
 
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -161,6 +182,30 @@ else
     [[ $? == 42 ]]
 fi
 
+runs_for() { grep -c -- "$1" "$state/runs" || true; }
+[[ $(runs_for TalariaTests/Failure) == 1 ]]  # A real failure never retries.
+
+# A pre-test runner hang with no failed test case retries exactly once.
+"$repo/scripts/test-ios" TalariaTests/HangOnce > "$state/hang-once.log" 2>&1
+[[ $(runs_for TalariaTests/HangOnce) == 2 ]]
+rg -q "retrying once" "$state/hang-once.log"
+[[ $(sed -n 's/^\([^|]*\)|.*HangOnce.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == 1 ]]  # re-leased a pool device
+if "$repo/scripts/test-ios" TalariaTests/HangTwice > "$state/hang-twice.log" 2>&1; then
+    print -u2 "Expected a repeated runner hang to fail."
+    exit 1
+else
+    [[ $? == 65 ]]
+fi
+[[ $(runs_for TalariaTests/HangTwice) == 2 ]]
+if "$repo/scripts/test-ios" TalariaTests/HangWithFailure > "$state/hang-with-failure.log" 2>&1; then
+    print -u2 "Expected a runner hang alongside a test failure to fail without retrying."
+    exit 1
+else
+    [[ $? == 65 ]]
+fi
+[[ $(runs_for TalariaTests/HangWithFailure) == 1 ]]
+! rg -q "retrying once" "$state/hang-with-failure.log"
+
 common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
 sleep 0.01 &
 dead_pid=$!
@@ -204,4 +249,4 @@ read -r active < "$state/active"
 [[ "$maximum" == 1 && "$active" == 0 ]]
 [[ ! -e "$common_dir/talaria-xctest-runner.lock.owner" ]]
 
-print "test-ios admission and selection checks passed ($rounds concurrent rounds)."
+print "test-ios admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."
