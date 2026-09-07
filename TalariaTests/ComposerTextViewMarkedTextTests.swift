@@ -118,6 +118,21 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         )
     }
 
+    func testSendClearIsDeferredWhenTheWholeDraftIsAComposition() {
+        let (draft, coordinator, textView) = makeComposer()
+        beginComposition("あ", in: textView, coordinator: coordinator)
+
+        // The send clears the draft while the composition still owns every character.
+        setDraftExternally("", draft: draft, coordinator: coordinator, textView: textView)
+        XCTAssertEqual(textView.text, "あ", "the composition must survive until it ends")
+
+        textView.unmarkText()
+        coordinator.textViewDidChange(textView)
+
+        XCTAssertEqual(textView.text, "")
+        XCTAssertEqual(draft.text, "")
+    }
+
     func testExternalReplacementOutsideCompositionAppliesImmediately() {
         let (draft, coordinator, textView) = makeComposer()
         type("hello", into: textView, coordinator: coordinator)
@@ -171,6 +186,14 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
                 editorText: "hello あ",
                 markedRange: NSRange(location: 6, length: 1)
             )
+        )
+        XCTAssertTrue(
+            ComposerMarkedText.isDeliberateReplacement(
+                "",
+                editorText: "あ",
+                markedRange: NSRange(location: 0, length: 1)
+            ),
+            "a fully marked draft has no surrounding text to compare"
         )
         XCTAssertTrue(
             ComposerMarkedText.isDeliberateReplacement(

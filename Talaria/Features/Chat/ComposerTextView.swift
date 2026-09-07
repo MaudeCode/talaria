@@ -368,6 +368,13 @@ enum ComposerMarkedText {
 
         let prefix = editor.substring(to: markedRange.location)
         let suffix = editor.substring(from: NSMaxRange(markedRange))
+
+        // The whole draft is the composition, so there is no surrounding text to
+        // compare and every value would read as catch-up, including a send clear.
+        // The caller's exact check on values it published already rejected real
+        // catch-up here, so anything reaching this point is external.
+        guard !prefix.isEmpty || !suffix.isEmpty else { return true }
+
         guard (boundText as NSString).length >= (prefix as NSString).length + (suffix as NSString).length
         else { return true }
 
