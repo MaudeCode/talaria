@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
+    let revision: Int
     @Binding var isFocused: Bool
     let isDisabled: Bool
     let isKeyboardSendEnabled: Bool
@@ -47,9 +48,7 @@ struct ComposerTextView: UIViewRepresentable {
 
     func updateUIView(_ textView: PastingTextView, context: Context) {
         context.coordinator.onHeightChange = onHeightChange
-        if textView.text != text {
-            textView.text = text
-        }
+        context.coordinator.applyBoundText(text, revision: revision, to: textView)
         // Mirror the chat RTL toggle onto the text view itself (#259): SwiftUI's
         // layoutDirection environment does not propagate into a wrapped UITextView,
         // so set the base direction directly so the cursor/empty-field rests on the
@@ -77,6 +76,14 @@ struct ComposerTextView: UIViewRepresentable {
         @Binding var isFocused: Bool
         var onHeightChange: (CGFloat) -> Void
         private var pendingFocusTarget: Bool?
+        // The newest draft revision this coordinator has acted on. An update carrying
+        // an older one has been superseded, so applying it would replay a draft the
+        // owner has already moved past.
+        private var appliedRevision = Int.min
+        // An external replacement that arrived mid-composition. Applying it straight
+        // away would drop the marked text, so it waits for the composition to end and
+        // is then applied exactly once.
+        private var pendingExternalText: String?
 
         init(
             text: Binding<String>,
@@ -86,6 +93,27 @@ struct ComposerTextView: UIViewRepresentable {
             _text = text
             _isFocused = isFocused
             self.onHeightChange = onHeightChange
+        }
+
+        func applyBoundText(_ boundText: String, revision: Int, to textView: UITextView) {
+            guard revision > appliedRevision else { return }
+            appliedRevision = revision
+
+            guard textView.text != boundText else {
+                pendingExternalText = nil
+                return
+            }
+
+            // Overwriting the text view during an IME composition drops the marked
+            // text, its selection and the keyboard's candidate state, so hold the
+            // replacement until the composition ends.
+            guard textView.markedTextRange == nil else {
+                pendingExternalText = boundText
+                return
+            }
+
+            pendingExternalText = nil
+            textView.text = boundText
         }
 
         func syncFocus(for textView: UITextView, shouldFocus: Bool, isDisabled: Bool) {
@@ -129,14 +157,49 @@ struct ComposerTextView: UIViewRepresentable {
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            flushPendingExternalText(into: textView)
             if isFocused {
                 isFocused = false
             }
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            text = textView.text
+            guard !flushPendingExternalText(into: textView) else { return }
+
+            // A deferred replacement owns the binding until the composition that
+            // blocked it ends. Publishing provisional marked text over it would both
+            // discard the replacement and register a spurious user edit.
+            guard pendingExternalText == nil else {
+                reportHeight(for: textView)
+                return
+            }
+
+            publish(textView.text, from: textView)
+        }
+
+        /// Applies the external replacement that was deferred during a composition,
+        /// once that composition has ended. Reports whether the pending value was
+        /// consumed. The binding already holds it, so it is not published back.
+        @discardableResult
+        private func flushPendingExternalText(into textView: UITextView) -> Bool {
+            guard textView.markedTextRange == nil, let pending = pendingExternalText else { return false }
+
+            pendingExternalText = nil
+            if textView.text != pending {
+                textView.text = pending
+            }
             reportHeight(for: textView)
+            return true
+        }
+
+        private func publish(_ value: String, from textView: UITextView) {
+            reportHeight(for: textView)
+
+            // Writing an unchanged value still counts as a composer edit for the
+            // draft bookkeeping behind the binding, so only publish real changes.
+            guard text != value else { return }
+
+            text = value
         }
 
         func reportHeight(for textView: UITextView) {

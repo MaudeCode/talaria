@@ -16,6 +16,7 @@ struct MessageComposerView: View {
     @ScaledMetric(relativeTo: .title3) private var plusButtonSize: CGFloat = 28
 
     @Binding var draftMessage: String
+    let draftWriteRevision: Int
     @Binding var isFocused: Bool
     let isSending: Bool
     let isCompressingSession: Bool
@@ -511,6 +512,7 @@ struct MessageComposerView: View {
 
                 ComposerTextInputView(
                     text: $draftMessage,
+                    revision: draftWriteRevision,
                     isFocused: $isFocused,
                     inputHeight: $textInputHeight,
                     measuredHeight: $textFieldHeight,
