@@ -164,6 +164,20 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertTrue(state.isCreatingNewChat)
     }
 
+    /// Work still resolving for a destination the user cleared — an external
+    /// session import in flight — must not reinstate it, so clearing advances the
+    /// revision that fences those opens just like selecting does.
+    func testClearingTheDestinationAdvancesTheRootRevision() {
+        var state = SessionNavigationState()
+        state.select(SessionSummary(sessionId: "cli-1"))
+        let revisionWhileOpen = state.rootRevision
+
+        state.clearDestination()
+
+        XCTAssertGreaterThan(state.rootRevision, revisionWhileOpen)
+        XCTAssertNil(state.destination)
+    }
+
     func testReturningFromContentfulNewChatSuppressesPlaceholdersThenRefreshesSessions() {
         let route = PendingNewChatRoute()
         var state = SessionNavigationState()

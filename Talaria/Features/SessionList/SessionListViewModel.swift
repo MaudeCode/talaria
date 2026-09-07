@@ -589,9 +589,11 @@ final class SessionListViewModel {
 
                 return ImportedSessionDetail(detail: detail, isAuthoritative: false)
             } catch let fallbackError {
-                // An expired login has to reach the auth manager even when the
-                // import failed for an unrelated reason first; every other
+                // A cancelled fallback is a torn-down navigation, not a failure to
+                // report, and an expired login has to reach the auth manager even
+                // when the import failed for an unrelated reason first. Every other
                 // fallback failure keeps the import's own error.
+                if APIError.isCancellation(fallbackError) { throw fallbackError }
                 guard case APIError.unauthorized = fallbackError else { throw error }
                 throw fallbackError
             }
