@@ -51,14 +51,15 @@ extension ChatViewModelSendTests {
         serverTTSAudioPlayerFactory: (@MainActor (Data) throws -> any ListenAudioPlaying)? = nil,
         draftAttachmentStore: any ChatDraftAttachmentStoring = RecordingSendDraftAttachmentStore(),
         userDefaults: UserDefaults = .standard,
+        server: URL = URL(string: "https://example.test")!,
+        protocolClasses: [AnyClass] = [MockURLProtocol.self],
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
         MockURLProtocol.requestHandler = handler
 
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.protocolClasses = protocolClasses
         let urlSession = URLSession(configuration: configuration)
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
         let client = APIClient(baseURL: server, session: urlSession)
         let summary: SessionSummary
         if let sessionSummary {
@@ -443,11 +444,22 @@ final class SpySSEStreamingClient: SSEStreamingClient {
     private var onEvent: (@MainActor (SSEEvent) -> Void)?
     var automaticallyFlushPendingStreamingContent = true
     var flushPendingStreamingContent: (() -> Void)?
+    var eventsOnStart: [SSEEvent] = []
 
     func start(url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
         startedURLs.append(url)
         lastEventID = nil
         self.onEvent = onEvent
+        if !eventsOnStart.isEmpty {
+            MainActor.assumeIsolated {
+                for event in eventsOnStart {
+                    onEvent(event)
+                    if automaticallyFlushPendingStreamingContent {
+                        flushPendingStreamingContent?()
+                    }
+                }
+            }
+        }
     }
 
     func stop() {

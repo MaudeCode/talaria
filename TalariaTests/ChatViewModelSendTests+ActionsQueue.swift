@@ -475,6 +475,142 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testRetrySlashCommandFallbackLoadDoesNotWaitOnItself() async throws {
+        var requestPaths: [String] = []
+        var sessionRequestCount = 0
+        let viewModel = try makeViewModel { request in
+            requestPaths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/session/retry":
+                return apiTestJSONResponse("""
+                {
+                  "ok": true,
+                  "last_user_text": "Try again",
+                  "removed_count": 2
+                }
+                """, for: request)
+            case "/api/session":
+                sessionRequestCount += 1
+                if sessionRequestCount == 1 {
+                    return apiTestJSONResponse("{}", for: request)
+                }
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "messages": [
+                      {"role": "user", "content": "Earlier message", "timestamp": 1, "message_id": "u-1"}
+                    ]
+                  }
+                }
+                """, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse("""
+                {
+                  "session_id": "session-abc",
+                  "stream_id": "stream-retry"
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let result = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "retry")))
+
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertEqual(requestPaths, ["/api/session/retry", "/api/session", "/api/session", "/api/chat/start"])
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Earlier message", "Try again"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-retry")
+    }
+
+    @MainActor
+    func testRetrySlashCommandInvalidatesOlderReloadBeforeReplacingTranscript() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-retry-overlap.test"
+        let outerSessionRequestStarted = expectation(description: "outer session request started")
+        let retryRequestStarted = expectation(description: "retry request started")
+        let retrySessionRequestStarted = expectation(description: "retry session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let requestCount = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session":
+                (requestCount == 1 ? outerSessionRequestStarted : retrySessionRequestStarted).fulfill()
+            case "/api/session/retry":
+                retryRequestStarted.fulfill()
+            case "/api/chat/start":
+                chatStartRequestStarted.fulfill()
+            default:
+                XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [outerSessionRequestStarted], timeout: 2)
+        let retryTask = Task { @MainActor in
+            await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "retry")))
+        }
+        await fulfillment(of: [retryRequestStarted], timeout: 2)
+
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "ok": true,
+          "last_user_text": "Try again",
+          "removed_count": 2
+        }
+        """)
+        await fulfillment(of: [retrySessionRequestStarted], timeout: 2)
+        requests.request(at: 2).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {"role": "user", "content": "Earlier message", "timestamp": 1, "message_id": "u-1"}
+            ]
+          }
+        }
+        """)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {"role": "user", "content": "Earlier message", "timestamp": 1, "message_id": "u-1"},
+              {"role": "assistant", "content": "Old answer", "timestamp": 2, "message_id": "a-1"}
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 3).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-retry"
+        }
+        """)
+        let retryResult = try await retryTask.value
+        await loadTask.value
+
+        XCTAssertEqual(retryResult, .executed(message: nil))
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Earlier message", "Try again"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-retry")
+    }
+
+    @MainActor
     func testClearSlashCommandClearsLocalTranscriptWithoutServerRequest() async throws {
         var requestCount = 0
         let viewModel = try makeViewModel { request in

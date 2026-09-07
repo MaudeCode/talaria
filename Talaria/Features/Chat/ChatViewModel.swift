@@ -8,6 +8,11 @@ import SwiftData
 final class ChatViewModel {
     private static let messagePageLimit = 50
 
+    private struct SessionLoadWaiter {
+        let requestGeneration: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private(set) var messages: [ChatMessage] = [] {
         didSet {
             if !isUpdatingStreamingAssistantContent {
@@ -24,6 +29,13 @@ final class ChatViewModel {
     private(set) var isLoading = false
     private(set) var isLoadingOlderMessages = false
     private(set) var isStartingChat = false
+    @ObservationIgnored private var isStartingMessageSend = false
+    @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var sessionLoadRequestGeneration = 0
+    @ObservationIgnored private var latestAppliedSessionLoadRequestGeneration = 0
+    @ObservationIgnored private var latestHandledSessionLoadFailureGeneration = 0
+    @ObservationIgnored private var activeSessionLoadRequestGenerations: Set<Int> = []
+    @ObservationIgnored private var sessionLoadWaiters: [SessionLoadWaiter] = []
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     private(set) var isSendingVoiceNote = false
@@ -1121,7 +1133,10 @@ final class ChatViewModel {
         await attachmentCoordinator.transcriptMediaData(for: reference)
     }
 
-    func loadMessages(modelContext: ModelContext? = nil) async {
+    func loadMessages(
+        modelContext: ModelContext? = nil,
+        waitsForPendingMessageSend: Bool = true
+    ) async {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return
@@ -1130,11 +1145,17 @@ final class ChatViewModel {
         resetPendingStreamingContentBuffers()
         latestServerLoadHadAssistantResponseAfterLatestUser = false
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
+        sessionLoadRequestGeneration &+= 1
+        let loadRequestGeneration = sessionLoadRequestGeneration
+        activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
         isLoading = true
         errorMessage = nil
         cacheErrorMessage = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            finishSessionLoadRequest(loadRequestGeneration)
+        }
 
         // Cache-first render (#289): capture the pre-reload window *before* painting
         // any cached transcript, so the network reconcile below replaces it cleanly
@@ -1204,6 +1225,50 @@ final class ChatViewModel {
             } else {
                 reloadedMessages = loadedMessages
             }
+            let canMergePendingMessageSend = waitsForPendingMessageSend
+                && isStartingMessageSend
+                && streamCoordinator.canApplySessionLoad(streamLoadPreparation)
+            if waitsForPendingMessageSend {
+                await waitForMessageSendToFinish()
+            }
+            await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
+            guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
+            if canMergePendingMessageSend,
+               !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
+                guard let currentActiveStreamID = activeStreamID else { return }
+                saveActiveStreamSnapshotIfNeeded()
+                let currentMessages = messages
+                let currentMessagesOffset = messagesOffset
+                let loadStartMessageIDs = Set(previousMessages.compactMap(\.messageId))
+                var mergedMessages = Self.mergingLoadedMessages(
+                    reloadedMessages,
+                    withCachedLocalOptimisticMessages: currentMessages
+                )
+                for message in currentMessages where Self.isLocalOptimisticUserMessage(message) {
+                    guard let messageID = message.messageId,
+                          !loadStartMessageIDs.contains(messageID),
+                          !mergedMessages.contains(where: { $0.messageId == messageID })
+                    else { continue }
+                    Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
+                }
+                applyReloadedMessages(
+                    mergedMessages,
+                    from: session,
+                    previousMessages: currentMessages,
+                    previousMessagesOffset: currentMessagesOffset
+                )
+                restoreActiveStreamSnapshotIfAvailable(streamID: currentActiveStreamID)
+                isViewingCachedData = false
+                lastError = nil
+                errorMessage = nil
+                cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
+                if renderedCacheFirst {
+                    cacheFirstReconcileScrollToken += 1
+                }
+                latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
+                return
+            }
+            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             applyCompressionAnchorMetadata(from: session)
             applyReloadedMessages(
                 reloadedMessages,
@@ -1221,6 +1286,8 @@ final class ChatViewModel {
             )
             responseCompletionNeedsTranscriptRefresh = false
             isViewingCachedData = false
+            lastError = nil
+            errorMessage = nil
             contextWindowSnapshot = ContextWindowSnapshot(
                 contextLength: session?.contextLength,
                 thresholdTokens: session?.thresholdTokens,
@@ -1255,7 +1322,15 @@ final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false
             )
+            latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
         } catch {
+            if waitsForPendingMessageSend {
+                await waitForMessageSendToFinish()
+            }
+            await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
+            guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
+            guard loadRequestGeneration > latestHandledSessionLoadFailureGeneration else { return }
+            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
             latestServerLoadHadAssistantResponseAfterLatestUser = false
             if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {
@@ -1325,6 +1400,7 @@ final class ChatViewModel {
                 isViewingCachedData = false
                 errorMessage = error.localizedDescription
             }
+            latestHandledSessionLoadFailureGeneration = loadRequestGeneration
         }
     }
 
@@ -2402,6 +2478,7 @@ final class ChatViewModel {
             return false
         }
         isStartingChat = true
+        isStartingMessageSend = true
         sendErrorMessage = nil
         lastError = nil
         archiveLiveActivityIfNeeded()
@@ -2410,7 +2487,7 @@ final class ChatViewModel {
         toolCallAnchorMessageID = nil
         streamCoordinator.prepareForNewResponse()
         responseCompletionNeedsTranscriptRefresh = false
-        defer { isStartingChat = false }
+        defer { finishMessageSend() }
 
         let optimisticMessage = ChatMessage(
             role: "user",
@@ -2455,7 +2532,7 @@ final class ChatViewModel {
                 // The existing run may have started outside this view model. Reconcile
                 // the server transcript first so the SSE tokens attach to the persisted
                 // assistant turn instead of creating a second bubble with only the tail.
-                await loadMessages(modelContext: modelContext)
+                await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
                 _ = restoreActiveStreamSnapshotIfAvailable(streamID: streamID)
                 streamingAssistantMessageID = TranscriptTurnClassifier
                     .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
@@ -2472,6 +2549,63 @@ final class ChatViewModel {
             cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
             restorePendingAttachments(attachmentsToRestoreOnFailure)
             return false
+        }
+    }
+
+    private func waitForMessageSendToFinish() async {
+        guard isStartingMessageSend else { return }
+
+        await withCheckedContinuation { continuation in
+            if isStartingMessageSend {
+                messageSendWaiters.append(continuation)
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func finishMessageSend() {
+        isStartingChat = false
+        isStartingMessageSend = false
+        let waiters = messageSendWaiters
+        messageSendWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func waitForNewerSessionLoadRequests(after requestGeneration: Int) async {
+        guard activeSessionLoadRequestGenerations.contains(where: { $0 > requestGeneration }) else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if activeSessionLoadRequestGenerations.contains(where: { $0 > requestGeneration }) {
+                sessionLoadWaiters.append(SessionLoadWaiter(
+                    requestGeneration: requestGeneration,
+                    continuation: continuation
+                ))
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func finishSessionLoadRequest(_ requestGeneration: Int) {
+        activeSessionLoadRequestGenerations.remove(requestGeneration)
+
+        var pending: [SessionLoadWaiter] = []
+        var ready: [CheckedContinuation<Void, Never>] = []
+        for waiter in sessionLoadWaiters {
+            if activeSessionLoadRequestGenerations.contains(where: { $0 > waiter.requestGeneration }) {
+                pending.append(waiter)
+            } else {
+                ready.append(waiter.continuation)
+            }
+        }
+        sessionLoadWaiters = pending
+        for continuation in ready {
+            continuation.resume()
         }
     }
 
@@ -3391,6 +3525,7 @@ final class ChatViewModel {
             if let error = retryResponse.error {
                 return .unsupported(friendlyMessage: error)
             }
+            streamCoordinator.invalidateSessionLoads()
 
             let lastUserText = retryResponse.lastUserText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !lastUserText.isEmpty else {

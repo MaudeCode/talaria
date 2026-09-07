@@ -605,6 +605,757 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testSuccessfulReloadDoesNotReplaceResponseStartedWhileRequestIsInFlight() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-stream-first.test"
+        let sessionRequestStarted = expectation(description: "session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session": sessionRequestStarted.fulfill()
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("In-flight question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Partial response"))
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Old question",
+                "timestamp": 1770000001,
+                "message_id": "old-user"
+              }
+            ]
+          }
+        }
+        """)
+        await loadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["In-flight question", "Partial response"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        XCTAssertNotNil(viewModel.streamingAssistantMessageID)
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+    }
+
+    @MainActor
+    func testReloadPreservesOptimisticTurnWhileChatStartIsPending() async throws {
+        try await assertPendingStartReloadPreservesNewResponse(
+            host: "tal116-session-first.test",
+            eventsOnStart: [.token("Partial response")],
+            expectedMessages: ["Old question", "Pending question", "Partial response"],
+            expectedActiveStreamID: "stream-123"
+        )
+    }
+
+    @MainActor
+    func testReloadPreservesRepeatedOptimisticTurnWhileChatStartIsPending() async throws {
+        try await assertPendingStartReloadPreservesNewResponse(
+            host: "tal116-repeated-prompt.test",
+            loadedUserContent: "Pending question",
+            loadedUserTimestamp: Date().timeIntervalSince1970 - 30,
+            eventsOnStart: [.token("Partial response")],
+            expectedMessages: ["Pending question", "Pending question", "Partial response"],
+            expectedActiveStreamID: "stream-123"
+        )
+    }
+
+    @MainActor
+    func testReloadDoesNotReplaceResponseCompletedBeforeWaiterResumes() async throws {
+        try await assertPendingStartReloadPreservesNewResponse(
+            host: "tal116-fast-completion.test",
+            eventsOnStart: [.token("Partial response"), .done(DoneStreamEvent(session: nil))],
+            expectedMessages: ["Pending question", "Partial response"],
+            expectedActiveStreamID: nil
+        )
+    }
+
+    private func assertPendingStartReloadPreservesNewResponse(
+        host: String,
+        loadedUserContent: String = "Old question",
+        loadedUserTimestamp: Double = 1_770_000_001,
+        eventsOnStart: [SSEEvent],
+        expectedMessages: [String],
+        expectedActiveStreamID: String?
+    ) async throws {
+        let requests = DeferredRequests()
+        let sessionRequestStarted = expectation(description: "session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session": sessionRequestStarted.fulfill()
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let streamClient = SpySSEStreamingClient()
+        streamClient.eventsOnStart = eventsOnStart
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Pending question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "\(loadedUserContent)",
+                "timestamp": \(loadedUserTimestamp),
+                "message_id": "old-user"
+              }
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Pending question"])
+
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        await loadTask.value
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), expectedMessages)
+        XCTAssertEqual(viewModel.activeStreamID, expectedActiveStreamID)
+    }
+
+    @MainActor
+    func testNewestReloadWinsWhenTwoLoadsWaitForTheSameChatStart() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-newest-load.test"
+        let firstSessionRequestStarted = expectation(description: "first session request started")
+        let secondSessionRequestStarted = expectation(description: "second session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let requestCount = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session":
+                (requestCount == 1 ? firstSessionRequestStarted : secondSessionRequestStarted).fulfill()
+            case "/api/chat/start":
+                chatStartRequestStarted.fulfill()
+            default:
+                XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let firstLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [firstSessionRequestStarted], timeout: 2)
+        let secondLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Pending question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {"role": "user", "content": "Older question", "timestamp": 1, "message_id": "old-user"},
+              {"role": "assistant", "content": "Older response", "timestamp": 2, "message_id": "old-assistant"}
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {"role": "user", "content": "Newest question", "timestamp": 3, "message_id": "new-user"},
+              {"role": "assistant", "content": "Newest response", "timestamp": 4, "message_id": "new-assistant"}
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 2).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        await firstLoadTask.value
+        await secondLoadTask.value
+
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Newest question", "Newest response", "Pending question"]
+        )
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+    }
+
+    @MainActor
+    func testNewestReloadFailureWinsWhenTwoLoadsFail() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-newest-failure.test"
+        let firstSessionRequestStarted = expectation(description: "first session request started")
+        let secondSessionRequestStarted = expectation(description: "second session request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            XCTAssertEqual(request.request.url?.path, "/api/session")
+            let requestCount = requests.append(request)
+            (requestCount == 1 ? firstSessionRequestStarted : secondSessionRequestStarted).fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let firstLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [firstSessionRequestStarted], timeout: 2)
+        let secondLoadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: #"{"error":"older failure"}"#, statusCode: 500)
+        await drainMainActor()
+        requests.request(at: 1).complete(withJSON: #"{"error":"newer failure"}"#, statusCode: 401)
+        await firstLoadTask.value
+        await secondLoadTask.value
+
+        guard let lastError = viewModel.lastError as? APIError,
+              case .unauthorized = lastError else {
+            return XCTFail("Expected the newer unauthorized error")
+        }
+        XCTAssertEqual(viewModel.errorMessage, APIError.unauthorized.localizedDescription)
+    }
+
+    @MainActor
+    func testPendingSecondSendDoesNotMakeOlderReloadCurrentAgain() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-two-responses.test"
+        let sessionRequestStarted = expectation(description: "session request started")
+        let firstChatStartRequestStarted = expectation(description: "first chat start request started")
+        let secondChatStartRequestStarted = expectation(description: "second chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let requestCount = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session":
+                sessionRequestStarted.fulfill()
+            case "/api/chat/start":
+                (requestCount == 2 ? firstChatStartRequestStarted : secondChatStartRequestStarted).fulfill()
+            default:
+                XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+
+        let firstSendTask = Task { @MainActor in
+            await viewModel.sendMessage("Question A")
+        }
+        await fulfillment(of: [firstChatStartRequestStarted], timeout: 2)
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-a"
+        }
+        """)
+        let firstDidStart = await firstSendTask.value
+        XCTAssertTrue(firstDidStart)
+        streamClient.emit(.token("Answer A"))
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+
+        let secondSendTask = Task { @MainActor in
+            await viewModel.sendMessage("Question B")
+        }
+        await fulfillment(of: [secondChatStartRequestStarted], timeout: 2)
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Old question",
+                "timestamp": 1770000001,
+                "message_id": "old-user"
+              }
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 2).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-b"
+        }
+        """)
+        let secondDidStart = await secondSendTask.value
+        XCTAssertTrue(secondDidStart)
+        await loadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question A", "Answer A", "Question B"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-b")
+    }
+
+    @MainActor
+    func testDuplicateStartRecoveryDiscardsOlderOuterReload() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-duplicate-start.test"
+        let outerSessionRequestStarted = expectation(description: "outer session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        let recoverySessionRequestStarted = expectation(description: "recovery session request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let requestCount = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session":
+                (requestCount == 1 ? outerSessionRequestStarted : recoverySessionRequestStarted).fulfill()
+            case "/api/chat/start":
+                chatStartRequestStarted.fulfill()
+            default:
+                XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [outerSessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Rejected duplicate")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Old question",
+                "timestamp": 1770000001,
+                "message_id": "old-user"
+              }
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 1).complete(
+            withJSON: #"{"error":"session already has an active stream","active_stream_id":"stream-existing"}"#,
+            statusCode: 409
+        )
+        await fulfillment(of: [recoverySessionRequestStarted], timeout: 2)
+        requests.request(at: 2).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "active_stream_id": "stream-existing",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Existing question",
+                "timestamp": 1770000002,
+                "message_id": "existing-user"
+              },
+              {
+                "role": "assistant",
+                "content": "Partial response",
+                "timestamp": 1770000003,
+                "message_id": "existing-assistant"
+              }
+            ]
+          }
+        }
+        """)
+        let didStart = await sendTask.value
+        XCTAssertFalse(didStart)
+        await loadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Existing question", "Partial response"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-existing")
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+    }
+
+    @MainActor
+    func testDuplicateStartRecoveryUsesOuterResponseWhenNestedLoadFails() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-duplicate-start-load-failure.test"
+        let outerSessionRequestStarted = expectation(description: "outer session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        let recoverySessionRequestStarted = expectation(description: "recovery session request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let requestCount = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session":
+                (requestCount == 1 ? outerSessionRequestStarted : recoverySessionRequestStarted).fulfill()
+            case "/api/chat/start":
+                chatStartRequestStarted.fulfill()
+            default:
+                XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [outerSessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Rejected duplicate")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Existing question",
+                "timestamp": 1770000001,
+                "message_id": "existing-user"
+              },
+              {
+                "role": "assistant",
+                "content": "Existing partial response",
+                "timestamp": 1770000002,
+                "message_id": "existing-assistant"
+              }
+            ]
+          }
+        }
+        """)
+        await drainMainActor()
+        requests.request(at: 1).complete(
+            withJSON: #"{"error":"session already has an active stream","active_stream_id":"stream-existing"}"#,
+            statusCode: 409
+        )
+        await fulfillment(of: [recoverySessionRequestStarted], timeout: 2)
+        requests.request(at: 2).fail(with: URLError(.timedOut))
+
+        let didStart = await sendTask.value
+        XCTAssertFalse(didStart)
+        await loadTask.value
+
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Existing question", "Existing partial response"]
+        )
+        XCTAssertEqual(viewModel.activeStreamID, "stream-existing")
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        XCTAssertNil(viewModel.lastError)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    @MainActor
+    func testSuccessfulReloadStillAppliesWhenConcurrentChatStartFails() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-start-failure.test"
+        let sessionRequestStarted = expectation(description: "session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session": sessionRequestStarted.fulfill()
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Rejected question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        requests.request(at: 1).complete(withJSON: #"{"error":"start failed"}"#)
+        let didStart = await sendTask.value
+        XCTAssertFalse(didStart)
+
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "assistant",
+                "content": "Authoritative transcript",
+                "timestamp": 1770000001,
+                "message_id": "assistant-1"
+              }
+            ]
+          }
+        }
+        """)
+        await loadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Authoritative transcript"])
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
+    func testReloadFailureWaitsForConcurrentChatStartFailureBeforeUsingCache() async throws {
+        let context = try makeContext()
+        let requests = DeferredRequests()
+        let host = "tal116-both-fail.test"
+        let serverURL = URL(string: "https://\(host)")!
+        try CacheStore.cacheMessages(
+            [ChatMessage(role: "assistant", content: "Cached transcript", timestamp: 1_770_000_001, messageId: "cached-1")],
+            serverURL: serverURL,
+            sessionID: "session-abc",
+            in: context
+        )
+        let sessionRequestStarted = expectation(description: "session request started")
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/session": sessionRequestStarted.fulfill()
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: serverURL,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages(modelContext: context)
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Rejected question", modelContext: context)
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+
+        requests.request(at: 0).fail(with: URLError(.timedOut))
+        await drainMainActor()
+        requests.request(at: 1).complete(withJSON: #"{"error":"start failed"}"#)
+        let didStart = await sendTask.value
+        XCTAssertFalse(didStart)
+        await loadTask.value
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Cached transcript"])
+        XCTAssertTrue(viewModel.isViewingCachedData)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
+    func testStreamEndDoesNotInvalidateCompletionTranscriptReload() async throws {
+        let requests = DeferredRequests()
+        let host = "tal116-completion.test"
+        let chatStartRequestStarted = expectation(description: "chat start request started")
+        let sessionRequestStarted = expectation(description: "session request started")
+        let titleRequestCompleted = expectation(description: "title request completed")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/chat/start": chatStartRequestStarted.fulfill()
+            case "/api/session":
+                let includesMessages = URLComponents(
+                    url: request.request.url!,
+                    resolvingAgainstBaseURL: false
+                )?.queryItems?.first(where: { $0.name == "messages" })?.value == "1"
+                if includesMessages {
+                    sessionRequestStarted.fulfill()
+                } else {
+                    request.complete(withJSON: #"{"session":{"session_id":"session-abc","title":"Updated"}}"#)
+                    titleRequestCompleted.fulfill()
+                }
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let sendTask = Task { @MainActor in
+            await viewModel.sendMessage("Question")
+        }
+        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        requests.request(at: 0).complete(withJSON: """
+        {
+          "session_id": "session-abc",
+          "stream_id": "stream-123"
+        }
+        """)
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Partial response"))
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        XCTAssertTrue(viewModel.responseCompletionNeedsTranscriptRefresh)
+
+        let loadTask = Task { @MainActor in
+            await viewModel.loadMessages()
+        }
+        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        streamClient.emit(.streamEnd)
+        requests.request(at: 1).complete(withJSON: """
+        {
+          "session": {
+            "session_id": "session-abc",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Question",
+                "timestamp": 1770000001,
+                "message_id": "user-1"
+              },
+              {
+                "role": "assistant",
+                "content": "Final response",
+                "timestamp": 1770000002,
+                "message_id": "assistant-1"
+              }
+            ]
+          }
+        }
+        """)
+        await loadTask.value
+        await fulfillment(of: [titleRequestCompleted], timeout: 2)
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question", "Final response"])
+        XCTAssertFalse(viewModel.responseCompletionNeedsTranscriptRefresh)
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
     func testReloadDoesNotDuplicateCachedOptimisticAttachmentMessageWhenServerReturnsIt() async throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

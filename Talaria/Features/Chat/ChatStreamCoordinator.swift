@@ -29,6 +29,7 @@ struct ChatStreamCoordinatorTiming: Equatable {
 struct ChatStreamLoadPreparation: Equatable {
     let activeStreamIDBeforeLoad: String?
     let shouldPrepareSuspendedStreamResume: Bool
+    let responseGeneration: Int
 }
 
 @MainActor
@@ -101,10 +102,12 @@ final class ChatStreamCoordinator {
     private(set) var liveTokensPerSecond: Double?
     private var lastRecoveryStatusCheckDate: Date?
     private(set) var isReplayConnection = false
-    // Bumped whenever the active run starts or finalizes. Captured before an async
-    // transcript load so a concurrent cancel/completion during the load can't be
-    // double-finalized (PR #266 review #2).
+    // Bumped whenever the active run starts or finalizes. Captured before async
+    // finalization work so stale tasks cannot finalize a newer run.
     private var runGeneration = 0
+    // Bumped when response ownership starts or reaches a terminal state. The
+    // post-done cleanup does not bump it again, so its completion reload survives.
+    private var responseGeneration = 0
     // Terminal fence. Set by teardown and, unlike `hasCompletedCurrentResponse`,
     // deliberately not cleared by `finishStream`, so late semantic content and
     // competing terminal events arriving on the dead connection can neither mutate
@@ -175,6 +178,7 @@ final class ChatStreamCoordinator {
         isColdAdoptedRun = false
         liveTokensPerSecond = nil
         runGeneration &+= 1
+        responseGeneration &+= 1
         cancelSharedReconnect()
         activeStreamID = streamID
         isConnectionSuspended = false
@@ -233,8 +237,17 @@ final class ChatStreamCoordinator {
 
         return ChatStreamLoadPreparation(
             activeStreamIDBeforeLoad: activeStreamIDBeforeLoad,
-            shouldPrepareSuspendedStreamResume: activeStreamID == nil || isConnectionSuspended
+            shouldPrepareSuspendedStreamResume: activeStreamID == nil || isConnectionSuspended,
+            responseGeneration: responseGeneration
         )
+    }
+
+    func canApplySessionLoad(_ preparation: ChatStreamLoadPreparation) -> Bool {
+        responseGeneration == preparation.responseGeneration
+    }
+
+    func invalidateSessionLoads() {
+        responseGeneration &+= 1
     }
 
     func reconcileSessionLoad(
@@ -772,6 +785,7 @@ final class ChatStreamCoordinator {
 
     private func completeCurrentResponse(needsTranscriptRefresh: Bool) {
         runGeneration &+= 1
+        responseGeneration &+= 1
         liveActivityManager.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
         delegate?.streamCoordinatorRemoveSnapshot(streamID: activeStreamID)
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
@@ -825,9 +839,12 @@ final class ChatStreamCoordinator {
         guard !hasFinishedCurrentRun else { return }
 
         hasFinishedCurrentRun = true
+        let completedNormally = hasCompletedCurrentResponse
         runGeneration &+= 1
         cancelSharedReconnect()
-        let completedNormally = hasCompletedCurrentResponse
+        if !completedNormally {
+            responseGeneration &+= 1
+        }
         let finishedStreamID = activeStreamID
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)

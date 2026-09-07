@@ -64,6 +64,37 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testCancelledStreamInvalidatesItsSessionLoadPreparation() {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let coordinator = makeCoordinator(streamClient: streamClient)
+
+        coordinator.start(streamID: "stream-123")
+        let preparation = coordinator.prepareForSessionLoad()
+        XCTAssertTrue(coordinator.canApplySessionLoad(preparation))
+
+        streamClient.emit(.cancelled)
+
+        XCTAssertFalse(coordinator.canApplySessionLoad(preparation))
+        XCTAssertNil(coordinator.activeStreamID)
+    }
+
+    @MainActor
+    func testDoneInvalidatesOlderLoadButKeepsCompletionLoadCurrentThroughStreamEnd() {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let coordinator = makeCoordinator(streamClient: streamClient)
+
+        coordinator.start(streamID: "stream-123")
+        let preCompletionPreparation = coordinator.prepareForSessionLoad()
+
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+
+        XCTAssertFalse(coordinator.canApplySessionLoad(preCompletionPreparation))
+        let completionPreparation = coordinator.prepareForSessionLoad()
+        streamClient.emit(.streamEnd)
+        XCTAssertTrue(coordinator.canApplySessionLoad(completionPreparation))
+    }
+
+    @MainActor
     func testSuspendSavesLastEventStopsStreamAndMarksLiveActivityStale() throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()

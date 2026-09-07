@@ -76,6 +76,20 @@ final class MockURLProtocol: URLProtocol {
 /// can be answered out of order.
 final class DeferredMockURLProtocol: URLProtocol {
     static var onRequest: ((DeferredMockURLProtocol) -> Void)?
+    private static let handlerLock = NSLock()
+    private static var handlersByHost: [String: (DeferredMockURLProtocol) -> Void] = [:]
+
+    static func setOnRequest(_ handler: ((DeferredMockURLProtocol) -> Void)?, forHost host: String) {
+        handlerLock.lock()
+        defer { handlerLock.unlock() }
+        handlersByHost[host] = handler
+    }
+
+    private static func handler(for request: URLRequest) -> ((DeferredMockURLProtocol) -> Void)? {
+        handlerLock.lock()
+        defer { handlerLock.unlock() }
+        return request.url?.host.flatMap { handlersByHost[$0] } ?? onRequest
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         true
@@ -86,7 +100,7 @@ final class DeferredMockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        guard let onRequest = Self.onRequest else {
+        guard let onRequest = Self.handler(for: request) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
@@ -95,10 +109,10 @@ final class DeferredMockURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 
-    func complete(withJSON json: String) {
+    func complete(withJSON json: String, statusCode: Int = 200) {
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: statusCode,
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
