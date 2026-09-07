@@ -8,10 +8,6 @@ struct ChatAttachmentSendPreparation {
     var apiPayloads: [JSONValue]? {
         attachments.isEmpty ? nil : attachments.map { $0.toJSONValue() }
     }
-
-    func chatMessageText(draft: String) -> String {
-        PendingAttachment.chatMessageText(draft: draft, attachments: attachments)
-    }
 }
 
 @MainActor

@@ -1011,7 +1011,7 @@ struct MessageComposerView: View {
     }
 
     private var showsStopButton: Bool {
-        isWaitingForStream && trimmedDraftMessage.isEmpty
+        isWaitingForStream && trimmedDraftMessage.isEmpty && pendingAttachments.isEmpty
     }
 
     private var isActionButtonDisabled: Bool {
@@ -1023,7 +1023,7 @@ struct MessageComposerView: View {
             return isCancellingStream
         }
 
-        return trimmedDraftMessage.isEmpty
+        return (trimmedDraftMessage.isEmpty && pendingAttachments.isEmpty)
             || isSending
             || isCompressingSession
             || isUploadingAttachment

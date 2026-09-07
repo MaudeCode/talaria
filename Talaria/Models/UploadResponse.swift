@@ -170,6 +170,15 @@ extension PendingAttachment {
             return draft
         }
 
+        // A textless send has nothing to append the marker to, so the WebUI
+        // synthesizes the whole message instead. Match its wording verbatim:
+        // it is what the agent reads, and it is what the server stores and
+        // replays, so the optimistic bubble has to use the same string to
+        // dedupe against the reloaded copy.
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "I've uploaded \(references.count) file(s): \(references.joined(separator: ", "))"
+        }
+
         return "\(draft)\n\n[Attached files: \(references.joined(separator: ", "))]"
     }
 }

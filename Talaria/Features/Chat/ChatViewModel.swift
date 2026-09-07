@@ -2244,7 +2244,16 @@ final class ChatViewModel {
         }
 
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return false }
+        // A textless send is valid when it carries staged files: the composed
+        // text then *is* the synthesized attachment message. Compose it before
+        // `prepareForSend` consumes the attachments, and reject on the composed
+        // result so an empty draft with unusable references still bails without
+        // spending them.
+        let composedMessage = PendingAttachment.chatMessageText(
+            draft: message,
+            attachments: attachmentCoordinator.pendingAttachments
+        )
+        guard !composedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
 
         guard let sessionID else {
             sendErrorMessage = String(localized: "The server did not provide a session ID.")
@@ -2257,8 +2266,8 @@ final class ChatViewModel {
         let didStart = await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
-            displayContent: message,
-            messageForAPI: attachmentPreparation.chatMessageText(draft: message),
+            displayContent: message.isEmpty ? composedMessage : message,
+            messageForAPI: composedMessage,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,
             attachmentsToRestoreOnFailure: attachmentPreparation.attachments,
@@ -2685,6 +2694,13 @@ final class ChatViewModel {
     ) async -> SlashCommandExecutionResult {
         switch behavior {
         case .steer:
+            // Steering has no attachment channel, so a textless send — which
+            // exists only to deliver its staged files — has to queue instead of
+            // steering an empty string that would drop them.
+            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !attachmentCoordinator.pendingAttachments.isEmpty {
+                return await queueMessageFromSlashCommand(draft)
+            }
             return await steerResponseFromSlashCommand(draft)
         case .interrupt:
             return await interruptResponseFromSlashCommand(draft)
@@ -2695,7 +2711,9 @@ final class ChatViewModel {
 
     private func queueMessageFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
         let message = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else {
+        // Staged files make a textless queue valid; `sendMessage` synthesizes
+        // the message when the drain replays it.
+        guard !message.isEmpty || !attachmentCoordinator.pendingAttachments.isEmpty else {
             return .unsupported(friendlyMessage: String(localized: "Usage: /queue <message>"))
         }
 
@@ -2750,7 +2768,8 @@ final class ChatViewModel {
 
     private func interruptResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
         let message = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else {
+        // Same as `/queue`: staged files carry the intent when the text is empty.
+        guard !message.isEmpty || !attachmentCoordinator.pendingAttachments.isEmpty else {
             return .unsupported(friendlyMessage: String(localized: "Usage: /interrupt <message>"))
         }
 
