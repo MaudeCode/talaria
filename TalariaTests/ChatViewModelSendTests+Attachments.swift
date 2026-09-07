@@ -242,9 +242,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(startedMessage, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
         XCTAssertEqual(startedAttachmentPaths, ["/tmp/workspace/notes.txt"])
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
-        // The synthesized text is for the agent, not the bubble: the optimistic
-        // row shows its files as chips and no text at all.
-        XCTAssertEqual(viewModel.messages.first?.content, "")
+        // The optimistic row carries exactly what the server will store, so the
+        // bubble looks the same before and after a reload.
+        XCTAssertEqual(viewModel.messages.first?.content, startedMessage)
         XCTAssertEqual(viewModel.messages.first?.attachments?.compactMap(\.path), startedAttachmentPaths)
     }
 

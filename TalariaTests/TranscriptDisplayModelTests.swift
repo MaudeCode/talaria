@@ -582,6 +582,20 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
     }
 
+    /// The optimistic row carries the same text the server will store, marker
+    /// included, so a user who types the synthesized wording *and* attaches the
+    /// file they named still sees their own words — before and after a reload.
+    func testContentWithoutAttachmentReferencesKeepsTypedLookalikeNamingItsAttachment() {
+        let typed = "I've uploaded 1 file(s): report.pdf"
+        let attachments = [MessageAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)]
+        let sent = PendingAttachment.chatMessageText(draft: typed, attachments: [
+            PendingAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)
+        ])
+
+        XCTAssertEqual(sent, "\(typed)\n\n[Attached files: /tmp/workspace/report.pdf]")
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: attachments), typed)
+    }
+
     /// A typed message that reads like the synthesized one still ends in a real
     /// marker, so only the marker is stripped.
     func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {

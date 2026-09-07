@@ -2270,9 +2270,11 @@ final class ChatViewModel {
         let didStart = await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
-            // A textless send shows no bubble text: its files render as chips,
-            // and the synthesized message the server stores is for the agent.
-            displayContent: message,
+            // The optimistic row carries exactly what the server will store, so
+            // the bubble cannot change appearance across a reload — and so the
+            // display layer sees the trailing marker that tells a typed message
+            // apart from a synthesized attachment-only one.
+            displayContent: composedMessage,
             messageForAPI: composedMessage,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,
