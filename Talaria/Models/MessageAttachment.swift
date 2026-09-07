@@ -143,18 +143,24 @@ extension MessageAttachment {
     /// Display text for a user bubble that hides attachment paths. A textless
     /// send has no marker to strip: the synthesized `I've uploaded N file(s): …`
     /// message *is* the whole content. That shape is close enough to ordinary
-    /// prose that matching it alone would blank a user's own sentence, so it
-    /// only counts when the message carries attachments and contains no marker
-    /// — which is exactly the message an attachment-only send produces.
-    /// Display-only; the sent payload and attachment inference are untouched.
+    /// text to occur by accident — pasted prose, or a voice-note transcript,
+    /// which `sendVoiceNote` sends bare alongside its audio clip — so matching
+    /// it is not enough. The references it names must also *be* the message's
+    /// attachments, which only an attachment-only send produces, since it built
+    /// both from the same list. Display-only; the sent payload and attachment
+    /// inference are untouched.
     static func contentWithoutAttachmentReferences(
         in content: String,
         attachments: [MessageAttachment]?
     ) -> String {
         let stripped = contentWithoutAttachedFilesMarker(in: content)
         guard stripped == content,
-              attachments?.isEmpty == false,
-              uploadedFilesMessage(in: content) != nil
+              let attachments,
+              !attachments.isEmpty,
+              let synthesized = uploadedFilesMessage(in: content),
+              synthesized.references.count == attachments.count,
+              Set(synthesized.references.compactMap { MessageAttachment(path: $0).identityKey })
+                == Set(attachments.compactMap(\.identityKey))
         else {
             return stripped
         }

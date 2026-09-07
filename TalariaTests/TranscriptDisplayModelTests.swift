@@ -554,6 +554,19 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
     }
 
+    /// A voice note sends its bare transcript alongside the audio clip, so a
+    /// transcript that happens to read like the synthesized message must not be
+    /// blanked: its references are not the message's attachments.
+    func testContentWithoutAttachmentReferencesKeepsVoiceNoteTranscript() {
+        let transcript = "I've uploaded 2 file(s): the report, the notes"
+        let audioClip = [MessageAttachment(name: "voice-note.m4a", path: "/tmp/workspace/voice-note.m4a", mime: "audio/mp4", size: 4, isImage: false)]
+
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: transcript, attachments: audioClip),
+            transcript
+        )
+    }
+
     /// A typed message that happens to read like the synthesized one still ends
     /// in a real marker, so only the marker is stripped.
     func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {
