@@ -850,6 +850,100 @@ final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
     }
 }
 
+final class KanbanBoardPickerUITests: AdaptiveLayoutUITestCase {
+    /// The fixture's current Board carries a long localized name, so every variant renders
+    /// the case that used to drop the Board picker out of the navigation bar entirely.
+    func testBoardPickerAndToolbarActionsStayReachableAcrossVariants() throws {
+        for variant in Self.variants {
+            try XCTContext.runActivity(named: variant.name) { _ in
+                launchFixture(variant: variant)
+                XCTAssertTrue(
+                    app.buttons["Open navigation"].waitForExistence(timeout: 15),
+                    "Missing deterministic app fixture [\(variant.name)]"
+                )
+                openSidebarDestination("Kanban")
+                let bar = app.navigationBars["Kanban"]
+                XCTAssertTrue(bar.waitForExistence(timeout: 5), "Kanban bar missing [\(variant.name)]")
+                XCTAssertTrue(app.staticTexts["Loading Kanban"].waitForNonExistence(timeout: 15))
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["KanbanStatusSelector"].waitForExistence(timeout: 5),
+                    "Kanban Board did not load [\(variant.name)]"
+                )
+
+                let picker = app.descendants(matching: .any)["KanbanBoardPicker"].firstMatch
+                XCTAssertTrue(picker.waitForExistence(timeout: 5), "Board picker missing [\(variant.name)]")
+                assertReachable(picker, named: "Board picker", in: bar, variant: variant)
+
+                // The Kanban root keeps the sidebar button where a pushed screen keeps Back;
+                // whichever leads the bar must stay clear of the picker.
+                let leading = bar.buttons["BackButton"].exists ? bar.buttons["BackButton"] : bar.buttons["Open navigation"]
+                assertReachable(leading, named: "Leading bar control", in: bar, variant: variant)
+                XCTAssertFalse(leading.frame.intersects(picker.frame), "Board picker covers the leading control [\(variant.name)]")
+
+                let overflow = app.descendants(matching: .any)["KanbanToolbarOverflow"].firstMatch
+                var trailing = [("New Card", bar.buttons["New Card"]), ("Dispatcher", bar.buttons["Dispatcher"])]
+                if overflow.exists {
+                    trailing.append(("More", overflow))
+                } else {
+                    trailing += [("Select Cards", bar.buttons["Select Cards"]), ("Card Filters", bar.buttons["Card Filters"])]
+                }
+                for (label, control) in trailing {
+                    assertReachable(control, named: label, in: bar, variant: variant)
+                    XCTAssertFalse(control.frame.intersects(picker.frame), "Board picker covers \(label) [\(variant.name)]")
+                }
+
+                assertSelectionAndFiltersReachable(in: bar, overflow: overflow, variant: variant)
+                assertBoardMenuSelectsAnotherBoard(picker: picker, variant: variant)
+                app.terminate()
+            }
+        }
+    }
+
+    /// Navigation-bar controls report `isHittable == false` to XCUI even when visible, so
+    /// reachability is measured from the frame. The bar caps its controls below the 44
+    /// points the toolbar requests; the size check is a floor against a squeezed control.
+    private func assertReachable(_ control: XCUIElement, named name: String, in bar: XCUIElement, variant: Variant) {
+        XCTAssertTrue(control.exists, "\(name) missing [\(variant.name)]")
+        XCTAssertGreaterThanOrEqual(min(control.frame.width, control.frame.height), 32, "\(name) squeezed [\(variant.name)]")
+        XCTAssertGreaterThanOrEqual(control.frame.minX, bar.frame.minX, "\(name) clipped by the bar [\(variant.name)]")
+        XCTAssertLessThanOrEqual(control.frame.maxX, bar.frame.maxX, "\(name) clipped by the bar [\(variant.name)]")
+    }
+
+    /// Select Cards and Card Filters keep their state whether they sit in the bar or the overflow.
+    private func assertSelectionAndFiltersReachable(in bar: XCUIElement, overflow: XCUIElement, variant: Variant) {
+        func secondaryAction(_ label: String) -> XCUIElement {
+            guard overflow.exists else { return bar.buttons[label] }
+            tap(at: overflow.frame.center)
+            return app.buttons[label].firstMatch
+        }
+
+        let filters = secondaryAction("Card Filters")
+        XCTAssertTrue(filters.waitForExistence(timeout: 3), "Card Filters unreachable [\(variant.name)]")
+        let selectCards = overflow.exists ? app.buttons["Select Cards"].firstMatch : bar.buttons["Select Cards"]
+        XCTAssertTrue(selectCards.exists, "Select Cards unreachable [\(variant.name)]")
+        XCTAssertTrue(selectCards.isEnabled, "Select Cards disabled in the fixture Board [\(variant.name)]")
+        tap(at: selectCards.frame.center)
+
+        let cancel = secondaryAction("Cancel")
+        XCTAssertTrue(
+            cancel.waitForExistence(timeout: 3),
+            "Selection mode did not survive the toolbar placement [\(variant.name)]"
+        )
+        tap(at: cancel.frame.center)
+    }
+
+    private func assertBoardMenuSelectsAnotherBoard(picker: XCUIElement, variant: Variant) {
+        tap(at: picker.frame.center)
+        let otherBoard = app.buttons["Fixture Board"].firstMatch
+        XCTAssertTrue(otherBoard.waitForExistence(timeout: 3), "Board menu did not open [\(variant.name)]")
+        otherBoard.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["KanbanBoardPicker"].firstMatch.waitForExistence(timeout: 5),
+            "Board picker lost after selecting a Board [\(variant.name)]"
+        )
+    }
+}
+
 final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
     func testOnboardingScalesTitleAndRetainsFocusAcrossVariants() throws {
         var titleHeights: [String: CGFloat] = [:]
