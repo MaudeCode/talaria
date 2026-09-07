@@ -523,6 +523,29 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         let content = "hello\n\n[Attached files: /tmp/a.png] and then more text"
         XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
     }
+
+    /// TAL-158: a textless send carries the synthesized message instead of a
+    /// marker, so the same display transform has to hide its paths too.
+    func testContentWithoutAttachedFilesMarkerStripsSynthesizedUploadMessage() {
+        let sent = PendingAttachment.chatMessageText(draft: "", attachments: [
+            PendingAttachment(name: "sample.html", path: "/tmp/workspace/sample.html", mime: "text/html", size: 4, isImage: false),
+            PendingAttachment(name: "image.jpg", path: "/tmp/workspace/image.jpg", mime: "image/jpeg", size: 4, isImage: true)
+        ])
+
+        XCTAssertEqual(sent, "I've uploaded 2 file(s): /tmp/workspace/sample.html, /tmp/workspace/image.jpg")
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: sent), "")
+        XCTAssertEqual(
+            MessageAttachment.inferredFromAttachedFilesMarker(in: sent)?.compactMap(\.path),
+            ["/tmp/workspace/sample.html", "/tmp/workspace/image.jpg"]
+        )
+    }
+
+    func testContentWithoutAttachedFilesMarkerLeavesLookalikeProseUnchanged() {
+        // Anchored at both ends with a numeric count, so a user's own sentence
+        // that merely mentions uploading survives untouched.
+        let content = "I've uploaded the file(s): please review them when you can."
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
+    }
 }
 
 final class ChatActiveRunStatusPolicyTests: XCTestCase {

@@ -174,9 +174,14 @@ extension PendingAttachment {
         // synthesizes the whole message instead. Match its wording verbatim:
         // it is what the agent reads, and it is what the server stores and
         // replays, so the optimistic bubble has to use the same string to
-        // dedupe against the reloaded copy.
+        // dedupe against the reloaded copy. `MessageAttachment` parses this
+        // shape back out for display and attachment inference — share its
+        // constants so the two cannot drift.
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "I've uploaded \(references.count) file(s): \(references.joined(separator: ", "))"
+            return MessageAttachment.uploadedFilesPrefix
+                + "\(references.count)"
+                + MessageAttachment.uploadedFilesInfix
+                + references.joined(separator: ", ")
         }
 
         return "\(draft)\n\n[Attached files: \(references.joined(separator: ", "))]"

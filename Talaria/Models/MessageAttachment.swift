@@ -135,9 +135,18 @@ extension MessageAttachment {
         return String(prefix)
     }
 
+    /// The two halves of the WebUI's message for a textless send, built by
+    /// `PendingAttachment.chatMessageText` and parsed back here.
+    static let uploadedFilesPrefix = "I've uploaded "
+    static let uploadedFilesInfix = " file(s): "
+
     private static func attachedFilesMarker(
         in content: String
     ) -> (range: Range<String.Index>, references: [String])? {
+        if let uploadedFiles = uploadedFilesMessage(in: content) {
+            return uploadedFiles
+        }
+
         guard let markerRange = content.range(of: "[Attached files:", options: .backwards) else {
             return nil
         }
@@ -159,6 +168,32 @@ extension MessageAttachment {
 
         let markerEnd = afterMarker.index(after: closeBracket)
         return (markerRange.lowerBound..<markerEnd, references)
+    }
+
+    /// Matches `I've uploaded <count> file(s): <references>` — the whole
+    /// message a textless send carries, since there is no typed text to append
+    /// a `[Attached files: …]` marker to. Anchored at both ends and requiring a
+    /// numeric count so a user's own prose is not mistaken for it; the whole
+    /// string is the marker, so the display layer strips it down to nothing and
+    /// renders the attachment chips alone.
+    private static func uploadedFilesMessage(
+        in content: String
+    ) -> (range: Range<String.Index>, references: [String])? {
+        guard content.hasPrefix(uploadedFilesPrefix) else { return nil }
+
+        let afterPrefix = content.dropFirst(uploadedFilesPrefix.count)
+        guard let infix = afterPrefix.range(of: uploadedFilesInfix) else { return nil }
+
+        let count = afterPrefix[..<infix.lowerBound]
+        guard !count.isEmpty, count.allSatisfy(\.isNumber) else { return nil }
+
+        let references = afterPrefix[infix.upperBound...]
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !references.isEmpty else { return nil }
+
+        return (content.startIndex..<content.endIndex, references)
     }
 
     private static func displayName(for reference: String) -> String {
