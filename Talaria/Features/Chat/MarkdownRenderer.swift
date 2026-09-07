@@ -645,7 +645,7 @@ extension MarkdownUI.Theme {
             // Restates the base theme's own paragraph metrics; the block exists so
             // a paragraph can report where its links landed (TAL-49).
             .paragraph { configuration in
-                ChatMarkdownParagraph(configuration: configuration)
+                ChatMarkdownParagraph(configuration: configuration, tracksLinks: !isStreaming)
             }
             .codeBlock { configuration in
                 MathFenceOrCodeBlock(
@@ -667,7 +667,10 @@ extension MarkdownUI.Theme {
                     minWidth: ChatMarkdownTable.cellMinWidth,
                     maxWidth: ChatMarkdownTable.cellMaxWidth
                 ) {
-                    ChatMarkdownLinkTrackedText(content: configuration.content) {
+                    ChatMarkdownLinkTrackedText(
+                        content: configuration.content,
+                        tracksLinks: !isStreaming
+                    ) {
                         configuration.label
                     }
                     .markdownTextStyle {

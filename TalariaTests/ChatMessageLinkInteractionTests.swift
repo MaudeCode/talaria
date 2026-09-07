@@ -171,6 +171,22 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
         )
     }
 
+    /// The streaming fade is drawn by a text renderer of its own; tracking a
+    /// link inside a streaming paragraph would replace it.
+    func testStreamingParagraphReportsNoRegions() throws {
+        let store = ChatMessageLinkRegionStore()
+        try host(
+            ChatMarkdownView(
+                content: "words before [FixtureLinkTarget](https://example.invalid/x) and after.",
+                colorScheme: .light,
+                isStreaming: true
+            )
+            .environment(\.chatMessageLinkRegionStore, store)
+        )
+
+        XCTAssertEqual(store.regions(), [], "A streaming paragraph must leave its fade renderer in place")
+    }
+
     func testParagraphWithoutLinksReportsNoRegions() throws {
         let store = try renderRegions(content: "FixturePlainLead words with no link at all in this paragraph.")
         XCTAssertEqual(store.regions(), [])

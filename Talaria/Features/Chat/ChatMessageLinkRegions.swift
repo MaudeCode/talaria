@@ -252,8 +252,13 @@ enum ChatMessageInteraction {
 ///
 /// The label must be the text itself, not a padded container: the rects the
 /// renderer reports are relative to the text's own origin.
+///
+/// Streaming text is left alone. Its fade is drawn by `TextRenderer` too, and
+/// this one would sit closer to the `Text` and replace it; a link becomes a hit
+/// target once its message settles.
 struct ChatMarkdownLinkTrackedText<Label: View>: View {
     let content: MarkdownContent
+    let tracksLinks: Bool
     @ViewBuilder let label: Label
 
     @Environment(\.chatMessageLinkRegionStore) private var store
@@ -261,7 +266,7 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
 
     @ViewBuilder
     var body: some View {
-        if let store, case let links = self.links, !links.isEmpty {
+        if tracksLinks, let store, case let links = self.links, !links.isEmpty {
             label
                 .textRenderer(
                     ChatLinkRegionTextRenderer(
@@ -304,9 +309,10 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
 /// because installing this style replaces that one.
 struct ChatMarkdownParagraph: View {
     let configuration: BlockConfiguration
+    let tracksLinks: Bool
 
     var body: some View {
-        ChatMarkdownLinkTrackedText(content: configuration.content) {
+        ChatMarkdownLinkTrackedText(content: configuration.content, tracksLinks: tracksLinks) {
             configuration.label
         }
         .fixedSize(horizontal: false, vertical: true)
