@@ -41,7 +41,7 @@ class TestIOSRunnerTest < Minitest::Test
 
     assert_includes(workflow, "TEST_WORKER_COUNT: 2")
     assert_includes(ui_testable, 'parallelizable = "YES"')
-    assert_equal(18, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
+    assert_equal(19, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     assert_includes(workflow, "-skip-testing:TalariaUITests/SidebarPerformanceUITests")
   end
 end

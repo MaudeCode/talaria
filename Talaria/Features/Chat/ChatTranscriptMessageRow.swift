@@ -28,6 +28,11 @@ struct ChatTranscriptMessageRow: View {
     let onFork: (MessageActionContext) -> Void
     let onCopy: (MessageActionContext) -> Void
 
+    @Environment(\.chatMessageMenuRegistry) private var menuRegistry
+    /// One store per row: its paragraphs fill in where their links landed, and
+    /// the row's marker hands them to the long-press handler (TAL-49).
+    @State private var linkRegions = ChatMessageLinkRegionStore()
+
     var body: some View {
         // Compaction marker messages render as collapsible cards (matching the
         // web UI), never as user bubbles — and without bubble actions, which
@@ -35,24 +40,23 @@ struct ChatTranscriptMessageRow: View {
         if let markerKind = ChatMarkerMessageClassifier.classify(message) {
             MarkerMessageCardView(kind: markerKind, content: message.content)
         } else if let actionContext {
+            // The actions hang off the transcript's long press rather than a
+            // bubble `contextMenu`: a press over a link opens the link's own
+            // actions, and a press on prose opens the message menu at the press
+            // point instead of lifting a snapshot of the whole bubble.
             bubble
-                .contextMenu {
-                    ChatMessageActionMenu(
-                        context: actionContext,
-                        listeningMessageID: listeningMessageID,
-                        isViewingCachedData: isViewingCachedData,
-                        hasActiveStream: hasActiveStream,
-                        isRegeneratingMessage: isRegeneratingMessage,
-                        isEditingMessage: isEditingMessage,
-                        isForkingMessage: isForkingMessage,
-                        disablesHistoryActions: disablesHistoryActions,
-                        onToggleListening: onToggleListening,
-                        onSelectText: onSelectText,
-                        onRegenerate: onRegenerate,
-                        onEdit: onEdit,
-                        onFork: onFork,
-                        onCopy: onCopy
-                    )
+                .environment(\.chatMessageLinkRegionStore, linkRegions)
+                .coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace))
+                .background {
+                    ChatMessageInteractionMarker(registry: menuRegistry) {
+                        menuContent(for: actionContext)
+                    }
+                    .accessibilityHidden(true)
+                }
+                .accessibilityActions {
+                    ForEach(actions(for: actionContext).filter(\.isEnabled)) { action in
+                        Button(action.title) { action.handler() }
+                    }
                 }
         } else {
             bubble
@@ -72,6 +76,37 @@ struct ChatTranscriptMessageRow: View {
             onPreviewTranscriptMedia: onPreviewTranscriptMedia,
             isStreaming: isStreaming,
             liveTokensPerSecond: liveTokensPerSecond
+        )
+    }
+
+    private func menuContent(for context: MessageActionContext) -> ChatMessageMenuContent {
+        ChatMessageMenuContent(
+            messageID: context.messageID,
+            actions: actions(for: context),
+            linkRegions: linkRegions.regions()
+        )
+    }
+
+    private func actions(for context: MessageActionContext) -> [ChatMessageAction] {
+        ChatMessageActionCatalog.actions(
+            context: context,
+            state: ChatMessageActionState(
+                listeningMessageID: listeningMessageID,
+                isViewingCachedData: isViewingCachedData,
+                hasActiveStream: hasActiveStream,
+                isRegeneratingMessage: isRegeneratingMessage,
+                isEditingMessage: isEditingMessage,
+                isForkingMessage: isForkingMessage,
+                disablesHistoryActions: disablesHistoryActions
+            ),
+            handlers: ChatMessageActionHandlers(
+                onToggleListening: onToggleListening,
+                onSelectText: onSelectText,
+                onRegenerate: onRegenerate,
+                onEdit: onEdit,
+                onFork: onFork,
+                onCopy: onCopy
+            )
         )
     }
 }

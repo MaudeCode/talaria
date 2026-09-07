@@ -374,17 +374,36 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse() -> Data {
-        let messages: [[String: Any]] = (0..<48).map { index in
+        var messages: [[String: Any]] = (0..<48).map { index in
             [
                 "role": index.isMultiple(of: 2) ? "user" : "assistant",
                 "content": "Fixture message \(index + 1) contains deterministic transcript content for scrolling.",
                 "_ts": 2_000_000_000 + index
             ]
         }
+        messages.append(contentsOf: linkInteractionMessages)
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         return json(["session": detail])
     }
+
+    /// Mixed text-and-link content that pins deterministic long-press targets for
+    /// the message-action interaction tests (TAL-49).
+    private static let linkInteractionMessages: [[String: Any]] = [
+        [
+            "role": "user",
+            "content": "Fixture link request",
+            "message_id": "ui-fixture-link-user",
+            "_ts": 2_000_000_100
+        ],
+        [
+            "role": "assistant",
+            "content": "FixturePlainLead \(String(repeating: "deterministic filler prose that makes this bubble tall. ", count: 12))"
+                + "[FixtureLinkTarget](https://example.invalid/fixture-link) FixturePlainTail",
+            "message_id": "ui-fixture-link-assistant",
+            "_ts": 2_000_000_101
+        ]
+    ]
 
     private static func chatSessionResponse() -> Data {
         let state = chatState.snapshot()

@@ -45,6 +45,55 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
+/// Long-press isolation between a message's links and its own actions (TAL-49).
+final class ChatMessageInteractionUITests: ChatUITestCase {
+    func testLongPressOnALinkShowsOnlyTheLinkActions() throws {
+        launchFixture()
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+
+        let link = app.links["FixtureLinkTarget"]
+        XCTAssertTrue(link.waitForExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
+        longPress(at: settledCenter(of: link))
+
+        XCTAssertTrue(app.buttons["Open Link"].waitForExistence(timeout: 5), "The link's own actions did not open")
+        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
+        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
+    }
+
+    func testLongPressOnMessageTextShowsMessageActionsAtThePressPoint() throws {
+        launchFixture()
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+
+        let message = element(labelContaining: "FixturePlainLead")
+        XCTAssertTrue(message.waitForExistence(timeout: 15), "Missing the fixture's long assistant message")
+        let before = settledFrame(of: message)
+        // High in a tall bubble: the pre-TAL-49 context menu lifted the whole
+        // bubble and pushed its menu to the top of the screen from here.
+        let press = CGPoint(x: before.midX, y: before.minY + 12)
+        longPress(at: press)
+
+        let fork = app.buttons["Fork From Here"]
+        XCTAssertTrue(fork.waitForExistence(timeout: 5), "The message actions did not open")
+        XCTAssertFalse(app.buttons["Open Link"].exists, "Prose must not offer link actions")
+
+        // The menu opens from the press point, not from a lifted bubble: one of
+        // its edges sits at the finger.
+        let menu = app.buttons["Listen"].frame.union(fork.frame)
+        XCTAssertLessThan(
+            min(abs(menu.minY - press.y), abs(menu.maxY - press.y)), 60,
+            "The menu opened away from the press point: \(menu) for a press at \(press)"
+        )
+        XCTAssertEqual(
+            message.frame, before,
+            "Opening the menu moved the message instead of leaving the transcript still"
+        )
+    }
+}
+
 final class ChatPrimaryStreamUITests: ChatUITestCase {
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
         launchChatFixture(
@@ -1028,6 +1077,30 @@ fileprivate extension ChatUITestCase {
 
     func countElements(containing text: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).count
+    }
+
+    /// Waits until the element stops moving, so a press lands where it was measured.
+    func settledFrame(of element: XCUIElement) -> CGRect {
+        var last = element.frame
+        for _ in 0..<20 {
+            Thread.sleep(forTimeInterval: 0.3)
+            let next = element.frame
+            if next == last { return next }
+            last = next
+        }
+        return last
+    }
+
+    func settledCenter(of element: XCUIElement) -> CGPoint {
+        let frame = settledFrame(of: element)
+        return CGPoint(x: frame.midX, y: frame.midY)
+    }
+
+    /// Presses by coordinate: transcript text reports itself as not hittable.
+    func longPress(at point: CGPoint) {
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: point.x, dy: point.y))
+            .press(forDuration: 1.2)
     }
 
     func tapCenter(of element: XCUIElement) {
