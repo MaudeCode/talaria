@@ -163,6 +163,24 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         XCTAssertEqual(draft.text, "")
     }
 
+    func testARestoreAfterADeferredClearIsApplied() {
+        let (draft, coordinator, textView) = makeComposer()
+        type("hello", into: textView, coordinator: coordinator)
+        coordinator.applyBoundText("hello", to: textView)
+
+        beginComposition("あ", in: textView, coordinator: coordinator)
+        setDraftExternally("", draft: draft, coordinator: coordinator, textView: textView)
+
+        textView.unmarkText()
+        coordinator.textViewDidChange(textView)
+        XCTAssertEqual(textView.text, "")
+
+        // The send failed, so the submitted draft comes back.
+        setDraftExternally("hello", draft: draft, coordinator: coordinator, textView: textView)
+
+        XCTAssertEqual(textView.text, "hello")
+    }
+
     func testExternalReplacementOutsideCompositionAppliesImmediately() {
         let (draft, coordinator, textView) = makeComposer()
         type("hello", into: textView, coordinator: coordinator)

@@ -200,6 +200,9 @@ struct ComposerTextView: UIViewRepresentable {
             if textView.text != pending {
                 textView.text = pending
             }
+            // The composition is over and the editor now holds the replacement, so a
+            // later update carrying it is a new external write, not catch-up.
+            settledText = pending
             reportHeight(for: textView)
             return true
         }
