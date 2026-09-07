@@ -2112,7 +2112,7 @@ final class ChatViewModel {
         localMessage: ChatMessage,
         requiresRecentTimestamp: Bool = true
     ) -> Bool {
-        let localContent = normalizedUserMessageContent(localMessage.content)
+        let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
 
         return loadedMessages.contains { loadedMessage in
@@ -2122,7 +2122,7 @@ final class ChatViewModel {
                 return true
             }
 
-            guard normalizedUserMessageContent(loadedMessage.content) == localContent else {
+            guard normalizedUserMessageContent(loadedMessage) == localContent else {
                 return false
             }
 
@@ -2213,14 +2213,18 @@ final class ChatViewModel {
         }
     }
 
-    nonisolated private static func normalizedUserMessageContent(_ content: String?) -> String {
-        guard let content else { return "" }
+    nonisolated private static func normalizedUserMessageContent(_ message: ChatMessage) -> String {
+        guard let content = message.content else { return "" }
 
-        // Share the single marker parser with the display layer so the two can
-        // never disagree about what counts as an attachment marker. Trim the
-        // result because this normalized form is compared for dedup equality.
+        // Share the single parser with the display layer so the two can never
+        // disagree about what counts as an attachment reference — including the
+        // synthesized message, which an attachment-only send shows as an empty
+        // optimistic bubble while the server replays it as text. Its own
+        // attachments are the evidence, so an unattached message that merely
+        // reads like it is never collapsed into a match. Trim the result because
+        // this normalized form is compared for dedup equality.
         return MessageAttachment
-            .normalizedContentForReloadMatching(in: content)
+            .contentWithoutAttachmentReferences(in: content, attachments: message.attachments)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

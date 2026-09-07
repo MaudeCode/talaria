@@ -140,21 +140,49 @@ extension MessageAttachment {
     static let uploadedFilesPrefix = "I've uploaded "
     static let uploadedFilesInfix = " file(s): "
 
-    /// Normalized user-message text for matching an optimistic bubble against
-    /// its server-reloaded copy. Also drops the synthesized
-    /// `I've uploaded N file(s): …` message: an attachment-only send shows an
-    /// empty optimistic bubble (its files render as chips) while the server
-    /// stores and replays the synthesized text, so the two only compare equal
-    /// once both normalize away. Matching is gated on attachment keys by the
-    /// caller, so recognizing this shape too eagerly cannot merge two unrelated
-    /// messages — which is why it lives here and not in the display or
-    /// attachment-inference paths.
-    static func normalizedContentForReloadMatching(in content: String) -> String {
-        if uploadedFilesMessage(in: content) != nil {
-            return ""
+    /// True when `content` is the message an attachment-only send produces *for
+    /// these attachments*: it has the WebUI's synthesized shape and names every
+    /// one of them. The shape alone is not evidence — pasted prose or a voice
+    /// note's bare transcript can wear it — so each attachment's identity key
+    /// must appear in the text. That is a containment check rather than a parse
+    /// of the reference list, so duplicate filenames, commas inside a filename,
+    /// and the server rewriting paths to bare filenames on reload all still
+    /// match, while a voice note (whose transcript never names its audio clip)
+    /// and any unattached message do not.
+    static func isSynthesizedUploadMessage(
+        _ content: String,
+        attachments: [MessageAttachment]?
+    ) -> Bool {
+        guard let attachments,
+              !attachments.isEmpty,
+              // A synthesized message is the whole content: text the user typed
+              // still carries its references in a trailing marker instead.
+              contentWithoutAttachedFilesMarker(in: content) == content,
+              uploadedFilesMessage(in: content) != nil
+        else {
+            return false
         }
 
-        return contentWithoutAttachedFilesMarker(in: content)
+        let lowercasedContent = content.lowercased()
+        return attachments.allSatisfy { attachment in
+            guard let key = attachment.identityKey else { return false }
+            return lowercasedContent.contains(key)
+        }
+    }
+
+    /// Display text for a user bubble that hides attachment paths. Strips the
+    /// `[Attached files: …]` marker, and — for the server's replayed copy of an
+    /// attachment-only send, whose whole content is the synthesized message —
+    /// everything, leaving the attachment chips to speak for themselves. The
+    /// optimistic bubble already carries no text; this keeps the row looking the
+    /// same after a reload. The sent payload is unaffected.
+    static func contentWithoutAttachmentReferences(
+        in content: String,
+        attachments: [MessageAttachment]?
+    ) -> String {
+        isSynthesizedUploadMessage(content, attachments: attachments)
+            ? ""
+            : contentWithoutAttachedFilesMarker(in: content)
     }
 
     private static func attachedFilesMarker(

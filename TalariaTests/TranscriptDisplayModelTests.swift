@@ -524,39 +524,74 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
     }
 
-    /// TAL-158: an attachment-only send shows no bubble text, so the display
-    /// transform needs no special case for the synthesized message — it must
-    /// leave that text, and any lookalike prose, exactly as it found it.
-    func testContentWithoutAttachedFilesMarkerLeavesSynthesizedUploadMessageAlone() {
+    /// TAL-158: the server replays an attachment-only send as the synthesized
+    /// message, so the display transform has to hide it there too — its own
+    /// attachments are the evidence that it really is one.
+    func testContentWithoutAttachmentReferencesStripsReloadedSynthesizedMessage() {
         let sent = PendingAttachment.chatMessageText(draft: "", attachments: [
             PendingAttachment(name: "notes.txt", path: "/tmp/workspace/notes.txt", mime: "text/plain", size: 4, isImage: false)
         ])
+        // The server commonly replays a bare filename as the path.
+        let reloaded = [MessageAttachment(name: "notes.txt", path: "notes.txt", mime: "text/plain", size: 4, isImage: false)]
 
         XCTAssertEqual(sent, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: sent), sent)
-        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: sent))
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: reloaded), "")
     }
 
-    /// Reload matching is the one place that has to see through the synthesized
-    /// message: the optimistic bubble carries no text while the server replays
-    /// the synthesized string, so both sides must normalize to the same value.
-    func testNormalizedContentForReloadMatchingCollapsesSynthesizedUploadMessage() {
-        let sent = "I've uploaded 2 file(s): /tmp/workspace/a.png, /tmp/workspace/b.png"
+    /// Duplicate filenames get distinct server paths, and a filename may contain
+    /// a comma. Containment rather than a parse of the reference list keeps both
+    /// matching.
+    func testContentWithoutAttachmentReferencesStripsDuplicateAndCommaFilenames() {
+        let duplicates = "I've uploaded 2 file(s): /tmp/workspace/shot.jpg, /tmp/workspace/shot-2.jpg"
+        let duplicateAttachments = [
+            MessageAttachment(name: "shot.jpg", path: "/tmp/workspace/shot.jpg", mime: "image/jpeg", size: 4, isImage: true),
+            MessageAttachment(name: "shot.jpg", path: "/tmp/workspace/shot-2.jpg", mime: "image/jpeg", size: 4, isImage: true)
+        ]
+        let comma = "I've uploaded 1 file(s): /tmp/workspace/a, b.txt"
+        let commaAttachment = [MessageAttachment(name: "a, b.txt", path: "/tmp/workspace/a, b.txt", mime: "text/plain", size: 4, isImage: false)]
 
-        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: sent), "")
-        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: ""), "")
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: duplicates, attachments: duplicateAttachments),
+            ""
+        )
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: comma, attachments: commaAttachment),
+            ""
+        )
     }
 
-    func testNormalizedContentForReloadMatchingStillStripsTheMarker() {
-        let sent = "Analyze these\n\n[Attached files: /tmp/workspace/a.png]"
+    /// A voice note sends its bare transcript alongside the audio clip, so the
+    /// shape alone must not blank it: the transcript never names the clip.
+    func testContentWithoutAttachmentReferencesKeepsVoiceNoteTranscript() {
+        let transcript = "I've uploaded 2 file(s): the report, the notes"
+        let audioClip = [MessageAttachment(name: "voice-note.m4a", path: "/tmp/workspace/voice-note.m4a", mime: "audio/mp4", size: 4, isImage: false)]
 
-        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: sent), "Analyze these")
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: transcript, attachments: audioClip),
+            transcript
+        )
     }
 
-    func testNormalizedContentForReloadMatchingLeavesPlainMessagesAlone() {
-        let plain = "I've uploaded the files, take a look"
+    /// Without attachments there is no evidence at all, so pasted prose in the
+    /// same shape survives — and is never turned into inferred chips.
+    func testContentWithoutAttachmentReferencesKeepsUnattachedLookalikeProse() {
+        let content = "I've uploaded 3 file(s): the report, the notes and the slides"
 
-        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: plain), plain)
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: nil), content)
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: []), content)
+        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
+    }
+
+    /// A typed message that reads like the synthesized one still ends in a real
+    /// marker, so only the marker is stripped.
+    func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {
+        let content = "I've uploaded 3 file(s): see below\n\n[Attached files: /tmp/a.png]"
+        let attachments = [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 4, isImage: true)]
+
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: attachments),
+            "I've uploaded 3 file(s): see below"
+        )
     }
 }
 
