@@ -683,6 +683,18 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testReloadPreservesRepeatedOptimisticTurnWhileChatStartIsPending() async throws {
+        try await assertPendingStartReloadPreservesNewResponse(
+            host: "tal116-repeated-prompt.test",
+            loadedUserContent: "Pending question",
+            loadedUserTimestamp: Date().timeIntervalSince1970 - 30,
+            eventsOnStart: [.token("Partial response")],
+            expectedMessages: ["Pending question", "Pending question", "Partial response"],
+            expectedActiveStreamID: "stream-123"
+        )
+    }
+
+    @MainActor
     func testReloadDoesNotReplaceResponseCompletedBeforeWaiterResumes() async throws {
         try await assertPendingStartReloadPreservesNewResponse(
             host: "tal116-fast-completion.test",
@@ -694,6 +706,8 @@ extension ChatViewModelSendTests {
 
     private func assertPendingStartReloadPreservesNewResponse(
         host: String,
+        loadedUserContent: String = "Old question",
+        loadedUserTimestamp: Double = 1_770_000_001,
         eventsOnStart: [SSEEvent],
         expectedMessages: [String],
         expectedActiveStreamID: String?
@@ -738,8 +752,8 @@ extension ChatViewModelSendTests {
             "messages": [
               {
                 "role": "user",
-                "content": "Old question",
-                "timestamp": 1770000001,
+                "content": "\(loadedUserContent)",
+                "timestamp": \(loadedUserTimestamp),
                 "message_id": "old-user"
               }
             ]

@@ -1239,11 +1239,20 @@ final class ChatViewModel {
                 saveActiveStreamSnapshotIfNeeded()
                 let currentMessages = messages
                 let currentMessagesOffset = messagesOffset
+                let loadStartMessageIDs = Set(previousMessages.compactMap(\.messageId))
+                var mergedMessages = Self.mergingLoadedMessages(
+                    reloadedMessages,
+                    withCachedLocalOptimisticMessages: currentMessages
+                )
+                for message in currentMessages where Self.isLocalOptimisticUserMessage(message) {
+                    guard let messageID = message.messageId,
+                          !loadStartMessageIDs.contains(messageID),
+                          !mergedMessages.contains(where: { $0.messageId == messageID })
+                    else { continue }
+                    Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
+                }
                 applyReloadedMessages(
-                    Self.mergingLoadedMessages(
-                        reloadedMessages,
-                        withCachedLocalOptimisticMessages: currentMessages
-                    ),
+                    mergedMessages,
                     from: session,
                     previousMessages: currentMessages,
                     previousMessagesOffset: currentMessagesOffset
