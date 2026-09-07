@@ -172,27 +172,43 @@ struct ComposerTextView: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             guard !flushPendingExternalText(into: textView) else { return }
+
+            // A deferred replacement owns the binding until the composition that
+            // blocked it ends. Publishing provisional marked text over it would both
+            // discard the replacement and register a spurious user edit.
+            guard pendingExternalText == nil else {
+                reportHeight(for: textView)
+                return
+            }
+
             publish(textView.text, from: textView)
         }
 
         /// Applies the external replacement that was deferred during a composition,
-        /// once that composition has ended. Reports whether the editor was rewritten.
+        /// once that composition has ended. Reports whether the pending value was
+        /// consumed. The binding already holds it, so it is not published back.
         @discardableResult
         private func flushPendingExternalText(into textView: UITextView) -> Bool {
             guard textView.markedTextRange == nil, let pending = pendingExternalText else { return false }
 
             pendingExternalText = nil
-            guard textView.text != pending else { return false }
-
-            textView.text = pending
-            publish(pending, from: textView)
+            if textView.text != pending {
+                textView.text = pending
+                unechoedPublishes.removeAll()
+            }
+            reportHeight(for: textView)
             return true
         }
 
         private func publish(_ value: String, from textView: UITextView) {
+            reportHeight(for: textView)
+
+            // Writing an unchanged value still counts as a composer edit for the
+            // draft bookkeeping behind the binding, so only publish real changes.
+            guard text != value else { return }
+
             unechoedPublishes.insert(value)
             text = value
-            reportHeight(for: textView)
         }
 
         func reportHeight(for textView: UITextView) {

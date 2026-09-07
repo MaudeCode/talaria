@@ -7,8 +7,11 @@ import XCTest
 @MainActor
 final class ComposerTextViewMarkedTextTests: XCTestCase {
     private final class Draft {
-        var text = ""
+        var writeCount = 0
         var isFocused = false
+        var text = "" {
+            didSet { writeCount += 1 }
+        }
     }
 
     // MARK: - Marked text protection
@@ -56,7 +59,7 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         beginComposition("あ", in: textView, coordinator: coordinator)
         let composedText = textView.text ?? ""
 
-        coordinator.applyBoundText("/help ", to: textView)
+        setDraftExternally("/help ", draft: draft, coordinator: coordinator, textView: textView)
         XCTAssertEqual(textView.text, composedText, "the composition must survive until it ends")
         XCTAssertNotNil(textView.markedTextRange)
 
@@ -72,11 +75,54 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         XCTAssertEqual(draft.text, "/help me")
     }
 
+    func testDeferredReplacementSurvivesFurtherCompositionChanges() {
+        let (draft, coordinator, textView) = makeComposer()
+        type("hello ", into: textView, coordinator: coordinator)
+        coordinator.applyBoundText("hello ", to: textView)
+
+        beginComposition("あ", in: textView, coordinator: coordinator)
+        setDraftExternally("/help ", draft: draft, coordinator: coordinator, textView: textView)
+
+        // The composition continues; its provisional text must not overwrite the
+        // replacement the binding is already holding.
+        textView.setMarkedText("あい", selectedRange: NSRange(location: 2, length: 0))
+        coordinator.textViewDidChange(textView)
+        XCTAssertEqual(draft.text, "/help ")
+
+        coordinator.applyBoundText("/help ", to: textView)
+        textView.unmarkText()
+        coordinator.textViewDidChange(textView)
+
+        XCTAssertEqual(textView.text, "/help ")
+        XCTAssertEqual(draft.text, "/help ")
+    }
+
+    func testFlushingADeferredReplacementDoesNotWriteBackToTheBinding() {
+        let (draft, coordinator, textView) = makeComposer()
+        type("hello ", into: textView, coordinator: coordinator)
+        coordinator.applyBoundText("hello ", to: textView)
+
+        beginComposition("あ", in: textView, coordinator: coordinator)
+        // A send clears the draft directly, without the composer's edit bookkeeping.
+        setDraftExternally("", draft: draft, coordinator: coordinator, textView: textView)
+        let writesBeforeFlush = draft.writeCount
+
+        textView.unmarkText()
+        coordinator.textViewDidChange(textView)
+
+        XCTAssertEqual(textView.text, "")
+        XCTAssertEqual(
+            draft.writeCount,
+            writesBeforeFlush,
+            "flushing a value the binding already holds must not register an edit"
+        )
+    }
+
     func testExternalReplacementOutsideCompositionAppliesImmediately() {
-        let (_, coordinator, textView) = makeComposer()
+        let (draft, coordinator, textView) = makeComposer()
         type("hello", into: textView, coordinator: coordinator)
 
-        coordinator.applyBoundText("", to: textView)
+        setDraftExternally("", draft: draft, coordinator: coordinator, textView: textView)
 
         XCTAssertEqual(textView.text, "")
     }
@@ -87,13 +133,12 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         coordinator.applyBoundText("hello ", to: textView)
 
         beginComposition("あ", in: textView, coordinator: coordinator)
-        coordinator.applyBoundText("", to: textView)
+        setDraftExternally("", draft: draft, coordinator: coordinator, textView: textView)
 
         textView.unmarkText()
         coordinator.textViewDidEndEditing(textView)
 
         XCTAssertEqual(textView.text, "")
-        XCTAssertEqual(draft.text, "")
     }
 
     // MARK: - Replacement classification
@@ -158,6 +203,18 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
     ) {
         textView.insertText(input)
         coordinator.textViewDidChange(textView)
+    }
+
+    /// Mirrors an external draft writer: it sets the binding, and SwiftUI then
+    /// delivers the new value to the representable.
+    private func setDraftExternally(
+        _ value: String,
+        draft: Draft,
+        coordinator: ComposerTextView.Coordinator,
+        textView: UITextView
+    ) {
+        draft.text = value
+        coordinator.applyBoundText(value, to: textView)
     }
 
     /// Mirrors an input method placing marked text, which also publishes the
