@@ -25,6 +25,9 @@ enum Endpoint {
     /// A real copy: independent messages, tool calls and usage counters, and no
     /// fork lineage. `branchSession` means "fork a child from here".
     case duplicateSession
+    /// Imports or refreshes an external (CLI or messaging) session into the
+    /// WebUI store so it can be opened and continued.
+    case importSession
     case compressSession
     case undoSession
     case retrySession
@@ -176,6 +179,8 @@ enum Endpoint {
             return "/api/session/branch"
         case .duplicateSession:
             return "/api/session/duplicate"
+        case .importSession:
+            return "/api/session/import_cli"
         case .compressSession:
             return "/api/session/compress"
         case .undoSession:

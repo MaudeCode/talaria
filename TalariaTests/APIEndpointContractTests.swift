@@ -60,6 +60,7 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "pin session", method: "POST", endpoint: .pinSession, path: "/api/session/pin"),
             .init(name: "archive session", method: "POST", endpoint: .archiveSession, path: "/api/session/archive"),
             .init(name: "branch session", method: "POST", endpoint: .branchSession, path: "/api/session/branch"),
+            .init(name: "import session", method: "POST", endpoint: .importSession, path: "/api/session/import_cli"),
             .init(name: "compress session", method: "POST", endpoint: .compressSession, path: "/api/session/compress"),
             .init(name: "undo session", method: "POST", endpoint: .undoSession, path: "/api/session/undo"),
             .init(name: "retry session", method: "POST", endpoint: .retrySession, path: "/api/session/retry"),

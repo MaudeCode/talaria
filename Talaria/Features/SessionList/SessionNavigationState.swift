@@ -75,7 +75,11 @@ struct SessionNavigationState: Equatable {
         }
     }
 
+    /// Advances `rootRevision` like the `select` overloads: clearing the
+    /// destination is a navigation the user chose, so work still resolving for the
+    /// destination it replaces must not reinstate it.
     mutating func clearDestination() {
+        rootRevision += 1
         destination = nil
         newChatSessionID = nil
     }
