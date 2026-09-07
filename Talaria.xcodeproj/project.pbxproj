@@ -102,6 +102,7 @@
 		C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */; };
 		C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */; };
 		C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14600000000000000000001 /* ChatToolbarHeaderTests.swift */; };
+		C16100000000000000000002 /* KanbanBoardToolbarLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16100000000000000000001 /* KanbanBoardToolbarLayoutTests.swift */; };
 		C15210000000000000000001 /* OnboardingFlowPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000001 /* OnboardingFlowPolicy.swift */; };
 		C15210000000000000000002 /* OnboardingWelcomePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000002 /* OnboardingWelcomePage.swift */; };
 		C15210000000000000000003 /* OnboardingFeaturesPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000003 /* OnboardingFeaturesPage.swift */; };
@@ -573,6 +574,7 @@
 		C107U0000000000000000005 /* KanbanAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000105 /* KanbanAccessibility.swift */; };
 		C107U0000000000000000006 /* KanbanStatusPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000106 /* KanbanStatusPresentation.swift */; };
 		C107U0000000000000000007 /* KanbanFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000107 /* KanbanFormatters.swift */; };
+		C107U0000000000000000008 /* KanbanBoardToolbarLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107U0000000000000000108 /* KanbanBoardToolbarLayout.swift */; };
 		C14900000000000000000009 /* APIClientKanbanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1490000000000000000000A /* APIClientKanbanTests.swift */; };
 		C1490000000000000000000B /* KanbanFeatureStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1490000000000000000000C /* KanbanFeatureStateTests.swift */; };
 		C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */; };
@@ -763,6 +765,7 @@
 		C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+TranscriptHistory.swift"; sourceTree = "<group>"; };
 		C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelMergeDedupTests.swift; sourceTree = "<group>"; };
 		C14600000000000000000001 /* ChatToolbarHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarHeaderTests.swift; sourceTree = "<group>"; };
+		C16100000000000000000001 /* KanbanBoardToolbarLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardToolbarLayoutTests.swift; sourceTree = "<group>"; };
 		C15200000000000000000001 /* OnboardingFlowPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowPolicy.swift; sourceTree = "<group>"; };
 		C15200000000000000000002 /* OnboardingWelcomePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWelcomePage.swift; sourceTree = "<group>"; };
 		C15200000000000000000003 /* OnboardingFeaturesPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeaturesPage.swift; sourceTree = "<group>"; };
@@ -1241,6 +1244,7 @@
 		C107U0000000000000000105 /* KanbanAccessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanAccessibility.swift; sourceTree = "<group>"; };
 		C107U0000000000000000106 /* KanbanStatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanStatusPresentation.swift; sourceTree = "<group>"; };
 		C107U0000000000000000107 /* KanbanFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFormatters.swift; sourceTree = "<group>"; };
+		C107U0000000000000000108 /* KanbanBoardToolbarLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardToolbarLayout.swift; sourceTree = "<group>"; };
 		C1490000000000000000000A /* APIClientKanbanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientKanbanTests.swift; sourceTree = "<group>"; };
 		C1490000000000000000000C /* KanbanFeatureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateTests.swift; sourceTree = "<group>"; };
 		C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateLoadTests.swift; sourceTree = "<group>"; };
@@ -1442,6 +1446,7 @@
 					C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */,
 					C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */,
 					C14600000000000000000001 /* ChatToolbarHeaderTests.swift */,
+					C16100000000000000000001 /* KanbanBoardToolbarLayoutTests.swift */,
 					C15200000000000000000007 /* OnboardingFlowTests.swift */,
 				C0390000000000000000000F /* SessionListMutationTests.swift */,
 				C107X0000000000000000101 /* SessionListLoadProfileTests.swift */,
@@ -1668,6 +1673,7 @@
 				C107U0000000000000000105 /* KanbanAccessibility.swift */,
 				C107U0000000000000000106 /* KanbanStatusPresentation.swift */,
 				C107U0000000000000000107 /* KanbanFormatters.swift */,
+				C107U0000000000000000108 /* KanbanBoardToolbarLayout.swift */,
 				C107O0000000000000000118 /* KanbanStatusFocusView.swift */,
 				C107O0000000000000000119 /* KanbanBoardManagementView.swift */,
 				C107O0000000000000000120 /* KanbanBoardEditorView.swift */,
@@ -2437,6 +2443,7 @@
 				C107U0000000000000000005 /* KanbanAccessibility.swift in Sources */,
 				C107U0000000000000000006 /* KanbanStatusPresentation.swift in Sources */,
 				C107U0000000000000000007 /* KanbanFormatters.swift in Sources */,
+				C107U0000000000000000008 /* KanbanBoardToolbarLayout.swift in Sources */,
 				C15400000000000000000001 /* KanbanCardDetailState.swift in Sources */,
 				C15400000000000000000003 /* KanbanCardDetailView.swift in Sources */,
 				C15300000000000000000001 /* KanbanCardEditorState.swift in Sources */,
@@ -2871,6 +2878,7 @@
 					C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */,
 					C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */,
 					C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */,
+					C16100000000000000000002 /* KanbanBoardToolbarLayoutTests.swift in Sources */,
 					C15210000000000000000007 /* OnboardingFlowTests.swift in Sources */,
 				C0391000000000000000000F /* SessionListMutationTests.swift in Sources */,
 				C107X0000000000000000001 /* SessionListLoadProfileTests.swift in Sources */,
