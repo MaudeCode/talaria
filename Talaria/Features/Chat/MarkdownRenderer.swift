@@ -10,6 +10,7 @@ struct MarkdownRenderer: View {
     let isStreaming: Bool
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.chatMessageLinkRegionStore) private var linkRegionStore
 
     init(content: String, isStreaming: Bool = false) {
         self.content = content
@@ -49,11 +50,6 @@ struct MarkdownRenderer: View {
         }
     }
 
-    /// Selectable text renders through a path that skips a custom `TextRenderer`,
-    /// which is how a paragraph reports where its links landed (TAL-49). Inline
-    /// selection was already unreachable — the message long press claims that
-    /// gesture, as the bubble context menu did before it — and the menu's
-    /// "Select Text" action is the supported way to select an answer.
     @ViewBuilder
     private var markdownContent: some View {
         switch MarkdownMathLayoutCache.layout(for: content) {
@@ -74,12 +70,33 @@ struct MarkdownRenderer: View {
                     }
                 }
             }
+            .modifier(TranscriptAwareTextSelection(tracksLinkRegions: linkRegionStore != nil))
         case .plain(let markdown):
             ChatMarkdownView(
                 content: markdown,
                 colorScheme: colorScheme,
                 isStreaming: isStreaming
             )
+            .modifier(TranscriptAwareTextSelection(tracksLinkRegions: linkRegionStore != nil))
+        }
+    }
+}
+
+/// Selectable text renders through a path that skips a custom `TextRenderer`,
+/// which is how a message row measures where its links landed (TAL-49). Only a
+/// transcript row measures that, and only there was inline selection already
+/// unreachable — the long press claims that gesture, as the bubble context menu
+/// did before it — with the menu's "Select Text" action in its place. Every
+/// other caller (memory, skills, workspace previews, Kanban) keeps selection.
+private struct TranscriptAwareTextSelection: ViewModifier {
+    let tracksLinkRegions: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if tracksLinkRegions {
+            content
+        } else {
+            content.textSelection(.enabled)
         }
     }
 }
@@ -650,14 +667,16 @@ extension MarkdownUI.Theme {
                     minWidth: ChatMarkdownTable.cellMinWidth,
                     maxWidth: ChatMarkdownTable.cellMaxWidth
                 ) {
-                    configuration.label
-                        .markdownTextStyle {
-                            if configuration.row == 0 {
-                                FontWeight(.semibold)
-                            }
-                            BackgroundColor(nil)
+                    ChatMarkdownLinkTrackedText(content: configuration.content) {
+                        configuration.label
+                    }
+                    .markdownTextStyle {
+                        if configuration.row == 0 {
+                            FontWeight(.semibold)
                         }
-                        .fixedSize(horizontal: false, vertical: true)
+                        BackgroundColor(nil)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 6)
                 .padding(.horizontal, 13)

@@ -246,29 +246,23 @@ enum ChatMessageInteraction {
     static let rowCoordinateSpace = "chat-message-row"
 }
 
-/// A Markdown paragraph that reports its links' geometry while a message row is
-/// listening. Without a store — every other `Markdown` in the app — it renders
-/// exactly as before, with no renderer attached.
+/// Markdown inline text that reports where its links landed while a message row
+/// is listening. Without a store — every other `Markdown` in the app — it
+/// renders exactly as before, with no renderer attached.
 ///
-/// The styling repeats what the base `gitHub` theme applies to a paragraph,
-/// because installing this style replaces that one.
-struct ChatMarkdownParagraph: View {
-    let configuration: BlockConfiguration
+/// The label must be the text itself, not a padded container: the rects the
+/// renderer reports are relative to the text's own origin.
+struct ChatMarkdownLinkTrackedText<Label: View>: View {
+    let content: MarkdownContent
+    @ViewBuilder let label: Label
 
     @Environment(\.chatMessageLinkRegionStore) private var store
     @State private var paragraphID = UUID()
 
-    var body: some View {
-        paragraph
-            .fixedSize(horizontal: false, vertical: true)
-            .relativeLineSpacing(.em(0.25))
-            .markdownMargin(top: 0, bottom: 16)
-    }
-
     @ViewBuilder
-    private var paragraph: some View {
+    var body: some View {
         if let store, case let links = self.links, !links.isEmpty {
-            configuration.label
+            label
                 .textRenderer(
                     ChatLinkRegionTextRenderer(
                         links: links,
@@ -284,22 +278,39 @@ struct ChatMarkdownParagraph: View {
                 }
                 .onDisappear { store.removeParagraph(paragraphID) }
         } else {
-            configuration.label
+            label
         }
     }
 
     private var links: [MarkdownLinkRange] {
         MarkdownLinkRanges.cachedRanges(
-            markdown: configuration.content.renderMarkdown(),
-            plainText: configuration.content.renderPlainText()
+            markdown: content.renderMarkdown(),
+            plainText: content.renderPlainText()
         )
     }
 
     private var plainTextCount: Int {
-        configuration.content
+        content
             .renderPlainText()
             .trimmingCharacters(in: .newlines)
             .replacingOccurrences(of: "\n", with: " ")
             .count
+    }
+}
+
+/// A Markdown paragraph, tracked for links.
+///
+/// The styling repeats what the base `gitHub` theme applies to a paragraph,
+/// because installing this style replaces that one.
+struct ChatMarkdownParagraph: View {
+    let configuration: BlockConfiguration
+
+    var body: some View {
+        ChatMarkdownLinkTrackedText(content: configuration.content) {
+            configuration.label
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .relativeLineSpacing(.em(0.25))
+        .markdownMargin(top: 0, bottom: 16)
     }
 }

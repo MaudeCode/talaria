@@ -156,9 +156,38 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
         }
     }
 
+    /// Links live in table cells too, which render through their own block style.
+    func testRenderedTableCellReportsItsLinkRect() throws {
+        let store = try renderRegions(content: """
+        | head | link |
+        | --- | --- |
+        | cell | [FixtureCellLink](https://example.invalid/cell) |
+        """)
+
+        XCTAssertEqual(
+            store.regions().map(\.url),
+            [URL(string: "https://example.invalid/cell")],
+            "A link inside a table cell reported no hit target"
+        )
+    }
+
     func testParagraphWithoutLinksReportsNoRegions() throws {
         let store = try renderRegions(content: "FixturePlainLead words with no link at all in this paragraph.")
         XCTAssertEqual(store.regions(), [])
+    }
+
+    /// `MarkdownRenderer` also renders memory, skills, workspace previews and
+    /// Kanban cards. Only a transcript row tracks links there — and only a
+    /// transcript row trades inline selection for that tracking.
+    func testMarkdownRendererTracksLinksOnlyForATranscriptRow() throws {
+        let content = "words before [FixtureLinkTarget](https://example.invalid/x) and after."
+        let tracked = ChatMessageLinkRegionStore()
+        try host(MarkdownRenderer(content: content).environment(\.chatMessageLinkRegionStore, tracked))
+        XCTAssertEqual(tracked.regions().map(\.url), [URL(string: "https://example.invalid/x")])
+
+        let untracked = ChatMessageLinkRegionStore()
+        try host(MarkdownRenderer(content: content))
+        XCTAssertEqual(untracked.regions(), [], "A view outside a transcript row must not report regions")
     }
 
     private let paragraphWidth: CGFloat = 320
@@ -167,13 +196,20 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
     /// draw pass, which only a hosted layout performs the way the transcript does.
     private func renderRegions(content: String) throws -> ChatMessageLinkRegionStore {
         let store = ChatMessageLinkRegionStore()
+        try host(
+            ChatMarkdownView(content: content, colorScheme: .light, isStreaming: false)
+                .environment(\.chatMessageLinkRegionStore, store)
+        )
+        return store
+    }
+
+    private func host(_ view: some View) throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = try XCTUnwrap(scene.windows.first { $0.isKeyWindow } ?? scene.windows.first)
         let root = try XCTUnwrap(window.rootViewController)
 
         let host = UIHostingController(rootView: AnyView(
-            ChatMarkdownView(content: content, colorScheme: .light, isStreaming: false)
-                .environment(\.chatMessageLinkRegionStore, store)
+            view
                 .frame(width: paragraphWidth)
                 .coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace))
         ))
@@ -189,6 +225,5 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
                 host.removeFromParent()
             }
         }
-        return store
     }
 }
