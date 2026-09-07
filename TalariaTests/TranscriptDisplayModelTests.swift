@@ -524,59 +524,39 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
     }
 
-    /// TAL-158: a textless send carries the synthesized message instead of a
-    /// marker, so the same display transform has to hide its paths too.
-    func testContentWithoutAttachmentReferencesStripsSynthesizedUploadMessage() {
+    /// TAL-158: an attachment-only send shows no bubble text, so the display
+    /// transform needs no special case for the synthesized message — it must
+    /// leave that text, and any lookalike prose, exactly as it found it.
+    func testContentWithoutAttachedFilesMarkerLeavesSynthesizedUploadMessageAlone() {
         let sent = PendingAttachment.chatMessageText(draft: "", attachments: [
-            PendingAttachment(name: "sample.html", path: "/tmp/workspace/sample.html", mime: "text/html", size: 4, isImage: false),
-            PendingAttachment(name: "image.jpg", path: "/tmp/workspace/image.jpg", mime: "image/jpeg", size: 4, isImage: true)
+            PendingAttachment(name: "notes.txt", path: "/tmp/workspace/notes.txt", mime: "text/plain", size: 4, isImage: false)
         ])
-        let attachments = [
-            MessageAttachment(name: "sample.html", path: "/tmp/workspace/sample.html", mime: "text/html", size: 4, isImage: false),
-            MessageAttachment(name: "image.jpg", path: "/tmp/workspace/image.jpg", mime: "image/jpeg", size: 4, isImage: true)
-        ]
 
-        XCTAssertEqual(sent, "I've uploaded 2 file(s): /tmp/workspace/sample.html, /tmp/workspace/image.jpg")
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: attachments),
-            ""
-        )
+        XCTAssertEqual(sent, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: sent), sent)
+        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: sent))
     }
 
-    /// The synthesized shape is close to ordinary prose, so without attachments
-    /// to corroborate it the text has to survive — and it must never be turned
-    /// into inferred attachment chips.
-    func testContentWithoutAttachmentReferencesKeepsLookalikeProseWithoutAttachments() {
-        let content = "I've uploaded 3 file(s): the report, the notes and the slides"
+    /// Reload matching is the one place that has to see through the synthesized
+    /// message: the optimistic bubble carries no text while the server replays
+    /// the synthesized string, so both sides must normalize to the same value.
+    func testNormalizedContentForReloadMatchingCollapsesSynthesizedUploadMessage() {
+        let sent = "I've uploaded 2 file(s): /tmp/workspace/a.png, /tmp/workspace/b.png"
 
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: nil), content)
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: []), content)
-        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
+        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: sent), "")
+        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: ""), "")
     }
 
-    /// A voice note sends its bare transcript alongside the audio clip, so a
-    /// transcript that happens to read like the synthesized message must not be
-    /// blanked: its references are not the message's attachments.
-    func testContentWithoutAttachmentReferencesKeepsVoiceNoteTranscript() {
-        let transcript = "I've uploaded 2 file(s): the report, the notes"
-        let audioClip = [MessageAttachment(name: "voice-note.m4a", path: "/tmp/workspace/voice-note.m4a", mime: "audio/mp4", size: 4, isImage: false)]
+    func testNormalizedContentForReloadMatchingStillStripsTheMarker() {
+        let sent = "Analyze these\n\n[Attached files: /tmp/workspace/a.png]"
 
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: transcript, attachments: audioClip),
-            transcript
-        )
+        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: sent), "Analyze these")
     }
 
-    /// A typed message that happens to read like the synthesized one still ends
-    /// in a real marker, so only the marker is stripped.
-    func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {
-        let content = "I've uploaded 3 file(s): see below\n\n[Attached files: /tmp/a.png]"
-        let attachments = [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 4, isImage: true)]
+    func testNormalizedContentForReloadMatchingLeavesPlainMessagesAlone() {
+        let plain = "I've uploaded the files, take a look"
 
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: attachments),
-            "I've uploaded 3 file(s): see below"
-        )
+        XCTAssertEqual(MessageAttachment.normalizedContentForReloadMatching(in: plain), plain)
     }
 }
 

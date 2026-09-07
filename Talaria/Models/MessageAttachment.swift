@@ -140,32 +140,21 @@ extension MessageAttachment {
     static let uploadedFilesPrefix = "I've uploaded "
     static let uploadedFilesInfix = " file(s): "
 
-    /// Display text for a user bubble that hides attachment paths. A textless
-    /// send has no marker to strip: the synthesized `I've uploaded N file(s): …`
-    /// message *is* the whole content. That shape is close enough to ordinary
-    /// text to occur by accident — pasted prose, or a voice-note transcript,
-    /// which `sendVoiceNote` sends bare alongside its audio clip — so matching
-    /// it is not enough. The references it names must also *be* the message's
-    /// attachments, which only an attachment-only send produces, since it built
-    /// both from the same list. Display-only; the sent payload and attachment
-    /// inference are untouched.
-    static func contentWithoutAttachmentReferences(
-        in content: String,
-        attachments: [MessageAttachment]?
-    ) -> String {
-        let stripped = contentWithoutAttachedFilesMarker(in: content)
-        guard stripped == content,
-              let attachments,
-              !attachments.isEmpty,
-              let synthesized = uploadedFilesMessage(in: content),
-              synthesized.references.count == attachments.count,
-              Set(synthesized.references.compactMap { MessageAttachment(path: $0).identityKey })
-                == Set(attachments.compactMap(\.identityKey))
-        else {
-            return stripped
+    /// Normalized user-message text for matching an optimistic bubble against
+    /// its server-reloaded copy. Also drops the synthesized
+    /// `I've uploaded N file(s): …` message: an attachment-only send shows an
+    /// empty optimistic bubble (its files render as chips) while the server
+    /// stores and replays the synthesized text, so the two only compare equal
+    /// once both normalize away. Matching is gated on attachment keys by the
+    /// caller, so recognizing this shape too eagerly cannot merge two unrelated
+    /// messages — which is why it lives here and not in the display or
+    /// attachment-inference paths.
+    static func normalizedContentForReloadMatching(in content: String) -> String {
+        if uploadedFilesMessage(in: content) != nil {
+            return ""
         }
 
-        return ""
+        return contentWithoutAttachedFilesMarker(in: content)
     }
 
     private static func attachedFilesMarker(

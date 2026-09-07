@@ -2220,7 +2220,7 @@ final class ChatViewModel {
         // never disagree about what counts as an attachment marker. Trim the
         // result because this normalized form is compared for dedup equality.
         return MessageAttachment
-            .contentWithoutAttachedFilesMarker(in: content)
+            .normalizedContentForReloadMatching(in: content)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -2266,7 +2266,9 @@ final class ChatViewModel {
         let didStart = await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
-            displayContent: message.isEmpty ? composedMessage : message,
+            // A textless send shows no bubble text: its files render as chips,
+            // and the synthesized message the server stores is for the agent.
+            displayContent: message,
             messageForAPI: composedMessage,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,

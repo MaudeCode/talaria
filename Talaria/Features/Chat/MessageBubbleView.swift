@@ -434,10 +434,7 @@ struct MessageBubbleView: View {
     private var userBubbleText: String {
         let content = message.content ?? ""
         guard hidesAttachmentPaths else { return content }
-        return MessageAttachment.contentWithoutAttachmentReferences(
-            in: content,
-            attachments: message.attachments
-        )
+        return MessageAttachment.contentWithoutAttachedFilesMarker(in: content)
     }
 
     private var hasVisibleUserBubbleText: Bool {

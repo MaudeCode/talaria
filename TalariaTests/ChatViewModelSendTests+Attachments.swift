@@ -242,9 +242,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(startedMessage, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
         XCTAssertEqual(startedAttachmentPaths, ["/tmp/workspace/notes.txt"])
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
-        // The optimistic bubble has to match what the server stores, or the
-        // reloaded copy will not dedupe against it.
-        XCTAssertEqual(viewModel.messages.first?.content, startedMessage)
+        // The synthesized text is for the agent, not the bubble: the optimistic
+        // row shows its files as chips and no text at all.
+        XCTAssertEqual(viewModel.messages.first?.content, "")
         XCTAssertEqual(viewModel.messages.first?.attachments?.compactMap(\.path), startedAttachmentPaths)
     }
 
@@ -332,10 +332,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(result, .executed(message: "Queued for next turn (#1)."))
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
 
-        let synthesized = "I've uploaded 1 file(s): /tmp/workspace/notes.txt"
         streamClient.emit(.streamEnd)
-        try await waitUntil { viewModel.messages.contains { $0.content == synthesized } }
+        try await waitUntil { viewModel.messages.contains { $0.attachments?.isEmpty == false } }
 
-        XCTAssertEqual(startedMessages, ["Initial request", synthesized])
+        XCTAssertEqual(startedMessages, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
     }
 }
