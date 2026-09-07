@@ -75,12 +75,10 @@ struct ComposerTextView: UIViewRepresentable {
         @Binding var isFocused: Bool
         var onHeightChange: (CGFloat) -> Void
         private var pendingFocusTarget: Bool?
-        // Values this coordinator pushed into the binding that SwiftUI has not yet
-        // echoed back. A representable update carrying one of them is SwiftUI
-        // catching up, not a new external draft, so it must not rewrite the editor.
-        // The set is emptied as soon as an update agrees with the editor, so it only
-        // ever holds the keystrokes of one in-flight burst.
-        private var unechoedPublishes: Set<String> = []
+        // The draft as of the last update with no composition in progress. A value
+        // still carrying it during or just after a composition is SwiftUI catching up
+        // to the draft that composition replaced, not a new external write.
+        private var settledText = ""
         // A deliberate external replacement that arrived mid-composition. Applying it
         // straight away would drop the marked text, so it waits for the composition
         // to end and is then applied exactly once.
@@ -97,15 +95,22 @@ struct ComposerTextView: UIViewRepresentable {
         }
 
         func applyBoundText(_ boundText: String, to textView: UITextView) {
+            let marked = textView.markedTextRange
+            // Only the representable's own observations settle the draft, so the guard
+            // below still holds for the first update after a composition commits.
+            defer { if marked == nil { settledText = textView.text } }
+
             guard textView.text != boundText else {
-                unechoedPublishes.removeAll()
                 pendingExternalText = nil
                 return
             }
 
-            guard !unechoedPublishes.contains(boundText) else { return }
+            // Never let a catch-up update reinstate the draft this composition
+            // replaced. An empty settled draft replaced nothing, so there is nothing
+            // to reinstate and the value is an external write, such as a send clear.
+            guard boundText != settledText || settledText.isEmpty else { return }
 
-            guard let marked = textView.markedTextRange else {
+            guard let marked else {
                 pendingExternalText = nil
                 textView.text = boundText
                 return
@@ -194,7 +199,6 @@ struct ComposerTextView: UIViewRepresentable {
             pendingExternalText = nil
             if textView.text != pending {
                 textView.text = pending
-                unechoedPublishes.removeAll()
             }
             reportHeight(for: textView)
             return true
@@ -207,7 +211,6 @@ struct ComposerTextView: UIViewRepresentable {
             // draft bookkeeping behind the binding, so only publish real changes.
             guard text != value else { return }
 
-            unechoedPublishes.insert(value)
             text = value
         }
 

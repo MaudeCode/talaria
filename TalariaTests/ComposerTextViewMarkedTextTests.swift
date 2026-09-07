@@ -36,14 +36,15 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
     func testCommittedCompositionIsNotReplacedByAnEarlierBindingValue() {
         let (_, coordinator, textView) = makeComposer()
         type("hello ", into: textView, coordinator: coordinator)
+        coordinator.applyBoundText("hello ", to: textView)
 
         beginComposition("あ", in: textView, coordinator: coordinator)
         let composedText = textView.text ?? ""
         textView.unmarkText()
         coordinator.textViewDidChange(textView)
 
-        // "hello " was published before the composition and SwiftUI has not echoed
-        // the committed value yet, so this update is catch-up, not an external edit.
+        // "hello " is the draft this composition started from, so an update still
+        // carrying it is catch-up rather than an external edit.
         coordinator.applyBoundText("hello ", to: textView)
 
         XCTAssertEqual(textView.text, composedText)
@@ -116,6 +117,35 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
             writesBeforeFlush,
             "flushing a value the binding already holds must not register an edit"
         )
+    }
+
+    func testCompositionReplacingTheWholeDraftIgnoresTheReplacedValue() {
+        let (draft, coordinator, textView) = makeComposer()
+        // A draft that this composer never published, e.g. one restored on appear.
+        setDraftExternally("hello", draft: draft, coordinator: coordinator, textView: textView)
+
+        // The user selects everything and composes over it.
+        textView.selectedRange = NSRange(location: 0, length: 5)
+        beginComposition("あ", in: textView, coordinator: coordinator)
+
+        coordinator.applyBoundText("hello", to: textView)
+        XCTAssertEqual(textView.text, "あ")
+        XCTAssertNotNil(textView.markedTextRange)
+
+        textView.unmarkText()
+        coordinator.textViewDidChange(textView)
+        XCTAssertEqual(textView.text, "あ", "the replaced draft must not come back")
+    }
+
+    func testAnExternalWriteRestoringAPreviouslyTypedValueIsApplied() {
+        let (draft, coordinator, textView) = makeComposer()
+        type("hello", into: textView, coordinator: coordinator)
+
+        // A send clears the draft, then fails and restores exactly what was typed.
+        setDraftExternally("", draft: draft, coordinator: coordinator, textView: textView)
+        setDraftExternally("hello", draft: draft, coordinator: coordinator, textView: textView)
+
+        XCTAssertEqual(textView.text, "hello")
     }
 
     func testSendClearIsDeferredWhenTheWholeDraftIsAComposition() {
