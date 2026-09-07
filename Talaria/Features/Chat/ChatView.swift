@@ -1465,7 +1465,9 @@ struct ChatView: View {
         _ submittedDraft: String,
         submittedDraftRevision: Int
     ) async -> Bool {
-        guard !submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !viewModel.pendingAttachments.isEmpty
+        else {
             return false
         }
 

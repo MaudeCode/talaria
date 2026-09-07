@@ -523,6 +523,90 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         let content = "hello\n\n[Attached files: /tmp/a.png] and then more text"
         XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
     }
+
+    /// TAL-158: the server replays an attachment-only send as the synthesized
+    /// message, so the display transform has to hide it there too — its own
+    /// attachments are the evidence that it really is one.
+    func testContentWithoutAttachmentReferencesStripsReloadedSynthesizedMessage() {
+        let sent = PendingAttachment.chatMessageText(draft: "", attachments: [
+            PendingAttachment(name: "notes.txt", path: "/tmp/workspace/notes.txt", mime: "text/plain", size: 4, isImage: false)
+        ])
+        // The server commonly replays a bare filename as the path.
+        let reloaded = [MessageAttachment(name: "notes.txt", path: "notes.txt", mime: "text/plain", size: 4, isImage: false)]
+
+        XCTAssertEqual(sent, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: reloaded), "")
+    }
+
+    /// Duplicate filenames get distinct server paths, and a filename may contain
+    /// a comma. Containment rather than a parse of the reference list keeps both
+    /// matching.
+    func testContentWithoutAttachmentReferencesStripsDuplicateAndCommaFilenames() {
+        let duplicates = "I've uploaded 2 file(s): /tmp/workspace/shot.jpg, /tmp/workspace/shot-2.jpg"
+        let duplicateAttachments = [
+            MessageAttachment(name: "shot.jpg", path: "/tmp/workspace/shot.jpg", mime: "image/jpeg", size: 4, isImage: true),
+            MessageAttachment(name: "shot.jpg", path: "/tmp/workspace/shot-2.jpg", mime: "image/jpeg", size: 4, isImage: true)
+        ]
+        let comma = "I've uploaded 1 file(s): /tmp/workspace/a, b.txt"
+        let commaAttachment = [MessageAttachment(name: "a, b.txt", path: "/tmp/workspace/a, b.txt", mime: "text/plain", size: 4, isImage: false)]
+
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: duplicates, attachments: duplicateAttachments),
+            ""
+        )
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: comma, attachments: commaAttachment),
+            ""
+        )
+    }
+
+    /// A voice note sends its bare transcript alongside the audio clip, so the
+    /// shape alone must not blank it: the transcript never names the clip.
+    func testContentWithoutAttachmentReferencesKeepsVoiceNoteTranscript() {
+        let transcript = "I've uploaded 2 file(s): the report, the notes"
+        let audioClip = [MessageAttachment(name: "voice-note.m4a", path: "/tmp/workspace/voice-note.m4a", mime: "audio/mp4", size: 4, isImage: false)]
+
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: transcript, attachments: audioClip),
+            transcript
+        )
+    }
+
+    /// Without attachments there is no evidence at all, so pasted prose in the
+    /// same shape survives — and is never turned into inferred chips.
+    func testContentWithoutAttachmentReferencesKeepsUnattachedLookalikeProse() {
+        let content = "I've uploaded 3 file(s): the report, the notes and the slides"
+
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: nil), content)
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: []), content)
+        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
+    }
+
+    /// The optimistic row carries the same text the server will store, marker
+    /// included, so a user who types the synthesized wording *and* attaches the
+    /// file they named still sees their own words — before and after a reload.
+    func testContentWithoutAttachmentReferencesKeepsTypedLookalikeNamingItsAttachment() {
+        let typed = "I've uploaded 1 file(s): report.pdf"
+        let attachments = [MessageAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)]
+        let sent = PendingAttachment.chatMessageText(draft: typed, attachments: [
+            PendingAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)
+        ])
+
+        XCTAssertEqual(sent, "\(typed)\n\n[Attached files: /tmp/workspace/report.pdf]")
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: attachments), typed)
+    }
+
+    /// A typed message that reads like the synthesized one still ends in a real
+    /// marker, so only the marker is stripped.
+    func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {
+        let content = "I've uploaded 3 file(s): see below\n\n[Attached files: /tmp/a.png]"
+        let attachments = [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 4, isImage: true)]
+
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: attachments),
+            "I've uploaded 3 file(s): see below"
+        )
+    }
 }
 
 final class ChatActiveRunStatusPolicyTests: XCTestCase {

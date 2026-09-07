@@ -135,6 +135,56 @@ extension MessageAttachment {
         return String(prefix)
     }
 
+    /// The two halves of the WebUI's message for a textless send, built by
+    /// `PendingAttachment.chatMessageText` and parsed back here.
+    static let uploadedFilesPrefix = "I've uploaded "
+    static let uploadedFilesInfix = " file(s): "
+
+    /// True when `content` is the message an attachment-only send produces *for
+    /// these attachments*: it has the WebUI's synthesized shape and names every
+    /// one of them. The shape alone is not evidence — pasted prose or a voice
+    /// note's bare transcript can wear it — so each attachment's identity key
+    /// must appear in the text. That is a containment check rather than a parse
+    /// of the reference list, so duplicate filenames, commas inside a filename,
+    /// and the server rewriting paths to bare filenames on reload all still
+    /// match, while a voice note (whose transcript never names its audio clip)
+    /// and any unattached message do not.
+    static func isSynthesizedUploadMessage(
+        _ content: String,
+        attachments: [MessageAttachment]?
+    ) -> Bool {
+        guard let attachments,
+              !attachments.isEmpty,
+              // A synthesized message is the whole content: text the user typed
+              // still carries its references in a trailing marker instead.
+              contentWithoutAttachedFilesMarker(in: content) == content,
+              uploadedFilesMessage(in: content) != nil
+        else {
+            return false
+        }
+
+        let lowercasedContent = content.lowercased()
+        return attachments.allSatisfy { attachment in
+            guard let key = attachment.identityKey else { return false }
+            return lowercasedContent.contains(key)
+        }
+    }
+
+    /// Display text for a user bubble that hides attachment paths. Strips the
+    /// `[Attached files: …]` marker, and — for the server's replayed copy of an
+    /// attachment-only send, whose whole content is the synthesized message —
+    /// everything, leaving the attachment chips to speak for themselves. The
+    /// optimistic bubble already carries no text; this keeps the row looking the
+    /// same after a reload. The sent payload is unaffected.
+    static func contentWithoutAttachmentReferences(
+        in content: String,
+        attachments: [MessageAttachment]?
+    ) -> String {
+        isSynthesizedUploadMessage(content, attachments: attachments)
+            ? ""
+            : contentWithoutAttachedFilesMarker(in: content)
+    }
+
     private static func attachedFilesMarker(
         in content: String
     ) -> (range: Range<String.Index>, references: [String])? {
@@ -159,6 +209,31 @@ extension MessageAttachment {
 
         let markerEnd = afterMarker.index(after: closeBracket)
         return (markerRange.lowerBound..<markerEnd, references)
+    }
+
+    /// Matches `I've uploaded <count> file(s): <references>` — the whole
+    /// message a textless send carries, since there is no typed text to append
+    /// a `[Attached files: …]` marker to. Anchored at both ends and requiring a
+    /// numeric count; the caller supplies the rest of the evidence that this is
+    /// really an attachment-only send.
+    private static func uploadedFilesMessage(
+        in content: String
+    ) -> (range: Range<String.Index>, references: [String])? {
+        guard content.hasPrefix(uploadedFilesPrefix) else { return nil }
+
+        let afterPrefix = content.dropFirst(uploadedFilesPrefix.count)
+        guard let infix = afterPrefix.range(of: uploadedFilesInfix) else { return nil }
+
+        let count = afterPrefix[..<infix.lowerBound]
+        guard !count.isEmpty, count.allSatisfy(\.isNumber) else { return nil }
+
+        let references = afterPrefix[infix.upperBound...]
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !references.isEmpty else { return nil }
+
+        return (content.startIndex..<content.endIndex, references)
     }
 
     private static func displayName(for reference: String) -> String {

@@ -196,3 +196,145 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(previews[paths[1]], imageB)
     }
 }
+
+// MARK: - TAL-158: attachment-only sends
+
+@MainActor
+extension ChatViewModelSendTests {
+    /// Uploads one file, then sends with an empty draft. The send must reach
+    /// `/api/chat/start` carrying the WebUI's synthesized message plus the file.
+    func testTextlessSendWithAttachmentSynthesizesMessage() async throws {
+        var startedMessage: String?
+        var startedAttachmentPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {
+                  "filename": "notes.txt",
+                  "path": "/tmp/workspace/notes.txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false
+                }
+                """, for: request)
+            case "/api/chat/start":
+                let body = try apiTestJSONBody(from: request)
+                startedMessage = body["message"] as? String
+                startedAttachmentPaths = (body["attachments"] as? [[String: Any]] ?? [])
+                    .compactMap { $0["path"] as? String }
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.uploadAttachment(data: Data("hello".utf8), filename: "notes.txt")
+        XCTAssertEqual(viewModel.pendingAttachments.count, 1)
+
+        let didStart = await viewModel.sendMessage("   ")
+
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(startedMessage, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
+        XCTAssertEqual(startedAttachmentPaths, ["/tmp/workspace/notes.txt"])
+        XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
+        // The optimistic row carries exactly what the server will store, so the
+        // bubble looks the same before and after a reload.
+        XCTAssertEqual(viewModel.messages.first?.content, startedMessage)
+        XCTAssertEqual(viewModel.messages.first?.attachments?.compactMap(\.path), startedAttachmentPaths)
+    }
+
+    func testTextlessSendWithoutAttachmentsIsRejectedBeforeAnyRequest() async throws {
+        let viewModel = try makeViewModel { request in
+            XCTFail("Empty send should not reach \(request.url?.path ?? "unknown path")")
+            throw URLError(.badURL)
+        }
+
+        let didStart = await viewModel.sendMessage("   \n ")
+
+        XCTAssertFalse(didStart)
+        XCTAssertTrue(viewModel.messages.isEmpty)
+    }
+
+    func testFailedTextlessSendRestoresStagedAttachment() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {
+                  "filename": "notes.txt",
+                  "path": "/tmp/workspace/notes.txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false
+                }
+                """, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","error":"server unreachable"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.uploadAttachment(data: Data("hello".utf8), filename: "notes.txt")
+
+        let didStart = await viewModel.sendMessage("")
+
+        XCTAssertFalse(didStart)
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.path), ["/tmp/workspace/notes.txt"])
+    }
+
+    /// A textless send during a run cannot steer — steering carries no files —
+    /// so it queues, and the drain replays it with the synthesized message.
+    func testTextlessSendDuringRunQueuesAndDrainsWithAttachment() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var startedMessages: [String] = []
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {
+                  "filename": "notes.txt",
+                  "path": "/tmp/workspace/notes.txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false
+                }
+                """, for: request)
+            case "/api/chat/start":
+                let body = try apiTestJSONBody(from: request)
+                startedMessages.append(try XCTUnwrap(body["message"] as? String))
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStartRun = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStartRun)
+        XCTAssertNotNil(viewModel.activeStreamID)
+
+        await viewModel.uploadAttachment(data: Data("hello".utf8), filename: "notes.txt")
+        let result = await viewModel.submitStreamingMessage("", behavior: .steer)
+
+        XCTAssertEqual(result, .executed(message: "Queued for next turn (#1)."))
+        XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
+
+        streamClient.emit(.streamEnd)
+        try await waitUntil { viewModel.messages.contains { $0.attachments?.isEmpty == false } }
+
+        XCTAssertEqual(startedMessages, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
+    }
+}

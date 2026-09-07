@@ -2188,7 +2188,7 @@ final class ChatViewModel {
         localMessage: ChatMessage,
         requiresRecentTimestamp: Bool = true
     ) -> Bool {
-        let localContent = normalizedUserMessageContent(localMessage.content)
+        let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
 
         return loadedMessages.contains { loadedMessage in
@@ -2198,7 +2198,7 @@ final class ChatViewModel {
                 return true
             }
 
-            guard normalizedUserMessageContent(loadedMessage.content) == localContent else {
+            guard normalizedUserMessageContent(loadedMessage) == localContent else {
                 return false
             }
 
@@ -2289,14 +2289,18 @@ final class ChatViewModel {
         }
     }
 
-    nonisolated private static func normalizedUserMessageContent(_ content: String?) -> String {
-        guard let content else { return "" }
+    nonisolated private static func normalizedUserMessageContent(_ message: ChatMessage) -> String {
+        guard let content = message.content else { return "" }
 
-        // Share the single marker parser with the display layer so the two can
-        // never disagree about what counts as an attachment marker. Trim the
-        // result because this normalized form is compared for dedup equality.
+        // Share the single parser with the display layer so the two can never
+        // disagree about what counts as an attachment reference — including the
+        // synthesized message, which an attachment-only send shows as an empty
+        // optimistic bubble while the server replays it as text. Its own
+        // attachments are the evidence, so an unattached message that merely
+        // reads like it is never collapsed into a match. Trim the result because
+        // this normalized form is compared for dedup equality.
         return MessageAttachment
-            .contentWithoutAttachedFilesMarker(in: content)
+            .contentWithoutAttachmentReferences(in: content, attachments: message.attachments)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -2320,7 +2324,16 @@ final class ChatViewModel {
         }
 
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return false }
+        // A textless send is valid when it carries staged files: the composed
+        // text then *is* the synthesized attachment message. Compose it before
+        // `prepareForSend` consumes the attachments, and reject on the composed
+        // result so an empty draft with unusable references still bails without
+        // spending them.
+        let composedMessage = PendingAttachment.chatMessageText(
+            draft: message,
+            attachments: attachmentCoordinator.pendingAttachments
+        )
+        guard !composedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
 
         guard let sessionID else {
             sendErrorMessage = String(localized: "The server did not provide a session ID.")
@@ -2333,8 +2346,12 @@ final class ChatViewModel {
         let didStart = await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
-            displayContent: message,
-            messageForAPI: attachmentPreparation.chatMessageText(draft: message),
+            // The optimistic row carries exactly what the server will store, so
+            // the bubble cannot change appearance across a reload — and so the
+            // display layer sees the trailing marker that tells a typed message
+            // apart from a synthesized attachment-only one.
+            displayContent: composedMessage,
+            messageForAPI: composedMessage,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,
             attachmentsToRestoreOnFailure: attachmentPreparation.attachments,
@@ -2819,6 +2836,13 @@ final class ChatViewModel {
     ) async -> SlashCommandExecutionResult {
         switch behavior {
         case .steer:
+            // Steering has no attachment channel, so a textless send — which
+            // exists only to deliver its staged files — has to queue instead of
+            // steering an empty string that would drop them.
+            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !attachmentCoordinator.pendingAttachments.isEmpty {
+                return await queueMessageFromSlashCommand(draft)
+            }
             return await steerResponseFromSlashCommand(draft)
         case .interrupt:
             return await interruptResponseFromSlashCommand(draft)
@@ -2829,7 +2853,9 @@ final class ChatViewModel {
 
     private func queueMessageFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
         let message = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else {
+        // Staged files make a textless queue valid; `sendMessage` synthesizes
+        // the message when the drain replays it.
+        guard !message.isEmpty || !attachmentCoordinator.pendingAttachments.isEmpty else {
             return .unsupported(friendlyMessage: String(localized: "Usage: /queue <message>"))
         }
 
@@ -2884,7 +2910,8 @@ final class ChatViewModel {
 
     private func interruptResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
         let message = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else {
+        // Same as `/queue`: staged files carry the intent when the text is empty.
+        guard !message.isEmpty || !attachmentCoordinator.pendingAttachments.isEmpty else {
             return .unsupported(friendlyMessage: String(localized: "Usage: /interrupt <message>"))
         }
 
