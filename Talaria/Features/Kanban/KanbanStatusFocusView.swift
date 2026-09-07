@@ -19,6 +19,14 @@ struct KanbanStatusFocusView: View {
     @AccessibilityFocusState private var bulkSummaryIsFocused: Bool
     @AccessibilityFocusState private var dispatchSummaryIsFocused: Bool
     @AccessibilityFocusState private var dispatcherButtonIsFocused: Bool
+    /// Width of the navigation content, which matches the navigation bar the toolbar fills.
+    @State private var barWidth: CGFloat = 0
+    /// One trailing control's width; it grows with Dynamic Type just as the controls do.
+    @ScaledMetric(relativeTo: .body) private var toolbarControlWidth: CGFloat = 44
+
+    private var toolbarLayout: KanbanBoardToolbarLayout {
+        .resolve(containerWidth: barWidth, controlWidth: toolbarControlWidth)
+    }
 
     var body: some View {
         Group {
@@ -59,6 +67,7 @@ struct KanbanStatusFocusView: View {
         .navigationTitle(String(localized: "Kanban"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $model.searchText, prompt: Text("Search Cards"))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
         .toolbar { toolbarContent }
         .sheet(isPresented: $showsFilters) {
             KanbanFiltersView(model: model)
@@ -1216,28 +1225,20 @@ struct KanbanStatusFocusView: View {
                 HStack(spacing: 4) {
                     Text(model.selectedBoard?.name ?? model.selectedBoardSlug ?? String(localized: "Board"))
                         .lineLimit(1)
+                        .frame(maxWidth: toolbarLayout.boardNameWidth, alignment: .leading)
                     Image(systemName: "chevron.down")
                         .font(.caption2)
                 }
                 .frame(minHeight: 44)
             }
             .accessibilityLabel(String(localized: "Switch Board"))
+            .accessibilityIdentifier("KanbanBoardPicker")
         }
 
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button {
-                if model.isSelectingCards {
-                    model.clearCardSelection()
-                } else {
-                    model.beginSelectingCards()
-                    selectionControlsAreFocused = true
-                }
-            } label: {
-                Image(systemName: model.isSelectingCards ? "xmark" : "checkmark.circle")
+            if !toolbarLayout.usesOverflowMenu {
+                selectCardsButton
             }
-            .disabled(model.bulkActionPhase != nil || !model.canUseBulkActions)
-            .frame(minWidth: 44, minHeight: 44)
-            .accessibilityLabel(model.isSelectingCards ? Text("Cancel") : Text("Select Cards"))
 
             Button {
                 cardEditor = model.makeCreateCardEditorState()
@@ -1264,13 +1265,72 @@ struct KanbanStatusFocusView: View {
             )
             .accessibilityFocused($dispatcherButtonIsFocused)
 
+            if toolbarLayout.usesOverflowMenu {
+                overflowMenu
+            } else {
+                filtersButton
+            }
+        }
+    }
+
+    private var selectCardsButton: some View {
+        Button(action: toggleCardSelection) {
+            Image(systemName: model.isSelectingCards ? "xmark" : "checkmark.circle")
+        }
+        .disabled(!canToggleCardSelection)
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel(model.isSelectingCards ? Text("Cancel") : Text("Select Cards"))
+    }
+
+    private var filtersButton: some View {
+        Button {
+            showsFilters = true
+        } label: {
+            Image(systemName: filtersSystemImage)
+        }
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel(Text("Card Filters"))
+    }
+
+    /// Holds Select Cards and Card Filters when the bar is too narrow for four trailing
+    /// controls. The button keeps reporting active filters so the indication is not lost.
+    private var overflowMenu: some View {
+        Menu {
+            Button(action: toggleCardSelection) {
+                Label(
+                    model.isSelectingCards ? String(localized: "Cancel") : String(localized: "Select Cards"),
+                    systemImage: model.isSelectingCards ? "xmark" : "checkmark.circle"
+                )
+            }
+            .disabled(!canToggleCardSelection)
+
             Button {
                 showsFilters = true
             } label: {
-                Image(systemName: model.hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                Label(String(localized: "Card Filters"), systemImage: filtersSystemImage)
             }
-            .frame(minWidth: 44, minHeight: 44)
-            .accessibilityLabel(Text("Card Filters"))
+        } label: {
+            Image(systemName: model.hasActiveFilters ? "ellipsis.circle.fill" : "ellipsis.circle")
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .accessibilityLabel(model.hasActiveFilters ? Text("More, filters active") : Text("More"))
+        .accessibilityIdentifier("KanbanToolbarOverflow")
+    }
+
+    private var filtersSystemImage: String {
+        model.hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+    }
+
+    private var canToggleCardSelection: Bool {
+        model.bulkActionPhase == nil && model.canUseBulkActions
+    }
+
+    private func toggleCardSelection() {
+        if model.isSelectingCards {
+            model.clearCardSelection()
+        } else {
+            model.beginSelectingCards()
+            selectionControlsAreFocused = true
         }
     }
 

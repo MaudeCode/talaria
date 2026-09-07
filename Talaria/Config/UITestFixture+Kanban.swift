@@ -9,7 +9,9 @@ extension UITestFixtureURLProtocol {
         case "/api/kanban/config":
             body = #"{"columns":["triage","todo","ready","running","blocked","done"],"assignees":["fixture-builder","fixture-reviewer"],"read_only":false}"#
         case "/api/kanban/boards":
-            body = ##"{"boards":[{"slug":"fixture","name":"Fixture Board","description":"Deterministic UI fixture","icon":"📋","color":"#5B8DEF","total":4}],"current":"fixture","read_only":false}"##
+            // The current Board carries a long localized name so layout checks exercise the
+            // narrow-bar case; the short Board gives the picker menu a second entry to select.
+            body = ##"{"boards":[{"slug":"fixture","name":"Fixture Board","description":"Deterministic UI fixture","icon":"📋","color":"#5B8DEF","total":4},{"slug":"fixture-long","name":"Fixture Überprüfungs-Board mit einem absichtlich sehr langen Namen","description":"Deterministic long-name UI fixture","icon":"📐","color":"#EF8D5B","total":4}],"current":"fixture-long","read_only":false}"##
         case "/api/kanban/board" where url.query?.contains("since=") == true:
             body = #"{"changed":false,"latest_event_id":1,"read_only":false}"#
         case "/api/kanban/board":
