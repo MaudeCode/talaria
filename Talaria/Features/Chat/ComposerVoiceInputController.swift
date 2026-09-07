@@ -34,7 +34,6 @@ final class ComposerVoiceInputController {
     private var activatedAudioSessionForRecording = false
     private var audioTapInstalled = false
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
-    @ObservationIgnored private var serverRecordingTimeoutTask: Task<Void, Never>?
     private var activeTranscriptionID: UUID?
     private let logger = Logger.talariaVoiceInput
 
@@ -261,15 +260,30 @@ final class ComposerVoiceInputController {
 
     // MARK: - Server STT
 
-    private static let maxServerRecordingDuration: UInt64 = 60
+    /// Server First records until the user taps Stop, so the format has to stay small
+    /// over long speech: mono AAC at 32 kbps is ~14 MB/hour, where the previous 16 kHz
+    /// PCM WAV was ~115 MB/hour and crossed the server's upload limit in minutes.
+    static let serverRecordingBitRate = 32_000
 
-    private static let serverRecordingSettings: [String: Any] = [
-        AVFormatIDKey: Int(kAudioFormatLinearPCM),
+    static let serverRecordingSettings: [String: Any] = [
+        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
         AVSampleRateKey: 16_000.0,
         AVNumberOfChannelsKey: 1,
-        AVLinearPCMBitDepthKey: 16,
-        AVLinearPCMIsFloatKey: false
+        AVEncoderBitRateKey: serverRecordingBitRate
     ]
+
+    /// Client upload ceiling. The server's default multipart limit is 20 MiB
+    /// (`HERMES_WEBUI_MAX_UPLOAD_MB`) and rejects a larger `Content-Length` with 413,
+    /// so leave room for the multipart envelope. A recording above this is never read
+    /// into memory or uploaded; it goes to the on-device fallback instead.
+    static let maximumServerUploadBytes = PendingAttachment.maximumUploadBytes - 64 * 1_024
+
+    /// `.m4a` so the extension the transcribe endpoint sees matches the AAC payload.
+    nonisolated static func makeServerRecordingURL(uuid: UUID = UUID()) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("talaria-composer-stt-\(uuid.uuidString)")
+            .appendingPathExtension("m4a")
+    }
 
     private func startServerRecording() throws {
         stopAudio(cancelTask: true)
@@ -290,9 +304,7 @@ final class ComposerVoiceInputController {
             inputNumberOfChannels: audioSession.inputNumberOfChannels
         )
 
-        let recordingURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("talaria-composer-stt-\(UUID().uuidString)")
-            .appendingPathExtension("wav")
+        let recordingURL = Self.makeServerRecordingURL()
         let recorder = try AVAudioRecorder(url: recordingURL, settings: Self.serverRecordingSettings)
         recorder.prepareToRecord()
         guard recorder.record() else {
@@ -303,25 +315,10 @@ final class ComposerVoiceInputController {
         self.recordingURL = recordingURL
         audioRecorder = recorder
         ComposerAudioCaptureState.shared.setCapturing(true)
-        startServerRecordingTimeout()
         logger.info("Server voice input recording started")
     }
 
-    private func startServerRecordingTimeout() {
-        serverRecordingTimeoutTask?.cancel()
-        serverRecordingTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.maxServerRecordingDuration * 1_000_000_000)
-            await MainActor.run {
-                guard let self, !Task.isCancelled, self.state == .serverListening else { return }
-                self.stopServerRecordingAndTranscribe()
-            }
-        }
-    }
-
     private func stopServerRecordingAndTranscribe() {
-        serverRecordingTimeoutTask?.cancel()
-        serverRecordingTimeoutTask = nil
-
         guard state == .serverListening,
               let recorder = audioRecorder,
               let recordingURL
@@ -371,8 +368,31 @@ final class ComposerVoiceInputController {
             return
         }
 
+        let audioData: Data
         do {
-            let audioData = try Data(contentsOf: recordingURL)
+            // Metadata first: an oversized clip must never be read into memory or sent,
+            // and a file the recorder left unreadable must not become a bogus upload.
+            let byteCount = try Self.recordedByteCount(at: recordingURL)
+            guard byteCount <= Self.maximumServerUploadBytes else {
+                logger.error("Server voice input recording exceeds upload ceiling bytes=\(byteCount, privacy: .public)")
+                throw ComposerVoiceInputError.recordingTooLargeToUpload
+            }
+            audioData = try Data(contentsOf: recordingURL)
+        } catch {
+            guard isActiveTranscription(transcriptionID), !Task.isCancelled else {
+                cleanupRecordingFile(recordingURL, transcriptionID: transcriptionID)
+                return
+            }
+
+            await fallbackFromServerFailure(
+                recordingURL: recordingURL,
+                transcriptionID: transcriptionID,
+                message: error.localizedDescription
+            )
+            return
+        }
+
+        do {
             let response = try await apiClient.transcribeAudio(
                 data: audioData,
                 filename: recordingURL.lastPathComponent
@@ -521,6 +541,13 @@ final class ComposerVoiceInputController {
         }
     }
 
+    nonisolated static func recordedByteCount(at recordingURL: URL) throws -> Int {
+        guard let byteCount = try recordingURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            throw ComposerVoiceInputError.recordingUnreadable
+        }
+        return byteCount
+    }
+
     private func isActiveTranscription(_ transcriptionID: UUID) -> Bool {
         activeTranscriptionID == transcriptionID
     }
@@ -625,8 +652,6 @@ final class ComposerVoiceInputController {
 
     private func stopAudio(cancelTask: Bool) {
         ComposerAudioCaptureState.shared.setCapturing(false)
-        serverRecordingTimeoutTask?.cancel()
-        serverRecordingTimeoutTask = nil
 
         if let recorder = audioRecorder, recorder.isRecording {
             recorder.stop()
@@ -666,9 +691,6 @@ final class ComposerVoiceInputController {
     }
 
     private func discardServerRecording() {
-        serverRecordingTimeoutTask?.cancel()
-        serverRecordingTimeoutTask = nil
-
         if let recorder = audioRecorder, recorder.isRecording {
             recorder.stop()
         }
@@ -784,6 +806,8 @@ final class ComposerVoiceInputController {
             return .appNotActive
         case .audioEngineAlreadyRunning, .audioRecorderStartFailed:
             return .audioEngineAlreadyRunning
+        case .recordingTooLargeToUpload, .recordingUnreadable:
+            return .speechUnavailable
         }
     }
 }
@@ -814,6 +838,8 @@ enum ComposerVoiceInputError: LocalizedError {
     case appNotActive
     case audioEngineAlreadyRunning
     case audioRecorderStartFailed
+    case recordingTooLargeToUpload
+    case recordingUnreadable
 
     var errorDescription: String? {
         switch self {
@@ -827,6 +853,10 @@ enum ComposerVoiceInputError: LocalizedError {
             return String(localized: "Voice input is already preparing the microphone. Try again in a moment.")
         case .audioRecorderStartFailed:
             return String(localized: "Voice input could not start recording. Try again in a moment.")
+        case .recordingTooLargeToUpload:
+            return String(localized: "That recording is too long to send to the server.")
+        case .recordingUnreadable:
+            return String(localized: "Couldn't read the finished recording. Try again.")
         }
     }
 }
