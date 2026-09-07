@@ -102,6 +102,8 @@
 		C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */; };
 		C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */; };
 		C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14600000000000000000001 /* ChatToolbarHeaderTests.swift */; };
+		C1TAL49D0000000000000002 /* ChatMessageActionCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49D0000000000000001 /* ChatMessageActionCatalogTests.swift */; };
+		C1TAL49E0000000000000002 /* ChatMessageLinkInteractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */; };
 		C15210000000000000000001 /* OnboardingFlowPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000001 /* OnboardingFlowPolicy.swift */; };
 		C15210000000000000000002 /* OnboardingWelcomePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000002 /* OnboardingWelcomePage.swift */; };
 		C15210000000000000000003 /* OnboardingFeaturesPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000003 /* OnboardingFeaturesPage.swift */; };
@@ -418,6 +420,9 @@
 		C107N0000000000000000017 /* SkillLinkedFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000117 /* SkillLinkedFileView.swift */; };
 		C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */; };
 		C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */; };
+		C1TAL49A0000000000000002 /* ChatMessageActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49A0000000000000001 /* ChatMessageActionCatalog.swift */; };
+		C1TAL49B0000000000000002 /* ChatMessageLinkRegions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */; };
+		C1TAL49C0000000000000002 /* ChatMessageMenuInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */; };
 		C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000120 /* ChatScrollToBottomButton.swift */; };
 		C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000121 /* LoadOlderMessagesButton.swift */; };
 		C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000122 /* SelectableTextPresentationView.swift */; };
@@ -764,6 +769,8 @@
 		C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModelSendTests+TranscriptHistory.swift"; sourceTree = "<group>"; };
 		C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelMergeDedupTests.swift; sourceTree = "<group>"; };
 		C14600000000000000000001 /* ChatToolbarHeaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarHeaderTests.swift; sourceTree = "<group>"; };
+		C1TAL49D0000000000000001 /* ChatMessageActionCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageActionCatalogTests.swift; sourceTree = "<group>"; };
+		C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageLinkInteractionTests.swift; sourceTree = "<group>"; };
 		C15200000000000000000001 /* OnboardingFlowPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowPolicy.swift; sourceTree = "<group>"; };
 		C15200000000000000000002 /* OnboardingWelcomePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWelcomePage.swift; sourceTree = "<group>"; };
 		C15200000000000000000003 /* OnboardingFeaturesPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeaturesPage.swift; sourceTree = "<group>"; };
@@ -1063,6 +1070,9 @@
 		C107N0000000000000000117 /* SkillLinkedFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFileView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageBlock.swift; sourceTree = "<group>"; };
 		C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageRow.swift; sourceTree = "<group>"; };
+		C1TAL49A0000000000000001 /* ChatMessageActionCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageActionCatalog.swift; sourceTree = "<group>"; };
+		C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageLinkRegions.swift; sourceTree = "<group>"; };
+		C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageMenuInteraction.swift; sourceTree = "<group>"; };
 		C107N0000000000000000120 /* ChatScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollToBottomButton.swift; sourceTree = "<group>"; };
 		C107N0000000000000000121 /* LoadOlderMessagesButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadOlderMessagesButton.swift; sourceTree = "<group>"; };
 		C107N0000000000000000122 /* SelectableTextPresentationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextPresentationView.swift; sourceTree = "<group>"; };
@@ -1445,6 +1455,8 @@
 					C107Y0000000000000000110 /* ChatViewModelSendTests+TranscriptHistory.swift */,
 					C0DED00000000000000DE000 /* ChatViewModelMergeDedupTests.swift */,
 					C14600000000000000000001 /* ChatToolbarHeaderTests.swift */,
+					C1TAL49D0000000000000001 /* ChatMessageActionCatalogTests.swift */,
+					C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */,
 					C15200000000000000000007 /* OnboardingFlowTests.swift */,
 				C0390000000000000000000F /* SessionListMutationTests.swift */,
 				C107X0000000000000000101 /* SessionListLoadProfileTests.swift */,
@@ -1762,6 +1774,9 @@
 				C05100000000000000000011 /* ChatTranscriptView.swift */,
 				C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */,
 				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
+				C1TAL49A0000000000000001 /* ChatMessageActionCatalog.swift */,
+				C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */,
+				C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */,
 				C107N0000000000000000120 /* ChatScrollToBottomButton.swift */,
 				C107N0000000000000000121 /* LoadOlderMessagesButton.swift */,
 				C107N0000000000000000122 /* SelectableTextPresentationView.swift */,
@@ -2593,6 +2608,9 @@
 				C107N0000000000000000017 /* SkillLinkedFileView.swift in Sources */,
 				C107N0000000000000000018 /* ChatTranscriptMessageBlock.swift in Sources */,
 				C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */,
+				C1TAL49A0000000000000002 /* ChatMessageActionCatalog.swift in Sources */,
+				C1TAL49B0000000000000002 /* ChatMessageLinkRegions.swift in Sources */,
+				C1TAL49C0000000000000002 /* ChatMessageMenuInteraction.swift in Sources */,
 				C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */,
 				C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */,
 				C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */,
@@ -2875,6 +2893,8 @@
 					C107Y0000000000000000010 /* ChatViewModelSendTests+TranscriptHistory.swift in Sources */,
 					C0DED00000000000000DE001 /* ChatViewModelMergeDedupTests.swift in Sources */,
 					C14600000000000000000002 /* ChatToolbarHeaderTests.swift in Sources */,
+					C1TAL49D0000000000000002 /* ChatMessageActionCatalogTests.swift in Sources */,
+					C1TAL49E0000000000000002 /* ChatMessageLinkInteractionTests.swift in Sources */,
 					C15210000000000000000007 /* OnboardingFlowTests.swift in Sources */,
 				C0391000000000000000000F /* SessionListMutationTests.swift in Sources */,
 				C107X0000000000000000001 /* SessionListLoadProfileTests.swift in Sources */,

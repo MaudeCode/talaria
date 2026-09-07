@@ -23,11 +23,5 @@ struct ChatMarkdownView: View {
                 BackgroundColor(SwiftUI.Color(.tertiarySystemGroupedBackground))
             }
             .markdownCodeSyntaxHighlighter(.plainText)
-            .markdownBlockStyle(\.paragraph) { configuration in
-                configuration.label
-                    .fixedSize(horizontal: false, vertical: true)
-                    .relativeLineSpacing(.em(0.18))
-                    .markdownMargin(top: 0, bottom: 8)
-            }
     }
 }

@@ -5,6 +5,9 @@ struct ChatTranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var scrollPositionController = ChatScrollPositionController()
+    /// Owns the transcript's message long press: one handler for every row,
+    /// which is what lets a press be resolved against link geometry first.
+    @State private var menuRegistry = ChatMessageMenuRegistry()
 
     let isLoading: Bool
     let errorMessage: String?
@@ -334,6 +337,7 @@ struct ChatTranscriptView: View {
             onDisclosureToggle()
         }
         .id(transcriptContentID)
+        .environment(\.chatMessageMenuRegistry, menuRegistry)
         .background {
             ZStack {
                 ChatScrollObserver(
@@ -345,6 +349,7 @@ struct ChatTranscriptView: View {
                 }
 
                 ChatVerticalScrollAxisGuard()
+                ChatMessageMenuHost(registry: menuRegistry)
             }
             .accessibilityHidden(true)
         }

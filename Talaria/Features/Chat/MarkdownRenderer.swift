@@ -49,6 +49,11 @@ struct MarkdownRenderer: View {
         }
     }
 
+    /// Selectable text renders through a path that skips a custom `TextRenderer`,
+    /// which is how a paragraph reports where its links landed (TAL-49). Inline
+    /// selection was already unreachable — the message long press claims that
+    /// gesture, as the bubble context menu did before it — and the menu's
+    /// "Select Text" action is the supported way to select an answer.
     @ViewBuilder
     private var markdownContent: some View {
         switch MarkdownMathLayoutCache.layout(for: content) {
@@ -69,14 +74,12 @@ struct MarkdownRenderer: View {
                     }
                 }
             }
-            .textSelection(.enabled)
         case .plain(let markdown):
             ChatMarkdownView(
                 content: markdown,
                 colorScheme: colorScheme,
                 isStreaming: isStreaming
             )
-            .textSelection(.enabled)
         }
     }
 }
@@ -621,6 +624,11 @@ extension MarkdownUI.Theme {
                         ? SwiftUI.Color(red: 0.08, green: 0.09, blue: 0.12)
                         : SwiftUI.Color(.tertiarySystemGroupedBackground)
                 )
+            }
+            // Restates the base theme's own paragraph metrics; the block exists so
+            // a paragraph can report where its links landed (TAL-49).
+            .paragraph { configuration in
+                ChatMarkdownParagraph(configuration: configuration)
             }
             .codeBlock { configuration in
                 MathFenceOrCodeBlock(
