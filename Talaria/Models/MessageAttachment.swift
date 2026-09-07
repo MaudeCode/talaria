@@ -140,13 +140,31 @@ extension MessageAttachment {
     static let uploadedFilesPrefix = "I've uploaded "
     static let uploadedFilesInfix = " file(s): "
 
+    /// Display text for a user bubble that hides attachment paths. A textless
+    /// send has no marker to strip: the synthesized `I've uploaded N file(s): …`
+    /// message *is* the whole content. That shape is close enough to ordinary
+    /// prose that matching it alone would blank a user's own sentence, so it
+    /// only counts when the message carries attachments and contains no marker
+    /// — which is exactly the message an attachment-only send produces.
+    /// Display-only; the sent payload and attachment inference are untouched.
+    static func contentWithoutAttachmentReferences(
+        in content: String,
+        attachments: [MessageAttachment]?
+    ) -> String {
+        let stripped = contentWithoutAttachedFilesMarker(in: content)
+        guard stripped == content,
+              attachments?.isEmpty == false,
+              uploadedFilesMessage(in: content) != nil
+        else {
+            return stripped
+        }
+
+        return ""
+    }
+
     private static func attachedFilesMarker(
         in content: String
     ) -> (range: Range<String.Index>, references: [String])? {
-        if let uploadedFiles = uploadedFilesMessage(in: content) {
-            return uploadedFiles
-        }
-
         guard let markerRange = content.range(of: "[Attached files:", options: .backwards) else {
             return nil
         }
@@ -173,9 +191,8 @@ extension MessageAttachment {
     /// Matches `I've uploaded <count> file(s): <references>` — the whole
     /// message a textless send carries, since there is no typed text to append
     /// a `[Attached files: …]` marker to. Anchored at both ends and requiring a
-    /// numeric count so a user's own prose is not mistaken for it; the whole
-    /// string is the marker, so the display layer strips it down to nothing and
-    /// renders the attachment chips alone.
+    /// numeric count; the caller supplies the rest of the evidence that this is
+    /// really an attachment-only send.
     private static func uploadedFilesMessage(
         in content: String
     ) -> (range: Range<String.Index>, references: [String])? {

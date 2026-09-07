@@ -526,25 +526,44 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
 
     /// TAL-158: a textless send carries the synthesized message instead of a
     /// marker, so the same display transform has to hide its paths too.
-    func testContentWithoutAttachedFilesMarkerStripsSynthesizedUploadMessage() {
+    func testContentWithoutAttachmentReferencesStripsSynthesizedUploadMessage() {
         let sent = PendingAttachment.chatMessageText(draft: "", attachments: [
             PendingAttachment(name: "sample.html", path: "/tmp/workspace/sample.html", mime: "text/html", size: 4, isImage: false),
             PendingAttachment(name: "image.jpg", path: "/tmp/workspace/image.jpg", mime: "image/jpeg", size: 4, isImage: true)
         ])
+        let attachments = [
+            MessageAttachment(name: "sample.html", path: "/tmp/workspace/sample.html", mime: "text/html", size: 4, isImage: false),
+            MessageAttachment(name: "image.jpg", path: "/tmp/workspace/image.jpg", mime: "image/jpeg", size: 4, isImage: true)
+        ]
 
         XCTAssertEqual(sent, "I've uploaded 2 file(s): /tmp/workspace/sample.html, /tmp/workspace/image.jpg")
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: sent), "")
         XCTAssertEqual(
-            MessageAttachment.inferredFromAttachedFilesMarker(in: sent)?.compactMap(\.path),
-            ["/tmp/workspace/sample.html", "/tmp/workspace/image.jpg"]
+            MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: attachments),
+            ""
         )
     }
 
-    func testContentWithoutAttachedFilesMarkerLeavesLookalikeProseUnchanged() {
-        // Anchored at both ends with a numeric count, so a user's own sentence
-        // that merely mentions uploading survives untouched.
-        let content = "I've uploaded the file(s): please review them when you can."
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
+    /// The synthesized shape is close to ordinary prose, so without attachments
+    /// to corroborate it the text has to survive — and it must never be turned
+    /// into inferred attachment chips.
+    func testContentWithoutAttachmentReferencesKeepsLookalikeProseWithoutAttachments() {
+        let content = "I've uploaded 3 file(s): the report, the notes and the slides"
+
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: nil), content)
+        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: []), content)
+        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
+    }
+
+    /// A typed message that happens to read like the synthesized one still ends
+    /// in a real marker, so only the marker is stripped.
+    func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {
+        let content = "I've uploaded 3 file(s): see below\n\n[Attached files: /tmp/a.png]"
+        let attachments = [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 4, isImage: true)]
+
+        XCTAssertEqual(
+            MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: attachments),
+            "I've uploaded 3 file(s): see below"
+        )
     }
 }
 
