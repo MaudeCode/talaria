@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
+    let revision: Int
     @Binding var isFocused: Bool
     let isDisabled: Bool
     let isKeyboardSendEnabled: Bool
@@ -47,7 +48,7 @@ struct ComposerTextView: UIViewRepresentable {
 
     func updateUIView(_ textView: PastingTextView, context: Context) {
         context.coordinator.onHeightChange = onHeightChange
-        context.coordinator.applyBoundText(text, to: textView)
+        context.coordinator.applyBoundText(text, revision: revision, to: textView)
         // Mirror the chat RTL toggle onto the text view itself (#259): SwiftUI's
         // layoutDirection environment does not propagate into a wrapped UITextView,
         // so set the base direction directly so the cursor/empty-field rests on the
@@ -75,13 +76,13 @@ struct ComposerTextView: UIViewRepresentable {
         @Binding var isFocused: Bool
         var onHeightChange: (CGFloat) -> Void
         private var pendingFocusTarget: Bool?
-        // The draft as of the last update with no composition in progress. A value
-        // still carrying it during or just after a composition is SwiftUI catching up
-        // to the draft that composition replaced, not a new external write.
-        private var settledText = ""
-        // A deliberate external replacement that arrived mid-composition. Applying it
-        // straight away would drop the marked text, so it waits for the composition
-        // to end and is then applied exactly once.
+        // The newest draft revision this coordinator has acted on. An update carrying
+        // an older one has been superseded, so applying it would replay a draft the
+        // owner has already moved past.
+        private var appliedRevision = Int.min
+        // An external replacement that arrived mid-composition. Applying it straight
+        // away would drop the marked text, so it waits for the composition to end and
+        // is then applied exactly once.
         private var pendingExternalText: String?
 
         init(
@@ -94,38 +95,25 @@ struct ComposerTextView: UIViewRepresentable {
             self.onHeightChange = onHeightChange
         }
 
-        func applyBoundText(_ boundText: String, to textView: UITextView) {
-            let marked = textView.markedTextRange
-            // Only the representable's own observations settle the draft, so the guard
-            // below still holds for the first update after a composition commits.
-            defer { if marked == nil { settledText = textView.text } }
+        func applyBoundText(_ boundText: String, revision: Int, to textView: UITextView) {
+            guard revision > appliedRevision else { return }
+            appliedRevision = revision
 
             guard textView.text != boundText else {
                 pendingExternalText = nil
                 return
             }
 
-            // Never let a catch-up update reinstate the draft this composition
-            // replaced. An empty settled draft replaced nothing, so there is nothing
-            // to reinstate and the value is an external write, such as a send clear.
-            guard boundText != settledText || settledText.isEmpty else { return }
-
-            guard let marked else {
-                pendingExternalText = nil
-                textView.text = boundText
+            // Overwriting the text view during an IME composition drops the marked
+            // text, its selection and the keyboard's candidate state, so hold the
+            // replacement until the composition ends.
+            guard textView.markedTextRange == nil else {
+                pendingExternalText = boundText
                 return
             }
 
-            guard ComposerMarkedText.isDeliberateReplacement(
-                boundText,
-                editorText: textView.text,
-                markedRange: NSRange(
-                    location: textView.offset(from: textView.beginningOfDocument, to: marked.start),
-                    length: textView.offset(from: marked.start, to: marked.end)
-                )
-            ) else { return }
-
-            pendingExternalText = boundText
+            pendingExternalText = nil
+            textView.text = boundText
         }
 
         func syncFocus(for textView: UITextView, shouldFocus: Bool, isDisabled: Bool) {
@@ -200,9 +188,6 @@ struct ComposerTextView: UIViewRepresentable {
             if textView.text != pending {
                 textView.text = pending
             }
-            // The composition is over and the editor now holds the replacement, so a
-            // later update carrying it is a new external write, not catch-up.
-            settledText = pending
             reportHeight(for: textView)
             return true
         }
@@ -343,47 +328,5 @@ struct ComposerTextView: UIViewRepresentable {
                 $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
             }
         }
-    }
-}
-
-enum ComposerMarkedText {
-    /// Decides whether a representable update that arrived during an IME composition
-    /// is a deliberate external draft replacement rather than SwiftUI catching up.
-    ///
-    /// A catch-up update carries marked text the editor has already moved past, so it
-    /// differs from the editor only inside the marked range; applying it would drop
-    /// the composition and its selection. A slash completion, a send clear or a draft
-    /// replacement changes the text around the marked range instead.
-    ///
-    /// Known ceiling: an external edit that only rewrites inside the marked span reads
-    /// as catch-up and is dropped. Preserving live composition is worth more than that
-    /// case, which no current caller produces.
-    static func isDeliberateReplacement(
-        _ boundText: String,
-        editorText: String,
-        markedRange: NSRange
-    ) -> Bool {
-        let editor = editorText as NSString
-        // `offset(from:to:)` reports NSNotFound for an unresolvable position, so bound
-        // the range without ever forming an overflowing NSMaxRange.
-        guard markedRange.location >= 0,
-              markedRange.location <= editor.length,
-              markedRange.length >= 0,
-              markedRange.length <= editor.length - markedRange.location
-        else { return true }
-
-        let prefix = editor.substring(to: markedRange.location)
-        let suffix = editor.substring(from: NSMaxRange(markedRange))
-
-        // The whole draft is the composition, so there is no surrounding text to
-        // compare and every value would read as catch-up, including a send clear.
-        // The caller's exact check on values it published already rejected real
-        // catch-up here, so anything reaching this point is external.
-        guard !prefix.isEmpty || !suffix.isEmpty else { return true }
-
-        guard (boundText as NSString).length >= (prefix as NSString).length + (suffix as NSString).length
-        else { return true }
-
-        return !(boundText.hasPrefix(prefix) && boundText.hasSuffix(suffix))
     }
 }

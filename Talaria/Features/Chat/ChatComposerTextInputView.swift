@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ComposerTextInputView: View {
     @Binding var text: String
+    let revision: Int
     @Binding var isFocused: Bool
     @Binding var inputHeight: CGFloat
     @Binding var measuredHeight: CGFloat
@@ -21,6 +22,7 @@ struct ComposerTextInputView: View {
         ZStack(alignment: .topLeading) {
             ComposerTextView(
                 text: $text,
+                revision: revision,
                 isFocused: $isFocused,
                 isDisabled: isDisabled,
                 isKeyboardSendEnabled: isKeyboardSendEnabled,

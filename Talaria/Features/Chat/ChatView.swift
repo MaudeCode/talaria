@@ -81,8 +81,21 @@ struct ChatView: View {
     let restoresDraftSettings: Bool
     let onConversationStarted: () -> Void
 
-    @State private var draftMessage = ""
+    @State private var draftMessageStorage = ""
+    @State private var draftWriteRevision = 0
     @State private var draftRevision = 0
+
+    /// Every write bumps `draftWriteRevision`, so the composer can order the updates
+    /// it receives and ignore one a newer write has already superseded. Without that
+    /// order it cannot tell a deliberate replacement from a superseded snapshot, and
+    /// applying the wrong one destroys in-progress IME composition (TAL-159).
+    private var draftMessage: String {
+        get { draftMessageStorage }
+        nonmutating set {
+            draftMessageStorage = newValue
+            draftWriteRevision &+= 1
+        }
+    }
     @State private var isScrolledNearBottom = true
     @State private var isReadingOlderTranscript = false
     @State private var followLatch = ChatScrollPolicy.FollowLatch()
@@ -165,7 +178,7 @@ struct ChatView: View {
         self.draftAttachmentStore = resolvedDraftAttachmentStore
         self.restoresDraftSettings = restoresDraftSettings
         self.onConversationStarted = onConversationStarted
-        _draftMessage = State(initialValue: initialDraft)
+        _draftMessageStorage = State(initialValue: initialDraft)
         _initialAttachments = State(initialValue: initialAttachments)
         _viewModel = State(initialValue: ChatViewModel(
             session: session,
@@ -187,6 +200,7 @@ struct ChatView: View {
     private var messageComposer: some View {
         MessageComposerView(
             draftMessage: persistedDraftBinding,
+            draftWriteRevision: draftWriteRevision,
             isFocused: $composerIsFocused,
             isSending: viewModel.isStartingChat || viewModel.isSendingVoiceNote,
             isCompressingSession: viewModel.isCompressingSession,
