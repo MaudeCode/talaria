@@ -50,6 +50,11 @@ that caused it. CI never sets the variable, so it can only report diffs.
 - Comparison tolerates a per-pixel channel delta of 12 across up to 0.2% of the
   image, which absorbs subpixel antialiasing between simulator runtime builds
   without hiding a moved glyph or a recoloured surface.
+- Tests run under `-testLanguage en -testRegion US`, set by `scripts/test-ios`
+  and by CI. SwiftUI's `\.locale` environment does not reach Foundation
+  formatters, so `RelativeDateTimeFormatter`, `ByteCountFormatter` and
+  `String(localized:)` would otherwise follow whatever language the simulator
+  happens to be set to.
 - Sizes are fixed per reference. If content grows past its frame it is clipped
   rather than resized, so give a new reference a frame with room to spare.
 

@@ -98,6 +98,8 @@ while true; do
         -project Talaria.xcodeproj \
         -scheme Talaria \
         -destination "$destination" \
+        -testLanguage en \
+        -testRegion US \
         -derivedDataPath "$runtime_dir/derived-data" \
         -disableAutomaticPackageResolution \
         -parallel-testing-enabled NO \
