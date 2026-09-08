@@ -7,6 +7,7 @@ import {
   apsEnvironmentValidator,
   preferencesValidator,
   sessionPhaseValidator,
+  aggregateRowValidator,
 } from "./lib/validators";
 
 export default defineSchema({
@@ -164,6 +165,7 @@ export default defineSchema({
     deepLink: v.string(),
     expiresAt: v.number(),
     terminalExpiresAt: v.optional(v.number()),
+    runKey: v.optional(v.string()),
     receivedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])
@@ -172,6 +174,19 @@ export default defineSchema({
     .index("by_version_and_user_id_and_expires_at", ["version", "userId", "expiresAt"])
     .index("by_expires_at", ["expiresAt"]),
 
+  completions: defineTable({
+    userId: v.string(),
+    grantId: v.id("publisherGrants"),
+    publisherOwnerUserId: v.string(),
+    profileId: v.string(),
+    runKey: v.string(),
+    revision: v.optional(v.number()),
+    acknowledged: v.boolean(),
+    row: aggregateRowValidator,
+  })
+    .index("by_grant_id_and_run_key", ["grantId", "runKey"])
+    .index("by_user_id_and_acknowledged", ["userId", "acknowledged"]),
+
   liveActivities: defineTable({
     userId: v.string(),
     deviceId: v.string(),
@@ -179,6 +194,7 @@ export default defineSchema({
     mode: activityModeValidator,
     publisherId: v.optional(v.string()),
     sessionId: v.optional(v.string()),
+    streamId: v.optional(v.string()),
     attributesType: v.string(),
     schemaVersion: v.number(),
     activityPushToken: v.string(),

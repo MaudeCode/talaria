@@ -162,3 +162,37 @@ Revoke the signed-in relay account's profile grant with authenticated `DELETE /v
 ## Foreground snapshot
 
 `GET /v1/activity-snapshot?mode=all_running` also requires `X-Talaria-Device-Id`. Talaria uses it only to seed or end an activity while foregrounded; APNs owns later updates while suspended.
+
+
+## Retained completions
+
+A terminal run is retained as semantic content until explicitly acknowledged. An
+existing Live Activity receives an `update` containing Done/Failed/Cancelled;
+terminal-only content does not initiate a remote start or repeated keepalive pushes.
+Active sessions take display priority. The bounded activity displays one outcome
+per session; the paginated inbox retains every run independently of session expiry.
+ActivityKit may still expire or dismiss the on-device activity.
+
+`GET /v1/activity-completions` requires the normal bearer credential and
+`X-Talaria-Device-Id`. It returns `{completions:[{id,row}],cursor}` with at most 100
+records per page. Pass the returned non-null cursor as `?cursor=...` to continue.
+Empty pages may still have a cursor when publisher exclusions hide their records.
+
+`POST /v1/activity-completions/acknowledge` uses the same authentication and accepts
+`{ids:[...]}` (at most 100 observed completion IDs). Success returns `{ok:true}`.
+Acknowledgement is account-wide for those exact records; it does not clear running
+work, later runs or another user's/profile's results. Retries are idempotent.
+Acknowledgement tombstones prevent later terminal snapshots from reviving a result.
+Revoked/expired devices, excluded publishers and obsolete profile grants are denied.
+
+A completion uses the publisher's stream ID as its durable run identity. Legacy
+streamless publishers are grouped by the observed session lifecycle; publishers
+should provide a stable stream ID to distinguish runs after session-state expiry.
+The additive row fields `streamId` and `completionId` may be ignored by old clients.
+New completion UI requires this relay release; deploy the relay before the app.
+
+Current-session activity registration also accepts an optional `streamId`. New
+clients provide it to pin the Activity to its original run. Later runs do not
+replace or repaint retained cards for another stream; explicit acknowledgement
+clears each finished run. Registrations without this field retain legacy
+single-card replacement behavior.

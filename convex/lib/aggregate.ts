@@ -51,6 +51,7 @@ function statusForPhase(phase: SessionPhase): string {
 
 export function rowForState(state: SessionState): AggregateRow {
   return {
+    ...(state.completionId ? { completionId: state.completionId } : {}),
     publisherId: state.publisherId,
     publisherLabel: state.publisherLabel,
     sessionId: state.sessionId,
@@ -68,12 +69,20 @@ export function makeAggregate(
   now: number,
   includeTerminalOnly = false,
 ): ActivityAggregate | null {
-  const visible = states
-    .filter((state) => {
-      if (state.deleted) return false;
-      if (state.expiresAt <= now) return false;
-      return !isTerminalPhase(state.phase) || (state.terminalExpiresAt ?? 0) > now;
-    })
+  const bySession = new Map<string, SessionState>();
+  for (const state of states) {
+    if (state.deleted || state.expiresAt <= now
+      || (isTerminalPhase(state.phase) && (state.terminalExpiresAt ?? 0) <= now)) continue;
+    const key = JSON.stringify([state.publisherId, state.sessionId]);
+    const current = bySession.get(key);
+    if (!current
+      || (isTerminalPhase(current.phase) && !isTerminalPhase(state.phase))
+      || (isTerminalPhase(current.phase) === isTerminalPhase(state.phase) && state.updatedAt > current.updatedAt)) {
+      bySession.set(key, state);
+    }
+  }
+  // The card shows the latest outcome per session; the inbox retains every run.
+  const visible = [...bySession.values()]
     .sort(
       (left, right) =>
         phasePriority(left.phase) - phasePriority(right.phase) ||
@@ -111,7 +120,12 @@ export function makeAggregate(
 }
 
 export function aggregateFingerprint(aggregate: ActivityAggregate | null): string {
-  return JSON.stringify(aggregate);
+  // Convex reorders object keys on persistence. Fingerprints must survive that round trip.
+  return JSON.stringify(aggregate, (_key, value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]))
+      : value,
+  );
 }
 
 export function alertForTransition(
@@ -151,6 +165,7 @@ export function shouldUpdateAggregate(
 ): boolean {
   if (previous === null) return true;
   if (aggregateFingerprint(previous) === aggregateFingerprint(next)) {
+    if (next.activeCount === 0 && lastDeliveryAt !== null) return false;
     return lastDeliveryAt === null || now - lastDeliveryAt >= 120_000;
   }
   if (previous.activeCount !== next.activeCount) return true;

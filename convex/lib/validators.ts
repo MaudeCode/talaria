@@ -31,6 +31,7 @@ export const preferencesValidator = v.object({
 });
 
 export const aggregateRowValidator = v.object({
+  completionId: v.optional(v.string()),
   publisherId: v.string(),
   publisherLabel: v.string(),
   sessionId: v.string(),
@@ -69,6 +70,7 @@ export const sessionStateInputValidator = v.object({
 });
 
 export const storedSessionStateValidator = v.object({
+  completionId: v.optional(v.string()),
   deleted: v.boolean(),
   publisherId: v.string(),
   publisherLabel: v.string(),

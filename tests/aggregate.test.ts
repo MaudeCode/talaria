@@ -88,6 +88,14 @@ describe("makeAggregate", () => {
     );
   });
 
+  it("shows the newest retained outcome for a session while preserving its other records", () => {
+    const first = { ...state("same", "completed", now - 10), streamId: "run-1", completionId: "first" };
+    const latest = { ...state("same", "completed", now), streamId: "run-2", completionId: "latest" };
+    expect(makeAggregate([first, latest], now, true)?.rows[0]?.completionId).toBe("latest");
+    expect(makeAggregate([{ ...first, phase: "failed" }, latest], now, true)?.rows[0]?.completionId).toBe("latest");
+    expect(makeAggregate([latest, { ...first, phase: "running" }], now, true)?.activeCount).toBe(1);
+  });
+
   it("does not update unchanged aggregates and throttles routine changes", () => {
     const previous = makeAggregate([state("a", "running")], now)!;
     const changed = makeAggregate([state("a", "running", now + 1)], now)!;

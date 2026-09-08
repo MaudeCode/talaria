@@ -101,6 +101,7 @@ export const registerActivity = internalMutation({
     mode: activityModeValidator,
     publisherId: v.optional(v.string()),
     sessionId: v.optional(v.string()),
+    streamId: v.optional(v.string()),
     attributesType: v.string(),
     schemaVersion: v.number(),
     activityPushToken: v.string(),
@@ -170,6 +171,10 @@ export const registerActivity = internalMutation({
       .take(10);
     for (const activity of sameMode) {
       if (activity.activityId !== args.activityId) {
+        // Modern current-session cards are pinned to distinct runs. The app retires
+        // superseded live cards; completed cards remain until acknowledgement.
+        if (args.mode === "per_session" && args.streamId !== undefined && activity.streamId !== undefined
+          && (activity.streamId !== args.streamId || activity.sessionId !== args.sessionId || activity.publisherId !== args.publisherId)) continue;
         await enqueueDisplacedActivityEnd(ctx, activity, device, args.now);
         await ctx.db.patch(activity._id, { endedAt: args.now, updatedAt: args.now });
       }
@@ -183,6 +188,7 @@ export const registerActivity = internalMutation({
       mode: args.mode,
       publisherId: args.mode === "per_session" ? args.publisherId : undefined,
       sessionId: args.mode === "per_session" ? args.sessionId : undefined,
+      streamId: args.mode === "per_session" ? args.streamId : undefined,
       attributesType: args.attributesType,
       schemaVersion: args.schemaVersion,
       activityPushToken: args.activityPushToken,

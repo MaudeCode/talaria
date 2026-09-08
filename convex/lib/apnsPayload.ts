@@ -12,6 +12,26 @@ export interface ApnsRequest {
 const maximumContentStateBytes = 3_500;
 const liveActivityStaleAfterSeconds = 10 * 60;
 
+export function nativeSessionRequest(request: ApnsRequest, startedAt: number): ApnsRequest {
+  const aps = request.payload.aps as Record<string, unknown>;
+  const aggregate = aps["content-state"] as ActivityAggregate | undefined;
+  const row = aggregate?.rows[0];
+  if (!row) return request;
+  const terminal = ["completed", "failed", "cancelled"].includes(row.phase);
+  const statuses: Record<string, string> = {
+    starting: "starting", running: "thinking", waiting_for_approval: "waitingForApproval",
+    waiting_for_input: "waitingForClarification", completed: "complete", failed: "failed",
+    cancelled: "cancelled", stale: "thinking",
+  };
+  // Swift's default Codable Date representation is seconds since 2001-01-01.
+  const swiftDate = (milliseconds: number) => milliseconds / 1_000 - 978_307_200;
+  return { ...request, payload: { aps: { ...aps, "content-state": {
+    sessionID: row.sessionId, sessionTitle: row.title, status: statuses[row.phase],
+    currentActivity: row.status, responseExcerpt: "", startedAt: swiftDate(startedAt),
+    updatedAt: swiftDate(row.updatedAt), isStale: row.phase === "stale", isFinal: terminal,
+  } } } };
+}
+
 export function fitActivityAggregate(aggregate: ActivityAggregate): ActivityAggregate {
   const fitted = { ...aggregate, rows: [...aggregate.rows] };
   while (
@@ -31,7 +51,7 @@ export function makeLiveActivityUpdate(input: {
   nowEpochSeconds: number;
   alert?: ActivityAlert | null;
 }): ApnsRequest {
-  const requiresImmediateDelivery = input.aggregate.rows.some(
+  const requiresImmediateDelivery = input.aggregate.activeCount === 0 || input.aggregate.rows.some(
     (row) => row.phase === "waiting_for_approval"
       || row.phase === "waiting_for_input"
       || row.phase === "failed",
