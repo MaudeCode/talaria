@@ -180,6 +180,7 @@ export default defineSchema({
     publisherOwnerUserId: v.string(),
     profileId: v.string(),
     runKey: v.string(),
+    revision: v.optional(v.number()),
     acknowledged: v.boolean(),
     row: aggregateRowValidator,
   })

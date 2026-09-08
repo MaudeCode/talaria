@@ -15,11 +15,21 @@ export async function recordCompletion(
   const existing = await ctx.db.query("completions")
     .withIndex("by_grant_id_and_run_key", (q) => q.eq("grantId", grant._id).eq("runKey", key))
     .unique();
-  // Keep the first terminal content and its acknowledgement across heartbeat replays.
-  if (existing) return;
+  if (existing) {
+    if (state.revision <= (existing.revision ?? -1)) return;
+    const changed = state.phase !== existing.row.phase || state.title !== existing.row.title
+      || state.publisherLabel !== existing.row.publisherLabel || state.deepLink !== existing.row.deepLink;
+    // Advance source ordering without turning heartbeat timestamps into new outcomes.
+    // A corrected result keeps the same run identity and acknowledgement.
+    await ctx.db.patch(existing._id, {
+      revision: state.revision,
+      ...(changed ? { row: rowForState(state) } : {}),
+    });
+    return;
+  }
   await ctx.db.insert("completions", {
     userId: grant.userId, grantId: grant._id, profileId: grant.profileId, publisherOwnerUserId: grant.publisherOwnerUserId,
-    runKey: key, acknowledged: false, row: rowForState(state),
+    runKey: key, revision: state.revision, acknowledged: false, row: rowForState(state),
   });
 }
 

@@ -190,3 +190,21 @@ it("keeps a completed current-session card pinned while a later run starts", asy
   const ends = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).filter((job) => job.kind === "live_activity_end");
   expect(ends.map((job) => job.activityId)).toEqual(["activity"]);
 });
+
+
+it("refreshes corrected terminal outcomes without losing acknowledgement", async () => {
+  const { backend, publish, list } = await fixture();
+  await publish("failed");
+  const first = (await list())!.completions[0]!;
+  await publish("completed");
+  const corrected = (await list())!.completions[0]!;
+  expect(corrected.id).toBe(first.id);
+  expect(corrected.row.phase).toBe("completed");
+  expect(corrected.row.status).toBe("Done");
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [first.id] });
+  await publish("failed");
+  expect((await list())!.completions).toEqual([]);
+  const retained = await backend.run((ctx) => ctx.db.get(first.id));
+  expect(retained?.row.phase).toBe("failed");
+  expect(retained?.acknowledged).toBe(true);
+});
