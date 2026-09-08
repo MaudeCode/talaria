@@ -121,8 +121,14 @@ final class LiveActivityTests: XCTestCase {
             rows: [aggregateRow(sessionID: "finished", phase: "completed", updatedAt: 100)]
         )
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.outcomeTitle(state), "Done")
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true), "completed")
         XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: true))
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalSymbol(for: "completed"), "checkmark.circle.fill")
+        for phase in ["cancelled", "failed"] {
+            var outcome = state
+            outcome.rows[0].phase = phase
+            XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: outcome, isStale: true), phase)
+        }
     }
 
     func testRelayCredentialsRoundTripThroughKeychain() throws {
@@ -869,7 +875,7 @@ final class LiveActivityTests: XCTestCase {
             TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: true),
             "Agent work completed"
         )
-        XCTAssertNil(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true))
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true), "completed")
     }
 
     private func aggregateRow(

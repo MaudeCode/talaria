@@ -106,10 +106,18 @@ enum TalariaAggregateLiveActivityPresentation {
             : state.subtitle
     }
 
+    private static func outcomePhase(_ state: TalariaAggregateActivityAttributes.ContentState) -> String {
+        if state.rows.contains(where: { $0.phase == "failed" }) { return "failed" }
+        if !state.rows.isEmpty && state.rows.allSatisfy({ $0.phase == "cancelled" }) { return "cancelled" }
+        return "completed"
+    }
+
     static func outcomeTitle(_ state: TalariaAggregateActivityAttributes.ContentState) -> String {
-        if state.rows.contains(where: { $0.phase == "failed" }) { return String(localized: "Failed") }
-        if !state.rows.isEmpty && state.rows.allSatisfy({ $0.phase == "cancelled" }) { return String(localized: "Cancelled") }
-        return String(localized: "Done")
+        switch outcomePhase(state) {
+        case "failed": String(localized: "Failed")
+        case "cancelled": String(localized: "Cancelled")
+        default: String(localized: "Done")
+        }
     }
 
     static func statusText(_ status: String, isStale: Bool) -> String {
@@ -121,6 +129,9 @@ enum TalariaAggregateLiveActivityPresentation {
         isStale: Bool
     ) -> String? {
         if isEffectivelyStale(state: state, isStale: isStale) { return "stale" }
+        if state.activeCount == 0 && state.rows.allSatisfy({ ["completed", "failed", "cancelled"].contains($0.phase) }) {
+            return outcomePhase(state)
+        }
         return state.rows.first(where: {
             $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
         })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
