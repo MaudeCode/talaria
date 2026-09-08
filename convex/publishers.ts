@@ -63,6 +63,14 @@ function stateRunKey(current: Doc<"sessionStates"> | null | undefined, next: { s
     ? current.runKey ?? current.eventId : next.eventId);
 }
 
+async function backfillCompletion(ctx: MutationCtx, grant: Doc<"publisherGrants">, state: Doc<"sessionStates">): Promise<boolean> {
+  if (state.deleted || state.profileId !== grant.profileId || !isTerminalPhase(state.phase)) return false;
+  const runKey = stateRunKey(state, state);
+  await recordCompletion(ctx, grant, state, runKey);
+  if (state.runKey === undefined) await ctx.db.patch(state._id, { runKey });
+  return state.runKey === undefined;
+}
+
 function exposedState(state: Doc<"sessionStates">) {
   return {
     deleted: state.deleted,
@@ -180,6 +188,9 @@ export const acceptState = internalMutation({
             .eq("publisherId", args.publisherId).eq("sessionId", args.sessionId),
         ).unique();
       if (existing?.eventId === args.eventId) {
+        if (await backfillCompletion(ctx, grant, existing)) {
+          await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: grant.userId });
+        }
         duplicate = true;
         continue;
       }
@@ -277,6 +288,7 @@ export const acceptSnapshot = internalMutation({
         const current = bySessionId.get(state.sessionId);
         if (current && state.revision < current.revision) continue;
         if (current && state.revision === current.revision) {
+          await backfillCompletion(ctx, grant, current);
           await ctx.db.patch(current._id, {
             ...(isTerminalPhase(current.phase) ? {} : expiryForPhase(current.phase, args.receivedAt)),
             receivedAt: args.receivedAt,

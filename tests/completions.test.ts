@@ -128,3 +128,32 @@ it("sends native per-session Done as an update and does not repush unchanged ter
     expect(invalid.status).toBe(400);
   } finally { vi.useRealTimers(); }
 });
+
+
+it.each(["state", "snapshot"] as const)("backfills legacy terminal rows on duplicate %s publication", async (kind) => {
+  const { backend, list, now } = await fixture();
+  const state = { sessionId: "legacy-session", streamId: "legacy-run", eventId: "legacy-event", revision: 7,
+    title: "Legacy completion", phase: "completed" as const, updatedAt: now, deepLink: "/sessions/legacy-session" };
+  await backend.run(async (ctx) => {
+    await ctx.db.insert("sessionStates", { ...state, version: 2, userId: "user", profileId: "profile", deleted: false,
+      publisherId: "https://hermes.example", publisherLabel: "Test", expiresAt: now + 900_000, terminalExpiresAt: now + 900_000, receivedAt: now });
+  });
+  const args = { publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
+    nonce: "legacy-nonce", nonceExpiresAt: now + 60_000, receivedAt: now };
+  const republish = async (nonce: string) => {
+    if (kind === "snapshot") {
+      await backend.mutation(internal.publishers.acceptSnapshot, { ...args, nonce, snapshotId: nonce, states: [state] });
+    } else {
+      const { eventId, revision, ...content } = state;
+      await backend.mutation(internal.publishers.acceptState, { ...args, nonce, sessionId: state.sessionId, eventId, revision, state: content });
+    }
+  };
+  await republish("legacy-first");
+  const completion = (await list())!.completions[0];
+  expect(completion?.row.status).toBe("Done");
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [completion!.id] });
+  await republish("legacy-repeat");
+  expect((await list())!.completions).toEqual([]);
+  const visible = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now });
+  expect(visible).toEqual([]);
+});
