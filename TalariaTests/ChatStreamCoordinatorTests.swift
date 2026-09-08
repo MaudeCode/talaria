@@ -163,10 +163,11 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
-    func testForegroundReconnectInactiveReplayUsesRestoredEventID() async throws {
+    func testForegroundReconnectInactiveReplayDoesNotRestartLiveActivity() async throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
-        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let coordinator = makeCoordinator(streamClient: streamClient, liveActivityManager: liveActivityManager, delegate: delegate) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/stream/status")
             return apiTestJSONResponse(
                 #"{"active": false, "stream_id": "stream-123", "replay_available": true}"#,
@@ -185,6 +186,23 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(queryItems.first(where: { $0.name == "replay" })?.value, "1")
         XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "9")
         XCTAssertFalse(coordinator.isConnectionSuspended)
+        XCTAssertEqual(liveActivityManager.starts.count, 1)
+        XCTAssertEqual(liveActivityManager.orphanedEnds.map(\.streamID), ["stream-123"])
+        XCTAssertEqual(liveActivityManager.orphanedEnds.last?.status, .complete)
+        let updateCount = liveActivityManager.updates.count
+        streamClient.emit(.reasoning(ReasoningStreamEvent(text: "Replayed reasoning")))
+        XCTAssertEqual(liveActivityManager.updates.count, updateCount)
+
+        // Leaving and reopening during transcript replay must not create another card.
+        coordinator.suspendActiveStreamConnection()
+        await coordinator.reconnectIfNeeded()
+        XCTAssertEqual(liveActivityManager.starts.count, 1)
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        XCTAssertTrue(liveActivityManager.ends.isEmpty)
+
+        coordinator.start(streamID: "new-running-stream")
+        XCTAssertEqual(liveActivityManager.starts.last?.streamID, "new-running-stream")
+        XCTAssertEqual(liveActivityManager.starts.count, 2)
     }
 
     @MainActor
@@ -1432,6 +1450,13 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
         let status: AgentRunActivityStatus
         let activity: String
         let errorSummary: String?
+    }
+
+    private(set) var orphanedEnds: [(streamID: String, status: AgentRunActivityStatus)] = []
+
+    func endOrphanedActivity(streamID: String, status: AgentRunActivityStatus, activity: String) async -> Bool {
+        orphanedEnds.append((streamID, status))
+        return true
     }
 
     private(set) var starts: [Start] = []

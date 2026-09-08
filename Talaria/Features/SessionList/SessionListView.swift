@@ -142,9 +142,7 @@ struct SessionListView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if hasWaitingSharedImport {
-                waitingSharedImportBanner
-            }
+            if hasWaitingSharedImport { waitingSharedImportBanner }
         }
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)

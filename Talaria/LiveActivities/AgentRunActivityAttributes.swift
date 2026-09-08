@@ -63,6 +63,8 @@ struct AgentRunActivityAttributes: ActivityAttributes {
 struct TalariaAggregateActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         struct Row: Codable, Hashable, Identifiable {
+            var completionId: String? = nil
+            var streamId: String? = nil
             var publisherId: String
             var publisherLabel: String
             var sessionId: String
@@ -81,6 +83,10 @@ struct TalariaAggregateActivityAttributes: ActivityAttributes {
         var subtitle: String
         var updatedAt: Double
         var rows: [Row]
+
+        var hasTerminalRows: Bool {
+            rows.contains { ["completed", "failed", "cancelled"].contains($0.phase) }
+        }
     }
 }
 
@@ -104,6 +110,20 @@ enum TalariaAggregateLiveActivityPresentation {
             : state.subtitle
     }
 
+    private static func outcomePhase(_ state: TalariaAggregateActivityAttributes.ContentState) -> String {
+        if state.rows.contains(where: { $0.phase == "failed" }) { return "failed" }
+        if !state.rows.isEmpty && state.rows.allSatisfy({ $0.phase == "cancelled" }) { return "cancelled" }
+        return "completed"
+    }
+
+    static func outcomeTitle(_ state: TalariaAggregateActivityAttributes.ContentState) -> String {
+        switch outcomePhase(state) {
+        case "failed": String(localized: "Failed")
+        case "cancelled": String(localized: "Cancelled")
+        default: String(localized: "Done")
+        }
+    }
+
     static func statusText(_ status: String, isStale: Bool) -> String {
         isStale ? String(localized: "Waiting") : status
     }
@@ -113,6 +133,9 @@ enum TalariaAggregateLiveActivityPresentation {
         isStale: Bool
     ) -> String? {
         if isEffectivelyStale(state: state, isStale: isStale) { return "stale" }
+        if state.activeCount == 0 && state.rows.allSatisfy({ ["completed", "failed", "cancelled"].contains($0.phase) }) {
+            return outcomePhase(state)
+        }
         return state.rows.first(where: {
             $0.phase == "waiting_for_approval" || $0.phase == "waiting_for_input"
         })?.phase ?? state.rows.first(where: { $0.phase == "failed" })?.phase
@@ -136,6 +159,8 @@ enum TalariaAggregateLiveActivityPresentation {
         case "waiting_for_approval": "exclamationmark.circle.fill"
         case "waiting_for_input": "questionmark.circle.fill"
         case "failed": "xmark.octagon.fill"
+        case "completed": "checkmark.circle.fill"
+        case "cancelled": "xmark.circle"
         case "stale": "clock.arrow.circlepath"
         default: "circle.fill"
         }
@@ -146,6 +171,8 @@ enum TalariaAggregateLiveActivityPresentation {
         case "waiting_for_approval": String(localized: "Approval needed")
         case "waiting_for_input": String(localized: "Input needed")
         case "failed": String(localized: "Agent work failed")
+        case "completed": String(localized: "Done")
+        case "cancelled": String(localized: "Cancelled")
         case "stale": String(localized: "Waiting for server")
         default: String(localized: "Agent status")
         }
@@ -362,6 +389,18 @@ enum AgentRunElapsedTimeFormatter {
 }
 
 enum AgentLiveActivityReusePolicy {
+    static func isViewedCompletion(
+        state: AgentRunActivityAttributes.ContentState, publisherID: String?,
+        viewedPublisherID: String, viewedSessionID: String, through viewedAt: Date
+    ) -> Bool {
+        state.isFinal && publisherID == viewedPublisherID
+            && state.sessionID == viewedSessionID && state.updatedAt <= viewedAt
+    }
+
+    static func preservesCompletedActivity(isFinal: Bool, relayPublisherID: String?) -> Bool {
+        isFinal && relayPublisherID != nil
+    }
+
     static func normalizedStreamID(_ streamID: String?) -> String? {
         guard let streamID else { return nil }
 

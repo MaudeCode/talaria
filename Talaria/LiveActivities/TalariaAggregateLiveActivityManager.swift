@@ -103,7 +103,7 @@ final class TalariaAggregateLiveActivityManager {
                     pushToStartEnabled: false
                 )
             }
-            await endAggregateActivities(client: client)
+            await endAggregateActivities(client: client, preserveCompleted: credentials != nil)
             return
         }
 
@@ -132,12 +132,15 @@ final class TalariaAggregateLiveActivityManager {
             await endAggregateActivities(client: client)
             return
         }
-        guard operationIsCurrent(generation, credentials: credentials) else {
-            await endAggregateActivities(client: client)
-            return
-        }
+        // A mode change or disconnect owns its cleanup; an older response must
+        // not override that owner's completion-retention policy.
+        guard operationIsCurrent(generation, credentials: credentials) else { return }
 
         for perSession in Activity<AgentRunActivityAttributes>.activities {
+            if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                isFinal: perSession.content.state.isFinal,
+                relayPublisherID: perSession.attributes.relayPublisherID
+            ) { continue }
             try? await client.unregister(activityID: perSession.id)
             await perSession.end(nil, dismissalPolicy: .immediate)
         }
@@ -153,7 +156,9 @@ final class TalariaAggregateLiveActivityManager {
                 await duplicate.end(nil, dismissalPolicy: .immediate)
             }
         } else {
-            guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+            // Expired or manually dismissed completion cards stay in the inbox.
+            guard reconciledAggregate.activeCount > 0,
+                  ActivityAuthorizationInfo().areActivitiesEnabled else { return }
             activity = try Activity.request(
                 attributes: TalariaAggregateActivityAttributes(),
                 content: ActivityContent(
@@ -166,17 +171,40 @@ final class TalariaAggregateLiveActivityManager {
         observePushToken(for: activity, client: client)
     }
 
-    func disconnect() async throws {
+    func reconcileAfterAcknowledgement(credentials: TalariaRelayCredentials) async throws {
+        guard !Activity<TalariaAggregateActivityAttributes>.activities.isEmpty else { return }
+        let generation = operationGeneration
+        let client = TalariaRelayClient(credentials: credentials)
+        let aggregate = try await client.snapshot()
+        guard generation == operationGeneration, activeDisconnectCount == 0,
+              TalariaRelayConfigurationStore.load() == credentials else { return }
+        if TalariaLiveActivityMode.current == .perSession, aggregate?.hasTerminalRows != true {
+            await endAggregateActivities(client: client)
+            return
+        }
+        if let aggregate {
+            let state = stateByReconcilingPendingSeeds(with: aggregate)
+            for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+                await enqueueUpdate(state, for: activity, generation: generation).value
+            }
+        } else {
+            prunePendingSeeds()
+            guard pendingSeeds.isEmpty else { return }
+            await endAggregateActivities(client: client)
+        }
+    }
+
+    func disconnect(preserveCompleted: Bool = false) async throws {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
-        await AgentLiveActivityManager.shared.disconnectRelayRegistration()
         activeDisconnectCount += 1
         defer { activeDisconnectCount -= 1 }
         operationGeneration += 1
         refreshRequested = false
+        await AgentLiveActivityManager.shared.disconnectRelayRegistration(preserveCompleted: preserveCompleted)
         let client = TalariaRelayClient(credentials: credentials)
         stopObservers()
-        await endAggregateActivities(client: client)
-        try await client.revokeDevice()
+        await endAggregateActivities(client: client, preserveCompleted: preserveCompleted)
+        if !preserveCompleted { try await client.revokeDevice() }
     }
 
     private func startObservers(client: TalariaRelayClient) {
@@ -252,10 +280,12 @@ final class TalariaAggregateLiveActivityManager {
         }
     }
 
-    private func endAggregateActivities(client: TalariaRelayClient? = nil) async {
+    private func endAggregateActivities(client: TalariaRelayClient? = nil, preserveCompleted: Bool = false) async {
         tokenTasks.values.forEach { $0.cancel() }
         tokenTasks.removeAll()
         for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+            // The shared card stays while any row still needs acknowledgement.
+            if preserveCompleted && activity.content.state.hasTerminalRows { continue }
             if let client {
                 try? await client.unregister(activityID: activity.id)
             }

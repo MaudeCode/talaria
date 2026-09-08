@@ -8,6 +8,223 @@ final class LiveActivityTests: XCTestCase {
         super.tearDown()
     }
 
+    func testCompletionInboxRetainsOfflineResultsAndAcknowledgesOnlyObservedIDs() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let suite = "completion-inbox-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); session.invalidateAndCancel() }
+        var credentials: TalariaRelayCredentials? = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example")), deviceID: "device", userID: "user",
+            appleUserID: "apple-user", sessionToken: "synthetic-token", expiresAt: .distantFuture
+        )
+        let payload = #"{"completions":[{"id":"completion1","row":{"publisherId":"https://hermes.example","publisherLabel":"Test","sessionId":"session","streamId":"run1","title":"Synthetic task","phase":"completed","status":"Done","updatedAt":1800000000000,"deepLink":"/sessions/session"}}],"cursor":null}"#
+        var offline = false
+        var acknowledgeSucceeds = false
+        var acknowledgements: [[String]] = []
+        LiveActivityURLProtocol.handler = { request in
+            if offline { throw URLError(.notConnectedToInternet) }
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Device-Id"), "device")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer synthetic-token")
+            let status: Int
+            let body: String
+            if request.httpMethod == "POST" {
+                let object = try JSONSerialization.jsonObject(with: XCTUnwrap(apiTestBodyData(from: request))) as! [String: [String]]
+                acknowledgements.append(try XCTUnwrap(object["ids"]))
+                status = acknowledgeSucceeds ? 200 : 503
+                body = acknowledgeSucceeds ? #"{"ok":true}"# : #"{"error":"temporarily unavailable"}"#
+            } else {
+                status = 200
+                body = payload
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        await store.refresh()
+        XCTAssertEqual(store.completions.map(\.id), ["completion1"])
+        offline = true
+        let relaunched = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        await relaunched.refresh()
+        XCTAssertEqual(relaunched.completions.map(\.id), ["completion1"])
+        XCTAssertNotNil(relaunched.errorMessage)
+        offline = false
+        let rejected = await relaunched.acknowledge(["not-observed"])
+        XCTAssertFalse(rejected)
+        XCTAssertTrue(acknowledgements.isEmpty)
+        let failed = await relaunched.acknowledge(["completion1"])
+        XCTAssertFalse(failed)
+        XCTAssertEqual(relaunched.completions.count, 1)
+        acknowledgeSucceeds = true
+        let accepted = await relaunched.acknowledge(["completion1"])
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acknowledgements, [["completion1"], ["completion1"]])
+        XCTAssertTrue(relaunched.completions.isEmpty)
+        credentials = nil
+        await store.refresh()
+        XCTAssertTrue(store.completions.isEmpty)
+    }
+
+    func testViewedCompletionCleanupPreservesRunningNewerAndOtherThreadCards() {
+        let viewedAt = Date(timeIntervalSince1970: 20)
+        let running = AgentRunActivityStateReducer.initialState(
+            sessionID: "viewed", sessionTitle: "Fixture", startedAt: Date(timeIntervalSince1970: 1)
+        )
+        var done = AgentRunActivityStateReducer.final(
+            status: .complete, activity: "Done", state: running, now: Date(timeIntervalSince1970: 10)
+        )
+        func matches(_ state: AgentRunActivityAttributes.ContentState, publisher: String = "https://fixture.example") -> Bool {
+            AgentLiveActivityReusePolicy.isViewedCompletion(
+                state: state, publisherID: publisher, viewedPublisherID: "https://fixture.example",
+                viewedSessionID: "viewed", through: viewedAt
+            )
+        }
+        XCTAssertTrue(matches(done))
+        XCTAssertFalse(matches(running))
+        XCTAssertFalse(matches(done, publisher: "https://other.example"))
+        done.updatedAt = Date(timeIntervalSince1970: 21)
+        XCTAssertFalse(matches(done))
+        done.updatedAt = Date(timeIntervalSince1970: 10)
+        done.sessionID = "other"
+        XCTAssertFalse(matches(done))
+    }
+
+    func testOpeningThreadAcknowledgesOnlyItsExistingCompletions() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let suite = "viewed-completion-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); session.invalidateAndCancel() }
+        let credentials = TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.example")!, deviceID: "device", userID: "user",
+            appleUserID: "apple", sessionToken: "synthetic-token", expiresAt: .distantFuture
+        )
+        let first = TalariaRelayClient.Completion(id: "first", row: aggregateRow(sessionID: "viewed", phase: "completed", updatedAt: 100))
+        let other = TalariaRelayClient.Completion(id: "other", row: aggregateRow(sessionID: "other", phase: "completed", updatedAt: 100))
+        let future = TalariaRelayClient.Completion(id: "future", row: aggregateRow(sessionID: "viewed", phase: "completed", updatedAt: 200))
+        var otherPublisherRow = first.row
+        otherPublisherRow.publisherId = "https://other.example"
+        let otherPublisher = TalariaRelayClient.Completion(id: "other-publisher", row: otherPublisherRow)
+        var postedIDs: [String] = []
+        var isOffline = false
+        var returnsEmptyPage = false
+        LiveActivityURLProtocol.handler = { request in
+            if isOffline { throw URLError(.notConnectedToInternet) }
+            let data: Data
+            if request.httpMethod == "POST" {
+                let object = try JSONSerialization.jsonObject(with: XCTUnwrap(apiTestBodyData(from: request))) as! [String: [String]]
+                postedIDs += object["ids"] ?? []
+                data = Data(#"{"ok":true}"#.utf8)
+            } else {
+                struct Page: Encodable { var completions: [TalariaRelayClient.Completion]; var cursor: String? }
+                let isSecondPage = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                    .queryItems?.contains { $0.name == "cursor" && $0.value == "page-2" } == true
+                data = try JSONEncoder().encode(returnsEmptyPage ? Page(completions: [], cursor: nil) : isSecondPage
+                    ? Page(completions: [first, future, otherPublisher], cursor: nil)
+                    : Page(completions: [other], cursor: "page-2"))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        let acknowledged = await store.acknowledgeViewedSession(
+            publisherURL: URL(string: "https://hermes.example/path")!, sessionID: "viewed",
+            through: Date(timeIntervalSince1970: 0.15)
+        )
+        XCTAssertEqual(acknowledged?.map(\.id), ["first"])
+        XCTAssertEqual(postedIDs, ["first"])
+        XCTAssertEqual(Set(store.completions.map(\.id)), ["other", "future", "other-publisher"])
+
+        isOffline = true
+        let failed = await store.acknowledgeViewedSession(
+            publisherURL: URL(string: "https://hermes.example")!, sessionID: "viewed", through: .distantFuture
+        )
+        XCTAssertNil(failed)
+        isOffline = false
+        returnsEmptyPage = true
+        let alreadyAcknowledged = await store.acknowledgeViewedSession(
+            publisherURL: URL(string: "https://hermes.example")!, sessionID: "viewed", through: .distantFuture
+        )
+        XCTAssertEqual(alreadyAcknowledged?.count, 0)
+    }
+
+    func testCompletionRefreshCannotResurrectAnAcknowledgedResult() async throws {
+        let host = "completion-race.example"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let suite = "completion-race-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
+            defaults.removePersistentDomain(forName: suite)
+            session.invalidateAndCancel()
+        }
+        let credentials = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://\(host)")), deviceID: "device", userID: "user",
+            appleUserID: "apple-user", sessionToken: "synthetic-token", expiresAt: .distantFuture
+        )
+        let payload = #"{"completions":[{"id":"completion1","row":{"publisherId":"https://hermes.example","publisherLabel":"Test","sessionId":"session","streamId":"run1","title":"Synthetic task","phase":"completed","status":"Done","updatedAt":1800000000000,"deepLink":"/sessions/session"}}],"cursor":null}"#
+        let requests = DeferredRequests()
+        let refreshStarted = expectation(description: "stale refresh is in flight")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let count = requests.append(request)
+            if request.request.httpMethod == "POST" {
+                request.complete(withJSON: #"{"ok":true}"#)
+            } else if count == 1 {
+                request.complete(withJSON: payload)
+            } else {
+                refreshStarted.fulfill()
+            }
+        }, forHost: host)
+        let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        await store.refresh()
+        let refresh = Task { await store.refresh() }
+        await fulfillment(of: [refreshStarted], timeout: 2)
+        let acknowledged = await store.acknowledge(["completion1"])
+        XCTAssertTrue(acknowledged)
+        requests.request(at: 1).complete(withJSON: payload)
+        await refresh.value
+        XCTAssertTrue(store.completions.isEmpty)
+        XCTAssertFalse(store.isLoading)
+    }
+
+    func testNativeRelayCompletionDecodesAsFinalWithoutEndingActivity() throws {
+        let data = Data(#"{"sessionID":"session","sessionTitle":"Synthetic task","status":"complete","currentActivity":"Done","responseExcerpt":"","startedAt":821692800,"updatedAt":821692800,"isStale":false,"isFinal":true}"#.utf8)
+        let state = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: data)
+        XCTAssertEqual(state.status, .complete)
+        XCTAssertTrue(state.isFinal)
+        XCTAssertFalse(state.isStale)
+        XCTAssertEqual(state.startedAt.timeIntervalSince1970, 1_800_000_000)
+    }
+
+    func testTerminalAggregateOutcomeDoesNotShowZeroOrWaiting() {
+        let state = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,
+            rows: [aggregateRow(sessionID: "finished", phase: "completed", updatedAt: 100)]
+        )
+        XCTAssertTrue(state.hasTerminalRows)
+        var mixed = state
+        mixed.activeCount = 1
+        mixed.rows.append(aggregateRow(sessionID: "running", phase: "thinking", updatedAt: 101))
+        XCTAssertTrue(mixed.hasTerminalRows)
+        var running = mixed
+        running.rows.removeFirst()
+        XCTAssertFalse(running.hasTerminalRows)
+        var empty = state
+        empty.rows = []
+        XCTAssertFalse(empty.hasTerminalRows)
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.outcomeTitle(state), "Done")
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true), "completed")
+        XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: true))
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalSymbol(for: "completed"), "checkmark.circle.fill")
+        for phase in ["cancelled", "failed"] {
+            var outcome = state
+            outcome.rows[0].phase = phase
+            XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: outcome, isStale: true), phase)
+        }
+    }
+
     func testRelayCredentialsRoundTripThroughKeychain() throws {
         let keychain = InMemoryKeychainStore()
         let credentials = TalariaRelayCredentials(
@@ -350,12 +567,14 @@ final class LiveActivityTests: XCTestCase {
             activityID: "activity-session-1",
             pushToken: "session-token",
             publisherID: "https://hermes.example.com",
-            sessionID: "session-1"
+            sessionID: "session-1",
+            streamID: "stream-1"
         )
         let perSessionBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
         let perSessionRegistration = try XCTUnwrap(
             JSONSerialization.jsonObject(with: perSessionBody) as? [String: Any]
         )
+        XCTAssertEqual(perSessionRegistration["streamId"] as? String, "stream-1")
         XCTAssertEqual(perSessionRegistration["mode"] as? String, "per_session")
         XCTAssertEqual(perSessionRegistration["publisherId"] as? String, "https://hermes.example.com")
         XCTAssertEqual(perSessionRegistration["sessionId"] as? String, "session-1")
@@ -750,7 +969,7 @@ final class LiveActivityTests: XCTestCase {
             TalariaAggregateLiveActivityPresentation.headerText(state: state, isStale: true),
             "Agent work completed"
         )
-        XCTAssertNil(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true))
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true), "completed")
     }
 
     private func aggregateRow(
@@ -829,6 +1048,12 @@ final class LiveActivityTests: XCTestCase {
             ),
             "00:00"
         )
+    }
+
+    func testNewRunCleanupPreservesOnlyRelayBackedCompletedActivities() {
+        XCTAssertTrue(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: true, relayPublisherID: "https://relay.example"))
+        XCTAssertFalse(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: false, relayPublisherID: "https://relay.example"))
+        XCTAssertFalse(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: true, relayPublisherID: nil))
     }
 
     func testLiveActivityReusePolicyRequiresMatchingSessionAndStream() {
@@ -999,7 +1224,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains(sessionID))
     }
 
-    func testAggregateDeepLinkCarriesPublisherForServerRouting() throws {
+    func testSessionDeepLinkCarriesPublisherForServerRouting() throws {
         let publisherID = "https://hermes.example.com"
         let url = try XCTUnwrap(
             TalariaDeepLink.sessionURL(sessionID: "session-abc", publisherID: publisherID)
