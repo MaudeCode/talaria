@@ -38,6 +38,10 @@ struct UITestFixtureEnvironment {
         if UIApplication.shared.alternateIconName != nil {
             UIApplication.shared.setAlternateIconName(nil)
         }
+        // The chat toolbar's Files and Git controls are hideable in Settings, and the
+        // workspace tests reach their destinations through them, so restore both.
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatFilesKey)
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatGitKey)
         UserDefaults.standard.set(
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey
