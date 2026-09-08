@@ -1,0 +1,369 @@
+import XCTest
+
+/// Launched-app smoke coverage for the agent panels reached from the sidebar (TAL-71).
+/// Every journey runs against the deterministic fixture server, so no owner server, live
+/// Kanban worker or real account is involved.
+class AgentPanelUITestCase: TalariaUITestCase {
+    static let panels = ["Tasks", "Kanban", "Skills", "Memory", "Insights"]
+
+    func launchPanelFixture(_ scenario: String) {
+        launchFixture(additionalArguments: [scenario])
+        XCTAssertTrue(
+            app.buttons["Open navigation"].waitForExistence(timeout: 15),
+            "Missing deterministic app fixture"
+        )
+    }
+
+    func openPanel(_ panel: String) {
+        openSidebarDestination(panel)
+        XCTAssertTrue(
+            app.navigationBars[panel].waitForExistence(timeout: 10),
+            "Sidebar did not open the \(panel) panel"
+        )
+    }
+
+    /// A panel is the navigation root, so it keeps the sidebar button where a pushed
+    /// screen keeps Back; the sidebar is the way out. The button can still be mid-pop
+    /// from a detail screen, so wait for it rather than assuming it is already there.
+    func leavePanel(_ panel: String) {
+        // The sidebar element stays in the tree while it is closed and its rows only
+        // resolve once it has finished opening, so the destination itself is the signal
+        // for whether the sidebar still has to be opened.
+        let chats = app.descendants(matching: .any)["app-sidebar"]
+            .descendants(matching: .any)["Chats"]
+            .firstMatch
+        let openNavigation = app.buttons["Open navigation"]
+        for _ in 0..<3 where !chats.waitForExistence(timeout: 3) {
+            guard openNavigation.exists else { continue }
+            openNavigation.tap()
+        }
+        XCTAssertTrue(
+            chats.waitForExistence(timeout: 5),
+            "\(panel) offered no way back to the session list"
+        )
+        chats.tap()
+        XCTAssertTrue(
+            app.navigationBars["Chats"].waitForExistence(timeout: 10),
+            "Leaving \(panel) did not return to the session list"
+        )
+    }
+
+    /// List rows and bar controls report `isHittable == false` to XCUI even when visible, so
+    /// taps go through a coordinate. A missing element has a zero frame, which would tap the
+    /// screen corner instead; the assertions keep that from passing as a silent stray tap.
+    func tapCenter(of element: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "Missing tap target")
+        let frame = element.frame
+        XCTAssertTrue(frame.width > 0 && frame.height > 0, "Tap target has no frame")
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: frame.midX / app.frame.width,
+            dy: frame.midY / app.frame.height
+        )).tap()
+    }
+
+    func tapBack(from bar: XCUIElement) {
+        let back = bar.buttons["BackButton"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "The pushed screen offered no Back control")
+        tapCenter(of: back)
+    }
+
+    func element(labelled label: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
+    }
+
+    func element(labelContaining text: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
+            .firstMatch
+    }
+
+    /// The panel fixture stalls each panel's first load, so the loading surface is a real
+    /// state rather than a frame that may already be gone when the query runs.
+    func assertLoadingResolves(_ label: String, panel: String) {
+        let loading = element(labelled: label)
+        XCTAssertTrue(loading.waitForExistence(timeout: 5), "\(panel) never showed its loading state")
+        XCTAssertTrue(loading.waitForNonExistence(timeout: 20), "\(panel) stayed in its loading state")
+    }
+
+    func tapRetry(in panel: String) {
+        let retry = app.buttons["Try Again"].firstMatch
+        XCTAssertTrue(retry.waitForExistence(timeout: 10), "\(panel) offered no recovery action")
+        tapCenter(of: retry)
+    }
+}
+
+/// Content, detail/editor surfaces and one safe primary interaction per panel.
+final class AgentPanelContentUITests: AgentPanelUITestCase {
+    func testTasksPanelOpensDetailAndEditorWithoutLosingItsList() throws {
+        launchPanelFixture("--ui-test-panels")
+        openPanel("Tasks")
+        assertLoadingResolves("Loading tasks...", panel: "Tasks")
+
+        let job = element(labelContaining: "Fixture Nightly Digest")
+        XCTAssertTrue(job.waitForExistence(timeout: 10), "Tasks did not render the fixture jobs")
+        XCTAssertTrue(element(labelContaining: "Fixture Weekly Sweep").exists)
+        XCTAssertTrue(element(labelContaining: "Running now").exists)
+
+        tapCenter(of: job)
+        let detail = app.navigationBars["Fixture Nightly Digest"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), "Task detail did not open")
+        XCTAssertTrue(
+            element(labelContaining: "Deterministic fixture digest output").waitForExistence(timeout: 10),
+            "Task detail did not render its recent output"
+        )
+        tapBack(from: detail)
+        XCTAssertTrue(
+            job.waitForExistence(timeout: 10),
+            "Returning from Task detail lost the task list"
+        )
+
+        tapCenter(of: app.navigationBars["Tasks"].buttons["New Task"])
+        let editor = app.navigationBars["New Task"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), "The New Task editor did not open")
+        tapCenter(of: editor.buttons["Cancel"])
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 10), "The New Task editor did not dismiss")
+        XCTAssertTrue(job.waitForExistence(timeout: 10), "Dismissing the editor lost the task list")
+
+        leavePanel("Tasks")
+    }
+
+    func testKanbanPanelOpensCardDetailWithoutDispatchingWork() throws {
+        launchPanelFixture("--ui-test-panels")
+        openPanel("Kanban")
+        assertLoadingResolves("Loading Kanban", panel: "Kanban")
+
+        let selector = app.descendants(matching: .any)["KanbanStatusSelector"]
+        XCTAssertTrue(selector.waitForExistence(timeout: 15), "The Kanban Board did not load")
+
+        // Whichever Status the Board opens on, its Cards carry the fixture id prefix.
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "FIXTURE-"))
+            .firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "The fixture Board rendered no Cards")
+        let cardID = String(card.label.prefix { $0 != "," })
+
+        // Reading a Card is the only Kanban interaction here: no move, complete, archive or
+        // dispatch action runs, so no worker is ever launched.
+        tapCenter(of: card)
+        let detail = app.navigationBars["Fixture Card \(cardID)"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), "The Card detail did not open")
+        tapBack(from: detail)
+        XCTAssertTrue(
+            selector.waitForExistence(timeout: 10) && card.waitForExistence(timeout: 10),
+            "Returning from the Card detail lost the Board"
+        )
+
+        leavePanel("Kanban")
+    }
+
+    func testSkillsPanelFiltersTogglesAndOpensASkill() throws {
+        launchPanelFixture("--ui-test-panels")
+        openPanel("Skills")
+        assertLoadingResolves("Loading skills...", panel: "Skills")
+
+        let skill = element(labelContaining: "fixture-runner")
+        XCTAssertTrue(skill.waitForExistence(timeout: 10), "Skills did not render the fixture skills")
+        XCTAssertTrue(element(labelContaining: "fixture-archivist").exists)
+
+        // Search is the panel's own filter; it needs no server state and reaches the
+        // no-results empty state as well.
+        let search = app.searchFields["Search skills..."]
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "Skills offered no search field")
+        search.tap()
+        search.typeText("reviewer")
+        XCTAssertTrue(
+            element(labelContaining: "fixture-reviewer").waitForExistence(timeout: 10),
+            "Searching did not keep the matching skill"
+        )
+        XCTAssertFalse(element(labelContaining: "fixture-archivist").exists)
+
+        search.typeText("-no-such-skill")
+        XCTAssertTrue(
+            element(labelled: "No Results").waitForExistence(timeout: 10),
+            "Searching for nothing did not reach the no-results state"
+        )
+        // Closing search, not just clearing its text: an active search field owns the whole
+        // navigation bar, so leaving it open would take the sidebar control with it.
+        tapCenter(of: app.navigationBars["Skills"].buttons["Close"])
+        XCTAssertTrue(skill.waitForExistence(timeout: 10), "Closing the search did not restore the list")
+        XCTAssertTrue(
+            app.buttons["Open navigation"].waitForExistence(timeout: 5),
+            "Closing the search did not restore the navigation control"
+        )
+
+        // Enabling a Skill writes to fixture state only; the reload behind it proves the
+        // round trip rather than an optimistic row update.
+        let disabledSkill = app.descendants(matching: .any)
+            .matching(NSPredicate(
+                format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "fixture-archivist", "Disabled"
+            ))
+            .firstMatch
+        XCTAssertTrue(disabledSkill.waitForExistence(timeout: 10), "The disabled fixture skill is missing")
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: disabledSkill.frame.midX / app.frame.width,
+            dy: disabledSkill.frame.midY / app.frame.height
+        )).press(forDuration: 1.2)
+        let enable = app.buttons["Enable"].firstMatch
+        XCTAssertTrue(enable.waitForExistence(timeout: 5), "The skill row offered no enable action")
+        tapCenter(of: enable)
+        XCTAssertTrue(
+            disabledSkill.waitForNonExistence(timeout: 15),
+            "Enabling a skill did not survive the reload"
+        )
+
+        tapCenter(of: skill)
+        let detail = app.navigationBars["fixture-runner"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), "The skill detail did not open")
+        XCTAssertTrue(
+            element(labelContaining: "Deterministic fixture skill content").waitForExistence(timeout: 10),
+            "The skill detail rendered no content"
+        )
+        tapBack(from: detail)
+        XCTAssertTrue(
+            app.navigationBars["Skills"].waitForExistence(timeout: 10)
+                && skill.waitForExistence(timeout: 10),
+            "Returning from the skill detail lost the skill list"
+        )
+
+        leavePanel("Skills")
+    }
+
+    func testMemoryPanelSavesASectionThroughItsEditor() throws {
+        launchPanelFixture("--ui-test-panels")
+        openPanel("Memory")
+        assertLoadingResolves("Loading memory...", panel: "Memory")
+
+        XCTAssertTrue(
+            element(labelContaining: "Fixture notes body").waitForExistence(timeout: 10),
+            "Memory did not render its sections"
+        )
+        XCTAssertTrue(element(labelContaining: "Fixture user profile").exists)
+        XCTAssertTrue(element(labelContaining: "Fixture agent soul").exists)
+
+        tapCenter(of: app.buttons["Edit My Notes"].firstMatch)
+        let editor = app.navigationBars["Edit My Notes"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), "The memory editor did not open")
+
+        let field = app.textViews["My Notes"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "The memory editor exposed no text field")
+        field.tap()
+        field.typeText(" Edited by fixture.")
+        tapCenter(of: editor.buttons["Save"])
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 15), "Saving did not dismiss the memory editor")
+        XCTAssertTrue(
+            element(labelContaining: "Edited by fixture").waitForExistence(timeout: 15),
+            "The saved memory text did not return with the reload"
+        )
+
+        leavePanel("Memory")
+    }
+
+    func testInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe() throws {
+        launchPanelFixture("--ui-test-panels")
+        openPanel("Insights")
+        assertLoadingResolves("Loading analytics…", panel: "Insights")
+
+        XCTAssertTrue(
+            element(labelled: "Provider quotas").waitForExistence(timeout: 10),
+            "Insights did not render the provider quota section"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["provider-quota-section"].exists,
+            "The provider quota section is missing its rows"
+        )
+        let sessions = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Sessions", "42"))
+            .firstMatch
+        XCTAssertTrue(sessions.waitForExistence(timeout: 10), "Insights did not render its analytics totals")
+
+        tapCenter(of: app.buttons["7 Days"].firstMatch)
+        XCTAssertTrue(
+            sessions.waitForExistence(timeout: 15),
+            "Switching the analytics timeframe lost the loaded analytics"
+        )
+
+        leavePanel("Insights")
+    }
+}
+
+/// Every panel's empty state, reached from payloads that carry no rows.
+final class AgentPanelEmptyStateUITests: AgentPanelUITestCase {
+    func testEveryAgentPanelShowsItsEmptyState() throws {
+        launchPanelFixture("--ui-test-panels-empty")
+
+        let emptyMessages = [
+            "Tasks": "No Tasks",
+            "Skills": "No Skills",
+            "Memory": "No notes yet.",
+            "Insights": "No quota sources reported by this server."
+        ]
+
+        for panel in Self.panels {
+            openPanel(panel)
+            if panel == "Kanban" {
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["KanbanStatusSelector"].waitForExistence(timeout: 15),
+                    "The Kanban Board did not load"
+                )
+                XCTAssertTrue(
+                    element(labelled: "No Cards in this Status").waitForExistence(timeout: 10),
+                    "Kanban did not show its empty Status"
+                )
+            } else {
+                let message = try XCTUnwrap(emptyMessages[panel])
+                let empty = element(labelContaining: message)
+                if !empty.waitForExistence(timeout: 15) {
+                    let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                    screenshot.name = "\(panel) empty state"
+                    screenshot.lifetime = .deleteOnSuccess
+                    add(screenshot)
+                    XCTFail("\(panel) did not show its empty state")
+                }
+            }
+            leavePanel(panel)
+        }
+    }
+}
+
+/// Every panel's load failure, and its recovery through Try Again on the same screen.
+final class AgentPanelRecoveryUITests: AgentPanelUITestCase {
+    func testEveryAgentPanelRecoversFromAFailedLoad() throws {
+        launchPanelFixture("--ui-test-panels-error")
+
+        let failures = [
+            "Tasks": (error: "Could Not Load Tasks", content: "Fixture Nightly Digest"),
+            "Skills": (error: "Could Not Load Skills", content: "fixture-runner"),
+            "Memory": (error: "Could Not Load Memory", content: "Fixture notes body"),
+            "Insights": (error: "Could Not Load Analytics", content: "Sessions")
+        ]
+
+        for panel in Self.panels {
+            openPanel(panel)
+            if panel == "Kanban" {
+                tapRetry(in: panel)
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["KanbanStatusSelector"].waitForExistence(timeout: 20),
+                    "Kanban did not recover after Try Again"
+                )
+            } else {
+                let expected = try XCTUnwrap(failures[panel])
+                XCTAssertTrue(
+                    element(labelContaining: expected.error).waitForExistence(timeout: 15),
+                    "\(panel) did not surface its load failure"
+                )
+                tapRetry(in: panel)
+                XCTAssertTrue(
+                    element(labelContaining: expected.content).waitForExistence(timeout: 20),
+                    "\(panel) did not recover after Try Again"
+                )
+                XCTAssertFalse(
+                    element(labelContaining: expected.error).exists,
+                    "\(panel) kept its error state after recovering"
+                )
+            }
+            leavePanel(panel)
+        }
+    }
+}
