@@ -383,7 +383,7 @@ struct ChatView: View {
         "\(server.absoluteString)|\(transcriptMediaSessionID ?? "local:\(session.id)")"
     }
 
-    var body: some View {
+    private var chatLayout: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
                 if viewModel.isViewingCachedData {
@@ -436,6 +436,10 @@ struct ChatView: View {
         .navigationTitle(displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("chat-detail:\(viewModel.displayTitle)")
+    }
+
+    private var chatWithLifecycle: some View {
+        chatLayout
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
@@ -509,6 +513,10 @@ struct ChatView: View {
                 guard viewModel.responseCompletionHapticTrigger > 0 else { return }
                 handleResponseCompletionSideEffects()
             }
+    }
+
+    private var chatWithToolbar: some View {
+        chatWithLifecycle
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ChatToolbarTitleLabel(
@@ -545,6 +553,10 @@ struct ChatView: View {
                     }
                 }
             }
+    }
+
+    var body: some View {
+        chatWithToolbar
             .navigationDestination(item: $forkedSession) { session in
                 ChatView(session: session, server: server, onAPIError: onAPIError)
             }
