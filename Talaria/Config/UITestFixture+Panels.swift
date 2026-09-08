@@ -1,0 +1,284 @@
+#if DEBUG
+import Foundation
+
+/// Deterministic Tasks, Kanban, Skills, Memory and Insights payloads for the agent-panel
+/// smoke journeys (TAL-71). Without one of these arguments the fixture keeps serving the
+/// responses the chat, sidebar and Kanban journeys already rely on.
+enum UITestPanelScenario: String, CaseIterable {
+    case populated = "--ui-test-panels"
+    case empty = "--ui-test-panels-empty"
+    /// Fails each panel's first load so a journey can walk the error state and recover
+    /// through Try Again; every later request serves the `populated` payload.
+    case failing = "--ui-test-panels-error"
+
+    static var current: Self? {
+        let arguments = ProcessInfo.processInfo.arguments
+        return allCases.first { arguments.contains($0.rawValue) }
+    }
+}
+
+/// Fixture-owned panel state: which loads already failed or stalled once, which Skills the
+/// journey disabled, and which Memory sections it saved.
+final class UITestPanelFixtureState: @unchecked Sendable {
+    static let shared = UITestPanelFixtureState()
+
+    private let lock = NSLock()
+    private var failedPaths: Set<String> = []
+    private var delayedPaths: Set<String> = []
+    private var analyticsFallbackFails = false
+    private var disabledSkills: Set<String> = ["fixture-archivist"]
+    private var memoryOverrides: [String: String] = [:]
+
+    /// True once per path, so the retry of the same load succeeds.
+    func consumeFailure(for path: String) -> Bool {
+        lock.withLock { failedPaths.insert(path).inserted }
+    }
+
+    /// True once per path, so only a panel's first load renders its loading state.
+    func consumeDelay(for path: String) -> Bool {
+        lock.withLock { delayedPaths.insert(path).inserted }
+    }
+
+    /// Insights falls back to `/api/sessions` when analytics fail, so the fallback has to
+    /// fail with them to reach the analytics error state. Scoping it to the failing
+    /// analytics load leaves the session list's own load alone.
+    var analyticsFallbackFailsWithInsights: Bool {
+        lock.withLock { analyticsFallbackFails }
+    }
+
+    func setAnalyticsFallbackFails(_ fails: Bool) {
+        lock.withLock { analyticsFallbackFails = fails }
+    }
+
+    func setSkill(_ name: String, disabled: Bool) {
+        lock.withLock {
+            if disabled {
+                disabledSkills.insert(name)
+            } else {
+                disabledSkills.remove(name)
+            }
+        }
+    }
+
+    func isSkillDisabled(_ name: String) -> Bool {
+        lock.withLock { disabledSkills.contains(name) }
+    }
+
+    func writeMemory(section: String, content: String) {
+        lock.withLock { memoryOverrides[section] = content }
+    }
+
+    func memory(_ section: String, fallback: String) -> String {
+        lock.withLock { memoryOverrides[section] ?? fallback }
+    }
+}
+
+extension UITestFixtureURLProtocol {
+    /// Panel loads the failing scenario breaks once. `/api/insights` and `/api/sessions`
+    /// are handled separately because Insights masks an analytics failure with a session
+    /// fallback.
+    private static let panelFailurePaths: Set<String> = [
+        "/api/crons",
+        "/api/crons/status",
+        "/api/skills",
+        "/api/memory",
+        "/api/kanban/board"
+    ]
+
+    /// Panel loads that stall once so their loading state is observable. `/api/crons/status`
+    /// is excluded: it resolves with `/api/crons`, and stalling both only doubles the wait.
+    private static let panelDelayPaths: Set<String> = [
+        "/api/crons",
+        "/api/skills",
+        "/api/memory",
+        "/api/insights",
+        "/api/kanban/board"
+    ]
+
+    private static let panelLoadingDelay: TimeInterval = 3
+
+    static func panelRequestFailure(for url: URL) -> Error? {
+        guard UITestPanelScenario.current == .failing else { return nil }
+        let state = UITestPanelFixtureState.shared
+
+        switch url.path {
+        case "/api/insights":
+            guard state.consumeFailure(for: url.path) else {
+                state.setAnalyticsFallbackFails(false)
+                return nil
+            }
+            state.setAnalyticsFallbackFails(true)
+            return URLError(.cannotConnectToHost)
+        case "/api/sessions":
+            return state.analyticsFallbackFailsWithInsights ? URLError(.cannotConnectToHost) : nil
+        case "/api/kanban/board":
+            // The Board's incremental poll carries `since=`; only the full load is broken.
+            guard url.query?.contains("since=") != true else { return nil }
+            return state.consumeFailure(for: url.path) ? URLError(.cannotConnectToHost) : nil
+        default:
+            guard panelFailurePaths.contains(url.path) else { return nil }
+            return state.consumeFailure(for: url.path) ? URLError(.cannotConnectToHost) : nil
+        }
+    }
+
+    /// Delays a panel's first load so its loading state is reachable without a live server.
+    static func panelResponseDelay(for url: URL) -> TimeInterval? {
+        guard UITestPanelScenario.current == .populated,
+              panelDelayPaths.contains(url.path),
+              url.query?.contains("since=") != true,
+              UITestPanelFixtureState.shared.consumeDelay(for: url.path)
+        else { return nil }
+        return panelLoadingDelay
+    }
+
+    static func panelResponseData(for request: URLRequest, url: URL) -> Data? {
+        guard let scenario = UITestPanelScenario.current else { return nil }
+        let isEmpty = scenario == .empty
+        let state = UITestPanelFixtureState.shared
+
+        switch url.path {
+        case "/api/crons":
+            return body(isEmpty ? emptyCrons : populatedCrons)
+        case "/api/crons/status":
+            return body(isEmpty ? #"{"running":{}}"# : #"{"running":{"ui-fixture-cron-digest":42.5}}"#)
+        case "/api/crons/output":
+            return body(isEmpty ? #"{"outputs":[]}"# : cronOutputs)
+        case "/api/crons/delivery-options":
+            return body(#"{"platforms":[{"value":"local","label":"Local"}]}"#)
+        case "/api/skills":
+            return body(isEmpty ? #"{"skills":[]}"# : skills(state))
+        case "/api/skills/content":
+            return body(skillContent(for: url))
+        case "/api/skills/toggle":
+            return body(toggleSkill(request, state: state))
+        case "/api/memory":
+            return body(isEmpty ? emptyMemory : memory(state))
+        case "/api/memory/write":
+            return body(writeMemory(request, state: state))
+        case "/api/insights":
+            return body(isEmpty ? emptyInsights : populatedInsights)
+        case "/api/provider/quotas" where isEmpty:
+            return body("""
+            {"version":1,"scope_id":"ui-fixture-scope","profile_id":"ui-fixture-profile",\
+            "active_provider":"fixture-provider","sources":[]}
+            """)
+        case "/api/kanban/board" where isEmpty && url.query?.contains("since=") != true:
+            return body(emptyKanbanBoard)
+        case "/api/kanban/stats" where isEmpty:
+            return body(#"{"by_status":{},"by_assignee":{}}"#)
+        default:
+            return nil
+        }
+    }
+
+    private static func body(_ json: String) -> Data { Data(json.utf8) }
+
+    // MARK: - Tasks
+
+    private static let emptyCrons = #"{"jobs":[]}"#
+
+    private static let populatedCrons = """
+    {"jobs":[
+      {"id":"ui-fixture-cron-digest","name":"Fixture Nightly Digest","prompt":"Summarize the deterministic fixture run.","schedule":"0 3 * * *","schedule_display":"Every day at 03:00","enabled":true,"state":"active","next_run_at":2000003600,"last_run_at":2000000000,"last_status":"success","deliver":"local","skills":["fixture-runner"],"model":"fixture-model","provider":"fixture-provider","profile":"fixture-profile","toast_notifications":true},
+      {"id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","prompt":"Sweep the deterministic fixture workspace.","schedule":"0 4 * * 1","schedule_display":"Every Monday at 04:00","enabled":false,"state":"paused","next_run_at":2000090000,"last_status":"paused","deliver":"local","toast_notifications":false}
+    ]}
+    """
+
+    private static let cronOutputs = """
+    {"job_id":"ui-fixture-cron-digest","outputs":[
+      {"filename":"fixture-digest.md","content":"Deterministic fixture digest output."}
+    ]}
+    """
+
+    // MARK: - Skills
+
+    private static func skills(_ state: UITestPanelFixtureState) -> String {
+        let rows = [
+            ("fixture-runner", "Fixture", "Runs the deterministic fixture journey."),
+            ("fixture-archivist", "Fixture", "Archives deterministic fixture output."),
+            ("fixture-reviewer", "Review", "Reviews the deterministic fixture slice.")
+        ].map { name, category, description in
+            """
+            {"name":"\(name)","category":"\(category)","description":"\(description)",\
+            "path":"/fixture/skills/\(name)/SKILL.md","disabled":\(state.isSkillDisabled(name)),\
+            "tags":["fixture"]}
+            """
+        }
+        return "{\"skills\":[" + rows.joined(separator: ",") + "]}"
+    }
+
+    private static func skillContent(for url: URL) -> String {
+        let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "name" }?.value ?? "fixture-runner"
+        return """
+        {"name":"\(name)","content":"# \(name)\\n\\nDeterministic fixture skill content.","linked_files":[]}
+        """
+    }
+
+    private static func toggleSkill(_ request: URLRequest, state: UITestPanelFixtureState) -> String {
+        let payload = requestJSON(request)
+        if let name = payload["name"] as? String {
+            state.setSkill(name, disabled: (payload["enabled"] as? Bool) == false)
+        }
+        return #"{"ok":true}"#
+    }
+
+    // MARK: - Memory
+
+    private static let emptyMemory = #"{"memory":"","user":"","soul":""}"#
+
+    private static func memory(_ state: UITestPanelFixtureState) -> String {
+        let sections = [
+            ("memory", "Fixture notes body."),
+            ("user", "Fixture user profile."),
+            ("soul", "Fixture agent soul.")
+        ].map { section, fallback in
+            "\"\(section)\":\"" + escaped(state.memory(section, fallback: fallback)) + "\""
+        }
+        return "{" + sections.joined(separator: ",")
+            + #","memory_mtime":2000000000,"user_mtime":2000000000,"soul_mtime":2000000000}"#
+    }
+
+    private static func writeMemory(_ request: URLRequest, state: UITestPanelFixtureState) -> String {
+        let payload = requestJSON(request)
+        if let section = payload["section"] as? String, let content = payload["content"] as? String {
+            state.writeMemory(section: section, content: content)
+        }
+        return #"{"ok":true}"#
+    }
+
+    /// The panel payloads are hand-written JSON, so saved Memory text has to be re-escaped.
+    private static func escaped(_ value: String) -> String {
+        let encoded = try! JSONSerialization.data(withJSONObject: [value], options: [])
+        let array = String(decoding: encoded, as: UTF8.self)
+        return String(array.dropFirst(2).dropLast(2))
+    }
+
+    // MARK: - Insights
+
+    private static let emptyInsights = """
+    {"period_days":30,"total_sessions":0,"total_messages":0,"total_input_tokens":0,\
+    "total_output_tokens":0,"total_tokens":0,"total_cost":0,"models":[],"daily_tokens":[],\
+    "activity_by_day":[],"activity_by_hour":[]}
+    """
+
+    private static let populatedInsights = """
+    {"period_days":30,"total_sessions":42,"total_messages":128,"total_input_tokens":4321,\
+    "total_output_tokens":8765,"total_tokens":13086,"total_cost":12.34,\
+    "models":[],"daily_tokens":[],"activity_by_day":[],"activity_by_hour":[]}
+    """
+
+    // MARK: - Kanban
+
+    private static let emptyKanbanBoard = """
+    {"changed":true,"latest_event_id":1,"read_only":false,"tenants":["fixture"],"assignees":[],"columns":[
+      {"name":"triage","tasks":[]},
+      {"name":"todo","tasks":[]},
+      {"name":"ready","tasks":[]},
+      {"name":"running","tasks":[]},
+      {"name":"blocked","tasks":[]},
+      {"name":"done","tasks":[]}
+    ]}
+    """
+}
+#endif
