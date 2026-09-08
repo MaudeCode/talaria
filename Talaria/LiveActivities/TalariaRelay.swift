@@ -137,15 +137,6 @@ final class TalariaRelayClient {
     struct Completion: Codable, Identifiable, Equatable {
         var id: String
         var row: TalariaAggregateActivityAttributes.ContentState.Row
-
-        var status: String {
-            switch row.phase {
-            case "completed": String(localized: "Done")
-            case "failed": String(localized: "Failed")
-            case "cancelled": String(localized: "Cancelled")
-            default: row.status
-            }
-        }
     }
 
     struct CompletionPage: Decodable {

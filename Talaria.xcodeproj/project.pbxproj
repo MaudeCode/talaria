@@ -637,7 +637,6 @@
 		105050000000000000000003 /* ComposerModelPickerSectionExpansionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105050000000000000000004 /* ComposerModelPickerSectionExpansionStateTests.swift */; };
 		A19000000000000000000001 /* TalariaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* TalariaUITests.swift */; };
 		C17300000000000000000001 /* TalariaCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17300000000000000000011 /* TalariaCompletionStore.swift */; };
-		C17300000000000000000002 /* TalariaCompletionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17300000000000000000012 /* TalariaCompletionBanner.swift */; };
 		A19000000000000000000101 /* AgentPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000102 /* AgentPanelUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -1299,7 +1298,6 @@
 		105050000000000000000002 /* ComposerModelPickerSectionExpansionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelPickerSectionExpansionState.swift; sourceTree = "<group>"; };
 		105050000000000000000004 /* ComposerModelPickerSectionExpansionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelPickerSectionExpansionStateTests.swift; sourceTree = "<group>"; };
 		C17300000000000000000011 /* TalariaCompletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaCompletionStore.swift; sourceTree = "<group>"; };
-		C17300000000000000000012 /* TalariaCompletionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaCompletionBanner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1729,7 +1727,6 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */,
-				C17300000000000000000012 /* TalariaCompletionBanner.swift */,
 				C107V0000000000000000101 /* SessionListInitialLoad.swift */,
 				C107V0000000000000000102 /* SessionListNewChatReturn.swift */,
 				C107V0000000000000000103 /* NewChatRequest.swift */,
@@ -2692,7 +2689,6 @@
 				C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */,
 				C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */,
 					1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */,
-				C17300000000000000000002 /* TalariaCompletionBanner.swift in Sources */,
 					C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */,
 					C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */,
 					C107V0000000000000000003 /* NewChatRequest.swift in Sources */,
