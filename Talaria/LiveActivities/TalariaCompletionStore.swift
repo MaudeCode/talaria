@@ -96,6 +96,32 @@ final class TalariaCompletionStore {
         }
     }
 
+    func acknowledgeViewedSession(publisherURL: URL, sessionID: String, through viewedAt: Date) async -> [TalariaRelayClient.Completion] {
+        guard let publisherID = TalariaRelayClient.originURL(publisherURL)?.absoluteString,
+              let (_, expectedScope) = client() else { return [] }
+        await refresh()
+        guard errorMessage == nil, scope == expectedScope, !Task.isCancelled else { return [] }
+        // ponytail: page the inbox for thread acknowledgement; add a server-side
+        // session filter if very large inboxes make this slow.
+        var seenCursors = Set<String>()
+        while let cursor, seenCursors.insert(cursor).inserted {
+            await refresh(loadMore: true)
+            guard errorMessage == nil, scope == expectedScope, !Task.isCancelled else { return [] }
+        }
+        let observed = completions.filter {
+            $0.row.publisherId == publisherID && $0.row.sessionId == sessionID
+                && $0.row.updatedAt <= viewedAt.timeIntervalSince1970 * 1_000
+        }
+        var acknowledged: [TalariaRelayClient.Completion] = []
+        for offset in stride(from: 0, to: observed.count, by: 100) {
+            guard scope == expectedScope, !Task.isCancelled else { break }
+            let batch = Array(observed[offset..<min(offset + 100, observed.count)])
+            guard await acknowledge(batch.map(\.id)) else { break }
+            acknowledged += batch
+        }
+        return acknowledged
+    }
+
     @discardableResult
     func acknowledge(_ ids: [String]) async -> Bool {
         guard !isAcknowledging, !ids.isEmpty, let (client, scope) = client() else { return false }

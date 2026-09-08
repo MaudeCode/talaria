@@ -171,6 +171,25 @@ final class TalariaAggregateLiveActivityManager {
         observePushToken(for: activity, client: client)
     }
 
+    func reconcileAfterAcknowledgement(credentials: TalariaRelayCredentials) async throws {
+        guard !Activity<TalariaAggregateActivityAttributes>.activities.isEmpty else { return }
+        let generation = operationGeneration
+        let client = TalariaRelayClient(credentials: credentials)
+        let aggregate = try await client.snapshot()
+        guard generation == operationGeneration, activeDisconnectCount == 0,
+              TalariaRelayConfigurationStore.load() == credentials else { return }
+        if let aggregate {
+            let state = stateByReconcilingPendingSeeds(with: aggregate)
+            for activity in Activity<TalariaAggregateActivityAttributes>.activities {
+                await enqueueUpdate(state, for: activity, generation: generation).value
+            }
+        } else {
+            prunePendingSeeds()
+            guard pendingSeeds.isEmpty else { return }
+            await endAggregateActivities(client: client)
+        }
+    }
+
     func disconnect(preserveCompleted: Bool = false) async throws {
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
         activeDisconnectCount += 1

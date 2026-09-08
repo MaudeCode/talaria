@@ -47,6 +47,9 @@ struct ChatView: View {
     private let activeRunStatusSpacerHeight: CGFloat = 36
     private let approvalBypassStatusSpacerHeight: CGFloat = 38
 
+    @State private var completionAcknowledgementTask: Task<Void, Never>?
+    @State private var completionAcknowledgementGeneration = 0
+    @State private var viewedCompletionsThrough: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -468,7 +471,20 @@ struct ChatView: View {
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
+            .onChange(of: viewModel.isViewingCachedData) {
+                if !viewModel.isViewingCachedData {
+                    viewedCompletionsThrough = Date()
+                    scheduleCompletionAcknowledgement()
+                }
+            }
+            .onChange(of: TalariaCompletionStore.shared.completions) {
+                scheduleCompletionAcknowledgement()
+            }
             .onDisappear {
+                viewedCompletionsThrough = nil
+                completionAcknowledgementGeneration += 1
+                completionAcknowledgementTask?.cancel()
+                completionAcknowledgementTask = nil
                 flushDraftsBestEffort()
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
@@ -1285,6 +1301,8 @@ struct ChatView: View {
             await loadMessages(appliesInitialFocus: false)
             guard !Task.isCancelled else { return }
         }
+        viewedCompletionsThrough = Date()
+        scheduleCompletionAcknowledgement()
         if initialAttachments.isEmpty {
             isInitialComposerFocusContentReady = true
             applyInitialComposerFocusPolicyIfNeeded()
@@ -2081,8 +2099,33 @@ struct ChatView: View {
         return nil
     }
 
+    private func scheduleCompletionAcknowledgement() {
+        guard completionAcknowledgementTask == nil, scenePhase == .active,
+              didCompleteInitialAppearance, viewModel.errorMessage == nil,
+              !viewModel.isViewingCachedData,
+              let viewedAt = viewedCompletionsThrough, let sessionID = session.sessionId,
+              let credentials = TalariaRelayConfigurationStore.load() else { return }
+        completionAcknowledgementGeneration += 1
+        let generation = completionAcknowledgementGeneration
+        completionAcknowledgementTask = Task {
+            defer {
+                if generation == completionAcknowledgementGeneration { completionAcknowledgementTask = nil }
+            }
+            let acknowledged = await TalariaCompletionStore.shared.acknowledgeViewedSession(
+                publisherURL: server, sessionID: sessionID, through: viewedAt
+            )
+            guard !acknowledged.isEmpty, !Task.isCancelled,
+                  TalariaRelayConfigurationStore.load() == credentials else { return }
+            await AgentLiveActivityManager.shared.reconcileAcknowledgedCompletions(acknowledged, credentials: credentials)
+            try? await TalariaAggregateLiveActivityManager.shared.reconcileAfterAcknowledgement(credentials: credentials)
+        }
+    }
+
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         if phase != .active {
+            completionAcknowledgementGeneration += 1
+            completionAcknowledgementTask?.cancel()
+            completionAcknowledgementTask = nil
             flushDraftsBestEffort()
         }
 
@@ -2096,6 +2139,10 @@ struct ChatView: View {
             endResponseCompletionBackgroundTask()
             Task {
                 await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
+                if viewedCompletionsThrough != nil {
+                    viewedCompletionsThrough = Date()
+                    scheduleCompletionAcknowledgement()
+                }
 
                 if let lastError = viewModel.lastError {
                     onAPIError(lastError)

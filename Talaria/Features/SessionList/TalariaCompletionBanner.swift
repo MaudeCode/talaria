@@ -62,7 +62,7 @@ private struct TalariaCompletionsView: View {
                                 if await store.acknowledge([completion.id]) {
                                     await AgentLiveActivityManager.shared.reconcileAcknowledgedCompletions([completion], credentials: credentials)
                                     guard TalariaRelayConfigurationStore.load() == credentials else { return }
-                                    try? await TalariaAggregateLiveActivityManager.shared.refresh()
+                                    try? await TalariaAggregateLiveActivityManager.shared.reconcileAfterAcknowledgement(credentials: credentials)
                                 }
                             }
                         }

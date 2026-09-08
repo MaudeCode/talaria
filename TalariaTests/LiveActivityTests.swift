@@ -65,6 +65,50 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(store.completions.isEmpty)
     }
 
+    func testOpeningThreadAcknowledgesOnlyItsExistingCompletions() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let suite = "viewed-completion-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); session.invalidateAndCancel() }
+        let credentials = TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.example")!, deviceID: "device", userID: "user",
+            appleUserID: "apple", sessionToken: "synthetic-token", expiresAt: .distantFuture
+        )
+        let first = TalariaRelayClient.Completion(id: "first", row: aggregateRow(sessionID: "viewed", phase: "completed", updatedAt: 100))
+        let other = TalariaRelayClient.Completion(id: "other", row: aggregateRow(sessionID: "other", phase: "completed", updatedAt: 100))
+        let future = TalariaRelayClient.Completion(id: "future", row: aggregateRow(sessionID: "viewed", phase: "completed", updatedAt: 200))
+        var otherPublisherRow = first.row
+        otherPublisherRow.publisherId = "https://other.example"
+        let otherPublisher = TalariaRelayClient.Completion(id: "other-publisher", row: otherPublisherRow)
+        var postedIDs: [String] = []
+        LiveActivityURLProtocol.handler = { request in
+            let data: Data
+            if request.httpMethod == "POST" {
+                let object = try JSONSerialization.jsonObject(with: XCTUnwrap(apiTestBodyData(from: request))) as! [String: [String]]
+                postedIDs += object["ids"] ?? []
+                data = Data(#"{"ok":true}"#.utf8)
+            } else {
+                struct Page: Encodable { var completions: [TalariaRelayClient.Completion]; var cursor: String? }
+                let isSecondPage = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                    .queryItems?.contains { $0.name == "cursor" && $0.value == "page-2" } == true
+                data = try JSONEncoder().encode(isSecondPage
+                    ? Page(completions: [first, future, otherPublisher], cursor: nil)
+                    : Page(completions: [other], cursor: "page-2"))
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        let acknowledged = await store.acknowledgeViewedSession(
+            publisherURL: URL(string: "https://hermes.example/path")!, sessionID: "viewed",
+            through: Date(timeIntervalSince1970: 0.15)
+        )
+        XCTAssertEqual(acknowledged.map(\.id), ["first"])
+        XCTAssertEqual(postedIDs, ["first"])
+        XCTAssertEqual(Set(store.completions.map(\.id)), ["other", "future", "other-publisher"])
+    }
+
     func testCompletionRefreshCannotResurrectAnAcknowledgedResult() async throws {
         let host = "completion-race.example"
         let configuration = URLSessionConfiguration.ephemeral
