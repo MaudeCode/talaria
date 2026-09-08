@@ -149,7 +149,7 @@ struct AgentRunLiveActivityWidget: Widget {
             AgentRunLockScreenView(context: context)
                 .activityBackgroundTint(AgentRunLiveActivityTheme.background)
                 .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
-                .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID))
+                .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -176,7 +176,7 @@ struct AgentRunLiveActivityWidget: Widget {
             } minimal: {
                 AgentRunIslandCompactMark(status: context.state.status)
             }
-            .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID))
+            .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
             .keylineTint(AgentRunStatusStyle.color(for: context.state.status, isStale: context.state.isStale))
         }
     }

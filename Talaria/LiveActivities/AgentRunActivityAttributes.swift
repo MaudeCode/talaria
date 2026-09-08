@@ -84,9 +84,8 @@ struct TalariaAggregateActivityAttributes: ActivityAttributes {
         var updatedAt: Double
         var rows: [Row]
 
-        var isTerminal: Bool {
-            activeCount == 0 && !rows.isEmpty
-                && rows.allSatisfy { ["completed", "failed", "cancelled"].contains($0.phase) }
+        var hasTerminalRows: Bool {
+            rows.contains { ["completed", "failed", "cancelled"].contains($0.phase) }
         }
     }
 }

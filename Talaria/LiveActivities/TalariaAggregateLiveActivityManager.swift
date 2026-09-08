@@ -178,6 +178,10 @@ final class TalariaAggregateLiveActivityManager {
         let aggregate = try await client.snapshot()
         guard generation == operationGeneration, activeDisconnectCount == 0,
               TalariaRelayConfigurationStore.load() == credentials else { return }
+        if TalariaLiveActivityMode.current == .perSession, aggregate?.hasTerminalRows != true {
+            await endAggregateActivities(client: client)
+            return
+        }
         if let aggregate {
             let state = stateByReconcilingPendingSeeds(with: aggregate)
             for activity in Activity<TalariaAggregateActivityAttributes>.activities {
@@ -280,7 +284,8 @@ final class TalariaAggregateLiveActivityManager {
         tokenTasks.values.forEach { $0.cancel() }
         tokenTasks.removeAll()
         for activity in Activity<TalariaAggregateActivityAttributes>.activities {
-            if preserveCompleted && activity.content.state.isTerminal { continue }
+            // The shared card stays while any row still needs acknowledgement.
+            if preserveCompleted && activity.content.state.hasTerminalRows { continue }
             if let client {
                 try? await client.unregister(activityID: activity.id)
             }

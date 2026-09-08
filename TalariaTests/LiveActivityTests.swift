@@ -203,13 +203,17 @@ final class LiveActivityTests: XCTestCase {
             schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,
             rows: [aggregateRow(sessionID: "finished", phase: "completed", updatedAt: 100)]
         )
-        XCTAssertTrue(state.isTerminal)
-        var running = state
-        running.activeCount = 1
-        XCTAssertFalse(running.isTerminal)
+        XCTAssertTrue(state.hasTerminalRows)
+        var mixed = state
+        mixed.activeCount = 1
+        mixed.rows.append(aggregateRow(sessionID: "running", phase: "thinking", updatedAt: 101))
+        XCTAssertTrue(mixed.hasTerminalRows)
+        var running = mixed
+        running.rows.removeFirst()
+        XCTAssertFalse(running.hasTerminalRows)
         var empty = state
         empty.rows = []
-        XCTAssertFalse(empty.isTerminal)
+        XCTAssertFalse(empty.hasTerminalRows)
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.outcomeTitle(state), "Done")
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true), "completed")
         XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: true))
@@ -1220,7 +1224,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains(sessionID))
     }
 
-    func testAggregateDeepLinkCarriesPublisherForServerRouting() throws {
+    func testSessionDeepLinkCarriesPublisherForServerRouting() throws {
         let publisherID = "https://hermes.example.com"
         let url = try XCTUnwrap(
             TalariaDeepLink.sessionURL(sessionID: "session-abc", publisherID: publisherID)
