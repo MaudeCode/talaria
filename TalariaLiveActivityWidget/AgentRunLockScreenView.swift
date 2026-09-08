@@ -3,7 +3,7 @@ import SwiftUI
 import WidgetKit
 
 struct AgentRunLockScreenView: View {
-    let context: ActivityViewContext<AgentRunActivityAttributes>
+    let state: AgentRunActivityAttributes.ContentState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -17,20 +17,20 @@ struct AgentRunLockScreenView: View {
     }
 
     private var activityText: String {
-        if context.state.isStale {
+        if state.isStale {
             return "Latest status shown"
         }
 
-        if let errorSummary = context.state.errorSummary, !errorSummary.isEmpty {
+        if let errorSummary = state.errorSummary, !errorSummary.isEmpty {
             return errorSummary
         }
 
-        return context.state.currentActivity
+        return state.currentActivity
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            AgentRunStatusDot(status: context.state.status, isStale: context.state.isStale, size: 34)
+            AgentRunStatusDot(status: state.status, isStale: state.isStale, size: 34)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Talaria")
@@ -38,7 +38,7 @@ struct AgentRunLockScreenView: View {
                     .foregroundStyle(AgentRunLiveActivityTheme.secondaryText)
                     .textCase(.uppercase)
 
-                Text(context.state.sessionTitle)
+                Text(state.sessionTitle)
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(AgentRunLiveActivityTheme.primaryText)
                     .lineLimit(1)
@@ -49,7 +49,7 @@ struct AgentRunLockScreenView: View {
 
             Spacer(minLength: 8)
 
-            AgentRunTimerPill(state: context.state)
+            AgentRunTimerPill(state: state)
         }
     }
 
@@ -64,7 +64,7 @@ struct AgentRunLockScreenView: View {
 
             Spacer(minLength: 8)
 
-            AgentRunProgressRail(status: context.state.status)
+            AgentRunProgressRail(status: state.status)
                 .frame(width: progressWidth)
         }
     }
@@ -80,7 +80,7 @@ struct AgentRunLockScreenView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(AgentRunStatusStyle.color(for: context.state.status, isStale: context.state.isStale).opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(AgentRunStatusStyle.color(for: state.status, isStale: state.isStale).opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(AgentRunLiveActivityTheme.stroke, lineWidth: 1)
@@ -88,11 +88,11 @@ struct AgentRunLockScreenView: View {
     }
 
     private var excerptText: String {
-        if !context.state.responseExcerpt.isEmpty {
-            return context.state.responseExcerpt
+        if !state.responseExcerpt.isEmpty {
+            return state.responseExcerpt
         }
 
-        if context.state.isFinal {
+        if state.isFinal {
             return "Response is ready to review."
         }
 

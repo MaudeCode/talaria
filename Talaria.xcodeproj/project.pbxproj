@@ -637,6 +637,22 @@
 		105050000000000000000003 /* ComposerModelPickerSectionExpansionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105050000000000000000004 /* ComposerModelPickerSectionExpansionStateTests.swift */; };
 		A19000000000000000000001 /* TalariaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* TalariaUITests.swift */; };
 		A19000000000000000000101 /* AgentPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000102 /* AgentPanelUITests.swift */; };
+		D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
+		D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
+		D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
+		D74A00000000000000000009 /* AgentRunProgressRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000221 /* AgentRunProgressRail.swift */; };
+		D74A00000000000000000010 /* AgentRunTimerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000222 /* AgentRunTimerPill.swift */; };
+		D74A00000000000000000011 /* AgentRunElapsedTimerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */; };
+		D74A00000000000000000012 /* AgentRunLockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000216 /* AgentRunLockScreenView.swift */; };
+		D74A00000000000000000013 /* AgentRunIslandBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000217 /* AgentRunIslandBadge.swift */; };
+		D74A00000000000000000014 /* AgentRunIslandStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000218 /* AgentRunIslandStatusView.swift */; };
+		D74A00000000000000000015 /* AgentRunIslandCompactMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000219 /* AgentRunIslandCompactMark.swift */; };
+		D74A00000000000000000016 /* AgentRunExpandedIslandBottomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000215 /* AgentRunExpandedIslandBottomView.swift */; };
+		D74A00000000000000000017 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
+		D74A00000000000000000018 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
+		D74A00000000000000000019 /* VisualReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000003 /* VisualReference.swift */; };
+		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
+		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1296,6 +1312,11 @@
 		FC2A37872AC842629FBDDFA4 /* SlashCommandAutocompleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandAutocompleteView.swift; sourceTree = "<group>"; };
 		105050000000000000000002 /* ComposerModelPickerSectionExpansionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelPickerSectionExpansionState.swift; sourceTree = "<group>"; };
 		105050000000000000000004 /* ComposerModelPickerSectionExpansionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelPickerSectionExpansionStateTests.swift; sourceTree = "<group>"; };
+		D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivityStyle.swift; sourceTree = "<group>"; };
+		D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunIslandCompactTrailing.swift; sourceTree = "<group>"; };
+		D74A00000000000000000003 /* VisualReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualReference.swift; sourceTree = "<group>"; };
+		D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityVisualReferenceTests.swift; sourceTree = "<group>"; };
+		D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppScreenVisualReferenceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1542,6 +1563,9 @@
 				A04500000000000000000018 /* LiveActivityTests.swift */,
 				1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */,
 				1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */,
+				D74A00000000000000000003 /* VisualReference.swift */,
+				D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */,
+				D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */,
 			);
 			path = TalariaTests;
 			sourceTree = "<group>";
@@ -2119,6 +2143,8 @@
 				C107M0000000000000000221 /* AgentRunProgressRail.swift */,
 				C107M0000000000000000222 /* AgentRunTimerPill.swift */,
 				C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */,
+				D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */,
+				D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */,
 				A04500000000000000000022 /* Resources */,
 			);
 			path = TalariaLiveActivityWidget;
@@ -2853,6 +2879,17 @@
 				C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */,
 				B5A100000000000000000001 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000008 /* ShareInputReader.swift in Sources */,
+				D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */,
+				D74A00000000000000000009 /* AgentRunProgressRail.swift in Sources */,
+				D74A00000000000000000010 /* AgentRunTimerPill.swift in Sources */,
+				D74A00000000000000000011 /* AgentRunElapsedTimerText.swift in Sources */,
+				D74A00000000000000000012 /* AgentRunLockScreenView.swift in Sources */,
+				D74A00000000000000000013 /* AgentRunIslandBadge.swift in Sources */,
+				D74A00000000000000000014 /* AgentRunIslandStatusView.swift in Sources */,
+				D74A00000000000000000015 /* AgentRunIslandCompactMark.swift in Sources */,
+				D74A00000000000000000016 /* AgentRunExpandedIslandBottomView.swift in Sources */,
+				D74A00000000000000000017 /* AgentRunLiveActivityStyle.swift in Sources */,
+				D74A00000000000000000018 /* AgentRunIslandCompactTrailing.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2987,6 +3024,9 @@
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
 				1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */,
 				1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */,
+				D74A00000000000000000019 /* VisualReference.swift in Sources */,
+				D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */,
+				D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3050,6 +3090,8 @@
 				A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */,
 				A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */,
+				D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */,
+				D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
