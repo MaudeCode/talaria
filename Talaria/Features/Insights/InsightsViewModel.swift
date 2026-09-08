@@ -318,8 +318,8 @@ final class InsightsViewModel {
     }
 }
 
-private struct InsightsResponseCache {
-    private static let storageKey = "insights.responseCache.v1"
+struct InsightsResponseCache {
+    static let storageKey = "insights.responseCache.v1"
 
     private let serverKey: String
     private let defaults: UserDefaults

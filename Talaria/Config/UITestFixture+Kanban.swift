@@ -2,6 +2,8 @@
 import Foundation
 
 extension UITestFixtureURLProtocol {
+    private static var cardPathPrefix: String { "/api/kanban/tasks/" }
+
     /// A small compatible Board so the fixture's Kanban destination renders a populated Status Focus view.
     static func kanbanResponseData(for url: URL) -> Data {
         let body: String
@@ -31,6 +33,17 @@ extension UITestFixtureURLProtocol {
             body = #"{"assignees":["fixture-builder","fixture-reviewer"]}"#
         case "/api/kanban/events":
             body = #"{"events":[],"cursor":1,"latest_event_id":1,"read_only":false}"#
+        case let path where path.hasPrefix(cardPathPrefix)
+            && !path.dropFirst(cardPathPrefix.count).contains("/"):
+            // Card detail for the pushed Card surface; the id echoes the requested Card so
+            // any fixture Card opens without a per-Card payload.
+            let cardID = String(path.dropFirst(cardPathPrefix.count))
+            body = """
+            {"read_only":false,"comments":[],"events":[],"runs":[],"links":{"parents":[],"children":[]},
+             "task":{"id":"\(cardID)","title":"Fixture Card \(cardID)","status":"ready","assignee":"fixture-builder",
+             "tenant":"fixture","priority":0,"description":"Deterministic fixture Card detail.",
+             "comment_count":0,"link_counts":{"parents":0,"children":0},"age_seconds":7200}}
+            """
         default:
             body = "{}"
         }
