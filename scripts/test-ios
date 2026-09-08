@@ -11,11 +11,16 @@ owner_file="$lock_file.owner"
 source "$repo_root/scripts/ios-simulator-pool"
 IOS_SIMULATOR_ID=${IOS_SIMULATOR_ID:-${TALARIA_SIMULATOR_ID:-}}
 xcodebuild_pid=""
+# xcodebuild does not forward host environment variables into the simulator test
+# process, so the visual-reference record switch travels as a marker file the
+# tests can stat. It never outlives the run.
+visual_reference_marker="$repo_root/TalariaTests/VisualReferences/.record"
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
 exec 9>"$lock_file"
 
 cleanup() {
+    rm -f "$visual_reference_marker"
     if [[ -n "$xcodebuild_pid" ]]; then
         kill -TERM "$xcodebuild_pid" 2>/dev/null || true
         wait "$xcodebuild_pid" 2>/dev/null || true
@@ -78,6 +83,14 @@ if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
 fi
 
 cd "$repo_root"
+# Clear first: a recording run killed before its EXIT trap would otherwise leave
+# the marker behind and silently turn the next ordinary run into a re-record.
+rm -f "$visual_reference_marker"
+if [[ -n "${TALARIA_RECORD_VISUAL_REFERENCES:-}" ]]; then
+    mkdir -p "${visual_reference_marker:h}"
+    : > "$visual_reference_marker"
+fi
+
 attempt=1
 while true; do
     result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$-$attempt.xcresult"
@@ -88,6 +101,8 @@ while true; do
         -project Talaria.xcodeproj \
         -scheme Talaria \
         -destination "$destination" \
+        -testLanguage en \
+        -testRegion US \
         -derivedDataPath "$runtime_dir/derived-data" \
         -disableAutomaticPackageResolution \
         -parallel-testing-enabled NO \

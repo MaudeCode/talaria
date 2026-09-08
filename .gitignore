@@ -59,3 +59,4 @@ fastlane/test_output/
 
 # Retired per-session progress log (removed in #224; history lives in git log / merged PRs)
 /PROGRESS.md
+TalariaTests/VisualReferences/.record

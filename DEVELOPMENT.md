@@ -20,6 +20,13 @@ Before debugging the app, verify the server is reachable:
 curl https://<your-server>/health
 ```
 
+## Visual References
+
+Pixel references for core screens, shared states and the Live Activity families
+live in `TalariaTests/VisualReferences`. See
+[`docs/visual-references.md`](docs/visual-references.md) for how to read a diff
+and how to re-record a reference on purpose.
+
 ## Upstream Contract Pin
 
 The app is currently tested against the untagged `hermes-webui` `master` merge commit `141056992d6d9b72636f02cac9ae91b6649cea9c`, which includes the native OIDC handoff from Hermes WebUI PR #15. The root [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA) file is the machine-readable pin for future drift checks and contract tests.
