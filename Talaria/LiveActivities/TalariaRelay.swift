@@ -134,6 +134,25 @@ final class TalariaRelayClient {
         var invitation: String
     }
 
+    struct Completion: Codable, Identifiable, Equatable {
+        var id: String
+        var row: TalariaAggregateActivityAttributes.ContentState.Row
+
+        var status: String {
+            switch row.phase {
+            case "completed": String(localized: "Done")
+            case "failed": String(localized: "Failed")
+            case "cancelled": String(localized: "Cancelled")
+            default: row.status
+            }
+        }
+    }
+
+    struct CompletionPage: Decodable {
+        var completions: [Completion]
+        var cursor: String?
+    }
+
     struct SnapshotResponse: Decodable {
         var aggregate: TalariaAggregateActivityAttributes.ContentState?
     }
@@ -325,6 +344,26 @@ final class TalariaRelayClient {
         request.setValue(credentials.deviceID, forHTTPHeaderField: "X-Talaria-Device-Id")
         let data = try await Self.responseData(for: request, session: session)
         return try JSONDecoder().decode(SnapshotResponse.self, from: data).aggregate
+    }
+
+    func completions(cursor: String? = nil) async throws -> CompletionPage {
+        var components = URLComponents(url: Self.endpoint(credentials.baseURL, "v1/activity-completions"), resolvingAgainstBaseURL: false)
+        if let cursor { components?.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+        guard let url = components?.url else { throw ClientError.invalidURL }
+        var request = authenticatedRequest(url: url, method: "GET")
+        request.setValue(credentials.deviceID, forHTTPHeaderField: "X-Talaria-Device-Id")
+        let data = try await Self.responseData(for: request, session: session)
+        return try JSONDecoder().decode(CompletionPage.self, from: data)
+    }
+
+    func acknowledgeCompletions(ids: [String]) async throws {
+        var request = authenticatedRequest(url: Self.endpoint(credentials.baseURL, "v1/activity-completions/acknowledge"), method: "POST")
+        request.setValue(credentials.deviceID, forHTTPHeaderField: "X-Talaria-Device-Id")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["ids": ids])
+        let data = try await Self.responseData(for: request, session: session)
+        struct Response: Decodable { var ok: Bool }
+        guard try JSONDecoder().decode(Response.self, from: data).ok else { throw ClientError.invalidResponse(409, nil) }
     }
 
     func register(

@@ -336,6 +336,11 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 state: persisted.content.state
             )
             let fallbackCredentials = TalariaRelayConfigurationStore.load()
+            if PerSessionRelayContext.make(for: persisted.attributes.relayPublisherID.flatMap { URL(string: $0) }) != nil {
+                await persisted.update(ActivityContent(state: finalState, staleDate: nil))
+                didEndRunningActivity = true
+                continue
+            }
             // `end(content:)` sets the final content directly and there is no
             // intervening render delay here, so a preceding `update` is redundant
             // (PR #266 review).
@@ -357,6 +362,23 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
 
         return didEndRunningActivity
+    }
+
+    func reconcileAcknowledgedCompletions(
+        _ completions: [TalariaRelayClient.Completion], credentials: TalariaRelayCredentials
+    ) async {
+        for activity in Activity<AgentRunActivityAttributes>.activities {
+            guard TalariaRelayConfigurationStore.load() == credentials else { return }
+            let matches = completions.contains { completion in
+                completion.row.publisherId == activity.attributes.relayPublisherID
+                    && completion.row.sessionId == activity.attributes.sessionID
+                    && completion.row.streamId != nil
+                    && completion.row.streamId == activity.attributes.streamID
+            }
+            guard matches else { continue }
+            await activity.end(nil, dismissalPolicy: .immediate)
+            await relayRegistration.unregister(activityID: activity.id, fallbackCredentials: TalariaRelayConfigurationStore.load())
+        }
     }
 }
 
@@ -529,6 +551,11 @@ private extension AgentLiveActivityManager {
         let fallbackCredentials = TalariaRelayConfigurationStore.load()
 
         await endingActivity.update(ActivityContent(state: finalState, staleDate: nil))
+        if PerSessionRelayContext.make(for: endingActivity.attributes.relayPublisherID.flatMap { URL(string: $0) }) != nil {
+            // A finished run remains addressable by the relay until acknowledgement.
+            resetIfStillCurrent(endingSessionID: endingSessionID, finalState: finalState)
+            return
+        }
         if status == .complete {
             try? await Task.sleep(nanoseconds: 600_000_000)
         }

@@ -8,6 +8,123 @@ final class LiveActivityTests: XCTestCase {
         super.tearDown()
     }
 
+    func testCompletionInboxRetainsOfflineResultsAndAcknowledgesOnlyObservedIDs() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let suite = "completion-inbox-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); session.invalidateAndCancel() }
+        var credentials: TalariaRelayCredentials? = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://relay.example")), deviceID: "device", userID: "user",
+            appleUserID: "apple-user", sessionToken: "synthetic-token", expiresAt: .distantFuture
+        )
+        let payload = #"{"completions":[{"id":"completion1","row":{"publisherId":"https://hermes.example","publisherLabel":"Test","sessionId":"session","streamId":"run1","title":"Synthetic task","phase":"completed","status":"Done","updatedAt":1800000000000,"deepLink":"/sessions/session"}}],"cursor":null}"#
+        var offline = false
+        var acknowledgeSucceeds = false
+        var acknowledgements: [[String]] = []
+        LiveActivityURLProtocol.handler = { request in
+            if offline { throw URLError(.notConnectedToInternet) }
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Device-Id"), "device")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer synthetic-token")
+            let status: Int
+            let body: String
+            if request.httpMethod == "POST" {
+                let object = try JSONSerialization.jsonObject(with: XCTUnwrap(apiTestBodyData(from: request))) as! [String: [String]]
+                acknowledgements.append(try XCTUnwrap(object["ids"]))
+                status = acknowledgeSucceeds ? 200 : 503
+                body = acknowledgeSucceeds ? #"{"ok":true}"# : #"{"error":"temporarily unavailable"}"#
+            } else {
+                status = 200
+                body = payload
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        await store.refresh()
+        XCTAssertEqual(store.completions.map(\.id), ["completion1"])
+        offline = true
+        let relaunched = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        await relaunched.refresh()
+        XCTAssertEqual(relaunched.completions.map(\.id), ["completion1"])
+        XCTAssertNotNil(relaunched.errorMessage)
+        offline = false
+        let rejected = await relaunched.acknowledge(["not-observed"])
+        XCTAssertFalse(rejected)
+        XCTAssertTrue(acknowledgements.isEmpty)
+        let failed = await relaunched.acknowledge(["completion1"])
+        XCTAssertFalse(failed)
+        XCTAssertEqual(relaunched.completions.count, 1)
+        acknowledgeSucceeds = true
+        let accepted = await relaunched.acknowledge(["completion1"])
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(acknowledgements, [["completion1"], ["completion1"]])
+        XCTAssertTrue(relaunched.completions.isEmpty)
+        credentials = nil
+        await store.refresh()
+        XCTAssertTrue(store.completions.isEmpty)
+    }
+
+    func testCompletionRefreshCannotResurrectAnAcknowledgedResult() async throws {
+        let host = "completion-race.example"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let suite = "completion-race-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
+            defaults.removePersistentDomain(forName: suite)
+            session.invalidateAndCancel()
+        }
+        let credentials = TalariaRelayCredentials(
+            baseURL: try XCTUnwrap(URL(string: "https://\(host)")), deviceID: "device", userID: "user",
+            appleUserID: "apple-user", sessionToken: "synthetic-token", expiresAt: .distantFuture
+        )
+        let payload = #"{"completions":[{"id":"completion1","row":{"publisherId":"https://hermes.example","publisherLabel":"Test","sessionId":"session","streamId":"run1","title":"Synthetic task","phase":"completed","status":"Done","updatedAt":1800000000000,"deepLink":"/sessions/session"}}],"cursor":null}"#
+        let requests = DeferredRequests()
+        let refreshStarted = expectation(description: "stale refresh is in flight")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let count = requests.append(request)
+            if request.request.httpMethod == "POST" {
+                request.complete(withJSON: #"{"ok":true}"#)
+            } else if count == 1 {
+                request.complete(withJSON: payload)
+            } else {
+                refreshStarted.fulfill()
+            }
+        }, forHost: host)
+        let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
+        await store.refresh()
+        let refresh = Task { await store.refresh() }
+        await fulfillment(of: [refreshStarted], timeout: 2)
+        let acknowledged = await store.acknowledge(["completion1"])
+        XCTAssertTrue(acknowledged)
+        requests.request(at: 1).complete(withJSON: payload)
+        await refresh.value
+        XCTAssertTrue(store.completions.isEmpty)
+        XCTAssertFalse(store.isLoading)
+    }
+
+    func testNativeRelayCompletionDecodesAsFinalWithoutEndingActivity() throws {
+        let data = Data(#"{"sessionID":"session","sessionTitle":"Synthetic task","status":"complete","currentActivity":"Done","responseExcerpt":"","startedAt":821692800,"updatedAt":821692800,"isStale":false,"isFinal":true}"#.utf8)
+        let state = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: data)
+        XCTAssertEqual(state.status, .complete)
+        XCTAssertTrue(state.isFinal)
+        XCTAssertFalse(state.isStale)
+        XCTAssertEqual(state.startedAt.timeIntervalSince1970, 1_800_000_000)
+    }
+
+    func testTerminalAggregateOutcomeDoesNotShowZeroOrWaiting() {
+        let state = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,
+            rows: [aggregateRow(sessionID: "finished", phase: "completed", updatedAt: 100)]
+        )
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.outcomeTitle(state), "Done")
+        XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: true))
+        XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalSymbol(for: "completed"), "checkmark.circle.fill")
+    }
+
     func testRelayCredentialsRoundTripThroughKeychain() throws {
         let keychain = InMemoryKeychainStore()
         let credentials = TalariaRelayCredentials(

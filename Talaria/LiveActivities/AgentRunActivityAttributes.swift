@@ -63,6 +63,8 @@ struct AgentRunActivityAttributes: ActivityAttributes {
 struct TalariaAggregateActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         struct Row: Codable, Hashable, Identifiable {
+            var completionId: String? = nil
+            var streamId: String? = nil
             var publisherId: String
             var publisherLabel: String
             var sessionId: String
@@ -104,6 +106,12 @@ enum TalariaAggregateLiveActivityPresentation {
             : state.subtitle
     }
 
+    static func outcomeTitle(_ state: TalariaAggregateActivityAttributes.ContentState) -> String {
+        if state.rows.contains(where: { $0.phase == "failed" }) { return String(localized: "Failed") }
+        if !state.rows.isEmpty && state.rows.allSatisfy({ $0.phase == "cancelled" }) { return String(localized: "Cancelled") }
+        return String(localized: "Done")
+    }
+
     static func statusText(_ status: String, isStale: Bool) -> String {
         isStale ? String(localized: "Waiting") : status
     }
@@ -136,6 +144,8 @@ enum TalariaAggregateLiveActivityPresentation {
         case "waiting_for_approval": "exclamationmark.circle.fill"
         case "waiting_for_input": "questionmark.circle.fill"
         case "failed": "xmark.octagon.fill"
+        case "completed": "checkmark.circle.fill"
+        case "cancelled": "xmark.circle"
         case "stale": "clock.arrow.circlepath"
         default: "circle.fill"
         }
@@ -146,6 +156,8 @@ enum TalariaAggregateLiveActivityPresentation {
         case "waiting_for_approval": String(localized: "Approval needed")
         case "waiting_for_input": String(localized: "Input needed")
         case "failed": String(localized: "Agent work failed")
+        case "completed": String(localized: "Done")
+        case "cancelled": String(localized: "Cancelled")
         case "stale": String(localized: "Waiting for server")
         default: String(localized: "Agent status")
         }

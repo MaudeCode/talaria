@@ -56,7 +56,9 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(isStale
                         ? String(localized: "Waiting")
-                        : "\(context.state.activeCount) active")
+                        : context.state.activeCount == 0
+                            ? TalariaAggregateLiveActivityPresentation.outcomeTitle(context.state)
+                            : "\(context.state.activeCount) active")
                         .font(.caption)
                         .lineLimit(1)
                         .padding(.trailing, 8)

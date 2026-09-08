@@ -153,7 +153,9 @@ final class TalariaAggregateLiveActivityManager {
                 await duplicate.end(nil, dismissalPolicy: .immediate)
             }
         } else {
-            guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+            // Expired or manually dismissed completion cards stay in the inbox.
+            guard reconciledAggregate.activeCount > 0,
+                  ActivityAuthorizationInfo().areActivitiesEnabled else { return }
             activity = try Activity.request(
                 attributes: TalariaAggregateActivityAttributes(),
                 content: ActivityContent(

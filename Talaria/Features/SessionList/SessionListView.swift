@@ -142,8 +142,9 @@ struct SessionListView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if hasWaitingSharedImport {
-                waitingSharedImportBanner
+            VStack(spacing: 0) {
+                TalariaCompletionBanner()
+                if hasWaitingSharedImport { waitingSharedImportBanner }
             }
         }
             .sheet(item: $sessionExportShareItem) { item in
