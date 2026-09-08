@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 
 @MainActor
 struct UITestFixtureEnvironment {
@@ -29,6 +30,18 @@ struct UITestFixtureEnvironment {
 
     static func make() -> UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
+        // Theme is a standard-defaults preference a test can change, so every fixture
+        // launch starts from the same appearance even if a previous run left it switched.
+        UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)
+        // The alternate app icon is system-level state that outlives the app's own storage,
+        // so clear it too: the icon picker must always start from the primary icon.
+        if UIApplication.shared.alternateIconName != nil {
+            UIApplication.shared.setAlternateIconName(nil)
+        }
+        // The chat toolbar's Files and Git controls are hideable in Settings, and the
+        // workspace tests reach their destinations through them, so restore both.
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatFilesKey)
+        UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatGitKey)
         UserDefaults.standard.set(
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey
@@ -261,7 +274,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if let delay = Self.panelResponseDelay(for: url) {
+        if let delay = Self.panelResponseDelay(for: url) ?? Self.workspaceResponseDelay(for: url) {
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -274,11 +287,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private func sendResponse(for url: URL) {
         let isEventStream = url.path.hasSuffix("/stream")
+        let contentType = Self.workspaceContentType(for: url)
+            ?? (isEventStream ? "text/event-stream" : "application/json")
         let response = HTTPURLResponse(
             url: url,
-            statusCode: 200,
+            statusCode: Self.workspaceStatusCode(for: request),
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": isEventStream ? "text/event-stream" : "application/json"]
+            headerFields: ["Content-Type": contentType]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if UITestChatScenario.current != nil,
@@ -298,6 +313,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
         if let panelData = panelResponseData(for: request, url: url) { return panelData }
+        if let workspaceData = workspaceResponseData(for: request) {
+            return workspaceData
+        }
         switch url.path {
         case "/health":
             return json(["status": "ok"])

@@ -361,11 +361,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
         launchFixture()
         openSettings()
 
-        let profile = app.buttons["settings-user-profile"]
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: profile.frame.midX / app.frame.width,
-            dy: profile.frame.midY / app.frame.height
-        )).tap()
+        tapCenter(of: app.buttons["settings-user-profile"])
         XCTAssertTrue(app.navigationBars["User Profile"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["Display Name"].exists)
         app.navigationBars["User Profile"].buttons["Settings"].tap()
@@ -428,10 +424,7 @@ final class RelaySettingsUITests: SettingsUITestCase {
         let manageRelay = app.buttons["settings-manage-relay"]
         XCTAssertTrue(manageRelay.waitForExistence(timeout: 3))
         XCTAssertTrue(manageRelay.label.contains("Connected to"))
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: manageRelay.frame.midX / app.frame.width,
-            dy: manageRelay.frame.midY / app.frame.height
-        )).tap()
+        tapCenter(of: manageRelay)
 
         XCTAssertTrue(app.navigationBars["Talaria Relay"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["settings-relay-server-https://ui-test.talaria.invalid"].exists)
@@ -439,10 +432,7 @@ final class RelaySettingsUITests: SettingsUITestCase {
         XCTAssertFalse(app.buttons["Connect"].exists)
         let unenroll = app.buttons["Enrollment options for removed.ui-test.invalid"]
         XCTAssertTrue(unenroll.waitForExistence(timeout: 3))
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: unenroll.frame.midX / app.frame.width,
-            dy: unenroll.frame.midY / app.frame.height
-        )).tap()
+        tapCenter(of: unenroll)
         XCTAssertTrue(app.buttons["This iPhone"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["All Devices"].exists)
         XCTAssertTrue(app.buttons["Cancel"].exists)
@@ -450,6 +440,274 @@ final class RelaySettingsUITests: SettingsUITestCase {
         XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
     }
 
+}
+
+final class SettingsPersonalizationUITests: SettingsUITestCase {
+    func testThemeAndAppIconSelectionsShowTheirCurrentChoice() throws {
+        launchFixture()
+        openSettings()
+        tapSettingsCategory(id: "appearance", title: "Appearance")
+
+        let theme = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Theme"))
+            .firstMatch
+        XCTAssertTrue(theme.waitForExistence(timeout: 3), "Missing the Theme picker")
+        XCTAssertTrue(theme.staticTexts["System"].exists, "The Theme row should show the current theme")
+
+        tapCenter(of: theme)
+        let dark = app.buttons["Dark"]
+        XCTAssertTrue(dark.waitForExistence(timeout: 3), "The Theme picker did not open")
+        dark.tap()
+        XCTAssertTrue(
+            theme.staticTexts["Dark"].waitForExistence(timeout: 3),
+            "Selecting a theme did not update the row"
+        )
+
+        // Restore the shared simulator's appearance; the fixture also resets it on launch.
+        tapCenter(of: theme)
+        let system = app.buttons["System"]
+        XCTAssertTrue(system.waitForExistence(timeout: 3))
+        system.tap()
+        XCTAssertTrue(theme.staticTexts["System"].waitForExistence(timeout: 3))
+
+        let appIcon = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "App Icon"))
+            .firstMatch
+        for _ in 0..<8 where !appIcon.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(appIcon.exists, "Missing the App Icon picker")
+        XCTAssertTrue(appIcon.label.contains("System"), "The App Icon row should name the current icon")
+        tapCenter(of: appIcon)
+
+        // The choices only have to be reachable and report the current selection; switching
+        // the icon is a system-level change the fixture deliberately leaves alone.
+        let discoChoice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Disco."))
+            .firstMatch
+        XCTAssertTrue(discoChoice.waitForExistence(timeout: 3), "The App Icon choices did not expand")
+        let selectedChoice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@ AND value == %@", "System.", "Selected"))
+            .firstMatch
+        XCTAssertTrue(selectedChoice.exists, "The current app icon is not marked as selected")
+    }
+}
+
+final class SettingsServerContentUITests: SettingsUITestCase {
+    func testProvidersAndArchivedChatsLoadContentAndSurfaceFailures() throws {
+        launchFixture()
+        openSettings()
+        openProviders()
+        XCTAssertTrue(
+            element(labelContaining: "Fixture Provider").waitForExistence(timeout: 10),
+            "The providers list did not show the fixture provider"
+        )
+
+        returnToSettingsRoot()
+        openArchivedChats()
+        XCTAssertTrue(
+            element(labelContaining: "Fixture Archived Session").waitForExistence(timeout: 10),
+            "The archived list did not show the fixture archived session"
+        )
+
+        app.terminate()
+        launchFixture(additionalArguments: ["--ui-test-read-errors"])
+        openSettings()
+        openProviders()
+        XCTAssertTrue(
+            app.staticTexts["Could not load providers"].waitForExistence(timeout: 10),
+            "A failed provider load must be visible"
+        )
+        XCTAssertTrue(app.buttons["Try Again"].exists, "A failed provider load needs a retry")
+
+        returnToSettingsRoot()
+        openArchivedChats()
+        XCTAssertTrue(
+            app.staticTexts["Could not load archived sessions"].waitForExistence(timeout: 10),
+            "A failed archived load must be visible"
+        )
+        XCTAssertTrue(app.buttons["Try Again"].exists, "A failed archived load needs a retry")
+    }
+}
+
+/// Every workspace destination hangs off an open chat, so these launches add the
+/// deterministic file/Git fixture and drive the session's own toolbar.
+class WorkspaceUITestCase: TalariaUITestCase {
+    override var fixtureLaunchArguments: [String] {
+        super.fixtureLaunchArguments + ["--ui-test-workspace"]
+    }
+}
+
+final class WorkspaceFileBrowserUITests: WorkspaceUITestCase {
+    func testFileBrowserLoadsNavigatesAndSurfacesFailures() throws {
+        launchFixture(additionalArguments: ["--ui-test-workspace-slow-reads"])
+        openFixtureSessionChat()
+        openFiles()
+
+        XCTAssertTrue(
+            app.staticTexts["Loading files..."].waitForExistence(timeout: 10),
+            "Missing the file browser loading state"
+        )
+        XCTAssertTrue(fileRow(folder: "fixture-dir").waitForExistence(timeout: 20), "The root listing never loaded")
+        XCTAssertTrue(fileRow(file: "fixture-notes.txt").exists)
+        XCTAssertFalse(app.buttons["Up"].isEnabled, "The root has no parent to walk up to")
+        XCTAssertFalse(app.buttons["Root"].isEnabled)
+
+        openDirectory("fixture-dir")
+        XCTAssertTrue(
+            fileRow(file: "nested-note.txt").waitForExistence(timeout: 20),
+            "Opening a directory did not list its entries"
+        )
+        XCTAssertTrue(app.buttons["Up"].isEnabled)
+
+        tapCenter(of: app.buttons["Open Root"])
+        XCTAssertTrue(
+            fileRow(file: "fixture-notes.txt").waitForExistence(timeout: 20),
+            "The Root breadcrumb did not return to the root"
+        )
+
+        openDirectory("fixture-dir")
+        XCTAssertTrue(fileRow(file: "nested-note.txt").waitForExistence(timeout: 20))
+        tapCenter(of: app.buttons["Up"])
+        XCTAssertTrue(
+            fileRow(file: "fixture-notes.txt").waitForExistence(timeout: 20),
+            "Up did not return to the root"
+        )
+
+        app.terminate()
+        launchFixture(additionalArguments: ["--ui-test-read-errors"])
+        openFixtureSessionChat()
+        openFiles()
+        XCTAssertTrue(
+            app.staticTexts["Could Not Load Files"].waitForExistence(timeout: 20),
+            "A failed listing must be visible"
+        )
+        XCTAssertTrue(app.buttons["Try Again"].exists)
+    }
+}
+
+final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
+    func testTextImageAndUnsupportedPreviewsKeepTheirOwnExportActions() throws {
+        launchFixture()
+        openFixtureSessionChat()
+        openFiles()
+
+        openPreview(file: "fixture-notes.txt")
+        let body = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS %@", "FixtureTextPreviewBody"))
+            .firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 20), "The text preview did not render its content")
+        XCTAssertTrue(app.buttons["Export file"].exists, "A text file should be exportable")
+        XCTAssertFalse(app.buttons["Save image to Photos"].exists, "Only images save to Photos")
+        app.buttons["BackButton"].tap()
+
+        openPreview(file: "fixture-image.png")
+        XCTAssertTrue(
+            app.images["fixture-image.png"].waitForExistence(timeout: 20),
+            "The image preview did not render its image"
+        )
+        XCTAssertTrue(app.buttons["Save image to Photos"].exists)
+        XCTAssertTrue(app.buttons["Export file"].exists)
+        app.buttons["BackButton"].tap()
+
+        openPreview(file: "fixture-archive.zip")
+        XCTAssertTrue(app.staticTexts["No Preview"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["Preview is not available for this file type."].exists)
+        XCTAssertFalse(app.buttons["Save image to Photos"].exists, "An archive is not an image")
+        app.buttons["BackButton"].tap()
+
+        app.terminate()
+        launchFixture(additionalArguments: ["--ui-test-file-read-errors"])
+        openFixtureSessionChat()
+        openFiles()
+        openPreview(file: "fixture-notes.txt")
+        XCTAssertTrue(
+            app.staticTexts["Could Not Load File"].waitForExistence(timeout: 20),
+            "A failed preview must be visible"
+        )
+        XCTAssertTrue(app.buttons["Try Again"].exists)
+    }
+}
+
+final class GitWorkspaceUITests: WorkspaceUITestCase {
+    func testChangesSheetLoadsFixtureStatusAndSurfacesFailure() throws {
+        launchFixture(additionalArguments: ["--ui-test-workspace-slow-reads"])
+        openFixtureSessionChat()
+        openGitActions()
+
+        let changes = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "+"))
+            .firstMatch
+        XCTAssertTrue(changes.waitForExistence(timeout: 25), "The Git status never reached the actions menu")
+        changes.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Loading…"].waitForExistence(timeout: 10),
+            "Missing the Git changes loading state"
+        )
+        XCTAssertTrue(
+            app.staticTexts["2 files changed"].waitForExistence(timeout: 25),
+            "The changes sheet did not show the fixture status"
+        )
+        XCTAssertTrue(gitFileCard(named: "fixture-notes.txt").exists)
+        XCTAssertTrue(gitFileCard(named: "nested-note.txt").exists)
+        app.buttons["Done"].tap()
+
+        app.terminate()
+        launchFixture(additionalArguments: ["--ui-test-read-errors"])
+        openFixtureSessionChat()
+        openGitActions()
+        let unavailable = app.buttons["Changes unavailable"]
+        XCTAssertTrue(unavailable.waitForExistence(timeout: 25), "A failed status must still open the sheet")
+        unavailable.tap()
+        XCTAssertTrue(
+            app.staticTexts["Could Not Load Changes"].waitForExistence(timeout: 20),
+            "A failed status must be visible"
+        )
+        XCTAssertTrue(app.buttons["Try Again"].exists)
+    }
+}
+
+final class GitRemoteActionUITests: WorkspaceUITestCase {
+    func testPushNeedsConfirmationAndTheFixtureWriteCapability() throws {
+        launchFixture()
+        openFixtureSessionChat()
+
+        openGitActions()
+        tapGitMenuPush()
+        let confirmation = app.alerts["Push Local Commits?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 10), "Push must ask before contacting the remote")
+        confirmation.buttons["Cancel"].tap()
+        XCTAssertFalse(
+            app.staticTexts["Push complete"].waitForExistence(timeout: 3),
+            "Cancelling the confirmation must not push"
+        )
+        XCTAssertFalse(app.alerts["Git Action Failed"].exists)
+
+        openGitActions()
+        tapGitMenuPush()
+        XCTAssertTrue(app.alerts["Push Local Commits?"].waitForExistence(timeout: 10))
+        app.alerts["Push Local Commits?"].buttons["Push"].tap()
+        let failure = app.alerts["Git Action Failed"]
+        XCTAssertTrue(
+            failure.waitForExistence(timeout: 20),
+            "Without the fixture write capability a push must fail visibly"
+        )
+        XCTAssertTrue(failure.staticTexts["Fixture git writes are disabled."].exists)
+        failure.buttons["OK"].tap()
+
+        app.terminate()
+        launchFixture(additionalArguments: ["--ui-test-git-writes"])
+        openFixtureSessionChat()
+        openGitActions()
+        tapGitMenuPush()
+        XCTAssertTrue(app.alerts["Push Local Commits?"].waitForExistence(timeout: 10))
+        app.alerts["Push Local Commits?"].buttons["Push"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Push complete"].waitForExistence(timeout: 25),
+            "The granted fixture capability should complete the push"
+        )
+    }
 }
 
 class QuotaWidgetUITestCase: TalariaUITestCase {}
@@ -1059,18 +1317,6 @@ fileprivate extension ChatUITestCase {
         tapCenter(of: send)
     }
 
-    func element(labelContaining text: String) -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
-            .firstMatch
-    }
-
-    func element(label: String) -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", label))
-            .firstMatch
-    }
-
     func countElements(label: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count
     }
@@ -1101,13 +1347,6 @@ fileprivate extension ChatUITestCase {
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: point.x, dy: point.y))
             .press(forDuration: 1.2)
-    }
-
-    func tapCenter(of element: XCUIElement) {
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: element.frame.midX / app.frame.width,
-            dy: element.frame.midY / app.frame.height
-        )).tap()
     }
 }
 
@@ -1156,6 +1395,42 @@ fileprivate extension TalariaUITestCase {
                 forDuration: 0.05,
                 thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.4 : 0.85))
             )
+    }
+
+    /// Settings and list rows report `isHittable == false` to XCUI even when visible;
+    /// tap where they are drawn instead.
+    func tapCenter(of element: XCUIElement) {
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: element.frame.midX / app.frame.width,
+            dy: element.frame.midY / app.frame.height
+        )).tap()
+    }
+
+    func element(labelContaining text: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
+            .firstMatch
+    }
+
+    func element(label: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
+    }
+
+    func element(labelBeginningWith prefix: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", prefix))
+            .firstMatch
+    }
+
+    func tapSettingsRow(label: String) {
+        let row = app.buttons[label]
+        for _ in 0..<12 where !row.exists || row.frame.maxY > app.frame.maxY {
+            app.swipeUp()
+        }
+        XCTAssertTrue(row.exists, "Missing settings row: \(label)")
+        tapCenter(of: row)
     }
 
     func tapSettingsCategory(id: String, title: String) {
@@ -1343,4 +1618,80 @@ fileprivate extension AdaptiveLayoutUITestCase {
 
 private extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
+
+fileprivate extension SettingsUITestCase {
+    func openProviders() {
+        tapSettingsCategory(id: "providers", title: "Providers")
+        tapSettingsRow(label: "Providers")
+    }
+
+    /// Walks back out of a nested Settings destination to the category root.
+    func returnToSettingsRoot() {
+        let root = app.navigationBars["Settings"]
+        for _ in 0..<3 where !root.exists {
+            app.buttons["BackButton"].tap()
+            _ = root.waitForExistence(timeout: 3)
+        }
+        XCTAssertTrue(root.exists, "Did not return to the Settings root")
+    }
+
+    func openArchivedChats() {
+        tapSettingsCategory(id: "chats", title: "Chats")
+        tapSettingsRow(label: "Archived Chats")
+        XCTAssertTrue(app.navigationBars["Archived Chats"].waitForExistence(timeout: 5))
+    }
+}
+
+fileprivate extension WorkspaceUITestCase {
+    func openFixtureSessionChat() {
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.waitForExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 15), "The fixture session did not open")
+    }
+
+    func openFiles() {
+        let files = app.buttons["Files"]
+        XCTAssertTrue(files.waitForExistence(timeout: 15), "Missing the Files toolbar button")
+        files.tap()
+        XCTAssertTrue(app.navigationBars["Files"].waitForExistence(timeout: 10), "The file browser did not open")
+    }
+
+    func openGitActions() {
+        let git = app.buttons["Git actions"]
+        XCTAssertTrue(git.waitForExistence(timeout: 25), "Missing the Git actions toolbar button")
+        git.tap()
+    }
+
+    func tapGitMenuPush() {
+        let push = app.buttons["Push"]
+        XCTAssertTrue(push.waitForExistence(timeout: 5), "Missing the Push action")
+        push.tap()
+    }
+
+    func openDirectory(_ name: String) {
+        let row = fileRow(folder: name)
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "Missing directory row: \(name)")
+        tapCenter(of: row)
+    }
+
+    func openPreview(file name: String) {
+        let row = fileRow(file: name)
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "Missing file row: \(name)")
+        tapCenter(of: row)
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 10), "The preview did not open: \(name)")
+    }
+
+    func fileRow(folder name: String) -> XCUIElement {
+        element(labelBeginningWith: "Folder, \(name)")
+    }
+
+    func fileRow(file name: String) -> XCUIElement {
+        element(labelBeginningWith: "File, \(name)")
+    }
+
+    func gitFileCard(named name: String) -> XCUIElement {
+        element(labelBeginningWith: name)
+    }
 }
