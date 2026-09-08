@@ -157,3 +157,36 @@ it.each(["state", "snapshot"] as const)("backfills legacy terminal rows on dupli
   const visible = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now });
   expect(visible).toEqual([]);
 });
+
+
+it("keeps a completed current-session card pinned while a later run starts", async () => {
+  const { backend, publish, list, now } = await fixture();
+  const registration = { userId: "user", deviceId: "device", mode: "per_session" as const,
+    publisherId: "https://hermes.example", sessionId: "session", attributesType: "AgentRunActivityAttributes",
+    schemaVersion: 1, seededLocally: false, now };
+  expect(await backend.mutation(internal.devices.registerActivity, { ...registration,
+    activityId: "activity", activityPushToken: "synthetic", streamId: "run-1" })).toEqual({ ok: true });
+  await publish("running");
+  await publish("completed");
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const firstJob = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))[0]!;
+  await publish("running", "run-2");
+  expect(await backend.mutation(internal.devices.registerActivity, { ...registration,
+    activityId: "activity-2", activityPushToken: "synthetic-2", streamId: "run-2" })).toEqual({ ok: true });
+  const activities = await backend.run((ctx) => ctx.db.query("liveActivities").collect());
+  expect(activities).toHaveLength(2);
+  expect(activities.every((activity) => activity.endedAt === undefined)).toBe(true);
+  // The older Done job remains valid even while the same session runs a new stream.
+  expect(await backend.mutation(internal.delivery.claimJob, { jobId: firstJob._id, now: Date.now() })).toMatchObject({ status: "ready" });
+  await backend.mutation(internal.delivery.markDelivered, { jobId: firstJob._id, apnsStatus: 200, now: Date.now() });
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  expect(jobs.filter((job) => job.kind === "live_activity_end")).toHaveLength(0);
+  const newJob = jobs.find((job) => job.activityId === "activity-2")!;
+  expect(JSON.parse(newJob.request.payloadJson).aps["content-state"].status).toBe("thinking");
+  const first = (await list())!.completions[0]!;
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [first.id] });
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const ends = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).filter((job) => job.kind === "live_activity_end");
+  expect(ends.map((job) => job.activityId)).toEqual(["activity"]);
+});

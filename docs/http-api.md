@@ -190,3 +190,9 @@ streamless publishers are grouped by the observed session lifecycle; publishers
 should provide a stable stream ID to distinguish runs after session-state expiry.
 The additive row fields `streamId` and `completionId` may be ignored by old clients.
 New completion UI requires this relay release; deploy the relay before the app.
+
+Current-session activity registration also accepts an optional `streamId`. New
+clients provide it to pin the Activity to its original run. Later runs do not
+replace or repaint retained cards for another stream; explicit acknowledgement
+clears each finished run. Registrations without this field retain legacy
+single-card replacement behavior.

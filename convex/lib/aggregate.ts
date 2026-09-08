@@ -69,15 +69,20 @@ export function makeAggregate(
   now: number,
   includeTerminalOnly = false,
 ): ActivityAggregate | null {
-  const activeSessions = new Set(states.filter((state) => !state.deleted && state.expiresAt > now && !isTerminalPhase(state.phase))
-    .map((state) => JSON.stringify([state.publisherId, state.sessionId])));
-  const visible = states
-    .filter((state) => {
-      if (state.deleted) return false;
-      if (state.expiresAt <= now) return false;
-      return !isTerminalPhase(state.phase) || (state.terminalExpiresAt ?? 0) > now;
-    })
-    .filter((state) => !isTerminalPhase(state.phase) || !activeSessions.has(JSON.stringify([state.publisherId, state.sessionId])))
+  const bySession = new Map<string, SessionState>();
+  for (const state of states) {
+    if (state.deleted || state.expiresAt <= now
+      || (isTerminalPhase(state.phase) && (state.terminalExpiresAt ?? 0) <= now)) continue;
+    const key = JSON.stringify([state.publisherId, state.sessionId]);
+    const current = bySession.get(key);
+    if (!current
+      || (isTerminalPhase(current.phase) && !isTerminalPhase(state.phase))
+      || (isTerminalPhase(current.phase) === isTerminalPhase(state.phase) && state.updatedAt > current.updatedAt)) {
+      bySession.set(key, state);
+    }
+  }
+  // The card shows the latest outcome per session; the inbox retains every run.
+  const visible = [...bySession.values()]
     .sort(
       (left, right) =>
         phasePriority(left.phase) - phasePriority(right.phase) ||
@@ -89,14 +94,6 @@ export function makeAggregate(
   if (visible.length === 0) return null;
   if (!includeTerminalOnly && !visible.some((state) => !isTerminalPhase(state.phase))) return null;
 
-  // One row per session on the activity; the completion inbox retains every run.
-  const sessions = new Set<string>();
-  const unique = visible.filter((state) => {
-    const key = JSON.stringify([state.publisherId, state.sessionId]);
-    if (sessions.has(key)) return false;
-    sessions.add(key);
-    return true;
-  });
   const activeCount = visible.filter(
     (state) => !isTerminalPhase(state.phase) && state.phase !== "stale",
   ).length;
@@ -118,7 +115,7 @@ export function makeAggregate(
           ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} attention`
           : `${activeCount} active ${activeCount === 1 ? "session" : "sessions"}`,
     updatedAt: Math.max(...visible.map((state) => state.updatedAt)),
-    rows: unique.slice(0, MAX_AGGREGATE_ROWS).map(rowForState),
+    rows: visible.slice(0, MAX_AGGREGATE_ROWS).map(rowForState),
   };
 }
 

@@ -390,7 +390,8 @@ export const recompute = internalMutation({
         ? deviceStates
         : deviceStates.filter(
             (state) =>
-              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
+              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId
+                && (activity.streamId === undefined || state.streamId === activity.streamId),
           );
       const nextAggregate = makeAggregate(activityStates, now, true);
       const activityChanged = changed.filter(
@@ -609,7 +610,8 @@ export const claimJob = internalMutation({
         ? deviceStates
         : deviceStates.filter(
             (state) =>
-              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
+              state.publisherId === activity.publisherId && state.sessionId === activity.sessionId
+                && (activity.streamId === undefined || state.streamId === activity.streamId),
           );
       const currentAggregate = makeAggregate(activityStates, args.now, true);
       const stateIsCurrent =

@@ -640,6 +640,7 @@ http.route({
       const rawPublisherId = optionalStringField(body, "publisherId", 191);
       const publisherId = rawPublisherId ? canonicalHttpOrigin(rawPublisherId) : rawPublisherId;
       const sessionId = optionalStringField(body, "sessionId", 191);
+      const streamId = optionalStringField(body, "streamId", 191);
       const attributesType = stringField(body, "attributesType", 120);
       const schemaVersion = numberField(body, "schemaVersion");
       const activityPushToken = stringField(body, "activityPushToken", 512);
@@ -649,6 +650,7 @@ http.route({
         (mode !== "per_session" && mode !== "all_running") ||
         publisherId === null ||
         sessionId === null ||
+        streamId === null ||
         !attributesType ||
         schemaVersion === null ||
         !Number.isSafeInteger(schemaVersion) ||
@@ -664,6 +666,7 @@ http.route({
         mode: mode as ActivityMode,
         publisherId,
         sessionId,
+        streamId,
         attributesType,
         schemaVersion,
         activityPushToken,

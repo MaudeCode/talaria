@@ -193,6 +193,7 @@ export default defineSchema({
     mode: activityModeValidator,
     publisherId: v.optional(v.string()),
     sessionId: v.optional(v.string()),
+    streamId: v.optional(v.string()),
     attributesType: v.string(),
     schemaVersion: v.number(),
     activityPushToken: v.string(),
