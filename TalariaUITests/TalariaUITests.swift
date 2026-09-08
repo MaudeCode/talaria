@@ -1259,7 +1259,7 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
 }
 
 class TalariaUITestCase: XCTestCase {
-    fileprivate var app: XCUIApplication!
+    var app: XCUIApplication!
 
     fileprivate var fixtureLaunchArguments: [String] {
         ["--ui-test-fixture"]
@@ -1275,12 +1275,12 @@ class TalariaUITestCase: XCTestCase {
         app = nil
     }
 
-    fileprivate func launch(arguments: [String]) {
+    func launch(arguments: [String]) {
         app.launchArguments = arguments
         app.launch()
     }
 
-    fileprivate func launchFixture(additionalArguments: [String] = []) {
+    func launchFixture(additionalArguments: [String] = []) {
         launch(arguments: fixtureLaunchArguments + additionalArguments)
     }
 }
@@ -1348,6 +1348,16 @@ fileprivate extension ChatUITestCase {
             .withOffset(CGVector(dx: point.x, dy: point.y))
             .press(forDuration: 1.2)
     }
+}
+
+extension TalariaUITestCase {
+    func openSidebarDestination(_ destination: String) {
+        app.buttons["Open navigation"].tap()
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        sidebar.descendants(matching: .any)[destination].firstMatch.tap()
+    }
+
 }
 
 fileprivate extension TalariaUITestCase {
@@ -1594,13 +1604,6 @@ fileprivate extension AdaptiveLayoutUITestCase {
                 "Accessibility audit failed on \(screen) [\(variant.name)]:\n" + issues.joined(separator: "\n")
             )
         }
-    }
-
-    func openSidebarDestination(_ destination: String) {
-        app.buttons["Open navigation"].tap()
-        let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
-        sidebar.descendants(matching: .any)[destination].firstMatch.tap()
     }
 
     /// Settings rows report `isHittable == false` to XCUI even when visible; tap by point.

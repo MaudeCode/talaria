@@ -112,11 +112,11 @@ extension UITestFixtureURLProtocol {
         WorkspaceFixture.isEnabled && url.path == "/api/file/raw" ? "image/png" : nil
     }
 
-    /// Holds a read long enough for its loading state to be asserted, without a real server.
-    static func waitForSlowWorkspaceRead(_ url: URL) {
-        guard WorkspaceFixture.isEnabled, WorkspaceFixture.readsAreSlow else { return }
-        guard url.path == "/api/list" || url.path == "/api/git/status" else { return }
-        Thread.sleep(forTimeInterval: 3)
+    /// Delays a read long enough for its loading state to be asserted, without a real server.
+    static func workspaceResponseDelay(for url: URL) -> TimeInterval? {
+        guard WorkspaceFixture.isEnabled, WorkspaceFixture.readsAreSlow else { return nil }
+        guard url.path == "/api/list" || url.path == "/api/git/status" else { return nil }
+        return 3
     }
 
     private static func directoryListData(path: String) -> Data {

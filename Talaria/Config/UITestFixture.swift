@@ -52,6 +52,18 @@ struct UITestFixtureEnvironment {
             chatScenario != nil,
             forKey: ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey
         )
+        // Insights and the quota poll both persist across launches; a reused simulator
+        // would otherwise replay one journey's analytics into the next one's empty or
+        // error state.
+        UserDefaults.standard.removeObject(forKey: InsightsResponseCache.storageKey)
+        // The quota widget snapshot lives in the shared app group and is restored into the
+        // provider view model at init, so a previous journey's sources would otherwise
+        // reappear as "removed" rows in a fixture that reports none.
+        _ = ProviderQuotaWidgetSnapshotStore().clear()
+        UserDefaults.standard.set(
+            ProviderQuotaRefreshInterval.defaultValue.rawValue,
+            forKey: ProviderQuotaRefreshInterval.storageKey
+        )
 
         let keychain = UITestFixtureKeychainStore(serverURL: serverURL)
         let defaultsName = "dev.kil.talaria.ui-test-fixture"
@@ -257,8 +269,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        Self.waitForSlowWorkspaceRead(url)
+        if let failure = Self.panelRequestFailure(for: url) {
+            client?.urlProtocol(self, didFailWithError: failure)
+            return
+        }
 
+        if let delay = Self.panelResponseDelay(for: url) ?? Self.workspaceResponseDelay(for: url) {
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, !self.isStopped else { return }
+                self.sendResponse(for: url)
+            }
+            return
+        }
+
+        sendResponse(for: url)
+    }
+
+    private func sendResponse(for url: URL) {
         let isEventStream = url.path.hasSuffix("/stream")
         let contentType = Self.workspaceContentType(for: url)
             ?? (isEventStream ? "text/event-stream" : "application/json")
@@ -285,6 +312,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
+        if let panelData = panelResponseData(for: request, url: url) { return panelData }
         if let workspaceData = workspaceResponseData(for: request) {
             return workspaceData
         }
@@ -535,11 +563,28 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
-    private static func requestJSON(_ request: URLRequest) -> [String: Any] {
-        guard let body = request.httpBody,
+    static func requestJSON(_ request: URLRequest) -> [String: Any] {
+        guard let body = requestBody(request),
               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         else { return [:] }
         return object
+    }
+
+    /// `URLSession` hands `URLProtocol` a body stream instead of `httpBody` for the panel
+    /// and chat mutations, so a fixture that only read `httpBody` saw every POST as empty.
+    private static func requestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            guard read > 0 else { break }
+            data.append(buffer, count: read)
+        }
+        return data.isEmpty ? nil : data
     }
 
     private func startScriptedChatStream(url: URL) {
