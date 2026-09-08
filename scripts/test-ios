@@ -83,6 +83,9 @@ if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
 fi
 
 cd "$repo_root"
+# Clear first: a recording run killed before its EXIT trap would otherwise leave
+# the marker behind and silently turn the next ordinary run into a re-record.
+rm -f "$visual_reference_marker"
 if [[ -n "${TALARIA_RECORD_VISUAL_REFERENCES:-}" ]]; then
     mkdir -p "${visual_reference_marker:h}"
     : > "$visual_reference_marker"
