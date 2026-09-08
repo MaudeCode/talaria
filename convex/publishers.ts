@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 
+import { recordCompletion, retainedStates } from "./completions";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
@@ -55,6 +56,11 @@ function expiryForState(
     return { expiresAt: current.expiresAt, terminalExpiresAt: current.terminalExpiresAt };
   }
   return expiryForPhase(next.phase, now);
+}
+
+function stateRunKey(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string; phase: SessionPhase; eventId: string }): string {
+  return next.streamId ?? (current && !(isTerminalPhase(current.phase) && !isTerminalPhase(next.phase))
+    ? current.runKey ?? current.eventId : next.eventId);
 }
 
 function exposedState(state: Doc<"sessionStates">) {
@@ -198,6 +204,7 @@ export const acceptState = internalMutation({
             eventId: args.eventId,
             revision: args.revision,
             ...args.state,
+            runKey: stateRunKey(existing, { ...args.state, eventId: args.eventId }),
             ...expiryForState(existing, args.state, args.receivedAt),
             receivedAt: args.receivedAt,
           }
@@ -218,6 +225,7 @@ export const acceptState = internalMutation({
             expiresAt: args.receivedAt,
             receivedAt: args.receivedAt,
           };
+      if (args.state) await recordCompletion(ctx, grant, next, stateRunKey(existing, { ...args.state, eventId: args.eventId }));
       if (existing) await ctx.db.replace(existing._id, next);
       else await ctx.db.insert("sessionStates", next);
       await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
@@ -283,6 +291,7 @@ export const acceptSnapshot = internalMutation({
           publisherId: args.publisherId,
           publisherLabel: authorization.label,
           ...state,
+          runKey: stateRunKey(current, state),
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
@@ -294,6 +303,7 @@ export const acceptSnapshot = internalMutation({
             state: exposedState(next as Doc<"sessionStates">),
           });
         }
+        await recordCompletion(ctx, grant, next, next.runKey);
         if (current) await ctx.db.replace(current._id, next);
         else await ctx.db.insert("sessionStates", next);
       }
@@ -311,7 +321,10 @@ export const listCurrentStates = internalQuery({
       .withIndex("by_version_and_user_id_and_expires_at", (query) =>
         query.eq("version", 2).eq("userId", args.userId).gt("expiresAt", args.now),
       ).take(500);
-    return states.filter((state) => !state.deleted).map(exposedState);
+    return [
+      ...states.filter((state) => !state.deleted && (!isTerminalPhase(state.phase) || state.runKey === undefined)).map(exposedState),
+      ...(await retainedStates(ctx, args.userId)).map((state) => ({ ...state, deleted: false, receivedAt: state.updatedAt })),
+    ];
   },
 });
 

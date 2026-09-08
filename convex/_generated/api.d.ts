@@ -11,6 +11,7 @@
 import type * as apns from "../apns.js";
 import type * as auth from "../auth.js";
 import type * as cleanup from "../cleanup.js";
+import type * as completions from "../completions.js";
 import type * as crons from "../crons.js";
 import type * as delivery from "../delivery.js";
 import type * as devices from "../devices.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   apns: typeof apns;
   auth: typeof auth;
   cleanup: typeof cleanup;
+  completions: typeof completions;
   crons: typeof crons;
   delivery: typeof delivery;
   devices: typeof devices;

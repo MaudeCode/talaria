@@ -725,6 +725,41 @@ http.route({
 });
 
 http.route({
+  path: "/v1/activity-completions",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authenticateUser(ctx, request);
+    const deviceId = request.headers.get("x-talaria-device-id")?.trim();
+    if (!auth || !deviceId) return json(401, { error: "unauthorized" });
+    const result = await ctx.runQuery(internal.completions.list, {
+      userId: auth.userId, deviceId,
+      paginationOpts: { numItems: 100, cursor: new URL(request.url).searchParams.get("cursor") },
+    });
+    return result ? json(200, result) : json(403, { error: "unauthorized" });
+  }),
+});
+
+http.route({
+  path: "/v1/activity-completions/acknowledge",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authenticateUser(ctx, request);
+    const deviceId = request.headers.get("x-talaria-device-id")?.trim();
+    if (!auth || !deviceId) return json(401, { error: "unauthorized" });
+    let body: unknown;
+    try { body = await request.json(); } catch { return json(400, { error: "invalid_json" }); }
+    if (!isRecord(body) || !Array.isArray(body.ids) || body.ids.length > 100
+      || body.ids.some((id) => typeof id !== "string" || id.length > 64 || !/^[a-z0-9]+$/.test(id))) {
+      return json(400, { error: "invalid_completion_ids" });
+    }
+    const result = await ctx.runMutation(internal.completions.acknowledge, {
+      userId: auth.userId, deviceId, ids: body.ids as string[],
+    });
+    return json(result.ok ? 200 : 403, result);
+  }),
+});
+
+http.route({
   path: "/v1/activity-snapshot",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
@@ -748,7 +783,7 @@ http.route({
         now,
       });
       return json(200, {
-        aggregate: makeAggregate(states.filter((state) => !excluded.has(state.publisherId)), now),
+        aggregate: makeAggregate(states.filter((state) => !excluded.has(state.publisherId)), now, true),
       });
     }
     if (mode === "per_session") {
@@ -756,12 +791,9 @@ http.route({
       const sessionId = url.searchParams.get("sessionId");
       if (!publisherId || !sessionId) return json(400, { error: "session_required" });
       if (excluded.has(publisherId)) return json(200, { aggregate: null });
-      const state = await ctx.runQuery(internal.publishers.getState, {
-        userId: auth.userId,
-        publisherId,
-        sessionId,
-      });
-      return json(200, { aggregate: state ? makeAggregate([state], now) : null });
+      const states = await ctx.runQuery(internal.publishers.listCurrentStates, { userId: auth.userId, now });
+      return json(200, { aggregate: makeAggregate(states.filter((state) =>
+        state.publisherId === publisherId && state.sessionId === sessionId), now, true) });
     }
     return json(400, { error: "invalid_mode" });
   }),

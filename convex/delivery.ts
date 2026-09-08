@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 
+import { retainedStates } from "./completions";
+import { isTerminalPhase } from "./lib/model";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
@@ -11,6 +13,7 @@ import {
   shouldUpdateAggregate,
 } from "./lib/aggregate";
 import {
+  nativeSessionRequest,
   makeLiveActivityEnd,
   makeLiveActivityStart,
   makeLiveActivityUpdate,
@@ -97,7 +100,10 @@ async function currentStates(ctx: MutationCtx, userId: string, now: number): Pro
       query.eq("version", 2).eq("userId", userId).gt("expiresAt", now),
     )
     .take(MAX_STATE_ROWS);
-  return states.map(asSessionState).filter((state) => !state.deleted);
+  return [
+    ...states.filter((state) => !state.deleted && (!isTerminalPhase(state.phase) || state.runKey === undefined)).map(asSessionState),
+    ...await retainedStates(ctx, userId),
+  ];
 }
 
 async function excludedPublisherIds(
@@ -322,8 +328,8 @@ export const recompute = internalMutation({
     const activeAggregateDevices = new Set(activities.map((activity) => activity.deviceId));
     for (const device of devices) {
       const deviceStates = statesForDevice(states, exclusionsByDevice, device.deviceId);
-      const aggregate = makeAggregate(deviceStates, now);
-      if (aggregate !== null) {
+      const aggregate = makeAggregate(deviceStates, now, true);
+      if (aggregate !== null && aggregate.activeCount > 0) {
         if (
           activeAggregateDevices.has(device.deviceId) ||
           device.revokedAt !== undefined ||
@@ -386,7 +392,7 @@ export const recompute = internalMutation({
             (state) =>
               state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
           );
-      const nextAggregate = makeAggregate(activityStates, now);
+      const nextAggregate = makeAggregate(activityStates, now, true);
       const activityChanged = changed.filter(
         ({ state }) => !exclusionsByDevice.get(activity.deviceId)?.has(state.publisherId),
       );
@@ -447,7 +453,7 @@ export const recompute = internalMutation({
           kind: "live_activity_end",
           sourcePublisherId: activityChangedState?.publisherId,
           sourceSessionId: activityChangedState?.sessionId,
-          request,
+          request: activity.attributesType === "AgentRunActivityAttributes" ? nativeSessionRequest(request, activity.createdAt) : request,
           aggregate: terminalAggregate ?? activity.lastAggregate,
           stateFingerprint: `end:${aggregateFingerprint(terminalAggregate)}`,
           now,
@@ -492,7 +498,7 @@ export const recompute = internalMutation({
         kind: "live_activity_update",
         sourcePublisherId: activityChangedState?.publisherId,
         sourceSessionId: activityChangedState?.sessionId,
-        request,
+        request: activity.attributesType === "AgentRunActivityAttributes" ? nativeSessionRequest(request, activity.createdAt) : request,
         aggregate: nextAggregate,
         stateFingerprint: aggregateFingerprint(nextAggregate),
         now,
@@ -605,7 +611,7 @@ export const claimJob = internalMutation({
             (state) =>
               state.publisherId === activity.publisherId && state.sessionId === activity.sessionId,
           );
-      const currentAggregate = makeAggregate(activityStates, args.now);
+      const currentAggregate = makeAggregate(activityStates, args.now, true);
       const stateIsCurrent =
         isDisplacementEnd
           ? true
@@ -658,7 +664,7 @@ export const claimJob = internalMutation({
             .first(),
         ]);
         const deviceStates = states.filter((state) => !excluded.has(state.publisherId));
-        const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(deviceStates, args.now))}`;
+        const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(deviceStates, args.now, true))}`;
         if (activeActivity || fingerprint !== job.stateFingerprint) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           if (device.pushToStartToken === job.expectedToken) {

@@ -1314,7 +1314,7 @@ describe("Convex relay state", () => {
     expect(refreshed?.terminalExpiresAt).toBe(now + 180_000 + 15 * 60_000);
   });
 
-  it("ends immediately when only terminal session state remains", async () => {
+  it("keeps terminal session state visible until acknowledgement", async () => {
     const backend = testBackend();
     const now = Date.now();
     let stateId: Id<"sessionStates">;
@@ -1372,14 +1372,15 @@ describe("Convex relay state", () => {
     await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
     const jobs = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").collect());
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.kind).toBe("live_activity_end");
+    expect(jobs[0]?.kind).toBe("live_activity_update");
     const payload = JSON.parse(jobs[0]!.request.payloadJson) as { aps: Record<string, unknown> };
     expect(payload.aps["content-state"]).toMatchObject({
       activeCount: 0,
       subtitle: "Agent work completed",
       rows: [{ sessionId: "session-1", status: "Done" }],
     });
-    expect((payload.aps["dismissal-date"] as number) - (payload.aps.timestamp as number)).toBe(15);
+    expect(payload.aps.event).toBe("update");
+    expect(payload.aps["dismissal-date"]).toBeUndefined();
     await backend.run(async (ctx) => {
       await ctx.db.patch(stateId, {
         eventId: "event-3",
@@ -1403,7 +1404,7 @@ describe("Convex relay state", () => {
     await expect(backend.mutation(internal.delivery.claimJob, {
       jobId: revisedJobs[1]!._id,
       now: now + 2,
-    })).resolves.toMatchObject({ status: "ready", kind: "live_activity_end" });
+    })).resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
   });
 
   it("retires devices and activities when cleanup expires their relay session", async () => {

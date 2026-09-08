@@ -14,6 +14,7 @@ export type ActivityMode = "per_session" | "all_running";
 export type ApsEnvironment = "sandbox" | "production";
 
 export interface SessionState {
+  completionId?: string;
   deleted?: boolean;
   publisherId: string;
   publisherLabel: string;
@@ -41,6 +42,7 @@ export interface PublishedSessionState {
 }
 
 export interface AggregateRow {
+  completionId?: string;
   publisherId: string;
   publisherLabel: string;
   sessionId: string;
