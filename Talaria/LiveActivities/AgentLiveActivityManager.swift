@@ -164,7 +164,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             _ = nextUpdateGeneration()
             let endingActivity = activity
             activity = nil
-            if let endingActivity {
+            if let endingActivity, !AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                isFinal: endingActivity.content.state.isFinal,
+                relayPublisherID: endingActivity.attributes.relayPublisherID
+            ) {
                 await endingActivity.end(nil, dismissalPolicy: .immediate)
                 unregisterRelayInBackground(
                     activityID: endingActivity.id,
@@ -187,9 +190,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
     }
 
-    func disconnectRelayRegistration() async {
+    func disconnectRelayRegistration(preserveCompleted: Bool = false) async {
         let credentials = TalariaRelayConfigurationStore.load()
         for retained in Activity<AgentRunActivityAttributes>.activities where retained.attributes.relayPublisherID != nil {
+            if preserveCompleted && retained.content.state.isFinal { continue }
             await retained.end(nil, dismissalPolicy: .immediate)
             await relayRegistration.unregister(activityID: retained.id, fallbackCredentials: credentials)
         }
@@ -341,7 +345,9 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 state: persisted.content.state
             )
             let fallbackCredentials = TalariaRelayConfigurationStore.load()
-            if PerSessionRelayContext.make(for: persisted.attributes.relayPublisherID.flatMap { URL(string: $0) }) != nil {
+            if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                isFinal: finalState.isFinal, relayPublisherID: persisted.attributes.relayPublisherID
+            ) {
                 await persisted.update(ActivityContent(state: finalState, staleDate: nil))
                 didEndRunningActivity = true
                 continue
@@ -560,7 +566,9 @@ private extension AgentLiveActivityManager {
         let fallbackCredentials = TalariaRelayConfigurationStore.load()
 
         await endingActivity.update(ActivityContent(state: finalState, staleDate: nil))
-        if PerSessionRelayContext.make(for: endingActivity.attributes.relayPublisherID.flatMap { URL(string: $0) }) != nil {
+        if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+            isFinal: finalState.isFinal, relayPublisherID: endingActivity.attributes.relayPublisherID
+        ) {
             // A finished run remains addressable by the relay until acknowledgement.
             resetIfStillCurrent(endingSessionID: endingSessionID, finalState: finalState)
             return

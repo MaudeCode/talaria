@@ -120,6 +120,13 @@ final class LiveActivityTests: XCTestCase {
             schemaVersion: 1, activeCount: 0, title: "Talaria", subtitle: "Agent work completed", updatedAt: 100,
             rows: [aggregateRow(sessionID: "finished", phase: "completed", updatedAt: 100)]
         )
+        XCTAssertTrue(state.isTerminal)
+        var running = state
+        running.activeCount = 1
+        XCTAssertFalse(running.isTerminal)
+        var empty = state
+        empty.rows = []
+        XCTAssertFalse(empty.isTerminal)
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.outcomeTitle(state), "Done")
         XCTAssertEqual(TalariaAggregateLiveActivityPresentation.signalPhase(state: state, isStale: true), "completed")
         XCTAssertFalse(TalariaAggregateLiveActivityPresentation.isEffectivelyStale(state: state, isStale: true))
