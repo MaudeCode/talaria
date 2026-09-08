@@ -193,8 +193,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             "Closing the search did not restore the navigation control"
         )
 
-        // Enabling a Skill writes to fixture state only; the reload behind it proves the
-        // round trip rather than an optimistic row update.
+        // Enabling a Skill writes to fixture state only.
         let disabledSkill = app.descendants(matching: .any)
             .matching(NSPredicate(
                 format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "fixture-archivist", "Disabled"
@@ -210,7 +209,21 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         tapCenter(of: enable)
         XCTAssertTrue(
             disabledSkill.waitForNonExistence(timeout: 15),
-            "Enabling a skill did not survive the reload"
+            "Enabling a skill did not clear its Disabled badge"
+        )
+
+        // The row above only proves the optimistic update, which the view model applies
+        // before the request. Leaving and re-entering builds a fresh view model whose only
+        // source is the fixture, so the badge comes back unless the toggle really reached it.
+        leavePanel("Skills")
+        openPanel("Skills")
+        XCTAssertTrue(
+            element(labelContaining: "fixture-archivist").waitForExistence(timeout: 15),
+            "Re-entering Skills did not reload the list"
+        )
+        XCTAssertFalse(
+            disabledSkill.exists,
+            "Enabling a skill did not survive a reload from the server"
         )
 
         tapCenter(of: skill)
@@ -278,11 +291,16 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             .firstMatch
         XCTAssertTrue(sessions.waitForExistence(timeout: 10), "Insights did not render its analytics totals")
 
+        // The analytics section header carries the loaded timeframe, which the view model
+        // only advances once the new response lands; the cards alone stay visible through a
+        // reload and would pass even if nothing switched.
+        XCTAssertTrue(element(labelContaining: "Last 30 Days").exists, "Insights did not report its timeframe")
         tapCenter(of: app.buttons["7 Days"].firstMatch)
         XCTAssertTrue(
-            sessions.waitForExistence(timeout: 15),
-            "Switching the analytics timeframe lost the loaded analytics"
+            element(labelContaining: "Last 7 Days").waitForExistence(timeout: 15),
+            "Switching the analytics timeframe did not reload the analytics"
         )
+        XCTAssertTrue(sessions.exists, "Switching the analytics timeframe lost the loaded analytics")
 
         leavePanel("Insights")
     }
