@@ -46,7 +46,8 @@ final class PerSessionRelayActivityRegistration {
                             activityID: activity.id,
                             pushToken: tokenString,
                             publisherID: context.publisherID,
-                            sessionID: sessionID
+                            sessionID: sessionID,
+                            streamID: activity.attributes.streamID
                         )
                         lastToken = tokenString
                         return true

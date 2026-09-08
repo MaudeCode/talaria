@@ -374,6 +374,10 @@ enum AgentRunElapsedTimeFormatter {
 }
 
 enum AgentLiveActivityReusePolicy {
+    static func preservesCompletedActivity(isFinal: Bool, relayPublisherID: String?) -> Bool {
+        isFinal && relayPublisherID != nil
+    }
+
     static func normalizedStreamID(_ streamID: String?) -> String? {
         guard let streamID else { return nil }
 

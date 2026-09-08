@@ -467,12 +467,14 @@ final class LiveActivityTests: XCTestCase {
             activityID: "activity-session-1",
             pushToken: "session-token",
             publisherID: "https://hermes.example.com",
-            sessionID: "session-1"
+            sessionID: "session-1",
+            streamID: "stream-1"
         )
         let perSessionBody = try XCTUnwrap(requests.last.flatMap(apiTestBodyData))
         let perSessionRegistration = try XCTUnwrap(
             JSONSerialization.jsonObject(with: perSessionBody) as? [String: Any]
         )
+        XCTAssertEqual(perSessionRegistration["streamId"] as? String, "stream-1")
         XCTAssertEqual(perSessionRegistration["mode"] as? String, "per_session")
         XCTAssertEqual(perSessionRegistration["publisherId"] as? String, "https://hermes.example.com")
         XCTAssertEqual(perSessionRegistration["sessionId"] as? String, "session-1")
@@ -946,6 +948,12 @@ final class LiveActivityTests: XCTestCase {
             ),
             "00:00"
         )
+    }
+
+    func testNewRunCleanupPreservesOnlyRelayBackedCompletedActivities() {
+        XCTAssertTrue(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: true, relayPublisherID: "https://relay.example"))
+        XCTAssertFalse(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: false, relayPublisherID: "https://relay.example"))
+        XCTAssertFalse(AgentLiveActivityReusePolicy.preservesCompletedActivity(isFinal: true, relayPublisherID: nil))
     }
 
     func testLiveActivityReusePolicyRequiresMatchingSessionAndStream() {

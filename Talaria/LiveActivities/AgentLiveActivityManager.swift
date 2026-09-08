@@ -188,6 +188,11 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     }
 
     func disconnectRelayRegistration() async {
+        let credentials = TalariaRelayConfigurationStore.load()
+        for retained in Activity<AgentRunActivityAttributes>.activities where retained.attributes.relayPublisherID != nil {
+            await retained.end(nil, dismissalPolicy: .immediate)
+            await relayRegistration.unregister(activityID: retained.id, fallbackCredentials: credentials)
+        }
         if let activityID = relayRegistration.activityID {
             await relayRegistration.unregister(activityID: activityID)
         } else {
@@ -400,7 +405,7 @@ private extension AgentLiveActivityManager {
             let relayContext = PerSessionRelayContext.make(for: publisherURL)
             let existingActivities = Activity<AgentRunActivityAttributes>.activities
             let reusableActivity = existingActivities.first { existing in
-                AgentLiveActivityReusePolicy.canReuseActivity(
+                !existing.content.state.isFinal && AgentLiveActivityReusePolicy.canReuseActivity(
                     existingSessionID: existing.attributes.sessionID,
                     existingStreamID: existing.attributes.streamID,
                     requestedSessionID: sessionID,
@@ -418,6 +423,10 @@ private extension AgentLiveActivityManager {
                     continue
                 }
 
+                if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                    isFinal: staleActivity.content.state.isFinal,
+                    relayPublisherID: staleActivity.attributes.relayPublisherID
+                ) { continue }
                 await staleActivity.end(nil, dismissalPolicy: .immediate)
                 unregisterRelayInBackground(
                     activityID: staleActivity.id,

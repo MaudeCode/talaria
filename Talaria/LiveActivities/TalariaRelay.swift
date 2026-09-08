@@ -389,9 +389,10 @@ final class TalariaRelayClient {
         activityID: String,
         pushToken: String,
         publisherID: String,
-        sessionID: String
+        sessionID: String,
+        streamID: String? = nil
     ) async throws {
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "mode": "per_session",
             "publisherId": publisherID,
             "sessionId": sessionID,
@@ -400,6 +401,7 @@ final class TalariaRelayClient {
             "activityPushToken": pushToken,
             "seededLocally": false
         ]
+        if let streamID { body["streamId"] = streamID }
         try await send(
             path: "v1/devices/\(credentials.deviceID)/live-activities/\(activityID)",
             method: "PUT",
