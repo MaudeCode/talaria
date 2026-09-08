@@ -88,7 +88,12 @@ final class ChatStreamCoordinator {
     @ObservationIgnored private weak var delegate: (any ChatStreamCoordinatorDelegate)?
     private let client: APIClient
     private let streamClient: SSEStreamingClient
-    private let liveActivityManager: any AgentLiveActivityManaging
+    private let configuredLiveActivityManager: any AgentLiveActivityManaging
+    // Finished-journal replay restores messages without driving any Live Activity.
+    private var publishesLiveActivity = true
+    private var liveActivityManager: (any AgentLiveActivityManaging)? {
+        publishesLiveActivity ? configuredLiveActivityManager : nil
+    }
     private let timing: ChatStreamCoordinatorTiming
     private var showsLiveActivityResponseExcerpts: Bool
 
@@ -142,7 +147,7 @@ final class ChatStreamCoordinator {
     ) {
         self.client = client
         self.streamClient = streamClient
-        self.liveActivityManager = liveActivityManager
+        self.configuredLiveActivityManager = liveActivityManager
         self.showsLiveActivityResponseExcerpts = showsLiveActivityResponseExcerpts
         self.timing = timing
     }
@@ -156,7 +161,7 @@ final class ChatStreamCoordinator {
 
         showsLiveActivityResponseExcerpts = shows
         if !shows, activeStreamID != nil {
-            liveActivityManager.update(.clearResponseExcerpt)
+            liveActivityManager?.update(.clearResponseExcerpt)
         }
     }
 
@@ -171,8 +176,10 @@ final class ChatStreamCoordinator {
         streamID: String,
         replayAfterSeq: Int? = nil,
         recoveryState: ActiveStreamRecoveryState = .idle,
-        armsAggregateForLocalWork: Bool = false
+        armsAggregateForLocalWork: Bool = false,
+        publishesLiveActivity: Bool = true
     ) {
+        self.publishesLiveActivity = publishesLiveActivity
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
         isColdAdoptedRun = false
@@ -212,7 +219,7 @@ final class ChatStreamCoordinator {
         guard self.activeStreamID == activeStreamID else { return response }
         guard response.ok != false else { return response }
 
-        liveActivityManager.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)
+        liveActivityManager?.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)
         finishStream()
         return response
     }
@@ -222,7 +229,7 @@ final class ChatStreamCoordinator {
 
         lastEventID = streamClient.lastEventID ?? lastEventID
         delegate?.streamCoordinatorSaveSnapshotIfNeeded()
-        liveActivityManager.markStale()
+        liveActivityManager?.markStale()
         isConnectionSuspended = true
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
@@ -384,9 +391,16 @@ final class ChatStreamCoordinator {
                 start(streamID: streamIDToResume, replayAfterSeq: coldReplayAfterSeq)
             } else if response.replayAvailable == true {
                 let replayAfterSeq = Self.runJournalReplayAfterSeq(from: lastEventID) ?? 0
-                self.activeStreamID = activeStreamID
-                isConnectionSuspended = false
-                start(streamID: activeStreamID, replayAfterSeq: replayAfterSeq)
+                // Replaying a finished journal restores the transcript, not a running card.
+                if response.active == false {
+                    let outcome = LiveActivityReconciler.reconciledOutcome(forTerminalState: response.journal?.terminalState)
+                    await configuredLiveActivityManager.endOrphanedActivity(
+                        streamID: activeStreamID, status: outcome.status, activity: outcome.activity
+                    )
+                    guard !Task.isCancelled, self.activeStreamID == activeStreamID,
+                          runGeneration == generation else { return }
+                }
+                start(streamID: activeStreamID, replayAfterSeq: replayAfterSeq, publishesLiveActivity: response.active != false)
             } else {
                 await delegate?.streamCoordinatorLoadMessages(modelContext: modelContext)
                 // Bail if a concurrent completion/cancel/new run finalized or
@@ -577,7 +591,7 @@ final class ChatStreamCoordinator {
         switch event {
         case .token(let text):
             if showsLiveActivityResponseExcerpts {
-                liveActivityManager.update(.token(text))
+                liveActivityManager?.update(.token(text))
             }
             if delegate?.streamCoordinatorAppendToken(text) == true {
                 markProgress()
@@ -586,25 +600,25 @@ final class ChatStreamCoordinator {
             if showsLiveActivityResponseExcerpts,
                payload.alreadyStreamed != true,
                let text = payload.text {
-                liveActivityManager.update(.interimAssistant(text))
+                liveActivityManager?.update(.interimAssistant(text))
             }
             if delegate?.streamCoordinatorAppendInterimAssistant(payload) == true {
                 markProgress()
             }
         case .reasoning(let payload):
             if !payload.text.isEmpty {
-                liveActivityManager.update(.reasoning(payload.text))
+                liveActivityManager?.update(.reasoning(payload.text))
             }
             if delegate?.streamCoordinatorAppendReasoning(payload) == true {
                 markProgress()
             }
         case .toolStarted(let payload):
-            liveActivityManager.update(.toolStarted(name: payload.name))
+            liveActivityManager?.update(.toolStarted(name: payload.name))
             if delegate?.streamCoordinatorAppendToolCall(payload) == true {
                 markProgress()
             }
         case .toolCompleted(let payload):
-            liveActivityManager.update(.toolCompleted)
+            liveActivityManager?.update(.toolCompleted)
             if delegate?.streamCoordinatorCompleteToolCall(payload) == true {
                 markProgress()
             }
@@ -625,11 +639,11 @@ final class ChatStreamCoordinator {
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript)
         case .approvalPending(let update):
-            liveActivityManager.update(.waitingForApproval)
+            liveActivityManager?.update(.waitingForApproval)
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()
         case .clarificationPending(let update):
-            liveActivityManager.update(.waitingForClarification)
+            liveActivityManager?.update(.waitingForClarification)
             delegate?.streamCoordinatorApplyClarificationUpdate(update)
             markProgress()
         case .steerConsumed(let event):
@@ -642,18 +656,18 @@ final class ChatStreamCoordinator {
             }
         case .streamEnd:
             if !isCurrentRunTerminated {
-                liveActivityManager.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
+                liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
             }
             finishStream()
         case .cancelled:
             if !isCurrentRunTerminated {
-                liveActivityManager.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)
+                liveActivityManager?.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)
             }
             finishStream()
         case .error(let message):
             if !isCurrentRunTerminated {
                 delegate?.streamCoordinatorDidReceiveErrorMessage(message)
-                liveActivityManager.end(status: .failed, activity: String(localized: "Response failed"), errorSummary: nil)
+                liveActivityManager?.end(status: .failed, activity: String(localized: "Response failed"), errorSummary: nil)
             }
             finishStream()
         case .transportError(let message):
@@ -688,7 +702,7 @@ final class ChatStreamCoordinator {
 
         lastEventID = streamClient.lastEventID ?? lastEventID
         delegate?.streamCoordinatorSaveSnapshotIfNeeded()
-        liveActivityManager.markStale()
+        liveActivityManager?.markStale()
         isConnectionSuspended = true
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
@@ -772,21 +786,22 @@ final class ChatStreamCoordinator {
         lastEventID = streamClient.lastEventID ?? lastEventID
         let replayAfterSeq = usesReplay ? Self.runJournalReplayAfterSeq(from: lastEventID) ?? 0 : nil
         delegate?.streamCoordinatorSaveSnapshotIfNeeded()
-        liveActivityManager.markStale()
+        liveActivityManager?.markStale()
         recoveryState = .reconnecting
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
         start(
             streamID: streamID,
             replayAfterSeq: replayAfterSeq,
-            recoveryState: .reconnecting
+            recoveryState: .reconnecting,
+            publishesLiveActivity: publishesLiveActivity
         )
     }
 
     private func completeCurrentResponse(needsTranscriptRefresh: Bool) {
         runGeneration &+= 1
         responseGeneration &+= 1
-        liveActivityManager.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
+        liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
         delegate?.streamCoordinatorRemoveSnapshot(streamID: activeStreamID)
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
         activeStreamID = nil
@@ -830,7 +845,7 @@ final class ChatStreamCoordinator {
         if delegate?.streamCoordinatorLatestServerLoadHadAssistantResponseAfterLatestUser == true {
             completeResponseFromRefreshedTranscriptAndFinishStream(streamID: streamID)
         } else {
-            liveActivityManager.end(status: .failed, activity: String(localized: "Response failed"), errorSummary: nil)
+            liveActivityManager?.end(status: .failed, activity: String(localized: "Response failed"), errorSummary: nil)
             finishStream()
         }
     }
@@ -894,14 +909,14 @@ final class ChatStreamCoordinator {
         let sessionTitle = delegate?.streamCoordinatorDisplayTitle ?? String(localized: "Untitled Session")
 
         if armsAggregateForLocalWork {
-            liveActivityManager.armAggregateForLocalWork(
+            liveActivityManager?.armAggregateForLocalWork(
                 sessionID: sessionID,
                 sessionTitle: sessionTitle,
                 publisherURL: client.baseURL
             )
         }
 
-        liveActivityManager.start(
+        liveActivityManager?.start(
             sessionID: sessionID,
             sessionTitle: sessionTitle,
             streamID: streamID,

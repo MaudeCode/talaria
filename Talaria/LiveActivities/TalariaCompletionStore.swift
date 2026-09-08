@@ -70,53 +70,55 @@ final class TalariaCompletionStore {
         defaults.set(data, forKey: Self.cacheKey)
     }
 
-    func refresh(loadMore: Bool = false) async {
-        guard let (client, scope) = client(), !isAcknowledging else { return }
+    @discardableResult
+    func refresh(loadMore: Bool = false) async -> Bool {
+        guard let (client, scope) = client(), !isAcknowledging else { return false }
         generation += 1
         let requestGeneration = generation
         isLoading = true
         defer { if generation == requestGeneration { isLoading = false } }
         do {
             let page = try await client.completions(cursor: loadMore ? cursor : nil)
-            guard isCurrent(scope, generation: requestGeneration), !Task.isCancelled else { return }
+            guard isCurrent(scope, generation: requestGeneration), !Task.isCancelled else { return false }
             let existing = loadMore ? completions : []
             let known = Set(existing.map(\.id))
             completions = existing + page.completions.filter { !known.contains($0.id) }
             cursor = page.cursor
             errorMessage = nil
             save()
+            return true
         } catch {
-            guard isCurrent(scope, generation: requestGeneration), !Task.isCancelled else { return }
+            guard isCurrent(scope, generation: requestGeneration), !Task.isCancelled else { return false }
             if case TalariaRelayClient.ClientError.invalidResponse(let status, _) = error, status == 401 || status == 403 {
                 completions = []
                 cursor = nil
                 save()
             }
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
-    func acknowledgeViewedSession(publisherURL: URL, sessionID: String, through viewedAt: Date) async -> [TalariaRelayClient.Completion] {
+    func acknowledgeViewedSession(publisherURL: URL, sessionID: String, through viewedAt: Date) async -> [TalariaRelayClient.Completion]? {
         guard let publisherID = TalariaRelayClient.originURL(publisherURL)?.absoluteString,
-              let (_, expectedScope) = client() else { return [] }
-        await refresh()
-        guard errorMessage == nil, scope == expectedScope, !Task.isCancelled else { return [] }
+              let (_, expectedScope) = client() else { return nil }
+        guard await refresh(), scope == expectedScope, !Task.isCancelled else { return nil }
         // ponytail: page the inbox for thread acknowledgement; add a server-side
         // session filter if very large inboxes make this slow.
         var seenCursors = Set<String>()
         while let cursor, seenCursors.insert(cursor).inserted {
-            await refresh(loadMore: true)
-            guard errorMessage == nil, scope == expectedScope, !Task.isCancelled else { return [] }
+            guard await refresh(loadMore: true), scope == expectedScope, !Task.isCancelled else { return nil }
         }
+        guard cursor == nil else { return nil }
         let observed = completions.filter {
             $0.row.publisherId == publisherID && $0.row.sessionId == sessionID
                 && $0.row.updatedAt <= viewedAt.timeIntervalSince1970 * 1_000
         }
         var acknowledged: [TalariaRelayClient.Completion] = []
         for offset in stride(from: 0, to: observed.count, by: 100) {
-            guard scope == expectedScope, !Task.isCancelled else { break }
+            guard scope == expectedScope, !Task.isCancelled else { return nil }
             let batch = Array(observed[offset..<min(offset + 100, observed.count)])
-            guard await acknowledge(batch.map(\.id)) else { break }
+            guard await acknowledge(batch.map(\.id)) else { return nil }
             acknowledged += batch
         }
         return acknowledged

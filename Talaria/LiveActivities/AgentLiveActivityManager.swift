@@ -376,8 +376,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     }
 
     func reconcileAcknowledgedCompletions(
-        _ completions: [TalariaRelayClient.Completion], credentials: TalariaRelayCredentials
+        _ completions: [TalariaRelayClient.Completion], credentials: TalariaRelayCredentials,
+        viewedPublisherURL: URL, viewedSessionID: String, through viewedAt: Date
     ) async {
+        guard let publisherID = TalariaRelayClient.originURL(viewedPublisherURL)?.absoluteString else { return }
         for activity in Activity<AgentRunActivityAttributes>.activities {
             guard TalariaRelayConfigurationStore.load() == credentials else { return }
             let matches = completions.contains { completion in
@@ -386,9 +388,18 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                     && completion.row.streamId != nil
                     && completion.row.streamId == activity.attributes.streamID
             }
-            guard matches else { continue }
+            let viewedCompletion = AgentLiveActivityReusePolicy.isViewedCompletion(
+                state: activity.content.state, publisherID: activity.attributes.relayPublisherID,
+                viewedPublisherID: publisherID, viewedSessionID: viewedSessionID, through: viewedAt
+            )
+            guard matches || viewedCompletion else { continue }
             await activity.end(nil, dismissalPolicy: .immediate)
-            await relayRegistration.unregister(activityID: activity.id, fallbackCredentials: TalariaRelayConfigurationStore.load())
+            let tracksCompletedStream = activity.attributes.streamID != nil
+                && currentStreamID == activity.attributes.streamID
+                && currentSessionID == activity.attributes.sessionID
+                && currentPublisherURL?.absoluteString == activity.attributes.relayPublisherID
+            if self.activity?.id == activity.id || tracksCompletedStream { reset() }
+            await relayRegistration.unregister(activityID: activity.id, fallbackCredentials: credentials)
         }
     }
 }

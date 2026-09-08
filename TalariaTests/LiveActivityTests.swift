@@ -65,6 +65,30 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(store.completions.isEmpty)
     }
 
+    func testViewedCompletionCleanupPreservesRunningNewerAndOtherThreadCards() {
+        let viewedAt = Date(timeIntervalSince1970: 20)
+        let running = AgentRunActivityStateReducer.initialState(
+            sessionID: "viewed", sessionTitle: "Fixture", startedAt: Date(timeIntervalSince1970: 1)
+        )
+        var done = AgentRunActivityStateReducer.final(
+            status: .complete, activity: "Done", state: running, now: Date(timeIntervalSince1970: 10)
+        )
+        func matches(_ state: AgentRunActivityAttributes.ContentState, publisher: String = "https://fixture.example") -> Bool {
+            AgentLiveActivityReusePolicy.isViewedCompletion(
+                state: state, publisherID: publisher, viewedPublisherID: "https://fixture.example",
+                viewedSessionID: "viewed", through: viewedAt
+            )
+        }
+        XCTAssertTrue(matches(done))
+        XCTAssertFalse(matches(running))
+        XCTAssertFalse(matches(done, publisher: "https://other.example"))
+        done.updatedAt = Date(timeIntervalSince1970: 21)
+        XCTAssertFalse(matches(done))
+        done.updatedAt = Date(timeIntervalSince1970: 10)
+        done.sessionID = "other"
+        XCTAssertFalse(matches(done))
+    }
+
     func testOpeningThreadAcknowledgesOnlyItsExistingCompletions() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LiveActivityURLProtocol.self]
@@ -83,7 +107,10 @@ final class LiveActivityTests: XCTestCase {
         otherPublisherRow.publisherId = "https://other.example"
         let otherPublisher = TalariaRelayClient.Completion(id: "other-publisher", row: otherPublisherRow)
         var postedIDs: [String] = []
+        var isOffline = false
+        var returnsEmptyPage = false
         LiveActivityURLProtocol.handler = { request in
+            if isOffline { throw URLError(.notConnectedToInternet) }
             let data: Data
             if request.httpMethod == "POST" {
                 let object = try JSONSerialization.jsonObject(with: XCTUnwrap(apiTestBodyData(from: request))) as! [String: [String]]
@@ -93,7 +120,7 @@ final class LiveActivityTests: XCTestCase {
                 struct Page: Encodable { var completions: [TalariaRelayClient.Completion]; var cursor: String? }
                 let isSecondPage = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
                     .queryItems?.contains { $0.name == "cursor" && $0.value == "page-2" } == true
-                data = try JSONEncoder().encode(isSecondPage
+                data = try JSONEncoder().encode(returnsEmptyPage ? Page(completions: [], cursor: nil) : isSecondPage
                     ? Page(completions: [first, future, otherPublisher], cursor: nil)
                     : Page(completions: [other], cursor: "page-2"))
             }
@@ -104,9 +131,21 @@ final class LiveActivityTests: XCTestCase {
             publisherURL: URL(string: "https://hermes.example/path")!, sessionID: "viewed",
             through: Date(timeIntervalSince1970: 0.15)
         )
-        XCTAssertEqual(acknowledged.map(\.id), ["first"])
+        XCTAssertEqual(acknowledged?.map(\.id), ["first"])
         XCTAssertEqual(postedIDs, ["first"])
         XCTAssertEqual(Set(store.completions.map(\.id)), ["other", "future", "other-publisher"])
+
+        isOffline = true
+        let failed = await store.acknowledgeViewedSession(
+            publisherURL: URL(string: "https://hermes.example")!, sessionID: "viewed", through: .distantFuture
+        )
+        XCTAssertNil(failed)
+        isOffline = false
+        returnsEmptyPage = true
+        let alreadyAcknowledged = await store.acknowledgeViewedSession(
+            publisherURL: URL(string: "https://hermes.example")!, sessionID: "viewed", through: .distantFuture
+        )
+        XCTAssertEqual(alreadyAcknowledged?.count, 0)
     }
 
     func testCompletionRefreshCannotResurrectAnAcknowledgedResult() async throws {

@@ -390,6 +390,14 @@ enum AgentRunElapsedTimeFormatter {
 }
 
 enum AgentLiveActivityReusePolicy {
+    static func isViewedCompletion(
+        state: AgentRunActivityAttributes.ContentState, publisherID: String?,
+        viewedPublisherID: String, viewedSessionID: String, through viewedAt: Date
+    ) -> Bool {
+        state.isFinal && publisherID == viewedPublisherID
+            && state.sessionID == viewedSessionID && state.updatedAt <= viewedAt
+    }
+
     static func preservesCompletedActivity(isFinal: Bool, relayPublisherID: String?) -> Bool {
         isFinal && relayPublisherID != nil
     }

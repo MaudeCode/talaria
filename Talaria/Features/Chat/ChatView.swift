@@ -636,14 +636,7 @@ struct ChatView: View {
             }
             .alert(
                 "Message Action Failed",
-                isPresented: Binding(
-                    get: { viewModel.messageActionErrorMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            viewModel.clearMessageActionError()
-                        }
-                    }
-                )
+                isPresented: messageActionErrorIsPresented
             ) {
                 Button("OK") {
                     viewModel.clearMessageActionError()
@@ -1597,6 +1590,15 @@ struct ChatView: View {
         .session(server: server, session: session)
     }
 
+    private var messageActionErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.messageActionErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented { viewModel.clearMessageActionError() }
+            }
+        )
+    }
+
     private var persistedDraftBinding: Binding<String> {
         Binding(
             get: { draftMessage },
@@ -2111,12 +2113,16 @@ struct ChatView: View {
             defer {
                 if generation == completionAcknowledgementGeneration { completionAcknowledgementTask = nil }
             }
-            let acknowledged = await TalariaCompletionStore.shared.acknowledgeViewedSession(
+            guard let acknowledged = await TalariaCompletionStore.shared.acknowledgeViewedSession(
                 publisherURL: server, sessionID: sessionID, through: viewedAt
+            ) else { return }
+            guard !Task.isCancelled, TalariaRelayConfigurationStore.load() == credentials else { return }
+            // Retry aggregate cleanup on later thread opens even when an earlier
+            // acknowledgement succeeded but its snapshot request failed.
+            await AgentLiveActivityManager.shared.reconcileAcknowledgedCompletions(
+                acknowledged, credentials: credentials, viewedPublisherURL: server,
+                viewedSessionID: sessionID, through: viewedAt
             )
-            guard !acknowledged.isEmpty, !Task.isCancelled,
-                  TalariaRelayConfigurationStore.load() == credentials else { return }
-            await AgentLiveActivityManager.shared.reconcileAcknowledgedCompletions(acknowledged, credentials: credentials)
             try? await TalariaAggregateLiveActivityManager.shared.reconcileAfterAcknowledgement(credentials: credentials)
         }
     }
