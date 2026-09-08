@@ -113,10 +113,12 @@ extension UITestFixtureURLProtocol {
     }
 
     /// Delays a read long enough for its loading state to be asserted, without a real server.
+    /// The delay has to outlast the navigation that opens the screen, since the request
+    /// starts as the destination appears and nothing else holds the response back.
     static func workspaceResponseDelay(for url: URL) -> TimeInterval? {
         guard WorkspaceFixture.isEnabled, WorkspaceFixture.readsAreSlow else { return nil }
         guard url.path == "/api/list" || url.path == "/api/git/status" else { return nil }
-        return 3
+        return 8
     }
 
     private static func directoryListData(path: String) -> Data {
