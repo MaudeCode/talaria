@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 
 @MainActor
 struct UITestFixtureEnvironment {
@@ -32,6 +33,11 @@ struct UITestFixtureEnvironment {
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
         UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)
+        // The alternate app icon is system-level state that outlives the app's own storage,
+        // so clear it too: the icon picker must always start from the primary icon.
+        if UIApplication.shared.alternateIconName != nil {
+            UIApplication.shared.setAlternateIconName(nil)
+        }
         UserDefaults.standard.set(
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey
