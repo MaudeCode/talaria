@@ -29,7 +29,8 @@ xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platfor
 
 If that simulator name isn't installed, pick a nearby iPhone from
 `xcrun simctl list devices available`. PR CI runs the complete functional suite
-with code signing disabled, so forks get green CI without any secrets. Dedicated
+against ad-hoc signed builds (`CODE_SIGN_IDENTITY=-`), which need no
+certificate, profile or secret, so forks still get green CI. Dedicated
 performance measurements may run on `main` instead when their runtime would slow
 every PR without improving functional regression coverage.
 
