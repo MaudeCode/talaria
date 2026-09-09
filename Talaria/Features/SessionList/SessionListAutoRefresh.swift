@@ -71,21 +71,30 @@ enum SessionListAutoRefresh {
 /// single follow-up rather than queueing a request each.
 @MainActor
 final class SessionListRefreshQueue {
+    private var isRunning = false
     private var hasFollowUp = false
 
     /// - Parameter isRefreshInFlight: whether a full-list load this queue does
-    ///   not own is already running. The active-row monitor reloads the list on
-    ///   its own 1s cadence, so its request is the one case where the follow-up
-    ///   flag can outlive the loop that would drain it; the next trigger then
-    ///   consumes it as a plain refresh.
+    ///   not own is already running. The active-row monitor reloads the list
+    ///   through `refreshActiveSessionStatesIfNeeded`, which is the one such
+    ///   owner; it calls `drainFollowUp` afterwards to run anything deferred
+    ///   during it.
     func run(
         isRefreshInFlight: () -> Bool,
         refresh: () async -> Void
     ) async {
-        guard !isRefreshInFlight() else {
+        // `isRunning` spans the whole closure, not just its session request. A
+        // refresh also reloads projects and the active profile after that
+        // request settles, and those have no generation fence of their own, so
+        // a second owner starting there could let an older response overwrite
+        // newer project state.
+        guard !isRunning, !isRefreshInFlight() else {
             hasFollowUp = true
             return
         }
+
+        isRunning = true
+        defer { isRunning = false }
 
         repeat {
             hasFollowUp = false

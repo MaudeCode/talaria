@@ -234,6 +234,26 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(drainCount, 2)
     }
 
+    /// A refresh reloads projects and the active profile after its session
+    /// request settles. Those have no generation fence, so the queue must stay
+    /// the owner for the whole closure rather than only its first stage.
+    func testTriggerArrivingAfterTheSessionStageDoesNotStartASecondRefresh() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run(isRefreshInFlight: { false }) {
+            refreshCount += 1
+            guard refreshCount == 1 else { return }
+            // The session request has settled — `viewModel.isLoading` is already
+            // false — but this refresh is still reloading projects.
+            await queue.run(isRefreshInFlight: { false }) {
+                XCTFail("a second owner must not start an overlapping refresh")
+            }
+        }
+
+        XCTAssertEqual(refreshCount, 2)
+    }
+
     // MARK: - Reconciliation and transient failure
 
     func testAutomaticRefreshAdoptsASessionCreatedElsewhere() async throws {
@@ -326,6 +346,23 @@ final class SessionListAutoRefreshTests: XCTestCase {
             viewModel.actionErrorMessage,
             "an explicitly requested projects reload still reports its failure"
         )
+    }
+
+    /// The alert binding tests `actionErrorMessage != nil`, so clearing it during
+    /// a refresh the user did not ask for dismisses a failure they have not read.
+    func testSilentProjectsReloadPreservesAPendingActionAlert() async throws {
+        let responses = SessionListResponses(bodies: [""], failingResponseIndexes: [0])
+        let viewModel = try makeViewModel(responses: responses)
+        defer { MockURLProtocol.requestHandler = nil }
+
+        // A user action has failed and its modal is on screen.
+        await viewModel.loadProjects()
+        let pendingAlert = try XCTUnwrap(viewModel.actionErrorMessage)
+
+        // An automatic tick arrives before the user has acknowledged it.
+        await viewModel.loadProjects(silently: true)
+
+        XCTAssertEqual(viewModel.actionErrorMessage, pendingAlert)
     }
 
     // MARK: - Support

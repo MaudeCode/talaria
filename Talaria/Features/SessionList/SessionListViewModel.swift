@@ -813,7 +813,13 @@ final class SessionListViewModel {
     ///   `/api/projects` failure interrupts them once per list refresh.
     func loadProjects(silently: Bool = false) async {
         isLoadingProjects = true
-        actionErrorMessage = nil
+        // A silent reload neither writes to the action-alert channel nor clears
+        // it: an alert the user has not acknowledged yet — a rename that just
+        // failed — must not be dismissed out from under them by a refresh they
+        // did not ask for.
+        if !silently {
+            actionErrorMessage = nil
+        }
         lastError = nil
         defer { isLoadingProjects = false }
 
