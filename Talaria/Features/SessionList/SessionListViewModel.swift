@@ -86,6 +86,10 @@ final class SessionListViewModel {
     /// reloads below that follow a mutation — so exactly one owner serves them
     /// and no caller is left waiting on a reload nobody will run.
     private let refreshQueue = SessionListRefreshQueue()
+    /// The profile reload gets its own queue for the same reason: a trigger
+    /// arriving mid-request is coalesced into a follow-up instead of being
+    /// dropped, since the request in flight may predate the change it reacts to.
+    private let profileRefreshQueue = SessionListRefreshQueue()
     private var projectsGeneration = 0
     private var activeProfileGeneration = 0
     private var openGeneration = 0
@@ -289,12 +293,15 @@ final class SessionListViewModel {
     }
 
     func loadActiveProfile() async {
-        guard !isLoadingActiveProfile else { return }
         // A poll that starts after `switchActiveProfile` bumped the fence but
         // before its request lands would capture the new generation and pass the
         // guard below, restoring the profile the user just left.
         guard !isSwitchingActiveProfile else { return }
 
+        await profileRefreshQueue.run { await self.performLoadActiveProfile() }
+    }
+
+    private func performLoadActiveProfile() async {
         isLoadingActiveProfile = true
         activeProfileErrorMessage = nil
         defer { isLoadingActiveProfile = false }
