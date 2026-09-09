@@ -8,9 +8,7 @@ struct SkillDetailView: View {
     @State private var detail: SkillDetailResponse?
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var selectedFile: String?
-    @State private var fileContent: String?
-    @State private var isLoadingFile = false
+    @State private var linkedFile: SkillLinkedFileSelection?
 
     var body: some View {
         content
@@ -32,15 +30,18 @@ struct SkillDetailView: View {
             .task {
                 await loadDetail()
             }
-            .sheet(item: $selectedFile) { fileName in
+            .sheet(item: $linkedFile) { file in
                 NavigationStack {
                     SkillLinkedFileView(
-                        fileName: fileName,
-                        content: fileContent,
-                        isLoading: isLoadingFile
+                        fileName: file.fileName,
+                        content: linkedFile?.content ?? file.content,
+                        isLoading: linkedFile?.isLoading ?? file.isLoading
                     )
                 }
                 .adaptivePagePresentation()
+                .task(id: file.fileName) {
+                    await loadLinkedFile(named: file.fileName)
+                }
             }
     }
 
@@ -70,7 +71,7 @@ struct SkillDetailView: View {
                         SkillLinkedFilesSection(
                             fileNames: linkedFiles,
                             onSelect: { fileName in
-                                Task { await loadLinkedFile(named: fileName) }
+                                linkedFile = SkillLinkedFileSelection(fileName: fileName)
                             }
                         )
                     }
@@ -103,15 +104,12 @@ struct SkillDetailView: View {
 
     private func loadLinkedFile(named fileName: String) async {
         guard let name = skill.name else { return }
-        isLoadingFile = true
-        selectedFile = fileName
-        defer { isLoadingFile = false }
-
-        do {
-            let response = try await APIClient(baseURL: server).skillContent(name: name, file: fileName)
-            fileContent = response.content
-        } catch {
-            fileContent = String(localized: "Could not load file: \(error.localizedDescription)")
-        }
+        let content = await SkillLinkedFileSelection.load(
+            fileName: fileName,
+            skill: name,
+            client: APIClient(baseURL: server)
+        )
+        guard !Task.isCancelled else { return }
+        linkedFile?.apply(content, for: fileName)
     }
 }
