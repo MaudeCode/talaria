@@ -249,10 +249,4 @@ final class ShareExtensionUITests: TalariaUITestCase {
 
         return nil
     }
-
-    private func element(labelContaining text: String) -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", text))
-            .firstMatch
-    }
 }

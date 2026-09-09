@@ -645,6 +645,7 @@
 		A19000000000000000000001 /* TalariaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* TalariaUITests.swift */; };
 		C17300000000000000000001 /* TalariaCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17300000000000000000011 /* TalariaCompletionStore.swift */; };
 		A19000000000000000000101 /* AgentPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000102 /* AgentPanelUITests.swift */; };
+		A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000104 /* AppEntryPointUITests.swift */; };
 		D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
 		D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
 		D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
@@ -736,6 +737,7 @@
 		1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A19000000000000000000002 /* TalariaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000102 /* AgentPanelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelUITests.swift; sourceTree = "<group>"; };
+		A19000000000000000000104 /* AppEntryPointUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntryPointUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -1431,6 +1433,7 @@
 				D81000000000000000000022 /* ShareExtensionUITests.swift */,
 				A19000000000000000000002 /* TalariaUITests.swift */,
 				A19000000000000000000102 /* AgentPanelUITests.swift */,
+				A19000000000000000000104 /* AppEntryPointUITests.swift */,
 				A19000000000000000000112 /* PerformanceUITests.swift */,
 			);
 			path = TalariaUITests;
@@ -3068,6 +3071,7 @@
 				D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */,
 				A19000000000000000000001 /* TalariaUITests.swift in Sources */,
 				A19000000000000000000101 /* AgentPanelUITests.swift in Sources */,
+				A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */,
 				A19000000000000000000111 /* PerformanceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

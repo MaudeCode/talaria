@@ -68,15 +68,15 @@ struct TalariaCommands: Commands {
     @FocusedValue(\.talariaSceneActions) private var actions
 
     var body: some Commands {
+        // iOS only materialises the group that replaces a standard one, so both commands
+        // live here: an `after: .newItem` group never registered its key command.
         CommandGroup(replacing: .newItem) {
             Button("New Chat") {
                 actions?.createNewChat()
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(actions?.canCreateNewChat != true)
-        }
 
-        CommandGroup(after: .newItem) {
             Button("Search Sessions") {
                 actions?.searchSessions()
             }
@@ -134,8 +134,11 @@ struct TalariaApp: App {
         _authManager = State(initialValue: liveAuthManager())
         #endif
 
+        // Registering only installs the launch handler, so the fixture needs it too: backgrounding
+        // the app submits a refresh request from `ContentView`, and submitting one whose
+        // identifier was never registered aborts the process (TAL-77).
+        ProviderQuotaBackgroundRefresh.register()
         if !usesUITestFixture {
-            ProviderQuotaBackgroundRefresh.register()
             ProviderQuotaBackgroundRefresh.schedule()
         }
 
