@@ -56,7 +56,9 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(isStale
                         ? String(localized: "Waiting")
-                        : "\(context.state.activeCount) active")
+                        : context.state.activeCount == 0
+                            ? TalariaAggregateLiveActivityPresentation.outcomeTitle(context.state)
+                            : "\(context.state.activeCount) active")
                         .font(.caption)
                         .lineLimit(1)
                         .padding(.trailing, 8)
@@ -147,7 +149,7 @@ struct AgentRunLiveActivityWidget: Widget {
             AgentRunLockScreenView(state: context.state)
                 .activityBackgroundTint(AgentRunLiveActivityTheme.background)
                 .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
-                .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID))
+                .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -170,7 +172,7 @@ struct AgentRunLiveActivityWidget: Widget {
             } minimal: {
                 AgentRunIslandCompactMark(status: context.state.status)
             }
-            .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID))
+            .widgetURL(TalariaDeepLink.sessionURL(sessionID: context.state.sessionID, publisherID: context.attributes.relayPublisherID))
             .keylineTint(AgentRunStatusStyle.color(for: context.state.status, isStale: context.state.isStale))
         }
     }

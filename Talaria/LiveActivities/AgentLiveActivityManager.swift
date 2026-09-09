@@ -164,7 +164,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             _ = nextUpdateGeneration()
             let endingActivity = activity
             activity = nil
-            if let endingActivity {
+            if let endingActivity, !AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                isFinal: endingActivity.content.state.isFinal,
+                relayPublisherID: endingActivity.attributes.relayPublisherID
+            ) {
                 await endingActivity.end(nil, dismissalPolicy: .immediate)
                 unregisterRelayInBackground(
                     activityID: endingActivity.id,
@@ -187,7 +190,13 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
     }
 
-    func disconnectRelayRegistration() async {
+    func disconnectRelayRegistration(preserveCompleted: Bool = false) async {
+        let credentials = TalariaRelayConfigurationStore.load()
+        for retained in Activity<AgentRunActivityAttributes>.activities where retained.attributes.relayPublisherID != nil {
+            if preserveCompleted && retained.content.state.isFinal { continue }
+            await retained.end(nil, dismissalPolicy: .immediate)
+            await relayRegistration.unregister(activityID: retained.id, fallbackCredentials: credentials)
+        }
         if let activityID = relayRegistration.activityID {
             await relayRegistration.unregister(activityID: activityID)
         } else {
@@ -336,6 +345,13 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                 state: persisted.content.state
             )
             let fallbackCredentials = TalariaRelayConfigurationStore.load()
+            if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                isFinal: finalState.isFinal, relayPublisherID: persisted.attributes.relayPublisherID
+            ) {
+                await persisted.update(ActivityContent(state: finalState, staleDate: nil))
+                didEndRunningActivity = true
+                continue
+            }
             // `end(content:)` sets the final content directly and there is no
             // intervening render delay here, so a preceding `update` is redundant
             // (PR #266 review).
@@ -358,6 +374,34 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
         return didEndRunningActivity
     }
+
+    func reconcileAcknowledgedCompletions(
+        _ completions: [TalariaRelayClient.Completion], credentials: TalariaRelayCredentials,
+        viewedPublisherURL: URL, viewedSessionID: String, through viewedAt: Date
+    ) async {
+        guard let publisherID = TalariaRelayClient.originURL(viewedPublisherURL)?.absoluteString else { return }
+        for activity in Activity<AgentRunActivityAttributes>.activities {
+            guard TalariaRelayConfigurationStore.load() == credentials else { return }
+            let matches = completions.contains { completion in
+                completion.row.publisherId == activity.attributes.relayPublisherID
+                    && completion.row.sessionId == activity.attributes.sessionID
+                    && completion.row.streamId != nil
+                    && completion.row.streamId == activity.attributes.streamID
+            }
+            let viewedCompletion = AgentLiveActivityReusePolicy.isViewedCompletion(
+                state: activity.content.state, publisherID: activity.attributes.relayPublisherID,
+                viewedPublisherID: publisherID, viewedSessionID: viewedSessionID, through: viewedAt
+            )
+            guard matches || viewedCompletion else { continue }
+            await activity.end(nil, dismissalPolicy: .immediate)
+            let tracksCompletedStream = activity.attributes.streamID != nil
+                && currentStreamID == activity.attributes.streamID
+                && currentSessionID == activity.attributes.sessionID
+                && currentPublisherURL?.absoluteString == activity.attributes.relayPublisherID
+            if self.activity?.id == activity.id || tracksCompletedStream { reset() }
+            await relayRegistration.unregister(activityID: activity.id, fallbackCredentials: credentials)
+        }
+    }
 }
 
 private extension AgentLiveActivityManager {
@@ -378,7 +422,7 @@ private extension AgentLiveActivityManager {
             let relayContext = PerSessionRelayContext.make(for: publisherURL)
             let existingActivities = Activity<AgentRunActivityAttributes>.activities
             let reusableActivity = existingActivities.first { existing in
-                AgentLiveActivityReusePolicy.canReuseActivity(
+                !existing.content.state.isFinal && AgentLiveActivityReusePolicy.canReuseActivity(
                     existingSessionID: existing.attributes.sessionID,
                     existingStreamID: existing.attributes.streamID,
                     requestedSessionID: sessionID,
@@ -396,6 +440,10 @@ private extension AgentLiveActivityManager {
                     continue
                 }
 
+                if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+                    isFinal: staleActivity.content.state.isFinal,
+                    relayPublisherID: staleActivity.attributes.relayPublisherID
+                ) { continue }
                 await staleActivity.end(nil, dismissalPolicy: .immediate)
                 unregisterRelayInBackground(
                     activityID: staleActivity.id,
@@ -529,6 +577,13 @@ private extension AgentLiveActivityManager {
         let fallbackCredentials = TalariaRelayConfigurationStore.load()
 
         await endingActivity.update(ActivityContent(state: finalState, staleDate: nil))
+        if AgentLiveActivityReusePolicy.preservesCompletedActivity(
+            isFinal: finalState.isFinal, relayPublisherID: endingActivity.attributes.relayPublisherID
+        ) {
+            // A finished run remains addressable by the relay until acknowledgement.
+            resetIfStillCurrent(endingSessionID: endingSessionID, finalState: finalState)
+            return
+        }
         if status == .complete {
             try? await Task.sleep(nanoseconds: 600_000_000)
         }
