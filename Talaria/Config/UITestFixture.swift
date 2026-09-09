@@ -329,6 +329,15 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
         case "/api/session/new":
             return json(["session": session(id: "ui-fixture-new-session", title: "New Fixture Chat")])
+        case "/api/upload":
+            // Shared attachments upload before the composer can show them, so the
+            // fixture has to accept one (TAL-81). Only a non-empty path is required;
+            // the composer labels the chip with the local filename.
+            return json([
+                "path": "/fixture/uploads/shared",
+                "mime": "application/octet-stream",
+                "is_image": false
+            ])
         case "/api/projects":
             return json(["projects": []])
         case "/api/profiles":

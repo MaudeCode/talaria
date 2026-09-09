@@ -104,6 +104,9 @@ struct TalariaApp: App {
         let arguments = ProcessInfo.processInfo.arguments
 
         #if DEBUG
+        if ShareExtensionUITestHost.isActive {
+            ShareExtensionUITestHost.resetSharedState()
+        }
         let fixture = arguments.contains(UITestFixtureEnvironment.launchArgument)
             ? UITestFixtureEnvironment.make()
             : nil
@@ -178,6 +181,13 @@ struct TalariaApp: App {
                     draftStore: uiTestFixture?.draftStore
                 )
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
+                    // TAL-81: overlaid rather than a root of its own, so the share
+                    // extension's `talaria://share` open lands on the real import path.
+                    .overlay(alignment: .top) {
+                        if ShareExtensionUITestHost.isActive {
+                            ShareExtensionUITestHostBar()
+                        }
+                    }
             }
             #else
             ContentView(authManager: authManager)
