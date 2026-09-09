@@ -145,8 +145,10 @@ Agent/MCP flow:
   XCUI launches a DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
   with in-memory authentication, draft, and cache state. It does not read simulator
   login state or contact an external server. A skipped functional `TalariaUITests`
-  test fails the run. Performance-only UI measurements may run on `main` CI instead
-  of every pull request; they remain part of the full local suite.
+  test fails the run. Performance-only UI measurements run on `main` CI instead
+  of every pull request; they remain part of the full local suite. See
+  [performance budgets](docs/performance-budgets.md) for what is measured, the
+  baselines behind each threshold, and how to compare a run.
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
   builds the isolated `.xctest` app, launches the deterministic fixture, and opens
   Simulator. Keep the command running for the manual session, then press Control-C
@@ -197,7 +199,11 @@ Recognized variables:
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
 - `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
-- `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`.
+- `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
+  as either the hardware UDID or the CoreDevice identifier from
+  `xcrun devicectl list devices`.
+- `TALARIA_DEVICE_DISCOVERY_ATTEMPTS` and `TALARIA_DEVICE_DISCOVERY_INTERVAL` —
+  bounded retry budget for physical iPhone discovery.
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
 - `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
 

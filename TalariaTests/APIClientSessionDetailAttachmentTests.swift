@@ -5,6 +5,7 @@ extension APIClientSessionDetailTests {
 func testSessionDecodesMessageAttachments() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
@@ -43,6 +44,7 @@ func testSessionDecodesMessageAttachments() async throws {
 func testSessionDecodesTolerantMessageAttachments() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
@@ -128,6 +130,7 @@ func testSessionDecodesTolerantMessageAttachments() async throws {
 func testSessionInfersAttachmentsFromAttachedFilesMarkerWhenServerOmitsMetadata() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
@@ -161,6 +164,7 @@ func testSessionInfersAttachmentsFromAttachedFilesMarkerWhenServerOmitsMetadata(
 func testSessionEnrichesLegacyAttachmentNamesFromAttachedFilesMarkerPaths() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
@@ -198,6 +202,7 @@ func testSessionEnrichesLegacyAttachmentNamesFromAttachedFilesMarkerPaths() asyn
 func testSessionDecodesWebUICreatedSessionWithUnexpectedOptionalFieldTypes() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {

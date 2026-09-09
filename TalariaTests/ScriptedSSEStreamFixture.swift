@@ -1,4 +1,4 @@
-import Foundation
+import XCTest
 @testable import Talaria
 
 /// A scripted, multi-connection mock of `SSEStreamingClient` for driving full
@@ -95,5 +95,54 @@ final class ScriptedSSEStreamingClient: SSEStreamingClient {
         }
         onEvent(step.event)
         flushPendingStreamingContent?()
+    }
+}
+
+@MainActor
+extension XCTestCase {
+    /// A real `ChatViewModel` wired to a scripted SSE client and a mocked HTTP
+    /// backend — the shared seam for reconnect/replay tests and for the replay
+    /// catch-up performance budget (TAL-75).
+    func makeScriptedChatViewModel(
+        streamClient: ScriptedSSEStreamingClient,
+        flushesEachEvent: Bool = true,
+        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
+    ) throws -> ChatViewModel {
+        MockURLProtocol.requestHandler = handler
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let client = APIClient(baseURL: server, session: urlSession)
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(
+            SessionSummary.self,
+            from: Data("""
+            {
+              "session_id": "session-abc",
+              "title": "Planning",
+              "workspace": "/tmp/workspace"
+            }
+            """.utf8)
+        )
+
+        let viewModel = ChatViewModel(
+            session: session,
+            server: server,
+            client: client,
+            streamClient: streamClient,
+            approvalStreamClient: ScriptedSSEStreamingClient(),
+            clarifyStreamClient: ScriptedSSEStreamingClient(),
+            btwStreamClient: ScriptedSSEStreamingClient()
+        )
+        if flushesEachEvent {
+            streamClient.flushPendingStreamingContent = { [weak viewModel] in
+                viewModel?.flushPendingStreamingContent()
+            }
+        }
+        return viewModel
     }
 }

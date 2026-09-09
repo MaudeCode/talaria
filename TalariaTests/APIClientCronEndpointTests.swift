@@ -260,6 +260,7 @@ final class APIClientCronEndpointTests: APIClientTestCase {
     func testCronCreateSendsProviderWhenSet() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/crons/create")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let data = try XCTUnwrap(apiTestBodyData(from: request))
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -376,6 +377,7 @@ final class APIClientCronEndpointTests: APIClientTestCase {
     func testCronOutputOmitsLimitWhenNil() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/crons/output")
+            XCTAssertEqual(request.httpMethod, "GET")
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
             XCTAssertEqual(query["job_id"], "job456")

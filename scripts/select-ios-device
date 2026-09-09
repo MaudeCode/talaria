@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Print the hardware UDID of the physical iPhone to build for.
+
+CoreDevice reports a paired iPhone as connected, available, or disconnected
+depending on how it is attached and whether its connection state is settling.
+Selection retries a bounded number of times for a ready iPhone and then falls
+back to the single paired physical iPhone in the unfiltered device record.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+HARDWARE_UDID = re.compile(r'^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}$')
+READY_STATES = ('connected', 'available')
+ATTEMPTS = int(os.environ.get('TALARIA_DEVICE_DISCOVERY_ATTEMPTS') or 3)
+INTERVAL = float(os.environ.get('TALARIA_DEVICE_DISCOVERY_INTERVAL') or 1)
+
+
+def fail(*lines):
+    for line in lines:
+        print(line, file=sys.stderr)
+    raise SystemExit(69)
+
+
+def load_devices():
+    with tempfile.TemporaryDirectory(prefix='talaria-devices-') as directory:
+        path = os.path.join(directory, 'devices.json')
+        result = subprocess.run(
+            ['xcrun', 'devicectl', 'list', 'devices',
+             '--json-output', path, '--omit-deprecated-fields-in-json'],
+            capture_output=True, text=True)
+        if result.returncode != 0 or not os.path.exists(path):
+            fail('Could not list devices with xcrun devicectl.',
+                 result.stderr.strip() or f'devicectl exited {result.returncode}.')
+        with open(path, 'rb') as stream:
+            record = json.load(stream)
+    devices = []
+    for entry in record.get('result', {}).get('devices', []):
+        properties = entry.get('properties', {})
+        hardware = properties.get('hardware', {})
+        if (hardware.get('reality'), hardware.get('platform'),
+                hardware.get('deviceType')) != ('physical', 'iOS', 'iPhone'):
+            continue
+        connection = properties.get('connection', {})
+        devices.append(dict(identifier=entry.get('identifier', ''),
+                            udid=hardware.get('udid', ''),
+                            name=hardware.get('marketingName', 'iPhone'),
+                            state=connection.get('state', 'unknown'),
+                            paired=connection.get('pairingState') == 'paired'))
+    return devices
+
+
+def polled():
+    """Yield the physical iPhones devicectl reports, once per bounded attempt."""
+    for attempt in range(ATTEMPTS):
+        if attempt:
+            time.sleep(INTERVAL)
+        yield load_devices()
+
+
+def choose(iphones):
+    """Return the one iPhone to build for, or fail when the choice is ambiguous."""
+    paired = [iphone for iphone in iphones if iphone['paired']]
+    if len(paired) > 1:
+        fail(f'Found {len(paired)} paired physical iPhones.',
+             'Set TALARIA_DEVICE_ID to one of:',
+             *(f"  {iphone['udid']}  {iphone['name']}" for iphone in paired))
+    return paired[0] if paired else None
+
+
+def discover():
+    iphones = []
+    for iphones in polled():
+        candidate = choose(iphones)
+        if candidate and candidate['state'] in READY_STATES:
+            return candidate['udid']
+    candidate = choose(iphones)
+    if candidate:
+        print(f"Using paired iPhone while CoreDevice reports "
+              f"'{candidate['state']}'.", file=sys.stderr)
+        return candidate['udid']
+    if iphones:
+        fail(f'A physical iPhone is present but not paired after {ATTEMPTS} attempts.',
+             'Unlock the iPhone, trust this Mac, then rerun.')
+    fail(f'No paired physical iPhone found after {ATTEMPTS} attempts.',
+         'Connect an iPhone, trust this Mac, then rerun.')
+
+
+def resolve(requested):
+    """Normalize an explicit hardware UDID or CoreDevice identifier to a UDID."""
+    if HARDWARE_UDID.match(requested):
+        return requested
+    wanted = requested.lower()
+    for iphones in polled():
+        for iphone in iphones:
+            if wanted in (iphone['identifier'].lower(), iphone['udid'].lower()):
+                return iphone['udid']
+    fail(f'TALARIA_DEVICE_ID={requested} is not a hardware UDID and matches no '
+         'physical iPhone.',
+         'Use the Identifier or hardware UDID from: xcrun devicectl list devices')
+
+
+requested = os.environ.get('TALARIA_DEVICE_ID', '').strip()
+print(resolve(requested) if requested else discover())

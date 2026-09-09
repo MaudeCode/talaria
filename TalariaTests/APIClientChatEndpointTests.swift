@@ -222,6 +222,7 @@ final class APIClientChatEndpointTests: APIClientTestCase {
     func testCancelChatBuildsExpectedQuery() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/chat/cancel")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
@@ -246,6 +247,7 @@ final class APIClientChatEndpointTests: APIClientTestCase {
     func testChatStreamStatusBuildsExpectedQuery() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/chat/stream/status")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })

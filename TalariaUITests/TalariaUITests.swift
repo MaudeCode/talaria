@@ -1360,7 +1360,9 @@ extension TalariaUITestCase {
 
 }
 
-fileprivate extension TalariaUITestCase {
+/// Shared by every `TalariaUITestCase` file: the Settings walk and the coordinate taps that
+/// list rows need because they report `isHittable == false`.
+extension TalariaUITestCase {
     func assertSettingsCategoryRoutes(_ categories: [(id: String, title: String)]) {
         launchFixture()
         openSettings()
@@ -1397,12 +1399,16 @@ fileprivate extension TalariaUITestCase {
             )
     }
 
-    /// Settings and list rows report `isHittable == false` to XCUI even when visible;
-    /// tap where they are drawn instead.
+    /// Settings and list rows report `isHittable == false` to XCUI even when visible; tap
+    /// where they are drawn instead. A missing element has a zero frame, which would tap the
+    /// screen corner; the assertions keep that from passing as a silent stray tap.
     func tapCenter(of element: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "Missing tap target")
+        let frame = element.frame
+        XCTAssertTrue(frame.width > 0 && frame.height > 0, "Tap target has no frame")
         app.coordinate(withNormalizedOffset: CGVector(
-            dx: element.frame.midX / app.frame.width,
-            dy: element.frame.midY / app.frame.height
+            dx: frame.midX / app.frame.width,
+            dy: frame.midY / app.frame.height
         )).tap()
     }
 

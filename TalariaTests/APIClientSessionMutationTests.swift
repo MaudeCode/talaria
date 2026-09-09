@@ -5,6 +5,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testPostRequestsEncodeSnakeCaseBody() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/pin")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -33,6 +34,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testBranchSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/branch")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -60,6 +62,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testBranchSessionIncludesKeepCountForMessageFork() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/branch")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -87,6 +90,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testCompressSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/compress")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -144,6 +148,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testUndoSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/undo")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -169,6 +174,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testRetrySessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/retry")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -194,6 +200,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testSessionMetadataRequestOmitsMessageLimitWhenNil() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
@@ -222,6 +229,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testMoveSessionBuildsExpectedBodyAndDecodesMovedSession() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/move")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -251,6 +259,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testMoveSessionToNoProjectOmitsProjectID() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/move")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -278,6 +287,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         // Upstream refuses a move while the session streams: 503 + JSON error payload.
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/move")
+            XCTAssertEqual(request.httpMethod, "POST")
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: 503,
@@ -325,6 +335,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testArchiveSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/archive")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -351,6 +362,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     func testUnarchiveSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/archive")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]

@@ -68,15 +68,15 @@ struct TalariaCommands: Commands {
     @FocusedValue(\.talariaSceneActions) private var actions
 
     var body: some Commands {
+        // iOS only materialises the group that replaces a standard one, so both commands
+        // live here: an `after: .newItem` group never registered its key command.
         CommandGroup(replacing: .newItem) {
             Button("New Chat") {
                 actions?.createNewChat()
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(actions?.canCreateNewChat != true)
-        }
 
-        CommandGroup(after: .newItem) {
             Button("Search Sessions") {
                 actions?.searchSessions()
             }
@@ -104,6 +104,9 @@ struct TalariaApp: App {
         let arguments = ProcessInfo.processInfo.arguments
 
         #if DEBUG
+        if ShareExtensionUITestHost.resetsSharedState {
+            ShareExtensionUITestHost.resetSharedState()
+        }
         let fixture = arguments.contains(UITestFixtureEnvironment.launchArgument)
             ? UITestFixtureEnvironment.make()
             : nil
@@ -131,8 +134,11 @@ struct TalariaApp: App {
         _authManager = State(initialValue: liveAuthManager())
         #endif
 
+        // Registering only installs the launch handler, so the fixture needs it too: backgrounding
+        // the app submits a refresh request from `ContentView`, and submitting one whose
+        // identifier was never registered aborts the process (TAL-77).
+        ProviderQuotaBackgroundRefresh.register()
         if !usesUITestFixture {
-            ProviderQuotaBackgroundRefresh.register()
             ProviderQuotaBackgroundRefresh.schedule()
         }
 
@@ -178,6 +184,13 @@ struct TalariaApp: App {
                     draftStore: uiTestFixture?.draftStore
                 )
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
+                    // TAL-81: overlaid rather than a root of its own, so the share
+                    // extension's `talaria://share` open lands on the real import path.
+                    .overlay(alignment: .top) {
+                        if ShareExtensionUITestHost.isActive {
+                            ShareExtensionUITestHostBar()
+                        }
+                    }
             }
             #else
             ContentView(authManager: authManager)
@@ -198,7 +211,14 @@ enum ProviderQuotaBackgroundRefresh {
         "\(Bundle.main.bundleIdentifier ?? "dev.kil.talaria").provider-quota-refresh"
     }
 
+    /// `BGTaskScheduler.submit` raises — and so aborts the process — when the
+    /// identifier was never registered, and the UI-test fixture deliberately
+    /// registers nothing. Backgrounding it used to crash the app through
+    /// `ContentView`'s scene-phase hook (TAL-75).
+    private static var isRegistered = false
+
     static func register() {
+        isRegistered = true
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             Task { @MainActor in
                 guard let refreshTask = task as? BGAppRefreshTask else {
@@ -211,7 +231,8 @@ enum ProviderQuotaBackgroundRefresh {
     }
 
     static func schedule() {
-        guard let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return }
+        guard isRegistered,
+              let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return }
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
         try? BGTaskScheduler.shared.submit(request(credentials: credentials, now: Date()))
     }

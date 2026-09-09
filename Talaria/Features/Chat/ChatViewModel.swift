@@ -287,6 +287,13 @@ final class ChatViewModel {
     private var isRefreshingCompletedResponseTitle = false
     private var activeStreamReplayChannels = ActiveStreamReplayChannels()
     private var activeStreamReplayMatchedPrefixLength = 0
+    /// Unmatched tail of the assistant text already received, cached while an armed
+    /// replay keeps matching in order (TAL-75). While every replayed token dedups to
+    /// nothing the received text cannot change, so the tail stays valid and each token
+    /// costs its own length instead of a rebuild and full traversal of the response so
+    /// far. `receivedUTF8Count` is the size the tail was built for; any other mismatch
+    /// means something rewrote the message, and the exact comparison runs instead.
+    private var activeStreamReplayTokenRemainder: (unmatched: Substring, receivedUTF8Count: Int)?
     private var activeStreamReplayMatchedInterimLength = 0
     private var activeStreamReplayMatchedReasoningLength = 0
     private var activeStreamReplayToolMatchIndex = 0
@@ -565,6 +572,7 @@ final class ChatViewModel {
         // stale. Reset only the counters — the replay connection may still be live,
         // so dedup must stay armed.
         activeStreamReplayMatchedPrefixLength = 0
+        activeStreamReplayTokenRemainder = nil
         activeStreamReplayMatchedReasoningLength = 0
     }
 
@@ -4988,12 +4996,26 @@ final class ChatViewModel {
             pendingReasoningTitles = []
         }
 
-        // Replay dedup needs the effective content (flushed + pending). Ordinary
-        // streaming skips that full-string construction and appends directly.
+        // Replay dedup needs the effective content (flushed + pending), which the
+        // cached tail avoids rebuilding while a replay keeps matching in order.
+        // Ordinary streaming skips both and appends directly.
         let messageID = ensureStreamingAssistantMessage()
         let remainder: String
         if activeStreamReplayChannels.token {
             let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
+            let receivedUTF8Count = flushedContent.utf8.count + pendingAssistantTokenText.utf8.count
+            if let cached = activeStreamReplayTokenRemainder,
+               cached.receivedUTF8Count == receivedUTF8Count,
+               cached.unmatched.hasPrefix(token) {
+                activeStreamReplayMatchedPrefixLength += token.count
+                activeStreamReplayTokenRemainder = (
+                    cached.unmatched.dropFirst(token.count),
+                    receivedUTF8Count
+                )
+                return false
+            }
+
+            activeStreamReplayTokenRemainder = nil
             remainder = deduplicatedReplayToken(
                 token,
                 existingContent: flushedContent + pendingAssistantTokenText
@@ -5115,6 +5137,10 @@ final class ChatViewModel {
         let expectedReplayRemainder = String(existingContent.dropFirst(matchedPrefixLength))
         if expectedReplayRemainder.hasPrefix(token) {
             activeStreamReplayMatchedPrefixLength = matchedPrefixLength + token.count
+            activeStreamReplayTokenRemainder = (
+                expectedReplayRemainder.dropFirst(token.count),
+                existingContent.utf8.count
+            )
             return ""
         }
 
@@ -5207,6 +5233,7 @@ final class ChatViewModel {
     private func resetActiveStreamReplayTokenState() {
         disarmReplayChannel(\.token)
         activeStreamReplayMatchedPrefixLength = 0
+        activeStreamReplayTokenRemainder = nil
     }
 
     private func flushPinnedLocalNoticesToTranscript() {
@@ -5732,6 +5759,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     func streamCoordinatorDidStartConnection(isReplay: Bool) {
         activeStreamReplayChannels.arm(isReplay)
         activeStreamReplayMatchedPrefixLength = 0
+        activeStreamReplayTokenRemainder = nil
         activeStreamReplayMatchedInterimLength = 0
         activeStreamReplayMatchedReasoningLength = 0
         activeStreamReplayToolMatchIndex = 0
@@ -5741,6 +5769,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     func streamCoordinatorDidResetRecoveryState() {
         activeStreamReplayChannels.arm(false)
         activeStreamReplayMatchedPrefixLength = 0
+        activeStreamReplayTokenRemainder = nil
         activeStreamReplayMatchedInterimLength = 0
         activeStreamReplayMatchedReasoningLength = 0
         activeStreamReplayToolMatchIndex = 0

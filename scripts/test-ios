@@ -71,6 +71,10 @@ typeset -a test_filters
 for selector in "$@"; do
     test_filters+=("-only-testing:$selector")
 done
+# The fuzz soak class reruns the PR fuzz properties at a far larger seed budget
+# and belongs to the scheduled Fuzz Soak workflow. Skip it in unfiltered runs,
+# matching PR CI; naming it as a selector still runs it.
+(( ${#test_filters} )) || test_filters+=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
 
 typeset -a contract_settings
 if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then

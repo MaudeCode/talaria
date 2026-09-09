@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000022 /* ShareExtensionUITests.swift */; };
+		D81000000000000000000013 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
+		D81000000000000000000011 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
+		D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000002 /* ShareExtensionUITestHost.swift */; };
 		05814DEA5DE4690F730B1E15 /* InsightsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 931EC010A2D940B0E42287A4 /* InsightsViewModel.swift */; };
 		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
@@ -252,6 +256,8 @@
 		C04600000000000000000003 /* ChatStreamCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */; };
 		C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */; };
 		C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000004 /* StreamReconnectContractTests.swift */; };
+		C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000106 /* PerformanceBudgetTests.swift */; };
+		C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */; };
 		1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */; };
 		C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000101 /* ApprovalPromptState.swift */; };
 		C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000102 /* ProfileSwitchOutcome.swift */; };
@@ -318,6 +324,7 @@
 		031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031031031031031031031004 /* MarkdownMathRendererTests.swift */; };
 		D0M1C0000000000000000009 /* MarkdownMathLayoutCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */; };
 		C0DE34000000000000000003 /* TranscriptMediaParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000004 /* TranscriptMediaParserTests.swift */; };
+		FA85000000000000000001 /* UntrustedInputFuzzTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA85000000000000000002 /* UntrustedInputFuzzTests.swift */; };
 		C0DE3400000000000000000B /* TranscriptMediaPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */; };
 		C0DE12000000000000000003 /* TranscriptLinkPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */; };
 		1A2B3C4D5E6F7000000000DC /* SSEClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */; };
@@ -618,6 +625,7 @@
 		A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */; };
 		A04500000000000000000007 /* TalariaLiveActivityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A04500000000000000000017 /* TalariaLiveActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A04500000000000000000008 /* LiveActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000018 /* LiveActivityTests.swift */; };
+		5DCEE3D4CBCD285BB2B1D82F /* SkillLinkedFileSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADA53DCCAE85A01103E582A /* SkillLinkedFileSelectionTests.swift */; };
 		2BE8F2B38F094C4C9EB18301 /* SkillsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE8F2B38F094C4C9EB18300 /* SkillsViewModelTests.swift */; };
 		22AB000000000000000000B3 /* WorkspaceRegistryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F3 /* WorkspaceRegistryViewModelTests.swift */; };
 		36CD9EF0B0734E5F8C28BB92 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA59130ED4141049177576C /* SlashCommand.swift */; };
@@ -641,6 +649,7 @@
 		A19000000000000000000001 /* TalariaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* TalariaUITests.swift */; };
 		C17300000000000000000001 /* TalariaCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17300000000000000000011 /* TalariaCompletionStore.swift */; };
 		A19000000000000000000101 /* AgentPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000102 /* AgentPanelUITests.swift */; };
+		A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000104 /* AppEntryPointUITests.swift */; };
 		D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
 		D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
 		D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
@@ -657,6 +666,7 @@
 		D74A00000000000000000019 /* VisualReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000003 /* VisualReference.swift */; };
 		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
 		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
+		A19000000000000000000111 /* PerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000112 /* PerformanceUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -706,6 +716,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D81000000000000000000022 /* ShareExtensionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITests.swift; sourceTree = "<group>"; };
+		D81000000000000000000012 /* ShareOpenFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareOpenFixture.swift; sourceTree = "<group>"; };
+		D81000000000000000000002 /* ShareExtensionUITestHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITestHost.swift; sourceTree = "<group>"; };
 		0485E1E1FFB64A24BB729CD4 /* SlashCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandTests.swift; sourceTree = "<group>"; };
 		351C0F1600000000000000A1 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Shared.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000301 /* ServerAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAccount.swift; sourceTree = "<group>"; };
@@ -728,6 +741,8 @@
 		1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A19000000000000000000002 /* TalariaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000102 /* AgentPanelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelUITests.swift; sourceTree = "<group>"; };
+		A19000000000000000000104 /* AppEntryPointUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntryPointUITests.swift; sourceTree = "<group>"; };
+		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
@@ -927,6 +942,8 @@
 		C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStreamCoordinatorTests.swift; sourceTree = "<group>"; };
 		C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedSSEStreamFixture.swift; sourceTree = "<group>"; };
 		C22600000000000000000004 /* StreamReconnectContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamReconnectContractTests.swift; sourceTree = "<group>"; };
+		C22600000000000000000106 /* PerformanceBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceBudgetTests.swift; sourceTree = "<group>"; };
+		C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayCatchUpPerformanceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		C107T0000000000000000101 /* ApprovalPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalPromptState.swift; sourceTree = "<group>"; };
 		C107T0000000000000000102 /* ProfileSwitchOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitchOutcome.swift; sourceTree = "<group>"; };
@@ -993,6 +1010,7 @@
 		031031031031031031031004 /* MarkdownMathRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMathRendererTests.swift; sourceTree = "<group>"; };
 		D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMathLayoutCacheTests.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000004 /* TranscriptMediaParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaParserTests.swift; sourceTree = "<group>"; };
+		FA85000000000000000002 /* UntrustedInputFuzzTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UntrustedInputFuzzTests.swift; sourceTree = "<group>"; };
 		C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptLinkPreviewTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClientTests.swift; sourceTree = "<group>"; };
@@ -1223,6 +1241,7 @@
 		1A2B3C4D5E6F70000000213 /* SkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000215 /* SkillsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000301 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		9ADA53DCCAE85A01103E582A /* SkillLinkedFileSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFileSelectionTests.swift; sourceTree = "<group>"; };
 		2BE8F2B38F094C4C9EB18300 /* SkillsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsViewModelTests.swift; sourceTree = "<group>"; };
 		22AB000000000000000000F3 /* WorkspaceRegistryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRegistryViewModelTests.swift; sourceTree = "<group>"; };
 		1AB43F55AB4F4262963E6A6E /* SlashCommandCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandCatalog.swift; sourceTree = "<group>"; };
@@ -1419,8 +1438,11 @@
 		A19000000000000000000004 /* TalariaUITests */ = {
 			isa = PBXGroup;
 			children = (
+				D81000000000000000000022 /* ShareExtensionUITests.swift */,
 				A19000000000000000000002 /* TalariaUITests.swift */,
 				A19000000000000000000102 /* AgentPanelUITests.swift */,
+				A19000000000000000000104 /* AppEntryPointUITests.swift */,
+				A19000000000000000000112 /* PerformanceUITests.swift */,
 			);
 			path = TalariaUITests;
 			sourceTree = "<group>";
@@ -1518,6 +1540,8 @@
 				1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */,
 				C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */,
 				C22600000000000000000004 /* StreamReconnectContractTests.swift */,
+				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
+				C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */,
 				C22300000000000000000004 /* CompressionAnchorResolverTests.swift */,
 				C21200000000000000000004 /* StreamingWordDrainTests.swift */,
 				C21200000000000000000006 /* ChatViewModelStreamingPaceTests.swift */,
@@ -1555,6 +1579,7 @@
 				6809B8F1391248A4AA77C453 /* SlashCommandExecutorTests.swift */,
 				A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */,
 				C5A0D8F5502048B6B9258B00 /* InsightsViewModelTests.swift */,
+				9ADA53DCCAE85A01103E582A /* SkillLinkedFileSelectionTests.swift */,
 				2BE8F2B38F094C4C9EB18300 /* SkillsViewModelTests.swift */,
 				26AB000000000000000000F3 /* APIClientProvidersTests.swift */,
 				A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */,
@@ -1567,6 +1592,7 @@
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
 				D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */,
 				C0DE34000000000000000004 /* TranscriptMediaParserTests.swift */,
+				FA85000000000000000002 /* UntrustedInputFuzzTests.swift */,
 				C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */,
 				C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
@@ -2064,6 +2090,7 @@
 		1A2B3C4D5E6F7000000000FA /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				D81000000000000000000002 /* ShareExtensionUITestHost.swift */,
 				1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */,
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
@@ -2083,6 +2110,7 @@
 		B5A100000000000000000050 /* Share */ = {
 			isa = PBXGroup;
 			children = (
+				D81000000000000000000012 /* ShareOpenFixture.swift */,
 				B5A100000000000000000010 /* SharedDraftStore.swift */,
 			);
 			path = Share;
@@ -2451,6 +2479,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D81000000000000000000011 /* ShareOpenFixture.swift in Sources */,
+				D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */,
 				1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* ContentView.swift in Sources */,
 				1A2B3C4D5E6F700000000338 /* TalariaAppIntents.swift in Sources */,
@@ -2984,6 +3014,8 @@
 				1A2B3C4D5E6F7000000000DC /* SSEClientTests.swift in Sources */,
 				C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */,
 				C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */,
+				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,
+				C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */,
 				C22300000000000000000003 /* CompressionAnchorResolverTests.swift in Sources */,
 				C21200000000000000000003 /* StreamingWordDrainTests.swift in Sources */,
 				C21200000000000000000005 /* ChatViewModelStreamingPaceTests.swift in Sources */,
@@ -3021,6 +3053,7 @@
 				0D82B28493C6401D98DA9C0E /* SlashCommandExecutorTests.swift in Sources */,
 				A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */,
 				C5A0D8F5502048B6B9258B01 /* InsightsViewModelTests.swift in Sources */,
+				5DCEE3D4CBCD285BB2B1D82F /* SkillLinkedFileSelectionTests.swift in Sources */,
 				2BE8F2B38F094C4C9EB18301 /* SkillsViewModelTests.swift in Sources */,
 				26AB000000000000000000B3 /* APIClientProvidersTests.swift in Sources */,
 				A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */,
@@ -3035,6 +3068,7 @@
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
 				D0M1C0000000000000000009 /* MarkdownMathLayoutCacheTests.swift in Sources */,
 				C0DE34000000000000000003 /* TranscriptMediaParserTests.swift in Sources */,
+				FA85000000000000000001 /* UntrustedInputFuzzTests.swift in Sources */,
 				C0DE3400000000000000000B /* TranscriptMediaPreviewViewModelTests.swift in Sources */,
 				C0DE12000000000000000003 /* TranscriptLinkPreviewTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
@@ -3050,8 +3084,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */,
 				A19000000000000000000001 /* TalariaUITests.swift in Sources */,
 				A19000000000000000000101 /* AgentPanelUITests.swift in Sources */,
+				A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */,
+				A19000000000000000000111 /* PerformanceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3059,6 +3096,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D81000000000000000000013 /* ShareOpenFixture.swift in Sources */,
 				B5A100000000000000000002 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000003 /* ShareViewController.swift in Sources */,
 				B5A100000000000000000007 /* ShareInputReader.swift in Sources */,

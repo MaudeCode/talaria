@@ -8,9 +8,10 @@
 #
 # Uses no repository secrets, so PRs from forks get green CI too.
 #
-# Code signing is disabled (CODE_SIGNING_ALLOWED=NO) — fine for compile/test
-# runs per TESTFLIGHT.md; the "simulator installs must be signed" rule applies
-# to manual simulator testing, not CI.
+# Builds are signed ad hoc (CODE_SIGN_IDENTITY=-), which needs no certificate,
+# no profile and no secrets, but does embed entitlements. Without them the app
+# group is unavailable, so the share extension cannot hand anything to the app
+# and ShareExtensionUITests would be testing nothing (TAL-81).
 
 name: CI
 
@@ -76,6 +77,16 @@ jobs:
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
       TEST_WORKER_COUNT: 2
+      # Measurement-only UI classes (TAL-75). They assert no behaviour, and
+      # together they add several minutes of scrolling and relaunching, so pull
+      # requests skip them and every push to main runs and records them. The
+      # unit-level budgets (replay catch-up, dense Kanban, image preview) are
+      # fast and deterministic, so they stay in the pull-request suite.
+      PERFORMANCE_UI_TEST_CLASSES: >-
+        TalariaUITests/SidebarPerformanceUITests
+        TalariaUITests/LaunchPerformanceUITests
+        TalariaUITests/TranscriptPerformanceUITests
+        TalariaUITests/NavigationPerformanceUITests
 
     steps:
       - name: Check out
@@ -132,7 +143,11 @@ jobs:
             -disableAutomaticPackageResolution \
             -showBuildTimingSummary \
             APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER=
           duration_seconds=$((SECONDS - start_seconds))
           echo "Build-for-testing duration: ${duration_seconds}s"
           echo "### PR CI timing" >> "${GITHUB_STEP_SUMMARY}"
@@ -144,9 +159,13 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          test_options=()
+          # The fuzz soak class reruns the PR fuzz properties at a far larger
+          # seed budget; the scheduled Fuzz Soak workflow owns it (TAL-85).
+          test_options=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test_options+=("-skip-testing:TalariaUITests/SidebarPerformanceUITests")
+            for performance_class in ${PERFORMANCE_UI_TEST_CLASSES}; do
+              test_options+=("-skip-testing:${performance_class}")
+            done
           fi
           xcodebuild test-without-building \
             -project "${PROJECT_PATH}" \
@@ -161,12 +180,16 @@ jobs:
             -parallel-testing-worker-count "${TEST_WORKER_COUNT}" \
             "${test_options[@]}" \
             APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER=
           duration_seconds=$((SECONDS - start_seconds))
           echo "Test-without-building duration: ${duration_seconds}s"
           echo "- Test without building (${TEST_WORKER_COUNT} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            echo "- Sidebar hitch performance: main-push CI" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- Performance UI budgets: main-push CI" >> "${GITHUB_STEP_SUMMARY}"
           fi
 
       - name: Report slowest tests
@@ -219,6 +242,67 @@ jobs:
 
       - name: Reject skipped UI tests
         run: scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"
+
+      # Performance budgets are only useful against previous runs, so every run
+      # keeps its measurements as an artifact and prints them into the summary.
+      - name: Record performance metrics
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [[ ! -d "${RESULT_BUNDLE_PATH}" ]]; then
+            echo "No result bundle is available; skipping performance reporting."
+            exit 0
+          fi
+
+          xcrun xcresulttool get test-results metrics \
+            --path "${RESULT_BUNDLE_PATH}" \
+            --compact > performance-metrics.json
+
+          python3 - <<'PY' | tee performance-metrics.txt
+          import json
+
+          with open("performance-metrics.json", encoding="utf-8") as metrics_file:
+              tests = json.load(metrics_file)
+
+          if not tests:
+              print("No performance metrics were recorded.")
+
+          for test in sorted(tests, key=lambda test: test["testIdentifier"]):
+              print(test["testIdentifier"])
+              for run in test.get("testRuns", []):
+                  for metric in run.get("metrics", []):
+                      measurements = metric.get("measurements") or []
+                      if not measurements:
+                          continue
+                      ordered = sorted(measurements)
+                      median = ordered[len(ordered) // 2]
+                      spread = ordered[-1] - ordered[0]
+                      print(
+                          f"    {metric['displayName']:<40}"
+                          f" median {median:>16.3f} {metric['unitOfMeasurement']}"
+                          f"  (n={len(measurements)}, spread {spread:.3f})"
+                      )
+          PY
+
+          {
+            echo ""
+            echo "#### Performance metrics"
+            echo '```text'
+            cat performance-metrics.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload performance metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-metrics
+          path: |
+            performance-metrics.json
+            performance-metrics.txt
+          retention-days: 90
+          if-no-files-found: ignore
 
       - name: Upload test results on failure
         if: failure()

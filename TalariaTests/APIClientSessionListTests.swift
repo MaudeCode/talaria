@@ -5,6 +5,7 @@ final class APIClientSessionListTests: APIClientTestCase {
     func testSessionStatusDecodesPinnedAgentRunningShape() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/status")
+            XCTAssertEqual(request.httpMethod, "GET")
             return apiTestJSONResponse(
                 #"{"session_id":"contract-session","agent_running":true}"#,
                 for: request
@@ -73,6 +74,7 @@ final class APIClientSessionListTests: APIClientTestCase {
     func testSessionsDecodesSnakeCaseResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/sessions")
+            XCTAssertEqual(request.httpMethod, "GET")
             // The default fetch must stay parameterless so the main list request
             // (and its server-side ordering) is unchanged (issue #17).
             XCTAssertNil(request.url?.query)
@@ -111,6 +113,7 @@ final class APIClientSessionListTests: APIClientTestCase {
     func testSessionsDecodesDelegationAndReadOnlyMetadataTolerantly() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/sessions")
+            XCTAssertEqual(request.httpMethod, "GET")
             return apiTestJSONResponse("""
             {
               "sessions": [
@@ -270,6 +273,7 @@ final class APIClientSessionListTests: APIClientTestCase {
     func testSessionSearchDecodesEmptyQueryResponseWithoutQueryOrCount() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/sessions/search")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })

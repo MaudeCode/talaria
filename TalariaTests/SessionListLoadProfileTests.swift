@@ -700,6 +700,7 @@ extension SessionListMutationTests {
                 }
                 """, for: request)
             case "/api/session/new":
+                XCTAssertEqual(request.httpMethod, "POST")
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["workspace"] as? String, "/tmp/workspace")
                 XCTAssertNil(body["model"] as? String)

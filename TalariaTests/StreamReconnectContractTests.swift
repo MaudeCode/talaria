@@ -26,7 +26,7 @@ final class StreamReconnectContractTests: APIClientTestCase {
                 .init(.streamEnd)
             ]
         ])
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeScriptedChatViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
                 return apiTestJSONResponse(
@@ -88,7 +88,7 @@ final class StreamReconnectContractTests: APIClientTestCase {
                 .init(.transportError("The network connection was lost."))
             ]
         ])
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeScriptedChatViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
                 return apiTestJSONResponse(
@@ -170,7 +170,7 @@ final class StreamReconnectContractTests: APIClientTestCase {
                 .init(.streamEnd)
             ]
         ])
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeScriptedChatViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
                 return apiTestJSONResponse(
@@ -226,7 +226,7 @@ final class StreamReconnectContractTests: APIClientTestCase {
         let streamClient = ScriptedSSEStreamingClient(connectionScripts: [[
             .init(.token(" continuation"), lastEventID: "stream-existing:1")
         ]])
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeScriptedChatViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
                 return self.jsonResponse(
@@ -289,7 +289,7 @@ final class StreamReconnectContractTests: APIClientTestCase {
         let streamClient = ScriptedSSEStreamingClient(connectionScripts: [[
             .init(.token("new response"), lastEventID: "stream-existing:1")
         ]])
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeScriptedChatViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
                 return self.jsonResponse(
@@ -360,7 +360,7 @@ final class StreamReconnectContractTests: APIClientTestCase {
             .init(.token("Partial"), lastEventID: "stream-123:1"),
             .init(.transportError("Connection lost"))
         ]])
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+        let viewModel = try makeScriptedChatViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
                 return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
@@ -400,47 +400,6 @@ final class StreamReconnectContractTests: APIClientTestCase {
     }
 
     // MARK: - Helpers
-
-    @MainActor
-    private func makeViewModel(
-        streamClient: ScriptedSSEStreamingClient,
-        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) throws -> ChatViewModel {
-        MockURLProtocol.requestHandler = handler
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        let urlSession = URLSession(configuration: configuration)
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
-        let client = APIClient(baseURL: server, session: urlSession)
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let session = try decoder.decode(
-            SessionSummary.self,
-            from: Data("""
-            {
-              "session_id": "session-abc",
-              "title": "Planning",
-              "workspace": "/tmp/workspace"
-            }
-            """.utf8)
-        )
-
-        let viewModel = ChatViewModel(
-            session: session,
-            server: server,
-            client: client,
-            streamClient: streamClient,
-            approvalStreamClient: ScriptedSSEStreamingClient(),
-            clarifyStreamClient: ScriptedSSEStreamingClient(),
-            btwStreamClient: ScriptedSSEStreamingClient()
-        )
-        streamClient.flushPendingStreamingContent = { [weak viewModel] in
-            viewModel?.flushPendingStreamingContent()
-        }
-        return viewModel
-    }
 
     @MainActor
     private func assistantContents(of viewModel: ChatViewModel) -> [String] {
