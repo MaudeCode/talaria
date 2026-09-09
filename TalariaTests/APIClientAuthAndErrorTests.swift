@@ -244,6 +244,25 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(APIError.http(statusCode: 403, body: body).serverMessage, reason)
     }
 
+    /// The bound counts Unicode scalars: a reason that is one extended grapheme
+    /// cluster ("e" plus thousands of combining marks) would otherwise report
+    /// `count == 1` and reach the alert whole.
+    func testBoundedServerMessageCapsSingleGraphemeClusterReasons() throws {
+        let reason = "e" + String(repeating: "\u{0301}", count: 5_000)
+        let error = APIError.http(statusCode: 403, body: #"{"error":"\#(reason)"}"#)
+        let prefix = "The server refused the request: "
+        let message = error.localizedDescription
+
+        let displayedReason = try XCTUnwrap(
+            message.hasPrefix(prefix) ? String(message.dropFirst(prefix.count)) : nil,
+            "403 message did not use the structured-reason copy: \(message)"
+        )
+
+        XCTAssertEqual(displayedReason.unicodeScalars.count, 200)
+        XCTAssertFalse(message.contains(reason))
+        XCTAssertEqual(error.serverMessage, reason, "Diagnostics keep the untruncated reason.")
+    }
+
     func testUnauthorizedKeepsPasswordGuidanceAndLogCategory() {
         XCTAssertEqual(
             APIError.unauthorized.localizedDescription,

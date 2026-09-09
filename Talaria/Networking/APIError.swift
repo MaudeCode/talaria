@@ -208,11 +208,13 @@ private extension APIError {
     }
 
     /// Server text that reaches an alert, capped so a long or hostile body cannot
-    /// crowd out the guidance around it. Classification helpers keep reading the
-    /// untruncated message.
+    /// crowd out the guidance around it. The cap counts Unicode scalars, so a
+    /// single grapheme cluster carrying thousands of combining marks is bounded
+    /// too. Classification helpers keep reading the untruncated message.
     static func boundedServerMessage(from body: String?) -> String? {
         guard let message = serverErrorMessage(from: body) else { return nil }
-        return message.count > 200 ? String(message.prefix(199)) + "…" : message
+        guard message.unicodeScalars.count > 200 else { return message }
+        return String(String.UnicodeScalarView(message.unicodeScalars.prefix(199))) + "…"
     }
 
     static func serverErrorPayload(from body: String?) -> ErrorPayload? {
