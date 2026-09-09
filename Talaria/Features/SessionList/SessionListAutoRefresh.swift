@@ -60,3 +60,37 @@ enum SessionListAutoRefresh {
         }
     }
 }
+
+/// Serializes the full-list refresh triggers that share one owner.
+///
+/// A trigger arriving while a load is in flight is not discarded: the in-flight
+/// request may have been sent before the change the trigger is reacting to — a
+/// chat the user just left, a pull after a remote rename — so it is not
+/// guaranteed to carry those rows. One follow-up refresh runs after the current
+/// load instead, and every trigger that arrived during it coalesces into that
+/// single follow-up rather than queueing a request each.
+@MainActor
+final class SessionListRefreshQueue {
+    private var hasFollowUp = false
+
+    /// - Parameter isRefreshInFlight: whether a full-list load this queue does
+    ///   not own is already running. The active-row monitor reloads the list on
+    ///   its own 1s cadence, so its request is the one case where the follow-up
+    ///   flag can outlive the loop that would drain it; the next trigger then
+    ///   consumes it as a plain refresh.
+    func run(
+        isRefreshInFlight: () -> Bool,
+        refresh: () async -> Void
+    ) async {
+        guard !isRefreshInFlight() else {
+            hasFollowUp = true
+            return
+        }
+
+        repeat {
+            hasFollowUp = false
+            await refresh()
+            guard !Task.isCancelled else { return }
+        } while hasFollowUp
+    }
+}

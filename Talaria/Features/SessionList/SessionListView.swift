@@ -42,6 +42,7 @@ struct SessionListView: View {
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
+    @State private var refreshQueue = SessionListRefreshQueue()
     @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
@@ -1083,16 +1084,17 @@ struct SessionListView: View {
 
     /// The one path every full-list trigger takes — initial load,
     /// pull-to-refresh, the return refresh, and the automatic refresh loop — so
-    /// this guard is where they are deduplicated. A trigger arriving while a
-    /// list load is in flight is dropped rather than queued: that load is
-    /// already fetching the same rows, and `SessionListViewModel.load` fences
-    /// its own late responses by generation. The active-row monitor takes the
-    /// matching `!isLoading` guard inside `refreshActiveSessionStatesIfNeeded`.
+    /// `refreshQueue` is their single deduplication owner. It keeps two
+    /// equivalent list requests from overlapping while still honouring a trigger
+    /// that arrives mid-load, which the in-flight request may predate. The
+    /// active-row monitor takes the matching `!isLoading` guard inside
+    /// `refreshActiveSessionStatesIfNeeded`.
     private func refreshSessionsAndActiveProfile() async {
-        guard !viewModel.isLoading else { return }
-        await loadSessions()
-        guard !Task.isCancelled else { return }
-        await viewModel.loadActiveProfile()
+        await refreshQueue.run(isRefreshInFlight: { viewModel.isLoading }) {
+            await loadSessions()
+            guard !Task.isCancelled else { return }
+            await viewModel.loadActiveProfile()
+        }
     }
 
     private var sceneActions: TalariaSceneActions {

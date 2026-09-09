@@ -112,6 +112,68 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 1)
     }
 
+    /// A return or pull-to-refresh reacting to a change the in-flight request may
+    /// predate must not be lost, so it runs once the current load finishes.
+    func testTriggerArrivingDuringALoadRunsAsOneFollowUp() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run(isRefreshInFlight: { false }) {
+            refreshCount += 1
+            guard refreshCount == 1 else { return }
+            // The user returns from a chat while this load is still running.
+            await queue.run(isRefreshInFlight: { true }) {
+                XCTFail("a trigger arriving mid-load must not start its own load")
+            }
+        }
+
+        XCTAssertEqual(refreshCount, 2)
+    }
+
+    func testTriggersArrivingDuringALoadCoalesceIntoOneFollowUp() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run(isRefreshInFlight: { false }) {
+            refreshCount += 1
+            guard refreshCount == 1 else { return }
+            for _ in 0..<3 {
+                await queue.run(isRefreshInFlight: { true }) {
+                    XCTFail("a trigger arriving mid-load must not start its own load")
+                }
+            }
+        }
+
+        XCTAssertEqual(refreshCount, 2)
+    }
+
+    func testQuietLoadRunsExactlyOnce() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run(isRefreshInFlight: { false }) { refreshCount += 1 }
+
+        XCTAssertEqual(refreshCount, 1)
+    }
+
+    /// The follow-up is consumed by the load that runs it, so the next trigger
+    /// starts clean instead of inheriting a stale request.
+    func testFollowUpIsNotRepeatedByTheNextTrigger() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run(isRefreshInFlight: { false }) {
+            refreshCount += 1
+            guard refreshCount == 1 else { return }
+            await queue.run(isRefreshInFlight: { true }) {}
+        }
+        XCTAssertEqual(refreshCount, 2)
+
+        await queue.run(isRefreshInFlight: { false }) { refreshCount += 1 }
+
+        XCTAssertEqual(refreshCount, 3)
+    }
+
     // MARK: - Reconciliation and transient failure
 
     func testAutomaticRefreshAdoptsASessionCreatedElsewhere() async throws {
