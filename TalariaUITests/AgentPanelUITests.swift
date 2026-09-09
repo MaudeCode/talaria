@@ -48,19 +48,6 @@ class AgentPanelUITestCase: TalariaUITestCase {
         )
     }
 
-    /// List rows and bar controls report `isHittable == false` to XCUI even when visible, so
-    /// taps go through a coordinate. A missing element has a zero frame, which would tap the
-    /// screen corner instead; the assertions keep that from passing as a silent stray tap.
-    func tapCenter(of element: XCUIElement) {
-        XCTAssertTrue(element.waitForExistence(timeout: 5), "Missing tap target")
-        let frame = element.frame
-        XCTAssertTrue(frame.width > 0 && frame.height > 0, "Tap target has no frame")
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: frame.midX / app.frame.width,
-            dy: frame.midY / app.frame.height
-        )).tap()
-    }
-
     func tapBack(from bar: XCUIElement) {
         let back = bar.buttons["BackButton"]
         XCTAssertTrue(back.waitForExistence(timeout: 5), "The pushed screen offered no Back control")
@@ -70,12 +57,6 @@ class AgentPanelUITestCase: TalariaUITestCase {
     func element(labelled label: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", label))
-            .firstMatch
-    }
-
-    func element(labelContaining text: String) -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS[c] %@", text))
             .firstMatch
     }
 

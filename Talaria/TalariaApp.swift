@@ -68,15 +68,15 @@ struct TalariaCommands: Commands {
     @FocusedValue(\.talariaSceneActions) private var actions
 
     var body: some Commands {
+        // iOS only materialises the group that replaces a standard one, so both commands
+        // live here: an `after: .newItem` group never registered its key command.
         CommandGroup(replacing: .newItem) {
             Button("New Chat") {
                 actions?.createNewChat()
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(actions?.canCreateNewChat != true)
-        }
 
-        CommandGroup(after: .newItem) {
             Button("Search Sessions") {
                 actions?.searchSessions()
             }

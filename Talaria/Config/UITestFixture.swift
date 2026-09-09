@@ -1,4 +1,5 @@
 #if DEBUG
+import AppIntents
 import Foundation
 import UIKit
 
@@ -8,6 +9,13 @@ struct UITestFixtureEnvironment {
     nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
     /// Launches with no saved server so the fixture lands on onboarding.
     nonisolated static let onboardingArgument = "--ui-test-onboarding"
+    /// Runs the "New Chat" App Intent at launch, so a UI test can exercise the real
+    /// intent → `AppIntentRouter` → `ContentView` drain path (TAL-77). XCUITest has no
+    /// supported way to run an App Intent through Shortcuts or Siri deterministically.
+    nonisolated static let newChatIntentArgument = "--ui-test-intent-new-chat"
+    /// Seeds one shared-import draft, so a UI test can exercise the share entry point.
+    nonisolated static let pendingShareArgument = "--ui-test-pending-share"
+    nonisolated static let pendingShareDraft = "FixtureSharedDraft"
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
     nonisolated static var relayCredentials: TalariaRelayCredentials {
         TalariaRelayCredentials(
@@ -65,6 +73,11 @@ struct UITestFixtureEnvironment {
             forKey: ProviderQuotaRefreshInterval.storageKey
         )
 
+        prepareSharedImportInbox()
+        if ProcessInfo.processInfo.arguments.contains(newChatIntentArgument) {
+            Task { _ = try? await NewChatIntent().perform() }
+        }
+
         let keychain = UITestFixtureKeychainStore(serverURL: serverURL)
         let defaultsName = "dev.kil.talaria.ui-test-fixture"
         let defaults = UserDefaults(suiteName: defaultsName)!
@@ -83,6 +96,19 @@ struct UITestFixtureEnvironment {
             client: client,
             draftStore: ChatDraftStore(persistence: UITestFixtureDraftPersistence())
         )
+    }
+}
+
+private extension UITestFixtureEnvironment {
+    /// The shared-import inbox lives in the app group, outside the app's own storage, so a
+    /// draft left by an earlier run would replay into this launch. Drain it first, then seed
+    /// only what this journey asked for.
+    static func prepareSharedImportInbox() {
+        guard let inbox = TalariaShareDraft.containerURL() else { return }
+        // Bounded: a record that cannot be consumed would otherwise spin here.
+        for _ in 0..<20 where (try? TalariaShareDraft.loadPendingImport(from: inbox)) != nil {}
+        guard ProcessInfo.processInfo.arguments.contains(pendingShareArgument) else { return }
+        try? TalariaShareDraft.savePendingDraft(pendingShareDraft, in: inbox)
     }
 }
 
@@ -328,7 +354,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/session":
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
         case "/api/session/new":
-            return json(["session": session(id: "ui-fixture-new-session", title: "New Fixture Chat")])
+            // The title echoes the requested profile so a UI test can see that a
+            // "new chat in <profile>" entry point pinned the session (TAL-77).
+            let requestedProfile = requestJSON(request)["profile"] as? String
+            return json(["session": session(
+                id: "ui-fixture-new-session",
+                title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
+            )])
         case "/api/projects":
             return json(["projects": []])
         case "/api/profiles":
