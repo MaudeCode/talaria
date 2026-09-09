@@ -8,6 +8,13 @@ struct UITestFixtureEnvironment {
     nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
     /// Launches with no saved server so the fixture lands on onboarding.
     nonisolated static let onboardingArgument = "--ui-test-onboarding"
+    /// Scales the deterministic transcript and session list up for the performance
+    /// budgets (TAL-75). The functional fixtures keep the small counts so their
+    /// scrolling and layout assertions stay fast.
+    nonisolated static let denseArgument = "--ui-test-dense"
+    nonisolated static var isDense: Bool {
+        ProcessInfo.processInfo.arguments.contains(denseArgument)
+    }
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
     nonisolated static var relayCredentials: TalariaRelayCredentials {
         TalariaRelayCredentials(
@@ -412,7 +419,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionsResponse() -> Data {
-        let sessions: [[String: Any]] = (0..<18).map { index in
+        let sessionCount = UITestFixtureEnvironment.isDense ? 300 : 18
+        let sessions: [[String: Any]] = (0..<sessionCount).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
@@ -422,7 +430,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse() -> Data {
-        var messages: [[String: Any]] = (0..<48).map { index in
+        let messageCount = UITestFixtureEnvironment.isDense ? 600 : 48
+        var messages: [[String: Any]] = (0..<messageCount).map { index in
             [
                 "role": index.isMultiple(of: 2) ? "user" : "assistant",
                 "content": "Fixture message \(index + 1) contains deterministic transcript content for scrolling.",
@@ -525,7 +534,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         [
             "session_id": id,
             "title": title,
-            "message_count": 48,
+            "message_count": UITestFixtureEnvironment.isDense ? 600 : 48,
             "last_message_at": 2_000_000_000,
             "workspace": "/fixture",
             "model": "fixture-model",
