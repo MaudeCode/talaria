@@ -199,7 +199,11 @@ Recognized variables:
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
 - `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
-- `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`.
+- `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
+  as either the hardware UDID or the CoreDevice identifier from
+  `xcrun devicectl list devices`.
+- `TALARIA_DEVICE_DISCOVERY_ATTEMPTS` and `TALARIA_DEVICE_DISCOVERY_INTERVAL` —
+  bounded retry budget for physical iPhone discovery.
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
 - `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
 
