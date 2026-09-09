@@ -22,6 +22,10 @@ class UntrustedInputFuzzTests: XCTestCase {
     /// Fixed so PR CI explores the same inputs on every run.
     class var baseSeed: UInt64 { 0x7A1A_21A0_0000_0055 }
 
+    /// Deliberately guessable and reproducible by the fragment table, so
+    /// generated names and filenames really do carry the active boundary.
+    fileprivate static let fuzzBoundary = "FuzzBoundary"
+
     /// Per-input wall-clock ceiling. A bounded input that takes longer than
     /// this at a parser boundary is the hang this suite exists to catch, not a
     /// slow machine.
@@ -123,7 +127,7 @@ class UntrustedInputFuzzTests: XCTestCase {
             body["error"] = generator.string()
             body["nested"] = ["password": credential, "inner": generator.string()]
 
-            guard let data = try? JSONSerialization.data(withJSONObject: body),
+            guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
                   let bodyString = String(data: data, encoding: .utf8)
             else {
                 return XCTFail("Generated error body was not serializable (seed \(seed)).")
@@ -153,13 +157,26 @@ class UntrustedInputFuzzTests: XCTestCase {
     // MARK: - Multipart part headers
 
     /// Field names and filenames reach a `Content-Disposition` header verbatim.
-    /// No generated name may add a line, forge a boundary, or unbalance the
+    /// No generated name may add a line, open a delimiter, or unbalance the
     /// quoting of the disposition parameters.
+    ///
+    /// The boundary is the fixed `FuzzBoundary` token the fragment table can
+    /// emit, so names and filenames really do carry the active boundary. A
+    /// delimiter only counts at the start of a line, and CR/LF are escaped out
+    /// of names, so one delimiter line is the invariant. A field *value* is
+    /// sent verbatim and could open a part — what makes that unreachable is the
+    /// fresh per-request boundary, covered by
+    /// `APIClientUploadTests.testUploadBoundariesAreUnguessableAndUniquePerRequest`.
     func testMultipartNamesCannotInjectHeadersOrBoundaries() {
+        var boundaryBearingInputs = 0
+
         forEachSeed { generator, seed in
-            let boundary = "Boundary-\(seed)"
+            let boundary = Self.fuzzBoundary
             let name = generator.string()
             let filename = generator.string()
+            if name.contains(boundary) || filename.contains(boundary) {
+                boundaryBearingInputs += 1
+            }
 
             var textBody = Data()
             textBody.appendMultipart(textField: name, value: "value", boundary: boundary)
@@ -170,18 +187,6 @@ class UntrustedInputFuzzTests: XCTestCase {
                 expectedQuotes: 2,
                 seed: seed,
                 label: "text field \(name.debugDescription)"
-            )
-
-            // A field *value* is intentionally sent verbatim, so it may contain
-            // line breaks. It must still never reproduce the random boundary.
-            let value = generator.string()
-            var valueBody = Data()
-            valueBody.appendMultipart(textField: name, value: value, boundary: boundary)
-            valueBody.appendMultipartClosingBoundary(boundary)
-            XCTAssertEqual(
-                String(decoding: valueBody, as: UTF8.self).components(separatedBy: "--\(boundary)").count - 1,
-                2,
-                "A multipart value forged a boundary delimiter (seed \(seed), \(value.debugDescription))."
             )
 
             var fileBody = Data()
@@ -200,6 +205,12 @@ class UntrustedInputFuzzTests: XCTestCase {
                 label: "file field \(name.debugDescription)/\(filename.debugDescription)"
             )
         }
+
+        XCTAssertGreaterThan(
+            boundaryBearingInputs,
+            0,
+            "No generated name or filename carried the active boundary, so the delimiter check proved nothing."
+        )
     }
 
     // MARK: - Workspace paths
@@ -423,9 +434,9 @@ class UntrustedInputFuzzTests: XCTestCase {
             line: line
         )
         XCTAssertEqual(
-            text.components(separatedBy: "--\(boundary)").count - 1,
+            lines.filter { $0.hasPrefix("--\(boundary)") }.count,
             1,
-            "A multipart name forged an extra boundary delimiter (seed \(seed), \(label)).",
+            "A multipart name opened an extra boundary delimiter (seed \(seed), \(label)).",
             file: file,
             line: line
         )
@@ -505,7 +516,7 @@ private struct FuzzGenerator {
         "http://a.test/x.png", "https://b.test/y", "javascript:alert(1)",
         "data:text/html,x", "```", "`", "$$", "|", "[", "](", ")", "{", "}",
         "\u{1F600}", "e\u{0301}", "\u{200B}", "\u{202E}", "\u{FFFD}",
-        "session_id", "password", "boundary", "\u{FEFF}",
+        "session_id", "password", "FuzzBoundary", "--FuzzBoundary", "\u{FEFF}",
         String(repeating: "A", count: 32), String(repeating: "/", count: 8)
     ]
 
@@ -575,7 +586,11 @@ private struct FuzzGenerator {
     /// Valid JSON, corrupted JSON, or bytes that were never JSON — the three
     /// shapes an untrusted response actually arrives in.
     mutating func payloadData() -> Data {
-        guard let encoded = try? JSONSerialization.data(withJSONObject: jsonObject()) else {
+        // `.sortedKeys` because Swift dictionary iteration order varies between
+        // processes: without it the same seed would serialize differently and
+        // truncate or corrupt a different byte, so a reported seed would not
+        // reproduce its input.
+        guard let encoded = try? JSONSerialization.data(withJSONObject: jsonObject(), options: [.sortedKeys]) else {
             return Data(string().utf8)
         }
 
