@@ -125,6 +125,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
     func testSaveDefaultModelWithProviderQualifiedID() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/default-model")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let data = try XCTUnwrap(apiTestBodyData(from: request))
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -425,6 +426,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
     func testClearPersonalitySendsEmptyName() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/personality/set")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let data = try XCTUnwrap(apiTestBodyData(from: request))
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -717,6 +719,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
     func testCreateProfileSendsOptionalFieldsWithSnakeCaseKeys() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/profile/create")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             let data = try XCTUnwrap(apiTestBodyData(from: request))
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -780,6 +783,7 @@ final class APIClientConfigurationTests: APIClientTestCase {
     func testSettingsBuildsExpectedPathAndDecodesServerVersion() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/settings")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             return apiTestJSONResponse("""
             {
@@ -795,5 +799,39 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertEqual(response.botName, "Hermes")
         XCTAssertEqual(response.webuiVersion, "v0.50.253")
         XCTAssertEqual(response.theme, "system")
+    }
+
+    func testModelCatalogRequestsUseGETAndDecodeGroupsAndLiveProvider() async throws {
+        var observedMethods: [String: String] = [:]
+        let client = makeClient { request in
+            observedMethods[request.url?.path ?? "nil"] = request.httpMethod
+
+            if request.url?.path == "/api/models/live" {
+                return apiTestJSONResponse("""
+                {
+                  "provider": "openai",
+                  "models": [{"id": "gpt-5.4", "label": "GPT-5.4"}],
+                  "count": 1
+                }
+                """, for: request)
+            }
+
+            return apiTestJSONResponse("""
+            {
+              "default_model": "gpt-5.4",
+              "active_provider": "openai",
+              "groups": [{"name": "OpenAI", "provider_id": "openai"}]
+            }
+            """, for: request)
+        }
+
+        let catalog = try await client.models()
+        let live = try await client.modelsLive()
+
+        XCTAssertEqual(observedMethods, ["/api/models": "GET", "/api/models/live": "GET"])
+        XCTAssertEqual(catalog.defaultModel, "gpt-5.4")
+        XCTAssertEqual(catalog.activeProvider, "openai")
+        XCTAssertEqual(live.normalizedProvider, "openai")
+        XCTAssertEqual(live.count, 1)
     }
 }

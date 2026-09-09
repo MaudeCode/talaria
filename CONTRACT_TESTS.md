@@ -39,7 +39,8 @@ or stream boundary that failed.
 | Disposable create, detail, status, rename, pin, archive, move, truncate, branch, delete, and cleanup | `scripts/upstream-contract-probe` |
 | SSE content type and controlled `initial`/`approval` events | `scripts/upstream-contract-probe` |
 | Live response values decoded by Talaria's real `Codable` models | `TalariaTests/APIClientSessionListTests.swift` through `scripts/validate-upstream-contract` |
-| Every app endpoint's method, path, and query shape | `TalariaTests/APIEndpointContractTests.swift` |
+| Every app endpoint's URL path and query shape | `TalariaTests/APIEndpointContractTests.swift` |
+| Every endpoint family's HTTP method, read off the `URLRequest` the client builds | `TalariaTests/APIClient*Tests.swift` request-interception tests |
 | Auth/error decoding and native POST headers | `TalariaTests/APIClientAuthAndErrorTests.swift` |
 | Native OIDC capability, callback/state/PKCE/server binding, exchange cookies, expiry, replay, cancellation, and server isolation | `TalariaTests/APIClientAuthAndErrorTests.swift`, `TalariaTests/AuthManagerStateTests.swift` |
 | Session status and mutation response decoding | `TalariaTests/APIClientSessionListTests.swift`, `TalariaTests/APIClientSessionMutationTests.swift` |
@@ -48,6 +49,13 @@ or stream boundary that failed.
 
 The fork-only plural provider quota endpoint remains covered by the Swift
 contract tests and is included in the current fork pin.
+
+`Endpoint` owns only the URL, so the matrix proves path and query and nothing
+else; each call site's method is asserted where that call's request is
+intercepted. The SSE endpoints (`/api/chat/stream`, `/api/approval/stream`,
+`/api/clarify/stream`, `/api/kanban/events/stream`) are the named exception:
+`EventSource` opens them from a URL and never sets `httpMethod`, so they carry
+URLSession's default GET rather than a method Talaria chooses.
 
 Native WebUI OIDC is capability-gated in the current pin. Compatible servers
 report `oidc_native_handoff_enabled` and expose

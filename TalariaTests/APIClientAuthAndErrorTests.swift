@@ -584,6 +584,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     func testNativeOIDCExchangeFailsClosedWhenServerOmitsSessionCookie() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/auth/oidc/native/exchange")
+            XCTAssertEqual(request.httpMethod, "POST")
             return apiTestJSONResponse(#"{"ok":true}"#, for: request)
         }
 
@@ -1304,6 +1305,48 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             .secure: "TRUE",
             .expires: Date().addingTimeInterval(600)
         ]))
+    }
+
+    /// The auth family has no other request-interception test, so a GET/POST
+    /// swap in `APIClient` would otherwise stay green (TAL-122).
+    func testAuthRequestsUseTheirDocumentedMethods() async throws {
+        var observedMethods: [String: String] = [:]
+        let client = makeClient { request in
+            observedMethods[request.url?.path ?? "nil"] = request.httpMethod
+
+            if request.url?.path == "/api/auth/oidc/native/start" {
+                return apiTestJSONResponse("""
+                {
+                  "flow_id": "flow-1",
+                  "authorization_url": "https://idp.test/authorize",
+                  "server_id": "server-1",
+                  "expires_in": 300
+                }
+                """, for: request)
+            }
+
+            return apiTestJSONResponse(#"{"ok": true}"#, for: request)
+        }
+
+        _ = try await client.health()
+        _ = try await client.authStatus()
+        _ = try await client.login(password: "hunter2")
+        _ = try await client.logout()
+        _ = try await client.beginNativeOIDC(
+            callbackURL: try XCTUnwrap(URL(string: "talaria://oidc-callback")),
+            state: "state-1",
+            codeChallenge: "challenge-1"
+        )
+        _ = try await client.cancelNativeOIDC(flowID: "flow-1", state: "state-1")
+
+        XCTAssertEqual(observedMethods, [
+            "/health": "GET",
+            "/api/auth/status": "GET",
+            "/api/auth/login": "POST",
+            "/api/auth/logout": "POST",
+            "/api/auth/oidc/native/start": "POST",
+            "/api/auth/oidc/native/cancel": "POST"
+        ])
     }
 }
 
