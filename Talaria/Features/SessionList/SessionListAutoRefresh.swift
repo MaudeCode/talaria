@@ -61,64 +61,50 @@ enum SessionListAutoRefresh {
     }
 }
 
-/// Serializes the full-list refresh triggers that share one owner.
+/// Serializes every full-list reload onto one owner.
+///
+/// `SessionListViewModel` owns the queue and routes `load` through it, so this
+/// covers the automatic tick, pull-to-refresh, the return refresh, the
+/// active-row monitor and the reloads the view model itself runs after a
+/// mutation. There is no reload outside the queue, so a request can never be
+/// left with no owner to serve it.
 ///
 /// A trigger arriving while a load is in flight is not discarded: the in-flight
 /// request may have been sent before the change the trigger is reacting to — a
 /// chat the user just left, a pull after a remote rename — so it is not
-/// guaranteed to carry those rows. One follow-up refresh runs after the current
-/// load instead, and every trigger that arrived during it coalesces into that
-/// single follow-up rather than queueing a request each.
+/// guaranteed to carry those rows. It records its generation and returns, and
+/// the caller already serving runs one follow-up once the current load
+/// finishes. Every trigger that arrived during it coalesces into that single
+/// follow-up rather than queueing a request each.
 ///
 /// Two rules keep that safe against SwiftUI replacing `.task(id:)` owners, which
 /// foregrounding, returning to the compact list and switching sessions all do:
 ///
-/// - A caller that finds another already serving records its request and returns
-///   rather than waiting, so a refresh can request another without deadlocking
-///   and a caller is never blocked on work it does not own.
-/// - Each refresh runs in a task this queue owns, and the serving loop drains
+/// - A caller that finds another already serving records and returns rather than
+///   waiting, so a reload can request another without deadlocking.
+/// - Each reload runs in a task this queue owns, and the serving loop drains
 ///   every outstanding generation without checking for cancellation. Cancelling
-///   a caller therefore cannot abandon a refresh part-way or strand a request
-///   that the caller it replaced had already been turned away from.
+///   a caller therefore cannot abandon a reload part-way or strand the request
+///   of a caller it replaced.
 @MainActor
 final class SessionListRefreshQueue {
     private var requestedGeneration = 0
     private var servedGeneration = 0
     private var isServing = false
 
-    /// Records a refresh request, then serves it and anything else outstanding
+    /// Records a reload request, then serves it and anything else outstanding
     /// unless another caller is already serving.
-    ///
-    /// - Parameter isRefreshInFlight: whether a full-list load this queue does
-    ///   not own is already running. The active-row monitor reloads the list
-    ///   through `refreshActiveSessionStatesIfNeeded`, which is the one such
-    ///   owner; it calls `drainFollowUp` afterwards.
-    func run(
-        isRefreshInFlight: () -> Bool,
-        refresh: @escaping @MainActor () async -> Void
-    ) async {
+    func run(_ refresh: @escaping @MainActor () async -> Void) async {
         requestedGeneration += 1
-        await serve(isRefreshInFlight: isRefreshInFlight, refresh: refresh)
-    }
 
-    /// Serves whatever is still outstanding after a load this queue does not own.
-    /// Does nothing when every request has already been served.
-    func drainFollowUp(refresh: @escaping @MainActor () async -> Void) async {
-        await serve(isRefreshInFlight: { false }, refresh: refresh)
-    }
-
-    private func serve(
-        isRefreshInFlight: () -> Bool,
-        refresh: @escaping @MainActor () async -> Void
-    ) async {
-        guard !isServing, !isRefreshInFlight() else { return }
+        guard !isServing else { return }
 
         isServing = true
         defer { isServing = false }
 
         while servedGeneration < requestedGeneration {
-            // Read before the refresh starts: a request arriving while it runs
-            // belongs to the next turn of this loop, not to a refresh that was
+            // Read before the reload starts: a request arriving while it runs
+            // belongs to the next turn of this loop, not to a reload that was
             // already in flight without it.
             let serving = requestedGeneration
             await Task { @MainActor in

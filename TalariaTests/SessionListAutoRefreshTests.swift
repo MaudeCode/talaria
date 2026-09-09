@@ -112,163 +112,99 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 1)
     }
 
-    /// A return or pull-to-refresh reacting to a change the in-flight request may
-    /// predate must not be lost, so it runs once the current load finishes.
-    func testTriggerArrivingDuringALoadRunsAsOneFollowUp() async {
+    // MARK: - Refresh queue
+
+    func testQuietReloadRunsExactlyOnce() async {
         let queue = SessionListRefreshQueue()
         var refreshCount = 0
 
-        await queue.run(isRefreshInFlight: { false }) {
-            refreshCount += 1
-            guard refreshCount == 1 else { return }
-            // The user returns from a chat while this load is still running.
-            await queue.run(isRefreshInFlight: { true }) {
-                XCTFail("a trigger arriving mid-load must not start its own load")
-            }
-        }
-
-        XCTAssertEqual(refreshCount, 2)
-    }
-
-    func testTriggersArrivingDuringALoadCoalesceIntoOneFollowUp() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.run(isRefreshInFlight: { false }) {
-            refreshCount += 1
-            guard refreshCount == 1 else { return }
-            for _ in 0..<3 {
-                await queue.run(isRefreshInFlight: { true }) {
-                    XCTFail("a trigger arriving mid-load must not start its own load")
-                }
-            }
-        }
-
-        XCTAssertEqual(refreshCount, 2)
-    }
-
-    func testQuietLoadRunsExactlyOnce() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.run(isRefreshInFlight: { false }) { refreshCount += 1 }
+        await queue.run { refreshCount += 1 }
 
         XCTAssertEqual(refreshCount, 1)
     }
 
-    /// The follow-up is consumed by the load that runs it, so the next trigger
-    /// starts clean instead of inheriting a stale request.
-    func testFollowUpIsNotRepeatedByTheNextTrigger() async {
+    /// A trigger arriving mid-reload is not discarded: the reload in flight may
+    /// predate the change it is reacting to, so one follow-up runs after it.
+    func testRequestArrivingDuringAReloadRunsAsOneFollowUp() async {
         let queue = SessionListRefreshQueue()
         var refreshCount = 0
 
-        await queue.run(isRefreshInFlight: { false }) {
+        await queue.run {
             refreshCount += 1
             guard refreshCount == 1 else { return }
-            await queue.run(isRefreshInFlight: { true }) {}
+            await queue.run { XCTFail("a second caller must not start its own reload") }
+        }
+
+        XCTAssertEqual(refreshCount, 2)
+    }
+
+    func testRequestsArrivingDuringAReloadCoalesceIntoOneFollowUp() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run {
+            refreshCount += 1
+            guard refreshCount == 1 else { return }
+            for _ in 0..<3 {
+                await queue.run { XCTFail("a second caller must not start its own reload") }
+            }
+        }
+
+        XCTAssertEqual(refreshCount, 2)
+    }
+
+    func testFollowUpIsNotRepeatedByTheNextRequest() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run {
+            refreshCount += 1
+            guard refreshCount == 1 else { return }
+            await queue.run {}
         }
         XCTAssertEqual(refreshCount, 2)
 
-        await queue.run(isRefreshInFlight: { false }) { refreshCount += 1 }
+        await queue.run { refreshCount += 1 }
 
         XCTAssertEqual(refreshCount, 3)
     }
 
-    /// The active-row monitor reloads the list outside the queue, so a trigger
-    /// deferred during that reload needs an explicit drain or it waits for the
-    /// next tick.
-    func testFollowUpQueuedDuringAnExternalLoadIsDrained() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        // The monitor's own reload is in flight when the user pulls to refresh.
-        await queue.run(isRefreshInFlight: { true }) {
-            XCTFail("a trigger arriving during an external load must not start its own")
-        }
-        await queue.drainFollowUp { refreshCount += 1 }
-
-        XCTAssertEqual(refreshCount, 1)
-    }
-
-    func testDrainDoesNothingWhenNoFollowUpWasQueued() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.drainFollowUp { refreshCount += 1 }
-
-        XCTAssertEqual(refreshCount, 0)
-    }
-
-    func testDrainedFollowUpIsNotRepeated() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.run(isRefreshInFlight: { true }) {}
-        await queue.drainFollowUp { refreshCount += 1 }
-        await queue.drainFollowUp { refreshCount += 1 }
-
-        XCTAssertEqual(refreshCount, 1)
-    }
-
     /// SwiftUI replaces these `.task(id:)` owners constantly. Cancelling one must
-    /// not abandon the refresh it started, because the request it was serving
+    /// not abandon the reload it started, because the request it was serving
     /// would then have no owner left to finish it.
-    func testCancellationDoesNotAbandonARefreshPartWay() async {
+    func testCancellationDoesNotAbandonAReloadPartWay() async {
         let queue = SessionListRefreshQueue()
-        var completedRefreshes = 0
+        var completedReloads = 0
 
         let caller = Task {
-            await queue.run(isRefreshInFlight: { false }) {
+            await queue.run {
                 withUnsafeCurrentTask { $0?.cancel() }
                 await Task.yield()
-                completedRefreshes += 1
+                completedReloads += 1
             }
         }
         caller.cancel()
         await caller.value
 
-        XCTAssertEqual(completedRefreshes, 1)
+        XCTAssertEqual(completedReloads, 1)
     }
 
     /// A replacement owner records its request and is turned away, so the caller
     /// already serving has to drain it — including after its own task is
     /// cancelled, which is exactly what replacing it does.
-    func testServingCallerDrainsARequestFromATurnedAwayCallerDespiteCancellation() async {
+    func testServingCallerDrainsATurnedAwayRequestDespiteCancellation() async {
         let queue = SessionListRefreshQueue()
         var refreshCount = 0
 
         let owner = Task {
-            await queue.run(isRefreshInFlight: { false }) {
+            await queue.run {
                 refreshCount += 1
                 guard refreshCount == 1 else { return }
-                // The replacement `.task` requests a refresh mid-flight.
-                await queue.run(isRefreshInFlight: { false }) {
-                    XCTFail("a turned-away caller must not start its own refresh")
-                }
+                await queue.run { XCTFail("a turned-away caller must not start its own reload") }
             }
         }
         owner.cancel()
         await owner.value
-
-        XCTAssertEqual(refreshCount, 2)
-    }
-
-    /// A refresh reloads projects and the active profile after its session
-    /// request settles. Those have no generation fence, so the queue must stay
-    /// the owner for the whole closure rather than only its first stage.
-    func testTriggerArrivingAfterTheSessionStageDoesNotStartASecondRefresh() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.run(isRefreshInFlight: { false }) {
-            refreshCount += 1
-            guard refreshCount == 1 else { return }
-            // The session request has settled — `viewModel.isLoading` is already
-            // false — but this refresh is still reloading projects.
-            await queue.run(isRefreshInFlight: { false }) {
-                XCTFail("a second owner must not start an overlapping refresh")
-            }
-        }
 
         XCTAssertEqual(refreshCount, 2)
     }

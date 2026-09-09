@@ -81,6 +81,11 @@ final class SessionListViewModel {
     private(set) var remoteContentSearchSessionIDs: [String] = []
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
+    /// Every full-list reload goes through here — the automatic tick,
+    /// pull-to-refresh, the return refresh, the active-row monitor and the
+    /// reloads below that follow a mutation — so exactly one owner serves them
+    /// and no caller is left waiting on a reload nobody will run.
+    private let refreshQueue = SessionListRefreshQueue()
     private var projectsGeneration = 0
     private var activeProfileGeneration = 0
     private var openGeneration = 0
@@ -192,6 +197,20 @@ final class SessionListViewModel {
     func load(
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
+    ) async -> Bool {
+        // A coalesced caller reports success for the same reason a superseded
+        // one does below: a newer reload is authoritative for the list, and it
+        // covers the request this caller just recorded.
+        var didApply = true
+        await refreshQueue.run {
+            didApply = await self.performLoad(modelContext: modelContext, animation: animation)
+        }
+        return didApply
+    }
+
+    private func performLoad(
+        modelContext: ModelContext?,
+        animation: Animation?
     ) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration

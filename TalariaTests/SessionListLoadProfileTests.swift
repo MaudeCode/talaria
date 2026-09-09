@@ -9,83 +9,98 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension SessionListMutationTests {
+    /// Two list loads can no longer be in flight at once: the refresh queue
+    /// serializes them, so a load requested while another is running is served
+    /// as a follow-up afterwards rather than racing it. The newer request still
+    /// determines the final list.
     @MainActor
-    func testLatestSessionLoadWinsWhenResponsesCompleteOutOfOrder() async throws {
+    func testLoadRequestedDuringAnotherRunsAfterItAndWins() async throws {
+        let host = "tal106-serialized-loads.test"
         let firstRequestArrived = expectation(description: "first sessions request arrived")
-        let secondRequestArrived = expectation(description: "second sessions request arrived")
+        let followUpRequestArrived = expectation(description: "follow-up sessions request arrived")
         let requests = DeferredRequests()
 
-        DeferredMockURLProtocol.onRequest = { request in
+        DeferredMockURLProtocol.setOnRequest({ request in
             switch requests.append(request) {
             case 1: firstRequestArrived.fulfill()
-            case 2: secondRequestArrived.fulfill()
+            case 2: followUpRequestArrived.fulfill()
             default: XCTFail("unexpected extra sessions request")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
         let viewModel = SessionListViewModel(server: server, client: client)
 
         let firstLoad = Task { await viewModel.load() }
         await fulfillment(of: [firstRequestArrived], timeout: 5)
-        let secondLoad = Task { await viewModel.load() }
-        await fulfillment(of: [secondRequestArrived], timeout: 5)
 
-        requests.request(at: 1).complete(withJSON: #"{"sessions":[{"session_id":"newest","title":"Newest","archived":false}]}"#)
-        let didApplyNewestLoad = await secondLoad.value
-        requests.request(at: 0).complete(withJSON: #"{"sessions":[{"session_id":"stale","title":"Stale","archived":false}]}"#)
-        let didSupersedeFirstLoad = await firstLoad.value
+        // Requested mid-flight: it records itself and returns rather than
+        // issuing a second overlapping request.
+        let didRecordSecondLoad = await viewModel.load()
+        XCTAssertTrue(didRecordSecondLoad)
 
-        XCTAssertTrue(didApplyNewestLoad)
-        XCTAssertTrue(didSupersedeFirstLoad)
+        requests.request(at: 0).complete(
+            withJSON: #"{"sessions":[{"session_id":"stale","title":"Stale","archived":false}]}"#
+        )
+
+        // The first load's owner now serves the recorded request.
+        await fulfillment(of: [followUpRequestArrived], timeout: 5)
+        requests.request(at: 1).complete(
+            withJSON: #"{"sessions":[{"session_id":"newest","title":"Newest","archived":false}]}"#
+        )
+        let didApplyFirstLoad = await firstLoad.value
+
+        XCTAssertTrue(didApplyFirstLoad)
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["newest"])
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNil(viewModel.sessionLoadError)
     }
 
+    /// A failed load leaves its error visible only until the follow-up it is
+    /// serving succeeds, and never reports the list as idle in between.
     @MainActor
-    func testStaleSessionLoadCannotClearLoadingOrPublishError() async throws {
+    func testFailedLoadIsClearedByTheFollowUpItServes() async throws {
+        let host = "tal106-failed-then-followup.test"
         let firstRequestArrived = expectation(description: "first sessions request arrived")
-        let secondRequestArrived = expectation(description: "second sessions request arrived")
+        let followUpRequestArrived = expectation(description: "follow-up sessions request arrived")
         let requests = DeferredRequests()
 
-        DeferredMockURLProtocol.onRequest = { request in
+        DeferredMockURLProtocol.setOnRequest({ request in
             switch requests.append(request) {
             case 1: firstRequestArrived.fulfill()
-            case 2: secondRequestArrived.fulfill()
+            case 2: followUpRequestArrived.fulfill()
             default: XCTFail("unexpected extra sessions request")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
         let viewModel = SessionListViewModel(server: server, client: client)
 
         let firstLoad = Task { await viewModel.load() }
         await fulfillment(of: [firstRequestArrived], timeout: 5)
-        let secondLoad = Task { await viewModel.load() }
-        await fulfillment(of: [secondRequestArrived], timeout: 5)
+        _ = await viewModel.load()
 
         requests.request(at: 0).fail(with: URLError(.timedOut))
-        let didSupersedeFirstLoad = await firstLoad.value
+        await fulfillment(of: [followUpRequestArrived], timeout: 5)
 
-        XCTAssertTrue(didSupersedeFirstLoad)
+        // Still loading: the queue is part-way through serving the request that
+        // arrived during the failed attempt.
         XCTAssertTrue(viewModel.isLoading)
-        XCTAssertNil(viewModel.errorMessage)
-        XCTAssertNil(viewModel.sessionLoadError)
 
-        requests.request(at: 1).complete(withJSON: #"{"sessions":[{"session_id":"newest","title":"Newest","archived":false}]}"#)
-        let didApplyNewestLoad = await secondLoad.value
+        requests.request(at: 1).complete(
+            withJSON: #"{"sessions":[{"session_id":"newest","title":"Newest","archived":false}]}"#
+        )
+        _ = await firstLoad.value
 
-        XCTAssertTrue(didApplyNewestLoad)
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["newest"])
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNil(viewModel.errorMessage)

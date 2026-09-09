@@ -42,7 +42,6 @@ struct SessionListView: View {
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
-    @State private var refreshQueue = SessionListRefreshQueue()
     @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
@@ -1083,18 +1082,14 @@ struct SessionListView: View {
     }
 
     /// The one path every full-list trigger takes — initial load,
-    /// pull-to-refresh, the return refresh, and the automatic refresh loop — so
-    /// `refreshQueue` is their single deduplication owner. It keeps two
-    /// equivalent list requests from overlapping while still honouring a trigger
-    /// that arrives mid-load, which the in-flight request may predate. The
-    /// active-row monitor takes the matching `!isLoading` guard inside
-    /// `refreshActiveSessionStatesIfNeeded`.
+    /// pull-to-refresh, the return refresh, and the automatic refresh loop.
+    /// `SessionListViewModel.load` serializes the list request itself through
+    /// its refresh queue, and `loadProjects` and `loadActiveProfile` fence their
+    /// own responses, so nothing here has to coordinate them.
     private func refreshSessionsAndActiveProfile() async {
-        await refreshQueue.run(isRefreshInFlight: { viewModel.isLoading }) {
-            await loadSessions()
-            guard !Task.isCancelled else { return }
-            await viewModel.loadActiveProfile()
-        }
+        await loadSessions()
+        guard !Task.isCancelled else { return }
+        await viewModel.loadActiveProfile()
     }
 
     private var sceneActions: TalariaSceneActions {
@@ -1152,14 +1147,6 @@ struct SessionListView: View {
             )
             if refreshResult == .reloaded || refreshResult == .failed {
                 handleLastError()
-            }
-
-            // This reload runs outside the queue, so a return or pull-to-refresh
-            // that arrived during it has no loop waiting to pick it up.
-            await refreshQueue.drainFollowUp {
-                await loadSessions()
-                guard !Task.isCancelled else { return }
-                await viewModel.loadActiveProfile()
             }
         }
     }
