@@ -104,7 +104,7 @@ struct TalariaApp: App {
         let arguments = ProcessInfo.processInfo.arguments
 
         #if DEBUG
-        if ShareExtensionUITestHost.isActive {
+        if ShareExtensionUITestHost.resetsSharedState {
             ShareExtensionUITestHost.resetSharedState()
         }
         let fixture = arguments.contains(UITestFixtureEnvironment.launchArgument)

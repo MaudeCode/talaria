@@ -23,10 +23,18 @@ final class ShareExtensionUITests: TalariaUITestCase {
             "Shared text never reached the composer"
         )
 
-        // Relaunch without the host, so nothing clears the inbox for us: whatever the app
-        // finds is what consumption actually left behind.
+        // Consumption is asynchronous, so watch the inbox rather than assume it finished:
+        // a still-reserved record would make every assertion below pass for the wrong
+        // reason, since reserved items are not re-offered for 15 minutes.
+        XCTAssertTrue(
+            waitForInbox("inbox pending=0 reserved=0"),
+            "The imported item was never cleaned up: \(inboxSummary())"
+        )
+
+        // Relaunch with the host but without a reset, so nothing clears the inbox for us:
+        // whatever the app finds is what consumption actually left behind.
         app.terminate()
-        launch(arguments: ["--ui-test-fixture"])
+        launch(arguments: ["--ui-test-fixture", "--ui-test-share-host"])
 
         XCTAssertTrue(
             app.navigationBars["Chats"].waitForExistence(timeout: 30),
@@ -40,6 +48,7 @@ final class ShareExtensionUITests: TalariaUITestCase {
             waitForComposerDraft(containing: Self.fixtureText, timeout: 3),
             "A consumed import was replayed into a new composer"
         )
+        XCTAssertEqual(inboxSummary(), "inbox pending=0 reserved=0", "The share inbox was not left empty")
     }
 
     func testSharedURLReachesTheComposer() throws {
@@ -133,6 +142,11 @@ final class ShareExtensionUITests: TalariaUITestCase {
             waitForComposerDraft(containing: Self.fixtureText, timeout: 5),
             "The fallback path opened the app anyway"
         )
+        // Unconsumed means untouched: the draft has to still be sitting in the inbox.
+        XCTAssertTrue(
+            waitForInbox("inbox pending=1 reserved=0"),
+            "The extension did not leave the unopened draft in the inbox: \(inboxSummary())"
+        )
 
         // Opening Talaria by hand is a cold launch, which is where the saved draft has to
         // reappear.
@@ -157,7 +171,7 @@ final class ShareExtensionUITests: TalariaUITestCase {
     }
 
     private func launchShareHost() {
-        launch(arguments: ["--ui-test-fixture", "--ui-test-share-host"])
+        launch(arguments: ["--ui-test-fixture", "--ui-test-share-host", "--ui-test-share-reset"])
         XCTAssertTrue(
             app.buttons["share-host-text"].waitForExistence(timeout: 30),
             "Missing the share host fixture"
@@ -194,6 +208,21 @@ final class ShareExtensionUITests: TalariaUITestCase {
             element(labelContaining: text).waitForExistence(timeout: timeout),
             "The share extension never showed: \(text)"
         )
+    }
+
+    private func inboxSummary() -> String {
+        app.staticTexts["share-host-inbox"].label
+    }
+
+    private func waitForInbox(_ summary: String, timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if inboxSummary() == summary { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+
+        return false
     }
 
     private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {

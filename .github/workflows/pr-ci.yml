@@ -8,9 +8,10 @@
 #
 # Uses no repository secrets, so PRs from forks get green CI too.
 #
-# Code signing is disabled (CODE_SIGNING_ALLOWED=NO) — fine for compile/test
-# runs per TESTFLIGHT.md; the "simulator installs must be signed" rule applies
-# to manual simulator testing, not CI.
+# Builds are signed ad hoc (CODE_SIGN_IDENTITY=-), which needs no certificate,
+# no profile and no secrets, but does embed entitlements. Without them the app
+# group is unavailable, so the share extension cannot hand anything to the app
+# and ShareExtensionUITests would be testing nothing (TAL-81).
 
 name: CI
 
@@ -132,7 +133,11 @@ jobs:
             -disableAutomaticPackageResolution \
             -showBuildTimingSummary \
             APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER=
           duration_seconds=$((SECONDS - start_seconds))
           echo "Build-for-testing duration: ${duration_seconds}s"
           echo "### PR CI timing" >> "${GITHUB_STEP_SUMMARY}"
@@ -161,7 +166,11 @@ jobs:
             -parallel-testing-worker-count "${TEST_WORKER_COUNT}" \
             "${test_options[@]}" \
             APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER=
           duration_seconds=$((SECONDS - start_seconds))
           echo "Test-without-building duration: ${duration_seconds}s"
           echo "- Test without building (${TEST_WORKER_COUNT} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"

@@ -1,4 +1,5 @@
 #if DEBUG
+import Combine
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -12,6 +13,9 @@ import UniformTypeIdentifiers
 /// of its input and leaves nothing behind for the next one.
 enum ShareExtensionUITestHost {
     static let launchArgument = "--ui-test-share-host"
+    /// Separate from the bar itself: a test that wants to observe what consumption left in
+    /// the inbox has to be able to relaunch the host without emptying it first.
+    static let resetArgument = "--ui-test-share-reset"
 
     static let sharedText = "TalariaShareFixtureText"
     static let sharedURL = URL(string: "https://share.fixture.invalid/talaria")!
@@ -20,9 +24,12 @@ enum ShareExtensionUITestHost {
         ProcessInfo.processInfo.arguments.contains(launchArgument)
     }
 
-    /// Each host launch starts from an empty share inbox and the shipping open path, so a
-    /// draft one test leaves behind can never surface in the next one. Launches without
-    /// the host bar keep the inbox: that is how a test reopens a draft the extension saved.
+    static var resetsSharedState: Bool {
+        ProcessInfo.processInfo.arguments.contains(resetArgument)
+    }
+
+    /// A reset launch starts from an empty share inbox and the shipping open path, so a
+    /// draft one test leaves behind can never surface in the next one.
     static func resetSharedState() {
         ShareOpenFixtureMode.store(.normal)
 
@@ -35,6 +42,26 @@ enum ShareExtensionUITestHost {
         ] {
             try? fileManager.removeItem(at: directory.appendingPathComponent(name))
         }
+    }
+
+    /// What the share inbox currently holds, as one readable line for the UI tests. This is
+    /// the only way a test can tell "consumed and cleaned up" apart from "still reserved
+    /// by an import that never finished".
+    static func inboxSummary() -> String {
+        guard let directory = TalariaShareDraft.containerURL() else {
+            return "inbox unavailable"
+        }
+
+        let inbox = directory.appendingPathComponent(TalariaShareDraft.inboxDirectoryName)
+        return "inbox pending=\(count(in: inbox, TalariaShareDraft.pendingItemsDirectoryName)) "
+            + "reserved=\(count(in: inbox, TalariaShareDraft.reservedItemsDirectoryName))"
+    }
+
+    private static func count(in inbox: URL, _ name: String) -> Int {
+        (try? FileManager.default.contentsOfDirectory(
+            at: inbox.appendingPathComponent(name),
+            includingPropertiesForKeys: nil
+        ).count) ?? 0
     }
 
     /// Fresh per launch: a leftover 25 MB fixture file must never outlive its test.
@@ -144,8 +171,29 @@ enum ShareExtensionUITestPayload: String, CaseIterable, Identifiable {
 struct ShareExtensionUITestHostBar: View {
     @State private var presentedPayload: ShareExtensionUITestPayload?
     @State private var openMode = ShareOpenFixtureMode.normal
+    @State private var inboxSummary = ShareExtensionUITestHost.inboxSummary()
 
     var body: some View {
+        VStack(spacing: 2) {
+            payloadGrid
+
+            Text(inboxSummary)
+                .font(.caption2)
+                .accessibilityIdentifier("share-host-inbox")
+                .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+                    inboxSummary = ShareExtensionUITestHost.inboxSummary()
+                }
+        }
+        .background(.regularMaterial)
+        // No identifier on the container: it would absorb the inbox readout's own.
+        .onChange(of: openMode, initial: true) { ShareOpenFixtureMode.store(openMode) }
+        .sheet(item: $presentedPayload) { payload in
+            ShareExtensionUITestActivitySheet(activityItems: payload.activityItems())
+                .ignoresSafeArea()
+        }
+    }
+
+    private var payloadGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
             ForEach(ShareExtensionUITestPayload.allCases) { payload in
                 Button(payload.title) { presentedPayload = payload }
@@ -160,13 +208,6 @@ struct ShareExtensionUITestHostBar: View {
         .font(.caption)
         .buttonStyle(.bordered)
         .padding(4)
-        .background(.regularMaterial)
-        .accessibilityIdentifier("share-host-bar")
-        .onChange(of: openMode, initial: true) { ShareOpenFixtureMode.store(openMode) }
-        .sheet(item: $presentedPayload) { payload in
-            ShareExtensionUITestActivitySheet(activityItems: payload.activityItems())
-                .ignoresSafeArea()
-        }
     }
 }
 

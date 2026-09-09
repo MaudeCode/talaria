@@ -54,9 +54,12 @@ team** — override locally instead:
    committed defaults for every target — no project-file changes needed.
 
 For simulator-only development you usually don't need any of this: simulator
-builds don't require a paid team. Note that unit tests and CI run with
-`CODE_SIGNING_ALLOWED=NO`; installing such a build on a simulator for *manual*
-testing breaks Keychain entitlements — use a normally-signed build for that
+builds don't require a paid team. CI signs its simulator builds ad hoc
+(`CODE_SIGN_IDENTITY=-`), which needs no certificate but does embed
+entitlements — the app group the share extension hands drafts through only
+exists in a build that has them. A build made with `CODE_SIGNING_ALLOWED=NO`
+has neither, so installing one on a simulator for *manual* testing breaks
+Keychain and app-group entitlements; use a normally-signed build for that
 (see `AGENTS.md`).
 
 ## What PRs we welcome (and what we don't)
