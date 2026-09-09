@@ -73,6 +73,15 @@ class UntrustedInputFuzzTests: XCTestCase {
                 )
             }
 
+            // Generic bound first: it covers every payload-bearing variant,
+            // including the ones with no specific check below.
+            assertBounded(
+                Self.decodedTextSize(of: event),
+                by: payload.count,
+                label: "decoded SSE event",
+                seed: seed
+            )
+
             if case let .token(text) = event {
                 assertBounded(text.count, by: payload.count, label: "token text", seed: seed)
             }
@@ -289,29 +298,36 @@ class UntrustedInputFuzzTests: XCTestCase {
         forEachSeed { generator, seed in
             let markdown = generator.markdown()
 
-            guard let segments = withinTimeBudget(seed: seed, input: markdown, {
-                TranscriptMediaParser.segments(in: markdown)
+            // Reading `.source`, `.mediaKind` and `.displayName` parses the
+            // reference again, so those accesses belong inside the watchdog
+            // too; only the assertions run out here.
+            guard let parsed = withinTimeBudget(seed: seed, input: markdown, {
+                let segments = TranscriptMediaParser.segments(in: markdown)
+                return (count: segments.count, media: segments.compactMap(FuzzMediaSummary.init))
             }) else { return }
 
-            assertBounded(segments.count, by: markdown.count, label: "media segments", seed: seed)
+            assertBounded(parsed.count, by: markdown.count, label: "media segments", seed: seed)
 
-            for case let .media(reference) in segments {
+            for media in parsed.media {
                 assertBounded(
-                    reference.rawReference.count,
+                    media.rawReference.count,
                     by: markdown.count,
                     label: "media reference",
                     seed: seed
                 )
-                assertRemoteOnlyForHTTP(reference, seed: seed)
+                assertRemoteOnlyForHTTP(media, seed: seed)
                 XCTAssertFalse(
-                    reference.displayName.isEmpty,
+                    media.displayName.isEmpty,
                     "A parsed media reference produced an empty display name (seed \(seed))."
                 )
             }
 
-            let standalone = TranscriptMediaReference(rawReference: generator.string())
+            let raw = generator.string()
+            guard let standalone = withinTimeBudget(seed: seed, input: raw, {
+                FuzzMediaSummary(TranscriptMediaReference(rawReference: raw))
+            }) else { return }
+
             assertRemoteOnlyForHTTP(standalone, seed: seed)
-            _ = standalone.mediaKind
         }
     }
 
@@ -424,6 +440,23 @@ class UntrustedInputFuzzTests: XCTestCase {
         }
     }
 
+    /// Total length of every string reachable in a decoded value. Measuring
+    /// `String(describing:)` instead would mostly count field names, which is a
+    /// constant floor unrelated to the input and says nothing about
+    /// amplification.
+    private static func decodedTextSize(of value: Any) -> Int {
+        if let text = value as? String {
+            return text.count
+        }
+
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            guard let wrapped = mirror.children.first else { return 0 }
+            return decodedTextSize(of: wrapped.value)
+        }
+        return mirror.children.reduce(0) { $0 + decodedTextSize(of: $1.value) }
+    }
+
     /// Amplification guard: a decoder may normalize and merge fields, so the
     /// bound is generous. It still fails on output that grows super-linearly
     /// with a bounded input.
@@ -445,12 +478,12 @@ class UntrustedInputFuzzTests: XCTestCase {
     }
 
     private func assertRemoteOnlyForHTTP(
-        _ reference: TranscriptMediaReference,
+        _ reference: FuzzMediaSummary,
         seed: UInt64,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        guard case .remoteURL = reference.source else { return }
+        guard reference.isRemote else { return }
         let trimmed = reference.rawReference
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -533,6 +566,31 @@ class UntrustedInputFuzzTests: XCTestCase {
 /// Skipped in PR CI by `.github/workflows/pr-ci.yml`.
 final class UntrustedInputFuzzSoakTests: UntrustedInputFuzzTests {
     override class var iterations: Int { 500_000 }
+}
+
+/// What the media boundary produced, resolved inside the watchdog so no
+/// parsing is left to run unwatched on the calling thread.
+private struct FuzzMediaSummary {
+    let rawReference: String
+    let isRemote: Bool
+    let displayName: String
+    let kind: TranscriptMediaKind
+
+    init(_ reference: TranscriptMediaReference) {
+        rawReference = reference.rawReference
+        if case .remoteURL = reference.source {
+            isRemote = true
+        } else {
+            isRemote = false
+        }
+        displayName = reference.displayName
+        kind = reference.mediaKind
+    }
+
+    init?(_ segment: TranscriptMediaSegment) {
+        guard case let .media(reference) = segment else { return nil }
+        self.init(reference)
+    }
 }
 
 /// Carries a watchdogged result back across the queue hop.
