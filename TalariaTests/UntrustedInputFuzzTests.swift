@@ -312,7 +312,14 @@ class UntrustedInputFuzzTests: XCTestCase {
     /// The hang detector has to be checked, or a regression in it would turn
     /// every "never hangs" property back into a silent pass.
     func testWatchdogAbandonsWorkThatOutlivesItsBudget() {
-        XCTExpectFailure("The watchdog is expected to report the abandoned input.")
+        // Matched, not blanket: a bare `XCTExpectFailure` would also absorb the
+        // `XCTAssertNil` below, so a watchdog that returned its value after the
+        // deadline would still pass. Matching the timeout issue leaves that
+        // assertion enforced, and strict mode fails the test if the watchdog
+        // never reports at all.
+        XCTExpectFailure("The watchdog is expected to report the abandoned input.") { issue in
+            issue.compactDescription.contains("did not finish inside")
+        }
 
         let result: Int? = withinTimeBudget(seed: 0, input: "deliberate hang", budget: 0.2, {
             Thread.sleep(forTimeInterval: 0.6)
