@@ -174,6 +174,42 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 3)
     }
 
+    /// The active-row monitor reloads the list outside the queue, so a trigger
+    /// deferred during that reload needs an explicit drain or it waits for the
+    /// next tick.
+    func testFollowUpQueuedDuringAnExternalLoadIsDrained() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        // The monitor's own reload is in flight when the user pulls to refresh.
+        await queue.run(isRefreshInFlight: { true }) {
+            XCTFail("a trigger arriving during an external load must not start its own")
+        }
+        await queue.drainFollowUp { refreshCount += 1 }
+
+        XCTAssertEqual(refreshCount, 1)
+    }
+
+    func testDrainDoesNothingWhenNoFollowUpWasQueued() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.drainFollowUp { refreshCount += 1 }
+
+        XCTAssertEqual(refreshCount, 0)
+    }
+
+    func testDrainedFollowUpIsNotRepeated() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        await queue.run(isRefreshInFlight: { true }) {}
+        await queue.drainFollowUp { refreshCount += 1 }
+        await queue.drainFollowUp { refreshCount += 1 }
+
+        XCTAssertEqual(refreshCount, 1)
+    }
+
     // MARK: - Reconciliation and transient failure
 
     func testAutomaticRefreshAdoptsASessionCreatedElsewhere() async throws {
@@ -229,6 +265,35 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["existing", "later"])
         XCTAssertNil(viewModel.lastError)
         XCTAssertNil(viewModel.errorMessage)
+    }
+
+    /// Why the automatic tick loads sessions only: a failing `/api/projects`
+    /// reaches `actionErrorMessage`, which `SessionActionConfirmations` presents
+    /// as a modal, while a failing session list stays out of that channel. A
+    /// background tick that reloaded projects would raise that modal once per
+    /// interval.
+    func testOnlyTheProjectsLoadReachesTheModalActionAlertChannel() async throws {
+        let responses = SessionListResponses(
+            bodies: ["", ""],
+            failingResponseIndexes: [0, 1]
+        )
+        let viewModel = try makeViewModel(responses: responses)
+        defer { MockURLProtocol.requestHandler = nil }
+
+        await viewModel.load()
+
+        XCTAssertNotNil(viewModel.lastError)
+        XCTAssertNil(
+            viewModel.actionErrorMessage,
+            "a failed session list must not raise the user-action modal"
+        )
+
+        await viewModel.loadProjects()
+
+        XCTAssertNotNil(
+            viewModel.actionErrorMessage,
+            "a failed projects load does raise it, so background ticks must skip projects"
+        )
     }
 
     // MARK: - Support

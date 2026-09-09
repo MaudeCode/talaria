@@ -93,4 +93,16 @@ final class SessionListRefreshQueue {
             guard !Task.isCancelled else { return }
         } while hasFollowUp
     }
+
+    /// Runs the follow-up left behind by a load this queue does not own.
+    ///
+    /// `run` drains its own follow-ups, but the active-row monitor reloads the
+    /// list through `refreshActiveSessionStatesIfNeeded`, so a trigger arriving
+    /// during that reload has no loop waiting to pick it up. The monitor calls
+    /// this once its reload finishes so the deferred refresh still happens
+    /// promptly instead of waiting for the next tick.
+    func drainFollowUp(refresh: () async -> Void) async {
+        guard hasFollowUp else { return }
+        await run(isRefreshInFlight: { false }, refresh: refresh)
+    }
 }
