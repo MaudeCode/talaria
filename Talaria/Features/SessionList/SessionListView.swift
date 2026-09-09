@@ -1123,6 +1123,13 @@ struct SessionListView: View {
 
     private func refreshAfterReturningIfNeeded() {
         guard didCompleteInitialLoad else { return }
+        // In compact width a return also brings the list back on screen, which
+        // restarts the automatic refresh loop with an immediate refresh of its
+        // own. Scheduling here as well would reload sessions, projects and the
+        // active profile twice for one transition. In regular width the sidebar
+        // never leaves the screen, so that loop does not restart and this is the
+        // only trigger a session switch has.
+        guard horizontalSizeClass == .regular else { return }
         returnRefreshID = UUID()
     }
 

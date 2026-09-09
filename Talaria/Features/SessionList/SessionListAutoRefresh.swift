@@ -69,17 +69,41 @@ enum SessionListAutoRefresh {
 /// guaranteed to carry those rows. One follow-up refresh runs after the current
 /// load instead, and every trigger that arrived during it coalesces into that
 /// single follow-up rather than queueing a request each.
+///
+/// Outstanding work lives in the two counters rather than in whichever task
+/// happens to be serving. A refresh that is cancelled part-way simply never
+/// advances `servedGeneration`, so the request stays outstanding for the next
+/// owner: nothing has to be handed over, and a cancelled `.task` cannot consume
+/// a refresh it never performed.
 @MainActor
 final class SessionListRefreshQueue {
+    private var requestedGeneration = 0
+    private var servedGeneration = 0
     private var isRunning = false
-    private var hasFollowUp = false
 
+    /// Records a refresh request, then serves it — along with anything requested
+    /// while it runs — unless another owner is already serving.
+    ///
     /// - Parameter isRefreshInFlight: whether a full-list load this queue does
     ///   not own is already running. The active-row monitor reloads the list
     ///   through `refreshActiveSessionStatesIfNeeded`, which is the one such
-    ///   owner; it calls `drainFollowUp` afterwards to run anything deferred
-    ///   during it.
+    ///   owner; it calls `drainFollowUp` afterwards.
     func run(
+        isRefreshInFlight: () -> Bool,
+        refresh: () async -> Void
+    ) async {
+        requestedGeneration += 1
+        await serve(isRefreshInFlight: isRefreshInFlight, refresh: refresh)
+    }
+
+    /// Serves a request left outstanding by an owner this queue does not control,
+    /// or by one that was cancelled before it finished. Does nothing when every
+    /// request has already been served.
+    func drainFollowUp(refresh: () async -> Void) async {
+        await serve(isRefreshInFlight: { false }, refresh: refresh)
+    }
+
+    private func serve(
         isRefreshInFlight: () -> Bool,
         refresh: () async -> Void
     ) async {
@@ -88,36 +112,16 @@ final class SessionListRefreshQueue {
         // request settles, and those have no generation fence of their own, so
         // a second owner starting there could let an older response overwrite
         // newer project state.
-        guard !isRunning, !isRefreshInFlight() else {
-            hasFollowUp = true
-            return
-        }
+        guard !isRunning, !isRefreshInFlight() else { return }
 
         isRunning = true
         defer { isRunning = false }
 
-        repeat {
-            hasFollowUp = false
+        while servedGeneration < requestedGeneration {
+            let serving = requestedGeneration
             await refresh()
-            if Task.isCancelled {
-                // This load was cancelled part-way, so whatever it was standing
-                // in for is still outstanding. Keep the follow-up for the next
-                // owner instead of consuming it here.
-                hasFollowUp = true
-                return
-            }
-        } while hasFollowUp
-    }
-
-    /// Runs the follow-up left behind by a load this queue does not own.
-    ///
-    /// `run` drains its own follow-ups, but the active-row monitor reloads the
-    /// list through `refreshActiveSessionStatesIfNeeded`, so a trigger arriving
-    /// during that reload has no loop waiting to pick it up. The monitor calls
-    /// this once its reload finishes so the deferred refresh still happens
-    /// promptly instead of waiting for the next tick.
-    func drainFollowUp(refresh: () async -> Void) async {
-        guard hasFollowUp else { return }
-        await run(isRefreshInFlight: { false }, refresh: refresh)
+            guard !Task.isCancelled else { return }
+            servedGeneration = serving
+        }
     }
 }

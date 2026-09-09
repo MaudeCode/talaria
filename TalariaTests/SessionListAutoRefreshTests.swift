@@ -210,10 +210,11 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 1)
     }
 
-    /// The monitor's `.task` can be cancelled by the very reload that drains a
-    /// follow-up, so a cancelled drain must hand the follow-up back rather than
-    /// consuming it.
-    func testCancelledRefreshKeepsItsFollowUpForTheNextOwner() async {
+    /// A cancelled refresh never advances the served generation, so the request
+    /// stays outstanding for whichever owner runs next. Nothing is handed over,
+    /// which is what keeps a cancelled `.task` from consuming a refresh it never
+    /// performed.
+    func testCancelledRefreshLeavesItsRequestOutstanding() async {
         let queue = SessionListRefreshQueue()
         var drainCount = 0
 
@@ -228,10 +229,34 @@ final class SessionListAutoRefreshTests: XCTestCase {
         await cancelled.value
         XCTAssertEqual(drainCount, 1)
 
-        // The follow-up survived, so the next owner still runs it.
+        // A different, non-cancelled owner still sees the request.
         await queue.drainFollowUp { drainCount += 1 }
 
         XCTAssertEqual(drainCount, 2)
+    }
+
+    /// A request made while an owner is mid-refresh is served even if that owner
+    /// is then cancelled before its loop comes back around.
+    func testRequestMadeDuringACancelledRefreshSurvives() async {
+        let queue = SessionListRefreshQueue()
+        var refreshCount = 0
+
+        let cancelled = Task {
+            await queue.run(isRefreshInFlight: { false }) {
+                refreshCount += 1
+                // A return refresh arrives, then this owner is torn down.
+                await queue.run(isRefreshInFlight: { false }) {
+                    XCTFail("a second owner must not start an overlapping refresh")
+                }
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        }
+        await cancelled.value
+        XCTAssertEqual(refreshCount, 1)
+
+        await queue.drainFollowUp { refreshCount += 1 }
+
+        XCTAssertEqual(refreshCount, 2)
     }
 
     /// A refresh reloads projects and the active profile after its session
