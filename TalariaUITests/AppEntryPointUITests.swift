@@ -39,6 +39,14 @@ class AppEntryPointUITestCase: TalariaUITestCase {
         XCTAssertTrue(chats.exists, "Did not return to the session list")
     }
 
+    /// Matches on label *or* value: composer text arrives as an element value, row text as a
+    /// label.
+    func element(carrying text: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", text, text))
+            .firstMatch
+    }
+
     /// Icon changes and microphone access both raise a system alert over the app. Dismissing
     /// it keeps the journey deterministic; a preferred button keeps the simulator's own
     /// permission state fixed.
@@ -83,9 +91,12 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
         )
     }
 
-    /// The voice variant opens the same composer and asks for dictation. Recognition itself
-    /// stays out of CI: the microphone prompt is declined, which the composer degrades from.
-    func testVoiceChatURLOpensTheComposerWithoutSiriRecognition() throws {
+    /// The voice variant opens the same composer *and* starts dictation. The prompt is the
+    /// evidence that dictation was attempted — a plain new chat never asks — so the test owns
+    /// the microphone permission by resetting it first. Recognition itself stays out of CI:
+    /// access is declined, and the composer degrades to a clear error.
+    func testVoiceChatURLOpensTheComposerAndStartsDictation() throws {
+        app.resetAuthorizationStatus(for: .microphone)
         launchFixtureOnSessionList()
 
         openThroughSystem(fixtureURL("new-chat-voice"))
@@ -93,7 +104,10 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
             app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
             "talaria://new-chat-voice did not open the New Chat composer"
         )
-        dismissSystemAlert(preferring: "Don’t Allow")
+        XCTAssertTrue(
+            dismissSystemAlert(preferring: "Don’t Allow", timeout: 20),
+            "The voice variant never asked for microphone access, so dictation did not start"
+        )
         XCTAssertTrue(
             app.navigationBars["New Fixture Chat"].exists,
             "Declining dictation must leave the composer open"
@@ -117,7 +131,7 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
     /// `talaria://share`; the fixture seeds it the same way, so reopening has real work to do.
     /// Foregrounding imports too, so this asserts the user-visible contract rather than which
     /// of the two paths served it.
-    func testAShareDraftArrivingWhileBackgroundedOpensTheComposer() throws {
+    func testAShareDraftArrivingWhileBackgroundedReachesTheComposerOnce() throws {
         launchFixtureOnSessionList(additionalArguments: ["--ui-test-pending-share"])
         XCTAssertFalse(
             app.navigationBars["New Fixture Chat"].exists,
@@ -130,15 +144,30 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
             app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
             "Reopening through talaria://share did not import the shared draft"
         )
+        XCTAssertTrue(
+            element(carrying: "FixtureSharedDraft").waitForExistence(timeout: 15),
+            "The shared text was routed away and never reached the composer"
+        )
 
-        // The inbox is empty now, so delivering the share URL again must not open a second
-        // composer or bounce back to the list.
+        // Marking the draft makes a repeat import visible: a second one would open a composer
+        // carrying the seeded text alone, so a surviving marker means this composer was left
+        // alone rather than replaced.
+        let input = app.textViews.firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 10), "The shared draft did not open an editable composer")
+        input.tap()
+        input.typeText(" MarkedByTest")
+        XCTAssertTrue(element(carrying: "MarkedByTest").waitForExistence(timeout: 5))
+
+        // The inbox is empty now, so delivering the share URL again must import nothing.
         openThroughSystem(fixtureURL("share"))
         XCTAssertFalse(
             app.navigationBars["Chats"].waitForExistence(timeout: 3),
             "A share URL with nothing pending changed navigation"
         )
-        XCTAssertTrue(app.navigationBars["New Fixture Chat"].exists)
+        XCTAssertTrue(
+            element(carrying: "MarkedByTest").waitForExistence(timeout: 10),
+            "A second share URL replaced the composer, so the record was imported twice"
+        )
     }
 
     /// A URL for another app never reaches this app — the system routes by scheme — so the
