@@ -17,6 +17,13 @@ struct UITestFixtureEnvironment {
     /// extension does, so a UI test can reopen through `talaria://share` and see it import.
     nonisolated static let pendingShareArgument = "--ui-test-pending-share"
     nonisolated static let pendingShareDraft = "FixtureSharedDraft"
+    /// Scales the deterministic transcript and session list up for the performance
+    /// budgets (TAL-75). The functional fixtures keep the small counts so their
+    /// scrolling and layout assertions stay fast.
+    nonisolated static let denseArgument = "--ui-test-dense"
+    nonisolated static var isDense: Bool {
+        ProcessInfo.processInfo.arguments.contains(denseArgument)
+    }
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
     nonisolated static var relayCredentials: TalariaRelayCredentials {
         TalariaRelayCredentials(
@@ -102,13 +109,15 @@ struct UITestFixtureEnvironment {
 
 private extension UITestFixtureEnvironment {
     /// The shared-import inbox lives in the app group, outside the app's own storage, so a
-    /// draft left by an earlier run would replay into this launch. Drain it first, then seed
-    /// only what this journey asked for.
+    /// draft left by an earlier run would replay into this launch. Reuses the share host's
+    /// reset (TAL-81), which removes the whole inbox: draining only the pending items would
+    /// leave a record an interrupted run reserved, and an identical draft deduplicates
+    /// against a reservation still holding its lease. Only this journey resets, so a test
+    /// that relaunches to inspect what consumption left behind still sees it.
     static func prepareSharedImportInbox() {
-        guard let inbox = TalariaShareDraft.containerURL() else { return }
-        // Bounded: a record that cannot be consumed would otherwise spin here.
-        for _ in 0..<20 where (try? TalariaShareDraft.loadPendingImport(from: inbox)) != nil {}
         guard ProcessInfo.processInfo.arguments.contains(pendingShareArgument) else { return }
+        ShareExtensionUITestHost.resetSharedState()
+        guard let inbox = TalariaShareDraft.containerURL() else { return }
         // The extension writes its draft while Talaria is in the background, so the fixture
         // does too. Seeding at launch instead would let the initial import consume the draft
         // before any share URL was delivered, leaving the URL nothing to do.
@@ -371,6 +380,15 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 id: "ui-fixture-new-session",
                 title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
             )])
+        case "/api/upload":
+            // Shared attachments upload before the composer can show them, so the
+            // fixture has to accept one (TAL-81). Only a non-empty path is required;
+            // the composer labels the chip with the local filename.
+            return json([
+                "path": "/fixture/uploads/shared",
+                "mime": "application/octet-stream",
+                "is_image": false
+            ])
         case "/api/projects":
             return json(["projects": []])
         case "/api/profiles":
@@ -454,7 +472,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionsResponse() -> Data {
-        let sessions: [[String: Any]] = (0..<18).map { index in
+        let sessionCount = UITestFixtureEnvironment.isDense ? 300 : 18
+        let sessions: [[String: Any]] = (0..<sessionCount).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
@@ -464,7 +483,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse() -> Data {
-        var messages: [[String: Any]] = (0..<48).map { index in
+        let messageCount = UITestFixtureEnvironment.isDense ? 600 : 48
+        var messages: [[String: Any]] = (0..<messageCount).map { index in
             [
                 "role": index.isMultiple(of: 2) ? "user" : "assistant",
                 "content": "Fixture message \(index + 1) contains deterministic transcript content for scrolling.",
@@ -567,7 +587,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         [
             "session_id": id,
             "title": title,
-            "message_count": 48,
+            "message_count": UITestFixtureEnvironment.isDense ? 600 : 48,
             "last_message_at": 2_000_000_000,
             "workspace": "/fixture",
             "model": "fixture-model",
