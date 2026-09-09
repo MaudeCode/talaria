@@ -30,6 +30,14 @@ class UntrustedInputFuzzTests: XCTestCase {
     /// that follow it.
     private static let watchdogQueue = DispatchQueue(label: "talaria.fuzz.watchdog", attributes: .concurrent)
 
+    /// Set once an input outlives its budget; `forEachSeed` stops on it.
+    private var hasAbandonedInput = false
+
+    override func setUp() {
+        super.setUp()
+        hasAbandonedInput = false
+    }
+
     /// Per-input wall-clock ceiling. A bounded input that takes longer than
     /// this at a parser boundary is the hang this suite exists to catch, not a
     /// slow machine.
@@ -336,11 +344,16 @@ class UntrustedInputFuzzTests: XCTestCase {
 
     // MARK: - Harness
 
+    /// Stops at the first abandoned input: its thread cannot be cancelled, so
+    /// continuing would pile up runaway threads and make every later seed pay
+    /// the full budget until the workflow timeout killed the job before it
+    /// could report anything.
     private func forEachSeed(_ body: (inout FuzzGenerator, UInt64) -> Void) {
         for iteration in 0..<Self.iterations {
             let seed = Self.baseSeed &+ UInt64(iteration)
             var generator = FuzzGenerator(seed: seed)
             body(&generator, seed)
+            if hasAbandonedInput { return }
         }
     }
 
@@ -367,10 +380,12 @@ class UntrustedInputFuzzTests: XCTestCase {
 
         let ceiling = budget ?? Self.perInputTimeBudget
         guard finished.wait(timeout: .now() + ceiling) == .success else {
+            hasAbandonedInput = true
             XCTFail(
                 """
                 A bounded input did not finish inside \(ceiling)s \
-                (seed \(seed), input \(input().debugDescription)).
+                (seed \(seed), input \(input().debugDescription)). \
+                Stopping the sweep here: the abandoned thread cannot be cancelled.
                 """,
                 file: file,
                 line: line
