@@ -47,21 +47,25 @@ class AppEntryPointUITestCase: TalariaUITestCase {
             .firstMatch
     }
 
-    /// Icon changes and microphone access both raise a system alert over the app. Dismissing
-    /// it keeps the journey deterministic; a preferred button keeps the simulator's own
-    /// permission state fixed.
+    /// Icon changes and microphone access both raise a system alert over the app, and
+    /// dismissing it keeps the journey deterministic. A named button also identifies *which*
+    /// alert counts: an alert without that button is left alone and reported as not dismissed,
+    /// so a caller asserting on the return value cannot be satisfied by an unrelated alert.
     @discardableResult
     func dismissSystemAlert(preferring buttonLabel: String? = nil, timeout: TimeInterval = 5) -> Bool {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             for alert in [app.alerts.firstMatch, springboard.alerts.firstMatch] where alert.exists {
-                if let buttonLabel, alert.buttons[buttonLabel].exists {
-                    alert.buttons[buttonLabel].tap()
-                } else {
+                guard let buttonLabel else {
                     alert.buttons.firstMatch.tap()
+                    return true
                 }
-                return true
+                let button = alert.buttons[buttonLabel]
+                if button.exists {
+                    button.tap()
+                    return true
+                }
             }
             Thread.sleep(forTimeInterval: 0.2)
         } while Date() < deadline
