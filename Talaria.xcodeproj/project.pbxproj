@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000022 /* ShareExtensionUITests.swift */; };
+		D81000000000000000000013 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
+		D81000000000000000000011 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
+		D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000002 /* ShareExtensionUITestHost.swift */; };
 		05814DEA5DE4690F730B1E15 /* InsightsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 931EC010A2D940B0E42287A4 /* InsightsViewModel.swift */; };
 		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
@@ -707,6 +711,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D81000000000000000000022 /* ShareExtensionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITests.swift; sourceTree = "<group>"; };
+		D81000000000000000000012 /* ShareOpenFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareOpenFixture.swift; sourceTree = "<group>"; };
+		D81000000000000000000002 /* ShareExtensionUITestHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITestHost.swift; sourceTree = "<group>"; };
 		0485E1E1FFB64A24BB729CD4 /* SlashCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandTests.swift; sourceTree = "<group>"; };
 		351C0F1600000000000000A1 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Shared.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000301 /* ServerAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAccount.swift; sourceTree = "<group>"; };
@@ -1421,6 +1428,7 @@
 		A19000000000000000000004 /* TalariaUITests */ = {
 			isa = PBXGroup;
 			children = (
+				D81000000000000000000022 /* ShareExtensionUITests.swift */,
 				A19000000000000000000002 /* TalariaUITests.swift */,
 				A19000000000000000000102 /* AgentPanelUITests.swift */,
 				A19000000000000000000112 /* PerformanceUITests.swift */,
@@ -2067,6 +2075,7 @@
 		1A2B3C4D5E6F7000000000FA /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				D81000000000000000000002 /* ShareExtensionUITestHost.swift */,
 				1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */,
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
@@ -2086,6 +2095,7 @@
 		B5A100000000000000000050 /* Share */ = {
 			isa = PBXGroup;
 			children = (
+				D81000000000000000000012 /* ShareOpenFixture.swift */,
 				B5A100000000000000000010 /* SharedDraftStore.swift */,
 			);
 			path = Share;
@@ -2454,6 +2464,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D81000000000000000000011 /* ShareOpenFixture.swift in Sources */,
+				D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */,
 				1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* ContentView.swift in Sources */,
 				1A2B3C4D5E6F700000000338 /* TalariaAppIntents.swift in Sources */,
@@ -3053,6 +3065,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */,
 				A19000000000000000000001 /* TalariaUITests.swift in Sources */,
 				A19000000000000000000101 /* AgentPanelUITests.swift in Sources */,
 				A19000000000000000000111 /* PerformanceUITests.swift in Sources */,
@@ -3063,6 +3076,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D81000000000000000000013 /* ShareOpenFixture.swift in Sources */,
 				B5A100000000000000000002 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000003 /* ShareViewController.swift in Sources */,
 				B5A100000000000000000007 /* ShareInputReader.swift in Sources */,

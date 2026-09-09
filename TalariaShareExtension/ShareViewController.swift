@@ -50,24 +50,24 @@ final class ShareViewController: UIViewController {
 
             guard !draft.isEmpty || !input.attachments.isEmpty else {
                 showStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
-                completeRequest(after: 0.8)
+                completeRequest(after: statusDwell)
                 return
             }
 
             guard let directory = TalariaShareDraft.containerURL() else {
                 showStatus("Could not access Talaria storage.")
-                completeRequest(after: 0.8)
+                completeRequest(after: statusDwell)
                 return
             }
 
             try TalariaShareDraft.savePendingImport(draft: draft, attachments: input.attachments, in: directory)
         } catch let error as SharedDraftStoreError {
             showStatus(error.localizedDescription)
-            completeRequest(after: 0.8)
+            completeRequest(after: statusDwell)
             return
         } catch {
             showStatus("Could not save shared content.")
-            completeRequest(after: 0.8)
+            completeRequest(after: statusDwell)
             return
         }
 
@@ -77,10 +77,22 @@ final class ShareViewController: UIViewController {
     private func showStatus(_ text: String) {
         statusLabel.text = text
         statusLabel.isHidden = false
+        // The sheet dismisses itself shortly after, so VoiceOver has to be moved to the
+        // message rather than wait for the user to find it (TAL-81).
+        UIAccessibility.post(notification: .layoutChanged, argument: statusLabel)
     }
 
     private func openTalaria() {
         let url = TalariaShareDraft.openURL
+
+        #if DEBUG
+        // TAL-81: no host can make `open` fail on demand, so the UI tests select the
+        // launch path they are validating through the shared app group.
+        if ShareOpenFixtureMode.current != .normal {
+            openTalariaViaWorkaround(url)
+            return
+        }
+        #endif
 
         extensionContext?.open(url, completionHandler: { [weak self] success in
             Task { @MainActor [weak self] in
@@ -95,6 +107,13 @@ final class ShareViewController: UIViewController {
     }
 
     private func openTalariaViaWorkaround(_ url: URL) {
+        #if DEBUG
+        if ShareOpenFixtureMode.current == .manualOnly {
+            showManualOpenFallback()
+            return
+        }
+        #endif
+
         let application = containingApplicationResponder()
         if let application, open(url, using: application) {
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
@@ -106,9 +125,13 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        // Fallback if everything fails
+        showManualOpenFallback()
+    }
+
+    /// Last resort: the draft is already stored, so tell the user how to reach it.
+    private func showManualOpenFallback() {
         showStatus("Shared content saved. Open Talaria manually.")
-        completeRequest(after: 1.5)
+        completeRequest(after: statusDwell)
     }
 
     private func openViaContainingApplication(_ url: URL) -> Bool {
@@ -186,6 +209,10 @@ final class ShareViewController: UIViewController {
 
         return false
     }
+
+    /// Long enough to read the status message, and for VoiceOver to speak it, before the
+    /// sheet closes itself.
+    private let statusDwell: TimeInterval = 2.5
 
     private func completeRequest(after delay: TimeInterval) {
         Task { @MainActor in
