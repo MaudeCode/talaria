@@ -271,6 +271,10 @@ final class SessionListViewModel {
 
     func loadActiveProfile() async {
         guard !isLoadingActiveProfile else { return }
+        // A poll that starts after `switchActiveProfile` bumped the fence but
+        // before its request lands would capture the new generation and pass the
+        // guard below, restoring the profile the user just left.
+        guard !isSwitchingActiveProfile else { return }
 
         isLoadingActiveProfile = true
         activeProfileErrorMessage = nil
@@ -699,17 +703,10 @@ final class SessionListViewModel {
             let resolvedTitle = Self.nonEmpty(response.session?.title) ?? title
             let baseSession = sessions.first(where: { $0.sessionId == sessionId }) ?? session
             let updatedSession = baseSession.replacingTitle(with: resolvedTitle)
-            if let existingIndex = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
-                sessions[existingIndex] = updatedSession
-            }
-
-            if let modelContext {
-                do {
-                    try CacheStore.cacheSession(updatedSession, serverURL: server, in: modelContext)
-                } catch {
-                    cacheErrorMessage = error.localizedDescription
-                }
-            }
+            // Claim the row rather than assigning it: a list load already in
+            // flight was requested before this rename and still carries the old
+            // title, so without the claim it would revert what the user typed.
+            refreshRow(with: updatedSession, modelContext: modelContext)
 
             return true
         } catch {

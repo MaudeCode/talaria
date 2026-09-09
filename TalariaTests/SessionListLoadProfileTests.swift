@@ -97,29 +97,33 @@ extension SessionListMutationTests {
     /// snapshot that tick returns.
     @MainActor
     func testProjectMutationSurvivesAnOlderProjectsResponse() async throws {
+        let host = "tal106-projects-fence.test"
+        let requests = DeferredRequestsByPath()
         let projectsArrived = expectation(description: "projects request arrived")
         let deleteArrived = expectation(description: "delete request arrived")
         let sessionsArrived = expectation(description: "sessions request arrived")
-        let requests = DeferredRequests()
 
-        DeferredMockURLProtocol.onRequest = { request in
-            switch requests.append(request) {
-            case 1: projectsArrived.fulfill()
-            case 2: deleteArrived.fulfill()
-            case 3: sessionsArrived.fulfill()
-            default: XCTFail("unexpected extra request")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            requests.record(request)
+            switch request.request.url?.path {
+            case "/api/projects": projectsArrived.fulfill()
+            case "/api/projects/delete": deleteArrived.fulfill()
+            case "/api/sessions": sessionsArrived.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
         let viewModel = SessionListViewModel(server: server, client: client)
+        // A bare decoder, so the fixture uses ProjectSummary's own camelCase keys
+        // rather than the snake case APIClient converts from.
         let doomed = try JSONDecoder().decode(
             ProjectSummary.self,
-            from: Data(#"{"project_id":"doomed","name":"Doomed"}"#.utf8)
+            from: Data(#"{"projectId":"doomed","name":"Doomed"}"#.utf8)
         )
 
         // An automatic tick reloads projects...
@@ -129,13 +133,17 @@ extension SessionListMutationTests {
         // ...and the user deletes a project while it is still in flight.
         let deletion = Task { await viewModel.delete(doomed) }
         await fulfillment(of: [deleteArrived], timeout: 5)
-        requests.request(at: 1).complete(withJSON: #"{"success":true}"#)
+        try XCTUnwrap(
+            requests.request("/api/projects/delete"),
+            "recorded: \(requests.recordedPaths)"
+        ).complete(withJSON: #"{"success":true}"#)
         await fulfillment(of: [sessionsArrived], timeout: 5)
 
         // The tick's response predates the deletion and still lists the project.
-        requests.request(at: 0).complete(
-            withJSON: #"{"projects":[{"project_id":"doomed","name":"Doomed"}]}"#
-        )
+        try XCTUnwrap(
+            requests.request("/api/projects"),
+            "recorded: \(requests.recordedPaths)"
+        ).complete(withJSON: #"{"projects":[{"project_id":"doomed","name":"Doomed"}]}"#)
         await reload.value
 
         XCTAssertTrue(
@@ -143,7 +151,10 @@ extension SessionListMutationTests {
             "a stale projects response must not resurrect a deleted project"
         )
 
-        requests.request(at: 2).complete(withJSON: #"{"sessions":[]}"#)
+        try XCTUnwrap(
+            requests.request("/api/sessions"),
+            "recorded: \(requests.recordedPaths)"
+        ).complete(withJSON: #"{"sessions":[]}"#)
         _ = await deletion.value
     }
 
@@ -151,22 +162,24 @@ extension SessionListMutationTests {
     /// flight must not be undone by the profile that request reports.
     @MainActor
     func testProfileSwitchSurvivesAnOlderProfilesResponse() async throws {
+        let host = "tal106-profile-fence.test"
+        let requests = DeferredRequests()
         let profilesArrived = expectation(description: "profiles request arrived")
         let switchArrived = expectation(description: "switch request arrived")
-        let requests = DeferredRequests()
 
-        DeferredMockURLProtocol.onRequest = { request in
-            switch requests.append(request) {
-            case 1: profilesArrived.fulfill()
-            case 2: switchArrived.fulfill()
-            default: XCTFail("unexpected extra profile request")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/profiles": profilesArrived.fulfill()
+            case "/api/profile/switch": switchArrived.fulfill()
+            default: XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
             }
-        }
-        defer { DeferredMockURLProtocol.onRequest = nil }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
         let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
         let viewModel = SessionListViewModel(server: server, client: client)
         let work = try JSONDecoder().decode(
@@ -196,6 +209,107 @@ extension SessionListMutationTests {
             viewModel.activeProfileName,
             "work",
             "a stale profiles response must not undo a newer switch"
+        )
+    }
+
+    /// The round-7 fence advanced only when a switch began, so a poll starting
+    /// mid-switch captured the new generation and passed the guard.
+    @MainActor
+    func testProfilePollStartedDuringASwitchCannotRestoreTheOldProfile() async throws {
+        let host = "tal106-profile-midswitch.test"
+        let requests = DeferredRequests()
+        let switchArrived = expectation(description: "switch request arrived")
+
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            switch request.request.url?.path {
+            case "/api/profile/switch": switchArrived.fulfill()
+            default: XCTFail("a poll during a switch must not reach the network")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+        let work = try JSONDecoder().decode(
+            ProfileSummary.self,
+            from: Data(#"{"name":"work"}"#.utf8)
+        )
+
+        let switched = Task { await viewModel.switchActiveProfile(work) }
+        await fulfillment(of: [switchArrived], timeout: 5)
+
+        // A tick fires mid-switch. It must not issue a request at all.
+        await viewModel.loadActiveProfile()
+
+        requests.request(at: 0).complete(
+            withJSON: #"{"active":"work","profiles":[{"name":"work"},{"name":"personal"}]}"#
+        )
+        let didSwitch = await switched.value
+
+        XCTAssertTrue(didSwitch)
+        XCTAssertEqual(viewModel.activeProfileName, "work")
+    }
+
+    /// A rename claims its row, so a list load requested before it still carries
+    /// the old title and must not put it back over what the user typed.
+    @MainActor
+    func testRenameSurvivesAnOlderSessionsResponse() async throws {
+        let host = "tal106-rename-fence.test"
+        let requests = DeferredRequests()
+        let seedArrived = expectation(description: "seed sessions request arrived")
+        let tickArrived = expectation(description: "tick sessions request arrived")
+        let renameArrived = expectation(description: "rename request arrived")
+
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch (request.request.url?.path, requests.append(request)) {
+            case ("/api/sessions", 1): seedArrived.fulfill()
+            case ("/api/sessions", 2): tickArrived.fulfill()
+            case ("/api/session/rename", 3): renameArrived.fulfill()
+            default: XCTFail("Unexpected request: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+        let existing = SessionSummary(sessionId: "session-1", title: "Old title", archived: false)
+        let oldTitleResponse = #"{"sessions":[{"session_id":"session-1","title":"Old title","archived":false}]}"#
+
+        // Seed the row so the rename has something to claim.
+        let seed = Task { await viewModel.load() }
+        await fulfillment(of: [seedArrived], timeout: 5)
+        requests.request(at: 0).complete(withJSON: oldTitleResponse)
+        _ = await seed.value
+
+        // An automatic tick starts...
+        let tick = Task { await viewModel.load() }
+        await fulfillment(of: [tickArrived], timeout: 5)
+
+        // ...and the user renames the session while it is still in flight.
+        let rename = Task { await viewModel.rename(existing, to: "New title") }
+        await fulfillment(of: [renameArrived], timeout: 5)
+        requests.request(at: 2).complete(
+            withJSON: #"{"session":{"session_id":"session-1","title":"New title","archived":false}}"#
+        )
+        let didRename = await rename.value
+        XCTAssertTrue(didRename)
+        XCTAssertEqual(viewModel.sessions.first?.title, "New title")
+
+        // The tick's response predates the rename and still carries the old title.
+        requests.request(at: 1).complete(withJSON: oldTitleResponse)
+        _ = await tick.value
+
+        XCTAssertEqual(
+            viewModel.sessions.first?.title,
+            "New title",
+            "a stale sessions response must not revert a rename"
         )
     }
 
@@ -1101,5 +1215,32 @@ extension SessionListMutationTests {
             XCTFail("Expected unauthorized lastError, got \(String(describing: viewModel.lastError))")
             return
         }
+    }
+}
+
+
+/// Records deferred requests by path so a test completes them by endpoint rather
+/// than by arrival order, and reports a missing one instead of trapping on an
+/// out-of-range index.
+final class DeferredRequestsByPath: @unchecked Sendable {
+    private let lock = NSLock()
+    private var byPath: [String: DeferredMockURLProtocol] = [:]
+
+    func record(_ request: DeferredMockURLProtocol) {
+        lock.lock()
+        defer { lock.unlock() }
+        byPath[request.request.url?.path ?? ""] = request
+    }
+
+    func request(_ path: String) -> DeferredMockURLProtocol? {
+        lock.lock()
+        defer { lock.unlock() }
+        return byPath[path]
+    }
+
+    var recordedPaths: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return byPath.keys.sorted()
     }
 }
