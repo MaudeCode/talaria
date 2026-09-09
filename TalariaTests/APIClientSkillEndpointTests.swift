@@ -32,6 +32,7 @@ final class APIClientSkillEndpointTests: APIClientTestCase {
     func testSkillsToleratesMissingFields() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/skills")
+            XCTAssertEqual(request.httpMethod, "GET")
             return apiTestJSONResponse("""
             {"skills": [{"name": "minimal-skill"}]}
             """, for: request)
@@ -70,6 +71,7 @@ final class APIClientSkillEndpointTests: APIClientTestCase {
     func testSkillContentBuildsExpectedQueryAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/skills/content")
+            XCTAssertEqual(request.httpMethod, "GET")
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
             XCTAssertEqual(query["name"], "swift-refactor")
@@ -90,6 +92,7 @@ final class APIClientSkillEndpointTests: APIClientTestCase {
     func testSkillContentDecodesGroupedLinkedFiles() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/skills/content")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             return apiTestJSONResponse("""
             {
@@ -116,6 +119,7 @@ final class APIClientSkillEndpointTests: APIClientTestCase {
     func testSkillLinkedFileBuildsExpectedQueryAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/skills/content")
+            XCTAssertEqual(request.httpMethod, "GET")
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
             XCTAssertEqual(query["name"], "swift-refactor")

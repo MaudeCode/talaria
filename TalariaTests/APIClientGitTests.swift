@@ -63,6 +63,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testGitInfoDecodesNullGitForNonRepository() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git-info")
+            XCTAssertEqual(request.httpMethod, "GET")
             return apiTestJSONResponse(#"{"git": null}"#, for: request)
         }
 
@@ -75,6 +76,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testGitStatusBuildsExpectedQueryAndDecodesFilesAndTotals() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/status")
+            XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(try self.query(request)["session_id"], "abc123")
 
             return apiTestJSONResponse("""
@@ -218,6 +220,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testGitBranchesBuildsExpectedQueryAndDecodes() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/branches")
+            XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(try self.query(request)["session_id"], "abc123")
 
             return apiTestJSONResponse("""
@@ -291,6 +294,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testGitDiffBuildsExpectedQueryWithKindAndDecodes() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/diff")
+            XCTAssertEqual(request.httpMethod, "GET")
             let q = try self.query(request)
             XCTAssertEqual(q["session_id"], "abc123")
             XCTAssertEqual(q["path"], "Sources/App.swift")
@@ -400,9 +404,11 @@ final class APIClientGitTests: APIClientTestCase {
             XCTAssertEqual(body["track"] as? Bool, true)
             if requestIndex == 0 {
                 XCTAssertEqual(request.url?.path, "/api/git/checkout")
+                XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(body["dirty_mode"] as? String, "block")
             } else {
                 XCTAssertEqual(request.url?.path, "/api/git/stash-checkout")
+                XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertNil(body["dirty_mode"])
             }
             requestIndex += 1
@@ -421,6 +427,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testCreateBranchSendsNewModeNotLocal() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/checkout")
+            XCTAssertEqual(request.httpMethod, "POST")
             let body = try self.jsonBody(request)
             // "local" would just switch to ref and ignore new_branch; creating a branch
             // must use the server's "new" mode (issue #315 follow-up).
@@ -479,6 +486,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testDiscardBuildsBodyWithDeleteUntrackedFlag() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/discard")
+            XCTAssertEqual(request.httpMethod, "POST")
             let body = try self.jsonBody(request)
             XCTAssertEqual(body["paths"] as? [String], ["junk.tmp"])
             XCTAssertEqual(body["delete_untracked"] as? Bool, true)
@@ -492,6 +500,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testCommitBuildsBodyAndDecodesShaAndStatusUnderStatusKey() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/commit")
+            XCTAssertEqual(request.httpMethod, "POST")
             let body = try self.jsonBody(request)
             XCTAssertEqual(body["session_id"] as? String, "abc123")
             XCTAssertEqual(body["message"] as? String, "Fix the thing")
@@ -507,6 +516,7 @@ final class APIClientGitTests: APIClientTestCase {
     func testCommitSelectedBuildsBodyWithPathsAndDecodes() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/git/commit-selected")
+            XCTAssertEqual(request.httpMethod, "POST")
             let body = try self.jsonBody(request)
             XCTAssertEqual(body["message"] as? String, "Partial commit")
             XCTAssertEqual(body["paths"] as? [String], ["a.swift"])
@@ -523,6 +533,7 @@ final class APIClientGitTests: APIClientTestCase {
         var receivedPaths: [String] = []
         let client = makeClient { request in
             receivedPaths.append(request.url?.path ?? "")
+            XCTAssertEqual(request.httpMethod, "POST")
             let body = try self.jsonBody(request)
             XCTAssertEqual(body["session_id"] as? String, "abc123")
             if request.url?.path == "/api/git/commit-message-selected" {

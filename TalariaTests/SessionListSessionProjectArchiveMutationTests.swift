@@ -36,6 +36,7 @@ extension SessionListMutationTests {
                 XCTAssertEqual(body["project_id"] as? String, "project-1")
                 return apiTestJSONResponse(#"{"ok": true}"#, for: request)
             case "/api/session/delete":
+                XCTAssertEqual(request.httpMethod, "POST")
                 mutationPaths.append("/api/session/delete")
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["session_id"] as? String, "session-abc")
@@ -87,6 +88,7 @@ extension SessionListMutationTests {
 
             switch path {
             case "/api/session/duplicate":
+                XCTAssertEqual(request.httpMethod, "POST")
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["session_id"] as? String, "session-abc")
                 return apiTestJSONResponse(

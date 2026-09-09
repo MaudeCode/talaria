@@ -227,6 +227,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
                     Data()
                 )
             case "/api/provider/quota":
+                XCTAssertEqual(request.httpMethod, "GET")
                 let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
                 XCTAssertTrue(query?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
                 return apiTestJSONResponse("""

@@ -58,6 +58,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
     func testMemoryToleratesMissingFields() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/memory")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             return apiTestJSONResponse("""
             {
@@ -89,6 +90,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
         // upstream currently sends a list; both shapes must decode.
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/memory")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             return apiTestJSONResponse("""
             {
@@ -107,6 +109,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
     func testMemoryDecodesEmptyShadowedListAsNotShadowed() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/memory")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             return apiTestJSONResponse("""
             {
@@ -124,6 +127,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
     func testMemoryToleratesNullAndUnexpectedShadowedShapes() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/memory")
+            XCTAssertEqual(request.httpMethod, "GET")
 
             return apiTestJSONResponse("""
             {
@@ -171,6 +175,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
     func testMemoryWriteToleratesMissingFieldsAndUnknownSection() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/memory/write")
+            XCTAssertEqual(request.httpMethod, "POST")
 
             return apiTestJSONResponse("""
             {

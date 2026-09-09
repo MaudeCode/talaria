@@ -5,6 +5,7 @@ extension APIClientSessionDetailTests {
 func testSessionRequestBuildsExpectedQuery() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
         let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
@@ -87,6 +88,7 @@ func testSessionLoadEarlierOmitsExpandRenderableFlag() async throws {
 func testSessionDecodesPersistedToolCalls() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
@@ -127,6 +129,7 @@ func testSessionDecodesPersistedToolCalls() async throws {
 func testSessionDecodesPersistedAssistantReasoning() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
@@ -156,6 +159,7 @@ func testSessionDecodesPersistedAssistantReasoning() async throws {
 func testSessionPrefersPersistedReasoningContentOverSummary() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
+        XCTAssertEqual(request.httpMethod, "GET")
 
         return apiTestJSONResponse("""
         {
