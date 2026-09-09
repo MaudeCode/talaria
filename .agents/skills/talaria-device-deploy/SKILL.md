@@ -33,10 +33,12 @@ When the user asks to install without opening Talaria, run:
 scripts/run-ios-device --no-launch
 ```
 
-The script discovers one connected physical iPhone, builds a signed Debug app,
+The script discovers one paired physical iPhone, builds a signed Debug app,
 verifies its signature, and installs it. It launches the app unless `--no-launch`
-is set. If multiple iPhones are connected, set `TALARIA_DEVICE_ID` to the
-requested device identifier.
+is set. Discovery retries briefly while CoreDevice settles, then falls back to the
+single paired iPhone in the unfiltered device record. If multiple iPhones are
+paired, set `TALARIA_DEVICE_ID` to either the hardware UDID or the CoreDevice
+identifier reported by `xcrun devicectl list devices`.
 
 ## Completion
 

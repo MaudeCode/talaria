@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Synthetic physical-iPhone selection checks; never touches a real device."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+selector = Path(__file__).resolve().parent / 'select-ios-device'
+ATTEMPTS = '3'
+UDID = '00008150-000A0B0C0D0E0F10'
+IDENTIFIER = '11111111-2222-3333-4444-555555555555'
+
+FAKE_XCRUN = '''#!/usr/bin/env python3
+import os, shutil, sys
+
+with open(os.environ['CALL_LOG'], 'a') as log:
+    log.write('list\\n')
+index = sum(1 for _ in open(os.environ['CALL_LOG'])) - 1
+fixtures = os.environ['FIXTURE_DIR']
+while not os.path.exists(os.path.join(fixtures, f'{index}.json')):
+    index -= 1
+shutil.copyfile(os.path.join(fixtures, f'{index}.json'),
+                sys.argv[sys.argv.index('--json-output') + 1])
+'''
+
+
+def phone(identifier=IDENTIFIER, udid=UDID, *, state='connected', pairing='paired',
+          reality='physical', platform='iOS', kind='iPhone', name='iPhone 17 Pro'):
+    return {'identifier': identifier,
+            'properties': {'connection': {'state': state, 'pairingState': pairing},
+                           'hardware': {'udid': udid, 'reality': reality, 'platform': platform,
+                                        'deviceType': kind, 'marketingName': name}}}
+
+
+def record(*devices):
+    return {'result': {'devices': list(devices)}}
+
+
+def select(*records, expected=0, **environment):
+    """Run the selector against one synthetic device record per discovery attempt."""
+    with tempfile.TemporaryDirectory(prefix='device-select-') as directory:
+        work = Path(directory)
+        (work / 'bin').mkdir()
+        for index, item in enumerate(records):
+            (work / f'{index}.json').write_text(json.dumps(item))
+        fake = work / 'bin' / 'xcrun'
+        fake.write_text(FAKE_XCRUN)
+        fake.chmod(0o755)
+        env = dict(os.environ, PATH=f"{work / 'bin'}:{os.environ['PATH']}",
+                   FIXTURE_DIR=str(work), CALL_LOG=str(work / 'calls'),
+                   TALARIA_DEVICE_DISCOVERY_ATTEMPTS=ATTEMPTS,
+                   TALARIA_DEVICE_DISCOVERY_INTERVAL='0.01')
+        env.pop('TALARIA_DEVICE_ID', None)
+        env.update(environment)
+        result = subprocess.run([sys.executable, str(selector)], env=env,
+                                capture_output=True, text=True, timeout=60)
+        assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
+        calls = work / 'calls'
+        return (result.stdout.strip(), result.stderr.strip(),
+                len(calls.read_text().split()) if calls.exists() else 0)
+
+
+simulator = phone('99999999-0000-0000-0000-000000000001', reality='simulated')
+watch = phone('99999999-0000-0000-0000-000000000002', udid='00008150-000000000000AAAA',
+              kind='appleWatch', platform='watchOS')
+ipad = phone('99999999-0000-0000-0000-000000000003', udid='00008150-000000000000BBBB', kind='iPad')
+unpaired = phone('99999999-0000-0000-0000-000000000004', udid='00008150-000000000000CCCC',
+                 pairing='unpaired')
+second = phone('99999999-0000-0000-0000-000000000005', udid='00008150-000000000000DDDD')
+
+# A strict query returning zero recovers once the same paired iPhone becomes available.
+assert select(record(), record(), record(phone())) == (UDID, '', 3)
+
+# The unfiltered record resolves a transitioning iPhone without picking anything else.
+udid, notice, calls = select(record(simulator, watch, ipad, unpaired, phone(state='disconnected')))
+assert (udid, calls) == (UDID, int(ATTEMPTS)), (udid, calls)
+assert "'disconnected'" in notice, notice
+
+# An explicit hardware UDID is used unchanged, without consulting devicectl.
+assert select(record(), TALARIA_DEVICE_ID=UDID) == (UDID, '', 0)
+
+# An explicit CoreDevice identifier resolves to the hardware UDID the build needs.
+assert select(record(simulator, phone(state='disconnected')),
+              TALARIA_DEVICE_ID=IDENTIFIER) == (UDID, '', 1)
+
+# Refuse to guess, with a distinct actionable message per failure, on a bounded budget.
+missing = select(record(simulator, watch, ipad), expected=69)
+assert missing[2] == int(ATTEMPTS) and 'No paired physical iPhone' in missing[1], missing
+
+unavailable = select(record(unpaired), expected=69)
+assert unavailable[2] == int(ATTEMPTS) and 'not paired' in unavailable[1], unavailable
+
+ambiguous = select(record(phone(), second), expected=69)
+assert ambiguous[2] == 1 and 'Found 2 paired physical iPhones' in ambiguous[1], ambiguous
+assert UDID in ambiguous[1] and second['properties']['hardware']['udid'] in ambiguous[1]
+
+invalid = select(record(phone()), expected=69, TALARIA_DEVICE_ID='not-a-device')
+assert invalid[2] == int(ATTEMPTS) and 'TALARIA_DEVICE_ID=not-a-device' in invalid[1], invalid
+
+assert len({missing[1], unavailable[1], ambiguous[1], invalid[1]}) == 4
+
+print('ios device selection checks passed')
