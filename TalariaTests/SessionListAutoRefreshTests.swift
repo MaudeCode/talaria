@@ -210,51 +210,45 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 1)
     }
 
-    /// A cancelled refresh never advances the served generation, so the request
-    /// stays outstanding for whichever owner runs next. Nothing is handed over,
-    /// which is what keeps a cancelled `.task` from consuming a refresh it never
-    /// performed.
-    func testCancelledRefreshLeavesItsRequestOutstanding() async {
+    /// SwiftUI replaces these `.task(id:)` owners constantly. Cancelling one must
+    /// not abandon the refresh it started, because the request it was serving
+    /// would then have no owner left to finish it.
+    func testCancellationDoesNotAbandonARefreshPartWay() async {
         let queue = SessionListRefreshQueue()
-        var drainCount = 0
+        var completedRefreshes = 0
 
-        await queue.run(isRefreshInFlight: { true }) {}
-
-        let cancelled = Task {
-            await queue.drainFollowUp {
-                drainCount += 1
+        let caller = Task {
+            await queue.run(isRefreshInFlight: { false }) {
                 withUnsafeCurrentTask { $0?.cancel() }
+                await Task.yield()
+                completedRefreshes += 1
             }
         }
-        await cancelled.value
-        XCTAssertEqual(drainCount, 1)
+        caller.cancel()
+        await caller.value
 
-        // A different, non-cancelled owner still sees the request.
-        await queue.drainFollowUp { drainCount += 1 }
-
-        XCTAssertEqual(drainCount, 2)
+        XCTAssertEqual(completedRefreshes, 1)
     }
 
-    /// A request made while an owner is mid-refresh is served even if that owner
-    /// is then cancelled before its loop comes back around.
-    func testRequestMadeDuringACancelledRefreshSurvives() async {
+    /// A replacement owner records its request and is turned away, so the caller
+    /// already serving has to drain it — including after its own task is
+    /// cancelled, which is exactly what replacing it does.
+    func testServingCallerDrainsARequestFromATurnedAwayCallerDespiteCancellation() async {
         let queue = SessionListRefreshQueue()
         var refreshCount = 0
 
-        let cancelled = Task {
+        let owner = Task {
             await queue.run(isRefreshInFlight: { false }) {
                 refreshCount += 1
-                // A return refresh arrives, then this owner is torn down.
+                guard refreshCount == 1 else { return }
+                // The replacement `.task` requests a refresh mid-flight.
                 await queue.run(isRefreshInFlight: { false }) {
-                    XCTFail("a second owner must not start an overlapping refresh")
+                    XCTFail("a turned-away caller must not start its own refresh")
                 }
-                withUnsafeCurrentTask { $0?.cancel() }
             }
         }
-        await cancelled.value
-        XCTAssertEqual(refreshCount, 1)
-
-        await queue.drainFollowUp { refreshCount += 1 }
+        owner.cancel()
+        await owner.value
 
         XCTAssertEqual(refreshCount, 2)
     }

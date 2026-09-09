@@ -70,19 +70,24 @@ enum SessionListAutoRefresh {
 /// load instead, and every trigger that arrived during it coalesces into that
 /// single follow-up rather than queueing a request each.
 ///
-/// Outstanding work lives in the two counters rather than in whichever task
-/// happens to be serving. A refresh that is cancelled part-way simply never
-/// advances `servedGeneration`, so the request stays outstanding for the next
-/// owner: nothing has to be handed over, and a cancelled `.task` cannot consume
-/// a refresh it never performed.
+/// Two rules keep that safe against SwiftUI replacing `.task(id:)` owners, which
+/// foregrounding, returning to the compact list and switching sessions all do:
+///
+/// - A caller that finds another already serving records its request and returns
+///   rather than waiting, so a refresh can request another without deadlocking
+///   and a caller is never blocked on work it does not own.
+/// - Each refresh runs in a task this queue owns, and the serving loop drains
+///   every outstanding generation without checking for cancellation. Cancelling
+///   a caller therefore cannot abandon a refresh part-way or strand a request
+///   that the caller it replaced had already been turned away from.
 @MainActor
 final class SessionListRefreshQueue {
     private var requestedGeneration = 0
     private var servedGeneration = 0
-    private var isRunning = false
+    private var isServing = false
 
-    /// Records a refresh request, then serves it — along with anything requested
-    /// while it runs — unless another owner is already serving.
+    /// Records a refresh request, then serves it and anything else outstanding
+    /// unless another caller is already serving.
     ///
     /// - Parameter isRefreshInFlight: whether a full-list load this queue does
     ///   not own is already running. The active-row monitor reloads the list
@@ -90,38 +95,36 @@ final class SessionListRefreshQueue {
     ///   owner; it calls `drainFollowUp` afterwards.
     func run(
         isRefreshInFlight: () -> Bool,
-        refresh: () async -> Void
+        refresh: @escaping @MainActor () async -> Void
     ) async {
         requestedGeneration += 1
         await serve(isRefreshInFlight: isRefreshInFlight, refresh: refresh)
     }
 
-    /// Serves a request left outstanding by an owner this queue does not control,
-    /// or by one that was cancelled before it finished. Does nothing when every
-    /// request has already been served.
-    func drainFollowUp(refresh: () async -> Void) async {
+    /// Serves whatever is still outstanding after a load this queue does not own.
+    /// Does nothing when every request has already been served.
+    func drainFollowUp(refresh: @escaping @MainActor () async -> Void) async {
         await serve(isRefreshInFlight: { false }, refresh: refresh)
     }
 
     private func serve(
         isRefreshInFlight: () -> Bool,
-        refresh: () async -> Void
+        refresh: @escaping @MainActor () async -> Void
     ) async {
-        // `isRunning` spans the whole closure, not just its session request. A
-        // refresh also reloads projects and the active profile after that
-        // request settles, and those have no generation fence of their own, so
-        // a second owner starting there could let an older response overwrite
-        // newer project state.
-        guard !isRunning, !isRefreshInFlight() else { return }
+        guard !isServing, !isRefreshInFlight() else { return }
 
-        isRunning = true
-        defer { isRunning = false }
+        isServing = true
+        defer { isServing = false }
 
         while servedGeneration < requestedGeneration {
+            // Read before the refresh starts: a request arriving while it runs
+            // belongs to the next turn of this loop, not to a refresh that was
+            // already in flight without it.
             let serving = requestedGeneration
-            await refresh()
-            guard !Task.isCancelled else { return }
-            servedGeneration = serving
+            await Task { @MainActor in
+                await refresh()
+                servedGeneration = serving
+            }.value
         }
     }
 }
