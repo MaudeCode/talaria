@@ -61,9 +61,8 @@ class PerformanceUITestCase: TalariaUITestCase {
 
     /// Backgrounds the app under test. On this simulator a home press alone
     /// leaves it in `runningForeground`; following the press with an explicit
-    /// Springboard activation and letting it settle is what actually suspends
-    /// it. Neither works from inside a `measure` block, which is why the warm
-    /// launch budget times its own window.
+    /// Springboard activation, and letting each step settle, is what actually
+    /// suspends it.
     func background() {
         XCUIDevice.shared.press(.home)
         Thread.sleep(forTimeInterval: 2)
@@ -73,23 +72,6 @@ class PerformanceUITestCase: TalariaUITestCase {
             app.state, .runningForeground,
             "The app never left the foreground"
         )
-    }
-
-    func median(of samples: [TimeInterval]) -> TimeInterval {
-        samples.sorted()[samples.count / 2]
-    }
-
-    func formatted(_ samples: [TimeInterval]) -> String {
-        samples.map { String(format: "%.0f ms", $0 * 1000) }.joined(separator: ", ")
-    }
-
-    /// Keeps the samples in the result bundle so CI runs stay comparable.
-    func report(_ samples: [TimeInterval], named name: String) {
-        let text = "\(name): median \(formatted([median(of: samples)])) over \(formatted(samples))"
-        let attachment = XCTAttachment(string: text)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 
     func openDenseSession() {
@@ -105,7 +87,14 @@ final class LaunchPerformanceUITests: PerformanceUITestCase {
     /// process, so the measurement covers process start through the first
     /// responsive frame of the dense session list.
     func testColdLaunchToSessionList() {
-        measure(metrics: [XCTApplicationLaunchMetric()], options: measureOptions(manualWindow: false)) {
+        measure(
+            metrics: [
+                XCTApplicationLaunchMetric(),
+                XCTCPUMetric(application: app),
+                XCTMemoryMetric(application: app)
+            ],
+            options: measureOptions(manualWindow: false)
+        ) {
             launchDenseFixture()
             waitForSessionList()
         }
@@ -113,33 +102,35 @@ final class LaunchPerformanceUITests: PerformanceUITestCase {
 
     /// Warm launch: the process survives, so this is the resume path — the cost
     /// of restoring the dense session list rather than of starting up.
-    ///
-    /// `measure` keeps the app under test in the foreground for the whole block,
-    /// so a resume cannot happen inside one. The resume is timed directly
-    /// instead, and the samples are attached for comparison the same way the
-    /// replay catch-up curve is.
     func testWarmLaunchFromBackground() {
         launchDenseFixture()
         waitForSessionList()
 
-        var samples: [TimeInterval] = []
-        for _ in 0..<Self.iterationCount {
+        measure(
+            metrics: [XCTClockMetric(), XCTCPUMetric(application: app), XCTMemoryMetric(application: app)],
+            options: measureOptions(manualWindow: true)
+        ) {
             background()
+
+            startMeasuring()
             let start = Date()
             app.activate()
             waitForSessionList()
-            samples.append(Date().timeIntervalSince(start))
-        }
+            let elapsed = Date().timeIntervalSince(start)
+            stopMeasuring()
 
-        report(samples, named: "Warm launch resume")
-        XCTAssertLessThan(
-            median(of: samples), Self.warmResumeBudgetSeconds,
-            "Warm resume to a responsive session list regressed: \(formatted(samples))"
-        )
+            // The one wall-clock budget on this lane: the resume window is
+            // narrow and repeatable (1.24 s median, 30 ms spread), so a
+            // threshold here is a signal rather than a flake.
+            XCTAssertLessThan(
+                elapsed, Self.warmResumeBudgetSeconds,
+                "Warm resume to a responsive session list took \(Int(elapsed * 1000)) ms"
+            )
+        }
     }
 
-    /// Budget from repeated baselines on an iPhone 17 Pro simulator, iOS 26.4.1
-    /// (see `docs/performance-budgets.md`), with headroom for a loaded CI host.
+    /// From repeated baselines on an iPhone 17 Pro simulator, iOS 26.4.1 (see
+    /// `docs/performance-budgets.md`), with headroom for a loaded CI host.
     private static let warmResumeBudgetSeconds: TimeInterval = 3.0
 }
 

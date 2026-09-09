@@ -58,8 +58,10 @@ Medians of three iterations.
 
 | Measurement | Median | Spread |
 | --- | --- | --- |
-| Cold launch to session list (`Duration (AppLaunch)`) | 1.308 s | 0.034 s |
-| Warm resume to session list | 1.253 s | 0.030 s |
+| Cold launch to session list (`Duration (AppLaunch)`) | 1.372 s | 0.034 s |
+| Cold launch to session list (peak memory) | 67,898 kB | — |
+| Warm resume to session list (clock) | 1.240 s | 0.030 s |
+| Warm resume to session list (CPU time) | 0.255 s | — |
 | Dense transcript open (clock) | 5.466 s | 0.129 s |
 | Dense transcript open (peak memory) | 228,838 kB | 5,636 kB |
 | Dense transcript scroll, 6 swipes (clock) | 33.589 s | 1.499 s |
@@ -72,14 +74,20 @@ The clock figures for the scroll and navigation budgets cover the whole
 scripted interaction, including the XCUI gesture and query time, so they are
 comparison points between runs rather than a claim about frame cost.
 
-Only two budgets assert a threshold; the rest record for comparison, because a
-wall-clock assertion on a simulator UI run is a flake, not a signal.
+Only two budgets assert a threshold. The rest record for comparison, because a
+wall-clock assertion over a simulator gesture or a whole XCUI launch cycle is a
+flake, not a signal.
 
 - Replay catch-up may not cost more than 3x per doubling of the response. A
   linear path measures ~1.96x, and the quadratic path this replaced measured
   ~3.9x.
-- Warm resume to a responsive session list must stay under 3.0 s, against a
-  1.25 s baseline.
+- Warm resume to a responsive session list must stay under 3.0 s. The resume
+  window is narrow and repeatable (1.24 s median, 30 ms spread), so a threshold
+  on it holds.
+
+`XCTHitchMetric` is attached to the scroll budget and to the older sidebar
+budget, but this simulator runtime records no hitch measurements for either, so
+those budgets read on wall time and CPU.
 
 ## Replay catch-up: the measured change
 
