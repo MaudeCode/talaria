@@ -144,7 +144,9 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          test_options=()
+          # The fuzz soak class reruns the PR fuzz properties at a far larger
+          # seed budget; the scheduled Fuzz Soak workflow owns it (TAL-85).
+          test_options=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             test_options+=("-skip-testing:TalariaUITests/SidebarPerformanceUITests")
           fi
