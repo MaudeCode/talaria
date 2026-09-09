@@ -179,6 +179,80 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         }
     }
 
+    func testForbiddenResponseShowsStructuredServerReasonWithoutPasswordGuidance() {
+        let bodies = [
+            #"{"error":"This session was imported read-only and cannot be continued."}"#,
+            #"{"message":"This session was imported read-only and cannot be continued."}"#,
+            #"{"detail":"This session was imported read-only and cannot be continued."}"#
+        ]
+
+        for body in bodies {
+            let message = APIError.http(statusCode: 403, body: body).localizedDescription
+
+            XCTAssertEqual(
+                message,
+                "The server refused the request: This session was imported read-only and cannot be continued.",
+                "Body \(body) should surface its structured reason."
+            )
+            XCTAssertFalse(message.localizedCaseInsensitiveContains("password"))
+        }
+    }
+
+    func testForbiddenResponseWithoutStructuredReasonUsesGenericRefusalCopy() {
+        let bodies: [String?] = [
+            nil,
+            "",
+            "   ",
+            #"{"error":"   "}"#,
+            #"{"error":}"#,
+            "<html><body>Forbidden by WAF rule 42</body></html>"
+        ]
+
+        for body in bodies {
+            let message = APIError.http(statusCode: 403, body: body).localizedDescription
+
+            XCTAssertEqual(
+                message,
+                "The server refused the request. Check your access to this server.",
+                "Body \(body ?? "nil") should fall back to generic refusal copy."
+            )
+            XCTAssertFalse(message.contains("<"))
+            XCTAssertFalse(message.localizedCaseInsensitiveContains("WAF rule 42"))
+            XCTAssertFalse(message.localizedCaseInsensitiveContains("password"))
+        }
+    }
+
+    func testInterpolatedServerErrorsAreBoundedTo200Characters() {
+        let reason = String(repeating: "n", count: 500)
+        let body = #"{"error":"\#(reason)"}"#
+        let bounded = String(repeating: "n", count: 199) + "\u{2026}"
+
+        let cases: [(Int, String)] = [
+            (400, "The server rejected the request: \(bounded)"),
+            (403, "The server refused the request: \(bounded)"),
+            (599, "Server returned HTTP 599: \(bounded)")
+        ]
+
+        for (statusCode, expected) in cases {
+            let message = APIError.http(statusCode: statusCode, body: body).localizedDescription
+
+            XCTAssertEqual(message, expected)
+            XCTAssertFalse(message.contains(reason), "HTTP \(statusCode) echoed the unbounded server reason.")
+        }
+
+        // The untruncated reason still reaches classification and diagnostics.
+        XCTAssertEqual(APIError.http(statusCode: 403, body: body).serverMessage, reason)
+    }
+
+    func testUnauthorizedKeepsPasswordGuidanceAndLogCategory() {
+        XCTAssertEqual(
+            APIError.unauthorized.localizedDescription,
+            "The password was rejected. Check the server password and try again."
+        )
+        XCTAssertEqual(APIError.unauthorized.privacySafeLogCategory, "unauthorized")
+        XCTAssertEqual(APIError.http(statusCode: 403, body: #"{"error":"nope"}"#).privacySafeLogCategory, "http.403")
+    }
+
     func testHTTPErrorPrivacySafeLogCategoryDoesNotExposeServerBody() {
         let error = APIError.http(
             statusCode: 400,

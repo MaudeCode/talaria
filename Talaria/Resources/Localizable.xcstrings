@@ -108314,112 +108314,6 @@
         }
       }
     },
-    "The server refused access. Check the server password and permissions." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "رفض الخادم الوصول. تحقق من كلمة مرور الخادم والأذونات."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Der Server hat den Zugriff verweigert. Überprüfe das Server-Passwort und die Berechtigungen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "El servidor rechazó el acceso. Verifica la contraseña y los permisos del servidor."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Le serveur a refusé l'accès. Vérifiez le mot de passe et les autorisations du serveur."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "השרת סירב לגישה. בדוק את סיסמת השרת וההרשאות."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Il server ha rifiutato l'accesso. Verifica la password e i permessi del server."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "サーバがアクセスを拒否しました。サーバのパスワードと権限を確認してください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "서버가 접근을 거부했어요. 서버 비밀번호와 권한을 확인하세요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "De server weigerde toegang. Controleer het serverwachtwoord en de machtigingen."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Serwer odmówił dostępu. Sprawdź hasło serwera i uprawnienia."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "O servidor recusou o acesso. Verifique a senha e as permissões do servidor."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Сервер отказал в доступе. Проверьте пароль сервера и разрешения."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Sunucu erişimi reddetti. Sunucu parolasını ve izinleri kontrol edin."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "سرور نے رسائی سے انکار کر دیا۔ سرور پاس ورڈ اور اجازتوں کی جانچ کریں۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "服务器拒绝访问。请检查服务器密码和权限。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "伺服器拒絕存取。請檢查伺服器密碼和權限。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "伺服器拒絕存取。請檢查伺服器密碼和權限。"
-          }
-        }
-      }
-    },
     "The server refused or did not apply this update." : {
       "localizations" : {
         "ar" : {
@@ -108522,6 +108416,218 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "伺服器拒絕或未套用此更新。"
+          }
+        }
+      }
+    },
+    "The server refused the request: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رفض الخادم هذا الطلب: %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Server hat diese Anfrage verweigert: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El servidor rechazó esta solicitud: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le serveur a refusé cette demande : %@"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "השרת סירב לבקשה הזו: %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il server ha rifiutato questa richiesta: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "サーバがこのリクエストを拒否しました：%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "서버가 이 요청을 거부했어요: %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De server heeft dit verzoek geweigerd: %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serwer odmówił wykonania tego żądania: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O servidor recusou esta solicitação: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервер отклонил этот запрос: %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sunucu bu isteği reddetti: %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سرور نے یہ درخواست مسترد کر دی: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "服务器拒绝了此请求：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "伺服器拒絕了此請求：%@"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "伺服器拒絕了此請求：%@"
+          }
+        }
+      }
+    },
+    "The server refused the request. Check your access to this server." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رفض الخادم هذا الطلب. تحقق من صلاحيات وصولك إلى هذا الخادم."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Server hat diese Anfrage verweigert. Überprüfe deinen Zugriff auf diesen Server."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El servidor rechazó esta solicitud. Verifica tu acceso a este servidor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le serveur a refusé cette demande. Vérifiez votre accès à ce serveur."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "השרת סירב לבקשה הזו. בדוק את הרשאות הגישה שלך לשרת הזה."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il server ha rifiutato questa richiesta. Verifica il tuo accesso a questo server."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "サーバがこのリクエストを拒否しました。このサーバへのアクセス権を確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "서버가 이 요청을 거부했어요. 이 서버에 대한 접근 권한을 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De server heeft dit verzoek geweigerd. Controleer je toegang tot deze server."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serwer odmówił wykonania tego żądania. Sprawdź swój dostęp do tego serwera."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O servidor recusou esta solicitação. Verifique seu acesso a este servidor."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервер отклонил этот запрос. Проверьте свой доступ к этому серверу."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sunucu bu isteği reddetti. Bu sunucudaki erişiminizi kontrol edin."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سرور نے یہ درخواست مسترد کر دی۔ اس سرور تک اپنی رسائی کی جانچ کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "服务器拒绝了此请求。请检查你对此服务器的访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "伺服器拒絕了此請求。請檢查你對此伺服器的存取權限。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "伺服器拒絕了此請求。請檢查你對此伺服器的存取權限。"
           }
         }
       }
