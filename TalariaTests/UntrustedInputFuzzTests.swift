@@ -26,6 +26,10 @@ class UntrustedInputFuzzTests: XCTestCase {
     /// generated names and filenames really do carry the active boundary.
     fileprivate static let fuzzBoundary = "FuzzBoundary"
 
+    /// Concurrent so a thread abandoned at the budget cannot stall the seeds
+    /// that follow it.
+    private static let watchdogQueue = DispatchQueue(label: "talaria.fuzz.watchdog", attributes: .concurrent)
+
     /// Per-input wall-clock ceiling. A bounded input that takes longer than
     /// this at a parser boundary is the hang this suite exists to catch, not a
     /// slow machine.
@@ -49,9 +53,9 @@ class UntrustedInputFuzzTests: XCTestCase {
             let eventType = isKnown ? generator.element(knownTypes) : generator.string()
             let payload = generator.payloadString()
 
-            let event = withinTimeBudget(seed: seed, input: "\(eventType) \(payload)") {
+            guard let event = withinTimeBudget(seed: seed, input: "\(eventType) \(payload)", {
                 SSEEventDecoder.decode(eventType: eventType, data: payload)
-            }
+            }) else { return }
 
             if !isKnown, !knownTypes.contains(eventType) {
                 XCTAssertEqual(
@@ -81,27 +85,23 @@ class UntrustedInputFuzzTests: XCTestCase {
     /// `DecodingError`. Nothing may trap, hang, or amplify the input into a
     /// disproportionately large string.
     func testModelDecodingFailsTolerantlyAndStaysBounded() {
-        let decoder = JSONDecoder()
-
         forEachSeed { generator, seed in
             let data = generator.payloadData()
 
-            withinTimeBudget(seed: seed, input: data.fuzzDescription) {
-                assertTolerantDecode(ChatMessage.self, from: data, decoder: decoder, seed: seed) { message in
-                    if let content = message.content {
-                        assertBounded(content.count, by: data.count, label: "message content", seed: seed)
-                    }
-                    if let rows = message.activityScene?.activityRows {
-                        assertBounded(rows.count, by: data.count, label: "activity rows", seed: seed)
-                    }
+            assertTolerantDecode(ChatMessage.self, from: data, seed: seed) { message in
+                if let content = message.content {
+                    assertBounded(content.count, by: data.count, label: "message content", seed: seed)
                 }
-                assertTolerantDecode(SessionsResponse.self, from: data, decoder: decoder, seed: seed) { response in
-                    assertBounded(response.sessions?.count ?? 0, by: data.count, label: "sessions", seed: seed)
+                if let rows = message.activityScene?.activityRows {
+                    assertBounded(rows.count, by: data.count, label: "activity rows", seed: seed)
                 }
-                assertTolerantDecode(SessionResponse.self, from: data, decoder: decoder, seed: seed) { _ in }
-                assertTolerantDecode(AssistantActivityScene.self, from: data, decoder: decoder, seed: seed) { scene in
-                    assertBounded(scene.activityRows?.count ?? 0, by: data.count, label: "scene rows", seed: seed)
-                }
+            }
+            assertTolerantDecode(SessionsResponse.self, from: data, seed: seed) { response in
+                assertBounded(response.sessions?.count ?? 0, by: data.count, label: "sessions", seed: seed)
+            }
+            assertTolerantDecode(SessionResponse.self, from: data, seed: seed) { _ in }
+            assertTolerantDecode(AssistantActivityScene.self, from: data, seed: seed) { scene in
+                assertBounded(scene.activityRows?.count ?? 0, by: data.count, label: "scene rows", seed: seed)
             }
         }
     }
@@ -228,9 +228,9 @@ class UntrustedInputFuzzTests: XCTestCase {
             let endpoint = generator.bool()
                 ? Endpoint.file(sessionID: sessionID, path: path)
                 : Endpoint.media(sessionID: sessionID, path: path)
-            let url = withinTimeBudget(seed: seed, input: path) {
+            guard let url = withinTimeBudget(seed: seed, input: path, {
                 endpoint.url(relativeTo: baseURL)
-            }
+            }) else { return }
 
             guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
                 return XCTFail("Endpoint produced an unparseable URL (seed \(seed), path \(path.debugDescription)).")
@@ -281,9 +281,9 @@ class UntrustedInputFuzzTests: XCTestCase {
         forEachSeed { generator, seed in
             let markdown = generator.markdown()
 
-            let segments = withinTimeBudget(seed: seed, input: markdown) {
+            guard let segments = withinTimeBudget(seed: seed, input: markdown, {
                 TranscriptMediaParser.segments(in: markdown)
-            }
+            }) else { return }
 
             assertBounded(segments.count, by: markdown.count, label: "media segments", seed: seed)
 
@@ -307,6 +307,21 @@ class UntrustedInputFuzzTests: XCTestCase {
         }
     }
 
+    // MARK: - Watchdog
+
+    /// The hang detector has to be checked, or a regression in it would turn
+    /// every "never hangs" property back into a silent pass.
+    func testWatchdogAbandonsWorkThatOutlivesItsBudget() {
+        XCTExpectFailure("The watchdog is expected to report the abandoned input.")
+
+        let result: Int? = withinTimeBudget(seed: 0, input: "deliberate hang", budget: 0.2, {
+            Thread.sleep(forTimeInterval: 0.6)
+            return 1
+        })
+
+        XCTAssertNil(result, "The watchdog returned a value for work that outlived its budget.")
+    }
+
     // MARK: - Minimized regressions
 
     // No fuzz-discovered failure is outstanding. Add the minimized
@@ -322,41 +337,63 @@ class UntrustedInputFuzzTests: XCTestCase {
         }
     }
 
+    /// Runs `work` on its own thread and gives up on it after the budget.
+    /// Timing the call after it returns cannot catch the runaway loop this
+    /// suite exists to find — that call never returns, so the job would burn
+    /// its whole workflow timeout without naming a reproducing seed. Returns
+    /// `nil` once the budget is spent; the input is abandoned, not awaited.
     @discardableResult
     private func withinTimeBudget<Output>(
         seed: UInt64,
-        input: String,
-        _ work: () -> Output,
+        input: @autoclosure @escaping () -> String,
+        budget: TimeInterval? = nil,
+        _ work: @escaping @Sendable () -> Output,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) -> Output {
-        let started = Date()
-        let result = work()
-        let elapsed = Date().timeIntervalSince(started)
-        XCTAssertLessThan(
-            elapsed,
-            Self.perInputTimeBudget,
-            "A bounded input took \(elapsed)s (seed \(seed), input \(input.debugDescription)).",
-            file: file,
-            line: line
-        )
-        return result
+    ) -> Output? {
+        let box = FuzzResultBox<Output>()
+        let finished = DispatchSemaphore(value: 0)
+        Self.watchdogQueue.async {
+            box.value = work()
+            finished.signal()
+        }
+
+        let ceiling = budget ?? Self.perInputTimeBudget
+        guard finished.wait(timeout: .now() + ceiling) == .success else {
+            XCTFail(
+                """
+                A bounded input did not finish inside \(ceiling)s \
+                (seed \(seed), input \(input().debugDescription)).
+                """,
+                file: file,
+                line: line
+            )
+            return nil
+        }
+        return box.value
     }
 
+    /// The decode runs under the watchdog; the inspection runs here, so a
+    /// bounded assertion failure is reported against the calling test.
     private func assertTolerantDecode<Value: Decodable>(
         _ type: Value.Type,
         from data: Data,
-        decoder: JSONDecoder,
         seed: UInt64,
         _ inspect: (Value) -> Void,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        do {
-            inspect(try decoder.decode(type, from: data))
-        } catch is DecodingError {
-            // The tolerant failure this boundary is required to produce.
-        } catch {
+        let outcome = withinTimeBudget(seed: seed, input: data.fuzzDescription, {
+            Result { try JSONDecoder().decode(Value.self, from: data) }
+        }, file: file, line: line)
+
+        switch outcome {
+        case .none:
+            return
+        case .success(let value)?:
+            inspect(value)
+        case .failure(let error)?:
+            guard !(error is DecodingError) else { return }
             XCTFail(
                 "\(type) threw a non-decoding error (seed \(seed)): \(error)",
                 file: file,
@@ -474,6 +511,11 @@ class UntrustedInputFuzzTests: XCTestCase {
 /// Skipped in PR CI by `.github/workflows/pr-ci.yml`.
 final class UntrustedInputFuzzSoakTests: UntrustedInputFuzzTests {
     override class var iterations: Int { 500_000 }
+}
+
+/// Carries a watchdogged result back across the queue hop.
+private final class FuzzResultBox<Value>: @unchecked Sendable {
+    var value: Value?
 }
 
 /// Deterministic, size-bounded generator for untrusted input. Every value it
@@ -614,7 +656,8 @@ private struct FuzzGenerator {
 }
 
 private extension Data {
+    /// Raw prefix; the caller applies `debugDescription` when it reports.
     var fuzzDescription: String {
-        String(decoding: prefix(120), as: UTF8.self).debugDescription
+        String(decoding: prefix(120), as: UTF8.self)
     }
 }
