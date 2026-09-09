@@ -806,7 +806,12 @@ final class SessionListViewModel {
         }
     }
 
-    func loadProjects() async {
+    /// - Parameter silently: `true` when this reload is a side effect of loading
+    ///   the session list rather than something the user asked for.
+    ///   `actionErrorMessage` is presented as a modal, so only a project action
+    ///   the user actually requested may fail into it — otherwise a transient
+    ///   `/api/projects` failure interrupts them once per list refresh.
+    func loadProjects(silently: Bool = false) async {
         isLoadingProjects = true
         actionErrorMessage = nil
         lastError = nil
@@ -819,7 +824,9 @@ final class SessionListViewModel {
             guard !APIError.isCancellation(error) else { return }
 
             lastError = error
-            actionErrorMessage = error.localizedDescription
+            if !silently {
+                actionErrorMessage = error.localizedDescription
+            }
         }
     }
 

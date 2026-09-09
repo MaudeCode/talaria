@@ -90,7 +90,13 @@ final class SessionListRefreshQueue {
         repeat {
             hasFollowUp = false
             await refresh()
-            guard !Task.isCancelled else { return }
+            if Task.isCancelled {
+                // This load was cancelled part-way, so whatever it was standing
+                // in for is still outstanding. Keep the follow-up for the next
+                // owner instead of consuming it here.
+                hasFollowUp = true
+                return
+            }
         } while hasFollowUp
     }
 

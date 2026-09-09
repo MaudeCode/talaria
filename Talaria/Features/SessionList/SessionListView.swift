@@ -290,7 +290,7 @@ struct SessionListView: View {
                     // back on screen, which both want fresh rows right away.
                     refreshesImmediately: didCompleteInitialLoad,
                     isRefreshInFlight: { viewModel.isLoading },
-                    refresh: { await refreshSessionsInBackground() }
+                    refresh: { await refreshSessionsAndActiveProfile() }
                 )
             }
             .onAppear {
@@ -1097,22 +1097,6 @@ struct SessionListView: View {
         }
     }
 
-    /// The automatic tick refreshes the session list and nothing else.
-    ///
-    /// `loadSessions()` also reloads projects, and `loadProjects` reports a
-    /// failure through `actionErrorMessage`, which `SessionActionConfirmations`
-    /// presents as a modal. That channel belongs to actions the user asked for:
-    /// a transient `/api/projects` failure must not interrupt them here, least
-    /// of all once per tick. `handleLastError` still runs, so an expired session
-    /// signs out exactly as it does on every other path.
-    private func refreshSessionsInBackground() async {
-        await refreshQueue.run(isRefreshInFlight: { viewModel.isLoading }) {
-            await viewModel.load(modelContext: modelContext)
-            guard !Task.isCancelled else { return }
-            handleLastError()
-        }
-    }
-
     private var sceneActions: TalariaSceneActions {
         TalariaSceneActions(
             canCreateNewChat: !viewModel.isViewingCachedData && !navigationState.isCreatingNewChat,
@@ -1189,7 +1173,7 @@ struct SessionListView: View {
         handleLastError()
 
         if !viewModel.isViewingCachedData {
-            await viewModel.loadProjects()
+            await viewModel.loadProjects(silently: true)
             guard !Task.isCancelled else { return }
             handleLastError()
         }
