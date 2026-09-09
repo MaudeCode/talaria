@@ -185,9 +185,9 @@ final class SessionNavigationStateTests: XCTestCase {
         state.remember(SessionSummary(sessionId: "created-session"))
         let oldDestination = state.destination
         state.clearDestination()
-        var events: [NewChatReturnEvent] = []
+        var events: [ReturnRefreshEvent] = []
 
-        SessionListNewChatReturn.run(
+        SessionListReturnRefresh.run(
             from: oldDestination,
             to: state.destination,
             suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
@@ -203,9 +203,9 @@ final class SessionNavigationStateTests: XCTestCase {
         state.select(route)
         let oldDestination = state.destination
         state.clearDestination()
-        var events: [NewChatReturnEvent] = []
+        var events: [ReturnRefreshEvent] = []
 
-        SessionListNewChatReturn.run(
+        SessionListReturnRefresh.run(
             from: oldDestination,
             to: state.destination,
             suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
@@ -218,11 +218,84 @@ final class SessionNavigationStateTests: XCTestCase {
     func testReplacingNewChatRouteDoesNotRefreshSessions() {
         let firstRoute = PendingNewChatRoute()
         let secondRoute = PendingNewChatRoute()
-        var events: [NewChatReturnEvent] = []
+        var events: [ReturnRefreshEvent] = []
 
-        SessionListNewChatReturn.run(
+        SessionListReturnRefresh.run(
             from: .newChat(firstRoute),
             to: .newChat(secondRoute),
+            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
+            refreshSessions: { events.append(.refreshedSessions) }
+        )
+
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testLeavingAnExistingSessionRefreshesWithoutSuppressingPlaceholders() {
+        var state = SessionNavigationState()
+        state.select(SessionSummary(sessionId: "session-1"))
+        let oldDestination = state.destination
+        state.clearDestination()
+        var events: [ReturnRefreshEvent] = []
+
+        SessionListReturnRefresh.run(
+            from: oldDestination,
+            to: state.destination,
+            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
+            refreshSessions: { events.append(.refreshedSessions) }
+        )
+
+        XCTAssertEqual(events, [.refreshedSessions])
+    }
+
+    /// Regular width switches straight from one session to another without ever
+    /// passing through a nil destination, and the session being left can still
+    /// have a newer title or message count on the server.
+    func testSwitchingBetweenSessionsRefreshesSessions() {
+        var events: [ReturnRefreshEvent] = []
+
+        SessionListReturnRefresh.run(
+            from: .session(SessionSummary(sessionId: "session-1")),
+            to: .session(SessionSummary(sessionId: "session-2")),
+            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
+            refreshSessions: { events.append(.refreshedSessions) }
+        )
+
+        XCTAssertEqual(events, [.refreshedSessions])
+    }
+
+    func testLeavingAUtilityDestinationRefreshesSessions() {
+        var events: [ReturnRefreshEvent] = []
+
+        SessionListReturnRefresh.run(
+            from: .utility(.archived),
+            to: nil,
+            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
+            refreshSessions: { events.append(.refreshedSessions) }
+        )
+
+        XCTAssertEqual(events, [.refreshedSessions])
+    }
+
+    func testFirstDestinationOfALaunchDoesNotRefreshSessions() {
+        var events: [ReturnRefreshEvent] = []
+
+        SessionListReturnRefresh.run(
+            from: nil,
+            to: .session(SessionSummary(sessionId: "session-1")),
+            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
+            refreshSessions: { events.append(.refreshedSessions) }
+        )
+
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testUnchangedDestinationDoesNotRefreshSessions() {
+        let session = SessionSummary(sessionId: "session-1")
+        var events: [ReturnRefreshEvent] = []
+
+        SessionListReturnRefresh.run(
+            from: .session(session),
+            to: .session(session),
             suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
@@ -359,7 +432,7 @@ final class SessionNavigationStateTests: XCTestCase {
     }
 }
 
-private enum NewChatReturnEvent: Equatable {
+private enum ReturnRefreshEvent: Equatable {
     case suppressedPlaceholders
     case refreshedSessions
 }

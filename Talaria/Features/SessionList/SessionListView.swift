@@ -281,6 +281,17 @@ struct SessionListView: View {
                 guard returnRefreshID != nil else { return }
                 await refreshSessionsAndActiveProfile()
             }
+            .task(id: autoRefreshTaskID) {
+                guard autoRefreshTaskID.isEnabled else { return }
+                await SessionListAutoRefresh.run(
+                    // The cold-start task already owns the first request; a
+                    // later restart means the app foregrounded or the list came
+                    // back on screen, which both want fresh rows right away.
+                    refreshesImmediately: didCompleteInitialLoad,
+                    isRefreshInFlight: { viewModel.isLoading },
+                    refresh: { await refreshSessionsAndActiveProfile() }
+                )
+            }
             .onAppear {
                 openPendingSharedImportIfNeeded()
                 openPendingQuotaSourceIfNeeded()
@@ -322,7 +333,7 @@ struct SessionListView: View {
                 selectedProjectID = nil
             }
             .onChange(of: navigationState.destination) { oldValue, newValue in
-                SessionListNewChatReturn.run(
+                SessionListReturnRefresh.run(
                     from: oldValue,
                     to: newValue,
                     suppressEmptyPlaceholders: viewModel.removeEmptySidebarPlaceholders,
@@ -807,6 +818,17 @@ struct SessionListView: View {
         "\(server.absoluteString)|\(quotaRefreshIntervalSeconds)|\(scenePhase == .active)"
     }
 
+    private var autoRefreshTaskID: SessionListAutoRefresh.TaskID {
+        SessionListAutoRefresh.TaskID(
+            server: server,
+            isSceneActive: scenePhase == .active,
+            // In regular width the sidebar stays beside the detail column, so
+            // the list is only off screen when a compact destination has
+            // replaced or covered it.
+            isListVisible: horizontalSizeClass == .regular || navigationState.destination == nil
+        )
+    }
+
     private var newSessionButton: some View {
         HapticButton(feedbackStyle: .medium) {
             openNewChat()
@@ -1059,7 +1081,15 @@ struct SessionListView: View {
         )
     }
 
+    /// The one path every full-list trigger takes — initial load,
+    /// pull-to-refresh, the return refresh, and the automatic refresh loop — so
+    /// this guard is where they are deduplicated. A trigger arriving while a
+    /// list load is in flight is dropped rather than queued: that load is
+    /// already fetching the same rows, and `SessionListViewModel.load` fences
+    /// its own late responses by generation. The active-row monitor takes the
+    /// matching `!isLoading` guard inside `refreshActiveSessionStatesIfNeeded`.
     private func refreshSessionsAndActiveProfile() async {
+        guard !viewModel.isLoading else { return }
         await loadSessions()
         guard !Task.isCancelled else { return }
         await viewModel.loadActiveProfile()
