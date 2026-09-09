@@ -13,7 +13,8 @@ struct UITestFixtureEnvironment {
     /// intent → `AppIntentRouter` → `ContentView` drain path (TAL-77). XCUITest has no
     /// supported way to run an App Intent through Shortcuts or Siri deterministically.
     nonisolated static let newChatIntentArgument = "--ui-test-intent-new-chat"
-    /// Seeds one shared-import draft, so a UI test can exercise the share entry point.
+    /// Writes one shared-import draft while the app is backgrounded, the way the share
+    /// extension does, so a UI test can reopen through `talaria://share` and see it import.
     nonisolated static let pendingShareArgument = "--ui-test-pending-share"
     nonisolated static let pendingShareDraft = "FixtureSharedDraft"
     nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
@@ -108,7 +109,16 @@ private extension UITestFixtureEnvironment {
         // Bounded: a record that cannot be consumed would otherwise spin here.
         for _ in 0..<20 where (try? TalariaShareDraft.loadPendingImport(from: inbox)) != nil {}
         guard ProcessInfo.processInfo.arguments.contains(pendingShareArgument) else { return }
-        try? TalariaShareDraft.savePendingDraft(pendingShareDraft, in: inbox)
+        // The extension writes its draft while Talaria is in the background, so the fixture
+        // does too. Seeding at launch instead would let the initial import consume the draft
+        // before any share URL was delivered, leaving the URL nothing to do.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            try? TalariaShareDraft.savePendingDraft(pendingShareDraft, in: inbox)
+        }
     }
 }
 

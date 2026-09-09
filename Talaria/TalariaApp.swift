@@ -131,8 +131,11 @@ struct TalariaApp: App {
         _authManager = State(initialValue: liveAuthManager())
         #endif
 
+        // Registering only installs the launch handler, so the fixture needs it too: backgrounding
+        // the app submits a refresh request from `ContentView`, and submitting one whose
+        // identifier was never registered aborts the process (TAL-77).
+        ProviderQuotaBackgroundRefresh.register()
         if !usesUITestFixture {
-            ProviderQuotaBackgroundRefresh.register()
             ProviderQuotaBackgroundRefresh.schedule()
         }
 

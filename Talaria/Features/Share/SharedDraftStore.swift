@@ -130,7 +130,20 @@ enum TalariaShareDraft {
     }
 
     static func containerURL(fileManager: FileManager = .default) -> URL? {
-        fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)
+        #if DEBUG
+        // The UI-test fixture owns its inbox outright: the app group container needs an
+        // entitlement the unsigned CI build does not carry, and a fixture must not share
+        // state with whatever the installed app left behind (TAL-77).
+        // The literal rather than `UITestFixtureEnvironment.launchArgument`: this file is also
+        // compiled into the share extension, which does not carry the fixture.
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-fixture") {
+            let inbox = fileManager.temporaryDirectory
+                .appendingPathComponent("ui-test-share-inbox", isDirectory: true)
+            try? fileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
+            return inbox
+        }
+        #endif
+        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)
     }
 
     static func draftText(textSnippets: [String], urls: [URL]) -> String {

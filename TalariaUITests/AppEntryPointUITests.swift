@@ -113,14 +113,22 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
         )
     }
 
-    /// The share extension hands its draft over through the app group and then opens
-    /// `talaria://share`; the fixture seeds one pending draft so the import has something
-    /// to route.
-    func testSharedDraftOpensTheComposerAndARepeatShareURLDoesNotDuplicateIt() throws {
-        launchFixture(additionalArguments: ["--ui-test-pending-share"])
+    /// The share extension writes its draft while Talaria is in the background and then opens
+    /// `talaria://share`; the fixture seeds it the same way, so reopening has real work to do.
+    /// Foregrounding imports too, so this asserts the user-visible contract rather than which
+    /// of the two paths served it.
+    func testAShareDraftArrivingWhileBackgroundedOpensTheComposer() throws {
+        launchFixtureOnSessionList(additionalArguments: ["--ui-test-pending-share"])
+        XCTAssertFalse(
+            app.navigationBars["New Fixture Chat"].exists,
+            "Nothing has been shared yet"
+        )
+
+        XCUIDevice.shared.press(.home)
+        openThroughSystem(fixtureURL("share"))
         XCTAssertTrue(
             app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
-            "A pending shared draft did not open the composer"
+            "Reopening through talaria://share did not import the shared draft"
         )
 
         // The inbox is empty now, so delivering the share URL again must not open a second
@@ -158,10 +166,11 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
 
 /// App Intent delivery. XCUITest has no supported way to run an App Intent through
 /// Shortcuts, Spotlight, or Siri deterministically, so the fixture runs the shipping intent
-/// itself at launch; everything after `perform()` — the router, the cold-launch drain, and
-/// the navigation — is the code path a real Action-button press takes.
+/// itself at launch; everything after `perform()` — the router and `ContentView`'s drain,
+/// whether it lands on the initial pass or the `onChange` one — is the code path a real
+/// Action-button press takes.
 final class AppIntentEntryPointUITests: AppEntryPointUITestCase {
-    func testNewChatIntentOpensTheComposerOnColdLaunch() throws {
+    func testNewChatIntentOpensTheComposerAtLaunch() throws {
         launchFixture(additionalArguments: ["--ui-test-intent-new-chat"])
         XCTAssertTrue(
             app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
@@ -176,9 +185,9 @@ final class KeyboardCommandUITests: AppEntryPointUITestCase {
     func testNewChatCommandOpensANewChat() throws {
         launchFixtureOnSessionList()
 
-        app.typeKey("n", modifierFlags: .command)
+        let newChat = app.navigationBars["New Fixture Chat"]
         XCTAssertTrue(
-            app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
+            pressCommand("n", until: newChat.exists),
             "Command-N did not open a new chat"
         )
     }
@@ -190,13 +199,30 @@ final class KeyboardCommandUITests: AppEntryPointUITestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 15), "Missing the session search field")
         XCTAssertFalse(hasKeyboardFocus(search), "Session search starts unfocused")
 
-        app.typeKey("f", modifierFlags: .command)
-        let deadline = Date().addingTimeInterval(10)
-        repeat {
-            if hasKeyboardFocus(search) { return }
-            Thread.sleep(forTimeInterval: 0.2)
-        } while Date() < deadline
-        XCTFail("Command-F did not focus session search")
+        XCTAssertTrue(
+            pressCommand("f", until: hasKeyboardFocus(search)),
+            "Command-F did not focus session search"
+        )
+    }
+
+    /// A key command pressed right after launch can land before the scene has installed its
+    /// key commands, and the keystroke is then simply dropped. Press again rather than read
+    /// that race as a missing shortcut.
+    private func pressCommand(
+        _ key: String,
+        until isSatisfied: @autoclosure () -> Bool,
+        attempts: Int = 3,
+        timeout: TimeInterval = 5
+    ) -> Bool {
+        for _ in 0..<attempts {
+            app.typeKey(key, modifierFlags: .command)
+            let deadline = Date().addingTimeInterval(timeout)
+            repeat {
+                if isSatisfied() { return true }
+                Thread.sleep(forTimeInterval: 0.2)
+            } while Date() < deadline
+        }
+        return false
     }
 
     private func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
@@ -219,25 +245,46 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         tapSettingsCategory(id: "appearance", title: "Appearance")
 
         for icon in Self.alternates + ["System"] {
-            select(icon)
             XCTAssertTrue(
-                selectedChoice(icon).waitForExistence(timeout: 5),
-                "The app icon did not change to \(icon); its alternate icon resource is missing or was rejected"
+                applyIcon(icon),
+                "The app icon never changed to \(icon); its alternate icon resource is missing or was rejected"
             )
         }
     }
 
-    /// The picker collapses after a successful change, so each selection re-expands it.
-    private func expandIconPicker() {
-        let row = app.descendants(matching: .any)
+    /// iOS rejects alternate-icon changes made in quick succession — the picker surfaces
+    /// "Resource temporarily unavailable" — so a rejected change is paced and retried. Only a
+    /// change that never lands means the icon resource itself is missing.
+    private func applyIcon(_ icon: String, attempts: Int = 4) -> Bool {
+        for attempt in 0..<attempts {
+            if attempt > 0 {
+                Thread.sleep(forTimeInterval: 2)
+            }
+            select(icon)
+            if selectedChoice(icon).waitForExistence(timeout: 5) { return true }
+        }
+        return false
+    }
+
+    private var iconRow: XCUIElement {
+        app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", "App Icon"))
             .firstMatch
+    }
+
+    /// The picker collapses after a successful change, so each selection re-expands it.
+    private func expandIconPicker() {
+        let row = iconRow
         for _ in 0..<8 where !row.exists {
             scrollSettingsRoot(up: true)
         }
         XCTAssertTrue(row.waitForExistence(timeout: 5), "Missing the App Icon picker")
         guard !choice("System").exists else { return }
         tapRow(row)
+        XCTAssertTrue(
+            choice("System").waitForExistence(timeout: 5),
+            "The App Icon choices did not expand"
+        )
     }
 
     private func select(_ icon: String) {
@@ -250,6 +297,9 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         tapRow(choice)
         // Changing the icon raises the system's "you have changed the icon" alert.
         dismissSystemAlert()
+        // A successful change collapses the picker. Waiting for that before re-reading it
+        // keeps the next tap from landing on a row that is still animating away.
+        _ = self.choice("System").waitForNonExistence(timeout: 5)
         expandIconPicker()
     }
 
