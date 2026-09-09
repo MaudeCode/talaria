@@ -30,15 +30,16 @@ enum SessionListAutoRefresh {
     /// - Parameters:
     ///   - refreshesImmediately: `false` only for the cold start, where the
     ///     initial-load task already owns the first request.
-    ///   - isRefreshInFlight: the deduplication gate. A tick that would race an
-    ///     in-flight load is dropped rather than queued: the load already
-    ///     running delivers the same fresh list.
     ///   - sleep: injectable so tests drive the cadence deterministically. A
     ///     thrown error ends the loop, which is how cancellation exits.
+    ///
+    /// There is deliberately no in-flight gate here. `SessionListRefreshQueue`
+    /// coalesces triggers that reach it, but only those that reach it: dropping
+    /// a foreground or return tick early would leave it unrecorded, and the load
+    /// already running may predate the very change that tick is reacting to.
     @MainActor
     static func run(
         refreshesImmediately: Bool,
-        isRefreshInFlight: () -> Bool,
         refresh: () async -> Void,
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
@@ -55,7 +56,6 @@ enum SessionListAutoRefresh {
             }
             waitsBeforeRefreshing = true
 
-            guard !isRefreshInFlight() else { continue }
             await refresh()
         }
     }

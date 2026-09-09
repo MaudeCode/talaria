@@ -847,6 +847,11 @@ final class SessionListViewModel {
         lastError = nil
         defer { isLoadingProjects = false }
 
+        // Advance for this request as well as for mutations, so of two reloads
+        // in flight only the later one applies. `load` fences itself the same
+        // way; without it a delayed earlier response could overwrite a newer
+        // snapshot when a project changes remotely between the two.
+        projectsGeneration += 1
         let generation = projectsGeneration
         do {
             let response = try await client.projects()

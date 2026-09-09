@@ -36,7 +36,6 @@ final class SessionListAutoRefreshTests: XCTestCase {
 
         await SessionListAutoRefresh.run(
             refreshesImmediately: false,
-            isRefreshInFlight: { false },
             refresh: { refreshCount += 1 },
             sleep: { _ in throw CancellationError() }
         )
@@ -53,7 +52,6 @@ final class SessionListAutoRefreshTests: XCTestCase {
 
         await SessionListAutoRefresh.run(
             refreshesImmediately: false,
-            isRefreshInFlight: { false },
             refresh: { events.append(.refreshed) },
             sleep: { interval in
                 guard events.count < 2 else { throw CancellationError() }
@@ -74,7 +72,6 @@ final class SessionListAutoRefreshTests: XCTestCase {
 
         await SessionListAutoRefresh.run(
             refreshesImmediately: true,
-            isRefreshInFlight: { false },
             refresh: { events.append(.refreshed) },
             sleep: { interval in
                 guard events.count < 3 else { throw CancellationError() }
@@ -90,26 +87,24 @@ final class SessionListAutoRefreshTests: XCTestCase {
 
     // MARK: - Deduplication
 
-    func testTickIsDroppedWhileAListLoadIsAlreadyInFlight() async {
+    /// The loop must not drop a tick before it reaches the queue. The queue
+    /// coalesces what reaches it, but a trigger dropped early is never recorded,
+    /// and the load already running may predate the change it is reacting to.
+    func testEveryTickReachesTheRefreshPath() async {
         var refreshCount = 0
         var tickCount = 0
-        var isRefreshInFlight = true
 
         await SessionListAutoRefresh.run(
             refreshesImmediately: true,
-            isRefreshInFlight: { isRefreshInFlight },
             refresh: { refreshCount += 1 },
             sleep: { _ in
                 tickCount += 1
-                // The in-flight load finishes during the first wait; the loop must
-                // have skipped its own request rather than racing it.
-                isRefreshInFlight = false
                 guard tickCount < 2 else { throw CancellationError() }
             }
         )
 
         XCTAssertEqual(tickCount, 2)
-        XCTAssertEqual(refreshCount, 1)
+        XCTAssertEqual(refreshCount, 2)
     }
 
     // MARK: - Refresh queue
@@ -344,7 +339,6 @@ final class SessionListAutoRefreshTests: XCTestCase {
     private func runOneTick(refreshing viewModel: SessionListViewModel) async {
         await SessionListAutoRefresh.run(
             refreshesImmediately: true,
-            isRefreshInFlight: { viewModel.isLoading },
             refresh: { await viewModel.load() },
             sleep: { _ in throw CancellationError() }
         )

@@ -288,7 +288,6 @@ struct SessionListView: View {
                     // later restart means the app foregrounded or the list came
                     // back on screen, which both want fresh rows right away.
                     refreshesImmediately: didCompleteInitialLoad,
-                    isRefreshInFlight: { viewModel.isLoading },
                     refresh: { await refreshSessionsAndActiveProfile() }
                 )
             }
