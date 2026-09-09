@@ -322,6 +322,7 @@
 		031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031031031031031031031004 /* MarkdownMathRendererTests.swift */; };
 		D0M1C0000000000000000009 /* MarkdownMathLayoutCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */; };
 		C0DE34000000000000000003 /* TranscriptMediaParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000004 /* TranscriptMediaParserTests.swift */; };
+		FA85000000000000000001 /* UntrustedInputFuzzTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA85000000000000000002 /* UntrustedInputFuzzTests.swift */; };
 		C0DE3400000000000000000B /* TranscriptMediaPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */; };
 		C0DE12000000000000000003 /* TranscriptLinkPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */; };
 		1A2B3C4D5E6F7000000000DC /* SSEClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */; };
@@ -1004,6 +1005,7 @@
 		031031031031031031031004 /* MarkdownMathRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMathRendererTests.swift; sourceTree = "<group>"; };
 		D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMathLayoutCacheTests.swift; sourceTree = "<group>"; };
 		C0DE34000000000000000004 /* TranscriptMediaParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaParserTests.swift; sourceTree = "<group>"; };
+		FA85000000000000000002 /* UntrustedInputFuzzTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UntrustedInputFuzzTests.swift; sourceTree = "<group>"; };
 		C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptLinkPreviewTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClientTests.swift; sourceTree = "<group>"; };
@@ -1582,6 +1584,7 @@
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
 				D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */,
 				C0DE34000000000000000004 /* TranscriptMediaParserTests.swift */,
+				FA85000000000000000002 /* UntrustedInputFuzzTests.swift */,
 				C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */,
 				C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
@@ -3053,6 +3056,7 @@
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
 				D0M1C0000000000000000009 /* MarkdownMathLayoutCacheTests.swift in Sources */,
 				C0DE34000000000000000003 /* TranscriptMediaParserTests.swift in Sources */,
+				FA85000000000000000001 /* UntrustedInputFuzzTests.swift in Sources */,
 				C0DE3400000000000000000B /* TranscriptMediaPreviewViewModelTests.swift in Sources */,
 				C0DE12000000000000000003 /* TranscriptLinkPreviewTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,

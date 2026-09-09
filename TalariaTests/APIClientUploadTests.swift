@@ -18,6 +18,37 @@ final class APIClientUploadTests: APIClientTestCase {
         XCTAssertFalse(bodyString.contains("\r\nInjected: yes"))
     }
 
+    /// A multipart *value* is sent verbatim, so a value carrying the active
+    /// boundary could open another part. Nothing escapes that; what makes it
+    /// unreachable is that every upload derives a fresh, unguessable boundary.
+    /// `UntrustedInputFuzzTests` covers the escaped name and filename side.
+    func testUploadBoundariesAreUnguessableAndUniquePerRequest() async throws {
+        var boundaries: [String] = []
+        let client = makeClient { request in
+            let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
+            boundaries.append(
+                contentType.replacingOccurrences(of: "multipart/form-data; boundary=", with: "")
+            )
+            return apiTestJSONResponse("""
+            {"filename": "a.txt", "path": "/tmp/workspace/a.txt", "size": 1}
+            """, for: request)
+        }
+
+        for _ in 0..<2 {
+            _ = try await client.uploadFile(sessionID: "abc123", data: Data("a".utf8), filename: "a.txt")
+        }
+
+        XCTAssertEqual(boundaries.count, 2)
+        XCTAssertNotEqual(boundaries[0], boundaries[1], "Two uploads reused one multipart boundary.")
+        for boundary in boundaries {
+            XCTAssertTrue(boundary.hasPrefix("Boundary-"), "Unexpected boundary shape: \(boundary)")
+            XCTAssertNotNil(
+                UUID(uuidString: String(boundary.dropFirst("Boundary-".count))),
+                "Upload boundary was not a UUID, so it is guessable: \(boundary)"
+            )
+        }
+    }
+
     func testUploadFileSendsMultipartAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/upload")
