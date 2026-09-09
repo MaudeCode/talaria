@@ -78,9 +78,11 @@ Only two budgets assert a threshold. The rest record for comparison, because a
 wall-clock assertion over a simulator gesture or a whole XCUI launch cycle is a
 flake, not a signal.
 
-- Replay catch-up may not cost more than 3x per doubling of the response. A
-  linear path measures ~1.96x, and the quadratic path this replaced measured
-  ~3.9x.
+- Replay catch-up may not cost more than 8x across the curve's 4x span, and
+  4,000 tokens may not take more than 80 ms. A linear path measures ~3.9x and
+  ~8.7 ms; the quadratic path this replaced measured ~16x and 212 ms. The
+  endpoints are compared rather than each step because at these millisecond
+  scales one noisy middle sample decides a per-step ratio.
 - Warm resume to a responsive session list must stay under 3.0 s. The resume
   window is narrow and repeatable (1.24 s median, 30 ms spread), so a threshold
   on it holds.

@@ -14,15 +14,26 @@ import XCTest
 /// superlinear regression; `testReplayCatchUpLargeBacklog` carries the absolute
 /// wall-clock, CPU and memory budget.
 final class ReplayCatchUpPerformanceTests: XCTestCase {
-    /// Token counts for the scaling curve. Each step doubles, so a quadratic
-    /// path costs ~4x per step where a linear one costs ~2x. 4000 tokens is a
-    /// ~52 KB response — a realistic long agent turn, and small enough that the
-    /// slowest measured step stays under a second on CI.
+    /// Token counts for the scaling curve. The span is 4x, so a linear path
+    /// costs ~4x across it where a quadratic one costs ~16x. 4000 tokens is a
+    /// ~30 KB response — a realistic long agent turn, and small enough that the
+    /// slowest measured size stays in the tens of milliseconds on CI.
     private static let scalingTokenCounts = [1000, 2000, 4000]
 
     /// Repeats per size; the curve uses the fastest run so an unrelated CI
-    /// stall inflates no ratio.
-    private static let repeatCount = 3
+    /// stall inflates no measurement.
+    private static let repeatCount = 5
+
+    /// Cost growth allowed across the whole 4x span of the curve. A linear path
+    /// measures ~3.9x there and a quadratic one ~16x, so the gap is wide, and
+    /// comparing the endpoints keeps one noisy middle sample from deciding the
+    /// result the way a per-step ratio did.
+    private static let maximumGrowthAcrossSpan = 8.0
+
+    /// Ceiling on the largest size. The pre-TAL-75 quadratic path spent 212 ms
+    /// there against 8.7 ms now, so this catches a regression that somehow
+    /// scaled evenly enough to keep the growth ratio flat.
+    private static let maximumLargestSizeSeconds = 0.08
 
     override func tearDown() {
         MockURLProtocol.requestHandler = nil
@@ -48,19 +59,25 @@ final class ReplayCatchUpPerformanceTests: XCTestCase {
         add(attachment)
         print("Replay catch-up scaling curve\n\(report)")
 
-        // Budget: one doubling of the response may cost at most 3x. A linear
-        // path lands near 2x; the pre-TAL-75 quadratic path measured ~4x.
-        for (previous, current) in zip(samples, samples.dropFirst()) {
-            let growth = current.wallSeconds / max(previous.wallSeconds, 1e-6)
-            XCTAssertLessThan(
-                growth, 3.0,
-                """
-                Replay catch-up scaling regressed between \(previous.tokenCount) and \
-                \(current.tokenCount) tokens: \(String(format: "%.2f", growth))x for a 2x response.
-                \(report)
-                """
-            )
-        }
+        let smallest = try XCTUnwrap(samples.first)
+        let largest = try XCTUnwrap(samples.last)
+        let growth = largest.wallSeconds / max(smallest.wallSeconds, 1e-6)
+        XCTAssertLessThan(
+            growth, Self.maximumGrowthAcrossSpan,
+            """
+            Replay catch-up scaling regressed: \(String(format: "%.2f", growth))x from \
+            \(smallest.tokenCount) to \(largest.tokenCount) tokens.
+            \(report)
+            """
+        )
+        XCTAssertLessThan(
+            largest.wallSeconds, Self.maximumLargestSizeSeconds,
+            """
+            Replay catch-up of \(largest.tokenCount) tokens took \
+            \(String(format: "%.1f", largest.wallSeconds * 1000)) ms.
+            \(report)
+            """
+        )
     }
 
     // MARK: - Absolute budget
