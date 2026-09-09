@@ -81,6 +81,8 @@ final class SessionListViewModel {
     private(set) var remoteContentSearchSessionIDs: [String] = []
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
+    private var projectsGeneration = 0
+    private var activeProfileGeneration = 0
     private var openGeneration = 0
     /// Counts completed import claims. A row is stamped with the value at the
     /// moment it was claimed — not when its open began — so a load that started
@@ -274,8 +276,13 @@ final class SessionListViewModel {
         activeProfileErrorMessage = nil
         defer { isLoadingActiveProfile = false }
 
+        let generation = activeProfileGeneration
         do {
             let response = try await client.profiles()
+            // A switch the user made while this request was in flight is newer
+            // than the profile it reports, so reapplying it would show the wrong
+            // active profile and rebuild profile-dependent views for it.
+            guard generation == activeProfileGeneration else { return }
             applyActiveProfile(response)
         } catch {
             guard !APIError.isCancellation(error) else { return }
@@ -299,6 +306,7 @@ final class SessionListViewModel {
             return true
         }
 
+        activeProfileGeneration += 1
         isSwitchingActiveProfile = true
         switchingActiveProfileName = profileName
         activeProfileErrorMessage = nil
@@ -823,8 +831,13 @@ final class SessionListViewModel {
         lastError = nil
         defer { isLoadingProjects = false }
 
+        let generation = projectsGeneration
         do {
             let response = try await client.projects()
+            // A project the user created, renamed or deleted while this request
+            // was in flight is newer than the snapshot it returns, so adopting
+            // it would make that mutation disappear until the next refresh.
+            guard generation == projectsGeneration else { return }
             projects = response.projects ?? []
         } catch {
             guard !APIError.isCancellation(error) else { return }
@@ -964,6 +977,7 @@ final class SessionListViewModel {
 
         do {
             _ = try await client.deleteProject(id: projectID)
+            projectsGeneration += 1
             projects.removeAll { $0.projectId == projectID }
             await load(modelContext: modelContext)
             return true
@@ -1230,6 +1244,7 @@ final class SessionListViewModel {
     private func upsertProject(_ project: ProjectSummary) {
         guard let projectID = project.projectId, !projectID.isEmpty else { return }
 
+        projectsGeneration += 1
         if let existingIndex = projects.firstIndex(where: { $0.projectId == projectID }) {
             projects[existingIndex] = project
         } else {

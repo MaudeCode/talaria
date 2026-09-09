@@ -92,6 +92,113 @@ extension SessionListMutationTests {
         XCTAssertNil(viewModel.sessionLoadError)
     }
 
+    /// The automatic refresh reloads projects every 30s, so a project the user
+    /// deletes just after a tick starts must not be brought back by the older
+    /// snapshot that tick returns.
+    @MainActor
+    func testProjectMutationSurvivesAnOlderProjectsResponse() async throws {
+        let projectsArrived = expectation(description: "projects request arrived")
+        let deleteArrived = expectation(description: "delete request arrived")
+        let sessionsArrived = expectation(description: "sessions request arrived")
+        let requests = DeferredRequests()
+
+        DeferredMockURLProtocol.onRequest = { request in
+            switch requests.append(request) {
+            case 1: projectsArrived.fulfill()
+            case 2: deleteArrived.fulfill()
+            case 3: sessionsArrived.fulfill()
+            default: XCTFail("unexpected extra request")
+            }
+        }
+        defer { DeferredMockURLProtocol.onRequest = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+        let doomed = try JSONDecoder().decode(
+            ProjectSummary.self,
+            from: Data(#"{"project_id":"doomed","name":"Doomed"}"#.utf8)
+        )
+
+        // An automatic tick reloads projects...
+        let reload = Task { await viewModel.loadProjects(silently: true) }
+        await fulfillment(of: [projectsArrived], timeout: 5)
+
+        // ...and the user deletes a project while it is still in flight.
+        let deletion = Task { await viewModel.delete(doomed) }
+        await fulfillment(of: [deleteArrived], timeout: 5)
+        requests.request(at: 1).complete(withJSON: #"{"success":true}"#)
+        await fulfillment(of: [sessionsArrived], timeout: 5)
+
+        // The tick's response predates the deletion and still lists the project.
+        requests.request(at: 0).complete(
+            withJSON: #"{"projects":[{"project_id":"doomed","name":"Doomed"}]}"#
+        )
+        await reload.value
+
+        XCTAssertTrue(
+            viewModel.projects.isEmpty,
+            "a stale projects response must not resurrect a deleted project"
+        )
+
+        requests.request(at: 2).complete(withJSON: #"{"sessions":[]}"#)
+        _ = await deletion.value
+    }
+
+    /// The same tick reloads the active profile, so a switch made while it is in
+    /// flight must not be undone by the profile that request reports.
+    @MainActor
+    func testProfileSwitchSurvivesAnOlderProfilesResponse() async throws {
+        let profilesArrived = expectation(description: "profiles request arrived")
+        let switchArrived = expectation(description: "switch request arrived")
+        let requests = DeferredRequests()
+
+        DeferredMockURLProtocol.onRequest = { request in
+            switch requests.append(request) {
+            case 1: profilesArrived.fulfill()
+            case 2: switchArrived.fulfill()
+            default: XCTFail("unexpected extra profile request")
+            }
+        }
+        defer { DeferredMockURLProtocol.onRequest = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let client = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let viewModel = SessionListViewModel(server: server, client: client)
+        let work = try JSONDecoder().decode(
+            ProfileSummary.self,
+            from: Data(#"{"name":"work"}"#.utf8)
+        )
+
+        let poll = Task { await viewModel.loadActiveProfile() }
+        await fulfillment(of: [profilesArrived], timeout: 5)
+
+        let switched = Task { await viewModel.switchActiveProfile(work) }
+        await fulfillment(of: [switchArrived], timeout: 5)
+        requests.request(at: 1).complete(
+            withJSON: #"{"active":"work","profiles":[{"name":"work"},{"name":"personal"}]}"#
+        )
+        let didSwitch = await switched.value
+        XCTAssertTrue(didSwitch)
+        XCTAssertEqual(viewModel.activeProfileName, "work")
+
+        // The poll started before the switch and reports the profile it replaced.
+        requests.request(at: 0).complete(
+            withJSON: #"{"active":"personal","profiles":[{"name":"work"},{"name":"personal"}]}"#
+        )
+        await poll.value
+
+        XCTAssertEqual(
+            viewModel.activeProfileName,
+            "work",
+            "a stale profiles response must not undo a newer switch"
+        )
+    }
+
     @MainActor
     func testLoadFallsBackToCachedSessionsForNetworkTimeout() async throws {
         let context = try makeContext()
