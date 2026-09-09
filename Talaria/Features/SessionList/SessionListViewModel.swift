@@ -293,15 +293,17 @@ final class SessionListViewModel {
     }
 
     func loadActiveProfile() async {
-        // A poll that starts after `switchActiveProfile` bumped the fence but
-        // before its request lands would capture the new generation and pass the
-        // guard below, restoring the profile the user just left.
-        guard !isSwitchingActiveProfile else { return }
-
         await profileRefreshQueue.run { await self.performLoadActiveProfile() }
     }
 
     private func performLoadActiveProfile() async {
+        // Checked per queued reload rather than once on entry: a switch can begin
+        // while a follow-up is still waiting its turn. A poll that starts after
+        // `switchActiveProfile` bumped the fence but before its request lands
+        // would capture the new generation and pass the guard below, restoring
+        // the profile the user just left.
+        guard !isSwitchingActiveProfile else { return }
+
         isLoadingActiveProfile = true
         activeProfileErrorMessage = nil
         defer { isLoadingActiveProfile = false }

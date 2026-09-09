@@ -257,7 +257,10 @@ extension SessionListMutationTests {
         let switched = Task { await viewModel.switchActiveProfile(work) }
         await fulfillment(of: [switchArrived], timeout: 5)
 
-        // A tick fires mid-switch. It must not issue a request at all.
+        // A tick fires mid-switch. It must not issue a request at all, and the
+        // guard is rechecked per queued reload, so a follow-up already waiting
+        // its turn when the switch began is refused too.
+        await viewModel.loadActiveProfile()
         await viewModel.loadActiveProfile()
 
         requests.request(at: 0).complete(
