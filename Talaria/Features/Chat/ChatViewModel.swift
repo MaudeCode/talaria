@@ -4996,8 +4996,9 @@ final class ChatViewModel {
             pendingReasoningTitles = []
         }
 
-        // Replay dedup needs the effective content (flushed + pending). Ordinary
-        // streaming skips that full-string construction and appends directly.
+        // Replay dedup needs the effective content (flushed + pending), which the
+        // cached tail avoids rebuilding while a replay keeps matching in order.
+        // Ordinary streaming skips both and appends directly.
         let messageID = ensureStreamingAssistantMessage()
         let remainder: String
         if activeStreamReplayChannels.token {

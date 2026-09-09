@@ -250,6 +250,7 @@
 		C04600000000000000000003 /* ChatStreamCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */; };
 		C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */; };
 		C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000004 /* StreamReconnectContractTests.swift */; };
+		C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000106 /* PerformanceBudgetTests.swift */; };
 		C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */; };
 		1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */; };
 		C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000101 /* ApprovalPromptState.swift */; };
@@ -655,6 +656,7 @@
 		D74A00000000000000000019 /* VisualReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000003 /* VisualReference.swift */; };
 		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
 		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
+		A19000000000000000000111 /* PerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000112 /* PerformanceUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -726,6 +728,7 @@
 		1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A19000000000000000000002 /* TalariaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000102 /* AgentPanelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelUITests.swift; sourceTree = "<group>"; };
+		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
@@ -923,6 +926,7 @@
 		C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStreamCoordinatorTests.swift; sourceTree = "<group>"; };
 		C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedSSEStreamFixture.swift; sourceTree = "<group>"; };
 		C22600000000000000000004 /* StreamReconnectContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamReconnectContractTests.swift; sourceTree = "<group>"; };
+		C22600000000000000000106 /* PerformanceBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceBudgetTests.swift; sourceTree = "<group>"; };
 		C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayCatchUpPerformanceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		C107T0000000000000000101 /* ApprovalPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalPromptState.swift; sourceTree = "<group>"; };
@@ -1417,6 +1421,7 @@
 			children = (
 				A19000000000000000000002 /* TalariaUITests.swift */,
 				A19000000000000000000102 /* AgentPanelUITests.swift */,
+				A19000000000000000000112 /* PerformanceUITests.swift */,
 			);
 			path = TalariaUITests;
 			sourceTree = "<group>";
@@ -1513,6 +1518,7 @@
 				1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */,
 				C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */,
 				C22600000000000000000004 /* StreamReconnectContractTests.swift */,
+				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
 				C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */,
 				C22300000000000000000004 /* CompressionAnchorResolverTests.swift */,
 				C21200000000000000000004 /* StreamingWordDrainTests.swift */,
@@ -2975,6 +2981,7 @@
 				1A2B3C4D5E6F7000000000DC /* SSEClientTests.swift in Sources */,
 				C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */,
 				C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */,
+				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,
 				C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */,
 				C22300000000000000000003 /* CompressionAnchorResolverTests.swift in Sources */,
 				C21200000000000000000003 /* StreamingWordDrainTests.swift in Sources */,
@@ -3044,6 +3051,7 @@
 			files = (
 				A19000000000000000000001 /* TalariaUITests.swift in Sources */,
 				A19000000000000000000101 /* AgentPanelUITests.swift in Sources */,
+				A19000000000000000000111 /* PerformanceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

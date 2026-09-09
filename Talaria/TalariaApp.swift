@@ -198,7 +198,14 @@ enum ProviderQuotaBackgroundRefresh {
         "\(Bundle.main.bundleIdentifier ?? "dev.kil.talaria").provider-quota-refresh"
     }
 
+    /// `BGTaskScheduler.submit` raises — and so aborts the process — when the
+    /// identifier was never registered, and the UI-test fixture deliberately
+    /// registers nothing. Backgrounding it used to crash the app through
+    /// `ContentView`'s scene-phase hook (TAL-75).
+    private static var isRegistered = false
+
     static func register() {
+        isRegistered = true
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             Task { @MainActor in
                 guard let refreshTask = task as? BGAppRefreshTask else {
@@ -211,7 +218,8 @@ enum ProviderQuotaBackgroundRefresh {
     }
 
     static func schedule() {
-        guard let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return }
+        guard isRegistered,
+              let credentials = ProviderQuotaWidgetRefreshCredentialStore.load() else { return }
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
         try? BGTaskScheduler.shared.submit(request(credentials: credentials, now: Date()))
     }

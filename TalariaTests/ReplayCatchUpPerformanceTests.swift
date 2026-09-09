@@ -66,28 +66,18 @@ final class ReplayCatchUpPerformanceTests: XCTestCase {
     // MARK: - Absolute budget
 
     func testReplayCatchUpLargeBacklog() {
-        let options = XCTMeasureOptions()
-        options.iterationCount = 3
-        options.invocationOptions = [.manuallyStart, .manuallyStop]
-
-        measure(metrics: [XCTClockMetric(), XCTCPUMetric(), XCTMemoryMetric()], options: options) {
-            let expectation = expectation(description: "Replay catch-up")
-            Task { @MainActor in
-                defer { expectation.fulfill() }
-                do {
-                    let harness = try await ReplayCatchUpHarness(
-                        tokenCount: Self.scalingTokenCounts.last!,
-                        test: self
-                    )
-                    self.startMeasuring()
-                    harness.replay()
-                    self.stopMeasuring()
-                    try harness.verify()
-                } catch {
-                    XCTFail("Replay catch-up harness failed: \(error)")
-                }
-            }
-            wait(for: [expectation], timeout: 120)
+        measureAsync(
+            metrics: [XCTClockMetric(), XCTCPUMetric(), XCTMemoryMetric()],
+            options: performanceOptions(manualWindow: true)
+        ) { test in
+            let harness = try await ReplayCatchUpHarness(
+                tokenCount: Self.scalingTokenCounts.last!,
+                test: test
+            )
+            test.startMeasuring()
+            harness.replay()
+            test.stopMeasuring()
+            try harness.verify()
         }
     }
 

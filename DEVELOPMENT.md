@@ -145,8 +145,10 @@ Agent/MCP flow:
   XCUI launches a DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
   with in-memory authentication, draft, and cache state. It does not read simulator
   login state or contact an external server. A skipped functional `TalariaUITests`
-  test fails the run. Performance-only UI measurements may run on `main` CI instead
-  of every pull request; they remain part of the full local suite.
+  test fails the run. Performance-only UI measurements run on `main` CI instead
+  of every pull request; they remain part of the full local suite. See
+  [performance budgets](docs/performance-budgets.md) for what is measured, the
+  baselines behind each threshold, and how to compare a run.
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
   builds the isolated `.xctest` app, launches the deterministic fixture, and opens
   Simulator. Keep the command running for the manual session, then press Control-C
