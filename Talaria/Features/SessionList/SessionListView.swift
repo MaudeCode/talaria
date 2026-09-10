@@ -41,7 +41,7 @@ struct SessionListView: View {
     @State private var isAppSidebarPresented = false
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
-    @State private var returnRefreshID: UUID?
+    @State private var immediateRefreshID: UUID?
     @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
@@ -277,9 +277,19 @@ struct SessionListView: View {
                     every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
                 )
             }
-            .task(id: returnRefreshID) {
-                guard returnRefreshID != nil else { return }
+            .task(id: immediateRefreshID) {
+                guard immediateRefreshID != nil else { return }
                 await refreshSessionsAndActiveProfile()
+            }
+            .task(id: autoRefreshTaskID) {
+                guard autoRefreshTaskID.isEnabled else { return }
+                await SessionListAutoRefresh.run(
+                    // The cold-start task already owns the first request; a
+                    // later restart means the app foregrounded or the list came
+                    // back on screen, which both want fresh rows right away.
+                    refreshesImmediately: didCompleteInitialLoad,
+                    refresh: { await refreshSessionsAndActiveProfile() }
+                )
             }
             .onAppear {
                 openPendingSharedImportIfNeeded()
@@ -321,8 +331,13 @@ struct SessionListView: View {
                 guard !showsProjectsSection else { return }
                 selectedProjectID = nil
             }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .talariaSessionNotificationArrived)
+            ) { _ in
+                refreshForSessionNotification()
+            }
             .onChange(of: navigationState.destination) { oldValue, newValue in
-                SessionListNewChatReturn.run(
+                SessionListReturnRefresh.run(
                     from: oldValue,
                     to: newValue,
                     suppressEmptyPlaceholders: viewModel.removeEmptySidebarPlaceholders,
@@ -807,6 +822,17 @@ struct SessionListView: View {
         "\(server.absoluteString)|\(quotaRefreshIntervalSeconds)|\(scenePhase == .active)"
     }
 
+    private var autoRefreshTaskID: SessionListAutoRefresh.TaskID {
+        SessionListAutoRefresh.TaskID(
+            server: server,
+            isSceneActive: scenePhase == .active,
+            // In regular width the sidebar stays beside the detail column, so
+            // the list is only off screen when a compact destination has
+            // replaced or covered it.
+            isListVisible: horizontalSizeClass == .regular || navigationState.destination == nil
+        )
+    }
+
     private var newSessionButton: some View {
         HapticButton(feedbackStyle: .medium) {
             openNewChat()
@@ -1059,6 +1085,11 @@ struct SessionListView: View {
         )
     }
 
+    /// The one path every full-list trigger takes — initial load,
+    /// pull-to-refresh, the return refresh, and the automatic refresh loop.
+    /// `SessionListViewModel.load` serializes the list request itself through
+    /// its refresh queue, and `loadProjects` and `loadActiveProfile` fence their
+    /// own responses, so nothing here has to coordinate them.
     private func refreshSessionsAndActiveProfile() async {
         await loadSessions()
         guard !Task.isCancelled else { return }
@@ -1089,9 +1120,24 @@ struct SessionListView: View {
         }
     }
 
+    /// Unlike the return refresh this is not width-specific: the notification can
+    /// arrive whatever the user is looking at, and the list behind them should be
+    /// current when they get back to it.
+    private func refreshForSessionNotification() {
+        guard didCompleteInitialLoad else { return }
+        immediateRefreshID = UUID()
+    }
+
     private func refreshAfterReturningIfNeeded() {
         guard didCompleteInitialLoad else { return }
-        returnRefreshID = UUID()
+        // In compact width a return also brings the list back on screen, which
+        // restarts the automatic refresh loop with an immediate refresh of its
+        // own. Scheduling here as well would reload sessions, projects and the
+        // active profile twice for one transition. In regular width the sidebar
+        // never leaves the screen, so that loop does not restart and this is the
+        // only trigger a session switch has.
+        guard horizontalSizeClass == .regular else { return }
+        immediateRefreshID = UUID()
     }
 
     private func monitorActiveSessionRows() async {
@@ -1128,12 +1174,19 @@ struct SessionListView: View {
     }
 
     private func loadSessions() async {
-        await viewModel.load(modelContext: modelContext)
+        // Rows carry `sessionRowTransition`, but it only plays when the array is
+        // replaced inside an animation. The first population has nothing to move,
+        // so it stays unanimated and later refreshes slide a new row into its
+        // sorted place instead of popping it in.
+        let animation = viewModel.sessions.isEmpty
+            ? nil
+            : SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+        await viewModel.load(modelContext: modelContext, animation: animation)
         guard !Task.isCancelled else { return }
         handleLastError()
 
         if !viewModel.isViewingCachedData {
-            await viewModel.loadProjects()
+            await viewModel.loadProjects(silently: true)
             guard !Task.isCancelled else { return }
             handleLastError()
         }

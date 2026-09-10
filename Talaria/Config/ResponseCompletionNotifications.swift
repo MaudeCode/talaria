@@ -163,3 +163,23 @@ private extension UNAuthorizationStatus {
         }
     }
 }
+
+
+extension Notification.Name {
+    /// Posted when a Talaria notification naming a session arrives while the app
+    /// is in the foreground. The Chats list refreshes on it, so a run that just
+    /// finished elsewhere appears as soon as the phone is told about it rather
+    /// than waiting out the polling interval.
+    static let talariaSessionNotificationArrived = Notification.Name(
+        "dev.kil.talaria.sessionNotificationArrived"
+    )
+}
+
+enum SessionNotificationRefresh {
+    /// Only a notification that names a session says anything about the list.
+    /// Relay and response-completion notifications both carry `sessionId`.
+    static func namesASession(userInfo: [AnyHashable: Any]) -> Bool {
+        guard let sessionID = userInfo["sessionId"] as? String else { return false }
+        return !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}

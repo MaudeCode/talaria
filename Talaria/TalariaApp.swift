@@ -29,7 +29,16 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        // The banner is the phone learning that a session finished, which is
+        // sooner than the next polling tick would find out. Let the list adopt it
+        // now so the row does not lag the notification the user just read.
+        if SessionNotificationRefresh.namesASession(
+            userInfo: notification.request.content.userInfo
+        ) {
+            NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)
+        }
+
+        return [.banner, .sound]
     }
 
     func userNotificationCenter(

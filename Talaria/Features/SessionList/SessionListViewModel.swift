@@ -81,6 +81,17 @@ final class SessionListViewModel {
     private(set) var remoteContentSearchSessionIDs: [String] = []
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
+    /// Every full-list reload goes through here — the automatic tick,
+    /// pull-to-refresh, the return refresh, the active-row monitor and the
+    /// reloads below that follow a mutation — so exactly one owner serves them
+    /// and no caller is left waiting on a reload nobody will run.
+    private let refreshQueue = SessionListRefreshQueue()
+    /// The profile reload gets its own queue for the same reason: a trigger
+    /// arriving mid-request is coalesced into a follow-up instead of being
+    /// dropped, since the request in flight may predate the change it reacts to.
+    private let profileRefreshQueue = SessionListRefreshQueue()
+    private var projectsGeneration = 0
+    private var activeProfileGeneration = 0
     private var openGeneration = 0
     /// Counts completed import claims. A row is stamped with the value at the
     /// moment it was claimed — not when its open began — so a load that started
@@ -191,6 +202,20 @@ final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> Bool {
+        // A coalesced caller reports success for the same reason a superseded
+        // one does below: a newer reload is authoritative for the list, and it
+        // covers the request this caller just recorded.
+        var didApply = true
+        await refreshQueue.run {
+            didApply = await self.performLoad(modelContext: modelContext, animation: animation)
+        }
+        return didApply
+    }
+
+    private func performLoad(
+        modelContext: ModelContext?,
+        animation: Animation?
+    ) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
         let claimCountAtStart = claimCount
@@ -268,14 +293,28 @@ final class SessionListViewModel {
     }
 
     func loadActiveProfile() async {
-        guard !isLoadingActiveProfile else { return }
+        await profileRefreshQueue.run { await self.performLoadActiveProfile() }
+    }
+
+    private func performLoadActiveProfile() async {
+        // Checked per queued reload rather than once on entry: a switch can begin
+        // while a follow-up is still waiting its turn. A poll that starts after
+        // `switchActiveProfile` bumped the fence but before its request lands
+        // would capture the new generation and pass the guard below, restoring
+        // the profile the user just left.
+        guard !isSwitchingActiveProfile else { return }
 
         isLoadingActiveProfile = true
         activeProfileErrorMessage = nil
         defer { isLoadingActiveProfile = false }
 
+        let generation = activeProfileGeneration
         do {
             let response = try await client.profiles()
+            // A switch the user made while this request was in flight is newer
+            // than the profile it reports, so reapplying it would show the wrong
+            // active profile and rebuild profile-dependent views for it.
+            guard generation == activeProfileGeneration else { return }
             applyActiveProfile(response)
         } catch {
             guard !APIError.isCancellation(error) else { return }
@@ -299,6 +338,7 @@ final class SessionListViewModel {
             return true
         }
 
+        activeProfileGeneration += 1
         isSwitchingActiveProfile = true
         switchingActiveProfileName = profileName
         activeProfileErrorMessage = nil
@@ -691,17 +731,10 @@ final class SessionListViewModel {
             let resolvedTitle = Self.nonEmpty(response.session?.title) ?? title
             let baseSession = sessions.first(where: { $0.sessionId == sessionId }) ?? session
             let updatedSession = baseSession.replacingTitle(with: resolvedTitle)
-            if let existingIndex = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
-                sessions[existingIndex] = updatedSession
-            }
-
-            if let modelContext {
-                do {
-                    try CacheStore.cacheSession(updatedSession, serverURL: server, in: modelContext)
-                } catch {
-                    cacheErrorMessage = error.localizedDescription
-                }
-            }
+            // Claim the row rather than assigning it: a list load already in
+            // flight was requested before this rename and still carries the old
+            // title, so without the claim it would revert what the user typed.
+            refreshRow(with: updatedSession, modelContext: modelContext)
 
             return true
         } catch {
@@ -806,20 +839,43 @@ final class SessionListViewModel {
         }
     }
 
-    func loadProjects() async {
+    /// - Parameter silently: `true` when this reload is a side effect of loading
+    ///   the session list rather than something the user asked for.
+    ///   `actionErrorMessage` is presented as a modal, so only a project action
+    ///   the user actually requested may fail into it — otherwise a transient
+    ///   `/api/projects` failure interrupts them once per list refresh.
+    func loadProjects(silently: Bool = false) async {
         isLoadingProjects = true
-        actionErrorMessage = nil
+        // A silent reload neither writes to the action-alert channel nor clears
+        // it: an alert the user has not acknowledged yet — a rename that just
+        // failed — must not be dismissed out from under them by a refresh they
+        // did not ask for.
+        if !silently {
+            actionErrorMessage = nil
+        }
         lastError = nil
         defer { isLoadingProjects = false }
 
+        // Advance for this request as well as for mutations, so of two reloads
+        // in flight only the later one applies. `load` fences itself the same
+        // way; without it a delayed earlier response could overwrite a newer
+        // snapshot when a project changes remotely between the two.
+        projectsGeneration += 1
+        let generation = projectsGeneration
         do {
             let response = try await client.projects()
+            // A project the user created, renamed or deleted while this request
+            // was in flight is newer than the snapshot it returns, so adopting
+            // it would make that mutation disappear until the next refresh.
+            guard generation == projectsGeneration else { return }
             projects = response.projects ?? []
         } catch {
             guard !APIError.isCancellation(error) else { return }
 
             lastError = error
-            actionErrorMessage = error.localizedDescription
+            if !silently {
+                actionErrorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -951,6 +1007,7 @@ final class SessionListViewModel {
 
         do {
             _ = try await client.deleteProject(id: projectID)
+            projectsGeneration += 1
             projects.removeAll { $0.projectId == projectID }
             await load(modelContext: modelContext)
             return true
@@ -1217,6 +1274,7 @@ final class SessionListViewModel {
     private func upsertProject(_ project: ProjectSummary) {
         guard let projectID = project.projectId, !projectID.isEmpty else { return }
 
+        projectsGeneration += 1
         if let existingIndex = projects.firstIndex(where: { $0.projectId == projectID }) {
             projects[existingIndex] = project
         } else {

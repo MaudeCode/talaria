@@ -62,7 +62,8 @@
 		1A2B3C4D5E6F7000000000A6 /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */; };
 		1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */; };
 		C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000101 /* SessionListInitialLoad.swift */; };
-		C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000102 /* SessionListNewChatReturn.swift */; };
+		C107V0000000000000000002 /* SessionListReturnRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000102 /* SessionListReturnRefresh.swift */; };
+		C107V0000000000000000031 /* SessionListAutoRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000131 /* SessionListAutoRefresh.swift */; };
 		C107V0000000000000000003 /* NewChatRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000103 /* NewChatRequest.swift */; };
 		C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000104 /* PendingNewChatRoute.swift */; };
 		C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000105 /* SessionListUtilityDestination.swift */; };
@@ -123,6 +124,7 @@
 		C107X0000000000000000004 /* SessionListAutomatedVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */; };
 		C107X0000000000000000005 /* SessionListMutationTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107X0000000000000000105 /* SessionListMutationTestSupport.swift */; };
 		A10900000000000000000002 /* SessionNavigationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10900000000000000000012 /* SessionNavigationStateTests.swift */; };
+		A10900000000000000000003 /* SessionListAutoRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10900000000000000000013 /* SessionListAutoRefreshTests.swift */; };
 		C03910000000000000000010 /* APIEndpointContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000010 /* APIEndpointContractTests.swift */; };
 		C03910000000000000000011 /* CronManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000011 /* CronManagementTests.swift */; };
 		C03910000000000000000012 /* MemoryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000012 /* MemoryViewModelTests.swift */; };
@@ -763,7 +765,8 @@
 		1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		C107V0000000000000000101 /* SessionListInitialLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListInitialLoad.swift; sourceTree = "<group>"; };
-		C107V0000000000000000102 /* SessionListNewChatReturn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListNewChatReturn.swift; sourceTree = "<group>"; };
+		C107V0000000000000000102 /* SessionListReturnRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListReturnRefresh.swift; sourceTree = "<group>"; };
+		C107V0000000000000000131 /* SessionListAutoRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListAutoRefresh.swift; sourceTree = "<group>"; };
 		C107V0000000000000000103 /* NewChatRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatRequest.swift; sourceTree = "<group>"; };
 		C107V0000000000000000104 /* PendingNewChatRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatRoute.swift; sourceTree = "<group>"; };
 		C107V0000000000000000105 /* SessionListUtilityDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListUtilityDestination.swift; sourceTree = "<group>"; };
@@ -824,6 +827,7 @@
 		C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListAutomatedVisibilityTests.swift; sourceTree = "<group>"; };
 		C107X0000000000000000105 /* SessionListMutationTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListMutationTestSupport.swift; sourceTree = "<group>"; };
 		A10900000000000000000012 /* SessionNavigationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationStateTests.swift; sourceTree = "<group>"; };
+		A10900000000000000000013 /* SessionListAutoRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListAutoRefreshTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000010 /* APIEndpointContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIEndpointContractTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000011 /* CronManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronManagementTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000012 /* MemoryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryViewModelTests.swift; sourceTree = "<group>"; };
@@ -1522,6 +1526,7 @@
 				C107X0000000000000000104 /* SessionListAutomatedVisibilityTests.swift */,
 				C107X0000000000000000105 /* SessionListMutationTestSupport.swift */,
 				A10900000000000000000012 /* SessionNavigationStateTests.swift */,
+				A10900000000000000000013 /* SessionListAutoRefreshTests.swift */,
 				C03900000000000000000010 /* APIEndpointContractTests.swift */,
 				C03900000000000000000011 /* CronManagementTests.swift */,
 				C03900000000000000000012 /* MemoryViewModelTests.swift */,
@@ -1780,7 +1785,8 @@
 			children = (
 				1A2B3C4D5E6F7000000000B7 /* SessionListView.swift */,
 				C107V0000000000000000101 /* SessionListInitialLoad.swift */,
-				C107V0000000000000000102 /* SessionListNewChatReturn.swift */,
+				C107V0000000000000000102 /* SessionListReturnRefresh.swift */,
+				C107V0000000000000000131 /* SessionListAutoRefresh.swift */,
 				C107V0000000000000000103 /* NewChatRequest.swift */,
 				C107V0000000000000000104 /* PendingNewChatRoute.swift */,
 				C107V0000000000000000105 /* SessionListUtilityDestination.swift */,
@@ -2750,7 +2756,8 @@
 				C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */,
 					1A2B3C4D5E6F7000000000A7 /* SessionListView.swift in Sources */,
 					C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */,
-					C107V0000000000000000002 /* SessionListNewChatReturn.swift in Sources */,
+					C107V0000000000000000002 /* SessionListReturnRefresh.swift in Sources */,
+					C107V0000000000000000031 /* SessionListAutoRefresh.swift in Sources */,
 					C107V0000000000000000003 /* NewChatRequest.swift in Sources */,
 					C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */,
 					C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */,
@@ -2993,6 +3000,7 @@
 				C107X0000000000000000004 /* SessionListAutomatedVisibilityTests.swift in Sources */,
 				C107X0000000000000000005 /* SessionListMutationTestSupport.swift in Sources */,
 				A10900000000000000000002 /* SessionNavigationStateTests.swift in Sources */,
+				A10900000000000000000003 /* SessionListAutoRefreshTests.swift in Sources */,
 				C03910000000000000000010 /* APIEndpointContractTests.swift in Sources */,
 				C03910000000000000000011 /* CronManagementTests.swift in Sources */,
 				C03910000000000000000012 /* MemoryViewModelTests.swift in Sources */,
