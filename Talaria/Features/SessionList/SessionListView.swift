@@ -41,7 +41,7 @@ struct SessionListView: View {
     @State private var isAppSidebarPresented = false
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
-    @State private var returnRefreshID: UUID?
+    @State private var immediateRefreshID: UUID?
     @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
     @AppStorage(SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
     private var scheduledSessionsAreExpanded = SessionSidebarDisclosureSettings.defaultScheduledSessionsAreExpanded
@@ -277,8 +277,8 @@ struct SessionListView: View {
                     every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
                 )
             }
-            .task(id: returnRefreshID) {
-                guard returnRefreshID != nil else { return }
+            .task(id: immediateRefreshID) {
+                guard immediateRefreshID != nil else { return }
                 await refreshSessionsAndActiveProfile()
             }
             .task(id: autoRefreshTaskID) {
@@ -330,6 +330,11 @@ struct SessionListView: View {
                 // the list on one project with no way back (#189).
                 guard !showsProjectsSection else { return }
                 selectedProjectID = nil
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .talariaSessionNotificationArrived)
+            ) { _ in
+                refreshForSessionNotification()
             }
             .onChange(of: navigationState.destination) { oldValue, newValue in
                 SessionListReturnRefresh.run(
@@ -1115,6 +1120,14 @@ struct SessionListView: View {
         }
     }
 
+    /// Unlike the return refresh this is not width-specific: the notification can
+    /// arrive whatever the user is looking at, and the list behind them should be
+    /// current when they get back to it.
+    private func refreshForSessionNotification() {
+        guard didCompleteInitialLoad else { return }
+        immediateRefreshID = UUID()
+    }
+
     private func refreshAfterReturningIfNeeded() {
         guard didCompleteInitialLoad else { return }
         // In compact width a return also brings the list back on screen, which
@@ -1124,7 +1137,7 @@ struct SessionListView: View {
         // never leaves the screen, so that loop does not restart and this is the
         // only trigger a session switch has.
         guard horizontalSizeClass == .regular else { return }
-        returnRefreshID = UUID()
+        immediateRefreshID = UUID()
     }
 
     private func monitorActiveSessionRows() async {
@@ -1161,7 +1174,14 @@ struct SessionListView: View {
     }
 
     private func loadSessions() async {
-        await viewModel.load(modelContext: modelContext)
+        // Rows carry `sessionRowTransition`, but it only plays when the array is
+        // replaced inside an animation. The first population has nothing to move,
+        // so it stays unanimated and later refreshes slide a new row into its
+        // sorted place instead of popping it in.
+        let animation = viewModel.sessions.isEmpty
+            ? nil
+            : SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+        await viewModel.load(modelContext: modelContext, animation: animation)
         guard !Task.isCancelled else { return }
         handleLastError()
 

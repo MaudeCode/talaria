@@ -204,6 +204,19 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(refreshCount, 2)
     }
 
+    // MARK: - Notification-driven refresh
+
+    /// The banner is the phone learning a run finished, which beats the next
+    /// tick. Only a notification naming a session says anything about the list.
+    func testOnlyASessionNotificationTriggersARefresh() {
+        XCTAssertTrue(SessionNotificationRefresh.namesASession(userInfo: ["sessionId": "abc"]))
+        XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: [:]))
+        XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: ["sessionId": ""]))
+        XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: ["sessionId": "   "]))
+        XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: ["sessionId": 42]))
+        XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: ["publisherId": "pub"]))
+    }
+
     // MARK: - Reconciliation and transient failure
 
     func testAutomaticRefreshAdoptsASessionCreatedElsewhere() async throws {
