@@ -496,6 +496,31 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertTrue(GitWriteAvailability(isStreaming: false, isViewingCachedData: true).fetchDisabled)
     }
 
+    /// TAL-140: the Git Actions setting hides the turn-end surfaces (inline commit button,
+    /// "File changes" recap) the same way it already hides the toolbar menu and branch picker.
+    func testTurnGitSurfaceVisibilityRequiresSettingAndTurnConditions() {
+        func visibility(
+            settingEnabled: Bool = true,
+            hasRepository: Bool = true,
+            isStreaming: Bool = false,
+            latestMessageRole: String? = "assistant"
+        ) -> ChatTurnGitSurfaceVisibility {
+            ChatTurnGitSurfaceVisibility(
+                settingEnabled: settingEnabled,
+                hasRepository: hasRepository,
+                isStreaming: isStreaming,
+                latestMessageRole: latestMessageRole
+            )
+        }
+
+        XCTAssertTrue(visibility().isVisible)
+        XCTAssertFalse(visibility(settingEnabled: false).isVisible)
+        XCTAssertFalse(visibility(hasRepository: false).isVisible)
+        XCTAssertFalse(visibility(isStreaming: true).isVisible)
+        XCTAssertFalse(visibility(latestMessageRole: "user").isVisible)
+        XCTAssertFalse(visibility(latestMessageRole: nil).isVisible)
+    }
+
     // MARK: - Diff parsing
 
     func testDiffParserDropsPreambleAndClassifiesLines() {

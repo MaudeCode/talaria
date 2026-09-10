@@ -98,7 +98,7 @@ final class LocalizationCatalogTests: XCTestCase {
         "Couldn't read the recorded voice note. Try again.",
         "Couldn't start recording. Try again.",
         "Couldn't transcribe that voice note. Try recording again.",
-        "Covers both the git menu in the chat toolbar and the branch picker in the composer.",
+        "Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap.",
         "Data & Storage",
         "Delivered for servers connected to Talaria Relay.",
         "Dictation Provider",

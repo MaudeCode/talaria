@@ -31380,7 +31380,7 @@
     "Couldn't transcribe that voice note. Try recording again." : {
 
     },
-    "Covers both the git menu in the chat toolbar and the branch picker in the composer." : {
+    "Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap." : {
 
     },
     "Crashed" : {

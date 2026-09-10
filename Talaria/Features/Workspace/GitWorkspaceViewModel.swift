@@ -480,6 +480,21 @@ struct GitWriteAvailability: Equatable {
     var fetchDisabled: Bool { isViewingCachedData }
 }
 
+/// Shared gate for the turn-end git surfaces in chat — the inline "Commit & Push" button
+/// and the "File changes" recap. Pure so the Settings > Chats > Git Actions toggle and the
+/// turn conditions are testable together (TAL-140).
+struct ChatTurnGitSurfaceVisibility: Equatable {
+    /// Settings > Chats > Git Actions.
+    let settingEnabled: Bool
+    let hasRepository: Bool
+    let isStreaming: Bool
+    let latestMessageRole: String?
+
+    var isVisible: Bool {
+        settingEnabled && hasRepository && !isStreaming && latestMessageRole == "assistant"
+    }
+}
+
 enum GitToolbarStatusDot: Equatable {
     case gray
 }

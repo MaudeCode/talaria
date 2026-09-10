@@ -207,7 +207,8 @@ struct ChatsSettingsView: View {
                     isOn: $showsChatGitControls
                 )
 
-                SettingsFootnote(String(localized: "Covers both the git menu in the chat toolbar and the branch picker in the composer."))
+                // swiftlint:disable:next line_length
+                SettingsFootnote(String(localized: "Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap."))
             }
 
             SettingsCard(title: String(localized: "Chat List")) {
