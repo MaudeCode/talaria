@@ -761,13 +761,22 @@ struct ChatView: View {
         )
     }
 
+    /// Whether the turn-end git surfaces may show at all: the Git Actions setting is on, this
+    /// is a git workspace, and the latest message is a finished assistant turn.
+    private var turnGitSurfaceVisibility: ChatTurnGitSurfaceVisibility {
+        ChatTurnGitSurfaceVisibility(
+            settingEnabled: showsGitControls,
+            hasRepository: gitAvailabilityViewModel.hasRepository,
+            isStreaming: viewModel.activeStreamID != nil,
+            latestMessageRole: latestTranscriptMessageRole
+        )
+    }
+
     /// Inputs for the inline "Commit & Push" button shown under the latest assistant turn.
-    /// Only for git workspaces, when the latest message is an assistant turn (not while a
-    /// response streams), and there is something to commit (or a commit is in flight).
+    /// Shown only when the turn-end git surfaces are visible and there is something to commit
+    /// (or a commit is in flight).
     private var inlineCommitContext: ChatInlineCommitContext? {
-        guard gitAvailabilityViewModel.hasRepository,
-              viewModel.activeStreamID == nil,
-              latestTranscriptMessageRole == "assistant",
+        guard turnGitSurfaceVisibility.isVisible,
               gitAvailabilityViewModel.hasCommittableChanges || gitAvailabilityViewModel.isCommitting
         else { return nil }
         return ChatInlineCommitContext(
@@ -776,14 +785,11 @@ struct ChatView: View {
         )
     }
 
-    /// Turn-end "File changes" recap card for the latest assistant turn (#316). Only for git
-    /// workspaces once the response finishes (status has refreshed) and the latest turn
+    /// Turn-end "File changes" recap card for the latest assistant turn (#316). Shown only
+    /// when the turn-end git surfaces are visible (status has refreshed) and the latest turn
     /// actually changed files.
     private var turnChangesRecapSummary: TurnFileChangeSummary? {
-        guard gitAvailabilityViewModel.hasRepository,
-              viewModel.activeStreamID == nil,
-              latestTranscriptMessageRole == "assistant"
-        else { return nil }
+        guard turnGitSurfaceVisibility.isVisible else { return nil }
         let summary = TurnFileChangeAggregator.summarize(
             toolCalls: viewModel.latestTurnToolCalls,
             status: gitAvailabilityViewModel.status
