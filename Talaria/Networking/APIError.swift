@@ -22,12 +22,15 @@ enum APIError: LocalizedError {
             case -1:
                 return String(localized: "The server response could not be read. Check that the URL points to a Hermes Web UI server.")
             case 400:
-                if let message = Self.serverErrorMessage(from: body) {
+                if let message = Self.boundedServerMessage(from: body) {
                     return String(localized: "The server rejected the request: \(message)")
                 }
                 return String(localized: "The server rejected the request.")
             case 403:
-                return String(localized: "The server refused access. Check the server password and permissions.")
+                if let message = Self.boundedServerMessage(from: body) {
+                    return String(localized: "The server refused the request: \(message)")
+                }
+                return String(localized: "The server refused the request. Check your access to this server.")
             case 404:
                 return String(localized: "The server endpoint was not found. Check that the URL points to a Hermes Web UI server.")
             case 408:
@@ -39,7 +42,7 @@ enum APIError: LocalizedError {
             case 502, 503, 504:
                 return String(localized: "The server or Cloudflare tunnel is unavailable. Check that the Mac is awake, hermes-webui is running, and the tunnel is connected.")
             default:
-                if let message = Self.serverErrorMessage(from: body) {
+                if let message = Self.boundedServerMessage(from: body) {
                     return String(localized: "Server returned HTTP \(statusCode): \(message)")
                 }
                 return String(localized: "Server returned HTTP \(statusCode).")
@@ -202,6 +205,16 @@ private extension APIError {
         guard let payload = serverErrorPayload(from: body) else { return nil }
         let message = payload.error ?? payload.message ?? payload.detail
         return message?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    /// Server text that reaches an alert, capped so a long or hostile body cannot
+    /// crowd out the guidance around it. The cap counts Unicode scalars, so a
+    /// single grapheme cluster carrying thousands of combining marks is bounded
+    /// too. Classification helpers keep reading the untruncated message.
+    static func boundedServerMessage(from body: String?) -> String? {
+        guard let message = serverErrorMessage(from: body) else { return nil }
+        guard message.unicodeScalars.count > 200 else { return message }
+        return String(String.UnicodeScalarView(message.unicodeScalars.prefix(199))) + "…"
     }
 
     static func serverErrorPayload(from body: String?) -> ErrorPayload? {
