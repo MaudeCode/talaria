@@ -156,12 +156,54 @@ struct MarkdownMathFormatter {
     private static func looksLikeMath(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        if trimmed.range(of: #"^[A-Za-z](?:_[A-Za-z0-9]+|\^[A-Za-z0-9]+)?$"#, options: .regularExpression) != nil {
+        if trimmed.range(of: identifierPattern, options: .regularExpression) != nil {
             return true
         }
         if trimmed.contains("\\") || trimmed.contains("^") || trimmed.contains("_") { return true }
-        return trimmed.range(of: #"[A-Za-z0-9]\s*[=<>+\-*/|]\s*[A-Za-z0-9]"#, options: .regularExpression) != nil
+        if trimmed.range(of: #"[A-Za-z0-9]\s*[=<>+\-*/|]\s*[A-Za-z0-9]"#, options: .regularExpression) != nil {
+            return true
+        }
+        return looksLikeGroupedAssignment(trimmed)
     }
+
+    /// Assignments whose right-hand side opens with a group, such as `E=[4,-2]`.
+    /// The operator heuristic above misses them because the character after `=`
+    /// is a bracket rather than an alphanumeric.
+    private static func looksLikeGroupedAssignment(_ value: String) -> Bool {
+        let sides = value.components(separatedBy: "=")
+        guard sides.count == 2,
+              sides[0].trimmingCharacters(in: .whitespaces)
+                .range(of: identifierPattern, options: .regularExpression) != nil
+        else { return false }
+
+        let rightHandSide = sides[1].trimmingCharacters(in: .whitespaces)
+        guard let opener = rightHandSide.first, groupPairs[opener] != nil,
+              rightHandSide.unicodeScalars.allSatisfy(groupedAssignmentCharacters.contains),
+              rightHandSide.range(of: #"[0-9,+\-*/|]"#, options: .regularExpression) != nil
+        else { return false }
+
+        return isBalanced(rightHandSide)
+    }
+
+    private static func isBalanced(_ value: String) -> Bool {
+        var expected: [Character] = []
+        for character in value {
+            if let closer = groupPairs[character] {
+                expected.append(closer)
+            } else if groupPairs.values.contains(character), expected.popLast() != character {
+                return false
+            }
+        }
+        return expected.isEmpty
+    }
+
+    private static let identifierPattern = #"^[A-Za-z](?:_[A-Za-z0-9]+|\^[A-Za-z0-9]+)?$"#
+
+    private static let groupPairs: [Character: Character] = ["[": "]", "(": ")", "{": "}"]
+
+    private static let groupedAssignmentCharacters = CharacterSet.alphanumerics
+        .union(.whitespaces)
+        .union(CharacterSet(charactersIn: #"_^,.+-*/<>|[](){}"#))
 }
 
 private enum InlineDelimiter: CaseIterable {

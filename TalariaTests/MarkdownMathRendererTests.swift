@@ -608,6 +608,74 @@ final class MarkdownMathRendererTests: XCTestCase {
             .tooManyLines
         )
     }
+
+    func testGroupedAssignmentsRenderAsInlineMath() {
+        let cases: [(input: String, expected: String)] = [
+            ("Vector $E=[4,-2]$.", "Vector E=[4,-2]."),
+            ("Point $p = (3, 4)$.", "Point p = (3, 4)."),
+            ("Matrix $A=[[1,0],[0,1]]$.", "Matrix A=[[1,0],[0,1]]."),
+            ("Scripted $v_1=[1,2]$.", "Scripted v₁=[1,2]."),
+            ("Symbolic $u=(a,b,c)$.", "Symbolic u=(a,b,c)."),
+        ]
+
+        for (input, expected) in cases {
+            XCTAssertEqual(MarkdownMathFormatter.replacingInlineMath(in: input), expected, input)
+        }
+    }
+
+    func testNonMathGroupedTextStaysLiteral() {
+        let cases = [
+            // Currency: the span between the two signs is not an assignment.
+            "Shirts cost $20 and hats cost $15 today.",
+            // Prose right-hand side carries no math symbol.
+            "Totals $x = (the running total)$ stay prose.",
+            // Unsafe characters outside the allowed set.
+            "Unsafe $x=[a@b#c]$ stays literal.",
+            // Mismatched and unclosed groups.
+            "Unbalanced $E=[4,-2)$ stays literal.",
+            "Unclosed $A=[[1,2],[3,4]$ stays literal.",
+            // More than one assignment operator.
+            "Chained $a=[1]=b$ stays literal.",
+        ]
+
+        for input in cases {
+            XCTAssertEqual(MarkdownMathFormatter.replacingInlineMath(in: input), input, input)
+        }
+    }
+
+    func testGroupedAssignmentsRespectEscapesAndCodeProtection() {
+        let input = #"""
+        Escaped \$E=[4,-2]\$ stays.
+
+        Code `$E=[4,-2]$` stays.
+
+        ```swift
+        let vector = "$E=[4,-2]$"
+        ```
+
+        But $E=[4,-2]$ renders.
+        """#
+
+        let rendered = MarkdownMathFormatter.replacingInlineMath(in: input)
+
+        XCTAssertTrue(rendered.contains(#"\$E=[4,-2]\$"#))
+        XCTAssertTrue(rendered.contains(#"`$E=[4,-2]$`"#))
+        XCTAssertTrue(rendered.contains(#""$E=[4,-2]$""#))
+        XCTAssertTrue(rendered.contains("But E=[4,-2] renders."))
+    }
+
+    func testGroupedAssignmentSegmentationMatchesAcrossStreamingAndSettledPaths() {
+        let content = "Streaming $E=[4,-2]$ and settled $p=(3,4)$ agree."
+
+        XCTAssertEqual(
+            MarkdownMathLayoutCache.uncachedLayout(for: content),
+            MarkdownMathLayoutCache.layout(for: content)
+        )
+        XCTAssertEqual(
+            MarkdownMathLayoutCache.uncachedLayout(for: content),
+            .plain(MarkdownMathFormatter.replacingInlineMath(in: content))
+        )
+    }
 }
 
 private func foregroundColorSignatures(in attributedString: NSAttributedString, userInterfaceStyle: UIUserInterfaceStyle) -> Set<String> {
