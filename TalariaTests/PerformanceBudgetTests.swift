@@ -46,7 +46,7 @@ extension XCTestCase {
 /// every card on the Board. One keystroke in the filter field therefore costs a
 /// full pass per column, which is why the budget covers load plus filtering
 /// rather than load alone.
-final class KanbanBoardPerformanceTests: XCTestCase {
+final class KanbanBoardPerformanceTests: KanbanDefaultsTestCase {
     /// A Board far denser than the fixture's four cards, and denser than a
     /// healthy real Board — enough that a per-card regression is visible
     /// without making the run slow.
@@ -59,6 +59,7 @@ final class KanbanBoardPerformanceTests: XCTestCase {
         measureAsync(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: performanceOptions()) { _ in
             let state = KanbanFeatureState(
                 server: URL(string: "https://example.test")!,
+                defaults: self.defaults,
                 client: KanbanClientStub(boardResult: .success(snapshot))
             )
             await state.load()

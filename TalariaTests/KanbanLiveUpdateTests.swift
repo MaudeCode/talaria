@@ -2,7 +2,7 @@ import XCTest
 @testable import Talaria
 
 @MainActor
-final class KanbanLiveUpdateTests: XCTestCase {
+final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
     func testVisibleBoardStartsAtSnapshotCursorAndCoalescesEventBurst() async throws {
         let client = LiveKanbanClient(boardResults: [.success(.rich), .success(.newer)])
         let stream = KanbanStreamSpy()
@@ -164,6 +164,7 @@ final class KanbanLiveUpdateTests: XCTestCase {
         let stream = KanbanStreamSpy()
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client,
             streamClient: stream,
             timing: KanbanLiveUpdateTiming(
@@ -214,6 +215,32 @@ final class KanbanLiveUpdateTests: XCTestCase {
         try await waitUntil { await client.boardCallCount == 3 }
         XCTAssertEqual(state.snapshot?.latestEventID, 21)
         state.setVisible(false)
+    }
+
+    func testRestoredBoardStartsLiveUpdatesPinnedToIt() async throws {
+        let first = makeState(
+            client: LiveKanbanClient(boards: .multiple, boardResults: [.success(.rich), .success(.release)]),
+            stream: KanbanStreamSpy()
+        )
+        await first.load()
+        await first.selectBoard("release")
+
+        let client = LiveKanbanClient(boards: .multiple, boardResults: [.success(.release), .success(.releaseUpdated)])
+        let stream = KanbanStreamSpy()
+        let restored = makeState(client: client, stream: stream)
+        await restored.load()
+        restored.setVisible(true)
+
+        XCTAssertEqual(restored.selectedBoardSlug, "release")
+        XCTAssertEqual(stream.startURLs.last?.queryValue("board"), "release")
+        XCTAssertEqual(stream.startURLs.last?.queryValue("since"), "20")
+        stream.emit(Self.eventsFrame(cursor: 21, kind: "task.created"))
+
+        try await waitUntil { await client.boardCallCount == 2 }
+        XCTAssertEqual(restored.snapshot?.latestEventID, 21)
+        let lastRequest = await client.boardRequests.last
+        XCTAssertEqual(lastRequest?.board, "release")
+        restored.setVisible(false)
     }
 
     func testPullToRefreshRetriesDelayedStreamAndNoticeClearsOnlyAfterHello() async throws {
@@ -284,6 +311,7 @@ final class KanbanLiveUpdateTests: XCTestCase {
         let first = makeState(client: firstClient, stream: firstStream)
         let second = KanbanFeatureState(
             server: URL(string: "https://second.example.test")!,
+            defaults: defaults,
             client: secondClient,
             streamClient: secondStream,
             timing: KanbanLiveUpdateTiming(
@@ -324,6 +352,7 @@ final class KanbanLiveUpdateTests: XCTestCase {
     ) -> KanbanFeatureState {
         KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client,
             streamClient: stream,
             timing: timing

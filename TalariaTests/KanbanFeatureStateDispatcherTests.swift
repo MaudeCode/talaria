@@ -8,6 +8,7 @@ extension KanbanFeatureStateTests {
         let client = DispatcherClient(defersFirstDispatch: true)
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client,
             now: { completedAt }
         )
@@ -41,6 +42,7 @@ extension KanbanFeatureStateTests {
         let client = DispatcherClient()
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()
@@ -141,6 +143,7 @@ extension KanbanFeatureStateTests {
         )
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()
@@ -179,6 +182,7 @@ extension KanbanFeatureStateTests {
         )
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()
@@ -228,6 +232,7 @@ extension KanbanFeatureStateTests {
         ])
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()
@@ -254,6 +259,7 @@ extension KanbanFeatureStateTests {
         let runClient = DispatcherClient(dispatchResults: [.failure(malformed)])
         let runState = KanbanFeatureState(
             server: URL(string: "https://run.example.test")!,
+            defaults: defaults,
             client: runClient
         )
         await runState.load()
@@ -265,6 +271,7 @@ extension KanbanFeatureStateTests {
         let previewClient = DispatcherClient(dispatchResults: [.failure(malformed)])
         let previewState = KanbanFeatureState(
             server: URL(string: "https://preview.example.test")!,
+            defaults: defaults,
             client: previewClient
         )
         await previewState.load()
@@ -279,6 +286,7 @@ extension KanbanFeatureStateTests {
         )
         let refusal = KanbanFeatureState(
             server: URL(string: "https://refusal.example.test")!,
+            defaults: defaults,
             client: refusalClient
         )
         await refusal.load()
@@ -291,6 +299,7 @@ extension KanbanFeatureStateTests {
         )
         let incompatible = KanbanFeatureState(
             server: URL(string: "https://old.example.test")!,
+            defaults: defaults,
             client: incompatibleClient
         )
         await incompatible.load()
@@ -301,6 +310,7 @@ extension KanbanFeatureStateTests {
         let partialClient = DispatcherClient(statsError: KanbanResponseError.nonJSONContentType)
         let partial = KanbanFeatureState(
             server: URL(string: "https://partial.example.test")!,
+            defaults: defaults,
             client: partialClient
         )
         await partial.load()
@@ -314,6 +324,7 @@ extension KanbanFeatureStateTests {
         )
         let unavailable = KanbanFeatureState(
             server: URL(string: "https://unknown.example.test")!,
+            defaults: defaults,
             client: missingWriteCapability
         )
         await unavailable.load()
@@ -327,6 +338,7 @@ extension KanbanFeatureStateTests {
         )
         let offline = KanbanFeatureState(
             server: URL(string: "https://offline.example.test")!,
+            defaults: defaults,
             client: offlineClient
         )
         await offline.load()
@@ -345,10 +357,12 @@ extension KanbanFeatureStateTests {
         let secondClient = DispatcherClient()
         let first = KanbanFeatureState(
             server: URL(string: "https://first.example.test")!,
+            defaults: defaults,
             client: firstClient
         )
         let second = KanbanFeatureState(
             server: URL(string: "https://second.example.test")!,
+            defaults: defaults,
             client: secondClient
         )
         await first.load()
@@ -368,6 +382,7 @@ extension KanbanFeatureStateTests {
         let client = DeferredBoardCollectionClient()
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()

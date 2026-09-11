@@ -1,9 +1,9 @@
 import Foundation
 import Observation
 
-/// Server-bound, transient Kanban browsing state. Each instance owns one
-/// server's Board choice, filters, selection, and snapshots; nothing is shared
-/// across servers or persisted by this slice.
+/// Server-bound Kanban browsing state. Each instance owns one server's Board
+/// choice, filters, selection, and snapshots; nothing is shared across servers.
+/// Only the locally browsed Board slug persists, under a server-scoped key.
 @MainActor
 @Observable
 final class KanbanFeatureState {
@@ -53,6 +53,8 @@ final class KanbanFeatureState {
     private var boardsResponse: KanbanBoardsResponse?
     private let client: any KanbanDataClient
     private let streamClient: any KanbanEventStreamingClient
+    private let defaults: UserDefaults
+    private let browsedBoardKey: String
     private let timing: KanbanLiveUpdateTiming
     private let archiveUndoLifetime: TimeInterval
     private let sleep: @MainActor @Sendable (Duration) async throws -> Void
@@ -80,6 +82,7 @@ final class KanbanFeatureState {
 
     init(
         server: URL,
+        defaults: UserDefaults = .standard,
         client: (any KanbanDataClient)? = nil,
         streamClient: (any KanbanEventStreamingClient)? = nil,
         timing: KanbanLiveUpdateTiming = .production,
@@ -91,6 +94,8 @@ final class KanbanFeatureState {
         onAPIError: @escaping (Error) -> Void = { _ in }
     ) {
         self.server = server
+        self.defaults = defaults
+        browsedBoardKey = "kanban.browsedBoard.\(server.absoluteString)"
         self.client = client ?? APIClient(baseURL: server)
         self.streamClient = streamClient ?? KanbanEventStreamClient()
         self.timing = timing
@@ -615,13 +620,16 @@ final class KanbanFeatureState {
                 state = report.isPartial ? .partial : .compatible
                 return
             }
-            let boardToLoad = previouslySelectedBoard ?? currentBoard
+            let boardToLoad = previouslySelectedBoard
+                ?? storedBoardSlug(in: availableBoards)
+                ?? currentBoard
             let snapshot = try await client.kanbanBoard(KanbanBoardRequest(board: boardToLoad))
             guard isCurrent(loadID) else { return }
 
             let report = try KanbanCompatibilityValidator.validate(
                 configuration: configuration,
                 boardsResponse: boardsResponse,
+                boardSlug: boardToLoad,
                 snapshot: snapshot
             )
             guard isCurrent(loadID) else { return }
@@ -715,6 +723,7 @@ final class KanbanFeatureState {
         clearSettledMutationPresentation()
         resetLiveUpdates(clearCursor: true)
         selectedBoardSlug = slug
+        defaults.set(slug, forKey: browsedBoardKey)
         boardSelectionNotice = nil
         snapshot = nil
         stats = nil
@@ -1945,6 +1954,7 @@ final class KanbanFeatureState {
         bulkActionPhase = nil
         bulkActionSummary = nil
         selectedBoardSlug = nil
+        defaults.removeObject(forKey: browsedBoardKey)
         snapshot = nil
         stats = nil
         assigneeHistory = nil
@@ -1952,6 +1962,17 @@ final class KanbanFeatureState {
         capabilityWarnings = []
         refreshFailed = false
         boardSelectionNotice = KanbanBoardSelectionNotice(boardName: boardDisplayName)
+    }
+
+    /// The saved slug is a hint: it is only returned when the fresh Board list
+    /// confirms it, and a stale value is dropped before falling back.
+    private func storedBoardSlug(in availableBoards: [KanbanBoard]) -> String? {
+        guard let slug = normalized(defaults.string(forKey: browsedBoardKey)) else { return nil }
+        guard availableBoards.contains(where: { normalized($0.slug) == slug }) else {
+            defaults.removeObject(forKey: browsedBoardKey)
+            return nil
+        }
+        return slug
     }
 
     private func normalizedOptional(_ value: String?) -> String? {

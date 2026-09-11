@@ -15,7 +15,7 @@ extension KanbanFeatureStateTests {
             ],
             defersCreate: true
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         let creation = Task {
@@ -54,7 +54,7 @@ extension KanbanFeatureStateTests {
                 #"{"boards":[{"slug":"main"},{"slug":"release"}],"current":"release","read_only":false}"#
             ))
         ])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         await state.refresh()
@@ -74,7 +74,7 @@ extension KanbanFeatureStateTests {
                 #"{"boards":[{"slug":"main","name":"Main"}],"current":"main","read_only":false}"#
             ))
         ])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         await state.selectBoard("release")
         state.beginSelectingCards()
@@ -98,7 +98,7 @@ extension KanbanFeatureStateTests {
                 #"{"boards":[{"slug":"main","name":"Main"}],"current":"main","read_only":false}"#
             ))
         ])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         await state.selectBoard("release")
 
@@ -116,7 +116,7 @@ extension KanbanFeatureStateTests {
                 #"{"boards":[{"slug":"main","name":"Main"}],"current":"main"}"#
             ))
         ])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         XCTAssertEqual(state.state, .partial)
@@ -139,7 +139,7 @@ extension KanbanFeatureStateTests {
             )),
             .failure(APIError.network(underlying: URLError(.notConnectedToInternet)))
         ])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let loadedCards = state.allCards
 
@@ -163,7 +163,7 @@ extension KanbanFeatureStateTests {
         ], refreshBoardSnapshot: mutationDecode(
             #"{"changed":true,"latest_event_id":12,"read_only":false,"columns":[{"name":"ready","tasks":[{"id":"REFRESHED","status":"ready"}]}]}"#
         ))
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         await state.refresh()
@@ -177,7 +177,7 @@ extension KanbanFeatureStateTests {
 
     func testCancelledBoardCollectionRefreshDoesNotReportFailureOrBlockWrites() async {
         let client = DeferredBoardCollectionClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         let refresh = Task { await state.refresh() }
@@ -208,10 +208,12 @@ extension KanbanFeatureStateTests {
         ])
         let first = KanbanFeatureState(
             server: URL(string: "https://first.example.test")!,
+            defaults: defaults,
             client: firstClient
         )
         let second = KanbanFeatureState(
             server: URL(string: "https://second.example.test")!,
+            defaults: defaults,
             client: secondClient
         )
         await first.load()
@@ -232,6 +234,106 @@ extension KanbanFeatureStateTests {
         XCTAssertEqual(secondCreateRequestCount, 0)
     }
 
+    func testRebuiltStateForSameServerRestoresBrowsedBoardAndRefreshesAgainstIt() async {
+        let boards = #"{"boards":[{"slug":"main","name":"Main"},{"slug":"release","name":"Release"}],"current":"main","read_only":false}"#
+        let server = URL(string: "https://example.test")!
+        let first = KanbanFeatureState(
+            server: server,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [.success(mutationDecode(boards))])
+        )
+        await first.load()
+        await first.selectBoard("release")
+
+        let client = BoardManagementClient(boardsResponses: [.success(mutationDecode(boards))])
+        let rebuilt = KanbanFeatureState(server: server, defaults: defaults, client: client)
+        await rebuilt.load()
+        await rebuilt.refresh()
+
+        XCTAssertEqual(rebuilt.selectedBoardSlug, "release")
+        XCTAssertEqual(rebuilt.report?.board.slug, "release")
+        XCTAssertEqual(rebuilt.sharedActiveBoardSlug, "main")
+        let boardRequests = await client.boardRequests().map(\.board)
+        XCTAssertEqual(boardRequests, ["release", "release"])
+    }
+
+    func testSecondServerDoesNotInheritBrowsedBoard() async {
+        let boards = #"{"boards":[{"slug":"main","name":"Main"},{"slug":"release","name":"Release"}],"current":"main","read_only":false}"#
+        let first = KanbanFeatureState(
+            server: URL(string: "https://first.example.test")!,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [.success(mutationDecode(boards))])
+        )
+        await first.load()
+        await first.selectBoard("release")
+
+        let second = KanbanFeatureState(
+            server: URL(string: "https://second.example.test")!,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [.success(mutationDecode(boards))])
+        )
+        await second.load()
+
+        XCTAssertEqual(second.selectedBoardSlug, "main")
+    }
+
+    func testStaleSavedBoardNeverReachesWireAndIsForgotten() async {
+        let withRelease = #"{"boards":[{"slug":"main","name":"Main"},{"slug":"release","name":"Release"}],"current":"main","read_only":false}"#
+        let withoutRelease = #"{"boards":[{"slug":"main","name":"Main"}],"current":"main","read_only":false}"#
+        let server = URL(string: "https://example.test")!
+        let first = KanbanFeatureState(
+            server: server,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [.success(mutationDecode(withRelease))])
+        )
+        await first.load()
+        await first.selectBoard("release")
+
+        let staleClient = BoardManagementClient(boardsResponses: [.success(mutationDecode(withoutRelease))])
+        let stale = KanbanFeatureState(server: server, defaults: defaults, client: staleClient)
+        await stale.load()
+
+        XCTAssertEqual(stale.selectedBoardSlug, "main")
+        XCTAssertNil(stale.boardSelectionNotice)
+        let staleRequests = await staleClient.boardRequests().map(\.board)
+        XCTAssertEqual(staleRequests, ["main"])
+
+        // The stale slug was dropped: Release reappearing no longer restores it.
+        let later = KanbanFeatureState(
+            server: server,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [.success(mutationDecode(withRelease))])
+        )
+        await later.load()
+        XCTAssertEqual(later.selectedBoardSlug, "main")
+    }
+
+    func testRemovingBrowsedBoardClearsSavedChoice() async {
+        let withRelease = #"{"boards":[{"slug":"main","name":"Main"},{"slug":"release","name":"Release"}],"current":"main","read_only":false}"#
+        let withoutRelease = #"{"boards":[{"slug":"main","name":"Main"}],"current":"main","read_only":false}"#
+        let server = URL(string: "https://example.test")!
+        let state = KanbanFeatureState(
+            server: server,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [
+                .success(mutationDecode(withRelease)),
+                .success(mutationDecode(withoutRelease))
+            ])
+        )
+        await state.load()
+        await state.selectBoard("release")
+        await state.refresh()
+        XCTAssertNil(state.selectedBoardSlug)
+
+        let rebuilt = KanbanFeatureState(
+            server: server,
+            defaults: defaults,
+            client: BoardManagementClient(boardsResponses: [.success(mutationDecode(withRelease))])
+        )
+        await rebuilt.load()
+        XCTAssertEqual(rebuilt.selectedBoardSlug, "main")
+    }
+
     func testAmbiguousBoardWriteChecksAuthoritativeListAndDefaultArchiveIsBlocked() async {
         let client = BoardManagementClient(
             boardsResponses: [
@@ -244,7 +346,7 @@ extension KanbanFeatureStateTests {
             ],
             createResult: .failure(APIError.network(underlying: URLError(.timedOut)))
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         await state.archiveBoard(slug: "default")
@@ -276,7 +378,7 @@ extension KanbanFeatureStateTests {
             ],
             createResult: .failure(APIError.network(underlying: URLError(.timedOut)))
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         state.beginSelectingCards()
         if let card = state.allCards.first { state.toggleCardSelection(card) }
@@ -314,7 +416,7 @@ extension KanbanFeatureStateTests {
             ],
             defersCreate: true
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         let creation = Task {
@@ -357,7 +459,7 @@ extension KanbanFeatureStateTests {
                 #"{"boards":[{"slug":"default","name":"Default"}],"current":"default","read_only":false}"#
             ))
         ])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         await state.editBoard(KanbanEditBoardRequest(
@@ -400,6 +502,7 @@ extension KanbanFeatureStateTests {
         )
         let state = KanbanFeatureState(
             server: URL(string: "https://capability.example.test")!,
+            defaults: defaults,
             client: client
         )
 
