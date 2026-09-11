@@ -79,6 +79,10 @@ final class SessionListViewModel {
     private(set) var archivedCount: Int?
 
     private(set) var remoteContentSearchSessionIDs: [String] = []
+    /// Server-redacted excerpts for `remoteContentSearchSessionIDs`, keyed by
+    /// session ID. Set and cleared together with the IDs so an excerpt never
+    /// outlives the query that produced it.
+    private(set) var remoteContentSearchPreviews: [String: String] = [:]
     private var activeRemoteSearchQuery: String?
     private var loadGeneration = 0
     /// Every full-list reload goes through here — the automatic tick,
@@ -169,6 +173,19 @@ final class SessionListViewModel {
         }
 
         return sortedLocalMatches + Self.sortedSessions(remoteMatches)
+    }
+
+    /// The excerpt explaining why `session` is listed for `searchText`, or nil
+    /// when the row is not a content match for the search currently applied —
+    /// the same guard `visibleSessions` uses, so a query typed ahead of the
+    /// remote search never shows the previous query's excerpt.
+    func contentMatchPreview(for session: SessionSummary, searchText rawSearchText: String) -> String? {
+        let query = Self.normalizedSearchQuery(rawSearchText)
+        guard !query.isEmpty, activeRemoteSearchQuery == query, let sessionID = session.sessionId else {
+            return nil
+        }
+
+        return remoteContentSearchPreviews[sessionID]
     }
 
     func scheduledSessionGroups(
@@ -387,6 +404,7 @@ final class SessionListViewModel {
         let query = Self.normalizedSearchQuery(rawQuery)
         activeRemoteSearchQuery = query
         remoteContentSearchSessionIDs = []
+        remoteContentSearchPreviews = [:]
         searchErrorMessage = nil
 
         guard !query.isEmpty, !isViewingCachedData else {
@@ -406,7 +424,17 @@ final class SessionListViewModel {
 
             guard !Task.isCancelled, activeRemoteSearchQuery == query else { return }
 
-            remoteContentSearchSessionIDs = contentMatchIDs(from: response.sessions ?? [])
+            let matches = contentMatches(in: response.sessions ?? [])
+            remoteContentSearchSessionIDs = matches.compactMap(\.sessionId)
+            remoteContentSearchPreviews = Dictionary(
+                matches.compactMap { match -> (String, String)? in
+                    guard let sessionID = match.sessionId,
+                          let preview = Self.normalizedMatchPreview(match.matchPreview)
+                    else { return nil }
+                    return (sessionID, preview)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
             isSearchingRemoteSessions = false
         } catch {
             guard activeRemoteSearchQuery == query else { return }
@@ -415,6 +443,7 @@ final class SessionListViewModel {
             guard !APIError.isCancellation(error) else { return }
 
             remoteContentSearchSessionIDs = []
+            remoteContentSearchPreviews = [:]
             searchErrorMessage = error.localizedDescription
             lastError = error
         }
@@ -423,6 +452,7 @@ final class SessionListViewModel {
     func clearSearchResults() {
         activeRemoteSearchQuery = nil
         remoteContentSearchSessionIDs = []
+        remoteContentSearchPreviews = [:]
         searchErrorMessage = nil
         isSearchingRemoteSessions = false
     }
@@ -1239,7 +1269,8 @@ final class SessionListViewModel {
         }
     }
 
-    private func contentMatchIDs(from sessions: [SessionSummary]) -> [String] {
+    /// Content-match rows for sessions the list already shows, first row per ID.
+    private func contentMatches(in sessions: [SessionSummary]) -> [SessionSummary] {
         let locallyVisibleSessionIDs = Set(self.sessions.compactMap { session -> String? in
             guard session.archived != true, let sessionID = session.sessionId, !sessionID.isEmpty else {
                 return nil
@@ -1249,18 +1280,25 @@ final class SessionListViewModel {
         })
         var seenSessionIDs = Set<String>()
 
-        return sessions.compactMap { session in
+        return sessions.filter { session in
             guard session.matchType?.lowercased() == "content",
                   let sessionID = session.sessionId,
-                  locallyVisibleSessionIDs.contains(sessionID),
-                  !seenSessionIDs.contains(sessionID)
+                  locallyVisibleSessionIDs.contains(sessionID)
             else {
-                return nil
+                return false
             }
 
-            seenSessionIDs.insert(sessionID)
-            return sessionID
+            return seenSessionIDs.insert(sessionID).inserted
         }
+    }
+
+    /// Mirrors upstream `_sessionSearchContentPreview`: collapse whitespace and
+    /// drop an empty excerpt. The text itself is shown as the server sent it,
+    /// redaction markers included.
+    private static func normalizedMatchPreview(_ preview: String?) -> String? {
+        guard let preview else { return nil }
+        let collapsed = preview.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return collapsed.isEmpty ? nil : collapsed
     }
 
     private func beginSessionMutation(_ sessionId: String) -> Bool {

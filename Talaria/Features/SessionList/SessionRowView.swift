@@ -9,6 +9,11 @@ struct SessionRowView: View {
     var showsMessageCount = true
     var showsWorkspace = true
     var isViewingCachedData = false
+    /// Server-redacted excerpt around a content-search hit (TAL-164); nil for
+    /// title-only matches and rows outside a search.
+    var matchPreview: String? = nil
+    /// The search text the excerpt is highlighted against.
+    var searchText = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -50,6 +55,28 @@ struct SessionRowView: View {
         ].compactMap(\.self)
 
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+
+    /// Emphasizes every case-insensitive occurrence of `query` in `preview`.
+    /// Foundation's search is canonical-equivalence aware, so a composed query
+    /// still highlights a decomposed excerpt and vice versa; text the server
+    /// redacted simply has no hit to emphasize.
+    static func highlightedPreview(_ preview: String, query rawQuery: String) -> AttributedString {
+        var result = AttributedString(preview)
+        // The excerpt arrives whitespace-collapsed, so the query must be too or a
+        // doubled space in the search box would leave a real hit unemphasized.
+        let query = rawQuery.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !query.isEmpty else { return result }
+
+        var searchRange = preview.startIndex..<preview.endIndex
+        while let hit = preview.range(of: query, options: .caseInsensitive, range: searchRange),
+              let attributedHit = Range(hit, in: result) {
+            result[attributedHit].foregroundColor = .primary
+            result[attributedHit].font = AppFont.caption(weight: .semibold)
+            searchRange = hit.upperBound..<preview.endIndex
+        }
+
+        return result
     }
 
     static func accessibilityStateLabels(
@@ -109,6 +136,15 @@ struct SessionRowView: View {
 
             if showsSupplementalContent {
                 supplementalArea
+            }
+
+            if let matchPreview {
+                Text(Self.highlightedPreview(matchPreview, query: searchText))
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(metadataLineLimit + 1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -262,6 +298,10 @@ struct SessionRowView: View {
 
         if let metadataLabel {
             parts.append(metadataLabel)
+        }
+
+        if let matchPreview {
+            parts.append(matchPreview)
         }
 
         if let relativeDate {

@@ -135,7 +135,7 @@ extension SessionListMutationTests {
                     return apiTestJSONResponse("""
                     {
                       "sessions": [
-                        {"session_id": "new-content", "title": "Second result", "match_type": "content"}
+                        {"session_id": "new-content", "title": "Second result", "match_type": "content", "match_preview": "second preview"}
                       ],
                       "query": "new",
                       "count": 1
@@ -161,9 +161,143 @@ extension SessionListMutationTests {
         await oldTask.value
 
         XCTAssertEqual(viewModel.remoteContentSearchSessionIDs, ["new-content"])
+        XCTAssertEqual(viewModel.remoteContentSearchPreviews, ["new-content": "second preview"])
         XCTAssertEqual(
             viewModel.visibleSessions(searchText: "new", selectedProjectID: nil).compactMap(\.sessionId),
             ["new-content"]
+        )
+    }
+
+    // MARK: - Content-match excerpts (TAL-164)
+
+    private static let previewSessionsJSON = """
+    {
+      "sessions": [
+        {"session_id": "with-preview", "title": "Budget", "archived": false},
+        {"session_id": "without-preview", "title": "Roadmap", "archived": false},
+        {"session_id": "blank-preview", "title": "Notes", "archived": false},
+        {"session_id": "title-hit", "title": "Needle planning", "archived": false}
+      ]
+    }
+    """
+
+    private static let previewSearchJSON = """
+    {
+      "sessions": [
+        {"session_id": "with-preview", "match_type": "content", "match_preview": "  the\\n[REDACTED]  needle\\tcafé "},
+        {"session_id": "without-preview", "match_type": "content"},
+        {"session_id": "blank-preview", "match_type": "content", "match_preview": " \\n "},
+        {"session_id": "title-hit", "match_type": "title", "match_preview": "never shown"},
+        {"session_id": "not-loaded", "match_type": "content", "match_preview": "not visible"}
+      ],
+      "query": "needle",
+      "count": 5
+    }
+    """
+
+    @MainActor
+    func testContentMatchPreviewFollowsVisibleContentMatchesAndTheActiveQuery() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse(Self.previewSessionsJSON, for: request)
+            case "/api/sessions/search":
+                return apiTestJSONResponse(Self.previewSearchJSON, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.load()
+        await viewModel.searchSessions(query: " Needle ", debounceNanoseconds: 0)
+
+        // Whitespace collapses like upstream; redaction markers pass through untouched.
+        XCTAssertEqual(viewModel.remoteContentSearchPreviews, ["with-preview": "the [REDACTED] needle café"])
+        XCTAssertEqual(
+            Set(viewModel.remoteContentSearchSessionIDs),
+            ["with-preview", "without-preview", "blank-preview"]
+        )
+
+        let rows = Dictionary(
+            uniqueKeysWithValues: viewModel.visibleSessions(searchText: "needle", selectedProjectID: nil)
+                .map { ($0.sessionId ?? "", $0) }
+        )
+        let withPreview = try XCTUnwrap(rows["with-preview"])
+        XCTAssertEqual(
+            viewModel.contentMatchPreview(for: withPreview, searchText: "needle"),
+            "the [REDACTED] needle café"
+        )
+        XCTAssertNil(viewModel.contentMatchPreview(for: try XCTUnwrap(rows["without-preview"]), searchText: "needle"))
+        XCTAssertNil(viewModel.contentMatchPreview(for: try XCTUnwrap(rows["blank-preview"]), searchText: "needle"))
+        XCTAssertNil(viewModel.contentMatchPreview(for: try XCTUnwrap(rows["title-hit"]), searchText: "needle"))
+
+        // Text typed ahead of the debounced remote search must not reuse the old excerpt.
+        XCTAssertNil(viewModel.contentMatchPreview(for: withPreview, searchText: "needles"))
+        XCTAssertNil(viewModel.contentMatchPreview(for: withPreview, searchText: ""))
+
+        viewModel.clearSearchResults()
+        XCTAssertTrue(viewModel.remoteContentSearchPreviews.isEmpty)
+        XCTAssertNil(viewModel.contentMatchPreview(for: withPreview, searchText: "needle"))
+    }
+
+    @MainActor
+    func testContentMatchPreviewsClearWhenTheSearchFails() async throws {
+        var searchCount = 0
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse(Self.previewSessionsJSON, for: request)
+            case "/api/sessions/search":
+                searchCount += 1
+                if searchCount == 1 {
+                    return apiTestJSONResponse(Self.previewSearchJSON, for: request)
+                }
+                throw URLError(.notConnectedToInternet)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.load()
+        await viewModel.searchSessions(query: "needle", debounceNanoseconds: 0)
+        XCTAssertFalse(viewModel.remoteContentSearchPreviews.isEmpty)
+
+        await viewModel.searchSessions(query: "needle again", debounceNanoseconds: 0)
+
+        XCTAssertNotNil(viewModel.searchErrorMessage)
+        XCTAssertTrue(viewModel.remoteContentSearchPreviews.isEmpty)
+        XCTAssertTrue(viewModel.remoteContentSearchSessionIDs.isEmpty)
+    }
+
+    func testHighlightedPreviewEmphasizesEveryHitAcrossUnicodeForms() {
+        let composedQuery = "caf\u{E9}"
+        let decomposedPreview = "Caf\u{65}\u{301} first, then cafe\u{301} again, [REDACTED] kept"
+
+        let highlighted = SessionRowView.highlightedPreview(decomposedPreview, query: composedQuery)
+
+        XCTAssertEqual(String(highlighted.characters), decomposedPreview)
+        let hits = highlighted.runs.filter { $0.foregroundColor == .primary }.map { String(highlighted[$0.range].characters) }
+        XCTAssertEqual(hits.count, 2)
+        XCTAssertTrue(hits.allSatisfy { $0.caseInsensitiveCompare(composedQuery) == .orderedSame })
+        XCTAssertTrue(highlighted.runs.allSatisfy { $0.foregroundColor == .primary || $0.foregroundColor == nil })
+    }
+
+    func testHighlightedPreviewCollapsesQueryWhitespaceLikeTheExcerpt() {
+        let highlighted = SessionRowView.highlightedPreview("the billing plan", query: " billing \n plan ")
+
+        let hits = highlighted.runs.filter { $0.foregroundColor == .primary }.map { String(highlighted[$0.range].characters) }
+        XCTAssertEqual(hits, ["billing plan"])
+    }
+
+    func testHighlightedPreviewLeavesUnmatchedTextAlone() {
+        let highlighted = SessionRowView.highlightedPreview("sk-[REDACTED] only", query: "sk-live")
+
+        XCTAssertEqual(String(highlighted.characters), "sk-[REDACTED] only")
+        XCTAssertTrue(highlighted.runs.allSatisfy { $0.foregroundColor == nil && $0.font == nil })
+        XCTAssertTrue(
+            SessionRowView.highlightedPreview("anything", query: "   ").runs.allSatisfy { $0.foregroundColor == nil }
         )
     }
 

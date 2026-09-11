@@ -151,7 +151,8 @@ final class SessionListMutationTests: XCTestCase {
             isCliSession: true,
             userMessageCount: 7,
             readOnly: true,
-            matchType: "content"
+            matchType: "content",
+            matchPreview: "why it matched"
         )
 
         let resolved = await viewModel.sessionToOpen(for: row)
@@ -164,6 +165,7 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(opened.isStreaming, true)
         XCTAssertEqual(opened.userMessageCount, 7)
         XCTAssertEqual(opened.matchType, "content")
+        XCTAssertEqual(opened.matchPreview, "why it matched")
         XCTAssertNil(viewModel.actionErrorMessage)
     }
 

@@ -8,6 +8,7 @@ struct SessionInteractiveRow: View {
     let showsWorkspace: Bool
     let selectedSessionID: String?
     let actions: SessionListRowActions
+    var searchText = ""
 
     var body: some View {
         Button {
@@ -17,7 +18,9 @@ struct SessionInteractiveRow: View {
                 session: session,
                 showsMessageCount: showsMessageCount,
                 showsWorkspace: showsWorkspace,
-                isViewingCachedData: viewModel.isViewingCachedData
+                isViewingCachedData: viewModel.isViewingCachedData,
+                matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
+                searchText: searchText
             )
         }
         .buttonStyle(.plain)

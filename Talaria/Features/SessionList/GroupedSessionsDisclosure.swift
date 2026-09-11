@@ -11,6 +11,7 @@ struct GroupedSessionsDisclosure: View {
     let sessions: [SessionSummary]
     let totalCount: Int
     let isSearchActive: Bool
+    let searchText: String
     let showsMessageCount: Bool
     let showsWorkspace: Bool
     let selectedSessionID: String?
@@ -59,7 +60,8 @@ struct GroupedSessionsDisclosure: View {
                     showsMessageCount: showsMessageCount,
                     showsWorkspace: showsWorkspace,
                     selectedSessionID: selectedSessionID,
-                    actions: actions
+                    actions: actions,
+                    searchText: searchText
                 )
                 .transition(SessionListMotion.disclosureContentTransition(reduceMotion: reduceMotion))
             }

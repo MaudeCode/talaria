@@ -618,6 +618,7 @@ struct SessionListView: View {
                     sessions: scheduledSessionGroups.scheduled,
                     totalCount: scheduledSessionGroups.totalScheduledCount,
                     isSearchActive: isSearchingSessions,
+                    searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
                     showsWorkspace: showsSessionWorkspace,
                     selectedSessionID: horizontalSizeClass == .regular
@@ -640,6 +641,7 @@ struct SessionListView: View {
                     sessions: scheduledSessionGroups.webhook,
                     totalCount: scheduledSessionGroups.totalWebhookCount,
                     isSearchActive: isSearchingSessions,
+                    searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
                     showsWorkspace: showsSessionWorkspace,
                     selectedSessionID: horizontalSizeClass == .regular
@@ -657,6 +659,7 @@ struct SessionListView: View {
                 emptyTitle: emptySessionsTitle,
                 emptyDescription: emptySessionsDescription,
                 isSearchActive: isSearchingSessions,
+                searchText: searchText,
                 showsMessageCount: showsSessionMessageCount,
                 showsWorkspace: showsSessionWorkspace,
                 selectedSessionID: horizontalSizeClass == .regular
