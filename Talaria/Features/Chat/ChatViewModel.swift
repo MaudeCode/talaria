@@ -272,10 +272,12 @@ final class ChatViewModel {
     private var hasCompletedCurrentResponse: Bool { streamCoordinator.hasCompletedCurrentResponse }
     private var isStreamConnectionSuspended: Bool { streamCoordinator.isConnectionSuspended }
     var isActiveStreamConnectionSuspended: Bool { streamCoordinator.isConnectionSuspended }
-    private var hasLoadedPersonalitySuggestions = false
-    private var isLoadingPersonalitySuggestions = false
-    private var hasLoadedSkillSlashSuggestions = false
-    private var isLoadingSkillSlashSuggestions = false
+    /// One owned fetch per autocomplete catalog. Concurrent callers await the same
+    /// task, so a cancelled composer `.task(id:)` neither cancels the request nor
+    /// lets a later caller see an empty catalog as loaded. A finished handle is the
+    /// cache; a failed load clears it so the next caller retries (TAL-160).
+    @ObservationIgnored private var personalitySuggestionsLoad: Task<Void, Error>?
+    @ObservationIgnored private var skillSlashSuggestionsLoad: Task<Void, Error>?
     private var queuedSlashMessages: [QueuedSlashMessage] = []
     private var isDrainingQueuedSlashMessage = false
     private var activeBtwStreamID: String?
@@ -822,38 +824,40 @@ final class ChatViewModel {
     }
 
     func loadPersonalitySuggestions() async {
-        guard !hasLoadedPersonalitySuggestions else { return }
-        guard !isLoadingPersonalitySuggestions else { return }
-
-        isLoadingPersonalitySuggestions = true
-        defer { isLoadingPersonalitySuggestions = false }
-
-        do {
-            personalitySuggestions = (try await client.personalities()).slashAutocompleteNames
-            hasLoadedPersonalitySuggestions = true
-        } catch {
-            lastError = error
-            composerConfigurationErrorMessage = error.localizedDescription
-            if personalitySuggestions.isEmpty {
-                personalitySuggestions = ["none"]
+        let load = personalitySuggestionsLoad ?? Task {
+            do {
+                personalitySuggestions = (try await client.personalities()).slashAutocompleteNames
+            } catch {
+                personalitySuggestionsLoad = nil
+                lastError = error
+                composerConfigurationErrorMessage = error.localizedDescription
+                if personalitySuggestions.isEmpty {
+                    personalitySuggestions = ["none"]
+                }
+                throw error
             }
         }
+        personalitySuggestionsLoad = load
+        _ = try? await load.value
     }
 
     func loadSkillSlashSuggestions() async {
-        guard !hasLoadedSkillSlashSuggestions else { return }
-        guard !isLoadingSkillSlashSuggestions else { return }
+        _ = try? await skillSlashSuggestionsLoadTask().value
+    }
 
-        isLoadingSkillSlashSuggestions = true
-        defer { isLoadingSkillSlashSuggestions = false }
-
-        do {
-            let response = try await client.skills()
-            skillSlashSuggestions = SlashSkillFormatter.suggestions(from: response.skills ?? [])
-            hasLoadedSkillSlashSuggestions = true
-        } catch {
-            lastError = error
+    private func skillSlashSuggestionsLoadTask() -> Task<Void, Error> {
+        let load = skillSlashSuggestionsLoad ?? Task {
+            do {
+                let response = try await client.skills()
+                skillSlashSuggestions = SlashSkillFormatter.suggestions(from: response.skills ?? [])
+            } catch {
+                skillSlashSuggestionsLoad = nil
+                lastError = error
+                throw error
+            }
         }
+        skillSlashSuggestionsLoad = load
+        return load
     }
 
     @discardableResult
@@ -3304,15 +3308,8 @@ final class ChatViewModel {
     }
 
     private func skillSuggestionsForSlashCommand() async throws -> [SkillSlashSuggestion] {
-        if hasLoadedSkillSlashSuggestions {
-            return skillSlashSuggestions
-        }
-
-        let response = try await client.skills()
-        let suggestions = SlashSkillFormatter.suggestions(from: response.skills ?? [])
-        skillSlashSuggestions = suggestions
-        hasLoadedSkillSlashSuggestions = true
-        return suggestions
+        try await skillSlashSuggestionsLoadTask().value
+        return skillSlashSuggestions
     }
 
     private func branchSessionFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {

@@ -206,6 +206,12 @@ final class DeferredRequests: @unchecked Sendable {
         defer { lock.unlock() }
         return pending[index]
     }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return pending.count
+    }
 }
 
 final class InMemoryKeychainStore: KeychainStoring {
