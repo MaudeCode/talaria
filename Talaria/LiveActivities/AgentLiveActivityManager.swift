@@ -131,7 +131,8 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         let state = AgentRunActivityStateReducer.initialState(
             sessionID: normalizedSessionID,
             sessionTitle: sessionTitle,
-            startedAt: startedAt
+            startedAt: startedAt,
+            updatedAt: Date()
         )
         currentState = state
         lastSentUpdateAt = nil

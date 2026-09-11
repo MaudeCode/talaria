@@ -2302,13 +2302,16 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(manager.activeConnectedStreamID)
     }
 
-    func testManagerKeepsEarliestStartAcrossSameRunReattach() {
+    func testManagerKeepsEarliestStartAcrossSameRunReattach() throws {
         let manager = AgentLiveActivityManager()
         let publisherURL = URL(string: "https://fixture.example")!
-        let discovered = Date(timeIntervalSince1970: 1_800_000_000)
+        let discovered = Date(timeIntervalSince1970: 1_700_000_000)
 
         manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1", publisherURL: publisherURL, startedAt: discovered)
         XCTAssertEqual(manager.currentState?.startedAt, discovered)
+        // A backdated run start must not backdate the activity's freshness: the
+        // orphan reconciler keys its notification window on `updatedAt`.
+        XCTAssertGreaterThan(try XCTUnwrap(manager.currentState?.updatedAt), discovered)
 
         // A later seed on the same run cannot move the timer forward.
         manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1", publisherURL: publisherURL, startedAt: discovered.addingTimeInterval(20))
