@@ -1028,4 +1028,129 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(unknownCustom.selectedModelTitle, "custom-model")
     }
 
+    /// A composer `.task(id:)` that restarts while a catalog request is in flight
+    /// must neither cancel the request nor let the replacement caller see an empty
+    /// catalog as loaded (TAL-160).
+    func testSkillSuggestionLoadIsSharedAndSurvivesACancelledCaller() async throws {
+        let requests = DeferredRequests()
+        let host = "tal160-skills.test"
+        let requestStarted = expectation(description: "skills request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            XCTAssertEqual(request.request.url?.path, "/api/skills")
+            _ = requests.append(request)
+            requestStarted.fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let cancelledCaller = Task { @MainActor in
+            await viewModel.loadSkillSlashSuggestions()
+        }
+        await fulfillment(of: [requestStarted], timeout: 2)
+        var survivingCallerFinished = false
+        let survivingCaller = Task { @MainActor in
+            await viewModel.loadSkillSlashSuggestions()
+            survivingCallerFinished = true
+        }
+        cancelledCaller.cancel()
+        await drainMainActor()
+
+        XCTAssertEqual(requests.count, 1, "Concurrent callers share one fetch")
+        XCTAssertFalse(survivingCallerFinished, "A waiter must not observe completion before the fetch finishes")
+
+        requests.request(at: 0).complete(withJSON: #"{"skills": [{"name": "Deploy", "category": "ops"}]}"#)
+        await survivingCaller.value
+
+        XCTAssertEqual(viewModel.skillSlashSuggestions.map(\.name), ["Deploy"])
+        XCTAssertNil(viewModel.lastError)
+
+        await viewModel.loadSkillSlashSuggestions()
+        XCTAssertEqual(requests.count, 1, "A successful load is cached")
+    }
+
+    func testSkillSuggestionLoadRetriesAfterFailureAndCachesAnEmptyCatalog() async throws {
+        let requests = DeferredRequests()
+        let host = "tal160-skills-retry.test"
+        DeferredMockURLProtocol.setOnRequest({ _ = requests.append($0) }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let failingCaller = Task { @MainActor in
+            await viewModel.loadSkillSlashSuggestions()
+        }
+        try await waitUntil { requests.count == 1 }
+        requests.request(at: 0).fail(with: URLError(.timedOut))
+        await failingCaller.value
+        XCTAssertNotNil(viewModel.lastError)
+
+        let retryingCaller = Task { @MainActor in
+            await viewModel.loadSkillSlashSuggestions()
+        }
+        try await waitUntil { requests.count == 2 }
+        requests.request(at: 1).complete(withJSON: #"{"skills": []}"#)
+        await retryingCaller.value
+
+        XCTAssertEqual(viewModel.skillSlashSuggestions, [])
+        await viewModel.loadSkillSlashSuggestions()
+        XCTAssertEqual(requests.count, 2, "An empty catalog is still cached")
+    }
+
+    func testPersonalitySuggestionLoadIsSharedAndRetriesAfterFailure() async throws {
+        let requests = DeferredRequests()
+        let host = "tal160-personalities.test"
+        DeferredMockURLProtocol.setOnRequest({ request in
+            XCTAssertEqual(request.request.url?.path, "/api/personalities")
+            _ = requests.append(request)
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let cancelledCaller = Task { @MainActor in
+            await viewModel.loadPersonalitySuggestions()
+        }
+        try await waitUntil { requests.count == 1 }
+        let survivingCaller = Task { @MainActor in
+            await viewModel.loadPersonalitySuggestions()
+        }
+        cancelledCaller.cancel()
+        await drainMainActor()
+        XCTAssertEqual(requests.count, 1, "Concurrent callers share one fetch")
+
+        requests.request(at: 0).fail(with: URLError(.timedOut))
+        await survivingCaller.value
+        XCTAssertNotNil(viewModel.composerConfigurationErrorMessage)
+        XCTAssertEqual(viewModel.personalitySuggestions, ["none"])
+
+        let retryingCaller = Task { @MainActor in
+            await viewModel.loadPersonalitySuggestions()
+        }
+        try await waitUntil { requests.count == 2 }
+        requests.request(at: 1).complete(withJSON: #"{"personalities": [{"name": "Pirate"}]}"#)
+        await retryingCaller.value
+
+        XCTAssertEqual(viewModel.personalitySuggestions, ["none", "Pirate"])
+        await viewModel.loadPersonalitySuggestions()
+        XCTAssertEqual(requests.count, 2, "A successful load is cached")
+    }
 }
