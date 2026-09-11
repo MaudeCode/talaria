@@ -251,6 +251,7 @@ extension KanbanFeatureStateTests {
         await rebuilt.refresh()
 
         XCTAssertEqual(rebuilt.selectedBoardSlug, "release")
+        XCTAssertEqual(rebuilt.report?.board.slug, "release")
         XCTAssertEqual(rebuilt.sharedActiveBoardSlug, "main")
         let boardRequests = await client.boardRequests().map(\.board)
         XCTAssertEqual(boardRequests, ["release", "release"])

@@ -629,6 +629,7 @@ final class KanbanFeatureState {
             let report = try KanbanCompatibilityValidator.validate(
                 configuration: configuration,
                 boardsResponse: boardsResponse,
+                boardSlug: boardToLoad,
                 snapshot: snapshot
             )
             guard isCurrent(loadID) else { return }
