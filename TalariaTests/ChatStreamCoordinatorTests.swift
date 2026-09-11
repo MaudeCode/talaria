@@ -30,7 +30,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             CoordinatorSpyLiveActivityManager.Start(
                 sessionID: "session-abc",
                 sessionTitle: "Planning",
-                streamID: "stream-123"
+                streamID: "stream-123",
+                startedAt: Self.fixedNow
             )
         ])
         XCTAssertTrue(liveActivityManager.aggregateArms.isEmpty)
@@ -58,7 +59,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             CoordinatorSpyLiveActivityManager.Start(
                 sessionID: "session-abc",
                 sessionTitle: "Planning",
-                streamID: "stream-123"
+                streamID: "stream-123",
+                startedAt: Self.fixedNow
             )
         ])
     }
@@ -1191,6 +1193,153 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertFalse(coordinator.isReplayConnection)
     }
 
+    // MARK: - Run start seeding (TAL-163)
+
+    /// Synthetic "now" for the coordinator's injected clock, well after every
+    /// server timestamp the fixtures use so seeds read as past events.
+    private static let fixedNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @MainActor
+    func testStartSeedsLiveActivityFromServerRunStartAndKeepsEarliestAcrossReattach() {
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(liveActivityManager: liveActivityManager, delegate: delegate)
+        let serverStart = Self.fixedNow.addingTimeInterval(-90)
+
+        coordinator.start(streamID: "stream-123", runStartedAt: serverStart)
+        XCTAssertEqual(coordinator.activeRunStartedAt, serverStart)
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, serverStart)
+
+        // Same-run reattach without a seed keeps the recorded start.
+        coordinator.start(streamID: "stream-123", replayAfterSeq: 4, recoveryState: .reconnecting)
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, serverStart)
+
+        // A later seed for the same run cannot move the start forward.
+        coordinator.start(streamID: "stream-123", runStartedAt: serverStart.addingTimeInterval(30))
+        XCTAssertEqual(coordinator.activeRunStartedAt, serverStart)
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, serverStart)
+
+        // An earlier seed sharpens it.
+        let earlier = serverStart.addingTimeInterval(-15)
+        coordinator.start(streamID: "stream-123", runStartedAt: earlier)
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, earlier)
+    }
+
+    @MainActor
+    func testFutureRunStartClampsToInjectedNow() {
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(liveActivityManager: liveActivityManager, delegate: delegate)
+
+        coordinator.start(streamID: "stream-123", runStartedAt: Self.fixedNow.addingTimeInterval(120))
+
+        XCTAssertEqual(coordinator.activeRunStartedAt, Self.fixedNow)
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, Self.fixedNow)
+    }
+
+    @MainActor
+    func testNewRunResetsRunStartToDiscoveryTime() {
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(
+            streamClient: streamClient,
+            liveActivityManager: liveActivityManager,
+            delegate: delegate
+        )
+
+        coordinator.start(streamID: "stream-1", runStartedAt: Self.fixedNow.addingTimeInterval(-600))
+        streamClient.emit(.done(DoneStreamEvent()))
+        XCTAssertNil(coordinator.activeRunStartedAt)
+
+        coordinator.start(streamID: "stream-2")
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, Self.fixedNow)
+    }
+
+    @MainActor
+    func testLoadedSessionAdoptionSeedsRunStartAndSurvivesRecoveryReload() async throws {
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        delegate.restoredSnapshotEventID = nil
+        let coordinator = makeCoordinator(liveActivityManager: liveActivityManager, delegate: delegate) { request in
+            apiTestJSONResponse(#"{"active": true, "stream_id": "stream-cold"}"#, for: request)
+        }
+        let serverStart = Self.fixedNow.addingTimeInterval(-300)
+
+        // The recovery reload re-seeds with a later value; the earliest must win.
+        delegate.onLoadMessages = { @MainActor in
+            let reloadPreparation = coordinator.prepareForSessionLoad()
+            coordinator.reconcileSessionLoad(
+                loadedActiveStreamID: "stream-cold",
+                preparation: reloadPreparation,
+                usedCacheFallback: false,
+                runStartedAt: serverStart.addingTimeInterval(45)
+            )
+        }
+
+        coordinator.reconcileSessionLoad(
+            loadedActiveStreamID: "stream-cold",
+            preparation: coordinator.prepareForSessionLoad(),
+            usedCacheFallback: false,
+            runStartedAt: serverStart
+        )
+        XCTAssertEqual(coordinator.activeRunStartedAt, serverStart)
+
+        await coordinator.reconnectIfNeeded()
+
+        XCTAssertEqual(liveActivityManager.starts.map(\.startedAt), [serverStart])
+    }
+
+    @MainActor
+    func testLoadedSessionAdoptionWithoutSeedCountsFromDiscovery() {
+        let coordinator = makeCoordinator()
+
+        coordinator.reconcileSessionLoad(
+            loadedActiveStreamID: "stream-cold",
+            preparation: coordinator.prepareForSessionLoad(),
+            usedCacheFallback: false
+        )
+
+        XCTAssertEqual(coordinator.activeRunStartedAt, Self.fixedNow)
+    }
+
+    @MainActor
+    func testSwitchingAwayAndBackKeepsRunStartForSameStream() async throws {
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(liveActivityManager: liveActivityManager, delegate: delegate) { request in
+            apiTestJSONResponse(#"{"active": true, "stream_id": "stream-123"}"#, for: request)
+        }
+        let serverStart = Self.fixedNow.addingTimeInterval(-45)
+
+        coordinator.start(streamID: "stream-123", runStartedAt: serverStart)
+        coordinator.suspendActiveStreamConnection()
+        // Coming back reloads the session; the latest user turn is the only seed
+        // it can offer and it is later than the server start already recorded.
+        coordinator.reconcileSessionLoad(
+            loadedActiveStreamID: "stream-123",
+            preparation: coordinator.prepareForSessionLoad(),
+            usedCacheFallback: false,
+            runStartedAt: serverStart.addingTimeInterval(5)
+        )
+        await coordinator.reconnectIfNeeded()
+
+        XCTAssertEqual(liveActivityManager.starts.count, 2)
+        XCTAssertEqual(liveActivityManager.starts.last?.startedAt, serverStart)
+    }
+
+    func testRunStartRejectsUnusableEpochSeconds() {
+        XCTAssertNil(ChatStreamCoordinator.runStart(fromEpochSeconds: nil))
+        XCTAssertNil(ChatStreamCoordinator.runStart(fromEpochSeconds: 0))
+        XCTAssertNil(ChatStreamCoordinator.runStart(fromEpochSeconds: -5))
+        XCTAssertNil(ChatStreamCoordinator.runStart(fromEpochSeconds: .nan))
+        XCTAssertNil(ChatStreamCoordinator.runStart(fromEpochSeconds: .infinity))
+        XCTAssertEqual(
+            ChatStreamCoordinator.runStart(fromEpochSeconds: 1_700_000_000),
+            Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
     private func makeCoordinatorTestContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: CachedSession.self,
@@ -1206,6 +1355,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         liveActivityManager: CoordinatorSpyLiveActivityManager? = nil,
         delegate: CoordinatorDelegateSpy? = nil,
         timing: ChatStreamCoordinatorTiming = .standard,
+        now: @escaping () -> Date = { ChatStreamCoordinatorTests.fixedNow },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
             apiTestJSONResponse(#"{"active": true}"#, for: request)
         }
@@ -1218,7 +1368,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
             showsLiveActivityResponseExcerpts: false,
-            timing: timing
+            timing: timing,
+            now: now
         )
         coordinator.attach(delegate: delegate)
         return coordinator
@@ -1444,6 +1595,7 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
         let sessionID: String
         let sessionTitle: String
         let streamID: String?
+        let startedAt: Date
     }
 
     struct End: Equatable {
@@ -1465,8 +1617,8 @@ private final class CoordinatorSpyLiveActivityManager: AgentLiveActivityManaging
     private(set) var markStaleCount = 0
     private(set) var ends: [End] = []
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL) {
-        starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID))
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL, startedAt: Date) {
+        starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID, startedAt: startedAt))
     }
 
     func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {

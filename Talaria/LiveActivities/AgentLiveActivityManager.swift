@@ -26,7 +26,10 @@ struct OrphanedLiveActivity: Equatable {
 @MainActor
 protocol AgentLiveActivityManaging: AnyObject {
     func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL)
-    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL)
+    /// `startedAt` is when the run began, not when the widget was created: the
+    /// coordinator passes the server-seeded run start so the widget's elapsed
+    /// timer counts the whole turn rather than from this process attaching.
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL, startedAt: Date)
     func update(_ event: AgentLiveActivityEvent)
     func markStale()
     func end(status: AgentRunActivityStatus, activity: String, errorSummary: String?)
@@ -57,7 +60,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
 
     private let minimumUpdateInterval: TimeInterval
     private var activity: Activity<AgentRunActivityAttributes>?
-    private var currentState: AgentRunActivityAttributes.ContentState?
+    private(set) var currentState: AgentRunActivityAttributes.ContentState?
     private var currentSessionID: String?
     private var currentStreamID: String?
     private var currentPublisherURL: URL?
@@ -88,7 +91,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         )
     }
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL) {
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL, startedAt: Date = Date()) {
         let normalizedSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedSessionID.isEmpty else { return }
         let normalizedStreamID = AgentLiveActivityReusePolicy.normalizedStreamID(streamID)
@@ -106,7 +109,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
                     status: state.status,
                     currentActivity: state.currentActivity,
                     responseExcerpt: state.responseExcerpt,
-                    startedAt: state.startedAt,
+                    // Earliest known start wins: the reused activity may have
+                    // started from a discovery stamp before the coordinator
+                    // learned the server's earlier `pending_started_at`.
+                    startedAt: min(state.startedAt, startedAt),
                     updatedAt: Date(),
                     isStale: false,
                     isFinal: false,
@@ -122,11 +128,11 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         rawResponseText = ""
         currentSessionID = normalizedSessionID
         currentStreamID = normalizedStreamID
-        let startedAt = Date()
         let state = AgentRunActivityStateReducer.initialState(
             sessionID: normalizedSessionID,
             sessionTitle: sessionTitle,
-            startedAt: startedAt
+            startedAt: startedAt,
+            updatedAt: Date()
         )
         currentState = state
         lastSentUpdateAt = nil

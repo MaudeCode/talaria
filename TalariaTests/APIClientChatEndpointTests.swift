@@ -17,7 +17,8 @@ final class APIClientChatEndpointTests: APIClientTestCase {
             return apiTestJSONResponse("""
             {
               "stream_id": "stream-123",
-              "session_id": "session-abc"
+              "session_id": "session-abc",
+              "pending_started_at": 1700000000.25
             }
             """, for: request)
         }
@@ -31,6 +32,23 @@ final class APIClientChatEndpointTests: APIClientTestCase {
 
         XCTAssertEqual(response.streamId, "stream-123")
         XCTAssertEqual(response.sessionId, "session-abc")
+        XCTAssertEqual(response.pendingStartedAt, 1_700_000_000.25)
+        XCTAssertEqual(response.runStartedAt(sentAt: Date()), Date(timeIntervalSince1970: 1_700_000_000.25))
+    }
+
+    func testStartChatToleratesMissingOrMalformedPendingStartedAt() async throws {
+        for payload in [
+            #"{"stream_id": "stream-123"}"#,
+            #"{"stream_id": "stream-123", "pending_started_at": "soon"}"#,
+            #"{"stream_id": "stream-123", "pending_started_at": null}"#,
+            #"{"stream_id": "stream-123", "pending_started_at": -1}"#
+        ] {
+            let client = makeClient { request in apiTestJSONResponse(payload, for: request) }
+            let response = try await client.startChat(sessionID: "session-abc", message: "Go", workspace: nil, model: nil)
+            let sentAt = Date(timeIntervalSince1970: 1_800_000_000)
+            XCTAssertEqual(response.streamId, "stream-123", payload)
+            XCTAssertEqual(response.runStartedAt(sentAt: sentAt), sentAt, payload)
+        }
     }
 
     func testStartChatIncludesAttachmentPayloads() async throws {

@@ -439,10 +439,14 @@ enum AgentRunActivityStateReducer {
         )
     }
 
+    /// `startedAt` may be backdated to the server's run start; `updatedAt` is
+    /// when this process attached, so the orphan reconciler's recency window
+    /// still measures local staleness rather than run age.
     static func initialState(
         sessionID: String,
         sessionTitle: String,
-        startedAt: Date = Date()
+        startedAt: Date = Date(),
+        updatedAt: Date? = nil
     ) -> AgentRunActivityAttributes.ContentState {
         AgentRunActivityAttributes.ContentState(
             sessionID: sessionID,
@@ -450,7 +454,7 @@ enum AgentRunActivityStateReducer {
             status: .starting,
             currentActivity: String(localized: "Starting response"),
             startedAt: startedAt,
-            updatedAt: startedAt
+            updatedAt: updatedAt ?? startedAt
         )
     }
 

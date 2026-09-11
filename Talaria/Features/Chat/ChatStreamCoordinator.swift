@@ -95,9 +95,21 @@ final class ChatStreamCoordinator {
         publishesLiveActivity ? configuredLiveActivityManager : nil
     }
     private let timing: ChatStreamCoordinatorTiming
+    private let now: () -> Date
     private var showsLiveActivityResponseExcerpts: Bool
 
-    private(set) var activeStreamID: String?
+    private(set) var activeStreamID: String? {
+        didSet {
+            guard activeStreamID != oldValue else { return }
+            activeRunStartedAt = activeStreamID == nil ? nil : now()
+        }
+    }
+    /// When the run behind the current stream started. Seeded by the caller from
+    /// the server's `pending_started_at`, then the latest user turn's timestamp,
+    /// and only failing both from the local moment this coordinator discovered
+    /// the stream. Keyed to stream identity, so a same-run reattach keeps the
+    /// per-session Live Activity timer counting from one instant.
+    private(set) var activeRunStartedAt: Date?
     private(set) var recoveryState: ActiveStreamRecoveryState = .idle
     private(set) var isConnectionSuspended = false
     private(set) var hasCompletedCurrentResponse = false
@@ -143,13 +155,15 @@ final class ChatStreamCoordinator {
         streamClient: SSEStreamingClient,
         liveActivityManager: any AgentLiveActivityManaging,
         showsLiveActivityResponseExcerpts: Bool,
-        timing: ChatStreamCoordinatorTiming = .standard
+        timing: ChatStreamCoordinatorTiming = .standard,
+        now: @escaping () -> Date = Date.init
     ) {
         self.client = client
         self.streamClient = streamClient
         self.configuredLiveActivityManager = liveActivityManager
         self.showsLiveActivityResponseExcerpts = showsLiveActivityResponseExcerpts
         self.timing = timing
+        self.now = now
     }
 
     func attach(delegate: any ChatStreamCoordinatorDelegate) {
@@ -172,12 +186,17 @@ final class ChatStreamCoordinator {
         liveTokensPerSecond = nil
     }
 
+    /// `runStartedAt` is the run's real start when the caller knows it: the
+    /// server's `pending_started_at` from `/api/chat/start`, else the local send
+    /// time. Reconnects and replays pass nil; they rejoin the same stream, whose
+    /// start is already recorded.
     func start(
         streamID: String,
         replayAfterSeq: Int? = nil,
         recoveryState: ActiveStreamRecoveryState = .idle,
         armsAggregateForLocalWork: Bool = false,
-        publishesLiveActivity: Bool = true
+        publishesLiveActivity: Bool = true,
+        runStartedAt: Date? = nil
     ) {
         self.publishesLiveActivity = publishesLiveActivity
         hasCompletedCurrentResponse = false
@@ -188,6 +207,7 @@ final class ChatStreamCoordinator {
         responseGeneration &+= 1
         cancelSharedReconnect()
         activeStreamID = streamID
+        seedActiveRunStart(runStartedAt)
         isConnectionSuspended = false
         if replayAfterSeq == nil {
             lastEventID = nil
@@ -257,10 +277,14 @@ final class ChatStreamCoordinator {
         responseGeneration &+= 1
     }
 
+    /// `runStartedAt` is when the loaded session says its in-flight turn started
+    /// (`pending_started_at`, else the latest user turn's timestamp), so adopting
+    /// a running stream counts from there instead of from this load.
     func reconcileSessionLoad(
         loadedActiveStreamID rawLoadedActiveStreamID: String?,
         preparation: ChatStreamLoadPreparation,
-        usedCacheFallback: Bool
+        usedCacheFallback: Bool,
+        runStartedAt: Date? = nil
     ) {
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
@@ -280,6 +304,7 @@ final class ChatStreamCoordinator {
             delegate?.streamCoordinatorStreamingAssistantMessageID = nil
             if let streamID = loadedActiveStreamID, !streamID.isEmpty {
                 activeStreamID = streamID
+                seedActiveRunStart(runStartedAt)
                 delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 isConnectionSuspended = true
                 // Adopting a run this process was not already holding is the cold
@@ -300,6 +325,7 @@ final class ChatStreamCoordinator {
                 : preparation.activeStreamIDBeforeLoad
             if let streamID {
                 activeStreamID = streamID
+                seedActiveRunStart(runStartedAt)
                 delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 restoreSnapshotIfAvailable(streamID: streamID)
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {
@@ -920,8 +946,27 @@ final class ChatStreamCoordinator {
             sessionID: sessionID,
             sessionTitle: sessionTitle,
             streamID: streamID,
-            publisherURL: client.baseURL
+            publisherURL: client.baseURL,
+            startedAt: activeRunStartedAt ?? now()
         )
+    }
+
+    /// A usable server run start: finite, positive epoch seconds. Anything else
+    /// is treated as absent so callers fall back to a later seed.
+    nonisolated static func runStart(fromEpochSeconds seconds: Double?) -> Date? {
+        guard let seconds, seconds.isFinite, seconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// Adopts a caller-supplied start for the run that is now active. The
+    /// earliest start known for this stream wins, so a re-seed on a same-run
+    /// reattach can sharpen the timer but never restart it; a future-dated seed
+    /// (phone/server clock skew) clamps to `now` so the timer never counts
+    /// backwards; nil leaves the discovery stamp alone.
+    private func seedActiveRunStart(_ startedAt: Date?) {
+        guard activeStreamID != nil, let startedAt else { return }
+        let clamped = min(startedAt, now())
+        activeRunStartedAt = min(activeRunStartedAt ?? clamped, clamped)
     }
 
     private func restoreSnapshotIfAvailable(streamID: String) {
