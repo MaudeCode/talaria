@@ -6,6 +6,7 @@ extension KanbanFeatureStateTests {
     func testBulkAvailabilityExplainsUnknownStatusAndRejectsInvalidActions() async throws {
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(boardResult: .success(KanbanFixtures.richSnapshot))
         )
         await state.load()
@@ -42,7 +43,7 @@ extension KanbanFeatureStateTests {
                 ]
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         state.beginSelectingCards()
         state.allCards.forEach(state.toggleCardSelection)
@@ -85,7 +86,7 @@ extension KanbanFeatureStateTests {
                 ]
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         state.beginSelectingCards()
         state.allCards.forEach(state.toggleCardSelection)
@@ -116,7 +117,7 @@ extension KanbanFeatureStateTests {
             ],
             defersFirstBulkResponse: true
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let first = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
         state.beginSelectingCards()
@@ -153,7 +154,7 @@ extension KanbanFeatureStateTests {
             ],
             bulkError: KanbanResponseError.nonJSONContentType
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         state.beginSelectingCards()
         state.allCards.forEach(state.toggleCardSelection)
@@ -184,6 +185,7 @@ extension KanbanFeatureStateTests {
         )
         let state = KanbanFeatureState(
             server: URL(string: "https://bulk-capability.example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()
@@ -219,7 +221,7 @@ extension KanbanFeatureStateTests {
             ],
             defersFirstDetailResponse: true
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         state.beginSelectingCards()
         state.allCards.forEach(state.toggleCardSelection)
@@ -249,7 +251,7 @@ extension KanbanFeatureStateTests {
             detailResults: [:],
             defersFirstBulkResponse: true
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let first = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
         state.beginSelectingCards()

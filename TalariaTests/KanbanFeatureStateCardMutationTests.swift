@@ -5,7 +5,7 @@ import XCTest
 extension KanbanFeatureStateTests {
     func testCardMutationsAreOptimisticSerializedPerCardAndConcurrentAcrossCards() async throws {
         let client = DeferredMutationClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let firstCard = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
         let secondCard = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-2" })
@@ -47,6 +47,7 @@ extension KanbanFeatureStateTests {
         ])
         let state = KanbanFeatureState(
             server: URL(string: "https://workflow-capability.example.test")!,
+            defaults: defaults,
             client: client
         )
         await state.load()
@@ -71,7 +72,7 @@ extension KanbanFeatureStateTests {
                 .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"done"}}"#))
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -103,7 +104,7 @@ extension KanbanFeatureStateTests {
             ],
             dependencyResult: .failure(APIError.http(statusCode: 409, body: #"{"error":"cycle"}"#))
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -125,7 +126,7 @@ extension KanbanFeatureStateTests {
 
     func testUnknownStatusAndRunningDestinationCannotConstructWrites() async throws {
         let client = ImmediateMutationClient(snapshot: mutationSnapshot(status: "future"))
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -141,6 +142,7 @@ extension KanbanFeatureStateTests {
         ])
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client,
             archiveUndoLifetime: 0.01
         )
@@ -163,7 +165,7 @@ extension KanbanFeatureStateTests {
                 .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"done"}}"#))
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -190,7 +192,7 @@ extension KanbanFeatureStateTests {
                 .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"todo"}}"#))
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -218,7 +220,7 @@ extension KanbanFeatureStateTests {
                 .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"done"}}"#))
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let staleCard = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
         let detailState = try XCTUnwrap(state.makeCardDetailState(cardID: "CARD-1"))
@@ -249,7 +251,7 @@ extension KanbanFeatureStateTests {
             #"{"task":{"id":"CARD-1","status":"todo"},"links":{"parents":["CARD-2"]}}"#
         )
         let client = ImmediateMutationClient(detailResults: [.success(confirmed), .success(confirmed)])
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
         let detailState = try XCTUnwrap(state.makeCardDetailState(cardID: "CARD-1"))
@@ -272,7 +274,7 @@ extension KanbanFeatureStateTests {
             ],
             detailResults: [.failure(APIError.http(statusCode: 404, body: nil))]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -296,7 +298,7 @@ extension KanbanFeatureStateTests {
                 .failure(APIError.http(statusCode: 404, body: nil))
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -320,7 +322,7 @@ extension KanbanFeatureStateTests {
                 .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"done"}}"#))
             ]
         )
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         var card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
@@ -340,7 +342,7 @@ extension KanbanFeatureStateTests {
 
     func testCardSelectionSurvivesFiltersAndRefreshButNeverCrossesBoards() async throws {
         let client = BrowsingClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 

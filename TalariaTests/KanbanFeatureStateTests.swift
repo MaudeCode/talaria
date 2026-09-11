@@ -1,8 +1,29 @@
 import XCTest
 @testable import Talaria
 
+/// Gives each test its own empty defaults suite so the persisted Board choice
+/// never leaks between tests or runs.
+class KanbanDefaultsTestCase: XCTestCase {
+    private var suiteName: String!
+    private(set) var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "\(type(of: self))-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        suiteName = nil
+        super.tearDown()
+    }
+}
+
 @MainActor
-final class KanbanFeatureStateTests: XCTestCase {
+final class KanbanFeatureStateTests: KanbanDefaultsTestCase {
 }
 
 func waitUntil(

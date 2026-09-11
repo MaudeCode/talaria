@@ -7,8 +7,8 @@ extension KanbanFeatureStateTests {
         let client = KanbanClientStub()
         let firstServer = URL(string: "https://first.example.test")!
         let secondServer = URL(string: "https://second.example.test")!
-        let first = KanbanFeatureState(server: firstServer, client: client)
-        let second = KanbanFeatureState(server: secondServer, client: client)
+        let first = KanbanFeatureState(server: firstServer, defaults: defaults, client: client)
+        let second = KanbanFeatureState(server: secondServer, defaults: defaults, client: client)
 
         await first.load()
 
@@ -29,6 +29,7 @@ extension KanbanFeatureStateTests {
     func testCommentCapabilityUsesEnvelopePermissionAndHonorsExplicitBoardReadOnly() async {
         let writable = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub()
         )
         await writable.load()
@@ -42,6 +43,7 @@ extension KanbanFeatureStateTests {
 
         let explicitReadOnly = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(boardsResult: .success(KanbanFixtures.readOnlyBoard))
         )
         await explicitReadOnly.load()
@@ -55,6 +57,7 @@ extension KanbanFeatureStateTests {
         var forwardedErrors: [Error] = []
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: client,
             onAPIError: { forwardedErrors.append($0) }
         )
@@ -69,6 +72,7 @@ extension KanbanFeatureStateTests {
     func testNetworkServerAndContractFailuresStayDistinct() async {
         let network = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(configurationResult: .failure(APIError.network(underlying: URLError(.notConnectedToInternet))))
         )
         await network.load()
@@ -76,6 +80,7 @@ extension KanbanFeatureStateTests {
 
         let server = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(configurationResult: .failure(APIError.http(statusCode: 503, body: nil)))
         )
         await server.load()
@@ -83,6 +88,7 @@ extension KanbanFeatureStateTests {
 
         let contract = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(configurationResult: .failure(KanbanResponseError.nonJSONContentType))
         )
         await contract.load()
@@ -92,6 +98,7 @@ extension KanbanFeatureStateTests {
     func testCancelledHandshakeReturnsToIdle() async {
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(configurationResult: .failure(CancellationError()))
         )
 
@@ -104,7 +111,7 @@ extension KanbanFeatureStateTests {
 
     func testStaleHandshakeCompletionCannotReplaceNewerResult() async {
         let client = DeferredFirstConfigurationClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
 
         let firstLoad = Task { await state.load() }
         await client.waitForFirstConfiguration()
@@ -122,6 +129,7 @@ extension KanbanFeatureStateTests {
     func testStatusSearchUnknownStatusAndClearFiltersUseLoadedBoardData() async {
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
+            defaults: defaults,
             client: KanbanClientStub(boardResult: .success(KanbanFixtures.richSnapshot))
         )
         await state.load()
@@ -145,7 +153,7 @@ extension KanbanFeatureStateTests {
 
     func testFilterAndBoardTransitionsPreserveLocalPresentationState() async {
         let client = BrowsingClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         state.selectedStatus = "running"
         state.searchText = "worker"
@@ -176,7 +184,7 @@ extension KanbanFeatureStateTests {
 
     func testGroupByProfileDraftCancelsOrAppliesLocallyWithoutRefetchingBoard() async {
         let client = BrowsingClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let requestsBeforeToggle = await client.boardRequests()
         var draft = KanbanFiltersDraft(model: state)
@@ -196,7 +204,7 @@ extension KanbanFeatureStateTests {
 
     func testBoardSwitchClearsBoardScopedDataAndRevalidatesCompatibility() async {
         let client = DeferredBoardSwitchClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         XCTAssertNotNil(state.snapshot)
         XCTAssertNotNil(state.stats)
@@ -222,7 +230,7 @@ extension KanbanFeatureStateTests {
 
     func testPullToRefreshPerformsFullReconciliation() async {
         let client = BrowsingClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let before = state.allCards
 
@@ -236,7 +244,7 @@ extension KanbanFeatureStateTests {
 
     func testRefreshRejectsMissingChangedAndPreservesStableCards() async {
         let client = MissingChangedRefreshClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
         let before = state.allCards
 
@@ -248,7 +256,7 @@ extension KanbanFeatureStateTests {
 
     func testStaleFilteredReadCannotReplaceNewerFilterResult() async {
         let client = DeferredBoardClient()
-        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, client: client)
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
         await state.load()
 
         let stale = Task { await state.setTenantFilter("ops") }
