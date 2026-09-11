@@ -284,6 +284,13 @@ extension SessionListMutationTests {
         XCTAssertTrue(highlighted.runs.allSatisfy { $0.foregroundColor == .primary || $0.foregroundColor == nil })
     }
 
+    func testHighlightedPreviewCollapsesQueryWhitespaceLikeTheExcerpt() {
+        let highlighted = SessionRowView.highlightedPreview("the billing plan", query: " billing \n plan ")
+
+        let hits = highlighted.runs.filter { $0.foregroundColor == .primary }.map { String(highlighted[$0.range].characters) }
+        XCTAssertEqual(hits, ["billing plan"])
+    }
+
     func testHighlightedPreviewLeavesUnmatchedTextAlone() {
         let highlighted = SessionRowView.highlightedPreview("sk-[REDACTED] only", query: "sk-live")
 

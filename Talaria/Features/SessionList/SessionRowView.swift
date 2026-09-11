@@ -63,7 +63,9 @@ struct SessionRowView: View {
     /// redacted simply has no hit to emphasize.
     static func highlightedPreview(_ preview: String, query rawQuery: String) -> AttributedString {
         var result = AttributedString(preview)
-        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The excerpt arrives whitespace-collapsed, so the query must be too or a
+        // doubled space in the search box would leave a real hit unemphasized.
+        let query = rawQuery.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard !query.isEmpty else { return result }
 
         var searchRange = preview.startIndex..<preview.endIndex
