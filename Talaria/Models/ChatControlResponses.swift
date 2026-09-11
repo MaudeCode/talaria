@@ -3,7 +3,30 @@ import Foundation
 struct ChatStartResponse: Decodable, Equatable {
     let streamId: String?
     let sessionId: String?
+    /// Unix epoch seconds for when the server started this turn, the same
+    /// `pending_started_at` the session detail reports while the turn is in
+    /// flight. Decoded lossily: absent or malformed values leave it nil.
+    let pendingStartedAt: Double?
     let error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case streamId, sessionId, pendingStartedAt, error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        streamId = try container.decodeIfPresent(String.self, forKey: .streamId)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    /// When the turn this response opened really started: the server's
+    /// `pending_started_at` when it reported a usable one, else the local
+    /// moment the client sent the request.
+    func runStartedAt(sentAt: Date) -> Date {
+        ChatStreamCoordinator.runStart(fromEpochSeconds: pendingStartedAt) ?? sentAt
+    }
 }
 
 struct ChatCancelResponse: Decodable, Equatable {

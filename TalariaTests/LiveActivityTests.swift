@@ -1300,6 +1300,101 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(viewModel.responseCompletionHapticTrigger, 1)
     }
 
+    // MARK: - Server run start seeding (TAL-163)
+
+    private func makeRunStartViewModel(
+        manager: SpyAgentLiveActivityManager,
+        streamClient: LiveActivitySpySSEClient
+    ) throws -> ChatViewModel {
+        let baseURL = URL(string: "https://example.test")!
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let client = APIClient(baseURL: baseURL, session: URLSession(configuration: configuration))
+        return ChatViewModel(
+            session: try Self.sessionSummary(id: "session-abc", title: "Live work"),
+            server: baseURL,
+            client: client,
+            streamClient: streamClient,
+            approvalStreamClient: LiveActivitySpySSEClient(),
+            clarifyStreamClient: LiveActivitySpySSEClient(),
+            liveActivityManager: manager
+        )
+    }
+
+    func testSendMessageSeedsLiveActivityFromServerPendingStartedAt() async throws {
+        let manager = SpyAgentLiveActivityManager()
+        let viewModel = try makeRunStartViewModel(manager: manager, streamClient: LiveActivitySpySSEClient())
+        LiveActivityURLProtocol.handler = { request in
+            Self.jsonResponse(
+                #"{"stream_id":"stream-123","session_id":"session-abc","pending_started_at":1700000000.5}"#,
+                for: request
+            )
+        }
+
+        let didStart = await viewModel.sendMessage("Run the tests")
+
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(manager.startedAts, [Date(timeIntervalSince1970: 1_700_000_000.5)])
+    }
+
+    func testSendMessageFallsBackToSendTimeWhenPendingStartedAtIsUnusable() async throws {
+        let manager = SpyAgentLiveActivityManager()
+        let viewModel = try makeRunStartViewModel(manager: manager, streamClient: LiveActivitySpySSEClient())
+        LiveActivityURLProtocol.handler = { request in
+            Self.jsonResponse(
+                #"{"stream_id":"stream-123","session_id":"session-abc","pending_started_at":"soon"}"#,
+                for: request
+            )
+        }
+
+        let before = Date()
+        let didStart = await viewModel.sendMessage("Run the tests")
+        let after = Date()
+        XCTAssertTrue(didStart)
+
+        let startedAt = try XCTUnwrap(manager.startedAts.last)
+        XCTAssertGreaterThanOrEqual(startedAt, before)
+        XCTAssertLessThanOrEqual(startedAt, after)
+    }
+
+    func testLoadedSessionAdoptionSeedsLiveActivityFromLatestUserTurnWhenServerStartIsMissing() async throws {
+        let manager = SpyAgentLiveActivityManager()
+        let streamClient = LiveActivitySpySSEClient()
+        let viewModel = try makeRunStartViewModel(manager: manager, streamClient: streamClient)
+        LiveActivityURLProtocol.handler = { request in
+            switch request.url?.path {
+            case "/api/session":
+                return Self.jsonResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "title": "Live work",
+                    "active_stream_id": "stream-cold",
+                    "pending_started_at": 0,
+                    "messages": [
+                      {"role": "user", "content": "Earlier", "timestamp": 1770000000, "message_id": "user-0"},
+                      {"role": "assistant", "content": "Done", "timestamp": 1770000010, "message_id": "assistant-0"},
+                      {"role": "user", "content": "Keep working", "timestamp": 1770000100, "message_id": "user-1"},
+                      {"role": "user", "content": "", "timestamp": 1770000150, "message_id": "tool-result-1"}
+                    ]
+                  }
+                }
+                """, for: request)
+            case "/api/chat/stream/status":
+                return Self.jsonResponse(#"{"active":true,"stream_id":"stream-cold"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages(modelContext: nil)
+        XCTAssertEqual(viewModel.activeStreamID, "stream-cold")
+        await viewModel.reconnectStreamIfNeeded()
+
+        XCTAssertEqual(manager.startedAts, [Date(timeIntervalSince1970: 1_770_000_100)])
+    }
+
     func testChatViewModelSuppressesLiveActivityResponseExcerptsByDefault() async throws {
         let baseURL = URL(string: "https://example.test")!
         let configuration = URLSessionConfiguration.ephemeral
@@ -2207,6 +2302,29 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(manager.activeConnectedStreamID)
     }
 
+    func testManagerKeepsEarliestStartAcrossSameRunReattach() {
+        let manager = AgentLiveActivityManager()
+        let publisherURL = URL(string: "https://fixture.example")!
+        let discovered = Date(timeIntervalSince1970: 1_800_000_000)
+
+        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1", publisherURL: publisherURL, startedAt: discovered)
+        XCTAssertEqual(manager.currentState?.startedAt, discovered)
+
+        // A later seed on the same run cannot move the timer forward.
+        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1", publisherURL: publisherURL, startedAt: discovered.addingTimeInterval(20))
+        XCTAssertEqual(manager.currentState?.startedAt, discovered)
+
+        // An earlier server start sharpens it.
+        let serverStart = discovered.addingTimeInterval(-40)
+        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-1", publisherURL: publisherURL, startedAt: serverStart)
+        XCTAssertEqual(manager.currentState?.startedAt, serverStart)
+
+        // A different run takes its own start.
+        manager.start(sessionID: "session-1", sessionTitle: "Title", streamID: "stream-2", publisherURL: publisherURL, startedAt: discovered)
+        XCTAssertEqual(manager.currentState?.startedAt, discovered)
+        manager.end(status: .complete, activity: "Response complete")
+    }
+
     func testAggregateModeStillTracksTheCurrentStreamForModeChanges() {
         let previous = UserDefaults.standard.string(forKey: TalariaLiveActivityMode.storageKey)
         UserDefaults.standard.set(
@@ -2251,12 +2369,14 @@ private final class SpyAgentLiveActivityManager: AgentLiveActivityManaging {
     }
 
     private(set) var starts: [Start] = []
+    private(set) var startedAts: [Date] = []
     private(set) var updates: [AgentLiveActivityEvent] = []
     private(set) var didMarkStale = false
     private(set) var ends: [End] = []
 
-    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL) {
+    func start(sessionID: String, sessionTitle: String, streamID: String?, publisherURL: URL, startedAt: Date) {
         starts.append(Start(sessionID: sessionID, sessionTitle: sessionTitle, streamID: streamID))
+        startedAts.append(startedAt)
     }
 
     func update(_ event: AgentLiveActivityEvent) {
