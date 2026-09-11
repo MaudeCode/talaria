@@ -1215,6 +1215,51 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testSignOutStillClearsTheCacheWhenTheDraftFlushFails() async throws {
+        let server = try XCTUnwrap(URL(string: "https://removed.test"))
+        let container = try ModelContainer(
+            for: CachedSession.self, CachedMessage.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(
+            SessionSummary.self,
+            from: Data(#"{"session_id": "s1", "title": "Thread", "archived": false}"#.utf8)
+        )
+        try CacheStore.cacheSessions([session], serverURL: server, in: context)
+        let draftStore = ChatDraftStore(persistence: FailingChatDraftPersistence(), debounceDuration: .seconds(10))
+        draftStore.setDraft("unsent", for: .newChat(server: server))
+        let keychain = InMemoryKeychainStore()
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStore: ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            ),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetServerScopedState: AuthManager.serverScopedStateReset(
+                cacheContainer: container,
+                draftStore: draftStore,
+                defaults: UserDefaults.ephemeral()
+            ),
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+        await manager.configure(serverURLString: server.absoluteString, password: "")
+
+        await manager.signOut()
+
+        // The failed draft write neither blocks the other deletion nor undoes sign-out.
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNil(manager.lastErrorMessage)
+        XCTAssertTrue(try CacheStore.cachedSessions(serverURL: server, in: context).isEmpty)
+        let draft = await draftStore.draft(for: .newChat(server: server))
+        XCTAssertNil(draft)
+    }
+
+    @MainActor
     func testNativeOIDCSupersededBeforeProfileResetNeverPurgesLocalState() async throws {
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let keychain = InMemoryKeychainStore()
@@ -1528,6 +1573,14 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             "/api/auth/oidc/native/start": "POST",
             "/api/auth/oidc/native/cancel": "POST"
         ])
+    }
+}
+
+private actor FailingChatDraftPersistence: ChatDraftPersisting {
+    func load() async -> [ChatDraftKey: ChatDraft] { [:] }
+
+    func write(_ drafts: [ChatDraftKey: ChatDraft]) async throws {
+        throw CocoaError(.fileWriteUnknown)
     }
 }
 
