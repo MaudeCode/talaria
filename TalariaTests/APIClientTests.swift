@@ -43,7 +43,37 @@ class APIClientTestCase: XCTestCase {
 }
 
 final class MockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    typealias Handler = (URLRequest) throws -> (HTTPURLResponse, Data)
+    static var requestHandler: Handler?
+    /// A session whose configuration sends this header (see `register`) is served
+    /// by its own handler, so a request that outlives its test — the completed-
+    /// response title refresh, for example — can never reach the next test's
+    /// global `requestHandler` (TAL-156).
+    static let scopeHeader = "X-Talaria-Test-Handler"
+    private static let scopedHandlerLock = NSLock()
+    /// Newest last. Only the most recent sessions are kept: a request that outlives
+    /// its test lands within the next few tests, and a scope dropped after that
+    /// fails with `badServerResponse` instead of retaining test state for the rest
+    /// of the runner process.
+    private static var scopedHandlers: [(scope: String, handler: Handler)] = []
+    private static let scopedHandlerLimit = 16
+
+    /// Registers `handler` and returns the `scopeHeader` value that routes to it.
+    static func register(_ handler: @escaping Handler) -> String {
+        let scope = UUID().uuidString
+        scopedHandlerLock.withLock {
+            scopedHandlers.append((scope, handler))
+            if scopedHandlers.count > scopedHandlerLimit {
+                scopedHandlers.removeFirst()
+            }
+        }
+        return scope
+    }
+
+    private static func handler(for request: URLRequest) -> Handler? {
+        guard let scope = request.value(forHTTPHeaderField: scopeHeader) else { return requestHandler }
+        return scopedHandlerLock.withLock { scopedHandlers.last { $0.scope == scope }?.handler }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         true
@@ -54,7 +84,7 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        guard let requestHandler = Self.requestHandler else {
+        guard let requestHandler = Self.handler(for: request) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
@@ -70,6 +100,40 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+final class MockURLProtocolScopeTests: APIClientTestCase {
+    func testScopedHandlerOutlivesGlobalHandlerReplacement() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [
+            MockURLProtocol.scopeHeader: MockURLProtocol.register { request in
+                apiTestJSONResponse(#"{"session":{"session_id":"scoped"}}"#, for: request)
+            }
+        ]
+        let client = APIClient(baseURL: URL(string: "https://example.test")!, session: URLSession(configuration: configuration))
+
+        // The next test's handler must not see this session's request.
+        MockURLProtocol.requestHandler = { request in
+            XCTFail("Scoped request leaked to the global handler: \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let response = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
+        XCTAssertEqual(response.session?.sessionId, "scoped")
+
+        // Registering many later sessions evicts this scope, so the retained
+        // closure count stays bounded and the stale session fails cleanly.
+        for _ in 0..<16 {
+            _ = MockURLProtocol.register { _ in throw URLError(.badURL) }
+        }
+        do {
+            _ = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
+            XCTFail("Evicted scope should not be served")
+        } catch APIError.network(let underlying) {
+            XCTAssertEqual((underlying as? URLError)?.code, .badServerResponse)
+        }
+    }
 }
 
 /// URLProtocol whose responses are completed manually so concurrent requests
