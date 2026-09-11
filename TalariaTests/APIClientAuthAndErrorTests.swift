@@ -862,7 +862,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             },
             cookieStore: cookieStore,
             profileEntityCache: ProfileEntityCache(defaults: nil),
-            resetProfileScopedState: { url in
+            resetServerScopedState: { url in
                 resets.append(url)
                 // The purge runs after reconciliation but before anything durable
                 // is written or the logged-in UI is entered.
@@ -905,7 +905,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
                 legacyStorage: ServerCookieStore.makeIsolatedStorage()
             ),
             profileEntityCache: ProfileEntityCache(defaults: nil),
-            resetProfileScopedState: { resets.append($0) },
+            resetServerScopedState: { resets.append($0) },
             serverRegistry: ServerRegistry.inMemory(keychain: keychain)
         )
 
@@ -975,7 +975,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
                 },
                 cookieStore: cookieStore,
                 profileEntityCache: ProfileEntityCache(defaults: nil),
-                resetProfileScopedState: { resets.append($0) },
+                resetServerScopedState: { resets.append($0) },
                 serverRegistry: registry
             )
 
@@ -1028,7 +1028,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             },
             cookieStore: cookieStore,
             profileEntityCache: ProfileEntityCache(defaults: nil),
-            resetProfileScopedState: { resets.append($0) },
+            resetServerScopedState: { resets.append($0) },
             serverRegistry: registry
         )
 
@@ -1099,7 +1099,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
                 legacyStorage: ServerCookieStore.makeIsolatedStorage()
             ),
             profileEntityCache: ProfileEntityCache(defaults: nil),
-            resetProfileScopedState: AuthManager.profileScopedStateReset(
+            resetServerScopedState: AuthManager.serverScopedStateReset(
                 cacheContainer: container,
                 draftStore: draftStore,
                 defaults: defaults
@@ -1124,6 +1124,91 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         // so a relaunch cannot bring the previous profile's drafts back.
         let persistedDrafts = await draftPersistence.load()
         XCTAssertTrue(persistedDrafts.isEmpty)
+    }
+
+    @MainActor
+    func testSignOutPurgesEveryServerScopedStoreAndLeavesTheOtherServerIntact() async throws {
+        let signedOut = try XCTUnwrap(URL(string: "https://removed.test"))
+        let kept = try XCTUnwrap(URL(string: "https://kept.test"))
+        let container = try ModelContainer(
+            for: CachedSession.self, CachedMessage.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let defaults = UserDefaults.ephemeral()
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let insights = try decoder.decode(InsightsResponse.self, from: Data(#"{"total_sessions": 3}"#.utf8))
+        let draftPersistence = InMemoryChatDraftPersistence()
+        let draftStore = ChatDraftStore(persistence: draftPersistence, debounceDuration: .seconds(10))
+        // Seed identical server-scoped state for both servers.
+        for (server, tag) in [(signedOut, "removed"), (kept, "kept")] {
+            let session = try decoder.decode(
+                SessionSummary.self,
+                from: Data(#"{"session_id": "\#(tag)-session", "title": "Thread", "archived": false}"#.utf8)
+            )
+            try CacheStore.cacheSessions([session], serverURL: server, in: context)
+            try CacheStore.cacheMessages(
+                [ChatMessage(role: "user", content: "hello", timestamp: 1, messageId: "m1")],
+                serverURL: server,
+                sessionID: "\(tag)-session",
+                in: context
+            )
+            SessionNavigationPersistence.save("\(tag)-session", for: server, defaults: defaults)
+            defaults.set(false, forKey: SessionRowDisplaySettings.showCliSessionsKey(for: server))
+            defaults.set(false, forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: server))
+            InsightsResponseCache(server: server, defaults: defaults).save(insights, timeframe: .today)
+            draftStore.setDraft("unsent \(tag)", for: .newChat(server: server))
+            draftStore.setAttachments(
+                [ChatDraftAttachment(id: UUID(), name: "\(tag).png", mime: "image/png", size: 1, isImage: true, file: "\(tag).png")],
+                for: .newChat(server: server)
+            )
+        }
+        try await draftStore.flush()
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        try registry.activate(url: kept)
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStore: ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            ),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetServerScopedState: AuthManager.serverScopedStateReset(
+                cacheContainer: container,
+                draftStore: draftStore,
+                defaults: defaults
+            ),
+            serverRegistry: registry
+        )
+        await manager.configure(serverURLString: signedOut.absoluteString, password: "")
+        XCTAssertEqual(manager.state, .loggedIn(server: signedOut))
+
+        await manager.signOut()
+
+        XCTAssertEqual(manager.state, .loggedIn(server: kept))
+        XCTAssertTrue(try CacheStore.cachedSessions(serverURL: signedOut, in: context).isEmpty)
+        XCTAssertTrue(try CacheStore.cachedMessages(serverURL: signedOut, sessionID: "removed-session", in: context).isEmpty)
+        XCTAssertNil(SessionNavigationPersistence.load(for: signedOut, defaults: defaults))
+        XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showCliSessionsKey(for: signedOut)))
+        XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: signedOut)))
+        XCTAssertNil(InsightsResponseCache(server: signedOut, defaults: defaults).load(timeframe: .today))
+        let removedDraft = await draftStore.draft(for: .newChat(server: signedOut))
+        XCTAssertNil(removedDraft)
+        // The other server's state is untouched, including the flushed draft document.
+        XCTAssertEqual(try CacheStore.cachedSessions(serverURL: kept, in: context).count, 1)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: kept, sessionID: "kept-session", in: context).count, 1)
+        XCTAssertEqual(SessionNavigationPersistence.load(for: kept, defaults: defaults), "kept-session")
+        XCTAssertEqual(defaults.object(forKey: SessionRowDisplaySettings.showCliSessionsKey(for: kept)) as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: kept)) as? Bool, false)
+        XCTAssertEqual(InsightsResponseCache(server: kept, defaults: defaults).load(timeframe: .today), insights)
+        let keptDraft = await draftStore.draft(for: .newChat(server: kept))
+        XCTAssertEqual(keptDraft?.text, "unsent kept")
+        XCTAssertEqual(keptDraft?.attachments.map(\.file), ["kept.png"])
+        let persistedDrafts = await draftPersistence.load()
+        XCTAssertEqual(persistedDrafts.keys.map(\.serverID), [kept.absoluteString])
     }
 
     @MainActor
@@ -1157,7 +1242,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             },
             cookieStore: cookieStore,
             profileEntityCache: ProfileEntityCache(defaults: nil),
-            resetProfileScopedState: { _ in resetCount += 1 },
+            resetServerScopedState: { _ in resetCount += 1 },
             serverRegistry: registry
         )
 
@@ -1205,7 +1290,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             cookieStore: cookieStore,
             profileEntityCache: ProfileEntityCache(defaults: nil),
             // The user edits the connect form while the purge is suspended.
-            resetProfileScopedState: { _ in inputRevision += 1 },
+            resetServerScopedState: { _ in inputRevision += 1 },
             serverRegistry: registry
         )
 
@@ -1251,7 +1336,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             },
             cookieStore: cookieStore,
             profileEntityCache: ProfileEntityCache(defaults: nil),
-            resetProfileScopedState: { _ in throw CocoaError(.fileWriteUnknown) },
+            resetServerScopedState: { _ in throw CocoaError(.fileWriteUnknown) },
             serverRegistry: registry
         )
 

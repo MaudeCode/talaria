@@ -103,7 +103,8 @@ struct TalariaApp: App {
     private let usesUITestFixture: Bool
     /// Offline session/message cache. Held explicitly (not just via the
     /// `modelContainer(for:)` modifier) so `AuthManager` can drop a server's
-    /// cache when a sign-in reconciles to a different profile (TAL-131).
+    /// cache when it is signed out or removed (TAL-146) or a sign-in reconciles
+    /// to a different profile (TAL-131).
     private let cacheContainer: ModelContainer
     #if DEBUG
     private let uiTestFixture: UITestFixtureEnvironment?
@@ -134,7 +135,7 @@ struct TalariaApp: App {
         self.cacheContainer = cacheContainer
         let liveAuthManager = {
             AuthManager(
-                resetProfileScopedState: AuthManager.profileScopedStateReset(cacheContainer: cacheContainer)
+                resetServerScopedState: AuthManager.serverScopedStateReset(cacheContainer: cacheContainer)
             )
         }
         #if DEBUG

@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 
 struct UserProfileSettingsRow: View {
@@ -112,7 +111,6 @@ struct ServersSettingsView: View {
     @State private var isLoadingDefaultProfile = false
     @State private var showDefaultModelPicker = false
     @State private var showDefaultProfilePicker = false
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -187,7 +185,6 @@ struct ServersSettingsView: View {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
                 Task {
-                    try? CacheStore.clearCache(for: server, in: modelContext)
                     await authManager.signOut()
                     dismiss()
                 }

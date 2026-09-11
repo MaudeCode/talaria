@@ -339,6 +339,13 @@ enum SessionRowDisplaySettings {
         "\(showClaudeCodeSessionsKey)|\(server.absoluteString)"
     }
 
+    /// Forgets both per-server toggles when `server` is removed from the app,
+    /// so re-adding the same URL starts from the server's own setting again.
+    static func clearServerScopedSettings(for server: URL, in defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: showCliSessionsKey(for: server))
+        defaults.removeObject(forKey: showClaudeCodeSessionsKey(for: server))
+    }
+
     /// Effective CLI-sessions visibility for `server`: the per-server value if
     /// one was ever stored, else the pre-#19 global value, else shown-by-default
     /// like every other session-row toggle.

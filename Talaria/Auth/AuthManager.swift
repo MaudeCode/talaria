@@ -2,9 +2,15 @@ import Foundation
 import AuthenticationServices
 import CryptoKit
 import Observation
+import OSLog
 import Security
 import SwiftData
 import UIKit
+
+private let authManagerLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "Talaria",
+    category: "AuthManager"
+)
 
 @MainActor
 @Observable
@@ -82,12 +88,14 @@ final class AuthManager {
     private let clearStoredSessionCookies: (URL) -> Void
     private let fallbackCookieStorage: HTTPCookieStorage?
     private let profileEntityCache: ProfileEntityCache
-    /// Drops local state that belongs to one authenticated profile on a server:
-    /// the stored session selection, composer drafts, and the offline
-    /// session/message cache. Runs before anything durable is written whenever
-    /// native OIDC reconciles a different server-authorized profile than the
-    /// last sign-in there; a thrown error aborts that sign-in (TAL-131).
-    private let resetProfileScopedState: @MainActor (URL) async throws -> Void
+    /// Drops every local store keyed by one server: the stored session
+    /// selection, composer drafts, the offline session/message cache, the
+    /// per-server session-row flags, and the Insights cache. Runs after the
+    /// registry removal commits on sign-out and server removal (TAL-146), and
+    /// before anything durable is written whenever native OIDC reconciles a
+    /// different server-authorized profile than the last sign-in there; only
+    /// the OIDC path lets a thrown error abort the operation (TAL-131).
+    private let resetServerScopedState: @MainActor (URL) async throws -> Void
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
     private var isOIDCSignInActive = false
@@ -108,7 +116,7 @@ final class AuthManager {
         cookieStorage: HTTPCookieStorage? = nil,
         cookieStore: ServerCookieStore? = nil,
         profileEntityCache: ProfileEntityCache = .shared,
-        resetProfileScopedState: @escaping @MainActor (URL) async throws -> Void = { _ in },
+        resetServerScopedState: @escaping @MainActor (URL) async throws -> Void = { _ in },
         logoutTimeout: Duration = .seconds(5),
         serverRegistry: ServerRegistry = .shared
     ) {
@@ -139,25 +147,28 @@ final class AuthManager {
             clearStoredSessionCookies = resolvedCookieStore.clear(for:)
         }
         self.profileEntityCache = profileEntityCache
-        self.resetProfileScopedState = resetProfileScopedState
+        self.resetServerScopedState = resetServerScopedState
         self.logoutTimeout = logoutTimeout
         self.serverRegistry = serverRegistry
         restoreSavedServer()
         refreshServers()
     }
 
-    /// The production `resetProfileScopedState`: clears the server's stored
-    /// selection, its composer drafts, and its offline cache in the app's
-    /// SwiftData container. Draft removal is flushed to disk rather than left
-    /// to the debounced write, and any failure propagates so the sign-in fails
-    /// closed instead of exposing the previous profile's data.
-    static func profileScopedStateReset(
+    /// The production `resetServerScopedState`: clears the server's stored
+    /// selection, session-row flags, Insights cache, composer drafts, and its
+    /// offline cache in the app's SwiftData container. Draft removal is flushed
+    /// to disk rather than left to the debounced write, and any failure
+    /// propagates so an OIDC sign-in fails closed instead of exposing the
+    /// previous profile's data.
+    static func serverScopedStateReset(
         cacheContainer: ModelContainer,
         draftStore: ChatDraftStore = .shared,
         defaults: UserDefaults = .standard
     ) -> @MainActor (URL) async throws -> Void {
         { server in
             SessionNavigationPersistence.save(nil, for: server, defaults: defaults)
+            SessionRowDisplaySettings.clearServerScopedSettings(for: server, in: defaults)
+            InsightsResponseCache(server: server, defaults: defaults).clear()
             await draftStore.discardDrafts(for: server)
             try await draftStore.flush()
             try CacheStore.clearCache(for: server, in: cacheContainer.mainContext)
@@ -551,13 +562,13 @@ final class AuthManager {
     /// When `profile` differs from the last sign-in on `server`, drops every
     /// profile-scoped local artifact before anything durable is written: the
     /// offline cache, stored selection, and drafts (via
-    /// `resetProfileScopedState`), the App Intents profile picker cache, and the
+    /// `resetServerScopedState`), the App Intents profile picker cache, and the
     /// quota widget snapshot (TAL-131). A purge failure propagates so the caller
     /// aborts the sign-in; the old marker stays, so the next sign-in retries.
     private func resetProfileScopedStateIfChanged(_ profile: String, for server: URL) async throws {
         let scope = server.absoluteString
         guard (try? keychain.load(.authenticatedProfile, scope: scope)) != profile else { return }
-        try await resetProfileScopedState(server)
+        try await resetServerScopedState(server)
         profileEntityCache.save([])
         clearQuotaWidgetSnapshot()
     }
@@ -660,7 +671,7 @@ final class AuthManager {
         }
 
         do {
-            try advanceAfterRemoving(activeServer: active)
+            try await advanceAfterRemoving(activeServer: active)
         } catch {
             lastErrorMessage = error.localizedDescription
         }
@@ -669,7 +680,8 @@ final class AuthManager {
     /// Removes a configured server. When it's the active one this behaves like
     /// `signOut` (best-effort server logout + auto-switch / onboarding). A
     /// non-active server is just dropped locally — its registry row, scoped
-    /// headers, and cookies — leaving the active server's auth untouched (#17).
+    /// headers, cookies, and server-scoped stores — leaving the active server
+    /// untouched (#17).
     @discardableResult
     func removeServer(_ account: ServerAccount) async -> Bool {
         guard let serverURL = URL(string: account.urlString) else { return false }
@@ -680,11 +692,12 @@ final class AuthManager {
                 if case .loggedIn = state {
                     await attemptBestEffortServerLogout(server: serverURL)
                 }
-                try advanceAfterRemoving(activeServer: serverURL)
+                try await advanceAfterRemoving(activeServer: serverURL)
             } else {
                 try serverRegistry.remove(id: account.id)
                 clearLocalArtifacts(for: serverURL)
                 refreshServers()
+                await purgeServerScopedState(for: serverURL)
             }
             return true
         } catch {
@@ -745,7 +758,7 @@ final class AuthManager {
     /// Drops the active server locally + from the registry, then auto-switches to
     /// the next remaining server, or returns to onboarding when none remain. The
     /// shared core of `signOut` and active-server `removeServer` (#17).
-    private func advanceAfterRemoving(activeServer server: URL) throws {
+    private func advanceAfterRemoving(activeServer server: URL) async throws {
         let nextActive = try serverRegistry.remove(id: server.absoluteString)
 
         // Always drop any pre-#16 global header remnant on a sign-out path.
@@ -768,6 +781,21 @@ final class AuthManager {
             try? keychain.delete(.serverURL)
             headerStore.replace(with: [])
             state = .unconfigured
+        }
+        await purgeServerScopedState(for: server)
+    }
+
+    /// Drops a removed server's drafts, selection, cache, and per-server
+    /// defaults once its registry row is gone. Best-effort: every store is
+    /// server-keyed, so a leftover cannot surface under another server, and
+    /// undoing the removal would be worse than the leftover (TAL-146).
+    private func purgeServerScopedState(for server: URL) async {
+        do {
+            try await resetServerScopedState(server)
+        } catch {
+            authManagerLogger.warning(
+                "Failed to purge local state for removed server: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
