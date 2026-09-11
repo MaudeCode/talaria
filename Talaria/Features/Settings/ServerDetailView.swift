@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 
 struct ServerDetailView: View {
@@ -6,7 +5,6 @@ struct ServerDetailView: View {
     let account: ServerAccount
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
     @State private var displayName: String
     @State private var initials: String
     @State private var colorHex: String
@@ -94,19 +92,10 @@ struct ServerDetailView: View {
                     let wasActive = isActive
                     isRemoving = true
                     errorMessage = nil
-                    let removedServerURL = URL(string: account.urlString)
-                    let context = modelContext
                     guard await authManager.removeServer(account) else {
                         errorMessage = authManager.lastErrorMessage
                         isRemoving = false
                         return
-                    }
-                    // Purge only after the registry removal commits. Best-effort:
-                    // cache and drafts are server-keyed, so leftovers cannot surface
-                    // under another server (#18, PR #286 W2).
-                    if let removedServerURL {
-                        try? CacheStore.clearCache(for: removedServerURL, in: context)
-                        await ChatDraftStore.shared.discardDrafts(for: removedServerURL)
                     }
                     // Only a non-active removal leaves this view alive to reset its
                     // state and pop; the active-server case is already torn down.

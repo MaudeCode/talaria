@@ -341,6 +341,14 @@ struct InsightsResponseCache {
         defaults.set(try? JSONEncoder().encode(payload), forKey: Self.storageKey)
     }
 
+    /// Drops this server's cached responses when the server is removed from
+    /// the app, leaving every other server's entries in place.
+    func clear() {
+        var payload = payload()
+        guard payload.removeValue(forKey: serverKey) != nil else { return }
+        defaults.set(try? JSONEncoder().encode(payload), forKey: Self.storageKey)
+    }
+
     private func payload() -> [String: [String: InsightsResponse]] {
         guard let data = defaults.data(forKey: Self.storageKey) else { return [:] }
         return (try? JSONDecoder().decode([String: [String: InsightsResponse]].self, from: data)) ?? [:]

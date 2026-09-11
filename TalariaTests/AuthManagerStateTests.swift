@@ -326,7 +326,12 @@ final class AuthManagerStateTests: XCTestCase {
     func testRemoveFailureReturnsFalseAndKeepsServerState() async throws {
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry.inMemory(keychain: keychain)
-        let (manager, _, bAccount) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        var resets: [URL] = []
+        let (manager, _, bAccount) = try await makeTwoServerManager(
+            keychain: keychain,
+            registry: registry,
+            resetServerScopedState: { resets.append($0) }
+        )
         keychain.saveErrors[.servers] = PreconditionFailure()
 
         let removed = await manager.removeServer(bAccount)
@@ -335,6 +340,65 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://a.test"))))
         XCTAssertEqual(registry.servers.map(\.id), ["https://b.test", "https://a.test"])
         XCTAssertNotNil(manager.lastErrorMessage)
+        // A server that is still configured keeps its local state (TAL-146).
+        XCTAssertTrue(resets.isEmpty)
+    }
+
+    // MARK: - Server-scoped purge on sign-out / removal (TAL-146)
+
+    func testSignOutPurgesTheRemovedServerOnceAfterRegistryRemoval() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        var resets: [(server: URL, registeredIDs: [String])] = []
+        let (manager, _, _) = try await makeTwoServerManager(
+            keychain: keychain,
+            registry: registry,
+            resetServerScopedState: { resets.append(($0, registry.servers.map(\.id))) }
+        )
+        let serverA = try XCTUnwrap(URL(string: "https://a.test"))
+        let serverB = try XCTUnwrap(URL(string: "https://b.test"))
+
+        await manager.signOut()
+
+        XCTAssertEqual(resets.map(\.server), [serverA])
+        // The purge runs only once the registry no longer contains the server.
+        XCTAssertEqual(resets.first?.registeredIDs, ["https://b.test"])
+        XCTAssertEqual(manager.state, .loggedIn(server: serverB))
+    }
+
+    func testRemoveNonActiveServerPurgesOnlyThatServer() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        var resets: [(server: URL, registeredIDs: [String])] = []
+        let (manager, _, bAccount) = try await makeTwoServerManager(
+            keychain: keychain,
+            registry: registry,
+            resetServerScopedState: { resets.append(($0, registry.servers.map(\.id))) }
+        )
+        let serverA = try XCTUnwrap(URL(string: "https://a.test"))
+        let serverB = try XCTUnwrap(URL(string: "https://b.test"))
+
+        await manager.removeServer(bAccount)
+
+        XCTAssertEqual(resets.map(\.server), [serverB])
+        XCTAssertEqual(resets.first?.registeredIDs, ["https://a.test"])
+        XCTAssertEqual(manager.state, .loggedIn(server: serverA))
+    }
+
+    func testPurgeFailureOnSignOutDoesNotUndoTheRemoval() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let (manager, _, _) = try await makeTwoServerManager(
+            keychain: keychain,
+            registry: registry,
+            resetServerScopedState: { _ in throw PreconditionFailure() }
+        )
+
+        await manager.signOut()
+
+        XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://b.test"))))
+        XCTAssertEqual(registry.servers.map(\.id), ["https://b.test"])
+        XCTAssertNil(manager.lastErrorMessage)
     }
 
     func testSignOutWithRemainingServerAutoSwitches() async throws {
@@ -550,7 +614,8 @@ final class AuthManagerStateTests: XCTestCase {
     /// `b.test` present but inactive. Returns the manager and both accounts.
     private func makeTwoServerManager(
         keychain: InMemoryKeychainStore,
-        registry: ServerRegistry
+        registry: ServerRegistry,
+        resetServerScopedState: @escaping @MainActor (URL) async throws -> Void = { _ in }
     ) async throws -> (AuthManager, ServerAccount, ServerAccount) {
         // Pre-seed B (becomes inactive once A signs in), then sign in to A.
         try registry.activate(url: try XCTUnwrap(URL(string: "https://b.test")))
@@ -559,6 +624,7 @@ final class AuthManagerStateTests: XCTestCase {
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
             cookieStorage: cookieStorage,
             profileEntityCache: profileEntityCache,
+            resetServerScopedState: resetServerScopedState,
             serverRegistry: registry
         )
         await manager.configure(serverURLString: "https://a.test", password: "")

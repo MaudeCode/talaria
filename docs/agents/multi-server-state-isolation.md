@@ -39,10 +39,10 @@ to `CacheStore`. Two consequences:
 | Auth cookies | `HTTPCookieStorage` (shared jar) | Cleared/queried per active server URL (#16). Same-host/different-port servers still share the jar — documented #16 limitation. |
 | Custom request headers | Keychain, per-server-scoped keys (#16) | `CustomHeaderStore` is hydrated for the active server; SSE + requests source headers from the active store. |
 | Display name / initials / **Header Logo Color** | `ServerAccount` in the Keychain registry blob (`Models/ServerAccount.swift`) | Per-server. The **active** server's identity is mirrored into the global `@AppStorage` keys (`SessionIdentitySettings.*`, `HeaderLogoColor.storageKey`) by `ServerRegistry.mirrorIdentityToDefaults`, on activate / set-active / identity-edit / remove — **never on first insert**, so first-run/single-server behavior is unchanged. Consumers (session-list avatar, header logo tint, New Chat / Send primary-action tint) read the mirrored global keys and therefore follow the active server automatically. |
-| Offline session/message cache | SwiftData (`CachedSession`, `CachedMessage`) | Keyed by `serverURLString` (the active server URL's `absoluteString`) on the unique `cacheKey` and on every read/write predicate. See below. |
-| Default model / profile | Server defaults are not persisted locally; unfinished new-chat choices can be | Settings re-fetches defaults from the **active** server. A non-empty new-chat draft may also retain that server's effective composer choices in `ChatDraftStore`, keyed by server URL plus `newChat`; removing the server discards those records. Without a saved draft, new sessions use the server's current defaults. |
+| Offline session/message cache | SwiftData (`CachedSession`, `CachedMessage`) | Keyed by `serverURLString` (the active server URL's `absoluteString`) on the unique `cacheKey` and on every read/write predicate. Purged by `AuthManager` when the server is signed out or removed (TAL-146). See below. |
+| Default model / profile | Server defaults are not persisted locally; unfinished new-chat choices can be | Settings re-fetches defaults from the **active** server. A non-empty new-chat draft may also retain that server's effective composer choices in `ChatDraftStore`, keyed by server URL plus `newChat`; `AuthManager` discards those records (and their attachment copies) when the server is signed out or removed (TAL-146). Without a saved draft, new sessions use the server's current defaults. |
 | Active project / session selection | View-local `@State` only | Not persisted. Destroyed and rebuilt on switch via `.id(server)`. |
-| "Show CLI sessions" toggle | UserDefaults, per-server key (`SessionRowDisplaySettings.showCliSessionsKey(for:)` = `sessionRow.showCliSessions|<server absoluteString>`) | Per-server since #19: the toggle mirrors the server's own `show_cli_sessions` setting (adopted on Settings load, written back via `POST /api/settings`), so an adopted value on one server cannot leak to another. Reads fall back to the pre-#19 global key as a migration seed, then to shown-by-default. Tested in `CliSessionsSyncModelTests`. |
+| "Show CLI sessions" toggle | UserDefaults, per-server key (`SessionRowDisplaySettings.showCliSessionsKey(for:)` = `sessionRow.showCliSessions|<server absoluteString>`) | Per-server since #19: the toggle mirrors the server's own `show_cli_sessions` setting (adopted on Settings load, written back via `POST /api/settings`), so an adopted value on one server cannot leak to another. Reads fall back to the pre-#19 global key as a migration seed, then to shown-by-default. Cleared with the Claude Code toggle by `AuthManager` on sign-out or removal (TAL-146). Tested in `CliSessionsSyncModelTests`. |
 
 ### Offline cache keying (`Persistence/CacheStore.swift`)
 
@@ -91,13 +91,16 @@ cached sessions/messages. Other configured servers' offline data and the Hermes
 server itself are untouched. The footnote and confirmation copy state this
 explicitly, matching the implemented behavior.
 
-Additionally, removing a server (`ServerDetailView`) purges that server's cache
-via the same scoped call, so a removed server leaves **no orphaned rows**
-(resolves the W2 follow-up deferred from PR #286). This is done in the Settings
-view layer (which holds the SwiftData `modelContext`) rather than in
-`AuthManager`, to avoid coupling auth to persistence. The purge is best-effort:
-because the cache is server-keyed, a leftover row can never surface as another
-server's content even if the purge fails.
+Additionally, signing out of or removing a server purges that server's cache,
+drafts, stored session selection, per-server session-row toggles, Insights
+response cache, and browsed Kanban Board, so a removed server leaves **no orphaned rows** (TAL-146;
+resolves the W2 follow-up deferred from PR #286). `AuthManager` owns the purge
+through its injected `resetServerScopedState` closure
+(`AuthManager.serverScopedStateReset`, wired in `TalariaApp`), which runs only
+after the registry removal commits; the same closure backs the TAL-131 profile
+reconciliation. The purge is best-effort on removal paths: because every store
+is server-keyed, a leftover can never surface as another server's content even
+if the purge fails.
 
 `CacheStore.clearAll(in:)` (delete every server's cache) is retained as a tested
 utility but is no longer wired to any user action.
