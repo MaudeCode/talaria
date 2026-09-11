@@ -55,10 +55,12 @@ extension ChatViewModelSendTests {
         protocolClasses: [AnyClass] = [MockURLProtocol.self],
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
-        MockURLProtocol.requestHandler = handler
-
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = protocolClasses
+        // Scope the handler to this view model's session: `MockURLProtocol.requestHandler`
+        // is process-global, and a view model's untracked follow-up request (the
+        // post-stream title refresh) would otherwise land on the next test's handler.
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register(handler)]
         let urlSession = URLSession(configuration: configuration)
         let client = APIClient(baseURL: server, session: urlSession)
         let summary: SessionSummary

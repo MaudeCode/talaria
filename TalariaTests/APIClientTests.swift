@@ -43,7 +43,27 @@ class APIClientTestCase: XCTestCase {
 }
 
 final class MockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    typealias Handler = (URLRequest) throws -> (HTTPURLResponse, Data)
+    static var requestHandler: Handler?
+    /// A session whose configuration sends this header (see `register`) is served
+    /// by its own handler, so a request that outlives its test — the completed-
+    /// response title refresh, for example — can never reach the next test's
+    /// global `requestHandler` (TAL-156).
+    static let scopeHeader = "X-Talaria-Test-Handler"
+    private static let scopedHandlerLock = NSLock()
+    private static var scopedHandlers: [String: Handler] = [:]
+
+    /// Registers `handler` and returns the `scopeHeader` value that routes to it.
+    static func register(_ handler: @escaping Handler) -> String {
+        let scope = UUID().uuidString
+        scopedHandlerLock.withLock { scopedHandlers[scope] = handler }
+        return scope
+    }
+
+    private static func handler(for request: URLRequest) -> Handler? {
+        guard let scope = request.value(forHTTPHeaderField: scopeHeader) else { return requestHandler }
+        return scopedHandlerLock.withLock { scopedHandlers[scope] }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         true
@@ -54,7 +74,7 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        guard let requestHandler = Self.requestHandler else {
+        guard let requestHandler = Self.handler(for: request) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
@@ -70,6 +90,28 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+final class MockURLProtocolScopeTests: APIClientTestCase {
+    func testScopedHandlerOutlivesGlobalHandlerReplacement() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [
+            MockURLProtocol.scopeHeader: MockURLProtocol.register { request in
+                apiTestJSONResponse(#"{"session":{"session_id":"scoped"}}"#, for: request)
+            }
+        ]
+        let client = APIClient(baseURL: URL(string: "https://example.test")!, session: URLSession(configuration: configuration))
+
+        // The next test's handler must not see this session's request.
+        MockURLProtocol.requestHandler = { request in
+            XCTFail("Scoped request leaked to the global handler: \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let response = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
+        XCTAssertEqual(response.session?.sessionId, "scoped")
+    }
 }
 
 /// URLProtocol whose responses are completed manually so concurrent requests
