@@ -253,6 +253,7 @@ final class APIClientSessionListTests: APIClientTestCase {
                   "session_id": "content-123",
                   "title": "Planning",
                   "match_type": "content",
+                  "match_preview": "the [REDACTED] billing plan for caf\\u00e9",
                   "unexpected": "ignored"
                 }
               ],
@@ -268,6 +269,7 @@ final class APIClientSessionListTests: APIClientTestCase {
         XCTAssertEqual(response.count, 1)
         XCTAssertEqual(response.sessions?.first?.sessionId, "content-123")
         XCTAssertEqual(response.sessions?.first?.matchType, "content")
+        XCTAssertEqual(response.sessions?.first?.matchPreview, "the [REDACTED] billing plan for café")
     }
 
     func testSessionSearchDecodesEmptyQueryResponseWithoutQueryOrCount() async throws {
@@ -297,6 +299,7 @@ final class APIClientSessionListTests: APIClientTestCase {
 
         XCTAssertEqual(response.sessions?.first?.sessionId, "abc123")
         XCTAssertNil(response.sessions?.first?.matchType)
+        XCTAssertNil(response.sessions?.first?.matchPreview)
         XCTAssertNil(response.query)
         XCTAssertNil(response.count)
     }

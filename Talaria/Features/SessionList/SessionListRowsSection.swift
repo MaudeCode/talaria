@@ -7,6 +7,7 @@ struct SessionListRowsSection: View {
     let emptyTitle: String
     let emptyDescription: String?
     let isSearchActive: Bool
+    let searchText: String
     let showsMessageCount: Bool
     let showsWorkspace: Bool
     let selectedSessionID: String?
@@ -39,7 +40,8 @@ struct SessionListRowsSection: View {
                     showsMessageCount: showsMessageCount,
                     showsWorkspace: showsWorkspace,
                     selectedSessionID: selectedSessionID,
-                    actions: actions
+                    actions: actions,
+                    searchText: searchText
                 )
             }
         }

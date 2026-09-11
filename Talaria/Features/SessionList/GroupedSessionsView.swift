@@ -35,7 +35,8 @@ struct GroupedSessionsView: View {
                         showsMessageCount: showsMessageCount,
                         showsWorkspace: showsWorkspace,
                         selectedSessionID: selectedSessionID,
-                        actions: actions
+                        actions: actions,
+                        searchText: searchText
                     )
                 }
             }
