@@ -51,18 +51,28 @@ final class MockURLProtocol: URLProtocol {
     /// global `requestHandler` (TAL-156).
     static let scopeHeader = "X-Talaria-Test-Handler"
     private static let scopedHandlerLock = NSLock()
-    private static var scopedHandlers: [String: Handler] = [:]
+    /// Newest last. Only the most recent sessions are kept: a request that outlives
+    /// its test lands within the next few tests, and a scope dropped after that
+    /// fails with `badServerResponse` instead of retaining test state for the rest
+    /// of the runner process.
+    private static var scopedHandlers: [(scope: String, handler: Handler)] = []
+    private static let scopedHandlerLimit = 16
 
     /// Registers `handler` and returns the `scopeHeader` value that routes to it.
     static func register(_ handler: @escaping Handler) -> String {
         let scope = UUID().uuidString
-        scopedHandlerLock.withLock { scopedHandlers[scope] = handler }
+        scopedHandlerLock.withLock {
+            scopedHandlers.append((scope, handler))
+            if scopedHandlers.count > scopedHandlerLimit {
+                scopedHandlers.removeFirst()
+            }
+        }
         return scope
     }
 
     private static func handler(for request: URLRequest) -> Handler? {
         guard let scope = request.value(forHTTPHeaderField: scopeHeader) else { return requestHandler }
-        return scopedHandlerLock.withLock { scopedHandlers[scope] }
+        return scopedHandlerLock.withLock { scopedHandlers.last { $0.scope == scope }?.handler }
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -111,6 +121,18 @@ final class MockURLProtocolScopeTests: APIClientTestCase {
 
         let response = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
         XCTAssertEqual(response.session?.sessionId, "scoped")
+
+        // Registering many later sessions evicts this scope, so the retained
+        // closure count stays bounded and the stale session fails cleanly.
+        for _ in 0..<16 {
+            _ = MockURLProtocol.register { _ in throw URLError(.badURL) }
+        }
+        do {
+            _ = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
+            XCTFail("Evicted scope should not be served")
+        } catch APIError.network(let underlying) {
+            XCTAssertEqual((underlying as? URLError)?.code, .badServerResponse)
+        }
     }
 }
 
