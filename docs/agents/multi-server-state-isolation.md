@@ -92,8 +92,8 @@ server itself are untouched. The footnote and confirmation copy state this
 explicitly, matching the implemented behavior.
 
 Additionally, signing out of or removing a server purges that server's cache,
-drafts, stored session selection, per-server session-row toggles, and Insights
-response cache, so a removed server leaves **no orphaned rows** (TAL-146;
+drafts, stored session selection, per-server session-row toggles, Insights
+response cache, and browsed Kanban Board, so a removed server leaves **no orphaned rows** (TAL-146;
 resolves the W2 follow-up deferred from PR #286). `AuthManager` owns the purge
 through its injected `resetServerScopedState` closure
 (`AuthManager.serverScopedStateReset`, wired in `TalariaApp`), which runs only

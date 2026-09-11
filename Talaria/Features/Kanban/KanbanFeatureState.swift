@@ -95,7 +95,7 @@ final class KanbanFeatureState {
     ) {
         self.server = server
         self.defaults = defaults
-        browsedBoardKey = "kanban.browsedBoard.\(server.absoluteString)"
+        browsedBoardKey = Self.browsedBoardKey(for: server)
         self.client = client ?? APIClient(baseURL: server)
         self.streamClient = streamClient ?? KanbanEventStreamClient()
         self.timing = timing
@@ -1962,6 +1962,16 @@ final class KanbanFeatureState {
         capabilityWarnings = []
         refreshFailed = false
         boardSelectionNotice = KanbanBoardSelectionNotice(boardName: boardDisplayName)
+    }
+
+    /// Server-scoped key for the locally browsed Board slug (TAL-142). Static so
+    /// `AuthManager` can forget it when the server is removed (TAL-146).
+    static func browsedBoardKey(for server: URL) -> String {
+        "kanban.browsedBoard.\(server.absoluteString)"
+    }
+
+    static func clearBrowsedBoard(for server: URL, in defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: browsedBoardKey(for: server))
     }
 
     /// The saved slug is a hint: it is only returned when the fresh Board list

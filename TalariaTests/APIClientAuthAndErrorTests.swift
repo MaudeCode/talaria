@@ -1158,6 +1158,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             defaults.set(false, forKey: SessionRowDisplaySettings.showCliSessionsKey(for: server))
             defaults.set(false, forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: server))
             InsightsResponseCache(server: server, defaults: defaults).save(insights, timeframe: .today)
+            defaults.set("\(tag)-board", forKey: KanbanFeatureState.browsedBoardKey(for: server))
             draftStore.setDraft("unsent \(tag)", for: .newChat(server: server))
             draftStore.setAttachments(
                 [ChatDraftAttachment(id: UUID(), name: "\(tag).png", mime: "image/png", size: 1, isImage: true, file: "\(tag).png")],
@@ -1195,6 +1196,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showCliSessionsKey(for: signedOut)))
         XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: signedOut)))
         XCTAssertNil(InsightsResponseCache(server: signedOut, defaults: defaults).load(timeframe: .today))
+        XCTAssertNil(defaults.string(forKey: KanbanFeatureState.browsedBoardKey(for: signedOut)))
         let removedDraft = await draftStore.draft(for: .newChat(server: signedOut))
         XCTAssertNil(removedDraft)
         // The other server's state is untouched, including the flushed draft document.
@@ -1204,6 +1206,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(defaults.object(forKey: SessionRowDisplaySettings.showCliSessionsKey(for: kept)) as? Bool, false)
         XCTAssertEqual(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: kept)) as? Bool, false)
         XCTAssertEqual(InsightsResponseCache(server: kept, defaults: defaults).load(timeframe: .today), insights)
+        XCTAssertEqual(defaults.string(forKey: KanbanFeatureState.browsedBoardKey(for: kept)), "kept-board")
         let keptDraft = await draftStore.draft(for: .newChat(server: kept))
         XCTAssertEqual(keptDraft?.text, "unsent kept")
         XCTAssertEqual(keptDraft?.attachments.map(\.file), ["kept.png"])
