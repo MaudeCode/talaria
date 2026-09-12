@@ -46,6 +46,16 @@ final class SourceFileHighlighterTests: XCTestCase {
         XCTAssertTrue(hasColour(lines[2]))
     }
 
+    func testEmojiStraddlingASegmentCutKeepsExactText() async {
+        let line = String(repeating: "a", count: MarkdownPlainCodeFormatter.maxSegmentLength - 1) + "😀b"
+        let content = "let x = 1\n\(line)\nlet y = 2"
+        let lines = await highlighter.lines(in: content, language: "swift", isDark: false)
+
+        XCTAssertEqual(lines.map(\.text), ["let x = 1", line, "let y = 2"])
+        XCTAssertFalse(lines[1].text.contains("\u{FFFD}"))
+        XCTAssertTrue(hasColour(lines[0]))
+    }
+
     func testFileBeyondThePolicyLimitsStaysPlain() async {
         let content = Array(repeating: "let x = 1", count: MarkdownHighlightPolicy.maxHighlightedCodeLineCount + 1)
             .joined(separator: "\n")

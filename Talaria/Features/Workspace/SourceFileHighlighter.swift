@@ -63,33 +63,30 @@ actor SourceFileHighlighter {
         let isLong = texts.map { $0.count > MarkdownHighlightPolicy.maxHighlightedCodeLineLength }
         let source = zip(texts, isLong).map { $1 ? "" : $0 }.joined(separator: "\n")
 
-        guard case let .highlight(normalizedLanguage, engine) = MarkdownHighlightPolicy.decision(
+        guard case let .highlight(normalizedLanguage, _) = MarkdownHighlightPolicy.decision(
             for: source,
             language: language,
             isStreaming: false
         ) else { return nil }
 
-        let attributed: NSAttributedString?
-        switch engine {
-        case .splashSwift:
-            attributed = SplashSwiftCodeHighlighter.highlightedAttributedString(
-                for: source,
-                colorScheme: isDark ? .dark : .light
-            )
-        case .highlightr:
-            attributed = highlightr(isDark: isDark)?.highlight(source, as: normalizedLanguage, fastRender: true)
-        }
-
-        guard let attributed, attributed.string == source else { return nil }
+        // Splash recurses once per character of a token and overflows this
+        // actor's stack on a long identifier or literal, so every grammar,
+        // Swift included, goes through the regex-driven Highlightr here.
+        guard let attributed = highlightr(isDark: isDark)?.highlight(source, as: normalizedLanguage, fastRender: true),
+              attributed.string == source
+        else { return nil }
         let colouredLines = MarkdownAttributedCodeFormatter.lines(in: attributed)
         guard colouredLines.count == plainLines.count else { return nil }
 
         return zip(plainLines, colouredLines).map { plain, coloured in
             guard !isLong[plain.id] else { return plainLine(plain) }
-            return SourceLine(
-                id: plain.id + 1,
-                segments: coloured.segments.map { Self.strippedOfFonts($0.attributedText) }
-            )
+            let segments = coloured.segments.map { Self.strippedOfFonts($0.attributedText) }
+            // Segments are cut at UTF-16 offsets, so a pair straddling a cut
+            // decodes as replacement characters; the text must stay exact.
+            guard segments.map({ String($0.characters) }).joined() == texts[plain.id] else {
+                return plainLine(plain)
+            }
+            return SourceLine(id: plain.id + 1, segments: segments)
         }
     }
 
