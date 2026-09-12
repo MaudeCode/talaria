@@ -100,6 +100,8 @@ describe("publisher alert eligibility", () => {
     await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
     delivered = await jobs(backend);
     expect(delivered.every((job) => job.kind === "live_activity_update" && !("alert" in job.aps))).toBe(true);
+    await expect(backend.query(internal.publishers.getState, { userId: "user-1", publisherId, sessionId: "session-1" }))
+      .resolves.toMatchObject({ revision: 3, alertEligible: false });
 
     // Omitting the field keeps the existing alert behavior for a new transition.
     await backend.mutation(internal.publishers.acceptSnapshot, {
@@ -160,9 +162,18 @@ describe("publisher alert eligibility", () => {
     const device = await backend.run(async (ctx) => ctx.db.query("devices").first());
     expect(device?.pushToStartIssuedAt).toBeUndefined();
 
+    // A same-phase update that omits the field keeps the start deferred.
     await backend.mutation(internal.publishers.acceptSnapshot, {
-      ...publish, nonce: "n2", receivedAt: now + 2, snapshotId: "s2",
-      states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 2, "waiting_for_input")],
+      ...publish, nonce: "n1b", receivedAt: now + 2, snapshotId: "s1b",
+      states: [snapshotState("session-1", 3, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    expect(await jobs(backend)).toEqual([]);
+
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 3, snapshotId: "s2",
+      states: [snapshotState("session-1", 3, "waiting_for_approval"), snapshotState("session-2", 2, "waiting_for_input")],
     });
     await runScheduledRecomputes(backend);
     const delivered = await jobs(backend);

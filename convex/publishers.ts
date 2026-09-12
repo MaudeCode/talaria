@@ -58,6 +58,11 @@ function expiryForState(
   return expiryForPhase(next.phase, now);
 }
 
+// Ineligibility belongs to the phase transition that carried it, so same-phase updates inherit it until the phase changes.
+function alertEligibleForState(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; alertEligible?: boolean }): boolean | undefined {
+  return current && !current.deleted && current.phase === next.phase && current.alertEligible === false ? false : next.alertEligible;
+}
+
 function stateRunKey(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string; phase: SessionPhase; eventId: string }): string {
   return next.streamId ?? (current && !(isTerminalPhase(current.phase) && !isTerminalPhase(next.phase))
     ? current.runKey ?? current.eventId : next.eventId);
@@ -216,6 +221,7 @@ export const acceptState = internalMutation({
             eventId: args.eventId,
             revision: args.revision,
             ...args.state,
+            alertEligible: alertEligibleForState(existing, args.state),
             runKey: stateRunKey(existing, { ...args.state, eventId: args.eventId }),
             ...expiryForState(existing, args.state, args.receivedAt),
             receivedAt: args.receivedAt,
@@ -307,6 +313,7 @@ export const acceptSnapshot = internalMutation({
           publisherId: args.publisherId,
           publisherLabel: authorization.label,
           ...state,
+          alertEligible: alertEligibleForState(current, state),
           runKey: stateRunKey(current, state),
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
