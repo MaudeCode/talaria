@@ -109,6 +109,16 @@ struct WorkspaceEntry: Decodable, Equatable, Identifiable {
         case isDir
     }
 
+    /// A file named outside a directory listing, such as a chat link's target.
+    init(name: String, path: String) {
+        self.name = name
+        self.path = path
+        type = "file"
+        size = nil
+        modified = nil
+        isDirectory = false
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decodeIfPresent(String.self, forKey: .name)
