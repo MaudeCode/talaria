@@ -260,9 +260,9 @@ struct SessionListView: View {
                 )
                 guard !Task.isCancelled else { return }
                 didCompleteInitialLoad = true
-                // Ordered after the deep link so restoreIfNeeded() sees the explicit
+                // Ordered after the deep link so the restore sees the explicit
                 // destination and leaves the stored selection alone.
-                restoreLastSelectedSessionIfNeeded()
+                await restoreLastSelectedSessionIfNeeded()
             }
             .task(id: remoteSearchTaskID) {
                 await viewModel.searchSessions(query: searchText, content: true, depth: 5)
@@ -1426,14 +1426,19 @@ struct SessionListView: View {
         persistLastSelectedSession()
     }
 
-    private func restoreLastSelectedSessionIfNeeded() {
-        navigationState.restoreIfNeeded(
+    /// The restored row takes the same path as a tapped one, so an external session
+    /// is imported before it is shown instead of opening with the list's stale
+    /// writability. A failed import leaves the list showing, like a failed tap.
+    private func restoreLastSelectedSessionIfNeeded() async {
+        let session = navigationState.sessionToRestore(
             from: viewModel.sessions,
             allowsAutomaticRestore: horizontalSizeClass == .regular,
             clearsMissingSelection: viewModel.sessionLoadError == nil,
             pendingDeepLinkedSessionID: pendingDeepLinkedSessionID
         )
         persistLastSelectedSession()
+        guard let session else { return }
+        await openSession(session)
     }
 
     private func persistLastSelectedSession() {
