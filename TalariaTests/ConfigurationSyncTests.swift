@@ -366,6 +366,84 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertNil(deviceB.standardDefaults.object(forKey: TalariaRelayNotifications.pushTokenKey))
     }
 
+    func testPasswordChangedBeforePullingRemoteEditIsNotOverwritten() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        await deviceA.authManager.configure(serverURLString: serverA, password: "pw-old")
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+        let deviceB = try await makeDevice(store: store)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+
+        // A pushes a newer identity edit; B then changes the password before pulling it.
+        deviceA.now.advance(by: 30)
+        deviceA.authManager.updateServerIdentity(
+            try XCTUnwrap(deviceA.authManager.servers.first),
+            displayName: "Renamed", initials: "RN", headerLogoColorHex: "#778899"
+        )
+        await deviceA.coordinator.sync()
+        deviceB.now.advance(by: 60)
+        let account = try XCTUnwrap(deviceB.authManager.servers.first)
+        let stored = await deviceB.authManager.verifyAndStorePassword(for: account, password: "pw-new")
+        XCTAssertTrue(stored)
+        await deviceB.coordinator.sync()
+
+        XCTAssertEqual(deviceB.authManager.serverPassword(for: serverA), "pw-new")
+        let payload = try XCTUnwrap(store.records.values.first { $0.type == .serverSetup }?.payload)
+        let synced = try ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: payload)
+        XCTAssertEqual(synced.password, "pw-new")
+    }
+
+    func testPendingLocalPreferenceEditSurvivesOlderRemoteRecord() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+        let deviceB = try await makeDevice(store: store)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+
+        // A pushes dark; B chose light later and pulls before its own push.
+        deviceA.now.advance(by: 30)
+        deviceA.standardDefaults.set(AppTheme.dark.rawValue, forKey: AppTheme.storageKey)
+        await deviceA.coordinator.sync()
+        deviceB.now.advance(by: 60)
+        deviceB.standardDefaults.set(AppTheme.light.rawValue, forKey: AppTheme.storageKey)
+        await deviceB.coordinator.sync()
+
+        XCTAssertEqual(deviceB.standardDefaults.string(forKey: AppTheme.storageKey), AppTheme.light.rawValue)
+        let record = try XCTUnwrap(store.records[ConfigurationSyncRecord.preferencesRecordName])
+        let preferences = try ConfigurationSyncCodec.decoder().decode(SyncedPreferences.self, from: record.payload)
+        XCTAssertEqual(preferences.values[AppTheme.storageKey], .string(AppTheme.light.rawValue))
+    }
+
+    func testRegistryWriteFailureDoesNotAdvanceSyncBookkeeping() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        await deviceA.authManager.configure(serverURLString: serverA, password: "pw-a")
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+
+        let deviceB = try await makeDevice(store: store)
+        deviceB.keychain.saveErrors[.servers] = URLError(.cannotWriteToFile)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+
+        guard case .failed = deviceB.coordinator.status else {
+            return XCTFail("Expected a failed status, got \(deviceB.coordinator.status)")
+        }
+        XCTAssertTrue(deviceB.coordinator.state.recordNames.isEmpty)
+        XCTAssertNil(deviceB.coordinator.state.changeToken)
+        XCTAssertEqual(store.records.values.filter { $0.type == .serverSetup }.count, 1)
+
+        deviceB.keychain.saveErrors = [:]
+        await deviceB.coordinator.sync()
+
+        XCTAssertEqual(deviceB.authManager.servers.map(\.id), [serverA])
+        XCTAssertEqual(store.records.values.filter { $0.type == .serverSetup }.count, 1)
+    }
+
     // MARK: - Failure modes
 
     func testOfflineKeepsChangesPendingUntilNextSync() async throws {

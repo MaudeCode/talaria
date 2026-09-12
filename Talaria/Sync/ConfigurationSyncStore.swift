@@ -142,7 +142,10 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
     private func ensureZone() async throws {
         guard !zoneIsReady else { return }
         do {
-            _ = try await database.modifyRecordZones(saving: [CKRecordZone(zoneID: Self.zoneID)], deleting: [])
+            let result = try await database.modifyRecordZones(saving: [CKRecordZone(zoneID: Self.zoneID)], deleting: [])
+            for case .failure(let error) in result.saveResults.values {
+                throw error
+            }
         } catch {
             throw Self.mapped(error)
         }

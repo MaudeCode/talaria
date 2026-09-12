@@ -145,6 +145,13 @@ final class ConfigurationSyncCoordinator {
     /// Deletes every synced Talaria record from the user's private database,
     /// then stops syncing on this device. Local setup stays.
     func deleteSyncedData() async throws {
+        // Stop new passes and let an in-flight one finish first, so nothing can
+        // recreate the zone after it is gone.
+        state.isEnabled = false
+        scheduledSync?.cancel()
+        if let activeSync {
+            await activeSync.value
+        }
         do {
             try await store.deleteAll()
         } catch {
@@ -183,6 +190,7 @@ final class ConfigurationSyncCoordinator {
     /// Coalesces bursts of local edits into one sync.
     func scheduleSync(onlyIfPreferencesChanged: Bool = false) {
         guard state.isEnabled, !isApplyingRemote, let authManager else { return }
+        stampLocalChanges(authManager)
         let preferencesChanged = localPreferences().fingerprint != state.preferencesMark?.fingerprint
         guard preferencesChanged || (!onlyIfPreferencesChanged && hasUnsyncedServerChanges(authManager)) else {
             return
@@ -223,6 +231,7 @@ final class ConfigurationSyncCoordinator {
             status = .disabled
             return
         }
+        stampLocalChanges(authManager)
         if case .unavailable(let reason) = await store.accountAvailability() {
             status = .unavailable(reason)
             return
@@ -256,16 +265,33 @@ final class ConfigurationSyncCoordinator {
         )
 
         isApplyingRemote = true
+        defer { isApplyingRemote = false }
         if !plan.applyLocally.isEmpty || !plan.removeLocally.isEmpty {
-            await authManager.applySyncedServers(plan.applyLocally, removing: plan.removeLocally, order: plan.order)
+            let applied = await authManager.applySyncedServers(
+                plan.applyLocally, removing: plan.removeLocally, order: plan.order
+            )
+            guard applied else {
+                // Nothing is recorded as downloaded: the next pass fetches the same
+                // changes again instead of treating the missing server as removed.
+                status = .failed(authManager.lastErrorMessage ?? String(localized: "Could not apply synced servers."))
+                return
+            }
         }
         var preferencesMark = state.preferencesMark
+        let pendingPreferenceEdit = state.preferencesChangedAt ?? .distantPast
         if let remotePreferences,
-           remotePreferences.updatedAt > (preferencesMark?.changedAt ?? .distantPast) {
+           remotePreferences.updatedAt > max(preferencesMark?.changedAt ?? .distantPast, pendingPreferenceEdit) {
             SyncedPreferenceAllowlist.apply(remotePreferences.values, standard: standardDefaults, appGroup: appGroupDefaults)
             preferencesMark = .init(fingerprint: remotePreferences.fingerprint, changedAt: remotePreferences.updatedAt)
+            state.preferencesChangedAt = nil
         }
         isApplyingRemote = false
+        // The user may have turned sync off or deleted the synced data while
+        // this pass was fetching; never push after that.
+        guard state.isEnabled else {
+            status = .disabled
+            return
+        }
 
         // Bookkeeping for what was downloaded is safe to keep even if the push
         // below fails: those records already match CloudKit.
@@ -287,7 +313,10 @@ final class ConfigurationSyncCoordinator {
             let preferences = localPreferences()
             var preferencesUpload: ConfigurationSyncState.UploadMark?
             if preferences.fingerprint != preferencesMark?.fingerprint {
-                let stamped = SyncedPreferences(values: preferences.values, updatedAt: now())
+                let stamped = SyncedPreferences(
+                    values: preferences.values,
+                    updatedAt: max(now(), state.preferencesChangedAt ?? .distantPast)
+                )
                 records.append(try .preferences(stamped))
                 preferencesUpload = .init(fingerprint: stamped.fingerprint, changedAt: stamped.updatedAt)
             }
@@ -297,6 +326,7 @@ final class ConfigurationSyncCoordinator {
             state.pendingDeletions = []
             if let preferencesUpload {
                 state.preferencesMark = preferencesUpload
+                state.preferencesChangedAt = nil
             }
             state.lastSyncAt = now()
             persistState()
@@ -338,6 +368,32 @@ final class ConfigurationSyncCoordinator {
     }
 
     // MARK: - Local snapshots
+
+    /// Records when a local server or preference edit made *after* a sync was
+    /// first seen, so the merge compares it against remote timestamps. Password
+    /// and header writes do not bump the registry's `updatedAt`, and a debounced
+    /// push can lose a race with a pull, so the stamp is taken here rather than
+    /// at write time. Anything never synced carries no stamp: on a device's
+    /// first sync the cloud copy wins, which is what "restore" means.
+    private func stampLocalChanges(_ authManager: AuthManager) {
+        var changed = false
+        for setup in localSetups(authManager) {
+            guard let uploaded = state.uploaded[setup.serverID],
+                  uploaded.fingerprint != setup.fingerprint,
+                  (state.localChangedAt[setup.serverID] ?? .distantPast) <= uploaded.changedAt else { continue }
+            state.localChangedAt[setup.serverID] = now()
+            changed = true
+        }
+        if state.preferencesChangedAt == nil,
+           let mark = state.preferencesMark,
+           localPreferences().fingerprint != mark.fingerprint {
+            state.preferencesChangedAt = now()
+            changed = true
+        }
+        if changed {
+            persistState()
+        }
+    }
 
     /// Whether the local server list differs from what CloudKit last saw, so a
     /// change notification for something already synced costs no network call.

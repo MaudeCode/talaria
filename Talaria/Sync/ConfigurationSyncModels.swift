@@ -237,11 +237,14 @@ struct ConfigurationSyncState: Codable, Equatable, Sendable {
     /// on upload so the other device can order edits.
     var localChangedAt: [String: Date] = [:]
     var preferencesMark: UploadMark?
+    /// When a not-yet-uploaded local preference edit was first noticed, so a
+    /// remote record older than that edit cannot overwrite it.
+    var preferencesChangedAt: Date?
     var lastSyncAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case appleUserID, isEnabled, changeToken, recordNames, uploaded
-        case pendingDeletions, localChangedAt, preferencesMark, lastSyncAt
+        case pendingDeletions, localChangedAt, preferencesMark, preferencesChangedAt, lastSyncAt
     }
 
     init() {}
@@ -256,6 +259,7 @@ struct ConfigurationSyncState: Codable, Equatable, Sendable {
         pendingDeletions = try container.decodeIfPresent([String].self, forKey: .pendingDeletions) ?? []
         localChangedAt = try container.decodeIfPresent([String: Date].self, forKey: .localChangedAt) ?? [:]
         preferencesMark = try container.decodeIfPresent(UploadMark.self, forKey: .preferencesMark)
+        preferencesChangedAt = try container.decodeIfPresent(Date.self, forKey: .preferencesChangedAt)
         lastSyncAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncAt)
     }
 
@@ -269,6 +273,7 @@ struct ConfigurationSyncState: Codable, Equatable, Sendable {
         pendingDeletions = []
         localChangedAt = [:]
         preferencesMark = nil
+        preferencesChangedAt = nil
         lastSyncAt = nil
     }
 }

@@ -1018,12 +1018,16 @@ final class AuthManager {
     /// Applies what CloudKit reported: upserts `setups` (identity, headers,
     /// password), removes `removing`, and restores `order`. On a device with no
     /// active server the first restored server is signed in with its retained
-    /// password, so a second device opens ready to use.
+    /// password, so a second device opens ready to use. Returns false when a
+    /// registry write failed, so the caller must not record the download as
+    /// applied.
+    @discardableResult
     func applySyncedServers(
         _ setups: [SyncedServerSetup],
         removing removedIDs: [String],
         order: [String]
-    ) async {
+    ) async -> Bool {
+        var applied = true
         for setup in setups {
             guard let serverURL = URL(string: setup.urlString) else { continue }
             let existing = serverRegistry.servers.first { $0.id == setup.serverID }
@@ -1041,6 +1045,7 @@ final class AuthManager {
                 try serverRegistry.upsert(account)
             } catch {
                 lastErrorMessage = error.localizedDescription
+                applied = false
                 continue
             }
             let scope = account.customHeadersRef ?? account.urlString
@@ -1065,6 +1070,7 @@ final class AuthManager {
         if state == .unconfigured, let first = serverRegistry.servers.first {
             await signInWithStoredPassword(serverID: first.id)
         }
+        return applied
     }
 
     /// Mirrors the in-memory header snapshot to `server`'s scoped Keychain entry:
