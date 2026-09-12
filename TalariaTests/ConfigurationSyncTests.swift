@@ -762,6 +762,29 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(synced.password, "pw-a")
     }
 
+    func testServersSignedInWithSSOOrWithoutPasswordsResolveAutomatically() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        // Pre-existing servers: one signed in with SSO on this device, one whose
+        // password login is disabled; neither has a retained password.
+        try registry.activate(url: XCTUnwrap(URL(string: serverA)))
+        try registry.activate(url: XCTUnwrap(URL(string: serverB)))
+        try keychain.save("ops", forKey: .authenticatedProfile, scope: serverA)
+        let client = MockAuthAPIClient(
+            authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false, passwordAuthEnabled: false, oidcEnabled: true)
+        )
+        let device = try await makeDevice(store: store, client: client, keychain: keychain, registry: registry)
+        device.coordinator.signInWithApple(userID: "apple-user-1")
+
+        await device.coordinator.enableSync()
+
+        XCTAssertEqual(device.coordinator.status, .synced(fixedNow))
+        XCTAssertEqual(device.authManager.serverPassword(for: serverA), AuthManager.noPasswordRequired)
+        XCTAssertEqual(device.authManager.serverPassword(for: serverB), AuthManager.noPasswordRequired)
+        XCTAssertTrue(client.loginPasswords.isEmpty, "Resolution never sends a password.")
+    }
+
     // MARK: - Helpers
 
     private struct Device {

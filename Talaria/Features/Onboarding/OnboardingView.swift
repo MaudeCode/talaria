@@ -80,7 +80,7 @@ struct OnboardingView: View {
         .preferredColorScheme(.dark)
         .sheet(isPresented: $isPresentingRestore) {
             NavigationStack {
-                ConfigurationSyncSettingsView(authManager: authManager)
+                AppleAccountSettingsView(authManager: authManager, server: nil)
             }
             .preferredColorScheme(nil)
         }

@@ -102,6 +102,8 @@ final class AuthManager {
     /// Servers whose retained password already got its one automatic retry
     /// after a 401, so a stale password cannot loop.
     private var autoSignInAttempted: Set<String> = []
+    /// Servers already probed by `resolveMissingPasswordMarkers` this launch.
+    private var passwordProbes: Set<String> = []
 
     /// Stored as the retained password when a server authenticated without
     /// one (auth off, trusted headers, OIDC), so sync can tell "no password
@@ -953,6 +955,35 @@ final class AuthManager {
     @discardableResult
     private func persistServerPassword(_ password: String, for server: URL) -> Bool {
         (try? keychain.save(password, forKey: .serverPassword, scope: server.absoluteString)) != nil
+    }
+
+    /// Servers signed in before passwords were retained carry no marker. Work
+    /// out which of them never needed one so sync does not ask: a server this
+    /// device signed in to with SSO (TAL-131 marker), one with auth off, a
+    /// trusted-header proxy, or one whose password login is disabled. Each
+    /// server is probed at most once per launch; a password-only server stays
+    /// unresolved until its next login or a manual entry.
+    func resolveMissingPasswordMarkers() async {
+        var changed = false
+        for account in serverRegistry.servers
+        where serverPassword(for: account.id) == nil && !passwordProbes.contains(account.id) {
+            passwordProbes.insert(account.id)
+            guard let serverURL = URL(string: account.urlString) else { continue }
+            if (try? keychain.load(.authenticatedProfile, scope: account.id)) != nil {
+                changed = persistServerPassword(Self.noPasswordRequired, for: serverURL) || changed
+                continue
+            }
+            let probeCookies = ServerCookieStore.makeIsolatedStorage()
+            let client = probeClientFactory(serverURL, customHeaders(for: account), probeCookies)
+            defer { probeCookies.cookies?.forEach(probeCookies.deleteCookie) }
+            guard let status = try? await testConnection(client: client) else { continue }
+            if status.authEnabled != true || status.isAlreadySignedIn || status.passwordAuthEnabled == false {
+                changed = persistServerPassword(Self.noPasswordRequired, for: serverURL) || changed
+            }
+        }
+        if changed {
+            notifyConfigurationChanged()
+        }
     }
 
     /// Checks `password` against `account` with a client scoped to that

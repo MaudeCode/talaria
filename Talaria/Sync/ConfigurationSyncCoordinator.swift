@@ -265,6 +265,7 @@ final class ConfigurationSyncCoordinator {
             return
         }
         stampLocalChanges(authManager)
+        await authManager.resolveMissingPasswordMarkers()
         if case .unavailable(let reason) = await store.accountAvailability() {
             status = .unavailable(reason)
             return
