@@ -80,11 +80,17 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
             while true {
                 let page = try await database.recordZoneChanges(inZoneWith: Self.zoneID, since: serverToken)
                 for result in page.modificationResultsByID.values {
-                    // A failed record must fail the fetch: accepting the page token
-                    // would skip that change on every later delta.
-                    if let record = Self.syncRecord(from: try result.get().record) {
-                        changes.changed.append(record)
+                    // A failed or unreadable record must fail the fetch: accepting
+                    // the page token would skip that change on every later delta.
+                    // Unknown record types are ignored.
+                    let ckRecord = try result.get().record
+                    guard ConfigurationSyncRecord.RecordType(rawValue: ckRecord.recordType) != nil else { continue }
+                    guard let record = Self.syncRecord(from: ckRecord) else {
+                        throw ConfigurationSyncStoreError.failed(
+                            String(localized: "A synced record could not be read by this version of Talaria.")
+                        )
                     }
+                    changes.changed.append(record)
                 }
                 changes.deletedRecordNames += page.deletions.map(\.recordID.recordName)
                 serverToken = page.changeToken

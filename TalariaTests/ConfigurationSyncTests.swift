@@ -166,6 +166,26 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(plan.upload.map { ($0.recordName, $0.setup.displayName) }.map { "\($0.0):\($0.1)" }, ["rec-a:Theirs"])
     }
 
+    func testMergeAppliesOnlyTheFinalWinnerWhenSeveralDuplicatesArrive() {
+        let older = makeSetup(url: serverA, name: "Older", password: "pw", updatedAt: fixedNow)
+        var newer = makeSetup(url: serverA, name: "Newer", password: "pw", updatedAt: fixedNow.addingTimeInterval(5))
+        newer.position = 0
+        var olderLate = older
+        olderLate.position = 3
+
+        let plan = ConfigurationSyncMerge.plan(
+            local: [],
+            remote: [.init(recordName: "rec-a", setup: olderLate), .init(recordName: "rec-z", setup: newer)],
+            remoteDeletions: [],
+            state: ConfigurationSyncState(),
+            now: fixedNow.addingTimeInterval(10)
+        )
+
+        XCTAssertEqual(plan.applyLocally.map(\.displayName), ["Newer"])
+        XCTAssertEqual(plan.deleteRemote, ["rec-z"])
+        XCTAssertEqual(plan.upload.map { "\($0.recordName):\($0.setup.displayName)" }, ["rec-a:Newer"])
+    }
+
     func testMergeAssignsOpaqueNamesToNewLocalServers() {
         let local = makeSetup(url: serverA, password: "pw", updatedAt: fixedNow)
 

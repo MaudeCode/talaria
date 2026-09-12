@@ -148,6 +148,7 @@ final class ConfigurationSyncCoordinator {
         // Stop new passes and let an in-flight one finish first, so nothing can
         // recreate the zone after it is gone.
         state.isEnabled = false
+        persistState()
         scheduledSync?.cancel()
         if let activeSync {
             await activeSync.value

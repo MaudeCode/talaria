@@ -1050,10 +1050,15 @@ final class AuthManager {
                 continue
             }
             let scope = account.customHeadersRef ?? account.urlString
-            if let encoded = setup.customHeaders.encodedForStorage() {
-                try? keychain.save(encoded, forKey: .customHeaders, scope: scope)
-            } else {
-                try? keychain.delete(.customHeaders, scope: scope)
+            do {
+                if let encoded = setup.customHeaders.encodedForStorage() {
+                    try keychain.save(encoded, forKey: .customHeaders, scope: scope)
+                } else {
+                    try keychain.delete(.customHeaders, scope: scope)
+                }
+            } catch {
+                lastErrorMessage = error.localizedDescription
+                applied = false
             }
             if let password = setup.password, !persistServerPassword(password, for: serverURL) {
                 applied = false
@@ -1062,7 +1067,12 @@ final class AuthManager {
                 hydrateCustomHeaders(for: serverURL)
             }
         }
-        try? serverRegistry.reorder(ids: order)
+        do {
+            try serverRegistry.reorder(ids: order)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            applied = false
+        }
         for id in removedIDs {
             guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
             if await !removeServer(account) {

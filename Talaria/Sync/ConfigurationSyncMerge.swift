@@ -112,6 +112,9 @@ enum ConfigurationSyncMerge {
             }
             let winner = change.setup.keepingPassword(from: local)
             merged[serverID] = winner
+            // Only the final winner for a server is applied; a provisional one
+            // queued from an earlier duplicate record must not replay after it.
+            plan.applyLocally.removeAll { $0.serverID == serverID }
             plan.applyLocally.append(winner)
             // Mark what the canonical record holds, not the winner: when the winner
             // inherited a local password, or arrived under a duplicate name that
