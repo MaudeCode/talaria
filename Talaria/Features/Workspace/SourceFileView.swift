@@ -89,6 +89,7 @@ struct SourceFileView: View {
                 .accessibilityLabel(String(localized: "Line \(line.id)"))
 
             lineText(line)
+                .textSelection(.enabled)
                 .fixedSize(horizontal: !wrapsLines, vertical: true)
                 .frame(maxWidth: wrapsLines ? CGFloat.infinity : nil, alignment: .leading)
                 .multilineTextAlignment(.leading)
