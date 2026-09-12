@@ -731,7 +731,7 @@ final class AuthManager {
     /// headers, cookies, and server-scoped stores — leaving the active server
     /// untouched (#17).
     @discardableResult
-    func removeServer(_ account: ServerAccount) async -> Bool {
+    func removeServer(_ account: ServerAccount, shouldContinue: () -> Bool = { true }) async -> Bool {
         guard let serverURL = URL(string: account.urlString) else { return false }
         let isActive = state.server?.absoluteString == account.id
 
@@ -740,6 +740,9 @@ final class AuthManager {
                 if case .loggedIn = state {
                     await attemptBestEffortServerLogout(server: serverURL)
                 }
+                // The logout suspended; a sync removal re-checks that sync is
+                // still on before anything local is dropped (TAL-91).
+                guard shouldContinue() else { return false }
                 try await advanceAfterRemoving(activeServer: serverURL)
             } else {
                 try serverRegistry.remove(id: account.id)
@@ -963,6 +966,12 @@ final class AuthManager {
         try? keychain.load(.serverPassword, scope: serverID)
     }
 
+    /// Throwing variant for sync: a failed Keychain read must never be taken
+    /// for an absent password, which would erase the synced credential.
+    func serverPasswordReadingKeychain(for serverID: String) throws -> String? {
+        try keychain.load(.serverPassword, scope: serverID)
+    }
+
     @discardableResult
     private func persistServerPassword(_ password: String, for server: URL) -> Bool {
         (try? keychain.save(password, forKey: .serverPassword, scope: server.absoluteString)) != nil
@@ -1154,7 +1163,7 @@ final class AuthManager {
                 if !shouldContinue() { return false }
                 continue
             }
-            if await !removeServer(account) {
+            if await !removeServer(account, shouldContinue: shouldContinue) {
                 return false
             }
         }

@@ -426,7 +426,12 @@ final class ConfigurationSyncCoordinator {
                 state.preferencesChangedAt = nil
             }
             state.lastSyncAt = now()
-            persistState()
+            // The pass is only done once its baseline is durable: after a relaunch
+            // without it, downloaded values would look like fresh local edits.
+            guard persistState() else {
+                status = .failed(String(localized: "Could not save sync settings to the Keychain."))
+                return
+            }
             status = finishedStatus(authManager)
         } catch {
             persistState()
@@ -513,9 +518,15 @@ final class ConfigurationSyncCoordinator {
         var setups: [SyncedServerSetup] = []
         for (index, account) in authManager.servers.enumerated() {
             guard let headers = authManager.customHeadersIfReadable(for: account) else { return nil }
+            let password: String?
+            do {
+                password = try authManager.serverPasswordReadingKeychain(for: account.id)
+            } catch {
+                return nil
+            }
             setups.append(SyncedServerSetup(
                 account: account,
-                password: authManager.serverPassword(for: account.id),
+                password: password,
                 customHeaders: headers,
                 position: index,
                 updatedAt: max(account.updatedAt, state.localChangedAt[account.id] ?? .distantPast)

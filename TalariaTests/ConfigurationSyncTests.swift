@@ -801,6 +801,41 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertTrue(device.coordinator.isEnabled)
     }
 
+    func testUnreadablePasswordAbortsThePassInsteadOfErasingIt() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let device = try await makeDevice(store: store)
+        await device.authManager.configure(serverURLString: serverA, password: "pw-a")
+        device.coordinator.signInWithApple(userID: "apple-user-1")
+        await device.coordinator.enableSync()
+        device.keychain.scopedLoadErrors[.serverPassword] = URLError(.cannotOpenFile)
+        device.now.advance(by: 30)
+
+        await device.coordinator.sync()
+
+        guard case .failed = device.coordinator.status else {
+            return XCTFail("Expected a failed status, got \(device.coordinator.status)")
+        }
+        let payload = try XCTUnwrap(store.records.values.first { $0.type == .serverSetup }?.payload)
+        let synced = try ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: payload)
+        XCTAssertEqual(synced.password, "pw-a")
+    }
+
+    func testPassIsNotReportedSyncedWhenBookkeepingCannotBePersisted() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let device = try await makeDevice(store: store)
+        await device.authManager.configure(serverURLString: serverA, password: "pw-a")
+        device.coordinator.signInWithApple(userID: "apple-user-1")
+        device.keychain.saveErrors[.configurationSync] = URLError(.cannotWriteToFile)
+
+        await device.coordinator.enableSync()
+
+        guard case .failed = device.coordinator.status else {
+            return XCTFail("Expected a failed status, got \(device.coordinator.status)")
+        }
+        XCTAssertFalse(device.coordinator.isEnabled, "Enabling is reverted when it cannot be saved.")
+        XCTAssertTrue(store.records.isEmpty)
+    }
+
     // MARK: - Disconnect and deletion
 
     func testDisconnectKeepsLocalSetupAndForgetsAppleAccount() async throws {
