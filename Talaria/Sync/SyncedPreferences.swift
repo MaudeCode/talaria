@@ -124,15 +124,23 @@ enum SyncedPreferenceAllowlist {
         return values
     }
 
-    /// Writes `values` for allowlisted keys only; anything else in the payload
-    /// is ignored. Returns whether any stored value changed.
+    /// Makes the local allowlisted keys match `values`: keys the snapshot
+    /// carries are written, keys it omits are removed (a preference cleared on
+    /// another device clears here too). Anything not allowlisted is ignored.
+    /// Returns whether any stored value changed.
     @discardableResult
     static func apply(_ values: [String: JSONValue], standard: UserDefaults, appGroup: UserDefaults) -> Bool {
         var changed = false
         for entry in allowlist {
-            guard let value = values[entry.key] else { continue }
             let defaults = entry.suite == .standard ? standard : appGroup
             let current = defaults.object(forKey: entry.key).flatMap(jsonValue(from:))
+            guard let value = values[entry.key] else {
+                if current != nil {
+                    defaults.removeObject(forKey: entry.key)
+                    changed = true
+                }
+                continue
+            }
             guard current != value, let object = object(from: value) else { continue }
             defaults.set(object, forKey: entry.key)
             changed = true

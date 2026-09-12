@@ -950,8 +950,9 @@ final class AuthManager {
         try? keychain.load(.serverPassword, scope: serverID)
     }
 
-    private func persistServerPassword(_ password: String, for server: URL) {
-        try? keychain.save(password, forKey: .serverPassword, scope: server.absoluteString)
+    @discardableResult
+    private func persistServerPassword(_ password: String, for server: URL) -> Bool {
+        (try? keychain.save(password, forKey: .serverPassword, scope: server.absoluteString)) != nil
     }
 
     /// Checks `password` against `account` with a client scoped to that
@@ -1054,8 +1055,8 @@ final class AuthManager {
             } else {
                 try? keychain.delete(.customHeaders, scope: scope)
             }
-            if let password = setup.password {
-                persistServerPassword(password, for: serverURL)
+            if let password = setup.password, !persistServerPassword(password, for: serverURL) {
+                applied = false
             }
             if state.server?.absoluteString == setup.serverID {
                 hydrateCustomHeaders(for: serverURL)
@@ -1064,7 +1065,9 @@ final class AuthManager {
         try? serverRegistry.reorder(ids: order)
         for id in removedIDs {
             guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
-            await removeServer(account)
+            if await !removeServer(account) {
+                applied = false
+            }
         }
         refreshServers()
         if state == .unconfigured, let first = serverRegistry.servers.first {

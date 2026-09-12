@@ -444,6 +444,63 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(store.records.values.filter { $0.type == .serverSetup }.count, 1)
     }
 
+    func testLocalWinnerStoresInheritedRemotePasswordLocally() {
+        let local = makeSetup(url: serverA, name: "Local", password: nil, updatedAt: fixedNow.addingTimeInterval(10))
+        let remote = makeSetup(url: serverA, name: "Remote", password: "pw", updatedAt: fixedNow)
+        var state = ConfigurationSyncState()
+        state.recordNames[serverA] = "rec-a"
+
+        let plan = ConfigurationSyncMerge.plan(
+            local: [local],
+            remote: [.init(recordName: "rec-a", setup: remote)],
+            remoteDeletions: [],
+            state: state,
+            now: fixedNow.addingTimeInterval(20)
+        )
+
+        XCTAssertEqual(plan.applyLocally.map(\.displayName), ["Local"])
+        XCTAssertEqual(plan.applyLocally.first?.password, "pw")
+        XCTAssertEqual(plan.upload.map(\.setup.password), ["pw"])
+    }
+
+    func testClearedPreferencePropagatesAsRemoval() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        deviceA.standardDefaults.set(AppTheme.dark.rawValue, forKey: AppTheme.storageKey)
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+        let deviceB = try await makeDevice(store: store)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+        XCTAssertEqual(deviceB.standardDefaults.string(forKey: AppTheme.storageKey), AppTheme.dark.rawValue)
+
+        deviceA.now.advance(by: 30)
+        deviceA.standardDefaults.removeObject(forKey: AppTheme.storageKey)
+        await deviceA.coordinator.sync()
+        deviceB.now.advance(by: 60)
+        await deviceB.coordinator.sync()
+
+        XCTAssertNil(deviceB.standardDefaults.object(forKey: AppTheme.storageKey))
+    }
+
+    func testUndecodableRecordDoesNotAdvanceChangeToken() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        try await store.save(
+            [ConfigurationSyncRecord(name: "rec-bad", type: .serverSetup, payload: Data("not json".utf8))],
+            deleting: []
+        )
+        let device = try await makeDevice(store: store)
+        device.coordinator.signInWithApple(userID: "apple-user-1")
+
+        await device.coordinator.enableSync()
+
+        guard case .failed = device.coordinator.status else {
+            return XCTFail("Expected a failed status, got \(device.coordinator.status)")
+        }
+        XCTAssertNil(device.coordinator.state.changeToken)
+        XCTAssertTrue(device.coordinator.state.recordNames.isEmpty)
+    }
+
     // MARK: - Failure modes
 
     func testOfflineKeepsChangesPendingUntilNextSync() async throws {

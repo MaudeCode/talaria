@@ -100,6 +100,11 @@ enum ConfigurationSyncMerge {
                 // the fingerprint check below pushes the local version back up.
                 let kept = local.keepingPassword(from: change.setup)
                 merged[serverID] = kept
+                if kept != local {
+                    // The remote copy carried the password this device lacked:
+                    // store it here as well, not only in the upload.
+                    plan.applyLocally.append(kept)
+                }
                 if change.setup.fingerprint != kept.fingerprint {
                     uploaded.removeValue(forKey: serverID)
                 }

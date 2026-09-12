@@ -96,6 +96,9 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
         changes.changeToken = try serverToken.map {
             try NSKeyedArchiver.archivedData(withRootObject: $0, requiringSecureCoding: true)
         }
+        // The fetch proved the zone exists; a later save must not recreate one
+        // that another device deletes in between, it must fail as deleted.
+        zoneIsReady = true
         return changes
     }
 

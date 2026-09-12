@@ -246,15 +246,30 @@ final class ConfigurationSyncCoordinator {
             return
         }
 
-        let remoteSetups = changes.changed.compactMap { record -> ConfigurationSyncMerge.RemoteSetup? in
-            guard record.type == .serverSetup,
-                  let setup = try? ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: record.payload)
-            else { return nil }
-            return .init(recordName: record.name, setup: setup)
+        // Sync may have been turned off or disconnected while the fetch was
+        // suspended; those promised to leave local setup alone.
+        guard state.isEnabled, state.appleUserID != nil else {
+            status = state.appleUserID == nil ? .signedOut : .disabled
+            return
         }
-        let remotePreferences = changes.changed
-            .first { $0.type == .preferences }
-            .flatMap { try? ConfigurationSyncCodec.decoder().decode(SyncedPreferences.self, from: $0.payload) }
+
+        // A payload this build cannot decode must not be skipped: accepting the
+        // token would drop that change from every later delta.
+        let remoteSetups: [ConfigurationSyncMerge.RemoteSetup]
+        let remotePreferences: SyncedPreferences?
+        do {
+            let decoder = ConfigurationSyncCodec.decoder()
+            remoteSetups = try changes.changed.filter { $0.type == .serverSetup }.map {
+                .init(recordName: $0.name, setup: try decoder.decode(SyncedServerSetup.self, from: $0.payload))
+            }
+            remotePreferences = try changes.changed.first { $0.type == .preferences }.map {
+                try decoder.decode(SyncedPreferences.self, from: $0.payload)
+            }
+        } catch {
+            status = .failed(String(localized: "A synced record could not be read by this version of Talaria."))
+            syncLogger.warning("Configuration sync payload undecodable: \(String(describing: type(of: error)), privacy: .public)")
+            return
+        }
 
         let plan = ConfigurationSyncMerge.plan(
             local: localSetups(authManager),
