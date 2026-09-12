@@ -296,6 +296,47 @@ final class ServerRegistry: @unchecked Sendable {
         }
     }
 
+    /// Inserts or replaces `account` exactly as given — timestamps included —
+    /// without touching the active selection. Used to apply a setup another
+    /// device synced (TAL-91); the active server's identity is mirrored so the
+    /// avatar and header tint follow the edit.
+    func upsert(_ account: ServerAccount) throws {
+        var activeUpdate: ServerAccount?
+        try storage.withLock { snapshot in
+            var updated = snapshot
+            if let index = updated.servers.firstIndex(where: { $0.id == account.id }) {
+                guard updated.servers[index] != account else { return }
+                updated.servers[index] = account
+            } else {
+                updated.servers.append(account)
+            }
+            try persist(updated)
+            snapshot = updated
+            if snapshot.activeServerID == account.id {
+                activeUpdate = account
+            }
+        }
+        if let activeUpdate {
+            mirrorIdentityToDefaults(activeUpdate)
+        }
+    }
+
+    /// Reorders the list to follow `ids`; servers not named keep their relative
+    /// order after the named ones. No write when the order already matches.
+    func reorder(ids: [String]) throws {
+        try storage.withLock { snapshot in
+            let rank = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+            let reordered = snapshot.servers.enumerated().sorted {
+                (rank[$0.element.id] ?? ids.count, $0.offset) < (rank[$1.element.id] ?? ids.count, $1.offset)
+            }.map(\.element)
+            guard reordered.map(\.id) != snapshot.servers.map(\.id) else { return }
+            var updated = snapshot
+            updated.servers = reordered
+            try persist(updated)
+            snapshot = updated
+        }
+    }
+
     /// Forgets the active server entirely, mirroring a full sign-out
     /// (`AuthManager.clearLocalAuth`) so a single-server install returns to
     /// "no servers configured."

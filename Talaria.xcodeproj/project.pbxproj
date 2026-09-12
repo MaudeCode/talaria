@@ -42,6 +42,13 @@
 		1A2B3C4D5E6F700000000008 /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2B3C4D5E6F700000000098 /* KeychainAccess */; };
 		5417A7400000000000000092 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 5417A7400000000000000091 /* SwiftMath */; };
 		1A2B3C4D5E6F7000000000A0 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */; };
+		C10D00000000000000000011 /* ConfigurationSyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000001 /* ConfigurationSyncModels.swift */; };
+		C10D00000000000000000012 /* ConfigurationSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000002 /* ConfigurationSyncStore.swift */; };
+		C10D00000000000000000013 /* ConfigurationSyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000003 /* ConfigurationSyncMerge.swift */; };
+		C10D00000000000000000014 /* SyncedPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000004 /* SyncedPreferences.swift */; };
+		C10D00000000000000000015 /* ConfigurationSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000005 /* ConfigurationSyncCoordinator.swift */; };
+		C10D00000000000000000016 /* ConfigurationSyncSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000006 /* ConfigurationSyncSettingsView.swift */; };
+		C10D00000000000000000017 /* ConfigurationSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000007 /* ConfigurationSyncTests.swift */; };
 		1A2B3C4D5E6F7000000000A1 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */; };
 		B11200000000000000000001 /* ServerCookieStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11200000000000000000002 /* ServerCookieStore.swift */; };
 		1A2B3C4D5E6F7000000000A2 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B2 /* APIClient.swift */; };
@@ -745,6 +752,13 @@
 		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		C10D00000000000000000001 /* ConfigurationSyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncModels.swift; sourceTree = "<group>"; };
+		C10D00000000000000000002 /* ConfigurationSyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncStore.swift; sourceTree = "<group>"; };
+		C10D00000000000000000003 /* ConfigurationSyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncMerge.swift; sourceTree = "<group>"; };
+		C10D00000000000000000004 /* SyncedPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncedPreferences.swift; sourceTree = "<group>"; };
+		C10D00000000000000000005 /* ConfigurationSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncCoordinator.swift; sourceTree = "<group>"; };
+		C10D00000000000000000006 /* ConfigurationSyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncSettingsView.swift; sourceTree = "<group>"; };
+		C10D00000000000000000007 /* ConfigurationSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		B11200000000000000000002 /* ServerCookieStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCookieStore.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B2 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
@@ -1417,6 +1431,7 @@
 				1A2B3C4D5E6F7000000000C1 /* Networking */,
 				1A2B3C4D5E6F7000000000C2 /* Models */,
 				1A2B3C4D5E6F7000000000F0 /* Persistence */,
+				C10D00000000000000000F00 /* Sync */,
 				1A2B3C4D5E6F7000000000C3 /* Features */,
 				1A2B3C4D5E6F700000000033 /* Resources */,
 			);
@@ -1588,6 +1603,7 @@
 				B5A100000000000000000016 /* SharedDraftStoreTests.swift */,
 				B5A100000000000000000019 /* ShareInputReaderTests.swift */,
 				B5A100000000000000000061 /* AuthManagerStateTests.swift */,
+				C10D00000000000000000007 /* ConfigurationSyncTests.swift */,
 				B5A220000000000000000006 /* ChatMarkerMessageClassifierTests.swift */,
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
 				D0M1C000000000000000000A /* MarkdownMathLayoutCacheTests.swift */,
@@ -1613,6 +1629,18 @@
 				B11200000000000000000002 /* ServerCookieStore.swift */,
 			);
 			path = Auth;
+			sourceTree = "<group>";
+		};
+		C10D00000000000000000F00 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				C10D00000000000000000001 /* ConfigurationSyncModels.swift */,
+				C10D00000000000000000002 /* ConfigurationSyncStore.swift */,
+				C10D00000000000000000003 /* ConfigurationSyncMerge.swift */,
+				C10D00000000000000000004 /* SyncedPreferences.swift */,
+				C10D00000000000000000005 /* ConfigurationSyncCoordinator.swift */,
+			);
+			path = Sync;
 			sourceTree = "<group>";
 		};
 		1A2B3C4D5E6F7000000000C1 /* Networking */ = {
@@ -2062,6 +2090,7 @@
 				C107J0000000000000000126 /* ProviderQuotaWidgetAppearanceView.swift */,
 				A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */,
 				C100A0000000000000000101 /* RelayConnectionSettingsView.swift */,
+				C10D00000000000000000006 /* ConfigurationSyncSettingsView.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
 				C107I000000000000000011 /* AppIconDisclosureLabel.swift */,
 				C107I000000000000000012 /* AppIconChoiceRow.swift */,
@@ -2551,6 +2580,12 @@
 				1A2B3C4D5E6F7000000000A3 /* APIError.swift in Sources */,
 				C04400000000000000000001 /* CacheFallbackPolicy.swift in Sources */,
 				1A2B3C4D5E6F7000000000A0 /* KeychainStore.swift in Sources */,
+				C10D00000000000000000011 /* ConfigurationSyncModels.swift in Sources */,
+				C10D00000000000000000012 /* ConfigurationSyncStore.swift in Sources */,
+				C10D00000000000000000013 /* ConfigurationSyncMerge.swift in Sources */,
+				C10D00000000000000000014 /* SyncedPreferences.swift in Sources */,
+				C10D00000000000000000015 /* ConfigurationSyncCoordinator.swift in Sources */,
+				C10D00000000000000000016 /* ConfigurationSyncSettingsView.swift in Sources */,
 				1A2B3C4D5E6F7000000000A5 /* OnboardingView.swift in Sources */,
 				C15210000000000000000006 /* OnboardingConnectPage.swift in Sources */,
 				C15210000000000000000004 /* OnboardingAgentPromptPage.swift in Sources */,
@@ -3064,6 +3099,7 @@
 				C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */,
 				B5A100000000000000000009 /* ShareInputReaderTests.swift in Sources */,
 				B5A100000000000000000060 /* AuthManagerStateTests.swift in Sources */,
+				C10D00000000000000000017 /* ConfigurationSyncTests.swift in Sources */,
 				B5A220000000000000000005 /* ChatMarkerMessageClassifierTests.swift in Sources */,
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
 				D0M1C0000000000000000009 /* MarkdownMathLayoutCacheTests.swift in Sources */,

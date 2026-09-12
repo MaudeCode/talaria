@@ -1059,7 +1059,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let container = try ModelContainer(
             for: CachedSession.self, CachedMessage.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
         let context = container.mainContext
         let defaults = UserDefaults.ephemeral()
@@ -1132,7 +1132,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let kept = try XCTUnwrap(URL(string: "https://kept.test"))
         let container = try ModelContainer(
             for: CachedSession.self, CachedMessage.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
         let context = container.mainContext
         let defaults = UserDefaults.ephemeral()
@@ -1219,7 +1219,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let server = try XCTUnwrap(URL(string: "https://removed.test"))
         let container = try ModelContainer(
             for: CachedSession.self, CachedMessage.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
         let context = container.mainContext
         let decoder = JSONDecoder()

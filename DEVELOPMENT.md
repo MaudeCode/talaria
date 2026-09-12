@@ -280,6 +280,7 @@ Current status:
 - App Store Connect distribution is active for `dev.kil.talaria`.
 - Apple Developer Team ID: `Q28NF3NH3D`.
 - Signing uses Xcode automatic signing.
+- The app target carries Sign in with Apple and iCloud/CloudKit entitlements; the App ID and CloudKit schema steps are in [`docs/icloud-sync-setup.md`](docs/icloud-sync-setup.md).
 - Export compliance is declared in `Info.plist` with `ITSAppUsesNonExemptEncryption = NO`; the app does not implement custom/proprietary encryption and uses normal Apple/platform networking security.
 - App icon uses owner-supplied light and dark assets in `AppIcon.appiconset`.
 - Launch screen uses the plist-based `UILaunchScreen` placeholder from `Info.plist`, which is acceptable for internal TestFlight validation.

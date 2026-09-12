@@ -127,10 +127,12 @@ struct TalariaApp: App {
         #endif
 
         // Same store the `modelContainer(for:)` modifier would open; failure is
-        // fatal there too.
+        // fatal there too. The offline cache is device-local: the CloudKit
+        // entitlement (TAL-91 configuration sync) must not turn on SwiftData's
+        // automatic mirroring, which also rejects the cache's unique keys.
         let cacheContainer = try! ModelContainer(
             for: CachedSession.self, CachedMessage.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture)
+            configurations: ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
         )
         self.cacheContainer = cacheContainer
         let liveAuthManager = {
