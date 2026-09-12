@@ -207,7 +207,7 @@ export const registerActivity = internalMutation({
       sessionId: args.sessionId,
     });
     if (args.mode === "all_running") {
-      await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
+      await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, pushToStartDeferredAt: undefined, updatedAt: args.now });
     }
     return { ok: true };
   },

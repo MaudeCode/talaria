@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 
 import { internal } from "../convex/_generated/api";
-import { defaultNotificationPreferences } from "../convex/lib/model";
+import { defaultNotificationPreferences, type SessionPhase } from "../convex/lib/model";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.ts");
@@ -66,7 +66,7 @@ async function jobs(backend: Backend) {
   return rows.map((job) => ({ kind: job.kind, status: job.status, aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps }));
 }
 
-function snapshotState(sessionId: string, revision: number, phase: "running" | "waiting_for_approval" | "waiting_for_input" | "completed", alertEligible?: boolean) {
+function snapshotState(sessionId: string, revision: number, phase: SessionPhase, alertEligible?: boolean) {
   return { sessionId, eventId: `${sessionId}-event-${revision}`, revision, title: sessionId, phase, updatedAt: now + revision, deepLink: `/sessions/${sessionId}`, ...(alertEligible === undefined ? {} : { alertEligible }) };
 }
 
@@ -208,6 +208,51 @@ describe("publisher alert eligibility", () => {
     });
     await runScheduledRecomputes(backend);
     expect((await jobs(backend)).map((job) => job.kind)).toEqual(["live_activity_update"]);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
+  });
+
+  it("releases a deferral on an eligible phase transition once no suppressed row remains", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([]);
+
+    // Another session's eligible transition does not release it while the suppressed approval is still visible.
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 2, snapshotId: "s2",
+      states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 2, "stale")],
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([]);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
+
+    // The suppressed session moving on to running (no alert category) releases the deferral and uses the fallback start.
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n3", receivedAt: now + 3, snapshotId: "s3",
+      states: [snapshotState("session-1", 3, "running"), snapshotState("session-2", 3, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "2 active sessions", sound: "default" } }) }),
+    ]);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
+  });
+
+  it("clears a deferral when an aggregate activity registers", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptState, {
+      ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
+      state: { sessionId: "session-1", title: "session-1", phase: "completed", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+    });
+    await runScheduledRecomputes(backend);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
+    await backend.mutation(internal.devices.registerActivity, {
+      userId: "user-1", deviceId: "device-1", activityId: "activity-1", mode: "all_running",
+      attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1, activityPushToken: "activity-token", seededLocally: false, now: now + 2,
+    });
     expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
   });
 

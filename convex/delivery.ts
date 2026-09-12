@@ -347,8 +347,13 @@ export const recompute = internalMutation({
         }
         continue;
       }
+      if (activeAggregateDevices.has(device.deviceId)) {
+        if (device.pushToStartDeferredAt !== undefined) {
+          await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
+        }
+        continue;
+      }
       if (
-        activeAggregateDevices.has(device.deviceId) ||
         device.revokedAt !== undefined ||
         (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
         !device.bundleId ||
@@ -360,14 +365,21 @@ export const recompute = internalMutation({
       }
       // APNs requires an alert on push-to-start. An ineligible event on a device without an aggregate activity defers
       // the start instead of injecting the fallback alert. The deferral is recorded before the lease check so a stale
-      // in-flight start cannot leak, and it persists until an eligible transition starts the activity or the device's
-      // work goes idle, so heartbeats, retention, and idle recomputes cannot alert for it later.
-      const ineligibleChange = changed.some(({ state }) =>
-        state.alertEligible === false && !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId),
+      // in-flight start cannot leak. It holds while the suppressed state is still visible, and otherwise until an
+      // eligible phase transition, an activity, or idle work releases it, so heartbeats, retention, and idle
+      // recomputes cannot alert for the suppressed event.
+      const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
+      const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
+      const eligibleTransition = visibleChanges.some(({ state, previousPhase }) =>
+        previousPhase !== undefined && previousPhase !== state.phase && state.alertEligible !== false,
       );
-      const deferred = device.pushToStartDeferredAt !== undefined || ineligibleChange;
+      const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
+      const deferred = ineligibleChange || ineligibleRow
+        || (device.pushToStartDeferredAt !== undefined && !eligibleTransition);
       if (ineligibleChange && device.pushToStartDeferredAt === undefined) {
         await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
+      } else if (!deferred && device.pushToStartDeferredAt !== undefined) {
+        await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
       }
       if ((device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS) continue;
       const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
