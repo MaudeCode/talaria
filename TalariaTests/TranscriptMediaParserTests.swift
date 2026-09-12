@@ -315,6 +315,38 @@ final class TranscriptMediaParserTests: XCTestCase {
         XCTAssertTrue(text.contains("![z](/tmp/fenced.png)"))
     }
 
+    func testMarkdownImagePercentEncodedDestinationDecodesOnce() throws {
+        let segments = TranscriptMediaParser.segments(
+            in: "![shot](/tmp/final%20shot%20%28v2%29.png) ![rel](./shots/a%20b.png)",
+            workspaceRoot: "/srv/workspaces/app"
+        )
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/final shot (v2).png", "/srv/workspaces/app/shots/a b.png"]
+        )
+    }
+
+    func testMarkdownImageInsideHTMLCommentStaysHidden() {
+        let markdown = """
+        Visible ![y](/tmp/outside.png) <!-- ![x](/tmp/inline-comment.png) --> tail
+        <!--
+        ![z](/tmp/block-comment.png) file:///tmp/commented.png
+        -->
+        After ![w](/tmp/after.png)
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/outside.png", "/tmp/after.png"]
+        )
+        let text = textSegments(in: segments).joined()
+        XCTAssertTrue(text.contains("<!-- ![x](/tmp/inline-comment.png) -->"))
+        XCTAssertTrue(text.contains("![z](/tmp/block-comment.png) file:///tmp/commented.png"))
+    }
+
     func testMarkdownImageEscapedOrMalformedSyntaxStaysText() {
         for markdown in [
             "\\![escaped](/tmp/escaped.png)",

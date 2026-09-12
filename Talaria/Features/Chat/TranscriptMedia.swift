@@ -134,6 +134,7 @@ enum TranscriptMediaParser {
         var index = markdown.startIndex
         var isInFence = false
         var fenceCharacter: Character?
+        var isInHTMLComment = false
 
         while index < markdown.endIndex {
             let lineRange = markdown.lineRange(for: index..<index)
@@ -145,12 +146,15 @@ enum TranscriptMediaParser {
                     isInFence = false
                     fenceCharacter = nil
                 }
+            } else if isInHTMLComment {
+                appendText(line, to: &segments)
+                isInHTMLComment = !line.contains(htmlCommentClose)
             } else if let marker = fenceMarker(in: line) {
                 appendText(line, to: &segments)
                 isInFence = true
                 fenceCharacter = marker
             } else {
-                appendMediaSegments(in: line, workspaceRoot: workspaceRoot, to: &segments)
+                isInHTMLComment = appendMediaSegments(in: line, workspaceRoot: workspaceRoot, to: &segments)
             }
 
             index = lineRange.upperBound
@@ -159,14 +163,18 @@ enum TranscriptMediaParser {
         return segments
     }
 
+    /// Returns true when the line opens an HTML comment it does not close, so
+    /// the following lines stay literal until `-->`.
     private static func appendMediaSegments(
         in line: String,
         workspaceRoot: String?,
         to segments: inout [TranscriptMediaSegment]
-    ) {
+    ) -> Bool {
         var cursor = line.startIndex
         var textStart = cursor
-        let inlineCodeRanges = inlineCodeRanges(in: line)
+        let (commentRanges, leavesCommentOpen) = htmlCommentRanges(in: line)
+        // Spans the Markdown renderer treats literally or hides: inline code and HTML comments.
+        let inlineCodeRanges = inlineCodeRanges(in: line) + commentRanges
 
         while cursor < line.endIndex {
             if line[cursor...].hasPrefix("!["),
@@ -225,6 +233,23 @@ enum TranscriptMediaParser {
         }
 
         appendText(String(line[textStart..<line.endIndex]), to: &segments)
+        return leavesCommentOpen
+    }
+
+    private static func htmlCommentRanges(in line: String) -> (ranges: [Range<String.Index>], leavesOpen: Bool) {
+        var ranges: [Range<String.Index>] = []
+        var search = line.startIndex
+
+        while let open = line.range(of: htmlCommentOpen, range: search..<line.endIndex) {
+            guard let close = line.range(of: htmlCommentClose, range: open.upperBound..<line.endIndex) else {
+                ranges.append(open.lowerBound..<line.endIndex)
+                return (ranges, true)
+            }
+            ranges.append(open.lowerBound..<close.upperBound)
+            search = close.upperBound
+        }
+
+        return (ranges, false)
     }
 
     private static func appendText(_ text: String, to segments: inout [TranscriptMediaSegment]) {
@@ -370,8 +395,12 @@ enum TranscriptMediaParser {
             return normalizedLocalPath(fromFileURL: destination)
         }
 
+        // Markdown destinations percent-encode spaces and punctuation; decode
+        // once so the server receives the filesystem path, as the file-URL branch does.
+        let path = destination.removingPercentEncoding ?? destination
+
         if destination.hasPrefix("/") || destination.hasPrefix("~/") {
-            return destination
+            return path
         }
 
         if destination.hasPrefix("./") || destination.hasPrefix("../") {
@@ -380,7 +409,7 @@ enum TranscriptMediaParser {
             else {
                 return nil
             }
-            return normalizedAbsolutePath(workspaceRoot + "/" + destination)
+            return normalizedAbsolutePath(workspaceRoot + "/" + path)
         }
 
         return nil
@@ -563,6 +592,8 @@ enum TranscriptMediaParser {
     private static let trailingPunctuation: Set<Character> = [".", ",", ";", ":", "!", "?"]
     private static let fileURLTerminators: Set<Character> = ["<", ">", "\"", "'"]
     private static let fileURLMarker = "file://"
+    private static let htmlCommentOpen = "<!--"
+    private static let htmlCommentClose = "-->"
 
     private enum ReferenceSyntax {
         case mediaToken
