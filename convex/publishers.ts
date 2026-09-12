@@ -248,12 +248,9 @@ export const acceptState = internalMutation({
       else await ctx.db.insert("sessionStates", next);
       await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
         userId: grant.userId,
-        transitions: previousPhase === undefined ? [] : [{
-          publisherId: args.publisherId,
-          sessionId: args.sessionId,
-          previousPhase,
-          ...(args.state ? { state: exposedState(next as Doc<"sessionStates">) } : {}),
-        }],
+        transitions: args.state
+          ? [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase, state: exposedState(next as Doc<"sessionStates">) }]
+          : previousPhase === undefined ? [] : [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase }],
       });
       accepted = true;
     }
@@ -291,7 +288,7 @@ export const acceptSnapshot = internalMutation({
       const transitions: {
         publisherId: string;
         sessionId: string;
-        previousPhase: SessionPhase;
+        previousPhase?: SessionPhase;
         state: ReturnType<typeof exposedState>;
       }[] = [];
       for (const state of args.states) {
@@ -318,11 +315,11 @@ export const acceptSnapshot = internalMutation({
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
-        if (current && current.phase !== state.phase) {
+        if (!current || current.phase !== state.phase) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
-            previousPhase: current.phase,
+            previousPhase: current?.phase,
             state: exposedState(next as Doc<"sessionStates">),
           });
         }

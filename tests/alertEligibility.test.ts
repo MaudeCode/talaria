@@ -179,6 +179,38 @@ describe("publisher alert eligibility", () => {
     expect(started?.pushToStartDeferredAt).toBeUndefined();
   });
 
+  it("defers a push-to-start for an ineligible first publication but not an eligible one", async () => {
+    const deferredBackend = await seed({ pushToStartToken: "start-token", activity: false });
+    await deferredBackend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 1, "running"), snapshotState("session-2", 1, "running"), snapshotState("session-3", 1, "waiting_for_approval", false)],
+    });
+    await runScheduledRecomputes(deferredBackend);
+    expect(await jobs(deferredBackend)).toEqual([]);
+    expect((await deferredBackend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
+
+    const startedBackend = await seed({ pushToStartToken: "start-token", activity: false });
+    await startedBackend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 1, "running"), snapshotState("session-2", 1, "running"), snapshotState("session-3", 1, "waiting_for_approval")],
+    });
+    await runScheduledRecomputes(startedBackend);
+    expect(await jobs(startedBackend)).toEqual([
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "1 needs attention", sound: "default" } }) }),
+    ]);
+  });
+
+  it("does not record a deferral while an aggregate activity already exists", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: true });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    expect((await jobs(backend)).map((job) => job.kind)).toEqual(["live_activity_update"]);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
+  });
+
   it("clears a deferral once the device's work goes idle", async () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptSnapshot, {

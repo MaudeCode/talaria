@@ -133,7 +133,8 @@ export function alertForTransition(
   next: SessionState,
   preferences: NotificationPreferences,
 ): ActivityAlert | null {
-  if (previous?.phase === next.phase || next.alertEligible === false) return null;
+  // A first publication has no transition to alert for; it still carries eligibility to delivery.
+  if (!previous || previous.phase === next.phase || next.alertEligible === false) return null;
 
   switch (next.phase) {
     case "waiting_for_approval":

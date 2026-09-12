@@ -20,7 +20,7 @@ import {
   makeNotification,
   type ApnsRequest,
 } from "./lib/apnsPayload";
-import type { ActivityAggregate, ActivityAlert, SessionPhase, SessionState } from "./lib/model";
+import type { ActivityAggregate, ActivityAlert, SessionState } from "./lib/model";
 import {
   aggregateValidator,
   apnsDeliveryResultValidator,
@@ -270,7 +270,7 @@ export const recompute = internalMutation({
     transitions: v.optional(v.array(v.object({
       publisherId: v.string(),
       sessionId: v.string(),
-      previousPhase: sessionPhaseValidator,
+      previousPhase: v.optional(sessionPhaseValidator),
       state: v.optional(storedSessionStateValidator),
     }))),
   },
@@ -347,16 +347,6 @@ export const recompute = internalMutation({
         }
         continue;
       }
-      // APNs requires an alert on push-to-start. An ineligible transition defers the start instead of injecting the
-      // fallback alert, and the deferral persists on the device until an eligible transition starts the activity or
-      // the device's work goes idle, so heartbeats, retention, and idle recomputes cannot alert for it later.
-      const ineligibleChange = changed.some(({ state }) =>
-        state.alertEligible === false && !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId),
-      );
-      const deferred = device.pushToStartDeferredAt !== undefined || ineligibleChange;
-      if (ineligibleChange && device.pushToStartDeferredAt === undefined) {
-        await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
-      }
       if (
         activeAggregateDevices.has(device.deviceId) ||
         device.revokedAt !== undefined ||
@@ -364,15 +354,26 @@ export const recompute = internalMutation({
         !device.bundleId ||
         !device.apsEnvironment ||
         !device.preferences.liveActivitiesEnabled ||
-        !device.pushToStartToken ||
-        (device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS
+        !device.pushToStartToken
       ) {
         continue;
       }
+      // APNs requires an alert on push-to-start. An ineligible event on a device without an aggregate activity defers
+      // the start instead of injecting the fallback alert. The deferral is recorded before the lease check so a stale
+      // in-flight start cannot leak, and it persists until an eligible transition starts the activity or the device's
+      // work goes idle, so heartbeats, retention, and idle recomputes cannot alert for it later.
+      const ineligibleChange = changed.some(({ state }) =>
+        state.alertEligible === false && !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId),
+      );
+      const deferred = device.pushToStartDeferredAt !== undefined || ineligibleChange;
+      if (ineligibleChange && device.pushToStartDeferredAt === undefined) {
+        await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
+      }
+      if ((device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS) continue;
       const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
         if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
         const value = alertForTransition(
-          { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+          previousPhase === undefined ? null : { ...state, phase: previousPhase },
           state,
           device.preferences,
         );
@@ -431,7 +432,7 @@ export const recompute = internalMutation({
           (activity.publisherId !== state.publisherId || activity.sessionId !== state.sessionId)
         ) return [];
         const value = alertForTransition(
-          { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+          previousPhase === undefined ? null : { ...state, phase: previousPhase },
           state,
           device.preferences,
         );
@@ -550,7 +551,7 @@ export const recompute = internalMutation({
           const changedAlert = changed.flatMap(({ state, previousPhase }) => {
             if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
             const value = alertForTransition(
-              { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+              previousPhase === undefined ? null : { ...state, phase: previousPhase },
               state,
               device.preferences,
             );
