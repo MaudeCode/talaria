@@ -214,6 +214,17 @@ final class AuthManager {
 
     /// Returns the request headers scoped to one configured server without
     /// changing the active server's live header snapshot.
+    /// Like `customHeaders(for:)`, but nil when the Keychain read itself failed,
+    /// so sync can tell "no headers" from "could not read them" (TAL-91).
+    func customHeadersIfReadable(for account: ServerAccount) -> [CustomHeader]? {
+        let scope = account.customHeadersRef ?? account.urlString
+        do {
+            return [CustomHeader].decodeFromStorage(try keychain.load(.customHeaders, scope: scope))
+        } catch {
+            return nil
+        }
+    }
+
     func customHeaders(for account: ServerAccount) -> [CustomHeader] {
         if account.id == activeServerID {
             return headerStore.snapshot()
@@ -1060,17 +1071,31 @@ final class AuthManager {
     func applySyncedServers(
         _ setups: [SyncedServerSetup],
         removing removedIDs: [String],
-        order: [String]
+        order: [String],
+        shouldContinue: () -> Bool = { true }
     ) async -> Bool {
-        var applied = true
+        // Everything mutated so far in this batch, so any failure restores the
+        // whole batch rather than leaving earlier servers half-synced.
+        var rollbacks: [(id: String, previous: ServerAccount?, headers: String?, password: String?)] = []
+        func rollBackBatch() {
+            for entry in rollbacks.reversed() {
+                rollBackSyncedServer(id: entry.id, to: entry.previous, headers: entry.headers, password: entry.password)
+            }
+            refreshServers()
+        }
         for setup in setups {
+            guard shouldContinue() else {
+                rollBackBatch()
+                return false
+            }
             guard let serverURL = URL(string: setup.urlString) else {
-                applied = false
-                continue
+                rollBackBatch()
+                return false
             }
             let existing = serverRegistry.servers.first { $0.id == setup.serverID }
             let previousHeaders = try? keychain.load(.customHeaders, scope: existing?.customHeadersRef ?? setup.serverID)
             let previousPassword = serverPassword(for: setup.serverID)
+            rollbacks.append((setup.serverID, existing, previousHeaders, previousPassword))
             let account = ServerAccount(
                 id: setup.serverID,
                 urlString: setup.urlString,
@@ -1085,8 +1110,8 @@ final class AuthManager {
                 try serverRegistry.upsert(account)
             } catch {
                 lastErrorMessage = error.localizedDescription
-                applied = false
-                continue
+                rollBackBatch()
+                return false
             }
             let scope = account.customHeadersRef ?? account.urlString
             var serverApplied = true
@@ -1107,8 +1132,8 @@ final class AuthManager {
             if !serverApplied {
                 // Never leave a half-applied setup that the next pass would read
                 // as a local edit and upload over the valid CloudKit copy.
-                rollBackSyncedServer(id: setup.serverID, to: existing, headers: previousHeaders, password: previousPassword)
-                applied = false
+                rollBackBatch()
+                return false
             }
             if state.server?.absoluteString == setup.serverID {
                 hydrateCustomHeaders(for: serverURL)
@@ -1118,19 +1143,26 @@ final class AuthManager {
             try serverRegistry.reorder(ids: order)
         } catch {
             lastErrorMessage = error.localizedDescription
-            applied = false
+            rollBackBatch()
+            return false
         }
         for id in removedIDs {
-            guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
+            // Removal can suspend on the best-effort server logout; sync may have
+            // been turned off meanwhile, and that promised to keep local setup.
+            guard shouldContinue(),
+                  let account = serverRegistry.servers.first(where: { $0.id == id }) else {
+                if !shouldContinue() { return false }
+                continue
+            }
             if await !removeServer(account) {
-                applied = false
+                return false
             }
         }
         refreshServers()
-        if state == .unconfigured, let first = serverRegistry.servers.first {
+        if state == .unconfigured, shouldContinue(), let first = serverRegistry.servers.first {
             await signInWithStoredPassword(serverID: first.id)
         }
-        return applied
+        return true
     }
 
     /// Best-effort restore of one server after a failed remote application:

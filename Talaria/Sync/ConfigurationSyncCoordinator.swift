@@ -194,9 +194,13 @@ final class ConfigurationSyncCoordinator {
     /// then stops syncing on this device. Local setup stays.
     func deleteSyncedData() async throws {
         // Stop new passes and let an in-flight one finish first, so nothing can
-        // recreate the zone after it is gone.
+        // recreate the zone after it is gone. If that cannot be persisted the
+        // deletion is not attempted: a relaunch would resume and repopulate it.
+        let previous = state
         state.isEnabled = false
-        persistState()
+        guard commitState(revertingTo: previous) else {
+            throw ConfigurationSyncStoreError.failed(String(localized: "Could not save sync settings to the Keychain."))
+        }
         scheduledSync?.cancel()
         if let activeSync {
             await activeSync.value
@@ -240,7 +244,7 @@ final class ConfigurationSyncCoordinator {
     /// Coalesces bursts of local edits into one sync.
     func scheduleSync(onlyIfPreferencesChanged: Bool = false) {
         guard state.isEnabled, !isApplyingRemote, let authManager else { return }
-        stampLocalChanges(authManager)
+        guard stampLocalChanges(authManager) else { return }
         let preferencesChanged = localPreferences().fingerprint != state.preferencesMark?.fingerprint
         guard preferencesChanged || (!onlyIfPreferencesChanged && hasUnsyncedServerChanges(authManager)) else {
             return
@@ -281,7 +285,10 @@ final class ConfigurationSyncCoordinator {
             status = .disabled
             return
         }
-        stampLocalChanges(authManager)
+        guard stampLocalChanges(authManager) else {
+            status = .failed(String(localized: "Could not read server settings from the Keychain."))
+            return
+        }
         await authManager.resolveMissingPasswordMarkers()
         if case .unavailable(let reason) = await store.accountAvailability() {
             status = .unavailable(reason)
@@ -337,8 +344,12 @@ final class ConfigurationSyncCoordinator {
             return
         }
 
+        guard let localSetups = localSetups(authManager) else {
+            status = .failed(String(localized: "Could not read server settings from the Keychain."))
+            return
+        }
         let plan = ConfigurationSyncMerge.plan(
-            local: localSetups(authManager),
+            local: localSetups,
             remote: remoteSetups,
             remoteDeletions: changes.deletedRecordNames,
             state: state,
@@ -349,9 +360,14 @@ final class ConfigurationSyncCoordinator {
         defer { isApplyingRemote = false }
         if !plan.applyLocally.isEmpty || !plan.removeLocally.isEmpty {
             let applied = await authManager.applySyncedServers(
-                plan.applyLocally, removing: plan.removeLocally, order: plan.order
+                plan.applyLocally, removing: plan.removeLocally, order: plan.order,
+                shouldContinue: { [weak self] in self?.state.isEnabled == true }
             )
             guard applied else {
+                if !state.isEnabled {
+                    status = .disabled
+                    return
+                }
                 // Nothing is recorded as downloaded: the next pass fetches the same
                 // changes again instead of treating the missing server as removed.
                 status = .failed(authManager.lastErrorMessage ?? String(localized: "Could not apply synced servers."))
@@ -457,9 +473,13 @@ final class ConfigurationSyncCoordinator {
     /// push can lose a race with a pull, so the stamp is taken here rather than
     /// at write time. Anything never synced carries no stamp: on a device's
     /// first sync the cloud copy wins, which is what "restore" means.
-    private func stampLocalChanges(_ authManager: AuthManager) {
+    /// Returns false when the local snapshot could not be read; nothing is
+    /// stamped then, because an unreadable header set must not look deleted.
+    @discardableResult
+    private func stampLocalChanges(_ authManager: AuthManager) -> Bool {
+        guard let setups = localSetups(authManager) else { return false }
         var changed = false
-        for setup in localSetups(authManager) {
+        for setup in setups {
             guard let uploaded = state.uploaded[setup.serverID],
                   uploaded.fingerprint != setup.fingerprint,
                   (state.localChangedAt[setup.serverID] ?? .distantPast) <= uploaded.changedAt else { continue }
@@ -475,27 +495,33 @@ final class ConfigurationSyncCoordinator {
         if changed {
             persistState()
         }
+        return true
     }
 
     /// Whether the local server list differs from what CloudKit last saw, so a
     /// change notification for something already synced costs no network call.
     private func hasUnsyncedServerChanges(_ authManager: AuthManager) -> Bool {
-        let local = localSetups(authManager)
+        guard let local = localSetups(authManager) else { return false }
         let localIDs = Set(local.map(\.serverID))
         if state.recordNames.keys.contains(where: { !localIDs.contains($0) }) { return true }
         return local.contains { state.uploaded[$0.serverID]?.fingerprint != $0.fingerprint }
     }
 
-    private func localSetups(_ authManager: AuthManager) -> [SyncedServerSetup] {
-        authManager.servers.enumerated().map { index, account in
-            SyncedServerSetup(
+    /// Nil when any server's headers could not be read from the Keychain: a
+    /// failed read must never be mistaken for an empty header set.
+    private func localSetups(_ authManager: AuthManager) -> [SyncedServerSetup]? {
+        var setups: [SyncedServerSetup] = []
+        for (index, account) in authManager.servers.enumerated() {
+            guard let headers = authManager.customHeadersIfReadable(for: account) else { return nil }
+            setups.append(SyncedServerSetup(
                 account: account,
                 password: authManager.serverPassword(for: account.id),
-                customHeaders: authManager.customHeaders(for: account),
+                customHeaders: headers,
                 position: index,
                 updatedAt: max(account.updatedAt, state.localChangedAt[account.id] ?? .distantPast)
-            )
+            ))
         }
+        return setups
     }
 
     private func localPreferences() -> SyncedPreferences {

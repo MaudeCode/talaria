@@ -742,6 +742,65 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(store.saveCount, 1, "The rolled-back copy must not have been uploaded.")
     }
 
+    func testUnreadableHeadersAbortThePassInsteadOfSyncingEmptyHeaders() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let device = try await makeDevice(store: store)
+        await device.authManager.configure(
+            serverURLString: serverA, password: "pw-a", customHeaders: [CustomHeader(name: "X-A", value: "a")]
+        )
+        device.coordinator.signInWithApple(userID: "apple-user-1")
+        await device.coordinator.enableSync()
+        device.keychain.scopedLoadErrors[.customHeaders] = URLError(.cannotOpenFile)
+        device.now.advance(by: 30)
+
+        await device.coordinator.sync()
+
+        guard case .failed = device.coordinator.status else {
+            return XCTFail("Expected a failed status, got \(device.coordinator.status)")
+        }
+        let payload = try XCTUnwrap(store.records.values.first { $0.type == .serverSetup }?.payload)
+        let synced = try ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: payload)
+        XCTAssertEqual(synced.customHeaders, [CustomHeader(name: "X-A", value: "a")])
+    }
+
+    func testFailureOnLaterServerRollsBackTheWholeBatch() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        await deviceA.authManager.configure(serverURLString: serverA, password: "pw-a")
+        _ = await deviceA.authManager.addServer(serverURLString: serverB, password: "pw-b")
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+
+        let deviceB = try await makeDevice(store: store)
+        // The password write for every server fails, so the second server's
+        // failure must also undo the first one's registry row.
+        deviceB.keychain.saveErrors[.serverPassword] = URLError(.cannotWriteToFile)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+
+        XCTAssertTrue(deviceB.authManager.servers.isEmpty)
+        XCTAssertTrue(deviceB.coordinator.state.recordNames.isEmpty)
+
+        deviceB.keychain.saveErrors = [:]
+        await deviceB.coordinator.sync()
+
+        XCTAssertEqual(deviceB.authManager.servers.map(\.id), [serverA, serverB])
+    }
+
+    func testDeleteSyncedDataAbortsWhenDisablingCannotBePersisted() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let device = try await makeDevice(store: store)
+        await device.authManager.configure(serverURLString: serverA, password: "pw-a")
+        device.coordinator.signInWithApple(userID: "apple-user-1")
+        await device.coordinator.enableSync()
+        device.keychain.saveErrors[.configurationSync] = URLError(.cannotWriteToFile)
+
+        await XCTAssertThrowsErrorAsync(try await device.coordinator.deleteSyncedData())
+
+        XCTAssertFalse(store.records.isEmpty, "The zone must survive when the disabled state could not be saved.")
+        XCTAssertTrue(device.coordinator.isEnabled)
+    }
+
     // MARK: - Disconnect and deletion
 
     func testDisconnectKeepsLocalSetupAndForgetsAppleAccount() async throws {
@@ -933,6 +992,17 @@ final class ConfigurationSyncTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
     }
+}
+
+func XCTAssertThrowsErrorAsync(
+    _ expression: @autoclosure () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        try await expression()
+        XCTFail("Expected an error", file: file, line: line)
+    } catch {}
 }
 
 // MARK: - Test doubles
