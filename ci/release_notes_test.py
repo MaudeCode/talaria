@@ -235,6 +235,8 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_schema_failures_are_actionable(self):
         cases = [
+            (json.dumps({"entries": [{"category": "Fixed", "summary": "Broken " + chr(0xD800) + " text", "highlight": False}]}), "surrogates"),
+            (json.dumps({"skip": "Broken " + chr(0xDC00) + " text"}), "surrogates"),
             ('{', "Expecting"),
             ('{"skip":"first", "skip":"second"}', "duplicate JSON key"),
             ('{"entries":[]}', "non-empty"),
@@ -344,7 +346,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.generate("--previous", baseline)
 
     def test_markdown_escapes_authored_text_but_json_preserves_it(self):
-        summary = "# Use <script> & [links](url) with *literal* text"
+        summary = "# Use <script> & [links](url) with *literal* text 😀"
         self.add_fragment(2, summary)
         self.commit("TAL-2: plain text")
         self.generate()

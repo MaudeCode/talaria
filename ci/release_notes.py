@@ -41,6 +41,7 @@ def unique_keys(pairs):
 def plain_text(value, field):
     if not isinstance(value, str) or not value.strip() or value != value.strip():
         raise ValueError(f"{field} must be non-empty text without surrounding whitespace")
+    value.encode("utf-8")
     if len(value.splitlines()) != 1 or any(ord(char) < 32 for char in value):
         raise ValueError(f"{field} must be a single line of plain text")
 
