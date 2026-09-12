@@ -1451,11 +1451,12 @@ extension ChatViewModelSendTests {
 
 extension ChatViewModelSendTests {
     /// A relaunched process adopting a run: no snapshot, no cursor, and a
-    /// transcript that already holds the streamed answer prefix.
+    /// transcript whose latest turn (`turnMessagesJSON`, one or more messages)
+    /// already holds the streamed answer prefix.
     @MainActor
     private func makeColdRelaunchViewModel(
         streamClient: SpySSEStreamingClient,
-        assistantMessageJSON: String
+        turnMessagesJSON: String
     ) throws -> ChatViewModel {
         try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
@@ -1473,7 +1474,7 @@ extension ChatViewModelSendTests {
                         "timestamp": 1770000100,
                         "message_id": "user-1"
                       },
-                      \(assistantMessageJSON)
+                      \(turnMessagesJSON)
                     ]
                   }
                 }
@@ -1507,7 +1508,7 @@ extension ChatViewModelSendTests {
     @MainActor
     func testColdRelaunchReplayKeepsLoadedPrefixVisibleWhenJournalOpensWithReasoning() async throws {
         let streamClient = SpySSEStreamingClient()
-        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, assistantMessageJSON: """
+        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, turnMessagesJSON: """
         {
           "role": "assistant",
           "content": "Once Raj reached the river. ",
@@ -1553,7 +1554,7 @@ extension ChatViewModelSendTests {
     @MainActor
     func testColdRelaunchReplayKeepsLoadedPrefixVisibleWhenJournalOpensWithTool() async throws {
         let streamClient = SpySSEStreamingClient()
-        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, assistantMessageJSON: """
+        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, turnMessagesJSON: """
         {
           "role": "assistant",
           "content": "Once Raj reached the river. ",
@@ -1605,6 +1606,88 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(
             viewModel.messages.compactMap(\.content),
             ["Tell me a tiger story", "Once Raj reached the river. The snare broke."]
+        )
+    }
+
+    // A tool-driven turn spans several assistant messages that the transcript
+    // renders as one block, so the seed must cover every segment, and the
+    // replayed tool events must land on the seeded rows instead of after them.
+    @MainActor
+    func testColdRelaunchReplaySeedsEveryAssistantSegmentOfTheTurn() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, turnMessagesJSON: """
+        {
+          "role": "assistant",
+          "content": "",
+          "timestamp": 1770000101,
+          "message_id": "assistant-tool",
+          "tool_calls": [
+            {
+              "id": "call-1",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\\"path\\":\\"notes.md\\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": "Jungle notes",
+          "timestamp": 1770000102,
+          "message_id": "tool-1",
+          "tool_call_id": "call-1"
+        },
+        {
+          "role": "assistant",
+          "content": "Once Raj reached the river. ",
+          "timestamp": 1770000103,
+          "message_id": "assistant-final"
+        }
+        """)
+        let startedTool = ToolStreamEvent(
+            eventType: "tool.started",
+            name: "read_file",
+            preview: "Reading jungle notes",
+            args: ["path": .string("notes.md")],
+            duration: nil,
+            isError: nil,
+            stableID: "call-1"
+        )
+        let completedTool = ToolStreamEvent(
+            eventType: "tool.completed",
+            name: "read_file",
+            preview: "Read jungle notes",
+            args: ["path": .string("notes.md")],
+            duration: 0.15,
+            isError: false,
+            stableID: "call-1"
+        )
+
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+
+        XCTAssertEqual(viewModel.streamingAssistantMessageID, "assistant-final")
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
+        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. "])
+
+        streamClient.emit(.toolStarted(startedTool))
+        streamClient.emit(.toolCompleted(completedTool))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
+        XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
+        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. "])
+
+        streamClient.emit(.token("Once Raj reached the river. "))
+        streamClient.emit(.token("The snare broke."))
+
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. The snare broke."])
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Tell me a tiger story", "", "Jungle notes", "Once Raj reached the river. The snare broke."]
         )
     }
 

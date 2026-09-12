@@ -5726,17 +5726,20 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorSeedLiveActivityForColdReplay() {
         // `loadMessages` emptied the live timeline, and live rows win over the
-        // persisted scene, so the first replayed reasoning or tool event would
-        // hide the answer prefix already on screen until `.done` reloads it.
+        // persisted scene of every segment in the rendered turn, so the first
+        // replayed reasoning or tool event would hide the answer prefix (and any
+        // earlier tool segments) already on screen until `.done` reloads them.
         guard liveActivityRows.isEmpty,
               let streamingAssistantMessageID,
-              let index = messages.lastIndex(where: { $0.messageId == streamingAssistantMessageID })
+              let turn = Self.transcriptMessages(from: messages, messageOffset: messagesOffset).last(where: {
+                  $0.assistantSegments.contains { $0.message.messageId == streamingAssistantMessageID }
+              })
         else { return }
 
         let timeline = AssistantActivityTimeline.persisted(
-            message: messages[index],
-            reasoningGroups: displayedReasoningGroups.filter { $0.anchorMessageID == streamingAssistantMessageID },
-            toolCallGroups: completedToolCallGroupsForAnchor(streamingAssistantMessageID)
+            assistantSegments: turn.assistantSegments,
+            reasoningGroups: displayedReasoningGroups,
+            toolCallGroups: turn.assistantSegments.map(\.anchorID).flatMap(completedToolCallGroupsForAnchor)
         ).resumedForStreaming
         guard !timeline.rows.isEmpty else { return }
 
