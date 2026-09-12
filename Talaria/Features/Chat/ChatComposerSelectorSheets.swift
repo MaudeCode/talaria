@@ -9,6 +9,13 @@ struct ComposerModelPickerSheet: View {
     let onSelect: (ModelCatalogOption) -> Void
     let onToggleFavorite: (ModelCatalogOption) -> Void
     let onDeleteSavedCustom: (ModelCatalogOption) -> Void
+    /// Off for surfaces that must not read or write `ModelFavoritesStore`
+    /// (the task editor): no stars on the rows or the custom entry.
+    var showsFavorites = true
+    /// Renders a "Server Default" row above the catalog for surfaces where an
+    /// unset model is a real value the server acts on. Nil leaves the list
+    /// starting at the catalog.
+    var onClear: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
@@ -25,6 +32,12 @@ struct ComposerModelPickerSheet: View {
                 customModelEntry
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
                     .listRowSeparator(.hidden)
+
+                if let onClear, searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    clearSelectionRow(onClear)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 12))
+                        .listRowSeparator(.hidden)
+                }
 
                 ForEach(filteredModelGroups) { group in
                     modelGroupDisclosure(group)
@@ -62,6 +75,34 @@ struct ComposerModelPickerSheet: View {
             }
         }
         .adaptiveFormPresentation()
+    }
+
+    /// "Let the server choose" is one of the choices rather than an escape
+    /// from the list, so it wears the same checkmark as a model row.
+    private func clearSelectionRow(_ onClear: @escaping () -> Void) -> some View {
+        let isSelected = selectedModelID?.isEmpty != false
+
+        return Button {
+            onClear()
+            dismiss()
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color(.tertiaryLabel))
+                    .frame(width: 18)
+
+                Text("Server Default")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var customModelEntry: some View {
@@ -119,18 +160,20 @@ struct ComposerModelPickerSheet: View {
                 .controlSize(.small)
                 .disabled(customOption == nil)
 
-                Button {
-                    guard let customOption else { return }
-                    onToggleFavorite(customOption)
-                } label: {
-                    Image(systemName: isCustomOptionFavorite ? "star.fill" : "star")
-                        .font(.system(size: 15, weight: .regular))
-                        .frame(width: 30, height: 30)
+                if showsFavorites {
+                    Button {
+                        guard let customOption else { return }
+                        onToggleFavorite(customOption)
+                    } label: {
+                        Image(systemName: isCustomOptionFavorite ? "star.fill" : "star")
+                            .font(.system(size: 15, weight: .regular))
+                            .frame(width: 30, height: 30)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(isCustomOptionFavorite ? Color.yellow : Color(.tertiaryLabel))
+                    .disabled(customOption == nil)
+                    .accessibilityLabel(isCustomOptionFavorite ? "Remove custom model from favorites" : "Add custom model to favorites")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(isCustomOptionFavorite ? Color.yellow : Color(.tertiaryLabel))
-                .disabled(customOption == nil)
-                .accessibilityLabel(isCustomOptionFavorite ? "Remove custom model from favorites" : "Add custom model to favorites")
 
                 Spacer(minLength: 0)
             }
@@ -219,16 +262,18 @@ struct ComposerModelPickerSheet: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                onToggleFavorite(option)
-            } label: {
-                Image(systemName: isFavorite(option) ? "star.fill" : "star")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(isFavorite(option) ? Color.yellow : Color(.tertiaryLabel))
-                    .frame(width: 30, height: 30)
+            if showsFavorites {
+                Button {
+                    onToggleFavorite(option)
+                } label: {
+                    Image(systemName: isFavorite(option) ? "star.fill" : "star")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(isFavorite(option) ? Color.yellow : Color(.tertiaryLabel))
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isFavorite(option) ? "Remove \(option.displayName) from favorites" : "Add \(option.displayName) to favorites")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isFavorite(option) ? "Remove \(option.displayName) from favorites" : "Add \(option.displayName) to favorites")
 
             if allowsDelete {
                 Button {

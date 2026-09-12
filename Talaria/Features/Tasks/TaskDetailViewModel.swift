@@ -18,7 +18,8 @@ final class TaskDetailViewModel {
     private(set) var lastError: Error?
     private(set) var lastMutation: CronJobListMutation?
 
-    private let client: APIClient
+    /// Shared with the task editor so its catalog loads use the same scope.
+    let client: APIClient
 
     init(job: CronJob, runningElapsed: Double?, server: URL, client: APIClient? = nil) {
         self.job = job

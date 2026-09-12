@@ -188,6 +188,102 @@ final class CronManagementModelTests: XCTestCase {
             "Schedule is required."
         )
     }
+
+    func testCronJobEditorDraftAppliesModelAndProviderTogether() {
+        var draft = CronJobEditorDraft()
+
+        draft.applyModelSelection(ModelCatalogOption(id: "gpt-5", displayName: "GPT-5", providerID: "openai"))
+        XCTAssertEqual(draft.trimmedModel, "gpt-5")
+        XCTAssertEqual(draft.trimmedProvider, "openai")
+
+        // A stale provider paired with a new model is the mismatch the
+        // combined picker exists to prevent.
+        draft.applyModelSelection(ModelCatalogOption(id: "llama3", displayName: "llama3", providerID: nil))
+        XCTAssertEqual(draft.model, "llama3")
+        XCTAssertEqual(draft.provider, "")
+
+        draft.applyModelSelection(ModelCatalogOption(id: "gpt-5", displayName: "GPT-5", providerID: "openai"))
+        draft.applyModelSelection(nil)
+        // Blank is what the server reads as "inherit"; the literal string is not.
+        XCTAssertNil(draft.trimmedModel)
+        XCTAssertNil(draft.trimmedProvider)
+    }
+
+    func testCronJobEditorDraftModelSelectionKeepsUnknownModelVisible() {
+        let catalog = [
+            ModelCatalogGroup(
+                id: "openai",
+                name: "OpenAI",
+                providerID: "openai",
+                models: [ModelCatalogOption(id: "gpt-5", displayName: "GPT-5", providerID: "openai")]
+            )
+        ]
+
+        XCTAssertEqual(
+            CronJobEditorDraft(model: "gpt-5", provider: "openai").modelSelection(in: catalog),
+            ModelCatalogOption(id: "gpt-5", displayName: "GPT-5", providerID: "openai")
+        )
+        XCTAssertEqual(
+            CronJobEditorDraft(model: "retired-model", provider: "openai").modelSelection(in: catalog),
+            ModelCatalogOption(id: "retired-model", displayName: "retired-model", providerID: "openai"),
+            "A model the catalog no longer offers still names itself instead of reading as unconfigured."
+        )
+        XCTAssertNil(CronJobEditorDraft(model: "  ", provider: "openai").modelSelection(in: catalog))
+    }
+
+    func testCronJobEditorDraftSkillToggleRoundTripsThroughSkillsText() {
+        var draft = CronJobEditorDraft(skillsText: "writing")
+
+        draft.toggleSkill("research")
+        XCTAssertEqual(draft.skillsText, "writing, research", "A new skill goes on the end.")
+        XCTAssertEqual(draft.skills, ["writing", "research"])
+
+        draft.toggleSkill("writing")
+        XCTAssertEqual(draft.skills, ["research"])
+
+        draft.applySkillSelection([])
+        XCTAssertEqual(draft.skillsText, "")
+        XCTAssertTrue(draft.skills.isEmpty)
+    }
+
+    func testCronProfilePickerFallsBackWithoutProfilesAndKeepsUnknownSelection() throws {
+        XCTAssertNil(
+            CronProfilePicker.options(profiles: nil, currentValue: "work"),
+            "An unavailable profile list keeps free-text entry."
+        )
+
+        let profiles = [
+            ProfileSummary(name: "default", path: nil, isDefault: true, isActive: true, gatewayRunning: nil, model: nil, provider: nil, hasEnv: nil, skillCount: nil),
+            ProfileSummary(name: "work", path: nil, isDefault: nil, isActive: nil, gatewayRunning: nil, model: "gpt-5", provider: "openai", hasEnv: nil, skillCount: nil),
+            ProfileSummary(name: nil, path: "/nameless", isDefault: nil, isActive: nil, gatewayRunning: nil, model: nil, provider: nil, hasEnv: nil, skillCount: nil)
+        ]
+
+        let blank = try XCTUnwrap(CronProfilePicker.options(profiles: profiles, currentValue: ""))
+        XCTAssertEqual(blank.map(\.value), ["", "default", "work"], "Blank keeps the server's own choice selectable.")
+        XCTAssertEqual(blank.first?.label, "Server Default")
+        XCTAssertFalse(blank.contains(where: \.isCustom))
+
+        let retired = try XCTUnwrap(
+            CronProfilePicker.options(profiles: profiles, currentValue: "retired", initialValue: "retired")
+        )
+        XCTAssertEqual(retired.map(\.value), ["", "default", "work", "retired"])
+        XCTAssertEqual(retired.last?.isCustom, true, "A saved profile the server no longer lists stays visible and removable.")
+
+        let empty = try XCTUnwrap(CronProfilePicker.options(profiles: [], currentValue: ""))
+        XCTAssertEqual(empty.map(\.value), [""])
+    }
+
+    func testCronJobSkillsPickerListsSelectedUnknownSkillsAndFilters() {
+        let writing = SkillSummary(name: "writing", category: "docs", description: "Drafts prose", path: nil)
+        let research = SkillSummary(name: "research", category: "web", description: "Reads sources", path: nil)
+
+        let listed = CronJobSkillsPickerSheet.skillsIncludingSelection([writing], selection: ["writing", "retired"])
+        XCTAssertEqual(listed.compactMap(\.name), ["retired", "writing"], "A saved skill the server no longer offers stays removable.")
+
+        XCTAssertEqual(CronJobSkillsPickerSheet.filteredSkills([writing, research], query: "docs").compactMap(\.name), ["writing"])
+        XCTAssertEqual(CronJobSkillsPickerSheet.filteredSkills([writing, research], query: "sources").compactMap(\.name), ["research"])
+        XCTAssertEqual(CronJobSkillsPickerSheet.filteredSkills([writing, research], query: "  ").count, 2)
+    }
 }
 
 final class CronManagementViewModelTests: APIClientTestCase {
@@ -352,6 +448,169 @@ final class CronManagementViewModelTests: APIClientTestCase {
 
         XCTAssertTrue(didDelete)
         XCTAssertEqual(viewModel.lastMutation, .delete(jobID: "job123"))
+    }
+
+    @MainActor
+    func testCronJobEditorCatalogsLoadModelsProfilesAndEnabledSkills() async throws {
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/models":
+                return apiTestJSONResponse("""
+                {
+                  "groups": [
+                    {"name": "OpenAI", "provider_id": "openai", "models": [{"id": "gpt-5", "name": "GPT-5"}]}
+                  ]
+                }
+                """, for: request)
+            case "/api/profiles":
+                return apiTestJSONResponse(
+                    #"{"active": "default", "profiles": [{"name": "work", "model": "gpt-5", "provider": "openai"}]}"#,
+                    for: request
+                )
+            case "/api/skills":
+                return apiTestJSONResponse(
+                    #"{"skills": [{"name": "writing", "category": "docs"}, {"name": "retired", "disabled": true}]}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+
+        let catalogs = CronJobEditorCatalogs(client: client)
+        await catalogs.load()
+
+        XCTAssertEqual(catalogs.modelGroups.flatMap(\.models).map(\.id), ["gpt-5"])
+        XCTAssertEqual(catalogs.profiles?.map(\.normalizedName), ["work"])
+        XCTAssertEqual(catalogs.skills.compactMap(\.name), ["writing"], "A disabled skill would be ignored by the run.")
+        XCTAssertNil(catalogs.errorMessage)
+        XCTAssertFalse(catalogs.isLoading)
+    }
+
+    @MainActor
+    func testCronJobEditorCatalogsTolerateUnavailableCatalogs() async throws {
+        var profilesFail = true
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/models":
+                throw URLError(.timedOut)
+            case "/api/profiles":
+                if profilesFail { throw URLError(.notConnectedToInternet) }
+                return apiTestJSONResponse(#"{"profiles": [{"name": "work"}]}"#, for: request)
+            case "/api/skills":
+                throw URLError(.timedOut)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+
+        let catalogs = CronJobEditorCatalogs(client: client)
+        await catalogs.load()
+
+        XCTAssertNotNil(catalogs.modelsErrorMessage)
+        XCTAssertNotNil(catalogs.profilesErrorMessage)
+        XCTAssertNotNil(catalogs.skillsErrorMessage)
+        XCTAssertEqual(catalogs.errorMessage, catalogs.modelsErrorMessage)
+        XCTAssertTrue(catalogs.modelGroups.isEmpty)
+        XCTAssertNil(catalogs.profiles, "A failed profile list keeps the free-text fallback.")
+        XCTAssertTrue(catalogs.skills.isEmpty)
+
+        // The saved draft survives untouched, and custom values still apply.
+        var draft = CronJobEditorDraft(prompt: "Report", schedule: "0 9 * * *", skillsText: "writing", model: "gpt-5", provider: "openai")
+        XCTAssertNil(draft.validationMessage)
+        XCTAssertNil(CronProfilePicker.options(profiles: catalogs.profiles, currentValue: draft.profile))
+        XCTAssertEqual(
+            CronJobSkillsPickerSheet.skillsIncludingSelection(catalogs.skills, selection: draft.skills).compactMap(\.name),
+            ["writing"]
+        )
+        draft.applyModelSelection(ModelCatalogOption(id: "gpt-5-mini", displayName: "gpt-5-mini", providerID: "openai"))
+        draft.toggleSkill("research")
+        XCTAssertEqual(draft.trimmedModel, "gpt-5-mini")
+        XCTAssertEqual(draft.skills, ["writing", "research"])
+
+        profilesFail = false
+        await catalogs.load()
+        XCTAssertEqual(catalogs.profiles?.map(\.normalizedName), ["work"], "Retry recovers the catalogs that now load.")
+        XCTAssertNil(catalogs.profilesErrorMessage)
+        XCTAssertNotNil(catalogs.skillsErrorMessage, "The catalogs that still fail keep reporting.")
+    }
+
+    @MainActor
+    func testCronJobEditorCatalogsIgnoreCancellation() async throws {
+        let client = makeClient { _ in throw URLError(.cancelled) }
+
+        let catalogs = CronJobEditorCatalogs(client: client)
+        await catalogs.load()
+
+        XCTAssertNil(catalogs.errorMessage, "A sheet dismissed mid-load is not a failure the user should see.")
+    }
+
+    @MainActor
+    func testTasksViewModelCreateSendsPickerSelections() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/create")
+            let body = try XCTUnwrap(apiTestBodyData(from: request))
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["model"] as? String, "gpt-5")
+            XCTAssertEqual(json["provider"] as? String, "openai")
+            XCTAssertEqual(json["profile"] as? String, "work")
+            XCTAssertEqual(json["skills"] as? [String], ["writing", "research"])
+
+            return apiTestJSONResponse(#"{"ok": true, "job": {"id": "job-created", "prompt": "Run it"}}"#, for: request)
+        }
+        let viewModel = TasksViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
+
+        var draft = CronJobEditorDraft(prompt: "Run it", schedule: "0 7 * * *")
+        draft.applyModelSelection(ModelCatalogOption(id: "gpt-5", displayName: "GPT-5", providerID: "openai"))
+        draft.profile = "work"
+        draft.toggleSkill("writing")
+        draft.toggleSkill("research")
+        // Choosing a profile never prefills the model: the server fills it in
+        // from the profile only while the model is blank.
+        XCTAssertEqual(draft.trimmedModel, "gpt-5")
+
+        let didCreate = await viewModel.create(from: draft)
+
+        XCTAssertTrue(didCreate)
+        XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job-created"])
+    }
+
+    @MainActor
+    func testTaskDetailViewModelUpdateSendsClearedModelAndProvider() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/update")
+            let body = try XCTUnwrap(apiTestBodyData(from: request))
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["job_id"] as? String, "job123")
+            XCTAssertEqual(json["model"] as? String, "", "Server Default clears the override rather than keeping the saved model.")
+            XCTAssertEqual(json["provider"] as? String, "")
+            XCTAssertEqual(json["profile"] as? String, "")
+            XCTAssertEqual(json["skills"] as? [String], ["writing"])
+
+            return apiTestJSONResponse(#"{"ok": true, "job": {"id": "job123", "model": "", "provider": ""}}"#, for: request)
+        }
+        let job = try decodeCronJob(
+            #"{"id": "job123", "prompt": "Run it", "schedule": "0 7 * * *", "model": "gpt-5", "provider": "openai", "profile": "retired", "skills": ["writing", "retired-skill"]}"#
+        )
+        let viewModel = TaskDetailViewModel(
+            job: job,
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        var draft = CronJobEditorDraft(job: job)
+        XCTAssertEqual(draft.skills, ["writing", "retired-skill"])
+        draft.applyModelSelection(nil)
+        draft.profile = CronProfilePicker.serverDefaultValue
+        draft.toggleSkill("retired-skill")
+
+        let didUpdate = await viewModel.update(from: draft)
+
+        XCTAssertTrue(didUpdate)
+        XCTAssertEqual(viewModel.job.jobId, "job123")
     }
 
     private func decodeCronJob(_ json: String) throws -> CronJob {
