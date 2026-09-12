@@ -50,6 +50,10 @@ final class ConfigurationSyncCoordinator {
     private let appGroupDefaults: UserDefaults
     private let now: () -> Date
     private let appleCredentialStatus: @Sendable (String) async -> TalariaRelayAppleCredentialStatus
+    /// The Apple user already signed in for Talaria Relay, if any. Both
+    /// features see the same Apple identity, so sync reuses it instead of
+    /// asking for a second sign-in.
+    private let relayAppleUserID: () -> String?
     private let debounce: Duration
 
     @ObservationIgnored private weak var authManager: AuthManager?
@@ -70,6 +74,11 @@ final class ConfigurationSyncCoordinator {
         appleCredentialStatus: @escaping @Sendable (String) async -> TalariaRelayAppleCredentialStatus = {
             await TalariaRelayAppleCredentialState.status(userID: $0)
         },
+        relayAppleUserID: @escaping () -> String? = {
+            guard let credentials = TalariaRelayConfigurationStore.load(),
+                  credentials.pendingRevocation != true else { return nil }
+            return credentials.appleUserID
+        },
         debounce: Duration = .seconds(1.5)
     ) {
         self.store = store
@@ -78,6 +87,7 @@ final class ConfigurationSyncCoordinator {
         self.appGroupDefaults = appGroupDefaults
         self.now = now
         self.appleCredentialStatus = appleCredentialStatus
+        self.relayAppleUserID = relayAppleUserID
         self.debounce = debounce
         state = Self.loadState(from: keychain)
         status = state.appleUserID == nil ? .signedOut : (state.isEnabled ? .synced(state.lastSyncAt) : .disabled)
@@ -91,6 +101,7 @@ final class ConfigurationSyncCoordinator {
     /// `observingLocalChanges: false` and drive `sync()` directly.
     func attach(authManager: AuthManager, observingLocalChanges: Bool = true) {
         self.authManager = authManager
+        adoptRelayIdentityIfNeeded()
         guard observingLocalChanges, observers.isEmpty else { return }
         let center = NotificationCenter.default
         observers.append(center.addObserver(
@@ -106,6 +117,14 @@ final class ConfigurationSyncCoordinator {
     }
 
     // MARK: - Account
+
+    /// Reuses the Apple sign-in Talaria Relay already holds, so a user who
+    /// connected the relay never signs in a second time for sync. Sync itself
+    /// stays off until they turn it on.
+    func adoptRelayIdentityIfNeeded() {
+        guard state.appleUserID == nil, let userID = relayAppleUserID() else { return }
+        signInWithApple(userID: userID)
+    }
 
     func signInWithApple(userID: String) {
         if state.appleUserID != userID {
@@ -126,10 +145,22 @@ final class ConfigurationSyncCoordinator {
         await sync()
     }
 
-    /// Stops syncing and forgets the remote bookkeeping. Local servers,
-    /// passwords, and preferences stay exactly as they are.
+    /// Stops syncing. Local servers, passwords, and preferences stay exactly
+    /// as they are, and so does the bookkeeping: edits made while sync is off
+    /// are stamped against the last synced baseline when it is turned back on,
+    /// so an older CloudKit copy cannot overwrite them.
     func disableSync() {
+        state.isEnabled = false
+        scheduledSync?.cancel()
+        persistState()
+        status = .disabled
+    }
+
+    /// Stops syncing and forgets the remote bookkeeping, for a zone that no
+    /// longer exists or an account that is no longer this one.
+    private func forgetRemoteState() {
         state.resetRemoteBookkeeping()
+        scheduledSync?.cancel()
         persistState()
         status = .disabled
     }
@@ -160,7 +191,7 @@ final class ConfigurationSyncCoordinator {
             status = .failed(mapped.userMessage)
             throw mapped
         }
-        disableSync()
+        forgetRemoteState()
     }
 
     func handleAppleCredentialRevoked() {
@@ -173,6 +204,7 @@ final class ConfigurationSyncCoordinator {
 
     /// Re-checks the Apple credential (foreground) and syncs when enabled.
     func refreshOnForeground() async {
+        adoptRelayIdentityIfNeeded()
         guard let appleUserID = state.appleUserID else { return }
         if await appleCredentialStatus(appleUserID) == .revoked {
             handleAppleCredentialRevoked()
@@ -368,7 +400,7 @@ final class ConfigurationSyncCoordinator {
         case .offline:
             status = .offline
         case .syncedDataDeleted:
-            disableSync()
+            forgetRemoteState()
             status = .failed(mapped.userMessage)
         case .accountUnavailable(let reason):
             status = .unavailable(reason)

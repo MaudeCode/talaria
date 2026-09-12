@@ -97,7 +97,7 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
                 if !page.moreComing { break }
             }
         } catch {
-            throw Self.mapped(error)
+            throw noteZoneLoss(Self.mapped(error))
         }
         changes.changeToken = try serverToken.map {
             try NSKeyedArchiver.archivedData(withRootObject: $0, requiringSecureCoding: true)
@@ -126,8 +126,16 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
                 throw error
             }
         } catch {
-            throw Self.mapped(error)
+            throw noteZoneLoss(Self.mapped(error))
         }
+    }
+
+    /// A deleted zone means the next first sync must create it again.
+    private func noteZoneLoss(_ error: ConfigurationSyncStoreError) -> ConfigurationSyncStoreError {
+        if error == .syncedDataDeleted {
+            zoneIsReady = false
+        }
+        return error
     }
 
     func deleteAll() async throws {

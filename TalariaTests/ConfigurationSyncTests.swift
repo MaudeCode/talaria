@@ -621,6 +621,71 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(store.fetchTokens.last, .some(nil), "Retry must fetch from the beginning.")
     }
 
+    func testEditsMadeWhileSyncIsOffSurviveReenabling() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        await deviceA.authManager.configure(serverURLString: serverA, password: "pw-old")
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+        let deviceB = try await makeDevice(store: store)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+
+        // B turns sync off, changes the password, and turns sync back on after
+        // A pushed an unrelated edit.
+        deviceB.coordinator.disableSync()
+        deviceA.now.advance(by: 30)
+        deviceA.authManager.updateServerIdentity(
+            try XCTUnwrap(deviceA.authManager.servers.first),
+            displayName: "Renamed", initials: "RN", headerLogoColorHex: "#778899"
+        )
+        await deviceA.coordinator.sync()
+        deviceB.now.advance(by: 60)
+        let account = try XCTUnwrap(deviceB.authManager.servers.first)
+        let stored = await deviceB.authManager.verifyAndStorePassword(for: account, password: "pw-new")
+        XCTAssertTrue(stored)
+        await deviceB.coordinator.enableSync()
+
+        XCTAssertEqual(deviceB.authManager.serverPassword(for: serverA), "pw-new")
+        let payload = try XCTUnwrap(store.records.values.first { $0.type == .serverSetup }?.payload)
+        let synced = try ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: payload)
+        XCTAssertEqual(synced.password, "pw-new")
+    }
+
+    func testNewerPayloadVersionIsRefused() {
+        let json = #"{"version":2,"urlString":"https://future.example.test"}"#
+        XCTAssertThrowsError(
+            try ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: Data(json.utf8))
+        )
+        let preferences = #"{"version":2,"values":{}}"#
+        XCTAssertThrowsError(
+            try ConfigurationSyncCodec.decoder().decode(SyncedPreferences.self, from: Data(preferences.utf8))
+        )
+    }
+
+    func testTimestampsKeepSubSecondPrecision() throws {
+        let setup = makeSetup(url: serverA, password: "pw", updatedAt: fixedNow.addingTimeInterval(0.25))
+        let data = try ConfigurationSyncCodec.encoder().encode(setup)
+        let decoded = try ConfigurationSyncCodec.decoder().decode(SyncedServerSetup.self, from: data)
+        XCTAssertEqual(decoded.updatedAt.timeIntervalSince1970, setup.updatedAt.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertGreaterThan(decoded.updatedAt, fixedNow)
+    }
+
+    func testRelayAppleSignInIsReusedForSync() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let device = try await makeDevice(store: store, relayAppleUserID: "apple-user-relay")
+        await device.authManager.configure(serverURLString: serverA, password: "pw-a")
+
+        XCTAssertTrue(device.coordinator.isSignedInWithApple, "attach adopts the relay identity")
+        XCTAssertFalse(device.coordinator.isEnabled, "sync still waits for the user to turn it on")
+        XCTAssertEqual(device.coordinator.status, .disabled)
+
+        await device.coordinator.enableSync()
+
+        XCTAssertEqual(device.coordinator.status, .synced(fixedNow))
+        XCTAssertEqual(device.coordinator.state.appleUserID, "apple-user-relay")
+    }
+
     // MARK: - Disconnect and deletion
 
     func testDisconnectKeepsLocalSetupAndForgetsAppleAccount() async throws {
@@ -715,7 +780,8 @@ final class ConfigurationSyncTests: XCTestCase {
         store: InMemoryConfigurationSyncStore = InMemoryConfigurationSyncStore(),
         client: MockAuthAPIClient? = nil,
         keychain: InMemoryKeychainStore = InMemoryKeychainStore(),
-        registry: ServerRegistry? = nil
+        registry: ServerRegistry? = nil,
+        relayAppleUserID: String? = nil
     ) async throws -> Device {
         let client = client ?? MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
         let registry = registry ?? ServerRegistry.inMemory(keychain: keychain)
@@ -739,6 +805,7 @@ final class ConfigurationSyncTests: XCTestCase {
             appGroupDefaults: appGroupDefaults,
             now: { clock.now },
             appleCredentialStatus: { _ in credentialStatus.value },
+            relayAppleUserID: { relayAppleUserID },
             debounce: .milliseconds(1)
         )
         coordinator.attach(authManager: authManager, observingLocalChanges: false)

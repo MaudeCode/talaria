@@ -980,7 +980,10 @@ final class AuthManager {
                 _ = try? await client.logout()
                 retained = password
             }
-            persistServerPassword(retained, for: serverURL)
+            guard persistServerPassword(retained, for: serverURL) else {
+                lastErrorMessage = String(localized: "Could not save the password to the Keychain.")
+                return false
+            }
             notifyConfigurationChanged()
             return true
         } catch {

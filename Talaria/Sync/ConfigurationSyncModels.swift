@@ -73,8 +73,9 @@ struct SyncedServerSetup: Codable, Equatable, Sendable {
     /// long as it names its server.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        urlString = try container.decode(String.self, forKey: .urlString)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        try ConfigurationSyncCodec.requireSupported(version: version, of: Self.currentVersion, in: container)
+        urlString = try container.decode(String.self, forKey: .urlString)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? ""
         initials = try container.decodeIfPresent(String.self, forKey: .initials) ?? ""
         headerLogoColorHex = try container.decodeIfPresent(String.self, forKey: .headerLogoColorHex)
@@ -129,6 +130,7 @@ struct SyncedPreferences: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        try ConfigurationSyncCodec.requireSupported(version: version, of: Self.currentVersion, in: container)
         values = try container.decodeIfPresent([String: JSONValue].self, forKey: .values) ?? [:]
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(timeIntervalSince1970: 0)
     }
@@ -139,17 +141,33 @@ struct SyncedPreferences: Codable, Equatable {
 /// Deterministic JSON so fingerprints and encrypted payloads are stable across
 /// devices and launches.
 enum ConfigurationSyncCodec {
+    /// Dates keep sub-second precision: timestamps order edits between
+    /// devices, and ISO 8601 would round two edits in one second to a tie that
+    /// each device keeps winning.
     static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .secondsSince1970
         return encoder
     }
 
     static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .secondsSince1970
         return decoder
+    }
+
+    /// A payload from a newer build may have renamed or dropped fields; reading
+    /// it with defaults could apply destructive values and then overwrite the
+    /// newer record. Older versions decode tolerantly, newer ones are refused.
+    static func requireSupported<K: CodingKey>(version: Int, of current: Int, in container: KeyedDecodingContainer<K>) throws {
+        guard version <= current else {
+            throw DecodingError.dataCorruptedError(
+                forKey: K(stringValue: "version")!,
+                in: container,
+                debugDescription: "Payload version \(version) is newer than \(current)"
+            )
+        }
     }
 
     static func fingerprint<T: Encodable>(of value: T) -> String {

@@ -75,6 +75,7 @@ struct ConfigurationSyncSettingsView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("iCloud Sync")
         .navigationBarTitleDisplayMode(.inline)
+        .task { coordinator.adoptRelayIdentityIfNeeded() }
         .sheet(item: $passwordAccount) { account in
             ServerPasswordSheet(authManager: authManager, account: account)
         }
@@ -127,8 +128,10 @@ struct ConfigurationSyncSettingsView: View {
         } footer: {
             if coordinator.status == .appleCredentialRevoked {
                 Text("Apple ID access was revoked, so sync stopped. Sign in again to resume.")
+            } else if coordinator.isSignedInWithApple {
+                Text("The same Apple account as Talaria Relay. Disconnecting stops sync and keeps every server and setting on this iPhone.")
             } else {
-                Text("Disconnecting stops sync and keeps every server and setting on this iPhone.")
+                Text("Connecting Talaria Relay signs in here too. Disconnecting stops sync and keeps every server and setting on this iPhone.")
             }
         }
     }
