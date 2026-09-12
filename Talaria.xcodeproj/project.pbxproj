@@ -462,6 +462,8 @@
 		C107L0000000000000000006 /* CronJobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000106 /* CronJobRowView.swift */; };
 		C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000107 /* CronJobEditorSheet.swift */; };
 		C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000108 /* CronJobMetadataRow.swift */; };
+		C165A0000000000000000001 /* CronJobEditorCatalogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C165A0000000000000000101 /* CronJobEditorCatalogs.swift */; };
+		C165A0000000000000000002 /* CronJobSkillsPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C165A0000000000000000102 /* CronJobSkillsPickerSheet.swift */; };
 		C107L0000000000000000009 /* StatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000109 /* StatusBadge.swift */; };
 		C107L0000000000000000010 /* FileBrowserRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000110 /* FileBrowserRow.swift */; };
 		C107L0000000000000000011 /* GitBranchPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000111 /* GitBranchPickerSheet.swift */; };
@@ -1148,6 +1150,8 @@
 		C107L0000000000000000106 /* CronJobRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobRowView.swift; sourceTree = "<group>"; };
 		C107L0000000000000000107 /* CronJobEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobEditorSheet.swift; sourceTree = "<group>"; };
 		C107L0000000000000000108 /* CronJobMetadataRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobMetadataRow.swift; sourceTree = "<group>"; };
+		C165A0000000000000000101 /* CronJobEditorCatalogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobEditorCatalogs.swift; sourceTree = "<group>"; };
+		C165A0000000000000000102 /* CronJobSkillsPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CronJobSkillsPickerSheet.swift; sourceTree = "<group>"; };
 		C107L0000000000000000109 /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
 		C107L0000000000000000110 /* FileBrowserRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000111 /* GitBranchPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBranchPickerSheet.swift; sourceTree = "<group>"; };
@@ -2234,6 +2238,8 @@
 				C107L0000000000000000106 /* CronJobRowView.swift */,
 				C107L0000000000000000107 /* CronJobEditorSheet.swift */,
 				C107L0000000000000000108 /* CronJobMetadataRow.swift */,
+				C165A0000000000000000101 /* CronJobEditorCatalogs.swift */,
+				C165A0000000000000000102 /* CronJobSkillsPickerSheet.swift */,
 				C107L0000000000000000109 /* StatusBadge.swift */,
 				3F91D2A54B9A4F66A2C01013 /* TasksViewModel.swift */,
 				3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */,
@@ -2722,6 +2728,8 @@
 				C107L0000000000000000006 /* CronJobRowView.swift in Sources */,
 				C107L0000000000000000007 /* CronJobEditorSheet.swift in Sources */,
 				C107L0000000000000000008 /* CronJobMetadataRow.swift in Sources */,
+				C165A0000000000000000001 /* CronJobEditorCatalogs.swift in Sources */,
+				C165A0000000000000000002 /* CronJobSkillsPickerSheet.swift in Sources */,
 				C107L0000000000000000009 /* StatusBadge.swift in Sources */,
 				C107L0000000000000000010 /* FileBrowserRow.swift in Sources */,
 				C107L0000000000000000011 /* GitBranchPickerSheet.swift in Sources */,
