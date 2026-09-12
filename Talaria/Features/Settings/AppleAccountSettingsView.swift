@@ -363,8 +363,13 @@ struct AppleAccountSettingsView: View {
                 return
             }
             // Sync needs only the Apple user; the relay needs the token exchange.
+            // A fresh sign-in opts into sync; a relay re-authentication while
+            // already signed in leaves the sync toggle exactly as the user set it.
+            let isFreshSignIn = !coordinator.isSignedInWithApple
             coordinator.signInWithApple(userID: credential.user)
-            Task { await coordinator.enableSync() }
+            if isFreshSignIn {
+                Task { await coordinator.enableSync() }
+            }
             if server != nil {
                 Task {
                     await connectRelay(identityToken: identityToken, appleUserID: credential.user, nonce: nonce)

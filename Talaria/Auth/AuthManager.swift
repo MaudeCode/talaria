@@ -1158,12 +1158,13 @@ final class AuthManager {
         for id in removedIDs {
             // Removal can suspend on the best-effort server logout; sync may have
             // been turned off meanwhile, and that promised to keep local setup.
-            guard shouldContinue(),
-                  let account = serverRegistry.servers.first(where: { $0.id == id }) else {
-                if !shouldContinue() { return false }
-                continue
+            guard shouldContinue() else {
+                rollBackBatch()
+                return false
             }
+            guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
             if await !removeServer(account, shouldContinue: shouldContinue) {
+                rollBackBatch()
                 return false
             }
         }
