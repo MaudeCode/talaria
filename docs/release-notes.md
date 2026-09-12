@@ -76,8 +76,11 @@ python3 ci/release_notes_test.py
 ```
 
 Use the branch's merge base if `origin/main` has advanced. `validate` without
-`--base` checks all working-tree fragments. The CI workflow checks the PR merge
-base or the main push's preceding SHA and always validates every fragment.
+`--base` checks all working-tree fragments. CI uses `--target` to scope PR metadata
+requirements to the PR head and its merge base with the fetched base branch.
+It still validates every fragment in the merged test tree. Main pushes compare
+against their preceding SHA. Changes already on the base branch cannot satisfy
+or invalidate another PR's metadata requirement.
 
 ## Generated output
 

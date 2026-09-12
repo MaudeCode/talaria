@@ -64,12 +64,15 @@ jobs:
 
       - name: Validate release fragments
         env:
-          CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CHANGE_BASE: ${{ github.event.before }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           options=()
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            options=(--base "$(git merge-base "${CHANGE_BASE}" HEAD)")
+            # The event's base SHA can lag main; HEAD is GitHub's merged test tree.
+            options=(--base "$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" "${PR_HEAD}")" --target "${PR_HEAD}")
           elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
             options=(--base "${CHANGE_BASE}")
           fi

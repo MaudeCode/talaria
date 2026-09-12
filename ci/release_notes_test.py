@@ -280,6 +280,23 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "out/release-notes.json").read_text())["releases"][0]["sections"], [])
         self.assertNotIn("###", (self.root / "out/release-notes.md").read_text())
 
+    def test_pr_metadata_is_scoped_to_head_while_the_merge_tree_is_validated(self):
+        baseline = self.git("rev-parse", "HEAD")
+        self.git("switch", "-c", "pull-request")
+        self.write("README.md", "Repository change")
+        self.write("changelog.d/TAL-2.json", '{"skip":"Repository documentation only"}')
+        self.commit("TAL-2: documentation")
+        pr_head = self.git("rev-parse", "HEAD")
+        self.git("switch", "main")
+        self.write("Talaria/Feature.swift", "// A main-branch change before metadata enforcement")
+        self.commit("TAL-3: unrelated main change")
+        self.git("merge", "--no-ff", "pull-request", "-m", "Synthetic PR merge")
+        self.cli("validate", "--base", baseline, error="require user-facing entries")
+        self.cli("validate", "--base", baseline, "--target", pr_head)
+        # Checking the PR delta must still reject malformed files in the merge tree.
+        self.write("changelog.d/TAL-3.json", "malformed")
+        self.cli("validate", "--base", baseline, "--target", pr_head, error="TAL-3.json")
+
     def test_app_changes_cannot_use_only_skip_or_another_tickets_metadata(self):
         self.write("Talaria/Feature.swift", "// fixture\n")
         self.write("changelog.d/TAL-2.json", '{"skip":"Docs only"}')

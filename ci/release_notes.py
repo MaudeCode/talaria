@@ -102,19 +102,22 @@ def repository_only(path):
     )
 
 
-def validate(base=None):
+def validate(base=None, target=None):
+    if target and not base:
+        raise ValueError("--target requires --base for change-scope validation")
     paths = sorted(path for path in Path(DIRECTORY).rglob("*") if path.is_file())
     current = {path.as_posix(): fragment(path.as_posix(), path.read_text(encoding="utf-8")) for path in paths}
     if base:
         base = commit(base)
-        selected = introduced(base, None, current)
-        changed = changes(base)
+        target = commit(target) if target else None
+        selected = introduced(base, target, snapshot(target) if target else current)
+        changed = changes(base, target)
         if changed and not selected:
             raise ValueError(f"missing release metadata: add {DIRECTORY}/TAL-<number>.json with entries or an explicit skip reason")
         if any(not repository_only(path) for path in changed) and not any("entries" in data for data in selected.values()):
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.
-        subjects = git("log", "--no-merges", "--format=%s", f"{base}..HEAD")
+        subjects = git("log", "--no-merges", "--format=%s", f"{base}..{target or 'HEAD'}")
         tickets = set()
         for subject in subjects.splitlines():
             prefix = subject.split(":", 1)[0]
@@ -256,6 +259,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("validate", help="validate working-tree fragments; stage new files before --base checks")
     check.add_argument("--base", help="require metadata for the change since this commit")
+    check.add_argument("--target", help="scope --base checks to this Git ref; still validate all working-tree fragments")
     render = commands.add_parser("generate", help="render the target Git tree, ignoring working-tree edits")
     render.add_argument("--previous", default="auto", help="previous release tag; default: highest lower reachable vX.Y.Z tag")
     render.add_argument("--target", required=True)
@@ -268,7 +272,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "validate":
-            validate(args.base)
+            validate(args.base, args.target)
         elif args.command == "previous-published":
             print(previous_published(args.target, args.version, args.repo))
         else:
