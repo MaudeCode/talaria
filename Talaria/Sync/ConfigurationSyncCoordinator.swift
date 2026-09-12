@@ -127,11 +127,12 @@ final class ConfigurationSyncCoordinator {
     }
 
     func signInWithApple(userID: String) {
+        let previous = state
         if state.appleUserID != userID {
             state.resetRemoteBookkeeping()
         }
         state.appleUserID = userID
-        persistState()
+        guard commitState(revertingTo: previous) else { return }
         status = .disabled
     }
 
@@ -140,8 +141,9 @@ final class ConfigurationSyncCoordinator {
             status = .signedOut
             return
         }
+        let previous = state
         state.isEnabled = true
-        persistState()
+        guard commitState(revertingTo: previous) else { return }
         await sync()
     }
 
@@ -150,27 +152,42 @@ final class ConfigurationSyncCoordinator {
     /// are stamped against the last synced baseline when it is turned back on,
     /// so an older CloudKit copy cannot overwrite them.
     func disableSync() {
+        let previous = state
         state.isEnabled = false
         scheduledSync?.cancel()
-        persistState()
+        guard commitState(revertingTo: previous) else { return }
         status = .disabled
     }
 
     /// Stops syncing and forgets the remote bookkeeping, for a zone that no
     /// longer exists or an account that is no longer this one.
     private func forgetRemoteState() {
+        let previous = state
         state.resetRemoteBookkeeping()
         scheduledSync?.cancel()
-        persistState()
+        guard commitState(revertingTo: previous) else { return }
         status = .disabled
     }
 
     /// Disconnect: stop syncing and forget the Apple sign-in. Local setup stays.
     func disconnect() {
+        let previous = state
         state.resetRemoteBookkeeping()
         state.appleUserID = nil
-        persistState()
+        scheduledSync?.cancel()
+        guard commitState(revertingTo: previous) else { return }
         status = .signedOut
+    }
+
+    /// Persists an account or toggle change, or reverts it and reports the
+    /// failure so Settings never shows a choice that would not survive relaunch.
+    private func commitState(revertingTo previous: ConfigurationSyncState) -> Bool {
+        guard persistState() else {
+            state = previous
+            status = .failed(String(localized: "Could not save sync settings to the Keychain."))
+            return false
+        }
+        return true
     }
 
     /// Deletes every synced Talaria record from the user's private database,
@@ -272,12 +289,19 @@ final class ConfigurationSyncCoordinator {
         }
         status = .syncing
 
-        let changes: ConfigurationSyncChanges
+        var changes: ConfigurationSyncChanges
+        let fetchedFullSnapshot: Bool
         do {
-            changes = try await fetchChangesResettingExpiredToken()
+            (changes, fetchedFullSnapshot) = try await fetchChangesResettingExpiredToken()
         } catch {
             handle(error)
             return
+        }
+        if fetchedFullSnapshot {
+            // A snapshot carries no tombstones: every record this device mapped
+            // that is no longer present was deleted while the token was invalid.
+            let present = Set(changes.changed.map(\.name))
+            changes.deletedRecordNames += state.recordNames.values.filter { !present.contains($0) }
         }
 
         // Sync may have been turned off or disconnected while the fetch was
@@ -293,8 +317,16 @@ final class ConfigurationSyncCoordinator {
         let remotePreferences: SyncedPreferences?
         do {
             let decoder = ConfigurationSyncCodec.decoder()
-            remoteSetups = try changes.changed.filter { $0.type == .serverSetup }.map {
-                .init(recordName: $0.name, setup: try decoder.decode(SyncedServerSetup.self, from: $0.payload))
+            remoteSetups = try changes.changed.filter { $0.type == .serverSetup }.compactMap {
+                let setup = try decoder.decode(SyncedServerSetup.self, from: $0.payload)
+                // A record naming something that is not a normalized server URL can
+                // never become a local server; it is left alone rather than mapped,
+                // so a later pass cannot mistake it for a local removal.
+                guard (try? AuthManager.normalizedServerURL(from: setup.urlString))?.absoluteString == setup.urlString else {
+                    syncLogger.warning("Ignoring synced server record with an invalid URL")
+                    return nil
+                }
+                return .init(recordName: $0.name, setup: setup)
             }
             remotePreferences = try changes.changed.first { $0.type == .preferences }.map {
                 try decoder.decode(SyncedPreferences.self, from: $0.payload)
@@ -386,12 +418,13 @@ final class ConfigurationSyncCoordinator {
         }
     }
 
-    private func fetchChangesResettingExpiredToken() async throws -> ConfigurationSyncChanges {
+    /// Returns the changes and whether they are a full snapshot (no token).
+    private func fetchChangesResettingExpiredToken() async throws -> (ConfigurationSyncChanges, Bool) {
         do {
-            return try await store.fetchChanges(since: state.changeToken)
+            return (try await store.fetchChanges(since: state.changeToken), state.changeToken == nil)
         } catch ConfigurationSyncStoreError.changeTokenExpired {
             state.changeToken = nil
-            return try await store.fetchChanges(since: nil)
+            return (try await store.fetchChanges(since: nil), true)
         }
     }
 
@@ -483,13 +516,16 @@ final class ConfigurationSyncCoordinator {
         return state
     }
 
-    private func persistState() {
-        guard let keychain else { return }
+    @discardableResult
+    private func persistState() -> Bool {
+        guard let keychain else { return true }
         do {
             let data = try ConfigurationSyncCodec.encoder().encode(state)
             try keychain.save(String(decoding: data, as: UTF8.self), forKey: .configurationSync)
+            return true
         } catch {
             syncLogger.error("Could not persist sync state: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 }

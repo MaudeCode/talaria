@@ -686,6 +686,62 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(device.coordinator.state.appleUserID, "apple-user-relay")
     }
 
+    func testRemoteDeletionIsReconciledAfterChangeTokenExpires() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        await deviceA.authManager.configure(serverURLString: serverA, password: "pw-a")
+        _ = await deviceA.authManager.addServer(serverURLString: serverB, password: "pw-b")
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+        let deviceB = try await makeDevice(store: store)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+        XCTAssertEqual(deviceB.authManager.servers.count, 2)
+
+        let removed = try XCTUnwrap(deviceA.authManager.servers.first { $0.id == serverB })
+        await deviceA.authManager.removeServer(removed)
+        await deviceA.coordinator.sync()
+        store.fetchError = .changeTokenExpired
+        store.failsNextFetchOnly = true
+        deviceB.now.advance(by: 60)
+
+        await deviceB.coordinator.sync()
+
+        XCTAssertEqual(deviceB.authManager.servers.map(\.id), [serverA])
+        XCTAssertEqual(store.records.values.filter { $0.type == .serverSetup }.count, 1)
+    }
+
+    func testFailedHeaderWriteRollsBackThePartialRemoteApply() async throws {
+        let store = InMemoryConfigurationSyncStore()
+        let deviceA = try await makeDevice(store: store)
+        await deviceA.authManager.configure(
+            serverURLString: serverA, password: "pw-a", customHeaders: [CustomHeader(name: "X-A", value: "a")]
+        )
+        deviceA.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceA.coordinator.enableSync()
+
+        let deviceB = try await makeDevice(store: store)
+        deviceB.keychain.saveErrors[.customHeaders] = URLError(.cannotWriteToFile)
+        deviceB.coordinator.signInWithApple(userID: "apple-user-1")
+        await deviceB.coordinator.enableSync()
+
+        guard case .failed = deviceB.coordinator.status else {
+            return XCTFail("Expected a failed status, got \(deviceB.coordinator.status)")
+        }
+        XCTAssertTrue(deviceB.authManager.servers.isEmpty, "A new server that could not be fully applied is rolled back.")
+        XCTAssertNil(deviceB.keychain.scopedValue(.serverPassword, scope: serverA))
+
+        deviceB.keychain.saveErrors = [:]
+        await deviceB.coordinator.sync()
+
+        XCTAssertEqual(deviceB.authManager.servers.map(\.id), [serverA])
+        XCTAssertEqual(
+            [CustomHeader].decodeFromStorage(deviceB.keychain.scopedValue(.customHeaders, scope: serverA)),
+            [CustomHeader(name: "X-A", value: "a")]
+        )
+        XCTAssertEqual(store.saveCount, 1, "The rolled-back copy must not have been uploaded.")
+    }
+
     // MARK: - Disconnect and deletion
 
     func testDisconnectKeepsLocalSetupAndForgetsAppleAccount() async throws {

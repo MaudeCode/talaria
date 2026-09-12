@@ -1064,8 +1064,13 @@ final class AuthManager {
     ) async -> Bool {
         var applied = true
         for setup in setups {
-            guard let serverURL = URL(string: setup.urlString) else { continue }
+            guard let serverURL = URL(string: setup.urlString) else {
+                applied = false
+                continue
+            }
             let existing = serverRegistry.servers.first { $0.id == setup.serverID }
+            let previousHeaders = try? keychain.load(.customHeaders, scope: existing?.customHeadersRef ?? setup.serverID)
+            let previousPassword = serverPassword(for: setup.serverID)
             let account = ServerAccount(
                 id: setup.serverID,
                 urlString: setup.urlString,
@@ -1084,6 +1089,7 @@ final class AuthManager {
                 continue
             }
             let scope = account.customHeadersRef ?? account.urlString
+            var serverApplied = true
             do {
                 if let encoded = setup.customHeaders.encodedForStorage() {
                     try keychain.save(encoded, forKey: .customHeaders, scope: scope)
@@ -1092,9 +1098,16 @@ final class AuthManager {
                 }
             } catch {
                 lastErrorMessage = error.localizedDescription
-                applied = false
+                serverApplied = false
             }
-            if let password = setup.password, !persistServerPassword(password, for: serverURL) {
+            if serverApplied, let password = setup.password, !persistServerPassword(password, for: serverURL) {
+                lastErrorMessage = String(localized: "Could not save the password to the Keychain.")
+                serverApplied = false
+            }
+            if !serverApplied {
+                // Never leave a half-applied setup that the next pass would read
+                // as a local edit and upload over the valid CloudKit copy.
+                rollBackSyncedServer(id: setup.serverID, to: existing, headers: previousHeaders, password: previousPassword)
                 applied = false
             }
             if state.server?.absoluteString == setup.serverID {
@@ -1118,6 +1131,27 @@ final class AuthManager {
             await signInWithStoredPassword(serverID: first.id)
         }
         return applied
+    }
+
+    /// Best-effort restore of one server after a failed remote application:
+    /// the previous registry row, headers, and password, or nothing at all when
+    /// the server was new.
+    private func rollBackSyncedServer(id: String, to previous: ServerAccount?, headers: String?, password: String?) {
+        if let previous {
+            try? serverRegistry.upsert(previous)
+        } else {
+            try? serverRegistry.remove(id: id)
+        }
+        if let headers {
+            try? keychain.save(headers, forKey: .customHeaders, scope: id)
+        } else {
+            try? keychain.delete(.customHeaders, scope: id)
+        }
+        if let password {
+            try? keychain.save(password, forKey: .serverPassword, scope: id)
+        } else {
+            try? keychain.delete(.serverPassword, scope: id)
+        }
     }
 
     /// Mirrors the in-memory header snapshot to `server`'s scoped Keychain entry:
