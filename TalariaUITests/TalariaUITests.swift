@@ -1211,6 +1211,17 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 let getStarted = app.buttons["Get Started"]
                 XCTAssertTrue(getStarted.waitForExistence(timeout: 15), "Missing onboarding fixture [\(variant.name)]")
                 try audit("Onboarding welcome", variant: variant)
+                // The welcome page scrolls once its text outgrows the page, so every
+                // line and badge must clear the bottom bar after scrolling.
+                let subtitle = app.staticTexts["Connect to your self-hosted Web UI over Tailscale."]
+                let lastBadge = element(label: "Tailscale ready")
+                let pageIndicator = element(label: "Page 1 of 5")
+                XCTAssertTrue(pageIndicator.exists && lastBadge.exists, "Welcome page parts missing [\(variant.name)]")
+                for _ in 0..<6 where lastBadge.frame.maxY > pageIndicator.frame.minY {
+                    app.swipeUp()
+                }
+                XCTAssertLessThanOrEqual(subtitle.frame.maxY, pageIndicator.frame.minY, "Subtitle under bottom bar [\(variant.name)]")
+                XCTAssertLessThanOrEqual(lastBadge.frame.maxY, pageIndicator.frame.minY, "Badges under bottom bar [\(variant.name)]")
                 getStarted.tap()
                 let setUp = app.buttons["Set Up"]
                 XCTAssertTrue(setUp.waitForExistence(timeout: 5), "Features page missing [\(variant.name)]")
