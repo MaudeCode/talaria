@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Tap a file link in a chat reply to open that workspace file in a syntax-highlighted viewer at the linked line, with line wrapping and text selection.",
+      "highlight": true
+    }
+  ]
+}
