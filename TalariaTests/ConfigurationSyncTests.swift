@@ -222,6 +222,17 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(device.authManager.serverPassword(for: serverA), AuthManager.noPasswordRequired)
     }
 
+    func testLoginFailsWhenThePasswordCannotBeRetained() async throws {
+        let device = try await makeDevice()
+        device.keychain.saveErrors[.serverPassword] = URLError(.cannotWriteToFile)
+
+        await device.authManager.configure(serverURLString: serverA, password: "pw-a")
+
+        XCTAssertEqual(device.authManager.state, .unconfigured)
+        XCTAssertTrue(device.authManager.servers.isEmpty)
+        XCTAssertNotNil(device.authManager.lastErrorMessage)
+    }
+
     func testSignOutRemovesRetainedPassword() async throws {
         let device = try await makeDevice()
         await device.authManager.configure(serverURLString: serverA, password: "pw-a")

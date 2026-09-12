@@ -422,7 +422,14 @@ struct AppleAccountSettingsView: View {
     @MainActor
     private func disconnect() async {
         errorMessage = nil
-        coordinator.disconnect()
+        // One action: if sync could not record the disconnect, leave the relay
+        // signed in too rather than half-applying the choice.
+        guard coordinator.disconnect() else {
+            if case .failed(let message) = coordinator.status {
+                errorMessage = message
+            }
+            return
+        }
         guard let credentials = TalariaRelayConfigurationStore.load() else { return }
         do {
             try await RelayConnectionOperations.disconnect(credentials: credentials)

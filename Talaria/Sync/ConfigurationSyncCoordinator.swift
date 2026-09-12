@@ -170,13 +170,16 @@ final class ConfigurationSyncCoordinator {
     }
 
     /// Disconnect: stop syncing and forget the Apple sign-in. Local setup stays.
-    func disconnect() {
+    /// Returns false, with the state reverted, when it could not be persisted.
+    @discardableResult
+    func disconnect() -> Bool {
         let previous = state
         state.resetRemoteBookkeeping()
         state.appleUserID = nil
         scheduledSync?.cancel()
-        guard commitState(revertingTo: previous) else { return }
+        guard commitState(revertingTo: previous) else { return false }
         status = .signedOut
+        return true
     }
 
     /// Persists an account or toggle change, or reverts it and reports the

@@ -105,6 +105,13 @@ final class AuthManager {
     /// Servers already probed by `resolveMissingPasswordMarkers` this launch.
     private var passwordProbes: Set<String> = []
 
+    /// The Keychain refused the retained password after a successful login.
+    struct PasswordRetentionError: LocalizedError {
+        var errorDescription: String? {
+            String(localized: "Could not save the password to the Keychain.")
+        }
+    }
+
     /// Stored as the retained password when a server authenticated without
     /// one (auth off, trusted headers, OIDC), so sync can tell "no password
     /// needed" from "never captured" (TAL-91).
@@ -642,6 +649,11 @@ final class AuthManager {
         cookies.forEach(targetStorage.setCookie)
         do {
             try persistSessionCookies(serverURL)
+            // Retained before the registry row exists: a server that cannot keep
+            // its password would sync without one and never sign in again.
+            guard persistServerPassword(password, for: serverURL) else {
+                throw PasswordRetentionError()
+            }
             try serverRegistry.activate(url: serverURL)
         } catch {
             clearStoredSessionCookies(serverURL)
@@ -650,7 +662,6 @@ final class AuthManager {
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         headerStore.replace(with: headers)
         persistCustomHeaders(for: serverURL)
-        persistServerPassword(password, for: serverURL)
         refreshServers()
         clearQuotaWidgetSnapshot()
         recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
@@ -665,10 +676,12 @@ final class AuthManager {
     ) throws {
         // Nothing durable is written until authentication has completed.
         try persistSessionCookies(serverURL)
+        guard persistServerPassword(password, for: serverURL) else {
+            throw PasswordRetentionError()
+        }
         try serverRegistry.activate(url: serverURL)
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         persistCustomHeaders(for: serverURL)
-        persistServerPassword(password, for: serverURL)
         refreshServers()
         if previousServerID != serverURL.absoluteString {
             clearQuotaWidgetSnapshot()
@@ -1086,11 +1099,23 @@ final class AuthManager {
         // Everything mutated so far in this batch, so any failure restores the
         // whole batch rather than leaving earlier servers half-synced.
         var rollbacks: [(id: String, previous: ServerAccount?, headers: String?, password: String?)] = []
+        let originalOrder = serverRegistry.servers.map(\.id)
         func rollBackBatch() {
             for entry in rollbacks.reversed() {
                 rollBackSyncedServer(id: entry.id, to: entry.previous, headers: entry.headers, password: entry.password)
             }
+            try? serverRegistry.reorder(ids: originalOrder)
             refreshServers()
+        }
+        // Removals go first: a removed server cannot be recreated with its
+        // purged local state, so nothing else may have been mutated when a
+        // removal fails or sync is turned off during its logout suspension.
+        for id in removedIDs {
+            guard shouldContinue() else { return false }
+            guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
+            if await !removeServer(account, shouldContinue: shouldContinue) {
+                return false
+            }
         }
         for setup in setups {
             guard shouldContinue() else {
@@ -1154,19 +1179,6 @@ final class AuthManager {
             lastErrorMessage = error.localizedDescription
             rollBackBatch()
             return false
-        }
-        for id in removedIDs {
-            // Removal can suspend on the best-effort server logout; sync may have
-            // been turned off meanwhile, and that promised to keep local setup.
-            guard shouldContinue() else {
-                rollBackBatch()
-                return false
-            }
-            guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
-            if await !removeServer(account, shouldContinue: shouldContinue) {
-                rollBackBatch()
-                return false
-            }
         }
         refreshServers()
         if state == .unconfigured, shouldContinue(), let first = serverRegistry.servers.first {
