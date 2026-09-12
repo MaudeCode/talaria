@@ -98,6 +98,9 @@ fork's web UI against the same server:
    - **Never invent API endpoints or JSON shapes** — verify against the pinned
      upstream `hermes-webui` source or your own running server.
    - **No new third-party dependencies** without approval.
+   - **Add release metadata** for every addressed ticket. Follow
+     [release-note authoring](docs/release-notes.md) for the fragment schema,
+     explicit repository-only skips, commit/PR format, and validation commands.
 4. **Run the full test suite** (command above) and make sure it passes.
 5. **Open a PR** against `main` using the PR template. Reference the `TAL` key
    and describe what changed and how you tested it. CI must be
