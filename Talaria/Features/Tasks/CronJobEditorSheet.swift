@@ -168,6 +168,7 @@ struct CronJobEditorSheet: View {
                     onToggleFavorite: { _ in },
                     onDeleteSavedCustom: { _ in },
                     showsFavorites: false,
+                    requiresCustomProviderID: false,
                     onClear: {
                         draft.applyModelSelection(nil)
                     }

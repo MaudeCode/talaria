@@ -209,6 +209,24 @@ final class CronManagementModelTests: XCTestCase {
         XCTAssertNil(draft.trimmedProvider)
     }
 
+    func testTaskEditorCustomModelEntryAllowsABareModelID() {
+        // The task editor's only fallback when the catalog is missing or
+        // failed; a bare id resolves through the profile or active provider.
+        XCTAssertEqual(
+            ComposerModelPickerSheet.customOption(modelID: " gpt-5 ", providerID: "  ", requiresProviderID: false),
+            ModelCatalogOption(id: "gpt-5", displayName: "gpt-5", providerID: nil)
+        )
+        XCTAssertEqual(
+            ComposerModelPickerSheet.customOption(modelID: "gpt-5", providerID: " OpenAI ", requiresProviderID: false),
+            ModelCatalogOption(id: "gpt-5", displayName: "gpt-5", providerID: "openai")
+        )
+        XCTAssertNil(ComposerModelPickerSheet.customOption(modelID: "  ", providerID: "openai", requiresProviderID: false))
+        XCTAssertNil(
+            ComposerModelPickerSheet.customOption(modelID: "gpt-5", providerID: "", requiresProviderID: true),
+            "The composer keeps requiring a provider id."
+        )
+    }
+
     func testCronJobEditorDraftModelSelectionKeepsUnknownModelVisible() {
         let catalog = [
             ModelCatalogGroup(

@@ -12,6 +12,10 @@ struct ComposerModelPickerSheet: View {
     /// Off for surfaces that must not read or write `ModelFavoritesStore`
     /// (the task editor): no stars on the rows or the custom entry.
     var showsFavorites = true
+    /// Off for the task editor, where a bare model id is valid: the server
+    /// resolves it through the job's profile or the active provider, and
+    /// `createCron`/`updateCron` send `provider` as optional.
+    var requiresCustomProviderID = true
     /// Renders a "Server Default" row above the catalog for surfaces where an
     /// unset model is a real value the server acts on. Nil leaves the list
     /// starting at the catalog.
@@ -388,10 +392,26 @@ struct ComposerModelPickerSheet: View {
     }
 
     private var customOption: ModelCatalogOption? {
-        let modelID = customModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let providerID = customProviderID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !modelID.isEmpty, !providerID.isEmpty else { return nil }
-        return ModelCatalogOption(id: modelID, displayName: modelID, providerID: providerID)
+        Self.customOption(
+            modelID: customModelID,
+            providerID: customProviderID,
+            requiresProviderID: requiresCustomProviderID
+        )
+    }
+
+    static func customOption(
+        modelID: String,
+        providerID: String,
+        requiresProviderID: Bool
+    ) -> ModelCatalogOption? {
+        let modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let providerID = providerID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !modelID.isEmpty, !providerID.isEmpty || !requiresProviderID else { return nil }
+        return ModelCatalogOption(
+            id: modelID,
+            displayName: modelID,
+            providerID: providerID.isEmpty ? nil : providerID
+        )
     }
 
     private var selectedCustomOption: ModelCatalogOption? {
