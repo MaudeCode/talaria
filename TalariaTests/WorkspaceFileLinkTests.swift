@@ -75,6 +75,13 @@ final class WorkspaceFileLinkTests: XCTestCase {
         )
     }
 
+    func testFilesystemRootWorkspaceAcceptsAbsolutePaths() {
+        XCTAssertEqual(parse("/etc/hosts:3", root: "/"), WorkspaceFileLink(path: "etc/hosts", line: 3))
+        XCTAssertEqual(parse("./etc/hosts", root: "/"), WorkspaceFileLink(path: "etc/hosts", line: nil))
+        XCTAssertNil(parse("/", root: "/"))
+        XCTAssertNil(parse("~/hosts", root: "/"))
+    }
+
     func testWorkspaceRootToleratesTrailingSlashAndWhitespace() {
         XCTAssertEqual(
             parse("./a.swift", root: " /Users/hermes/projects/app/ "),

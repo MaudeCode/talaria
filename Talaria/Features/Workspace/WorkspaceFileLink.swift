@@ -30,10 +30,10 @@ struct WorkspaceFileLink: Hashable, Identifiable {
     }
 
     /// Nil when the destination is not a file link, the workspace root is
-    /// unknown, or the path lexically resolves outside the workspace.
+    /// unknown, or the path lexically resolves outside the workspace. A root of
+    /// `/` is a valid, if unusual, workspace.
     static func parse(_ destination: String, workspaceRoot: String?) -> WorkspaceFileLink? {
         guard let rootComponents = components(ofAbsolutePath: workspaceRoot ?? ""),
-              !rootComponents.isEmpty,
               let target = fileTarget(of: destination.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return nil }
 

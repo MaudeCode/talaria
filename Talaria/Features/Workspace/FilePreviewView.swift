@@ -150,7 +150,7 @@ struct FilePreviewView: View {
     @ViewBuilder
     private func previewContent(_ preview: FilePreviewContent) -> some View {
         switch preview {
-        case let .text(file) where isMarkdownFile:
+        case let .text(file) where rendersMarkdown:
             markdownContent(file.content ?? "")
         case let .text(file):
             sourceContent(file)
@@ -236,14 +236,16 @@ struct FilePreviewView: View {
     }
 
     private var isSourcePreview: Bool {
-        if case .text = viewModel.preview, !isMarkdownFile {
+        if case .text = viewModel.preview, !rendersMarkdown {
             return true
         }
         return false
     }
 
-    private var isMarkdownFile: Bool {
-        guard let path = entry.path else { return false }
+    /// Markdown renders as prose unless a link asked for a line: the rendered
+    /// document has no line numbers, so a targeted link uses the source viewer.
+    private var rendersMarkdown: Bool {
+        guard initialLine == nil, let path = entry.path else { return false }
         return ["md", "markdown", "mdown", "mkd"].contains((path as NSString).pathExtension.lowercased())
     }
 
