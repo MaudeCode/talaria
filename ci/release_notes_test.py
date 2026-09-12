@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline CLI checks in disposable, deterministic Git repositories."""
 
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 
 SCRIPT = Path(__file__).with_name("release_notes.py").resolve()
@@ -64,6 +66,119 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def generate(self, *args, **kwargs):
         return self.cli("generate", "--target", "HEAD", "--version", "1.1.0", "--output", "out", *args, **kwargs)
+
+    def mock_github(self, responses):
+        binary = self.root / "bin/gh"
+        binary.parent.mkdir(exist_ok=True)
+        binary.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "assert sys.argv[1] == 'api'\n"
+            "responses = json.loads(Path(__file__).with_name('responses.json').read_text())\n"
+            "response = responses[sys.argv[2]]\n"
+            "if isinstance(response, dict) and 'zip' in response:\n"
+            "    assert len(sys.argv) == 3\n"
+            "    sys.stdout.buffer.write(bytes.fromhex(response['zip']))\n"
+            "else:\n"
+            "    assert sys.argv[3:] == ['--paginate', '--slurp']\n"
+            "    print(json.dumps(response))\n"
+        )
+        binary.chmod(0o755)
+        binary.with_name("responses.json").write_text(json.dumps(responses))
+        self.env["PATH"] = str(binary.parent) + os.pathsep + os.environ["PATH"]
+
+    def published_responses(self, runs, jobs):
+        root = "repos/fixture/app/actions"
+        # Separate pages exercise CLI pagination without network access.
+        responses = {f"{root}/workflows/release.yml/runs?status=success&per_page=100":
+                     [{"workflow_runs": [run]} for run in runs]}
+        for run_id, job in jobs.items():
+            responses[f"{root}/runs/{run_id}/jobs?per_page=100"] = [
+                {"jobs": []}, {"jobs": [job]}]
+        return responses
+
+    def published_baseline(self, error=None):
+        return self.cli("previous-published", "--target", "HEAD", "--version", "1.1.0",
+                        "--repo", "fixture/app", error=error).stdout.strip()
+
+    def test_published_baseline_preserves_notes_before_failed_tags(self):
+        baseline = self.git("rev-parse", "HEAD")
+        self.add_fragment(2, "Important change before failed tag")
+        self.commit("TAL-2: important change")
+        self.git("tag", "v1.0.1")
+        failed = self.git("rev-parse", "HEAD")
+        self.add_fragment(3, "Later change")
+        self.commit("TAL-3: later change")
+        runs = [
+            {"id": 3, "event": "push", "head_branch": "v1.0.1", "head_sha": failed, "conclusion": "failure"},
+            {"id": 2, "event": "workflow_dispatch", "head_branch": "main", "head_sha": failed, "conclusion": "success"},
+            {"id": 1, "event": "push", "head_branch": "v1.0.0", "head_sha": baseline, "conclusion": "success"},
+        ]
+        jobs = {
+            2: {"name": "Publish iOS app", "conclusion": "skipped", "completed_at": "2026-01-03T00:00:00Z"},
+            1: {"name": "Publish iOS app", "conclusion": "success", "completed_at": "2026-01-02T00:00:00Z"},
+        }
+        self.mock_github(self.published_responses(runs, jobs))
+        selected = self.published_baseline()
+        self.assertEqual(selected, baseline)
+        self.generate("--previous", selected)
+        notes = (self.root / "out/release-notes.md").read_text()
+        self.assertIn("Important change before failed tag", notes)
+        self.assertIn("Later change", notes)
+
+    def test_published_baseline_skips_unmerged_releases_and_unneeded_old_manual_history(self):
+        baseline = self.git("rev-parse", "HEAD")
+        self.git("switch", "-c", "unmerged")
+        self.write("side.md", "Side release")
+        self.commit("Side release")
+        side = self.git("rev-parse", "HEAD")
+        self.git("tag", "v1.0.5")
+        self.git("switch", "main")
+        self.add_fragment(2)
+        self.commit("TAL-2: release")
+        runs = [
+            {"id": 1, "event": "push", "head_branch": "v1.0.0", "head_sha": baseline, "conclusion": "success"},
+            {"id": 2, "event": "push", "head_branch": "v1.0.5", "head_sha": side, "conclusion": "success"},
+            {"id": 3, "event": "workflow_dispatch", "head_branch": "main", "head_sha": baseline, "conclusion": "success"},
+        ]
+        jobs = {number: {"name": "Publish iOS app", "conclusion": "success", "completed_at": date}
+                for number, date in ((1, "2026-01-02T00:00:00Z"), (2, "2026-01-03T00:00:00Z"), (3, "2026-01-01T00:00:00Z"))}
+        # No artifact response for the old manual run: it must never be needed.
+        self.mock_github(self.published_responses(runs, jobs))
+        self.assertEqual(self.published_baseline(), baseline)
+
+    def test_manual_publication_uses_artifact_source_not_workflow_head(self):
+        baseline = self.git("rev-parse", "HEAD")
+        self.add_fragment(2)
+        self.commit("TAL-2: new release")
+        target = self.git("rev-parse", "HEAD")
+        run = {"id": 2, "event": "workflow_dispatch", "head_branch": "main", "head_sha": target, "conclusion": "success"}
+        jobs = {2: {"name": "Publish iOS app", "conclusion": "success", "completed_at": "2026-01-02T00:00:00Z"}}
+        responses = self.published_responses([run], jobs)
+        artifact_path = "repos/fixture/app/actions/runs/2/artifacts?per_page=100"
+        responses[artifact_path] = [{"artifacts": [{"id": 20, "name": "release-notes-1.0.0", "expired": False}]}]
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr("release-notes.json", json.dumps({"schemaVersion": 1, "sourceCommit": baseline, "releases": [{"version": "1.0.0"}]}))
+        responses["repos/fixture/app/actions/artifacts/20/zip"] = {"zip": archive.getvalue().hex()}
+        self.mock_github(responses)
+        self.assertEqual(self.published_baseline(), baseline)
+        responses[artifact_path][0]["artifacts"][0]["expired"] = True
+        self.mock_github(responses)
+        self.published_baseline(error="lacks retained release-note provenance")
+
+    def test_published_baseline_fails_closed_without_history_or_after_retag(self):
+        self.mock_github(self.published_responses([], {}))
+        self.published_baseline(error="no successful published release baseline")
+        baseline = self.git("rev-parse", "HEAD")
+        self.add_fragment(2)
+        self.commit("TAL-2: new release")
+        self.git("tag", "-f", "v1.0.0")
+        run = {"id": 1, "event": "push", "head_branch": "v1.0.0", "head_sha": baseline, "conclusion": "success"}
+        jobs = {1: {"name": "Publish iOS app", "conclusion": "success", "completed_at": "2026-01-02T00:00:00Z"}}
+        self.mock_github(self.published_responses([run], jobs))
+        self.published_baseline(error="no longer matches")
 
     def test_adjacent_tags_order_highlights_multiple_entries_and_determinism(self):
         self.add_fragment(10, "Reconnect safely", "Fixed")

@@ -4,10 +4,12 @@
 import argparse
 from datetime import datetime, timezone
 import html
+import io
 import json
 from pathlib import Path
 import re
 import subprocess
+import zipfile
 
 
 DIRECTORY = "changelog.d"
@@ -137,6 +139,73 @@ def previous_tag(target, version):
     return max(candidates)[1]
 
 
+def github_api(path, paginate=True):
+    options = ["--paginate", "--slurp"] if paginate else []
+    result = subprocess.run(["gh", "api", path, *options], capture_output=True)
+    if result.returncode:
+        raise ValueError(f"GitHub release history: {result.stderr.decode('utf-8').strip()}")
+    return json.loads(result.stdout) if paginate else result.stdout
+
+
+def previous_published(target, version, repository):
+    """Use successful uploads, never the mere existence of a semantic tag."""
+    if not re.fullmatch(VERSION, version):
+        raise ValueError("version must use X.Y.Z numeric semantic versioning")
+    target = commit(target)
+    target_version = tuple(map(int, version.split(".")))
+    root = f"repos/{repository}/actions"
+    published = []
+    pages = github_api(f"{root}/workflows/release.yml/runs?status=success&per_page=100")
+    for run in (run for page in pages for run in page["workflow_runs"]):
+        if run["conclusion"] != "success" or run["event"] not in {"push", "workflow_dispatch"}:
+            continue
+        jobs = github_api(f"{root}/runs/{run['id']}/jobs?per_page=100")
+        for page in jobs:
+            for job in page["jobs"]:
+                if job["name"] == "Publish iOS app" and job["conclusion"] == "success":
+                    published.append((job["completed_at"], run))
+    for _, run in sorted(published, key=lambda item: item[0], reverse=True):
+        if run["event"] == "push":
+            tag = run["head_branch"] or ""
+            if not re.fullmatch("v" + VERSION, tag):
+                continue
+            released_version, sha = tag[1:], run["head_sha"]
+            if tuple(map(int, released_version.split("."))) >= target_version:
+                continue
+            if commit(f"refs/tags/{tag}") != sha:
+                raise ValueError(f"published tag {tag} no longer matches run {run['id']}; refusing an ambiguous baseline")
+        else:
+            # Dispatch run.head_sha is the workflow ref, not the checked-out tag.
+            pages = github_api(f"{root}/runs/{run['id']}/artifacts?per_page=100")
+            artifacts = [artifact for page in pages for artifact in page["artifacts"]
+                         if artifact["name"].startswith("release-notes-")]
+            if len(artifacts) != 1:
+                raise ValueError(f"published manual run {run['id']} lacks retained release-note provenance")
+            artifact_version = artifacts[0]["name"].removeprefix("release-notes-")
+            if not re.fullmatch(VERSION, artifact_version):
+                raise ValueError(f"invalid release artifact name in run {run['id']}")
+            if tuple(map(int, artifact_version.split("."))) >= target_version:
+                continue
+            if artifacts[0]["expired"]:
+                raise ValueError(f"published manual run {run['id']} lacks retained release-note provenance")
+            archive = github_api(f"{root}/artifacts/{artifacts[0]['id']}/zip", paginate=False)
+            with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                catalog = json.loads(bundle.read("release-notes.json"))
+            if catalog["schemaVersion"] != 1 or len(catalog["releases"]) != 1:
+                raise ValueError(f"invalid release catalog in run {run['id']}")
+            released_version = catalog["releases"][0]["version"]
+            sha = catalog["sourceCommit"]
+            if artifacts[0]["name"] != f"release-notes-{released_version}":
+                raise ValueError(f"release artifact version mismatch in run {run['id']}")
+        if (not isinstance(released_version, str) or not re.fullmatch(VERSION, released_version)
+                or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha)):
+            raise ValueError(f"invalid release provenance in run {run['id']}")
+        parts = tuple(map(int, released_version.split(".")))
+        if parts < target_version and sha != target and git("merge-base", sha, target) == sha:
+            return sha
+    raise ValueError("no successful published release baseline found in retained GitHub Actions history")
+
+
 def markdown_text(value):
     value = html.escape(value, quote=False)
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
@@ -166,7 +235,7 @@ def generate(previous, target, version, output):
     date = datetime.fromtimestamp(int(git("show", "-s", "--format=%ct", target)), timezone.utc).date().isoformat()
     release = {"version": version, "date": date, "highlights": highlights,
                "sections": [{"category": category, "entries": entries} for category, entries in sections.items() if entries]}
-    catalog = {"schemaVersion": 1, "releases": [release]}
+    catalog = {"schemaVersion": 1, "sourceCommit": target, "releases": [release]}
     lines = [f"## [{version}] - {date}", ""]
     groups = [("Featured", highlights), *sections.items()]
     for title, entries in groups:
@@ -192,13 +261,19 @@ def main():
     render.add_argument("--target", required=True)
     render.add_argument("--version", required=True)
     render.add_argument("--output", type=Path, required=True)
+    published = commands.add_parser("previous-published", help="resolve the last successful upload using GitHub Actions history")
+    published.add_argument("--target", required=True)
+    published.add_argument("--version", required=True)
+    published.add_argument("--repo", required=True)
     args = parser.parse_args()
     try:
         if args.command == "validate":
             validate(args.base)
+        elif args.command == "previous-published":
+            print(previous_published(args.target, args.version, args.repo))
         else:
             generate(args.previous, args.target, args.version, args.output)
-    except (ValueError, OSError) as error:
+    except (ValueError, OSError, KeyError, IndexError, TypeError, zipfile.BadZipFile) as error:
         parser.exit(1, f"release notes: {error}\n")
 
 

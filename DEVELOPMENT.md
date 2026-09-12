@@ -362,8 +362,8 @@ testing. There is no separate internal-only archive.
    distribution identity, downloads each target's active App Store profile, and
    manually signs the app, share extension, and Live Activity widget before upload.
    The validation job automatically generates Markdown and JSON release notes
-   from the preceding semantic release tag through the validated SHA. The notes
-   appear in its summary and the `release-notes-X.Y.Z` workflow artifact. See
+   from the preceding successful TestFlight publication through the validated SHA.
+   The notes appear in its summary and the `release-notes-X.Y.Z` workflow artifact. See
    [release-note authoring](docs/release-notes.md) for the metadata contract.
 5. Wait for App Store Connect processing, add the build to the internal group,
    and test it on the owner's iPhone. External group assignment and Beta App

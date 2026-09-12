@@ -1,8 +1,8 @@
 # Release-note authoring
 
 Agents add release metadata with each implementation. Once the PR merges, the
-signed-tag workflow does everything else: selects the preceding reachable
-semantic release tag, validates the target Git tree, renders Markdown and JSON,
+signed-tag workflow does everything else: finds the preceding successful
+TestFlight publication, validates the target Git tree, renders Markdown and JSON,
 adds the Markdown to the workflow summary, and retains both files as the
 `release-notes-X.Y.Z` artifact for 90 days. No release-time writing, sorting,
 copying, LLM call, or extra credential is needed.
@@ -89,11 +89,26 @@ python3 ci/release_notes.py generate \
   --output build/release-notes
 ```
 
-Omit `--previous` to select the highest lower numeric `vX.Y.Z` tag reachable from
-the target. Non-semantic tags and tags on unmerged branches are ignored. An
-explicit baseline must be a strict ancestor; a repository with no prior release
-tag requires `--previous <baseline-ref>`. Normal signed releases already have a
-preceding semantic tag and need no input beyond the release tag.
+For an offline preview, omit `--previous` to select the highest lower numeric
+`vX.Y.Z` tag reachable from the target. This tag-only preview does not prove that
+an earlier release succeeded. Non-semantic tags and tags on unmerged branches are
+ignored. An explicit baseline must be a strict ancestor; a repository with no prior release
+tag requires `--previous <baseline-ref>`.
+
+Production resolves the baseline automatically with `previous-published` and
+passes its SHA to `generate --previous`. The resolver pages through the Release
+workflow's successful runs and verifies that **Publish iOS app** succeeded.
+It selects the most recent publication with a lower marketing version whose
+source commit is an ancestor of the target. Failed tag validations, failed
+uploads, and successful dry builds with a skipped publish job cannot consume
+release notes. This uses the existing workflow token's `actions: read` access.
+
+For tag pushes, the run's tag and SHA identify the published source, and the tag
+must still match that SHA. For manual dispatches, the workflow ref can differ
+from the built tag, so the resolver reads the release artifact's `sourceCommit`
+and version. It stops with an error if the required publication history or manual
+artifact has been deleted or expired; it never guesses from a failed tag. Older
+manual artifacts are not needed once a newer eligible publication is found.
 
 The generator reads committed blobs from the target SHA, never the working tree.
 It includes only newly introduced fragments after the baseline and rejects edits,
@@ -111,6 +126,7 @@ order. Entries sort by numeric ticket number and then their authored array order
 ```json
 {
   "schemaVersion": 1,
+  "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
   "releases": [
     {
       "version": "1.8.0",
@@ -140,6 +156,9 @@ as the categories, ordered by ticket and authored entry order. Entry IDs are the
 ticket key followed by the one-based entry index. Skip reasons are excluded from
 both user-facing outputs. Bundling and presenting this catalog belong to the
 separate What's New app task.
+
+`sourceCommit` records the exact validated Git SHA and lets a later release find
+the correct baseline even when this release was built through manual dispatch.
 
 Release-note generation runs after signed-tag, ancestry, and exact-main-CI
 validation and before any archive or upload. It also runs for a manual build with
