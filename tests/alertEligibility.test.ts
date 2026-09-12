@@ -346,6 +346,45 @@ describe("publisher alert eligibility", () => {
     expect((await jobs(backend)).map((job) => [job.kind, job.status])).toEqual([["live_activity_start", "stale"]]);
   });
 
+  it("stales a queued notification once its event is suppressed", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const queued = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(queued).toMatchObject({ kind: "notification", status: "queued" });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 3, snapshotId: "s2",
+      states: [{ ...snapshotState("session-1", 3, "waiting_for_approval", false), eventId: "session-1-event-2", updatedAt: now + 2 }, snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 4 })).resolves.toEqual({ status: "stale" });
+  });
+
+  it("releases a deferral on an eligible transition even while Live Activities are disabled", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const device = await backend.run(async (ctx) => ctx.db.query("devices").first());
+    expect(device?.pushToStartDeferredAt).toBeDefined();
+    await backend.run(async (ctx) => ctx.db.patch(device!._id, { preferences: { ...device!.preferences, liveActivitiesEnabled: false } }));
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 2, snapshotId: "s2",
+      states: [snapshotState("session-1", 3, "running"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([]);
+    expect((await backend.run(async (ctx) => ctx.db.get(device!._id)))?.pushToStartDeferredAt).toBeUndefined();
+    await backend.run(async (ctx) => ctx.db.patch(device!._id, { preferences: { ...device!.preferences, liveActivitiesEnabled: true } }));
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    expect((await jobs(backend)).map((job) => job.kind)).toEqual(["live_activity_start"]);
+  });
+
   it("clears a deferral when an aggregate activity registers", async () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptState, {

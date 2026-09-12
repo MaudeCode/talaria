@@ -353,21 +353,11 @@ export const recompute = internalMutation({
         }
         continue;
       }
-      if (
-        device.revokedAt !== undefined ||
-        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
-        !device.bundleId ||
-        !device.apsEnvironment ||
-        !device.preferences.liveActivitiesEnabled ||
-        !device.pushToStartToken
-      ) {
-        continue;
-      }
       // APNs requires an alert on push-to-start. An ineligible event on a device without an aggregate activity defers
-      // the start instead of injecting the fallback alert. The deferral is recorded before the lease check so a stale
-      // in-flight start cannot leak. It holds while the suppressed state is still visible, and otherwise until an
-      // eligible phase transition, an activity, or idle work releases it, so heartbeats, retention, and idle
-      // recomputes cannot alert for the suppressed event.
+      // the start instead of injecting the fallback alert. The deferral is tracked before the validity and lease
+      // checks so a disabled device or a stale in-flight start cannot leak or strand it. It holds while the suppressed
+      // state is still visible, and otherwise until an eligible phase transition, an activity, or idle work releases
+      // it, so heartbeats, retention, and idle recomputes cannot alert for the suppressed event.
       const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
       const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
       const eligibleTransition = visibleChanges.some(({ state, previousPhase }) =>
@@ -380,6 +370,16 @@ export const recompute = internalMutation({
         await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
       } else if (!deferred && device.pushToStartDeferredAt !== undefined) {
         await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
+      }
+      if (
+        device.revokedAt !== undefined ||
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
+        !device.bundleId ||
+        !device.apsEnvironment ||
+        !device.preferences.liveActivitiesEnabled ||
+        !device.pushToStartToken
+      ) {
+        continue;
       }
       if ((device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS) continue;
       const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
@@ -763,6 +763,7 @@ export const claimJob = internalMutation({
           !grant ||
           !state ||
           state.deleted ||
+          state.alertEligible === false ||
           !job.stateFingerprint.includes(`:${state.eventId}:`)
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
