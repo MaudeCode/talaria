@@ -687,13 +687,15 @@ describe("Convex relay state", () => {
       userId: "user-b",
       now,
     })).resolves.toEqual([expect.objectContaining({ sessionId: "session-b", title: "Private B", alertEligible: false })]);
-    const malformedBody = snapshotBody.replace('"alertEligible":false', '"alertEligible":"no"');
-    const malformed = await backend.fetch(snapshotPath, {
-      method: "PUT",
-      headers: await signedHeaders("PUT", snapshotPath, malformedBody, "malformed-nonce"),
-      body: malformedBody,
-    });
-    expect(malformed.status).toBe(400);
+    for (const [value, nonce] of [['"no"', "malformed-nonce"], ["null", "null-nonce"]]) {
+      const malformedBody = snapshotBody.replace('"alertEligible":false', `"alertEligible":${value}`);
+      const malformed = await backend.fetch(snapshotPath, {
+        method: "PUT",
+        headers: await signedHeaders("PUT", snapshotPath, malformedBody, nonce!),
+        body: malformedBody,
+      });
+      expect(malformed.status).toBe(400);
+    }
     await expect(backend.query(internal.publishers.listCurrentStates, {
       userId: "user-a",
       now,

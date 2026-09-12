@@ -58,9 +58,21 @@ function expiryForState(
   return expiryForPhase(next.phase, now);
 }
 
-// Ineligibility belongs to the phase transition that carried it, so same-phase updates inherit it until the phase changes.
-function alertEligibleForState(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; alertEligible?: boolean }): boolean | undefined {
-  return current && !current.deleted && current.phase === next.phase && current.alertEligible === false ? false : next.alertEligible;
+// Ineligibility belongs to the phase transition that carried it, so same-phase updates of the same run inherit it
+// until the phase changes. A new stream is a new run and starts from its own value.
+function alertEligibleForState(
+  current: Doc<"sessionStates"> | null | undefined,
+  next: { phase: SessionPhase; streamId?: string; alertEligible?: boolean },
+): boolean | undefined {
+  return current && !current.deleted && current.phase === next.phase && current.streamId === next.streamId
+    && current.alertEligible === false ? false : next.alertEligible;
+}
+
+// The phase a delivery transition starts from. A first publication, a re-created session, or a new run that begins in
+// the same phase has none: it never alerts, but it still carries eligibility to delivery.
+function previousPhaseFor(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; streamId?: string }): SessionPhase | undefined {
+  if (!current || current.deleted) return undefined;
+  return current.phase === next.phase && current.streamId !== next.streamId ? undefined : current.phase;
 }
 
 function stateRunKey(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string; phase: SessionPhase; eventId: string }): string {
@@ -209,7 +221,7 @@ export const acceptState = internalMutation({
         if (states.length >= 500) continue;
       }
 
-      const previousPhase = existing?.deleted ? undefined : existing?.phase;
+      const previousPhase = args.state ? previousPhaseFor(existing, args.state) : existing?.deleted ? undefined : existing?.phase;
       const next = args.state
         ? {
             deleted: false,
@@ -315,11 +327,11 @@ export const acceptSnapshot = internalMutation({
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
-        if (!current || current.phase !== state.phase) {
+        if (!current || current.phase !== state.phase || current.streamId !== state.streamId) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
-            previousPhase: current?.phase,
+            previousPhase: previousPhaseFor(current, state),
             state: exposedState(next as Doc<"sessionStates">),
           });
         }

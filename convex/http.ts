@@ -285,7 +285,7 @@ function parseState(
   const phase = value.phase;
   const updatedAt = numberField(value, "updatedAt");
   const deepLink = stringField(value, "deepLink", 512);
-  const alertEligible = value.alertEligible ?? undefined;
+  const alertEligible = value.alertEligible;
   if (
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     !sessionId ||

@@ -66,8 +66,8 @@ async function jobs(backend: Backend) {
   return rows.map((job) => ({ kind: job.kind, status: job.status, aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps }));
 }
 
-function snapshotState(sessionId: string, revision: number, phase: SessionPhase, alertEligible?: boolean) {
-  return { sessionId, eventId: `${sessionId}-event-${revision}`, revision, title: sessionId, phase, updatedAt: now + revision, deepLink: `/sessions/${sessionId}`, ...(alertEligible === undefined ? {} : { alertEligible }) };
+function snapshotState(sessionId: string, revision: number, phase: SessionPhase, alertEligible?: boolean, streamId?: string) {
+  return { sessionId, eventId: `${sessionId}-event-${revision}`, revision, title: sessionId, phase, updatedAt: now + revision, deepLink: `/sessions/${sessionId}`, ...(alertEligible === undefined ? {} : { alertEligible }), ...(streamId === undefined ? {} : { streamId }) };
 }
 
 describe("publisher alert eligibility", () => {
@@ -239,6 +239,27 @@ describe("publisher alert eligibility", () => {
       expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "2 active sessions", sound: "default" } }) }),
     ]);
     expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
+  });
+
+  it("does not inherit suppression into a new run that begins in the same phase", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval", false, "run-1"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([]);
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 2, snapshotId: "s2",
+      states: [snapshotState("session-1", 3, "waiting_for_approval", undefined, "run-2"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const state = await backend.query(internal.publishers.getState, { userId: "user-1", publisherId, sessionId: "session-1" });
+    expect(state).toMatchObject({ streamId: "run-2" });
+    expect(state).not.toHaveProperty("alertEligible");
+    expect(await jobs(backend)).toEqual([
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "Talaria", body: "1 needs attention", sound: "default" } }) }),
+    ]);
   });
 
   it("clears a deferral when an aggregate activity registers", async () => {

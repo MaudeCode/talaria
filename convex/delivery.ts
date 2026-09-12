@@ -371,7 +371,7 @@ export const recompute = internalMutation({
       const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
       const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
       const eligibleTransition = visibleChanges.some(({ state, previousPhase }) =>
-        previousPhase !== undefined && previousPhase !== state.phase && state.alertEligible !== false,
+        previousPhase !== state.phase && state.alertEligible !== false,
       );
       const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
       const deferred = ineligibleChange || ineligibleRow
