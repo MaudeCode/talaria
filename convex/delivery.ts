@@ -130,12 +130,12 @@ function statesForDevice(
   return excluded ? states.filter((state) => !excluded.has(state.publisherId)) : states;
 }
 
-async function hasPendingActivityJob(
+async function pendingActivityJobs(
   ctx: MutationCtx,
   userId: string,
   activityId: string,
   fingerprint: string,
-): Promise<boolean> {
+): Promise<Doc<"deliveryJobs">[]> {
   const [queued, running] = await Promise.all([
     ctx.db
       .query("deliveryJobs")
@@ -150,15 +150,15 @@ async function hasPendingActivityJob(
       )
       .take(20),
   ]);
-  return [...queued, ...running].some((job) => job.stateFingerprint === fingerprint);
+  return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
 }
 
-async function hasPendingDeviceJob(
+async function pendingDeviceJobs(
   ctx: MutationCtx,
   userId: string,
   deviceId: string,
   fingerprint: string,
-): Promise<boolean> {
+): Promise<Doc<"deliveryJobs">[]> {
   const [queued, running] = await Promise.all([
     ctx.db
       .query("deliveryJobs")
@@ -173,7 +173,11 @@ async function hasPendingDeviceJob(
       )
       .take(20),
   ]);
-  return [...queued, ...running].some((job) => job.stateFingerprint === fingerprint);
+  return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
+}
+
+function carriesAlert(payload: unknown): boolean {
+  return (payload as { aps?: { alert?: unknown } }).aps?.alert !== undefined;
 }
 
 async function enqueueJob(
@@ -191,10 +195,17 @@ async function enqueueJob(
     now: number;
   },
 ): Promise<void> {
-  const duplicate = input.activityId
-    ? await hasPendingActivityJob(ctx, input.userId, input.activityId, input.stateFingerprint)
-    : await hasPendingDeviceJob(ctx, input.userId, input.deviceId, input.stateFingerprint);
-  if (duplicate) return;
+  const pending = input.activityId
+    ? await pendingActivityJobs(ctx, input.userId, input.activityId, input.stateFingerprint)
+    : await pendingDeviceJobs(ctx, input.userId, input.deviceId, input.stateFingerprint);
+  if (pending.length > 0) {
+    // Same state already pending. An alerted payload still replaces queued silent duplicates so an eligible
+    // transition is never swallowed by an earlier ineligible one that reached the same aggregate first.
+    if (!carriesAlert(input.request.payload) || pending.some((job) => carriesAlert(JSON.parse(job.request.payloadJson)))) return;
+    for (const job of pending) {
+      if (job.status === "queued") await ctx.db.patch(job._id, { status: "stale", updatedAt: input.now });
+    }
+  }
 
   const jobId = await ctx.db.insert("deliveryJobs", {
     userId: input.userId,
@@ -330,55 +341,63 @@ export const recompute = internalMutation({
     for (const device of devices) {
       const deviceStates = statesForDevice(states, exclusionsByDevice, device.deviceId);
       const aggregate = makeAggregate(deviceStates, now, true);
-      if (aggregate !== null && aggregate.activeCount > 0) {
-        if (
-          activeAggregateDevices.has(device.deviceId) ||
-          device.revokedAt !== undefined ||
-          (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
-          !device.bundleId ||
-          !device.apsEnvironment ||
-          !device.preferences.liveActivitiesEnabled ||
-          !device.pushToStartToken ||
-          (device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS
-        ) {
-          continue;
+      if (aggregate === null || aggregate.activeCount === 0) {
+        if (device.pushToStartDeferredAt !== undefined) {
+          await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
         }
-        const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
-          if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
-          const value = alertForTransition(
-            { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
-            state,
-            device.preferences,
-          );
-          return value ? [value] : [];
-        })[0] ?? null;
-        // APNs requires an alert on push-to-start, so an ineligible transition defers the start instead of injecting
-        // the fallback alert. Non-terminal ineligible rows keep deferring across same-phase heartbeats; retained
-        // completions do not, or one unacknowledged silent completion would block every later start.
-        const ineligible = changed.some(({ state }) =>
-          state.alertEligible === false && !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId),
-        ) || deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
-        if (!transitionAlert && ineligible) continue;
-        const request = makeLiveActivityStart({
-          token: device.pushToStartToken,
-          bundleId: device.bundleId,
-          environment: device.apsEnvironment,
-          aggregate,
-          nowEpochSeconds: Math.floor(now / 1_000),
-          alert: transitionAlert ?? { title: "Talaria", body: aggregate.subtitle },
-        });
-        await enqueueJob(ctx, {
-          userId: args.userId,
-          deviceId: device.deviceId,
-          kind: "live_activity_start",
-          request,
-          aggregate,
-          stateFingerprint: `start:${device.pushToStartToken}:${aggregateFingerprint(aggregate)}`,
-          now,
-        });
-        await ctx.db.patch(device._id, { pushToStartIssuedAt: now, updatedAt: now });
-        if (transitionAlert) alertedDevices.add(device.deviceId);
+        continue;
       }
+      // APNs requires an alert on push-to-start. An ineligible transition defers the start instead of injecting the
+      // fallback alert, and the deferral persists on the device until an eligible transition starts the activity or
+      // the device's work goes idle, so heartbeats, retention, and idle recomputes cannot alert for it later.
+      const ineligibleChange = changed.some(({ state }) =>
+        state.alertEligible === false && !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId),
+      );
+      const deferred = device.pushToStartDeferredAt !== undefined || ineligibleChange;
+      if (ineligibleChange && device.pushToStartDeferredAt === undefined) {
+        await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
+      }
+      if (
+        activeAggregateDevices.has(device.deviceId) ||
+        device.revokedAt !== undefined ||
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
+        !device.bundleId ||
+        !device.apsEnvironment ||
+        !device.preferences.liveActivitiesEnabled ||
+        !device.pushToStartToken ||
+        (device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS
+      ) {
+        continue;
+      }
+      const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
+        if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
+        const value = alertForTransition(
+          { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+          state,
+          device.preferences,
+        );
+        return value ? [value] : [];
+      })[0] ?? null;
+      if (!transitionAlert && deferred) continue;
+      const request = makeLiveActivityStart({
+        token: device.pushToStartToken,
+        bundleId: device.bundleId,
+        environment: device.apsEnvironment,
+        aggregate,
+        nowEpochSeconds: Math.floor(now / 1_000),
+        alert: transitionAlert ?? { title: "Talaria", body: aggregate.subtitle },
+      });
+      await enqueueJob(ctx, {
+        userId: args.userId,
+        deviceId: device.deviceId,
+        kind: "live_activity_start",
+        request,
+        aggregate,
+        stateFingerprint: `start:${device.pushToStartToken}:${aggregateFingerprint(aggregate)}`,
+        now,
+      });
+      await ctx.db.patch(device._id, { pushToStartIssuedAt: now, pushToStartDeferredAt: undefined, updatedAt: now });
+      if (transitionAlert) alertedDevices.add(device.deviceId);
     }
 
     for (const activity of allActivities) {

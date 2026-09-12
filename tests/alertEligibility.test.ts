@@ -63,7 +63,7 @@ async function runScheduledRecomputes(backend: Backend) {
 
 async function jobs(backend: Backend) {
   const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").order("asc").collect());
-  return rows.map((job) => ({ kind: job.kind, aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps }));
+  return rows.map((job) => ({ kind: job.kind, status: job.status, aps: (JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> }).aps }));
 }
 
 function snapshotState(sessionId: string, revision: number, phase: "running" | "waiting_for_approval" | "waiting_for_input" | "completed", alertEligible?: boolean) {
@@ -160,6 +160,58 @@ describe("publisher alert eligibility", () => {
     expect(await jobs(backend)).toEqual([]);
     const device = await backend.run(async (ctx) => ctx.db.query("devices").first());
     expect(device?.pushToStartIssuedAt).toBeUndefined();
+    expect(device?.pushToStartDeferredAt).toBeDefined();
+
+    // Transitionless recomputes (device upsert, acknowledgement, cleanup) keep the deferral.
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    expect(await jobs(backend)).toEqual([]);
+
+    // The next eligible transition starts the activity with its own alert and consumes the deferral.
+    await backend.mutation(internal.publishers.acceptState, {
+      ...publish, nonce: "n2", receivedAt: now + 2, sessionId: "session-2", eventId: "session-2-event-2", revision: 2,
+      state: { sessionId: "session-2", title: "session-2", phase: "waiting_for_input", updatedAt: now + 2, deepLink: "/sessions/session-2" },
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([
+      expect.objectContaining({ kind: "live_activity_start", aps: expect.objectContaining({ alert: { title: "session-2", body: "Input needed on Home", sound: "default" } }) }),
+    ]);
+    const started = await backend.run(async (ctx) => ctx.db.query("devices").first());
+    expect(started?.pushToStartDeferredAt).toBeUndefined();
+  });
+
+  it("clears a deferral once the device's work goes idle", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 2, snapshotId: "s2",
+      states: [snapshotState("session-1", 3, "completed", false), snapshotState("session-2", 2, "completed", false)],
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([]);
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeUndefined();
+  });
+
+  it("lets a later eligible transition replace a queued silent update", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: true });
+    await backend.mutation(internal.publishers.acceptState, {
+      ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
+      state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+    });
+    await backend.mutation(internal.publishers.acceptState, {
+      ...publish, nonce: "n2", receivedAt: now + 2, sessionId: "session-2", eventId: "session-2-event-2", revision: 2,
+      state: { sessionId: "session-2", title: "session-2", phase: "waiting_for_input", updatedAt: now + 2, deepLink: "/sessions/session-2" },
+    });
+    // Both recomputes run after both states are stored, so they compute the same aggregate fingerprint.
+    await runScheduledRecomputes(backend);
+    const delivered = await jobs(backend);
+    expect(delivered.map((job) => [job.kind, job.status])).toEqual([["live_activity_update", "stale"], ["live_activity_update", "queued"]]);
+    expect(delivered[0]!.aps).not.toHaveProperty("alert");
+    expect(delivered[1]!.aps.alert).toEqual({ title: "session-2", body: "Input needed on Home", sound: "default" });
   });
 
   it("defers a push-to-start instead of injecting the fallback alert for an ineligible transition", async () => {
