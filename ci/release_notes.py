@@ -201,7 +201,7 @@ def previous_published(target, version, repository):
                 or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha)):
             raise ValueError(f"invalid release provenance in run {run['id']}")
         parts = tuple(map(int, released_version.split(".")))
-        if parts < target_version and sha != target and git("merge-base", sha, target) == sha:
+        if parts < target_version and git("merge-base", sha, target) == sha:
             return sha
     raise ValueError("no successful published release baseline found in retained GitHub Actions history")
 
@@ -218,11 +218,11 @@ def generate(previous, target, version, output):
     if previous == "auto":
         previous = previous_tag(target, version)
     base = commit(previous)
-    if git("merge-base", base, target) != base or base == target:
-        raise ValueError("previous release must be a strict ancestor of target")
+    if git("merge-base", base, target) != base:
+        raise ValueError("previous release must be an ancestor of target")
     current = snapshot(target)
     selected = introduced(base, target, current)
-    if not selected:
+    if not selected and changes(base, target):
         raise ValueError("missing release fragments in the requested range; add entries or an explicit skip")
     sections = {category: [] for category in CATEGORIES}
     highlights = []

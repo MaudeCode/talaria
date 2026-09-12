@@ -102,6 +102,21 @@ class ReleaseNotesTests(unittest.TestCase):
         return self.cli("previous-published", "--target", "HEAD", "--version", "1.1.0",
                         "--repo", "fixture/app", error=error).stdout.strip()
 
+    def test_new_version_on_same_commit_generates_empty_notes_without_a_dummy_commit(self):
+        baseline = self.git("rev-parse", "HEAD")
+        self.git("tag", "v1.1.0")
+        run = {"id": 1, "event": "push", "head_branch": "v1.0.0", "head_sha": baseline, "conclusion": "success"}
+        jobs = {1: {"name": "Publish iOS app", "conclusion": "success", "completed_at": "2026-01-02T00:00:00Z"}}
+        self.mock_github(self.published_responses([run], jobs))
+        self.generate("--previous", self.published_baseline())
+        catalog = json.loads((self.root / "out/release-notes.json").read_text())
+        self.assertEqual(catalog["sourceCommit"], baseline)
+        self.assertEqual(catalog["releases"][0]["version"], "1.1.0")
+        self.assertEqual(catalog["releases"][0]["sections"], [])
+        self.assertEqual(catalog["releases"][0]["highlights"], [])
+        self.assertIn("No app-facing release notes were recorded", (self.root / "out/release-notes.md").read_text())
+        self.generate()  # Offline tag selection must handle the same range too.
+
     def test_published_baseline_preserves_notes_before_failed_tags(self):
         baseline = self.git("rev-parse", "HEAD")
         self.add_fragment(2, "Important change before failed tag")
@@ -300,8 +315,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.add_fragment(2)
         self.commit("TAL-2: release")
         self.assertIn("v1.0.10..", self.generate().stdout)
-        self.generate("--previous", "v1.0.99", error="strict ancestor")
-        self.generate("--previous", "HEAD", error="strict ancestor")
+        self.generate("--previous", "v1.0.99", error="ancestor")
         self.generate("--version", "01.1.0", error="X.Y.Z")
 
     def test_no_previous_tag_requires_explicit_baseline(self):

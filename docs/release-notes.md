@@ -92,7 +92,7 @@ python3 ci/release_notes.py generate \
 For an offline preview, omit `--previous` to select the highest lower numeric
 `vX.Y.Z` tag reachable from the target. This tag-only preview does not prove that
 an earlier release succeeded. Non-semantic tags and tags on unmerged branches are
-ignored. An explicit baseline must be a strict ancestor; a repository with no prior release
+ignored. An explicit baseline must be an ancestor or the target itself; a repository with no prior release
 tag requires `--previous <baseline-ref>`.
 
 Production resolves the baseline automatically with `previous-published` and
@@ -112,9 +112,11 @@ manual artifacts are not needed once a newer eligible publication is found.
 
 The generator reads committed blobs from the target SHA, never the working tree.
 It includes only newly introduced fragments after the baseline and rejects edits,
-deletions, or renames of earlier fragments. An empty range fails with an actionable
-error; a range containing only explicit skips produces an empty release entry
-and a short no-notes statement in Markdown.
+deletions, or renames of earlier fragments. Changes without a new fragment fail
+with an actionable error. A release with no changed files, including a new
+marketing version on the same commit, needs no dummy commit or fragment. It
+produces an empty release entry and a short no-notes statement in Markdown,
+as does a range containing only explicit skips.
 
 `release-notes.md` has a version heading and the target commit's UTC date,
 Featured highlights, and non-empty categories in Added, Changed, Fixed, Security
