@@ -36,7 +36,7 @@ struct TranscriptMediaUnavailableChip: View {
                 .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Media unavailable \(reference.displayName)"))
+        .accessibilityLabel(String(localized: "Media unavailable \(reference.accessibilityName)"))
     }
 
     private var iconName: String {

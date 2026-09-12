@@ -4,6 +4,7 @@ struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.transcriptMediaWorkspaceRoot) private var transcriptMediaWorkspaceRoot
     @AppStorage(ChatTranscriptDisplaySettings.hidesAttachmentPathsKey) private var hidesAttachmentPaths = true
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
@@ -116,7 +117,10 @@ struct MessageBubbleView: View {
     }
 
     private var assistantMessageRow: some View {
-        let segments = TranscriptMediaParser.segments(in: messageText)
+        let segments = TranscriptMediaParser.segments(
+            in: messageText,
+            workspaceRoot: transcriptMediaWorkspaceRoot
+        )
 
         return VStack(alignment: .leading, spacing: 6) {
             if showsAssistantTurnHeaderForThisMessage {
@@ -442,6 +446,20 @@ struct MessageBubbleView: View {
 
     private var hasVisibleUserBubbleText: Bool {
         !userBubbleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+/// The session workspace that `./` and `../` Markdown image destinations
+/// resolve against before they load through `/api/media` (TAL-168). Nil leaves
+/// those images to the Markdown renderer.
+struct TranscriptMediaWorkspaceRootKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var transcriptMediaWorkspaceRoot: String? {
+        get { self[TranscriptMediaWorkspaceRootKey.self] }
+        set { self[TranscriptMediaWorkspaceRootKey.self] = newValue }
     }
 }
 

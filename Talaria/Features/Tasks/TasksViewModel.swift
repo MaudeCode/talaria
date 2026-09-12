@@ -20,7 +20,8 @@ final class TasksViewModel {
     private(set) var actionErrorMessage: String?
     private(set) var lastError: Error?
 
-    private let client: APIClient
+    /// Shared with the task editor so its catalog loads use the same scope.
+    let client: APIClient
 
     init(server: URL, client: APIClient? = nil) {
         self.client = client ?? APIClient(baseURL: server)

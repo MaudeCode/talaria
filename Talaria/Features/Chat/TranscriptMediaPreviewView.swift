@@ -159,7 +159,7 @@ struct TranscriptMediaPreviewView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
-                    .accessibilityLabel(item.reference.displayName)
+                    .accessibilityLabel(item.reference.accessibilityName)
             }
             .padding()
         }

@@ -444,6 +444,110 @@ final class SessionListMutationTests: XCTestCase {
         )
     }
 
+    // MARK: Launch restore
+
+    /// A restored external session takes the same import path as a tapped row, so
+    /// the destination carries the server's writability rather than the list's.
+    @MainActor
+    func testRestoredExternalSessionImportsOnceBeforeOpening() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            let path = request.url?.path ?? "nil"
+            requestedPaths.append(path)
+            if path == "/api/sessions" {
+                return apiTestJSONResponse("""
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true}]}
+                """, for: request)
+            }
+            return apiTestJSONResponse("""
+            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false}, "imported": true}
+            """, for: request)
+        }
+        var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
+        _ = await viewModel.load()
+
+        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
+        XCTAssertTrue(candidate.isSessionReadOnly)
+        let resolved = await viewModel.sessionToOpen(for: candidate)
+        let opened = try XCTUnwrap(resolved)
+        state.select(opened)
+
+        XCTAssertEqual(requestedPaths, ["/api/sessions", "/api/session/import_cli"])
+        XCTAssertEqual(state.destination, .session(opened))
+        XCTAssertFalse(opened.isSessionReadOnly)
+    }
+
+    @MainActor
+    func testRestoredWebUISessionOpensWithoutImport() async throws {
+        let viewModel = try makeViewModel { request in
+            guard request.url?.path == "/api/sessions" else {
+                XCTFail("A restored WebUI session must not issue \(request.url?.path ?? "nil").")
+                throw URLError(.badURL)
+            }
+            return apiTestJSONResponse("""
+            {"sessions": [{"session_id": "webui-1", "title": "WebUI", "is_cli_session": true, "session_source": "webui"}]}
+            """, for: request)
+        }
+        var state = SessionNavigationState(lastSelectedSessionID: "webui-1")
+        _ = await viewModel.load()
+
+        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
+        let opened = await viewModel.sessionToOpen(for: candidate)
+
+        XCTAssertEqual(opened, candidate)
+    }
+
+    /// A failed restore import leaves the list showing with the stored selection
+    /// intact, like a failed tap, instead of a destination the import rejected.
+    @MainActor
+    func testFailedRestoreImportLeavesTheListShowing() async throws {
+        let viewModel = try makeViewModel { request in
+            if request.url?.path == "/api/sessions" {
+                return apiTestJSONResponse("""
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true}]}
+                """, for: request)
+            }
+            return apiTestJSONResponse(#"{"error": "Session not found in CLI store"}"#, statusCode: 404, for: request)
+        }
+        var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
+        _ = await viewModel.load()
+
+        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
+        let opened = await viewModel.sessionToOpen(for: candidate)
+
+        XCTAssertNil(opened)
+        XCTAssertNil(state.destination)
+        XCTAssertEqual(state.lastSelectedSessionID, "cli-1")
+        XCTAssertNotNil(viewModel.actionErrorMessage)
+    }
+
+    /// Offline cached browsing restores the cached row as-is: there is no server to
+    /// import from, and the cached list is what the user is browsing.
+    @MainActor
+    func testRestoredSessionOpensFromCacheWithoutImport() async throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        try CacheStore.cacheSessions(
+            [SessionSummary(sessionId: "cli-1", title: "CLI", isCliSession: true)],
+            serverURL: server,
+            in: context
+        )
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            requestedPaths.append(request.url?.path ?? "nil")
+            throw URLError(.notConnectedToInternet)
+        }
+        var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
+        _ = await viewModel.load(modelContext: context)
+        XCTAssertTrue(viewModel.isViewingCachedData)
+
+        let candidate = try XCTUnwrap(state.sessionToRestore(from: viewModel.sessions))
+        let opened = await viewModel.sessionToOpen(for: candidate, modelContext: context)
+
+        XCTAssertEqual(opened?.sessionId, "cli-1")
+        XCTAssertEqual(requestedPaths, ["/api/sessions"])
+    }
+
     /// A session the server already owns can still be opened through the canonical
     /// detail route when the import call itself fails.
     @MainActor

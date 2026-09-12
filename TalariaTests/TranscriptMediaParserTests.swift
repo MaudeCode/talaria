@@ -199,6 +199,251 @@ final class TranscriptMediaParserTests: XCTestCase {
         )
     }
 
+    // MARK: - Markdown images (TAL-168)
+
+    func testMarkdownImageWithAbsolutePathBecomesMediaWithAltText() {
+        let segments = TranscriptMediaParser.segments(
+            in: "Login ![Login screen](/tmp/shots/login.png \"Title\") captured."
+        )
+
+        XCTAssertEqual(
+            segments,
+            [
+                .text("Login "),
+                .media(.init(rawReference: "/tmp/shots/login.png", altText: "Login screen")),
+                .text(" captured.")
+            ]
+        )
+        XCTAssertEqual(mediaReferences(in: segments).first?.accessibilityName, "Login screen")
+        XCTAssertEqual(mediaReferences(in: segments).first?.source, .localPath("/tmp/shots/login.png"))
+    }
+
+    func testMarkdownImageWithoutAltTextFallsBackToFileNameForAccessibility() throws {
+        let segments = TranscriptMediaParser.segments(in: "![](</tmp/shots/final shot.png>)")
+        let media = try XCTUnwrap(mediaReferences(in: segments).first)
+
+        XCTAssertNil(media.altText)
+        XCTAssertEqual(media.rawReference, "/tmp/shots/final shot.png")
+        XCTAssertEqual(media.accessibilityName, "final shot.png")
+    }
+
+    func testMarkdownImageFileURLDecodesToLocalPath() {
+        let segments = TranscriptMediaParser.segments(
+            in: "![chart](file:///tmp/reports/Q3%20chart.png)"
+        )
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/reports/Q3 chart.png"]
+        )
+    }
+
+    func testMarkdownImageWorkspaceRelativeDestinationsJoinTheWorkspaceRoot() throws {
+        let workspace = "/srv/workspaces/app"
+        let expectations = [
+            "./shots/login.png": "/srv/workspaces/app/shots/login.png",
+            "../other/shots/login.png": "/srv/workspaces/other/shots/login.png",
+            "./../other/../app/shots/login.png": "/srv/workspaces/app/shots/login.png"
+        ]
+
+        for (destination, expected) in expectations {
+            let segments = TranscriptMediaParser.segments(
+                in: "![shot](\(destination))",
+                workspaceRoot: workspace
+            )
+            let media = try XCTUnwrap(mediaReferences(in: segments).first, destination)
+            XCTAssertEqual(media.rawReference, expected, destination)
+        }
+    }
+
+    func testMarkdownImageWorkspaceRelativeDestinationsRequireWorkspaceRoot() {
+        for destination in ["./shots/login.png", "../shots/login.png"] {
+            let markdown = "![shot](\(destination))"
+            XCTAssertEqual(TranscriptMediaParser.segments(in: markdown), [.text(markdown)], destination)
+            XCTAssertEqual(
+                TranscriptMediaParser.segments(in: markdown, workspaceRoot: "relative/root"),
+                [.text(markdown)],
+                destination
+            )
+        }
+    }
+
+    func testMarkdownImageHomeRelativeDestinationIsSentToServerUnexpanded() {
+        let segments = TranscriptMediaParser.segments(
+            in: "![shot](~/shots/login.png)",
+            workspaceRoot: "/srv/workspaces/app"
+        )
+
+        XCTAssertEqual(mediaReferences(in: segments).map(\.rawReference), ["~/shots/login.png"])
+    }
+
+    func testMarkdownImageRemoteAndBareRelativeDestinationsStayText() {
+        for markdown in [
+            "![remote](https://cdn.example.test/image.png)",
+            "![remote](http://cdn.example.test/image.png)",
+            "![data](data:image/png;base64,AAAA)",
+            "![bare](shots/login.png)",
+            "![bare](login.png)"
+        ] {
+            XCTAssertEqual(
+                TranscriptMediaParser.segments(in: markdown, workspaceRoot: "/srv/workspaces/app"),
+                [.text(markdown)],
+                markdown
+            )
+        }
+    }
+
+    func testMarkdownImageNonRasterDestinationStaysText() {
+        let markdown = "![report](/tmp/report.csv) ![vector](/tmp/vector.svg)"
+
+        XCTAssertEqual(TranscriptMediaParser.segments(in: markdown), [.text(markdown)])
+    }
+
+    func testMarkdownImageInsideCodeStaysLiteral() {
+        let markdown = """
+        Use `![x](/tmp/inline.png)` then ![y](/tmp/outside.png)
+        ```markdown
+        ![z](/tmp/fenced.png)
+        ```
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(mediaReferences(in: segments).map(\.rawReference), ["/tmp/outside.png"])
+        let text = textSegments(in: segments).joined()
+        XCTAssertTrue(text.contains("![x](/tmp/inline.png)"))
+        XCTAssertTrue(text.contains("![z](/tmp/fenced.png)"))
+    }
+
+    func testMarkdownImagePercentEncodedDestinationDecodesOnce() throws {
+        let segments = TranscriptMediaParser.segments(
+            in: "![shot](/tmp/final%20shot%20%28v2%29.png) ![rel](./shots/a%20b.png)",
+            workspaceRoot: "/srv/workspaces/app"
+        )
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/final shot (v2).png", "/srv/workspaces/app/shots/a b.png"]
+        )
+    }
+
+    func testMarkdownImageInsideHTMLCommentStaysHidden() {
+        let markdown = """
+        Visible ![y](/tmp/outside.png) <!-- ![x](/tmp/inline-comment.png) --> tail
+        <!--
+        ![z](/tmp/block-comment.png) file:///tmp/commented.png
+        -->
+        After ![w](/tmp/after.png)
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/outside.png", "/tmp/after.png"]
+        )
+        let text = textSegments(in: segments).joined()
+        XCTAssertTrue(text.contains("<!-- ![x](/tmp/inline-comment.png) -->"))
+        XCTAssertTrue(text.contains("![z](/tmp/block-comment.png) file:///tmp/commented.png"))
+    }
+
+    func testMarkdownImageAfterMultilineCommentCloseIsExtracted() {
+        let markdown = """
+        <!--
+        ![hidden](/tmp/hidden.png)
+        hidden --> ![visible](/tmp/visible.png) tail
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(mediaReferences(in: segments).map(\.rawReference), ["/tmp/visible.png"])
+        XCTAssertEqual(segments.last, .text(" tail"))
+    }
+
+    func testMarkdownImageCommentMarkerInsideInlineCodeDoesNotHideLaterImages() {
+        let markdown = """
+        Type `<!--` to start a comment ![same](/tmp/same-line.png)
+        ![next](/tmp/next-line.png)
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/same-line.png", "/tmp/next-line.png"]
+        )
+    }
+
+    func testMarkdownImageAcceptsOptionalTitleButRejectsOtherTrailingContent() {
+        for markdown in [
+            "![x](/tmp/a.png \"Title\")",
+            "![x](/tmp/a.png 'Title')",
+            "![x](/tmp/a.png (Title))",
+            "![x](</tmp/a.png> \"Title\")"
+        ] {
+            XCTAssertEqual(
+                TranscriptMediaParser.segments(in: markdown),
+                [.media(.init(rawReference: "/tmp/a.png", altText: "x"))],
+                markdown
+            )
+        }
+
+        for markdown in [
+            "![x](/tmp/a.png garbage)",
+            "![x](/tmp/a.png \"unterminated)",
+            "![x](/tmp/a.png\"Title\")",
+            "![x](</tmp/a.png>garbage)"
+        ] {
+            XCTAssertEqual(TranscriptMediaParser.segments(in: markdown), [.text(markdown)], markdown)
+        }
+    }
+
+    func testMarkdownImageEscapedOrMalformedSyntaxStaysText() {
+        for markdown in [
+            "\\![escaped](/tmp/escaped.png)",
+            "![unterminated](/tmp/open.png",
+            "![no destination]()",
+            "![missing paren] (/tmp/spaced.png)",
+            "![alt\\](/tmp/broken.png)",
+            "![alt](/tmp/one.png\\)"
+        ] {
+            XCTAssertEqual(TranscriptMediaParser.segments(in: markdown), [.text(markdown)], markdown)
+        }
+    }
+
+    func testMarkdownImageHandlesNestedAndEscapedDelimiters() {
+        let segments = TranscriptMediaParser.segments(
+            in: "![Build [1] (final)](/tmp/build(1)/shot.png) and ![x](/tmp/a\\)b.png)"
+        )
+
+        XCTAssertEqual(
+            segments,
+            [
+                .media(.init(rawReference: "/tmp/build(1)/shot.png", altText: "Build [1] (final)")),
+                .text(" and "),
+                .media(.init(rawReference: "/tmp/a)b.png", altText: "x"))
+            ]
+        )
+    }
+
+    func testMarkdownImageDoesNotChangeMediaTokenOrBareFileURLBehavior() {
+        let segments = TranscriptMediaParser.segments(
+            in: "![tok](MEDIA:/tmp/token.png) MEDIA:/tmp/plain.png file:///tmp/bare.png"
+        )
+
+        XCTAssertEqual(
+            segments,
+            [
+                .text("![tok]("),
+                .media(.init(rawReference: "/tmp/token.png")),
+                .text(") "),
+                .media(.init(rawReference: "/tmp/plain.png")),
+                .text(" "),
+                .media(.init(rawReference: "/tmp/bare.png"))
+            ]
+        )
+    }
+
     func testUnsupportedSVGIsNotRasterImageCandidate() {
         let segments = TranscriptMediaParser.segments(in: "MEDIA:/tmp/vector.svg")
         let media = mediaReferences(in: segments).first

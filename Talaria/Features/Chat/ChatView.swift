@@ -1089,6 +1089,7 @@ struct ChatView: View {
             }
         )
         .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
+        .environment(\.transcriptMediaWorkspaceRoot, viewModel.selectedWorkspacePath)
     }
 
     /// A link that names a workspace file opens the source viewer at its line;

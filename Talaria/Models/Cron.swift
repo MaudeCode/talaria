@@ -309,8 +309,24 @@ enum CronDeliverPicker {
         currentValue: String,
         initialValue: String? = nil
     ) -> [CronDeliverPickerOption]? {
+        let valid = serverRows(serverOptions)
+        guard !valid.isEmpty else {
+            return nil
+        }
+
+        let current = currentValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !current.isEmpty else {
+            return nil
+        }
+
+        return appendingCustomRows(to: valid, currentValue: current, initialValue: initialValue)
+    }
+
+    /// Server rows with blank and duplicate values dropped; missing labels
+    /// fall back to the raw value.
+    static func serverRows(_ serverOptions: [CronDeliveryOption]?) -> [CronDeliverPickerOption] {
         var seenValues = Set<String>()
-        let valid: [CronDeliverPickerOption] = (serverOptions ?? []).compactMap { option in
+        return (serverOptions ?? []).compactMap { option in
             guard let value = option.value?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !value.isEmpty,
                   seenValues.insert(value).inserted else {
@@ -324,26 +340,57 @@ enum CronDeliverPicker {
                 isCustom: false
             )
         }
+    }
 
-        guard !valid.isEmpty else {
-            return nil
-        }
-
-        let current = currentValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !current.isEmpty else {
-            return nil
-        }
-
-        var options = valid
-        var knownValues = Set(valid.map(\.value))
+    /// Adds a custom row for the initial and current values the server did
+    /// not list, so an unknown/legacy value stays visible and re-selectable.
+    static func appendingCustomRows(
+        to rows: [CronDeliverPickerOption],
+        currentValue: String,
+        initialValue: String?
+    ) -> [CronDeliverPickerOption] {
+        var options = rows
+        var knownValues = Set(rows.map(\.value))
         let initial = initialValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !initial.isEmpty, knownValues.insert(initial).inserted {
             options.append(CronDeliverPickerOption(value: initial, label: initial, isCustom: true))
         }
-        if knownValues.insert(current).inserted {
+        let current = currentValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !current.isEmpty, knownValues.insert(current).inserted {
             options.append(CronDeliverPickerOption(value: current, label: current, isCustom: true))
         }
         return options
+    }
+}
+
+enum CronProfilePicker {
+    /// Blank selects the server's own profile choice.
+    static let serverDefaultValue = ""
+
+    /// Builds the task editor's profile rows: "Server Default" first, then the
+    /// server's profiles, then custom rows for a saved name the server no
+    /// longer lists. Returns `nil` when the profile list is unavailable so the
+    /// editor falls back to free-text entry (the same rule as `deliver`).
+    static func options(
+        profiles: [ProfileSummary]?,
+        currentValue: String,
+        initialValue: String? = nil
+    ) -> [CronDeliverPickerOption]? {
+        guard let profiles else { return nil }
+
+        let serverRows = CronDeliverPicker.serverRows(
+            profiles.map { CronDeliveryOption(value: $0.normalizedName, label: $0.displayName) }
+        )
+        let serverDefault = CronDeliverPickerOption(
+            value: serverDefaultValue,
+            label: String(localized: "Server Default"),
+            isCustom: false
+        )
+        return CronDeliverPicker.appendingCustomRows(
+            to: [serverDefault] + serverRows,
+            currentValue: currentValue,
+            initialValue: initialValue
+        )
     }
 }
 
@@ -464,6 +511,46 @@ struct CronJobEditorDraft: Equatable {
         }
 
         return nil
+    }
+
+    /// Applies a model picked in the editor, or `nil` for "Server Default".
+    ///
+    /// Model and provider always move together: every picker option names
+    /// both, and writing one without the other is how a job ends up asking a
+    /// provider for a model it does not serve. Clearing blanks both, which the
+    /// server reads as "use the selected profile's model".
+    mutating func applyModelSelection(_ option: ModelCatalogOption?) {
+        model = option?.id ?? ""
+        provider = option?.providerID ?? ""
+    }
+
+    /// The option the editor's Model row shows, or `nil` for "Server Default".
+    /// A saved model the catalog no longer offers resolves to itself so the
+    /// row keeps naming it instead of reading as unconfigured.
+    func modelSelection(in groups: [ModelCatalogGroup]) -> ModelCatalogOption? {
+        guard let modelID = trimmedModel else { return nil }
+        return groups
+            .flatMap(\.slashAutocompleteModels)
+            .firstMatchingSelection(modelID: modelID, providerID: trimmedProvider)
+            ?? ModelCatalogOption(id: modelID, displayName: modelID, providerID: trimmedProvider)
+    }
+
+    /// `skillsText` stays the storage so a job created before the picker
+    /// existed keeps round-tripping through the same comma-separated form.
+    mutating func applySkillSelection(_ names: [String]) {
+        skillsText = names.joined(separator: ", ")
+    }
+
+    /// Adds `name` if absent, removes it if present. A newly selected skill
+    /// goes on the end rather than re-sorting a list the user just read.
+    mutating func toggleSkill(_ name: String) {
+        var selection = skills
+        if let index = selection.firstIndex(of: name) {
+            selection.remove(at: index)
+        } else {
+            selection.append(name)
+        }
+        applySkillSelection(selection)
     }
 
     private static func nonEmpty(_ value: String) -> String? {

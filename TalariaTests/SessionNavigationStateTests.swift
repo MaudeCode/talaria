@@ -18,9 +18,12 @@ final class SessionNavigationStateTests: XCTestCase {
         let second = SessionSummary(sessionId: "session-2", title: "Two")
         var state = SessionNavigationState(lastSelectedSessionID: "session-2")
 
-        state.restoreIfNeeded(from: [first, second])
+        let restored = state.sessionToRestore(from: [first, second])
 
-        XCTAssertEqual(state.destination, .session(second))
+        XCTAssertEqual(restored, second)
+        // The caller opens the candidate through the import path; the state never
+        // shows it directly.
+        XCTAssertNil(state.destination)
         XCTAssertEqual(state.lastSelectedSessionID, "session-2")
     }
 
@@ -28,27 +31,27 @@ final class SessionNavigationStateTests: XCTestCase {
         let stored = SessionSummary(sessionId: "stored")
         var state = SessionNavigationState(lastSelectedSessionID: "stored")
 
-        state.restoreIfNeeded(from: [stored], allowsAutomaticRestore: false)
+        let restored = state.sessionToRestore(from: [stored], allowsAutomaticRestore: false)
 
-        XCTAssertNil(state.destination)
+        XCTAssertNil(restored)
         XCTAssertEqual(state.lastSelectedSessionID, "stored")
     }
 
     func testRestoreClearsStoredSelectionWhenSessionNoLongerExists() {
         var state = SessionNavigationState(lastSelectedSessionID: "missing")
 
-        state.restoreIfNeeded(from: [SessionSummary(sessionId: "session-1")])
+        let restored = state.sessionToRestore(from: [SessionSummary(sessionId: "session-1")])
 
-        XCTAssertNil(state.destination)
+        XCTAssertNil(restored)
         XCTAssertNil(state.lastSelectedSessionID)
     }
 
     func testRestorePreservesStoredSelectionWhenSessionListIsNotAuthoritative() {
         var state = SessionNavigationState(lastSelectedSessionID: "session-1")
 
-        state.restoreIfNeeded(from: [], clearsMissingSelection: false)
+        let restored = state.sessionToRestore(from: [], clearsMissingSelection: false)
 
-        XCTAssertNil(state.destination)
+        XCTAssertNil(restored)
         XCTAssertEqual(state.lastSelectedSessionID, "session-1")
     }
 
@@ -56,9 +59,9 @@ final class SessionNavigationStateTests: XCTestCase {
         let stored = SessionSummary(sessionId: "stored")
         var state = SessionNavigationState(lastSelectedSessionID: "stored")
 
-        state.restoreIfNeeded(from: [stored], pendingDeepLinkedSessionID: "deep-linked")
+        let restored = state.sessionToRestore(from: [stored], pendingDeepLinkedSessionID: "deep-linked")
 
-        XCTAssertNil(state.destination)
+        XCTAssertNil(restored)
         XCTAssertEqual(state.lastSelectedSessionID, "stored")
     }
 
@@ -67,25 +70,25 @@ final class SessionNavigationStateTests: XCTestCase {
         var state = SessionNavigationState(lastSelectedSessionID: "stored")
 
         let deepLinkedSessionID = state.beginDeepLinkedSessionLoad(id: "deep-linked")
-        state.restoreIfNeeded(from: [stored], pendingDeepLinkedSessionID: nil)
+        let blocked = state.sessionToRestore(from: [stored], pendingDeepLinkedSessionID: nil)
 
         XCTAssertEqual(deepLinkedSessionID, "deep-linked")
-        XCTAssertNil(state.destination)
+        XCTAssertNil(blocked)
         XCTAssertEqual(state.lastSelectedSessionID, "stored")
 
         state.finishDeepLinkedSessionLoad(id: deepLinkedSessionID)
-        state.restoreIfNeeded(from: [stored], pendingDeepLinkedSessionID: nil)
+        let restored = state.sessionToRestore(from: [stored], pendingDeepLinkedSessionID: nil)
 
-        XCTAssertEqual(state.destination, .session(stored))
+        XCTAssertEqual(restored, stored)
     }
 
     func testRestoreProceedsWhenPendingDeepLinkIDIsBlank() {
         let stored = SessionSummary(sessionId: "stored")
         var state = SessionNavigationState(lastSelectedSessionID: "stored")
 
-        state.restoreIfNeeded(from: [stored], pendingDeepLinkedSessionID: "   ")
+        let restored = state.sessionToRestore(from: [stored], pendingDeepLinkedSessionID: "   ")
 
-        XCTAssertEqual(state.destination, .session(stored))
+        XCTAssertEqual(restored, stored)
     }
 
     func testInitialRefreshStartsBeforeDelayedDeepLinkFinishes() async {
@@ -117,8 +120,9 @@ final class SessionNavigationStateTests: XCTestCase {
         var state = SessionNavigationState(lastSelectedSessionID: "session-1")
         state.select(route)
 
-        state.restoreIfNeeded(from: [SessionSummary(sessionId: "session-1")])
+        let restored = state.sessionToRestore(from: [SessionSummary(sessionId: "session-1")])
 
+        XCTAssertNil(restored)
         XCTAssertEqual(state.destination, .newChat(route))
         XCTAssertEqual(state.lastSelectedSessionID, "session-1")
     }
@@ -129,8 +133,9 @@ final class SessionNavigationStateTests: XCTestCase {
         var state = SessionNavigationState(lastSelectedSessionID: "stored")
         state.select(deepLinked)
 
-        state.restoreIfNeeded(from: [stored])
+        let restored = state.sessionToRestore(from: [stored])
 
+        XCTAssertNil(restored)
         XCTAssertEqual(state.destination, .session(deepLinked))
         XCTAssertEqual(state.lastSelectedSessionID, "deep-linked")
     }
