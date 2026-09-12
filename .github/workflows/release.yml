@@ -79,6 +79,27 @@ jobs:
           MAIN_CI_POLL_SECONDS: "30"
         run: ci/require_successful_main_ci
 
+      - name: Generate release notes from the validated commit
+        env:
+          RELEASE_SHA: ${{ steps.tag.outputs.sha }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 ci/release_notes.py generate \
+            --target "${RELEASE_SHA}" --version "${RELEASE_VERSION}" \
+            --output release-notes
+          cat release-notes/release-notes.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Retain release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes-${{ steps.tag.outputs.version }}
+          path: |
+            release-notes/release-notes.md
+            release-notes/release-notes.json
+          if-no-files-found: error
+          retention-days: 90
+
   tooling:
     needs: validate-release
     uses: ./.github/workflows/repository-tooling.yml

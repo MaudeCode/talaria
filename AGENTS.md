@@ -32,6 +32,12 @@ explicitly adopted it.
   point. Start every tracked-work commit subject with the Kaneo key it addresses,
   for example `TAL-29: require ticket keys`; include every addressed key if a
   commit intentionally spans issues. Keep unrelated changes out of the commit.
+- Every tracked PR must add `changelog.d/TAL-<number>.json` for each addressed
+  ticket, including an explicit skip reason for repository-only work. Before
+  committing or opening a PR, follow [release-note authoring](docs/release-notes.md)
+  for the JSON schema, commit/PR format, and validation command. Agents author
+  these fragments as part of implementation; signed releases generate the final
+  Markdown and JSON automatically.
 - Pushing, opening or updating a PR, merging, and uploading a build each require
   explicit human approval.
 - Pass `--repo MaudeCode/talaria` to repository-scoped `gh` commands; do not

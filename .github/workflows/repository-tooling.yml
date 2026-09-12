@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
 
       - name: Prepare tooling runtime
         run: |
@@ -53,12 +54,26 @@ jobs:
 
       - name: Test repository tooling
         run: |
+          python3 ci/release_notes_test.py
           python3 ci/load_env_test.py
           python3 scripts/test-ios-device-selection
           ruby ci/select_testflight_build_number_test.rb
           ruby ci/test_ios_runner_test.rb
           ci/require_successful_main_ci_test.sh
           ci/validate_release_tag_test.sh
+
+      - name: Validate release fragments
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          options=()
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            options=(--base "$(git merge-base "${CHANGE_BASE}" HEAD)")
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            options=(--base "${CHANGE_BASE}")
+          fi
+          python3 ci/release_notes.py validate "${options[@]}"
 
       - name: Validate property lists
         run: |
@@ -77,5 +92,5 @@ jobs:
           set -euo pipefail
           bash -n ci/require_successful_main_ci ci/require_successful_main_ci_test.sh ci/validate_release_tag ci/validate_release_tag_test.sh scripts/check-swift-file-sizes scripts/webui-json
           zsh -n ci/verify_bundle_versions scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/ios-simulator-pool scripts/select-ios-simulator scripts/setup-ios-test-pool scripts/test-ios scripts/test-test-ios scripts/validate-upstream-contract
-          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile scripts/select-ios-device scripts/test-ios-device-selection scripts/test-ios-simulator-pool ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/release_notes.py ci/release_notes_test.py scripts/select-ios-device scripts/test-ios-device-selection scripts/test-ios-simulator-pool ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/upstream-watch scripts/verify_kanban_reference_server.py
           for file in ci/*.rb; do ruby -c "${file}"; done
