@@ -67,6 +67,7 @@ struct AppleAccountSettingsView: View {
     @State private var isDeleting = false
     @State private var passwordAccount: ServerAccount?
     @State private var errorMessage: String?
+    @State private var help: SettingsSectionHelp?
 
     init(authManager: AuthManager, server: URL?) {
         self.authManager = authManager
@@ -100,6 +101,7 @@ struct AppleAccountSettingsView: View {
         .sheet(item: $passwordAccount) { account in
             ServerPasswordSheet(authManager: authManager, account: account)
         }
+        .settingsSectionHelp($help)
         .alert("Disconnect Apple account?", isPresented: $isConfirmingDisconnect) {
             Button("Cancel", role: .cancel) {}
             Button("Disconnect", role: .destructive) {
@@ -154,14 +156,11 @@ struct AppleAccountSettingsView: View {
                 .accessibilityIdentifier("settings-sign-in-with-apple")
             }
         } header: {
-            Text("Apple Account")
-        } footer: {
-            if coordinator.status == .appleCredentialRevoked {
-                Text("Apple ID access was revoked, so sync and relay alerts stopped. Sign in again to resume.")
-            } else if coordinator.isSignedInWithApple, relayState == .expired {
-                Text("Talaria Relay needs a fresh sign-in. iCloud sync keeps working.")
-            } else {
-                Text("One sign-in covers iCloud sync of your servers and settings and Talaria Relay for remote Live Activities and alerts.")
+            SettingsSectionHeader(title: String(localized: "Apple Account")) {
+                help = SettingsSectionHelp(
+                    title: String(localized: "Apple Account"),
+                    message: String(localized: "One sign-in covers iCloud sync of your servers and settings and Talaria Relay for remote Live Activities and alerts. Disconnecting keeps everything on this iPhone.")
+                )
             }
         }
     }
@@ -207,9 +206,12 @@ struct AppleAccountSettingsView: View {
             }
             .disabled(!coordinator.isEnabled || coordinator.status.isSyncing)
         } header: {
-            Text("iCloud Sync")
-        } footer: {
-            Text("Server URLs, passwords, and custom headers are stored only as encrypted fields in your private iCloud database. CloudKit encrypts them on this device with keys from your iCloud Keychain. Session cookies and cached chats stay on this iPhone. The active server is chosen per device.")
+            SettingsSectionHeader(title: String(localized: "iCloud Sync")) {
+                help = SettingsSectionHelp(
+                    title: String(localized: "iCloud Sync"),
+                    message: String(localized: "Server URLs, passwords, and custom headers are stored only as encrypted fields in your private iCloud database. CloudKit encrypts them on this device with keys from your iCloud Keychain. Session cookies and cached chats stay on this iPhone. The active server is chosen per device.")
+                )
+            }
         }
     }
 
@@ -227,9 +229,12 @@ struct AppleAccountSettingsView: View {
                 relaySummary
             }
         } header: {
-            Text("Talaria Relay")
-        } footer: {
-            Text("Delivers Live Activities and alerts for connected servers even when Talaria is closed.")
+            SettingsSectionHeader(title: String(localized: "Talaria Relay")) {
+                help = SettingsSectionHelp(
+                    title: String(localized: "Talaria Relay"),
+                    message: String(localized: "Delivers Live Activities and alerts for connected servers even when Talaria is closed.")
+                )
+            }
         }
     }
 
@@ -297,9 +302,12 @@ struct AppleAccountSettingsView: View {
                 .accessibilityIdentifier("settings-icloud-sync-password-\(account.id)")
             }
         } header: {
-            Text("Passwords to Sync")
-        } footer: {
-            Text("These servers were signed in with a password before Talaria kept it. Add it once, or sign in to the server again, and it syncs from then on.")
+            SettingsSectionHeader(title: String(localized: "Passwords to Sync")) {
+                help = SettingsSectionHelp(
+                    title: String(localized: "Passwords to Sync"),
+                    message: String(localized: "These servers were signed in with a password before Talaria kept it. Add it once, or sign in to the server again, and it syncs from then on.")
+                )
+            }
         }
     }
 
@@ -316,8 +324,13 @@ struct AppleAccountSettingsView: View {
             }
             .disabled(isDeleting)
             .accessibilityIdentifier("settings-icloud-sync-delete")
-        } footer: {
-            Text("Disconnecting keeps everything on this iPhone. Deleting removes Talaria's records from iCloud; other iCloud data is not affected.")
+        } header: {
+            SettingsSectionHeader(title: String(localized: "Manage")) {
+                help = SettingsSectionHelp(
+                    title: String(localized: "Manage"),
+                    message: String(localized: "Disconnecting keeps everything on this iPhone. Deleting removes Talaria's records from iCloud; other iCloud data is not affected.")
+                )
+            }
         }
     }
 
@@ -440,6 +453,7 @@ private struct ServerPasswordSheet: View {
     @State private var password = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var help: SettingsSectionHelp?
 
     var body: some View {
         NavigationStack {
@@ -451,9 +465,12 @@ private struct ServerPasswordSheet: View {
                         .onSubmit { Task { await save() } }
                         .accessibilityIdentifier("settings-icloud-sync-password-field")
                 } header: {
-                    Text(account.displayName.isEmpty ? account.urlString : account.displayName)
-                } footer: {
-                    Text("Talaria signs in to check the password before saving it.")
+                    SettingsSectionHeader(title: account.displayName.isEmpty ? account.urlString : account.displayName) {
+                        help = SettingsSectionHelp(
+                            title: String(localized: "Add Password"),
+                            message: String(localized: "Talaria signs in to check the password before saving it.")
+                        )
+                    }
                 }
                 if let errorMessage {
                     Section {
@@ -463,6 +480,7 @@ private struct ServerPasswordSheet: View {
             }
             .navigationTitle("Add Password")
             .navigationBarTitleDisplayMode(.inline)
+            .settingsSectionHelp($help)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -539,6 +557,50 @@ extension ConfigurationSyncStatus {
         case .synced: .green
         case .appleCredentialRevoked, .failed, .unavailable: .orange
         default: .secondary
+        }
+    }
+}
+
+/// A section title with a `?` at the trailing edge that opens a short
+/// explanation, instead of prose under the section.
+struct SettingsSectionHeader: View {
+    let title: String
+    let onHelp: () -> Void
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button(action: onHelp) {
+                Image(systemName: "questionmark.circle")
+                    .font(.body)
+            }
+            .buttonStyle(.borderless)
+            .textCase(nil)
+            .accessibilityLabel(String(localized: "About \(title)"))
+        }
+    }
+}
+
+struct SettingsSectionHelp: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
+
+extension View {
+    /// Presents the tapped section's explanation as a plain alert.
+    func settingsSectionHelp(_ help: Binding<SettingsSectionHelp?>) -> some View {
+        alert(
+            help.wrappedValue?.title ?? "",
+            isPresented: Binding(
+                get: { help.wrappedValue != nil },
+                set: { if !$0 { help.wrappedValue = nil } }
+            )
+        ) {
+            Button("OK") { help.wrappedValue = nil }
+        } message: {
+            Text(help.wrappedValue?.message ?? "")
         }
     }
 }
