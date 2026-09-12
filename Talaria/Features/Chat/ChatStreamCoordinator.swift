@@ -43,6 +43,10 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
 
     func streamCoordinatorLoadMessages(modelContext: ModelContext?) async
     func streamCoordinatorLatestAssistantMessageID() -> String?
+    /// TAL-148: before a cold replay from sequence zero, extend the live timeline
+    /// with the streaming turn's already-loaded scene so replayed rows append to
+    /// the rendered prefix instead of replacing it.
+    func streamCoordinatorSeedLiveActivityForColdReplay()
     func streamCoordinatorStartAuxiliaryMonitoring()
     func streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: Bool)
     func streamCoordinatorSaveSnapshotIfNeeded()
@@ -413,6 +417,9 @@ final class ChatStreamCoordinator {
                 let needsColdReplay = isColdAdoptedRun
                     && lastEventID == nil
                     && response.replayAvailable == true
+                if needsColdReplay {
+                    delegate?.streamCoordinatorSeedLiveActivityForColdReplay()
+                }
                 let coldReplayAfterSeq: Int? = needsColdReplay ? 0 : nil
                 start(streamID: streamIDToResume, replayAfterSeq: coldReplayAfterSeq)
             } else if response.replayAvailable == true {

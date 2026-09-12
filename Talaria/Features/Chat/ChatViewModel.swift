@@ -5724,6 +5724,31 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         Self.latestAssistantMessageIDAfterLatestSteeringHint(in: messages)
     }
 
+    func streamCoordinatorSeedLiveActivityForColdReplay() {
+        // `loadMessages` emptied the live timeline, and live rows win over the
+        // persisted scene, so the first replayed reasoning or tool event would
+        // hide the answer prefix already on screen until `.done` reloads it.
+        guard liveActivityRows.isEmpty,
+              let streamingAssistantMessageID,
+              let index = messages.lastIndex(where: { $0.messageId == streamingAssistantMessageID })
+        else { return }
+
+        let timeline = AssistantActivityTimeline.persisted(
+            message: messages[index],
+            reasoningGroups: displayedReasoningGroups.filter { $0.anchorMessageID == streamingAssistantMessageID },
+            toolCallGroups: completedToolCallGroupsForAnchor(streamingAssistantMessageID)
+        ).resumedForStreaming
+        guard !timeline.rows.isEmpty else { return }
+
+        liveAssistantActivity = timeline
+        if reasoningAnchorMessageID == nil, !liveReasoningText.isEmpty {
+            reasoningAnchorMessageID = streamingAssistantMessageID
+        }
+        if toolCallAnchorMessageID == nil, !liveToolCalls.isEmpty {
+            toolCallAnchorMessageID = streamingAssistantMessageID
+        }
+    }
+
     func streamCoordinatorStartAuxiliaryMonitoring() {
         pendingActionCoordinator.startMonitoring()
     }
