@@ -248,6 +248,43 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         XCTAssertNotNil(thumbnail)
     }
 
+    func testMarkdownImageWorkspaceRelativeReferenceLoadsResolvedPathFromMediaEndpoint() async throws {
+        let mediaData = try XCTUnwrap(Self.imageData())
+        let sessionID = "session-abc"
+        let segments = TranscriptMediaParser.segments(
+            in: "![Login screen](./shots/login.png)",
+            workspaceRoot: "/srv/workspaces/app"
+        )
+        let reference = try XCTUnwrap(segments.compactMap { segment -> TranscriptMediaReference? in
+            if case let .media(reference) = segment { return reference }
+            return nil
+        }.first)
+        let client = makeAuthenticatedMediaClient { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/media")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "authenticated")
+
+            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
+            XCTAssertEqual(query["session_id"], sessionID)
+            XCTAssertEqual(query["path"], "/srv/workspaces/app/shots/login.png")
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "image/png"]
+            )!
+            return (response, mediaData)
+        }
+        let coordinator = makeCoordinator(client: client)
+
+        let thumbnail = await coordinator.transcriptMediaThumbnailData(for: reference)
+
+        XCTAssertNotNil(thumbnail)
+        XCTAssertEqual(reference.accessibilityName, "Login screen")
+    }
+
     func testTranscriptLocalAudioMediaIncludesSessionIDOnMediaEndpoint() async throws {
         let mediaData = Data("audio-bytes".utf8)
         let mediaPath = "/tmp/generated/clip.mp3"
