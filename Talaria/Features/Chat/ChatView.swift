@@ -1095,7 +1095,8 @@ struct ChatView: View {
     /// every other link keeps the system behaviour. The viewer's own error
     /// state covers a file the server refuses or no longer has.
     private func handleTranscriptLink(_ url: URL) -> OpenURLAction.Result {
-        guard let link = WorkspaceFileLink.parse(url, workspaceRoot: session.workspace) else {
+        // The live workspace: `/workspace` and the composer can change it after the session loads.
+        guard let link = WorkspaceFileLink.parse(url, workspaceRoot: viewModel.selectedWorkspacePath) else {
             return .systemAction
         }
         openedFileLink = link
