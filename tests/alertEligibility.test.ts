@@ -326,6 +326,26 @@ describe("publisher alert eligibility", () => {
     expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
   });
 
+  it("stales a queued alerted push-to-start once a snapshot suppresses its terminal transition", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "completed"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const queued = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(queued).toMatchObject({ kind: "live_activity_start", status: "queued" });
+    expect((JSON.parse(queued!.request.payloadJson) as { aps: { alert: unknown } }).aps.alert).toEqual({ title: "session-1", body: "Completed on Home", sound: "default" });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 3, snapshotId: "s2",
+      states: [{ ...snapshotState("session-1", 3, "completed", false), updatedAt: now + 2 }, snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 4 })).resolves.toEqual({ status: "stale" });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    expect((await jobs(backend)).map((job) => [job.kind, job.status])).toEqual([["live_activity_start", "stale"]]);
+  });
+
   it("clears a deferral when an aggregate activity registers", async () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptState, {

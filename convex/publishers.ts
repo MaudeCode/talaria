@@ -327,7 +327,10 @@ export const acceptSnapshot = internalMutation({
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
-        if (!current || current.phase !== state.phase || current.streamId !== state.streamId) {
+        // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
+        // record the deferral and revalidate any queued alert for it.
+        if (!current || current.phase !== state.phase || current.streamId !== state.streamId
+          || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
