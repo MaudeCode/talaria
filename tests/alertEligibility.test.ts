@@ -285,6 +285,47 @@ describe("publisher alert eligibility", () => {
     expect((await jobs(backend)).map((job) => [job.kind, job.status])).toEqual([["live_activity_start", "stale"]]);
   });
 
+  it("sends a queued alerted update silently once its transition is suppressed", async () => {
+    const backend = await seed({ pushToken: "push-token", activity: true });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const queued = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(queued).toMatchObject({ kind: "live_activity_update", status: "queued", sourceSessionId: "session-1" });
+    expect((JSON.parse(queued!.request.payloadJson) as { aps: Record<string, unknown> }).aps.alert).toBeDefined();
+    // Same phase and aggregate fields, now suppressed: the silent duplicate is dropped, so revalidate at claim time.
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 3, snapshotId: "s2",
+      states: [{ ...snapshotState("session-1", 3, "waiting_for_approval", false), updatedAt: now + 2 }, snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const claimed = await backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 4 });
+    expect(claimed).toMatchObject({ status: "ready", kind: "live_activity_update" });
+    const aps = (JSON.parse((claimed as { request: { payloadJson: string } }).request.payloadJson) as { aps: Record<string, unknown> }).aps;
+    expect(aps).not.toHaveProperty("alert");
+    expect(aps["content-state"]).toMatchObject({ subtitle: "1 needs attention" });
+  });
+
+  it("stales a queued push-to-start once a snapshot suppresses its row in the same phase", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const queued = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(queued).toMatchObject({ kind: "live_activity_start", status: "queued" });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n2", receivedAt: now + 3, snapshotId: "s2",
+      states: [{ ...snapshotState("session-1", 3, "waiting_for_approval", false), updatedAt: now + 2 }, snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 4 })).resolves.toEqual({ status: "stale" });
+    expect((await backend.run(async (ctx) => ctx.db.query("devices").first()))?.pushToStartDeferredAt).toBeDefined();
+  });
+
   it("clears a deferral when an aggregate activity registers", async () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptState, {

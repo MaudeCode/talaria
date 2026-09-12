@@ -376,7 +376,7 @@ export const recompute = internalMutation({
       const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
       const deferred = ineligibleChange || ineligibleRow
         || (device.pushToStartDeferredAt !== undefined && !eligibleTransition);
-      if (ineligibleChange && device.pushToStartDeferredAt === undefined) {
+      if ((ineligibleChange || ineligibleRow) && device.pushToStartDeferredAt === undefined) {
         await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
       } else if (!deferred && device.pushToStartDeferredAt !== undefined) {
         await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
@@ -437,8 +437,7 @@ export const recompute = internalMutation({
       const activityChanged = changed.filter(
         ({ state }) => !exclusionsByDevice.get(activity.deviceId)?.has(state.publisherId),
       );
-      const activityChangedState = activityChanged[0]?.state ?? null;
-      const alert = activityChanged.flatMap(({ state, previousPhase }) => {
+      const alerted = activityChanged.flatMap(({ state, previousPhase }) => {
         if (
           activity.mode !== "all_running" &&
           (activity.publisherId !== state.publisherId || activity.sessionId !== state.sessionId)
@@ -448,8 +447,11 @@ export const recompute = internalMutation({
           state,
           device.preferences,
         );
-        return value ? [value] : [];
-      })[0] ?? null;
+        return value ? [{ alert: value, state }] : [];
+      })[0];
+      const alert = alerted?.alert ?? null;
+      // Source the job from the alerting state so claiming can revalidate that alert's eligibility.
+      const activityChangedState = alerted?.state ?? activityChanged[0]?.state ?? null;
 
       const seededLeaseUntil = activity.emptyStateLeaseUntil;
       const seededLeaseActive = seededLeaseUntil !== undefined && seededLeaseUntil > now;
@@ -614,6 +616,7 @@ export const claimJob = internalMutation({
     if (!job?.userId || (job.status !== "queued" && job.status !== "running")) {
       return { status: "stale" as const };
     }
+    let request = job.request;
     if (job.activityId) {
       const isDisplacementEnd = job.kind === "live_activity_end"
         && job.stateFingerprint === `end:displaced:${job.deviceId}:${job.activityId}`;
@@ -664,6 +667,22 @@ export const claimJob = internalMutation({
       if (!stateIsCurrent) {
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
+      }
+      const payload = JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> };
+      if (job.sourcePublisherId && job.sourceSessionId && payload.aps.alert !== undefined) {
+        // The state is still current, but its alert may have been suppressed after this job was queued.
+        const source = await ctx.db
+          .query("sessionStates")
+          .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
+            query.eq("version", 2).eq("userId", job.userId)
+              .eq("publisherId", job.sourcePublisherId!).eq("sessionId", job.sourceSessionId!),
+          )
+          .unique();
+        if (source && !source.deleted && source.alertEligible === false) {
+          const { alert: _alert, ...aps } = payload.aps;
+          request = { ...job.request, payloadJson: JSON.stringify({ ...payload, aps }) };
+          await ctx.db.patch(job._id, { request });
+        }
       }
     } else {
       const device = await ctx.db
@@ -756,7 +775,7 @@ export const claimJob = internalMutation({
       attemptCount: job.attemptCount + 1,
       updatedAt: args.now,
     });
-    return { status: "ready" as const, kind: job.kind, request: job.request };
+    return { status: "ready" as const, kind: job.kind, request };
   },
 });
 
