@@ -150,6 +150,18 @@ describe("publisher alert eligibility", () => {
       .resolves.toEqual([expect.objectContaining({ sessionId: "session-1", phase: "failed" })]);
   });
 
+  it("defers a push-to-start for an ineligible terminal transition while other work is active", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptState, {
+      ...publish, nonce: "n1", receivedAt: now + 1, sessionId: "session-1", eventId: "session-1-event-2", revision: 2,
+      state: { sessionId: "session-1", title: "session-1", phase: "completed", updatedAt: now + 1, deepLink: "/sessions/session-1", alertEligible: false },
+    });
+    await runScheduledRecomputes(backend);
+    expect(await jobs(backend)).toEqual([]);
+    const device = await backend.run(async (ctx) => ctx.db.query("devices").first());
+    expect(device?.pushToStartIssuedAt).toBeUndefined();
+  });
+
   it("defers a push-to-start instead of injecting the fallback alert for an ineligible transition", async () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptSnapshot, {

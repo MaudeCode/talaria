@@ -352,10 +352,13 @@ export const recompute = internalMutation({
           );
           return value ? [value] : [];
         })[0] ?? null;
-        // APNs requires an alert on push-to-start, so an ineligible row defers the start instead of injecting the fallback alert.
-        if (!transitionAlert && deviceStates.some((state) => state.alertEligible === false)) {
-          continue;
-        }
+        // APNs requires an alert on push-to-start, so an ineligible transition defers the start instead of injecting
+        // the fallback alert. Non-terminal ineligible rows keep deferring across same-phase heartbeats; retained
+        // completions do not, or one unacknowledged silent completion would block every later start.
+        const ineligible = changed.some(({ state }) =>
+          state.alertEligible === false && !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId),
+        ) || deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
+        if (!transitionAlert && ineligible) continue;
         const request = makeLiveActivityStart({
           token: device.pushToStartToken,
           bundleId: device.bundleId,
