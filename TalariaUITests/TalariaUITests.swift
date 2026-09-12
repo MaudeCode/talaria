@@ -1061,7 +1061,16 @@ final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
                 app.buttons["BackButton"].tap()
 
                 openSettings()
+                // The account rows above the category directory (User Profile,
+                // Talaria Relay, iCloud Sync) fill more than one screen at
+                // accessibility sizes, and a List does not create rows that far
+                // below the fold, so scroll until the directory renders.
                 let firstCategory = app.buttons["settings-category-appearance"]
+                if !firstCategory.waitForExistence(timeout: 3) {
+                    for _ in 0..<10 where !firstCategory.exists {
+                        scrollSettingsRoot(up: true)
+                    }
+                }
                 XCTAssertTrue(firstCategory.waitForExistence(timeout: 3), "Settings categories missing [\(variant.name)]")
                 try audit("Settings root", variant: variant)
 

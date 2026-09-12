@@ -143,6 +143,29 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(plan.order, [serverA])
     }
 
+    func testMergeUploadsNewerDuplicateUnderCanonicalNameBeforeDeletingIt() {
+        // The canonical name sorts first, but the newer payload arrived under the
+        // duplicate that is about to be deleted: it must move to the canonical record.
+        let mine = makeSetup(url: serverA, name: "Mine", password: "pw", updatedAt: fixedNow)
+        let theirs = makeSetup(url: serverA, name: "Theirs", password: "pw", updatedAt: fixedNow.addingTimeInterval(5))
+        var state = ConfigurationSyncState()
+        state.recordNames[serverA] = "rec-a"
+        state.uploaded[serverA] = .init(fingerprint: mine.fingerprint, changedAt: mine.updatedAt)
+
+        let plan = ConfigurationSyncMerge.plan(
+            local: [mine],
+            remote: [.init(recordName: "rec-z", setup: theirs)],
+            remoteDeletions: [],
+            state: state,
+            now: fixedNow.addingTimeInterval(10)
+        )
+
+        XCTAssertEqual(plan.recordNames[serverA], "rec-a")
+        XCTAssertEqual(plan.deleteRemote, ["rec-z"])
+        XCTAssertEqual(plan.applyLocally.map(\.displayName), ["Theirs"])
+        XCTAssertEqual(plan.upload.map { ($0.recordName, $0.setup.displayName) }.map { "\($0.0):\($0.1)" }, ["rec-a:Theirs"])
+    }
+
     func testMergeAssignsOpaqueNamesToNewLocalServers() {
         let local = makeSetup(url: serverA, password: "pw", updatedAt: fixedNow)
 

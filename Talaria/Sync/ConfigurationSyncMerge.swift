@@ -82,11 +82,13 @@ enum ConfigurationSyncMerge {
             let serverID = change.setup.serverID
             if pending.contains(change.recordName) { continue }
 
+            var isCanonicalRecord = true
             if let existingName = recordNames[serverID], existingName != change.recordName {
                 let canonical = min(existingName, change.recordName)
                 let duplicate = max(existingName, change.recordName)
                 plan.deleteRemote.append(duplicate)
                 recordNames[serverID] = canonical
+                isCanonicalRecord = change.recordName == canonical
             } else {
                 recordNames[serverID] = change.recordName
             }
@@ -106,9 +108,14 @@ enum ConfigurationSyncMerge {
             let winner = change.setup.keepingPassword(from: local)
             merged[serverID] = winner
             plan.applyLocally.append(winner)
-            // Mark what CloudKit holds, not the winner: when the winner inherited
-            // a local password the fingerprints differ and it uploads below.
-            uploaded[serverID] = .init(fingerprint: change.setup.fingerprint, changedAt: change.setup.updatedAt)
+            // Mark what the canonical record holds, not the winner: when the winner
+            // inherited a local password, or arrived under a duplicate name that
+            // is about to be deleted, the fingerprints differ and it uploads below.
+            if isCanonicalRecord {
+                uploaded[serverID] = .init(fingerprint: change.setup.fingerprint, changedAt: change.setup.updatedAt)
+            } else {
+                uploaded.removeValue(forKey: serverID)
+            }
         }
 
         // 5. Uploads.

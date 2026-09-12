@@ -66,7 +66,12 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
     }
 
     func fetchChanges(since token: Data?) async throws -> ConfigurationSyncChanges {
-        try await ensureZone()
+        // Only a first sync (no token) may create the zone. Once this device
+        // has synced, a missing zone means another device deleted the synced
+        // data, and that must surface as `syncedDataDeleted`, not a fresh zone.
+        if token == nil {
+            try await ensureZone()
+        }
         var serverToken = try token.flatMap {
             try NSKeyedUnarchiver.unarchivedObject(ofClass: CKServerChangeToken.self, from: $0)
         }
@@ -74,8 +79,10 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
         do {
             while true {
                 let page = try await database.recordZoneChanges(inZoneWith: Self.zoneID, since: serverToken)
-                for case .success(let modification) in page.modificationResultsByID.values {
-                    if let record = Self.syncRecord(from: modification.record) {
+                for result in page.modificationResultsByID.values {
+                    // A failed record must fail the fetch: accepting the page token
+                    // would skip that change on every later delta.
+                    if let record = Self.syncRecord(from: try result.get().record) {
                         changes.changed.append(record)
                     }
                 }
@@ -116,10 +123,17 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
 
     func deleteAll() async throws {
         do {
-            _ = try await database.modifyRecordZones(saving: [], deleting: [Self.zoneID])
+            let result = try await database.modifyRecordZones(saving: [], deleting: [Self.zoneID])
+            for case .failure(let error) in result.deleteResults.values {
+                throw error
+            }
         } catch {
             let mapped = Self.mapped(error)
-            if mapped == .syncedDataDeleted { return }
+            // An already-missing zone is the outcome the user asked for.
+            if mapped == .syncedDataDeleted {
+                zoneIsReady = false
+                return
+            }
             throw mapped
         }
         zoneIsReady = false
