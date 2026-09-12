@@ -125,12 +125,18 @@ final class ChatMessageInteractionMarkerView: UIView {
 /// point instead of snapshotting and lifting the whole bubble.
 struct ChatMessageMenuHost: UIViewRepresentable {
     let registry: ChatMessageMenuRegistry
+    /// The transcript's link action, so Open Link takes the same workspace-aware
+    /// route as a tap (TAL-169) and falls back to the system for everything else.
+    @Environment(\.openURL) private var openURL
 
     func makeUIView(context: Context) -> ChatMessageMenuHostView {
-        ChatMessageMenuHostView(registry: registry)
+        let view = ChatMessageMenuHostView(registry: registry)
+        view.openLink = { openURL($0) }
+        return view
     }
 
     func updateUIView(_ uiView: ChatMessageMenuHostView, context: Context) {
+        uiView.openLink = { openURL($0) }
         uiView.attachToNearestScrollViewIfNeeded()
     }
 
@@ -149,6 +155,8 @@ final class ChatMessageMenuHostView: UIView, UIGestureRecognizerDelegate {
     /// the press point, not the row. It is moved into the transcript's current
     /// scroll view on each press, so a rebuilt transcript cannot leave it behind.
     private let anchor = UIButton(type: .custom)
+
+    var openLink: (URL) -> Void = { UIApplication.shared.open($0) }
 
     init(registry: ChatMessageMenuRegistry) {
         self.registry = registry
@@ -242,8 +250,8 @@ final class ChatMessageMenuHostView: UIView, UIGestureRecognizerDelegate {
             UIAction(
                 title: String(localized: "Open Link"),
                 image: UIImage(systemName: "safari")
-            ) { _ in
-                MainActor.assumeIsolated { UIApplication.shared.open(url) }
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.openLink(url) }
             },
             UIAction(
                 title: String(localized: "Copy Link"),

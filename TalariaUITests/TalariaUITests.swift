@@ -629,6 +629,31 @@ final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
     }
 }
 
+/// A chat link that names a workspace file opens the source viewer at its line (TAL-169).
+final class ChatWorkspaceFileLinkUITests: WorkspaceUITestCase {
+    func testTappingAWorkspaceFileLinkOpensTheSourceViewerAtItsLine() throws {
+        launchFixture()
+        openFixtureSessionChat()
+
+        let link = app.links["FixtureFileLink"]
+        XCTAssertTrue(link.waitForExistence(timeout: 15), "Missing the fixture's workspace file link")
+        tapCenter(of: link)
+
+        XCTAssertTrue(
+            app.navigationBars["fixture-notes.txt"].waitForExistence(timeout: 15),
+            "The file link did not open the source viewer"
+        )
+        let secondLine = app.staticTexts["Second deterministic line."]
+        XCTAssertTrue(secondLine.waitForExistence(timeout: 20), "The viewer did not render the linked file")
+        XCTAssertTrue(app.staticTexts["Line 2"].exists, "The viewer should number its rows")
+        XCTAssertTrue(app.buttons["Enable code line wrapping"].exists, "Source files offer a wrap toggle")
+        XCTAssertTrue(app.buttons["Export file"].exists, "The linked file keeps the preview's export action")
+
+        app.buttons["Done"].tap()
+        XCTAssertTrue(waitForComposer(timeout: 10) != nil, "Dismissing the viewer should return to the chat")
+    }
+}
+
 final class GitWorkspaceUITests: WorkspaceUITestCase {
     func testChangesSheetLoadsFixtureStatusAndSurfacesFailure() throws {
         launchFixture(additionalArguments: ["--ui-test-workspace-slow-reads"])

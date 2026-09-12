@@ -6,6 +6,7 @@ struct FilePreviewView: View {
     let onAPIError: (Error) -> Void
 
     private let entry: WorkspaceEntry
+    private let initialLine: Int?
     @State private var viewModel: FilePreviewViewModel
     @State private var selectableText: SelectableTextPresentation?
     @State private var exportDocument = ExportedFileDocument(data: Data())
@@ -15,9 +16,18 @@ struct FilePreviewView: View {
     @State private var exportErrorMessage: String?
     @State private var saveConfirmationMessage: String?
     @State private var isSavingToPhotos = false
+    @AppStorage(FilePreviewDisplaySettings.wrapsLinesKey) private var wrapsLines = false
 
-    init(session: SessionSummary, server: URL, entry: WorkspaceEntry, onAPIError: @escaping (Error) -> Void) {
+    /// `initialLine` is one-based; the source viewer scrolls to it and highlights it.
+    init(
+        session: SessionSummary,
+        server: URL,
+        entry: WorkspaceEntry,
+        initialLine: Int? = nil,
+        onAPIError: @escaping (Error) -> Void
+    ) {
         self.entry = entry
+        self.initialLine = initialLine
         self.onAPIError = onAPIError
         _viewModel = State(initialValue: FilePreviewViewModel(session: session, server: server, path: entry.path ?? ""))
     }
@@ -52,6 +62,15 @@ struct FilePreviewView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if isSourcePreview {
+                    Button {
+                        wrapsLines.toggle()
+                    } label: {
+                        Image(systemName: wrapsLines ? "arrow.turn.down.left" : "arrow.left.and.right")
+                    }
+                    .accessibilityLabel(wrapsLines ? "Disable code line wrapping" : "Enable code line wrapping")
+                }
+
                 if viewModel.canSaveImageToPhotos {
                     Button {
                         Task { await saveImageToPhotos() }
@@ -131,8 +150,10 @@ struct FilePreviewView: View {
     @ViewBuilder
     private func previewContent(_ preview: FilePreviewContent) -> some View {
         switch preview {
+        case let .text(file) where rendersMarkdown:
+            markdownContent(file.content ?? "")
         case let .text(file):
-            fileContent(file.content ?? "")
+            sourceContent(file)
         case let .image(file):
             imageContent(file)
         case .audio:
@@ -158,45 +179,73 @@ struct FilePreviewView: View {
         }
     }
 
-    private func fileContent(_ content: String) -> some View {
-        ScrollView(isMarkdownFile ? .vertical : [.vertical, .horizontal]) {
+    private func markdownContent(_ content: String) -> some View {
+        ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 fileHeader
 
-                if isMarkdownFile {
-                    MarkdownRenderer(content: content, isStreaming: false)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text(content)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                MarkdownRenderer(content: content, isStreaming: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
         }
         .contentShape(Rectangle())
-        .contextMenu {
-            Button {
-                selectableText = SelectableTextPresentation(
-                    id: "file-preview:\(displayPath)",
-                    text: content
-                )
-            } label: {
-                Label("Select Text", systemImage: "text.cursor")
-            }
-
-            Button {
-                UIPasteboard.general.string = content
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-        }
+        .contextMenu { copyActions(for: content) }
         .background(Color(.systemBackground))
     }
 
-    private var isMarkdownFile: Bool {
-        guard let path = entry.path else { return false }
+    private func sourceContent(_ file: FileResponse) -> some View {
+        let content = file.content ?? ""
+        return VStack(alignment: .leading, spacing: 0) {
+            fileHeader
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+
+            Divider()
+
+            SourceFileView(
+                content: content,
+                path: displayPath,
+                serverLanguage: file.language,
+                targetLine: initialLine,
+                wrapsLines: wrapsLines
+            )
+        }
+        .contentShape(Rectangle())
+        .contextMenu { copyActions(for: content) }
+        .background(Color(.systemBackground))
+    }
+
+    /// Whole-file Copy and the exact multiline Select Text sheet.
+    @ViewBuilder
+    private func copyActions(for content: String) -> some View {
+        Button {
+            selectableText = SelectableTextPresentation(
+                id: "file-preview:\(displayPath)",
+                text: content
+            )
+        } label: {
+            Label("Select Text", systemImage: "text.cursor")
+        }
+
+        Button {
+            UIPasteboard.general.string = content
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+    }
+
+    private var isSourcePreview: Bool {
+        if case .text = viewModel.preview, !rendersMarkdown {
+            return true
+        }
+        return false
+    }
+
+    /// Markdown renders as prose unless a link asked for a line: the rendered
+    /// document has no line numbers, so a targeted link uses the source viewer.
+    private var rendersMarkdown: Bool {
+        guard initialLine == nil, let path = entry.path else { return false }
         return ["md", "markdown", "mdown", "mkd"].contains((path as NSString).pathExtension.lowercased())
     }
 

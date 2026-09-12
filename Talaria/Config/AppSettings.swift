@@ -41,6 +41,10 @@ enum StreamedTextAnimationSettings {
     }
 }
 
+enum FilePreviewDisplaySettings {
+    static let wrapsLinesKey = "filePreview.wrapsLines"
+}
+
 enum ChatTranscriptDisplaySettings {
     static let showsThinkingAndToolCardsKey = "chatTranscript.showsThinkingAndToolCards"
     static let thinkingCardsStartExpandedKey = "chatTranscript.thinkingCardsStartExpanded"

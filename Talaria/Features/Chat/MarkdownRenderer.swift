@@ -426,6 +426,11 @@ enum MarkdownHighlightPolicy {
         return .plain(reason: .unsupportedLanguage, normalizedLanguage: normalizedLanguage)
     }
 
+    /// True when a normalized language has an engine (Splash for Swift, Highlightr otherwise).
+    static func isHighlightable(_ normalizedLanguage: String) -> Bool {
+        splashSwiftLanguages.contains(normalizedLanguage) || highlightrLanguages.contains(normalizedLanguage)
+    }
+
     static func normalizedLanguage(from language: String?) -> String? {
         guard let token = language?
             .split(whereSeparator: { $0.isWhitespace })
@@ -578,7 +583,7 @@ enum MarkdownCodeHighlighter {
     }
 }
 
-private enum SplashSwiftCodeHighlighter {
+enum SplashSwiftCodeHighlighter {
     static func highlightedAttributedString(for code: String, colorScheme: ColorScheme) -> NSAttributedString {
         let font = Splash.Font(size: 13)
         let theme = colorScheme == .dark

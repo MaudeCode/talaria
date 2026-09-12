@@ -85,6 +85,8 @@
 		C107S0000000000000000006 /* APIClientSessionDetailPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000106 /* APIClientSessionDetailPresentationTests.swift */; };
 		C03910000000000000000004 /* APIClientSessionMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000004 /* APIClientSessionMutationTests.swift */; };
 		C03910000000000000000005 /* APIClientWorkspaceFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */; };
+		7A16900000000000000000B1 /* WorkspaceFileLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000E1 /* WorkspaceFileLinkTests.swift */; };
+		7A16900000000000000000B2 /* SourceFileHighlighterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000E2 /* SourceFileHighlighterTests.swift */; };
 		C03910000000000000000006 /* APIClientChatEndpointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000006 /* APIClientChatEndpointTests.swift */; };
 		C06510000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06500000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift */; };
 		C03910000000000000000007 /* APIClientAuthAndErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000007 /* APIClientAuthAndErrorTests.swift */; };
@@ -339,6 +341,9 @@
 		1A2B3C4D5E6F7000000000E6 /* FileBrowserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E7 /* FileBrowserViewModel.swift */; };
 		1A2B3C4D5E6F7000000000E8 /* FilePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */; };
 		1A2B3C4D5E6F7000000000EA /* FilePreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000EB /* FilePreviewViewModel.swift */; };
+		7A16900000000000000000A1 /* WorkspaceFileLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000F1 /* WorkspaceFileLink.swift */; };
+		7A16900000000000000000A2 /* SourceFileHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000F2 /* SourceFileHighlighter.swift */; };
+		7A16900000000000000000A3 /* SourceFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000F3 /* SourceFileView.swift */; };
 		BEEF02600000000000000001 /* FileExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF02600000000000000002 /* FileExportSupport.swift */; };
 		1A2B3C4D5E6F7000000000EC /* CachedSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000EE /* CachedSession.swift */; };
 		1A2B3C4D5E6F7000000000ED /* CachedMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000EF /* CachedMessage.swift */; };
@@ -790,6 +795,8 @@
 		C107S0000000000000000106 /* APIClientSessionDetailPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionDetailPresentationTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000004 /* APIClientSessionMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionMutationTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientWorkspaceFileTests.swift; sourceTree = "<group>"; };
+		7A16900000000000000000E1 /* WorkspaceFileLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceFileLinkTests.swift; sourceTree = "<group>"; };
+		7A16900000000000000000E2 /* SourceFileHighlighterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceFileHighlighterTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000006 /* APIClientChatEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientChatEndpointTests.swift; sourceTree = "<group>"; };
 		C06500000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000007 /* APIClientAuthAndErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientAuthAndErrorTests.swift; sourceTree = "<group>"; };
@@ -1027,6 +1034,9 @@
 		1A2B3C4D5E6F7000000000E7 /* FileBrowserViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000EB /* FilePreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewViewModel.swift; sourceTree = "<group>"; };
+		7A16900000000000000000F1 /* WorkspaceFileLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceFileLink.swift; sourceTree = "<group>"; };
+		7A16900000000000000000F2 /* SourceFileHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceFileHighlighter.swift; sourceTree = "<group>"; };
+		7A16900000000000000000F3 /* SourceFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceFileView.swift; sourceTree = "<group>"; };
 		BEEF02600000000000000002 /* FileExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExportSupport.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000EE /* CachedSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedSession.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000EF /* CachedMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedMessage.swift; sourceTree = "<group>"; };
@@ -1488,6 +1498,8 @@
 				C107S0000000000000000106 /* APIClientSessionDetailPresentationTests.swift */,
 				C03900000000000000000004 /* APIClientSessionMutationTests.swift */,
 				C03900000000000000000005 /* APIClientWorkspaceFileTests.swift */,
+				7A16900000000000000000E1 /* WorkspaceFileLinkTests.swift */,
+				7A16900000000000000000E2 /* SourceFileHighlighterTests.swift */,
 				C03900000000000000000006 /* APIClientChatEndpointTests.swift */,
 				C06500000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift */,
 				C03900000000000000000007 /* APIClientAuthAndErrorTests.swift */,
@@ -1999,6 +2011,9 @@
 				1A2B3C4D5E6F7000000000E7 /* FileBrowserViewModel.swift */,
 				1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */,
 				1A2B3C4D5E6F7000000000EB /* FilePreviewViewModel.swift */,
+				7A16900000000000000000F1 /* WorkspaceFileLink.swift */,
+				7A16900000000000000000F2 /* SourceFileHighlighter.swift */,
+				7A16900000000000000000F3 /* SourceFileView.swift */,
 				BEEF02600000000000000002 /* FileExportSupport.swift */,
 				C03120000000000000F003 /* GitWorkspaceViewModel.swift */,
 				C03120000000000000F004 /* GitWorkspaceView.swift */,
@@ -2808,6 +2823,9 @@
 				1A2B3C4D5E6F7000000000E6 /* FileBrowserViewModel.swift in Sources */,
 				1A2B3C4D5E6F7000000000E8 /* FilePreviewView.swift in Sources */,
 				1A2B3C4D5E6F7000000000EA /* FilePreviewViewModel.swift in Sources */,
+				7A16900000000000000000A1 /* WorkspaceFileLink.swift in Sources */,
+				7A16900000000000000000A2 /* SourceFileHighlighter.swift in Sources */,
+				7A16900000000000000000A3 /* SourceFileView.swift in Sources */,
 				BEEF02600000000000000001 /* FileExportSupport.swift in Sources */,
 				1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */,
 				C107Q0000000000000000001 /* StreamingMarkdownRenderer.swift in Sources */,
@@ -2966,6 +2984,8 @@
 				C107S0000000000000000006 /* APIClientSessionDetailPresentationTests.swift in Sources */,
 				C03910000000000000000004 /* APIClientSessionMutationTests.swift in Sources */,
 				C03910000000000000000005 /* APIClientWorkspaceFileTests.swift in Sources */,
+				7A16900000000000000000B1 /* WorkspaceFileLinkTests.swift in Sources */,
+				7A16900000000000000000B2 /* SourceFileHighlighterTests.swift in Sources */,
 				C03910000000000000000006 /* APIClientChatEndpointTests.swift in Sources */,
 				C06510000000000000000001 /* ChatAttachmentPreviewViewModelTests.swift in Sources */,
 				C03910000000000000000007 /* APIClientAuthAndErrorTests.swift in Sources */,

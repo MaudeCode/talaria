@@ -120,6 +120,8 @@ struct ChatView: View {
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
+    /// A workspace file a chat link named; shown in the source viewer at its line.
+    @State private var openedFileLink: WorkspaceFileLink?
     @State private var pendingProfileSelection: ProfileSummary?
     @State private var showProfileNewSessionConfirmation = false
     @State private var goalDraft = ""
@@ -577,6 +579,7 @@ struct ChatView: View {
                 }
             }
             .sheet(item: $transcriptMediaPreviewItem, content: transcriptMediaPreviewView)
+            .sheet(item: $openedFileLink, content: fileLinkSheet)
             .sheet(item: $activeGitSheet, content: gitSheet)
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
             .alert(item: $gitAlert, content: gitAlertPresentation)
@@ -1085,7 +1088,37 @@ struct ChatView: View {
                 turnDiffPresentation = .file(file)
             }
         )
+        .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
         .environment(\.transcriptMediaWorkspaceRoot, viewModel.selectedWorkspacePath)
+    }
+
+    /// A link that names a workspace file opens the source viewer at its line;
+    /// every other link keeps the system behaviour. The viewer's own error
+    /// state covers a file the server refuses or no longer has.
+    private func handleTranscriptLink(_ url: URL) -> OpenURLAction.Result {
+        // The live workspace: `/workspace` and the composer can change it after the session loads.
+        guard let link = WorkspaceFileLink.parse(url, workspaceRoot: viewModel.selectedWorkspacePath) else {
+            return .systemAction
+        }
+        openedFileLink = link
+        return .handled
+    }
+
+    private func fileLinkSheet(for link: WorkspaceFileLink) -> some View {
+        NavigationStack {
+            FilePreviewView(
+                session: session,
+                server: server,
+                entry: WorkspaceEntry(name: link.name, path: link.path),
+                initialLine: link.line,
+                onAPIError: onAPIError
+            )
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { openedFileLink = nil }
+                }
+            }
+        }
     }
 
     /// The chat-canvas layout direction. Driven by the manual Settings → Chat

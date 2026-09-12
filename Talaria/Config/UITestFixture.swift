@@ -492,10 +492,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             ]
         }
         messages.append(contentsOf: linkInteractionMessages)
+        if WorkspaceFixture.isEnabled {
+            messages.append(workspaceFileLinkMessage)
+        }
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         return json(["session": detail])
     }
+
+    /// A link to a workspace file with a line target, which the chat opens in
+    /// the source viewer instead of handing to the system (TAL-169). Only the
+    /// workspace fixture serves the file, so only it carries the message.
+    private static let workspaceFileLinkMessage: [String: Any] = [
+        "role": "assistant",
+        "content": "See [FixtureFileLink](/fixture/\(WorkspaceFixture.textFileName):2) for the second line.",
+        "message_id": "ui-fixture-file-link-assistant",
+        "_ts": 2_000_000_102
+    ]
 
     /// Mixed text-and-link content that pins deterministic long-press targets for
     /// the message-action interaction tests (TAL-49).
