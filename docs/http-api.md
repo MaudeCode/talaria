@@ -100,6 +100,8 @@ BASE64URL_SHA256_OF_EXACT_BODY
 
 Allowed phases are `starting`, `running`, `waiting_for_approval`, `waiting_for_input`, `completed`, `failed`, `cancelled`, and `stale`. A snapshot contains at most 500 states. Non-terminal rows are three-minute leases refreshed by the WebUI heartbeat. Missing rows expire instead of being immediately tombstoned, so a WebUI restart cannot incorrectly end Gateway-owned work before reconciliation.
 
+Each state may carry an optional `alertEligible` boolean. Omitting it means `true`. `alertEligible: false` applies only to the exact event carrying it: the relay still persists the transition and delivers the Live Activity state silently, but produces no ordinary notification and no `alert` or sound on a Live Activity update or end. Because APNs requires an alert on push-to-start, an ineligible transition on a device with no running Live Activity defers the start until an eligible transition arrives. A later heartbeat or eligibility change in the same phase never alerts for the already-consumed transition.
+
 The per-session route remains available at `PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
 
 ## Device and Live Activity routes

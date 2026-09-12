@@ -133,7 +133,7 @@ export function alertForTransition(
   next: SessionState,
   preferences: NotificationPreferences,
 ): ActivityAlert | null {
-  if (previous?.phase === next.phase) return null;
+  if (previous?.phase === next.phase || next.alertEligible === false) return null;
 
   switch (next.phase) {
     case "waiting_for_approval":

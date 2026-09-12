@@ -86,6 +86,7 @@ function exposedState(state: Doc<"sessionStates">) {
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    alertEligible: state.alertEligible,
     receivedAt: state.receivedAt,
   };
 }
@@ -241,9 +242,12 @@ export const acceptState = internalMutation({
       else await ctx.db.insert("sessionStates", next);
       await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
         userId: grant.userId,
-        publisherId: args.publisherId,
-        sessionId: args.sessionId,
-        previousPhase,
+        transitions: previousPhase === undefined ? [] : [{
+          publisherId: args.publisherId,
+          sessionId: args.sessionId,
+          previousPhase,
+          ...(args.state ? { state: exposedState(next as Doc<"sessionStates">) } : {}),
+        }],
       });
       accepted = true;
     }

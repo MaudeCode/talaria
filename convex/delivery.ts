@@ -90,6 +90,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    alertEligible: state.alertEligible,
   };
 }
 
@@ -351,6 +352,10 @@ export const recompute = internalMutation({
           );
           return value ? [value] : [];
         })[0] ?? null;
+        // APNs requires an alert on push-to-start, so an ineligible row defers the start instead of injecting the fallback alert.
+        if (!transitionAlert && deviceStates.some((state) => state.alertEligible === false)) {
+          continue;
+        }
         const request = makeLiveActivityStart({
           token: device.pushToStartToken,
           bundleId: device.bundleId,

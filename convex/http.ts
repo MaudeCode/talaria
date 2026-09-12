@@ -285,7 +285,9 @@ function parseState(
   const phase = value.phase;
   const updatedAt = numberField(value, "updatedAt");
   const deepLink = stringField(value, "deepLink", 512);
+  const alertEligible = value.alertEligible ?? undefined;
   if (
+    (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     !sessionId ||
     streamId === null ||
     !eventId ||
@@ -309,6 +311,7 @@ function parseState(
     phase,
     updatedAt,
     deepLink,
+    alertEligible,
   };
 }
 
@@ -502,6 +505,7 @@ http.route({
               phase: state.phase,
               updatedAt: state.updatedAt,
               deepLink: state.deepLink,
+              alertEligible: state.alertEligible,
             }
           : null,
       });
