@@ -14,9 +14,21 @@ enum TranscriptMediaKind: Equatable {
 
 struct TranscriptMediaReference: Equatable, Identifiable {
     let rawReference: String
+    /// Markdown image alt text; nil for `MEDIA:` tokens and bare file URLs.
+    var altText: String? = nil
 
     var id: String {
         rawReference
+    }
+
+    /// Alt text when the author supplied one, otherwise the file name.
+    var accessibilityName: String {
+        guard let altText = altText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !altText.isEmpty
+        else {
+            return displayName
+        }
+        return altText
     }
 
     var source: TranscriptMediaSource {
@@ -113,7 +125,9 @@ enum TranscriptMediaSegment: Equatable {
 }
 
 enum TranscriptMediaParser {
-    static func segments(in markdown: String) -> [TranscriptMediaSegment] {
+    /// `workspaceRoot` is the session workspace that `./` and `../` Markdown
+    /// image destinations resolve against; without it those images stay text.
+    static func segments(in markdown: String, workspaceRoot: String? = nil) -> [TranscriptMediaSegment] {
         guard !markdown.isEmpty else { return [] }
 
         var segments: [TranscriptMediaSegment] = []
@@ -136,7 +150,7 @@ enum TranscriptMediaParser {
                 isInFence = true
                 fenceCharacter = marker
             } else {
-                appendMediaSegments(in: line, to: &segments)
+                appendMediaSegments(in: line, workspaceRoot: workspaceRoot, to: &segments)
             }
 
             index = lineRange.upperBound
@@ -145,12 +159,29 @@ enum TranscriptMediaParser {
         return segments
     }
 
-    private static func appendMediaSegments(in line: String, to segments: inout [TranscriptMediaSegment]) {
+    private static func appendMediaSegments(
+        in line: String,
+        workspaceRoot: String?,
+        to segments: inout [TranscriptMediaSegment]
+    ) {
         var cursor = line.startIndex
         var textStart = cursor
         let inlineCodeRanges = inlineCodeRanges(in: line)
 
         while cursor < line.endIndex {
+            if line[cursor...].hasPrefix("!["),
+               !isBackslashEscaped(cursor, in: line),
+               !inlineCodeRanges.contains(where: { $0.contains(cursor) }),
+               let image = markdownImage(in: line, from: cursor),
+               let reference = markdownImageReference(for: image, workspaceRoot: workspaceRoot) {
+                appendText(String(line[textStart..<cursor]), to: &segments)
+                segments.append(.media(reference))
+
+                cursor = image.end
+                textStart = cursor
+                continue
+            }
+
             if line[cursor...].hasPrefix("MEDIA:"),
                let referenceRange = referenceRange(
                    in: line,
@@ -273,6 +304,183 @@ enum TranscriptMediaParser {
 
     private static func isBareFileURLStart(_ index: String.Index, in line: String) -> Bool {
         index == line.startIndex || line[line.index(before: index)].isWhitespace
+    }
+
+    // MARK: - Markdown images
+
+    private struct MarkdownImage {
+        let altText: String
+        let destination: String
+        let end: String.Index
+    }
+
+    /// Parses `![alt](destination "title")` starting at the `!`, honoring
+    /// nested brackets and backslash escapes. Returns nil for malformed syntax.
+    private static func markdownImage(in line: String, from start: String.Index) -> MarkdownImage? {
+        let altOpen = line.index(after: start)
+        guard let altClose = balancedClose(in: line, opening: altOpen, open: "[", close: "]") else {
+            return nil
+        }
+
+        let parenthesisOpen = line.index(after: altClose)
+        guard parenthesisOpen < line.endIndex,
+              line[parenthesisOpen] == "(",
+              let parenthesisClose = balancedClose(
+                  in: line,
+                  opening: parenthesisOpen,
+                  open: "(",
+                  close: ")"
+              ),
+              let destination = destination(
+                  inLinkBody: String(line[line.index(after: parenthesisOpen)..<parenthesisClose])
+              )
+        else {
+            return nil
+        }
+
+        return MarkdownImage(
+            altText: unescaped(String(line[line.index(after: altOpen)..<altClose]))
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            destination: destination,
+            end: line.index(after: parenthesisClose)
+        )
+    }
+
+    private static func markdownImageReference(
+        for image: MarkdownImage,
+        workspaceRoot: String?
+    ) -> TranscriptMediaReference? {
+        guard let path = localMediaPath(forMarkdownDestination: image.destination, workspaceRoot: workspaceRoot) else {
+            return nil
+        }
+
+        let reference = TranscriptMediaReference(
+            rawReference: path,
+            altText: image.altText.isEmpty ? nil : image.altText
+        )
+        return reference.isRasterImageCandidate ? reference : nil
+    }
+
+    /// Destinations the server media contract can serve as a `path` query:
+    /// absolute paths, `file://` URLs, `~/` paths (sent as-is; the server owns
+    /// home expansion), and `./` `../` paths joined to the session workspace.
+    /// Remote URLs and bare relative paths stay with the Markdown renderer.
+    static func localMediaPath(forMarkdownDestination destination: String, workspaceRoot: String?) -> String? {
+        if destination.lowercased().hasPrefix(fileURLMarker) {
+            return normalizedLocalPath(fromFileURL: destination)
+        }
+
+        if destination.hasPrefix("/") || destination.hasPrefix("~/") {
+            return destination
+        }
+
+        if destination.hasPrefix("./") || destination.hasPrefix("../") {
+            guard let workspaceRoot = workspaceRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  workspaceRoot.hasPrefix("/")
+            else {
+                return nil
+            }
+            return normalizedAbsolutePath(workspaceRoot + "/" + destination)
+        }
+
+        return nil
+    }
+
+    /// Textual `.`/`..` collapse; never touches the client filesystem.
+    private static func normalizedAbsolutePath(_ path: String) -> String {
+        var components: [Substring] = []
+        for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+            switch component {
+            case ".":
+                continue
+            case "..":
+                _ = components.popLast()
+            default:
+                components.append(component)
+            }
+        }
+        return "/" + components.joined(separator: "/")
+    }
+
+    /// Index of the `close` matching the `open` at `opening`, or nil when the
+    /// line ends first.
+    private static func balancedClose(
+        in line: String,
+        opening: String.Index,
+        open: Character,
+        close: Character
+    ) -> String.Index? {
+        guard opening < line.endIndex, line[opening] == open else { return nil }
+
+        var depth = 0
+        var index = opening
+        while index < line.endIndex {
+            let character = line[index]
+            if character == "\\" {
+                index = line.index(index, offsetBy: 2, limitedBy: line.endIndex) ?? line.endIndex
+                continue
+            }
+            if character == open {
+                depth += 1
+            } else if character == close {
+                depth -= 1
+                if depth == 0 {
+                    return index
+                }
+            }
+            index = line.index(after: index)
+        }
+        return nil
+    }
+
+    /// The destination of a link body, dropping an optional title and
+    /// `<...>` wrapping.
+    private static func destination(inLinkBody body: String) -> String? {
+        let trimmed = body.trimmingCharacters(in: .whitespaces)
+        let raw: Substring
+        if trimmed.hasPrefix("<") {
+            guard let close = trimmed.firstIndex(of: ">") else { return nil }
+            raw = trimmed[trimmed.index(after: trimmed.startIndex)..<close]
+        } else {
+            raw = trimmed.prefix { !$0.isWhitespace }
+        }
+
+        let destination = unescaped(String(raw))
+        return destination.isEmpty ? nil : destination
+    }
+
+    private static func isBackslashEscaped(_ index: String.Index, in line: String) -> Bool {
+        var backslashes = 0
+        var cursor = index
+        while cursor > line.startIndex {
+            cursor = line.index(before: cursor)
+            guard line[cursor] == "\\" else { break }
+            backslashes += 1
+        }
+        return backslashes % 2 == 1
+    }
+
+    /// Removes CommonMark backslash escapes (a backslash before ASCII punctuation).
+    private static func unescaped(_ text: String) -> String {
+        guard text.contains("\\") else { return text }
+
+        var result = ""
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            let next = text.index(after: index)
+            if character == "\\",
+               next < text.endIndex,
+               text[next].isASCII,
+               text[next].isPunctuation || text[next].isSymbol {
+                result.append(text[next])
+                index = text.index(after: next)
+                continue
+            }
+            result.append(character)
+            index = next
+        }
+        return result
     }
 
     private static func normalizedLocalPath(fromFileURL rawURL: String) -> String {

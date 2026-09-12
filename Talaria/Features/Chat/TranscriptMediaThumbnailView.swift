@@ -99,7 +99,7 @@ struct TranscriptMediaThumbnailView: View {
             return String(localized: "Open media video \(reference.displayName)")
         }
 
-        return String(localized: "Open media image \(reference.displayName)")
+        return String(localized: "Open media image \(reference.accessibilityName)")
     }
 
     @ViewBuilder

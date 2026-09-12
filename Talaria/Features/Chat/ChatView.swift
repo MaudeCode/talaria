@@ -1085,6 +1085,7 @@ struct ChatView: View {
                 turnDiffPresentation = .file(file)
             }
         )
+        .environment(\.transcriptMediaWorkspaceRoot, viewModel.selectedWorkspacePath)
     }
 
     /// The chat-canvas layout direction. Driven by the manual Settings → Chat
