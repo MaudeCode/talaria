@@ -262,6 +262,29 @@ describe("publisher alert eligibility", () => {
     ]);
   });
 
+  it("stales a queued push-to-start once a deferral is recorded", async () => {
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+      states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+    });
+    await runScheduledRecomputes(backend);
+    const queued = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").first());
+    expect(queued).toMatchObject({ kind: "live_activity_start", status: "queued" });
+    // Same phase, same aggregate fields, now suppressed: the aggregate fingerprint is unchanged.
+    await backend.mutation(internal.publishers.acceptState, {
+      ...publish, nonce: "n2", receivedAt: now + 3, sessionId: "session-1", eventId: "session-1-event-3", revision: 3,
+      state: { sessionId: "session-1", title: "session-1", phase: "waiting_for_approval", updatedAt: now + 2, deepLink: "/sessions/session-1", alertEligible: false },
+    });
+    await runScheduledRecomputes(backend);
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 4 })).resolves.toEqual({ status: "stale" });
+    const device = await backend.run(async (ctx) => ctx.db.query("devices").first());
+    expect(device?.pushToStartIssuedAt).toBeUndefined();
+    expect(device?.pushToStartDeferredAt).toBeDefined();
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    expect((await jobs(backend)).map((job) => [job.kind, job.status])).toEqual([["live_activity_start", "stale"]]);
+  });
+
   it("clears a deferral when an aggregate activity registers", async () => {
     const backend = await seed({ pushToStartToken: "start-token", activity: false });
     await backend.mutation(internal.publishers.acceptState, {

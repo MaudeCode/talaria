@@ -707,7 +707,8 @@ export const claimJob = internalMutation({
         ]);
         const deviceStates = states.filter((state) => !excluded.has(state.publisherId));
         const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(deviceStates, args.now, true))}`;
-        if (activeActivity || fingerprint !== job.stateFingerprint) {
+        // A deferral recorded after this start was queued means its fallback alert is no longer wanted.
+        if (activeActivity || fingerprint !== job.stateFingerprint || device.pushToStartDeferredAt !== undefined) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           if (device.pushToStartToken === job.expectedToken) {
             await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
