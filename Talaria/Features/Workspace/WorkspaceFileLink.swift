@@ -69,7 +69,10 @@ struct WorkspaceFileLink: Hashable, Identifiable {
             return Target(path: path, fragment: url.fragment(percentEncoded: false) ?? "")
         }
 
-        guard ["/", "./", "../", "~/"].contains(where: destination.hasPrefix) else { return nil }
+        // `//host/path` is a protocol-relative web link, never a file.
+        guard !destination.hasPrefix("//"),
+              ["/", "./", "../", "~/"].contains(where: destination.hasPrefix)
+        else { return nil }
 
         var path = destination
         var fragment = ""
