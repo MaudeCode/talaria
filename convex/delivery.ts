@@ -20,7 +20,7 @@ import {
   makeNotification,
   type ApnsRequest,
 } from "./lib/apnsPayload";
-import type { ActivityAggregate, ActivityAlert, SessionPhase, SessionState } from "./lib/model";
+import type { ActivityAggregate, ActivityAlert, SessionState } from "./lib/model";
 import {
   aggregateValidator,
   apnsDeliveryResultValidator,
@@ -90,6 +90,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    alertEligible: state.alertEligible,
   };
 }
 
@@ -129,12 +130,12 @@ function statesForDevice(
   return excluded ? states.filter((state) => !excluded.has(state.publisherId)) : states;
 }
 
-async function hasPendingActivityJob(
+async function pendingActivityJobs(
   ctx: MutationCtx,
   userId: string,
   activityId: string,
   fingerprint: string,
-): Promise<boolean> {
+): Promise<Doc<"deliveryJobs">[]> {
   const [queued, running] = await Promise.all([
     ctx.db
       .query("deliveryJobs")
@@ -149,15 +150,15 @@ async function hasPendingActivityJob(
       )
       .take(20),
   ]);
-  return [...queued, ...running].some((job) => job.stateFingerprint === fingerprint);
+  return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
 }
 
-async function hasPendingDeviceJob(
+async function pendingDeviceJobs(
   ctx: MutationCtx,
   userId: string,
   deviceId: string,
   fingerprint: string,
-): Promise<boolean> {
+): Promise<Doc<"deliveryJobs">[]> {
   const [queued, running] = await Promise.all([
     ctx.db
       .query("deliveryJobs")
@@ -172,7 +173,11 @@ async function hasPendingDeviceJob(
       )
       .take(20),
   ]);
-  return [...queued, ...running].some((job) => job.stateFingerprint === fingerprint);
+  return [...queued, ...running].filter((job) => job.stateFingerprint === fingerprint);
+}
+
+function carriesAlert(payload: unknown): boolean {
+  return (payload as { aps?: { alert?: unknown } }).aps?.alert !== undefined;
 }
 
 async function enqueueJob(
@@ -190,10 +195,17 @@ async function enqueueJob(
     now: number;
   },
 ): Promise<void> {
-  const duplicate = input.activityId
-    ? await hasPendingActivityJob(ctx, input.userId, input.activityId, input.stateFingerprint)
-    : await hasPendingDeviceJob(ctx, input.userId, input.deviceId, input.stateFingerprint);
-  if (duplicate) return;
+  const pending = input.activityId
+    ? await pendingActivityJobs(ctx, input.userId, input.activityId, input.stateFingerprint)
+    : await pendingDeviceJobs(ctx, input.userId, input.deviceId, input.stateFingerprint);
+  if (pending.length > 0) {
+    // Same state already pending. An alerted payload still replaces queued silent duplicates so an eligible
+    // transition is never swallowed by an earlier ineligible one that reached the same aggregate first.
+    if (!carriesAlert(input.request.payload) || pending.some((job) => carriesAlert(JSON.parse(job.request.payloadJson)))) return;
+    for (const job of pending) {
+      if (job.status === "queued") await ctx.db.patch(job._id, { status: "stale", updatedAt: input.now });
+    }
+  }
 
   const jobId = await ctx.db.insert("deliveryJobs", {
     userId: input.userId,
@@ -258,7 +270,7 @@ export const recompute = internalMutation({
     transitions: v.optional(v.array(v.object({
       publisherId: v.string(),
       sessionId: v.string(),
-      previousPhase: sessionPhaseValidator,
+      previousPhase: v.optional(sessionPhaseValidator),
       state: v.optional(storedSessionStateValidator),
     }))),
   },
@@ -329,48 +341,76 @@ export const recompute = internalMutation({
     for (const device of devices) {
       const deviceStates = statesForDevice(states, exclusionsByDevice, device.deviceId);
       const aggregate = makeAggregate(deviceStates, now, true);
-      if (aggregate !== null && aggregate.activeCount > 0) {
-        if (
-          activeAggregateDevices.has(device.deviceId) ||
-          device.revokedAt !== undefined ||
-          (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
-          !device.bundleId ||
-          !device.apsEnvironment ||
-          !device.preferences.liveActivitiesEnabled ||
-          !device.pushToStartToken ||
-          (device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS
-        ) {
-          continue;
+      if (aggregate === null || aggregate.activeCount === 0) {
+        if (device.pushToStartDeferredAt !== undefined) {
+          await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
         }
-        const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
-          if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
-          const value = alertForTransition(
-            { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
-            state,
-            device.preferences,
-          );
-          return value ? [value] : [];
-        })[0] ?? null;
-        const request = makeLiveActivityStart({
-          token: device.pushToStartToken,
-          bundleId: device.bundleId,
-          environment: device.apsEnvironment,
-          aggregate,
-          nowEpochSeconds: Math.floor(now / 1_000),
-          alert: transitionAlert ?? { title: "Talaria", body: aggregate.subtitle },
-        });
-        await enqueueJob(ctx, {
-          userId: args.userId,
-          deviceId: device.deviceId,
-          kind: "live_activity_start",
-          request,
-          aggregate,
-          stateFingerprint: `start:${device.pushToStartToken}:${aggregateFingerprint(aggregate)}`,
-          now,
-        });
-        await ctx.db.patch(device._id, { pushToStartIssuedAt: now, updatedAt: now });
-        if (transitionAlert) alertedDevices.add(device.deviceId);
+        continue;
       }
+      if (activeAggregateDevices.has(device.deviceId)) {
+        if (device.pushToStartDeferredAt !== undefined) {
+          await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
+        }
+        continue;
+      }
+      // APNs requires an alert on push-to-start. An ineligible event on a device without an aggregate activity defers
+      // the start instead of injecting the fallback alert. The deferral is tracked before the validity and lease
+      // checks so a disabled device or a stale in-flight start cannot leak or strand it. It holds while the suppressed
+      // state is still visible, and otherwise until an eligible phase transition, an activity, or idle work releases
+      // it, so heartbeats, retention, and idle recomputes cannot alert for the suppressed event.
+      const visibleChanges = changed.filter(({ state }) => !exclusionsByDevice.get(device.deviceId)?.has(state.publisherId));
+      const ineligibleChange = visibleChanges.some(({ state }) => state.alertEligible === false);
+      const eligibleTransition = visibleChanges.some(({ state, previousPhase }) =>
+        previousPhase !== state.phase && state.alertEligible !== false,
+      );
+      const ineligibleRow = deviceStates.some((state) => state.alertEligible === false && !isTerminalPhase(state.phase));
+      const deferred = ineligibleChange || ineligibleRow
+        || (device.pushToStartDeferredAt !== undefined && !eligibleTransition);
+      if ((ineligibleChange || ineligibleRow) && device.pushToStartDeferredAt === undefined) {
+        await ctx.db.patch(device._id, { pushToStartDeferredAt: now, updatedAt: now });
+      } else if (!deferred && device.pushToStartDeferredAt !== undefined) {
+        await ctx.db.patch(device._id, { pushToStartDeferredAt: undefined, updatedAt: now });
+      }
+      if (
+        device.revokedAt !== undefined ||
+        (device.sessionExpiresAt !== undefined && device.sessionExpiresAt <= now) ||
+        !device.bundleId ||
+        !device.apsEnvironment ||
+        !device.preferences.liveActivitiesEnabled ||
+        !device.pushToStartToken
+      ) {
+        continue;
+      }
+      if ((device.pushToStartIssuedAt ?? 0) > now - PUSH_TO_START_LEASE_MS) continue;
+      const transitionAlert = changed.flatMap(({ state, previousPhase }) => {
+        if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
+        const value = alertForTransition(
+          previousPhase === undefined ? null : { ...state, phase: previousPhase },
+          state,
+          device.preferences,
+        );
+        return value ? [value] : [];
+      })[0] ?? null;
+      if (!transitionAlert && deferred) continue;
+      const request = makeLiveActivityStart({
+        token: device.pushToStartToken,
+        bundleId: device.bundleId,
+        environment: device.apsEnvironment,
+        aggregate,
+        nowEpochSeconds: Math.floor(now / 1_000),
+        alert: transitionAlert ?? { title: "Talaria", body: aggregate.subtitle },
+      });
+      await enqueueJob(ctx, {
+        userId: args.userId,
+        deviceId: device.deviceId,
+        kind: "live_activity_start",
+        request,
+        aggregate,
+        stateFingerprint: `start:${device.pushToStartToken}:${aggregateFingerprint(aggregate)}`,
+        now,
+      });
+      await ctx.db.patch(device._id, { pushToStartIssuedAt: now, pushToStartDeferredAt: undefined, updatedAt: now });
+      if (transitionAlert) alertedDevices.add(device.deviceId);
     }
 
     for (const activity of allActivities) {
@@ -397,19 +437,21 @@ export const recompute = internalMutation({
       const activityChanged = changed.filter(
         ({ state }) => !exclusionsByDevice.get(activity.deviceId)?.has(state.publisherId),
       );
-      const activityChangedState = activityChanged[0]?.state ?? null;
-      const alert = activityChanged.flatMap(({ state, previousPhase }) => {
+      const alerted = activityChanged.flatMap(({ state, previousPhase }) => {
         if (
           activity.mode !== "all_running" &&
           (activity.publisherId !== state.publisherId || activity.sessionId !== state.sessionId)
         ) return [];
         const value = alertForTransition(
-          { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+          previousPhase === undefined ? null : { ...state, phase: previousPhase },
           state,
           device.preferences,
         );
-        return value ? [value] : [];
-      })[0] ?? null;
+        return value ? [{ alert: value, state }] : [];
+      })[0];
+      const alert = alerted?.alert ?? null;
+      // Source the job from the alerting state so claiming can revalidate that alert's eligibility.
+      const activityChangedState = alerted?.state ?? activityChanged[0]?.state ?? null;
 
       const seededLeaseUntil = activity.emptyStateLeaseUntil;
       const seededLeaseActive = seededLeaseUntil !== undefined && seededLeaseUntil > now;
@@ -523,7 +565,7 @@ export const recompute = internalMutation({
           const changedAlert = changed.flatMap(({ state, previousPhase }) => {
             if (exclusionsByDevice.get(device.deviceId)?.has(state.publisherId)) return [];
             const value = alertForTransition(
-              { ...state, phase: previousPhase as SessionPhase } satisfies SessionState,
+              previousPhase === undefined ? null : { ...state, phase: previousPhase },
               state,
               device.preferences,
             );
@@ -574,6 +616,7 @@ export const claimJob = internalMutation({
     if (!job?.userId || (job.status !== "queued" && job.status !== "running")) {
       return { status: "stale" as const };
     }
+    let request = job.request;
     if (job.activityId) {
       const isDisplacementEnd = job.kind === "live_activity_end"
         && job.stateFingerprint === `end:displaced:${job.deviceId}:${job.activityId}`;
@@ -625,6 +668,22 @@ export const claimJob = internalMutation({
         await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
         return { status: "stale" as const };
       }
+      const payload = JSON.parse(job.request.payloadJson) as { aps: Record<string, unknown> };
+      if (job.sourcePublisherId && job.sourceSessionId && payload.aps.alert !== undefined) {
+        // The state is still current, but its alert may have been suppressed after this job was queued.
+        const source = await ctx.db
+          .query("sessionStates")
+          .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
+            query.eq("version", 2).eq("userId", job.userId)
+              .eq("publisherId", job.sourcePublisherId!).eq("sessionId", job.sourceSessionId!),
+          )
+          .unique();
+        if (source && !source.deleted && source.alertEligible === false) {
+          const { alert: _alert, ...aps } = payload.aps;
+          request = { ...job.request, payloadJson: JSON.stringify({ ...payload, aps }) };
+          await ctx.db.patch(job._id, { request });
+        }
+      }
     } else {
       const device = await ctx.db
         .query("devices")
@@ -667,7 +726,8 @@ export const claimJob = internalMutation({
         ]);
         const deviceStates = states.filter((state) => !excluded.has(state.publisherId));
         const fingerprint = `start:${job.expectedToken}:${aggregateFingerprint(makeAggregate(deviceStates, args.now, true))}`;
-        if (activeActivity || fingerprint !== job.stateFingerprint) {
+        // A deferral recorded after this start was queued means its fallback alert is no longer wanted.
+        if (activeActivity || fingerprint !== job.stateFingerprint || device.pushToStartDeferredAt !== undefined) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
           if (device.pushToStartToken === job.expectedToken) {
             await ctx.db.patch(device._id, { pushToStartIssuedAt: undefined, updatedAt: args.now });
@@ -703,6 +763,7 @@ export const claimJob = internalMutation({
           !grant ||
           !state ||
           state.deleted ||
+          state.alertEligible === false ||
           !job.stateFingerprint.includes(`:${state.eventId}:`)
         ) {
           await ctx.db.patch(job._id, { status: "stale", updatedAt: args.now });
@@ -715,7 +776,7 @@ export const claimJob = internalMutation({
       attemptCount: job.attemptCount + 1,
       updatedAt: args.now,
     });
-    return { status: "ready" as const, kind: job.kind, request: job.request };
+    return { status: "ready" as const, kind: job.kind, request };
   },
 });
 

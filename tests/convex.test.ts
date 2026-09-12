@@ -674,6 +674,7 @@ describe("Convex relay state", () => {
         phase: "running",
         updatedAt: now,
         deepLink: "/sessions/session-b",
+        alertEligible: false,
       }],
     });
     const snapshot = await backend.fetch(snapshotPath, {
@@ -685,7 +686,16 @@ describe("Convex relay state", () => {
     await expect(backend.query(internal.publishers.listCurrentStates, {
       userId: "user-b",
       now,
-    })).resolves.toEqual([expect.objectContaining({ sessionId: "session-b", title: "Private B" })]);
+    })).resolves.toEqual([expect.objectContaining({ sessionId: "session-b", title: "Private B", alertEligible: false })]);
+    for (const [value, nonce] of [['"no"', "malformed-nonce"], ["null", "null-nonce"]]) {
+      const malformedBody = snapshotBody.replace('"alertEligible":false', `"alertEligible":${value}`);
+      const malformed = await backend.fetch(snapshotPath, {
+        method: "PUT",
+        headers: await signedHeaders("PUT", snapshotPath, malformedBody, nonce!),
+        body: malformedBody,
+      });
+      expect(malformed.status).toBe(400);
+    }
     await expect(backend.query(internal.publishers.listCurrentStates, {
       userId: "user-a",
       now,

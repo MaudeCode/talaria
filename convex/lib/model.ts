@@ -28,6 +28,7 @@ export interface SessionState {
   deepLink: string;
   expiresAt: number;
   terminalExpiresAt?: number;
+  alertEligible?: boolean;
 }
 
 export interface PublishedSessionState {
@@ -39,6 +40,7 @@ export interface PublishedSessionState {
   phase: SessionPhase;
   updatedAt: number;
   deepLink: string;
+  alertEligible?: boolean;
 }
 
 export interface AggregateRow {

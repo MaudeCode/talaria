@@ -58,6 +58,23 @@ function expiryForState(
   return expiryForPhase(next.phase, now);
 }
 
+// Ineligibility belongs to the phase transition that carried it, so same-phase updates of the same run inherit it
+// until the phase changes. A new stream is a new run and starts from its own value.
+function alertEligibleForState(
+  current: Doc<"sessionStates"> | null | undefined,
+  next: { phase: SessionPhase; streamId?: string; alertEligible?: boolean },
+): boolean | undefined {
+  return current && !current.deleted && current.phase === next.phase && current.streamId === next.streamId
+    && current.alertEligible === false ? false : next.alertEligible;
+}
+
+// The phase a delivery transition starts from. A first publication, a re-created session, or a new run that begins in
+// the same phase has none: it never alerts, but it still carries eligibility to delivery.
+function previousPhaseFor(current: Doc<"sessionStates"> | null | undefined, next: { phase: SessionPhase; streamId?: string }): SessionPhase | undefined {
+  if (!current || current.deleted) return undefined;
+  return current.phase === next.phase && current.streamId !== next.streamId ? undefined : current.phase;
+}
+
 function stateRunKey(current: Doc<"sessionStates"> | null | undefined, next: { streamId?: string; phase: SessionPhase; eventId: string }): string {
   return next.streamId ?? (current && !(isTerminalPhase(current.phase) && !isTerminalPhase(next.phase))
     ? current.runKey ?? current.eventId : next.eventId);
@@ -86,6 +103,7 @@ function exposedState(state: Doc<"sessionStates">) {
     deepLink: state.deepLink,
     expiresAt: state.expiresAt,
     terminalExpiresAt: state.terminalExpiresAt,
+    alertEligible: state.alertEligible,
     receivedAt: state.receivedAt,
   };
 }
@@ -203,7 +221,7 @@ export const acceptState = internalMutation({
         if (states.length >= 500) continue;
       }
 
-      const previousPhase = existing?.deleted ? undefined : existing?.phase;
+      const previousPhase = args.state ? previousPhaseFor(existing, args.state) : existing?.deleted ? undefined : existing?.phase;
       const next = args.state
         ? {
             deleted: false,
@@ -215,6 +233,7 @@ export const acceptState = internalMutation({
             eventId: args.eventId,
             revision: args.revision,
             ...args.state,
+            alertEligible: alertEligibleForState(existing, args.state),
             runKey: stateRunKey(existing, { ...args.state, eventId: args.eventId }),
             ...expiryForState(existing, args.state, args.receivedAt),
             receivedAt: args.receivedAt,
@@ -241,9 +260,9 @@ export const acceptState = internalMutation({
       else await ctx.db.insert("sessionStates", next);
       await ctx.scheduler.runAfter(0, internal.delivery.recompute, {
         userId: grant.userId,
-        publisherId: args.publisherId,
-        sessionId: args.sessionId,
-        previousPhase,
+        transitions: args.state
+          ? [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase, state: exposedState(next as Doc<"sessionStates">) }]
+          : previousPhase === undefined ? [] : [{ publisherId: args.publisherId, sessionId: args.sessionId, previousPhase }],
       });
       accepted = true;
     }
@@ -281,7 +300,7 @@ export const acceptSnapshot = internalMutation({
       const transitions: {
         publisherId: string;
         sessionId: string;
-        previousPhase: SessionPhase;
+        previousPhase?: SessionPhase;
         state: ReturnType<typeof exposedState>;
       }[] = [];
       for (const state of args.states) {
@@ -303,15 +322,19 @@ export const acceptSnapshot = internalMutation({
           publisherId: args.publisherId,
           publisherLabel: authorization.label,
           ...state,
+          alertEligible: alertEligibleForState(current, state),
           runKey: stateRunKey(current, state),
           ...expiryForState(current, state, args.receivedAt),
           receivedAt: args.receivedAt,
         };
-        if (current && current.phase !== state.phase) {
+        // A newly suppressed same-phase update is also delivered as a (non-alerting) transition so delivery can
+        // record the deferral and revalidate any queued alert for it.
+        if (!current || current.phase !== state.phase || current.streamId !== state.streamId
+          || (next.alertEligible === false && current.alertEligible !== false)) {
           transitions.push({
             publisherId: args.publisherId,
             sessionId: state.sessionId,
-            previousPhase: current.phase,
+            previousPhase: previousPhaseFor(current, state),
             state: exposedState(next as Doc<"sessionStates">),
           });
         }

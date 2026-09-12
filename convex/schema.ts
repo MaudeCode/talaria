@@ -127,6 +127,7 @@ export default defineSchema({
     pushToken: v.optional(v.string()),
     pushToStartToken: v.optional(v.string()),
     pushToStartIssuedAt: v.optional(v.number()),
+    pushToStartDeferredAt: v.optional(v.number()),
     preferences: preferencesValidator,
     revokedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -166,6 +167,7 @@ export default defineSchema({
     expiresAt: v.number(),
     terminalExpiresAt: v.optional(v.number()),
     runKey: v.optional(v.string()),
+    alertEligible: v.optional(v.boolean()),
     receivedAt: v.number(),
   })
     .index("by_user_id_and_publisher_id_and_session_id", ["userId", "publisherId", "sessionId"])
