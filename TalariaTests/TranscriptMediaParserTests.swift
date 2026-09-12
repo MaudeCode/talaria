@@ -347,6 +347,57 @@ final class TranscriptMediaParserTests: XCTestCase {
         XCTAssertTrue(text.contains("![z](/tmp/block-comment.png) file:///tmp/commented.png"))
     }
 
+    func testMarkdownImageAfterMultilineCommentCloseIsExtracted() {
+        let markdown = """
+        <!--
+        ![hidden](/tmp/hidden.png)
+        hidden --> ![visible](/tmp/visible.png) tail
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(mediaReferences(in: segments).map(\.rawReference), ["/tmp/visible.png"])
+        XCTAssertEqual(segments.last, .text(" tail"))
+    }
+
+    func testMarkdownImageCommentMarkerInsideInlineCodeDoesNotHideLaterImages() {
+        let markdown = """
+        Type `<!--` to start a comment ![same](/tmp/same-line.png)
+        ![next](/tmp/next-line.png)
+        """
+
+        let segments = TranscriptMediaParser.segments(in: markdown)
+
+        XCTAssertEqual(
+            mediaReferences(in: segments).map(\.rawReference),
+            ["/tmp/same-line.png", "/tmp/next-line.png"]
+        )
+    }
+
+    func testMarkdownImageAcceptsOptionalTitleButRejectsOtherTrailingContent() {
+        for markdown in [
+            "![x](/tmp/a.png \"Title\")",
+            "![x](/tmp/a.png 'Title')",
+            "![x](/tmp/a.png (Title))",
+            "![x](</tmp/a.png> \"Title\")"
+        ] {
+            XCTAssertEqual(
+                TranscriptMediaParser.segments(in: markdown),
+                [.media(.init(rawReference: "/tmp/a.png", altText: "x"))],
+                markdown
+            )
+        }
+
+        for markdown in [
+            "![x](/tmp/a.png garbage)",
+            "![x](/tmp/a.png \"unterminated)",
+            "![x](/tmp/a.png\"Title\")",
+            "![x](</tmp/a.png>garbage)"
+        ] {
+            XCTAssertEqual(TranscriptMediaParser.segments(in: markdown), [.text(markdown)], markdown)
+        }
+    }
+
     func testMarkdownImageEscapedOrMalformedSyntaxStaysText() {
         for markdown in [
             "\\![escaped](/tmp/escaped.png)",

@@ -147,8 +147,16 @@ enum TranscriptMediaParser {
                     fenceCharacter = nil
                 }
             } else if isInHTMLComment {
-                appendText(line, to: &segments)
-                isInHTMLComment = !line.contains(htmlCommentClose)
+                if let close = line.range(of: htmlCommentClose) {
+                    appendText(String(line[..<close.upperBound]), to: &segments)
+                    isInHTMLComment = appendMediaSegments(
+                        in: String(line[close.upperBound...]),
+                        workspaceRoot: workspaceRoot,
+                        to: &segments
+                    )
+                } else {
+                    appendText(line, to: &segments)
+                }
             } else if let marker = fenceMarker(in: line) {
                 appendText(line, to: &segments)
                 isInFence = true
@@ -172,9 +180,10 @@ enum TranscriptMediaParser {
     ) -> Bool {
         var cursor = line.startIndex
         var textStart = cursor
-        let (commentRanges, leavesCommentOpen) = htmlCommentRanges(in: line)
+        let codeRanges = inlineCodeRanges(in: line)
+        let (commentRanges, leavesCommentOpen) = htmlCommentRanges(in: line, skipping: codeRanges)
         // Spans the Markdown renderer treats literally or hides: inline code and HTML comments.
-        let inlineCodeRanges = inlineCodeRanges(in: line) + commentRanges
+        let inlineCodeRanges = codeRanges + commentRanges
 
         while cursor < line.endIndex {
             if line[cursor...].hasPrefix("!["),
@@ -236,11 +245,19 @@ enum TranscriptMediaParser {
         return leavesCommentOpen
     }
 
-    private static func htmlCommentRanges(in line: String) -> (ranges: [Range<String.Index>], leavesOpen: Bool) {
+    /// `<!-- … -->` spans on the line; an opener inside inline code is literal.
+    private static func htmlCommentRanges(
+        in line: String,
+        skipping codeRanges: [Range<String.Index>]
+    ) -> (ranges: [Range<String.Index>], leavesOpen: Bool) {
         var ranges: [Range<String.Index>] = []
         var search = line.startIndex
 
         while let open = line.range(of: htmlCommentOpen, range: search..<line.endIndex) {
+            if codeRanges.contains(where: { $0.contains(open.lowerBound) }) {
+                search = open.upperBound
+                continue
+            }
             guard let close = line.range(of: htmlCommentClose, range: open.upperBound..<line.endIndex) else {
                 ranges.append(open.lowerBound..<line.endIndex)
                 return (ranges, true)
@@ -462,20 +479,41 @@ enum TranscriptMediaParser {
         return nil
     }
 
-    /// The destination of a link body, dropping an optional title and
-    /// `<...>` wrapping.
+    /// The destination of a link body, dropping `<...>` wrapping and an
+    /// optional quoted title. Any other trailing content is malformed.
     private static func destination(inLinkBody body: String) -> String? {
         let trimmed = body.trimmingCharacters(in: .whitespaces)
         let raw: Substring
+        let remainder: Substring
         if trimmed.hasPrefix("<") {
             guard let close = trimmed.firstIndex(of: ">") else { return nil }
             raw = trimmed[trimmed.index(after: trimmed.startIndex)..<close]
+            remainder = trimmed[trimmed.index(after: close)...]
         } else {
             raw = trimmed.prefix { !$0.isWhitespace }
+            remainder = trimmed[raw.endIndex...]
         }
 
+        guard isOptionalLinkTitle(remainder) else { return nil }
         let destination = unescaped(String(raw))
         return destination.isEmpty ? nil : destination
+    }
+
+    /// Empty, or whitespace followed by a `"…"`, `'…'`, or `(…)` title.
+    private static func isOptionalLinkTitle(_ remainder: Substring) -> Bool {
+        let title = remainder.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return true }
+        guard remainder.first?.isWhitespace == true, title.count >= 2,
+              let open = title.first, let close = title.last
+        else {
+            return false
+        }
+        switch (open, close) {
+        case ("\"", "\""), ("'", "'"), ("(", ")"):
+            return !title.dropFirst().dropLast().contains(close)
+        default:
+            return false
+        }
     }
 
     private static func isBackslashEscaped(_ index: String.Index, in line: String) -> Bool {
