@@ -18,6 +18,17 @@ final class WorkspaceFileLinkTests: XCTestCase {
         XCTAssertEqual(link?.name, "ChatView.swift")
     }
 
+    func testFileURLAcceptsTheLocalhostAuthorityInAnyCase() {
+        XCTAssertEqual(
+            parse("file://LOCALHOST/Users/hermes/projects/app/Sources/Main.swift:5"),
+            WorkspaceFileLink(path: "Sources/Main.swift", line: 5)
+        )
+        XCTAssertEqual(
+            parse("file://localhost/Users/hermes/projects/app/Sources/Main.swift"),
+            WorkspaceFileLink(path: "Sources/Main.swift", line: nil)
+        )
+    }
+
     func testFileURLWithGitHubStyleFragment() {
         XCTAssertEqual(
             parse("file:///Users/hermes/projects/app/README.md#L8C2"),

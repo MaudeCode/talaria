@@ -62,7 +62,7 @@ struct WorkspaceFileLink: Hashable, Identifiable {
         if destination.lowercased().hasPrefix("file:") {
             guard let url = URL(string: destination), url.scheme?.lowercased() == "file" else { return nil }
             // A file on another host is not this workspace's file.
-            let host = url.host() ?? ""
+            let host = (url.host() ?? "").lowercased()
             guard host.isEmpty || host == "localhost" else { return nil }
             let path = url.path(percentEncoded: false)
             guard path.hasPrefix("/") else { return nil }
