@@ -98,23 +98,25 @@ struct SessionNavigationState: Equatable {
         deepLinkedSessionLoadID = nil
     }
 
-    /// Restores only when no explicit route already won. Deep links, shared drafts,
-    /// and App Intent requests therefore take precedence over the stored selection.
-    /// A pending or in-flight deep link (not yet resolved into a destination) also
-    /// blocks the restore, so its network load is never pre-empted by the stored
-    /// selection; the stored ID is kept for a later restore.
-    mutating func restoreIfNeeded(
+    /// The stored session to restore, or nil when no restore should happen. Deep
+    /// links, shared drafts, and App Intent requests take precedence over the stored
+    /// selection, and a pending or in-flight deep link (not yet resolved into a
+    /// destination) also blocks the restore so its network load is never pre-empted;
+    /// the stored ID is kept for a later restore. The caller opens the returned
+    /// session through the same import path a tapped row uses, so this never sets
+    /// the destination itself.
+    mutating func sessionToRestore(
         from sessions: [SessionSummary],
         allowsAutomaticRestore: Bool = true,
         clearsMissingSelection: Bool = true,
         pendingDeepLinkedSessionID: String? = nil
-    ) {
+    ) -> SessionSummary? {
         guard allowsAutomaticRestore,
               destination == nil,
               deepLinkedSessionLoadID == nil,
               Self.normalized(pendingDeepLinkedSessionID) == nil,
               let lastSelectedSessionID
-        else { return }
+        else { return nil }
 
         guard let session = sessions.first(where: {
             Self.normalized($0.sessionId) == lastSelectedSessionID
@@ -122,10 +124,10 @@ struct SessionNavigationState: Equatable {
             if clearsMissingSelection {
                 self.lastSelectedSessionID = nil
             }
-            return
+            return nil
         }
 
-        destination = .session(session)
+        return session
     }
 
     /// Invalidates both the visible detail and stored restoration target when the
