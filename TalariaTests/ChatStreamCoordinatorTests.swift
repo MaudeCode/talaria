@@ -1118,6 +1118,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(queryItems.first(where: { $0.name == "replay" })?.value, "1")
         XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
         XCTAssertTrue(coordinator.isReplayConnection)
+        // TAL-148: the loaded scene seeds the live timeline before the replay starts.
+        XCTAssertEqual(delegate.seedLiveActivityCount, 1)
     }
 
     @MainActor
@@ -1151,6 +1153,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
         XCTAssertFalse(coordinator.isReplayConnection)
+        XCTAssertEqual(delegate.seedLiveActivityCount, 0)
     }
 
     @MainActor
@@ -1403,6 +1406,7 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     var streamCoordinatorStreamingAssistantMessageID: String?
 
     private(set) var loadMessagesCount = 0
+    private(set) var seedLiveActivityCount = 0
     private(set) var startMonitoringCount = 0
     private(set) var stopMonitoringClearPromptValues: [Bool] = []
     private(set) var saveSnapshotCount = 0
@@ -1434,6 +1438,10 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         loadMessagesCount += 1
         loadMessagesHadModelContext.append(modelContext != nil)
         await onLoadMessages?()
+    }
+
+    func streamCoordinatorSeedLiveActivityForColdReplay() {
+        seedLiveActivityCount += 1
     }
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
