@@ -103,6 +103,10 @@ final class AuthManagerStateTests: XCTestCase {
     func testRecoverySignInMethodsFollowCapabilitiesAndOIDCMarker() async throws {
         for (status, marker, sso, password) in [
             (AuthStatusResponse(loggedIn: false), "fixture-profile", true, false),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: false, oidcEnabled: false), "fixture-profile", false, false),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: false, oidcEnabled: true, oidcNativeHandoffEnabled: false), "fixture-profile", false, false),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: false, oidcEnabled: true), "fixture-profile", false, false),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: true, oidcEnabled: false), "fixture-profile", false, true),
             (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: false, oidcNativeHandoffEnabled: true), nil, true, false),
             (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: true, oidcNativeHandoffEnabled: true), nil, true, true),
             (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: true), nil, false, true)

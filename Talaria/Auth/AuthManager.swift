@@ -91,7 +91,8 @@ final class AuthManager {
     private func requireReauthentication(for server: URL, status: AuthStatusResponse?) {
         let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
         // Without a successful capability probe, keep retry/header repair available.
-        reauthenticationOffersSSO = status != nil && (usedSSO || status?.oidcNativeHandoffEnabled == true)
+        reauthenticationOffersSSO = status != nil && status?.oidcEnabled != false
+            && (status?.oidcNativeHandoffEnabled ?? (usedSSO && status?.oidcEnabled == nil))
         reauthenticationOffersPassword = status != nil && (status?.passwordAuthEnabled == true
             || (!reauthenticationOffersSSO && status?.passwordAuthEnabled != false))
         if let status, let guidance = Self.unsupportedSignInMessage(for: status) {
