@@ -48,6 +48,7 @@ team** — override locally instead:
    // The app-group entitlement must stay in sync with the bundle ID.
    // APP_BUNDLE_IDENTIFIER = com.yourname.talaria
    // APP_GROUP_IDENTIFIER = group.com.yourname.talaria
+   // ICLOUD_CONTAINER_IDENTIFIER = iCloud.com.yourname.talaria
    ```
 
 2. Build normally. `Config/Shared.xcconfig` is wired into the project and ends

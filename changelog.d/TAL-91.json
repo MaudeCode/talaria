@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Sign in with Apple and turn on iCloud Sync to keep your servers, saved passwords, custom headers, and settings the same on every iPhone.",
+      "highlight": true
+    },
+    {
+      "category": "Added",
+      "summary": "Restore from iCloud on a new iPhone and open your servers without entering setup again.",
+      "highlight": false
+    },
+    {
+      "category": "Security",
+      "summary": "Synced server URLs, passwords, and headers are stored only as encrypted iCloud fields and never leave your private iCloud database.",
+      "highlight": false
+    }
+  ]
+}

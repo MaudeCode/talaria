@@ -218,6 +218,9 @@ final class InMemoryKeychainStore: KeychainStoring {
     private(set) var savedValues: [KeychainStore.Key: String] = [:]
     var saveError: Error?
     var saveErrors: [KeychainStore.Key: Error] = [:]
+    /// Scoped reads of these keys throw, so tests can prove a failed read is
+    /// never treated as an absent value (TAL-91).
+    var scopedLoadErrors: [KeychainStore.Key: Error] = [:]
     /// Per-key write count, so tests can assert no redundant writes occur.
     private(set) var saveCounts: [KeychainStore.Key: Int] = [:]
     /// Per-server-scoped storage, keyed by the same "raw::scope" string the real
@@ -244,7 +247,8 @@ final class InMemoryKeychainStore: KeychainStoring {
     }
 
     func load(_ key: KeychainStore.Key, scope: String) throws -> String? {
-        scopedValues[KeychainStore.scopedKey(key, scope: scope)]
+        if let error = scopedLoadErrors[key] { throw error }
+        return scopedValues[KeychainStore.scopedKey(key, scope: scope)]
     }
 
     func delete(_ key: KeychainStore.Key, scope: String) throws {

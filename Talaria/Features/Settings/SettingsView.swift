@@ -24,7 +24,7 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings-user-profile")
 
-                RelayAccountSettingsSection(authManager: authManager, server: server)
+                AppleAccountSettingsRow(authManager: authManager, server: server)
             }
 
             Section {

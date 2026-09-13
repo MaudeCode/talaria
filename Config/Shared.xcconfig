@@ -9,6 +9,10 @@ DEVELOPMENT_TEAM = Q28NF3NH3D
 APP_IDENTIFIER_SUFFIX =
 APP_BUNDLE_IDENTIFIER = dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
 APP_GROUP_IDENTIFIER = group.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
+// Private CloudKit container for server-setup and preference sync (TAL-91).
+// Must be enabled on the App ID in Certificates, Identifiers & Profiles; see
+// docs/icloud-sync-setup.md.
+ICLOUD_CONTAINER_IDENTIFIER = iCloud.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
 
 // Optional per-machine overrides. This include must stay last: later
 // assignments win, so Local.xcconfig values override the defaults above.

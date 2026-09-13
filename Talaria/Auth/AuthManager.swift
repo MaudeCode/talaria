@@ -99,6 +99,23 @@ final class AuthManager {
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
     private var isOIDCSignInActive = false
+    /// Servers whose retained password already got its one automatic retry
+    /// after a 401, so a stale password cannot loop.
+    private var autoSignInAttempted: Set<String> = []
+    /// Servers already probed by `resolveMissingPasswordMarkers` this launch.
+    private var passwordProbes: Set<String> = []
+
+    /// The Keychain refused the retained password after a successful login.
+    struct PasswordRetentionError: LocalizedError {
+        var errorDescription: String? {
+            String(localized: "Could not save the password to the Keychain.")
+        }
+    }
+
+    /// Stored as the retained password when a server authenticated without
+    /// one (auth off, trusted headers, OIDC), so sync can tell "no password
+    /// needed" from "never captured" (TAL-91).
+    nonisolated static let noPasswordRequired = ""
 
     init(
         keychain: any KeychainStoring = KeychainStore(),
@@ -187,6 +204,13 @@ final class AuthManager {
     /// every registry mutation routed through this manager.
     private func refreshServers() {
         servers = serverRegistry.servers
+        notifyConfigurationChanged()
+    }
+
+    /// Tells `ConfigurationSyncCoordinator` that the server list, a password, or
+    /// a header set was persisted, without this manager knowing about sync.
+    private func notifyConfigurationChanged() {
+        NotificationCenter.default.post(name: .talariaServerConfigurationChanged, object: nil)
     }
 
     /// The headers currently in effect — used to prefill the editor on the connect
@@ -197,6 +221,17 @@ final class AuthManager {
 
     /// Returns the request headers scoped to one configured server without
     /// changing the active server's live header snapshot.
+    /// Like `customHeaders(for:)`, but nil when the Keychain read itself failed,
+    /// so sync can tell "no headers" from "could not read them" (TAL-91).
+    func customHeadersIfReadable(for account: ServerAccount) -> [CustomHeader]? {
+        let scope = account.customHeadersRef ?? account.urlString
+        do {
+            return [CustomHeader].decodeFromStorage(try keychain.load(.customHeaders, scope: scope))
+        } catch {
+            return nil
+        }
+    }
+
     func customHeaders(for account: ServerAccount) -> [CustomHeader] {
         if account.id == activeServerID {
             return headerStore.snapshot()
@@ -259,6 +294,7 @@ final class AuthManager {
             // `logged_in` means the server already authenticated this client —
             // trusted-header mode does it at the proxy — so there is nothing to
             // log in with and the server is saved as signed in.
+            var retainedPassword = Self.noPasswordRequired
             if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
                     lastErrorMessage = String(localized: "Enter the server password.")
@@ -272,10 +308,15 @@ final class AuthManager {
                     lastErrorMessage = APIError.unauthorized.localizedDescription
                     return
                 }
+                retainedPassword = password
             }
 
             do {
-                try completeConfiguration(serverURL, previousServerID: previousServerID)
+                try completeConfiguration(
+                    serverURL,
+                    previousServerID: previousServerID,
+                    password: retainedPassword
+                )
             } catch {
                 _ = try? await client.logout()
                 clearSessionCookies(for: serverURL)
@@ -334,7 +375,8 @@ final class AuthManager {
                 try completeConfiguration(
                     serverURL,
                     previousServerID: state.server?.absoluteString,
-                    authenticatedProfile: activeProfile
+                    authenticatedProfile: activeProfile,
+                    password: Self.noPasswordRequired
                 )
             } catch {
                 await abandonSession()
@@ -403,6 +445,7 @@ final class AuthManager {
                 return .failed
             }
 
+            var retainedPassword = Self.noPasswordRequired
             if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
                     let oidcAvailable = authStatus.oidcEnabled == true
@@ -420,12 +463,14 @@ final class AuthManager {
                     lastErrorMessage = APIError.unauthorized.localizedDescription
                     return .failed
                 }
+                retainedPassword = password
             }
 
             try completeAddedServer(
                 serverURL,
                 headers: newHeaders,
-                cookies: probeCookies.cookies(for: serverURL) ?? []
+                cookies: probeCookies.cookies(for: serverURL) ?? [],
+                password: retainedPassword
             )
             probeCookies.cookies?.forEach(probeCookies.deleteCookie)
             return .added(serverURL)
@@ -469,7 +514,8 @@ final class AuthManager {
                     serverURL,
                     headers: newHeaders,
                     cookies: probeCookies.cookies(for: serverURL) ?? [],
-                    authenticatedProfile: activeProfile
+                    authenticatedProfile: activeProfile,
+                    password: Self.noPasswordRequired
                 )
                 probeCookies.cookies?.forEach(probeCookies.deleteCookie)
             } catch {
@@ -593,18 +639,26 @@ final class AuthManager {
         _ serverURL: URL,
         headers: [CustomHeader],
         cookies: [HTTPCookie],
-        authenticatedProfile: String? = nil
+        authenticatedProfile: String? = nil,
+        password: String
     ) throws {
         // The only throwing mutation happens first, while the old active server
         // and its cookie jar are still untouched.
         let targetStorage = cookieStorageProvider(serverURL)
         targetStorage.cookies?.forEach(targetStorage.deleteCookie)
         cookies.forEach(targetStorage.setCookie)
+        let previousPassword = serverPassword(for: serverURL.absoluteString)
         do {
             try persistSessionCookies(serverURL)
+            // Retained before the registry row exists: a server that cannot keep
+            // its password would sync without one and never sign in again.
+            guard persistServerPassword(password, for: serverURL) else {
+                throw PasswordRetentionError()
+            }
             try serverRegistry.activate(url: serverURL)
         } catch {
             clearStoredSessionCookies(serverURL)
+            restoreServerPassword(previousPassword, for: serverURL)
             throw error
         }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
@@ -619,11 +673,22 @@ final class AuthManager {
     private func completeConfiguration(
         _ serverURL: URL,
         previousServerID: String?,
-        authenticatedProfile: String? = nil
+        authenticatedProfile: String? = nil,
+        password: String
     ) throws {
         // Nothing durable is written until authentication has completed.
         try persistSessionCookies(serverURL)
-        try serverRegistry.activate(url: serverURL)
+        let previousPassword = serverPassword(for: serverURL.absoluteString)
+        guard persistServerPassword(password, for: serverURL) else {
+            throw PasswordRetentionError()
+        }
+        do {
+            try serverRegistry.activate(url: serverURL)
+        } catch {
+            // Never leave a password stored for a server that was not registered.
+            restoreServerPassword(previousPassword, for: serverURL)
+            throw error
+        }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         persistCustomHeaders(for: serverURL)
         refreshServers()
@@ -655,6 +720,7 @@ final class AuthManager {
         // unconfigured there's nothing to scope to, so we skip the write (#16).
         if persist, let server = state.server {
             persistCustomHeaders(for: server)
+            notifyConfigurationChanged()
         }
     }
 
@@ -687,7 +753,7 @@ final class AuthManager {
     /// headers, cookies, and server-scoped stores — leaving the active server
     /// untouched (#17).
     @discardableResult
-    func removeServer(_ account: ServerAccount) async -> Bool {
+    func removeServer(_ account: ServerAccount, shouldContinue: () -> Bool = { true }) async -> Bool {
         guard let serverURL = URL(string: account.urlString) else { return false }
         let isActive = state.server?.absoluteString == account.id
 
@@ -696,6 +762,9 @@ final class AuthManager {
                 if case .loggedIn = state {
                     await attemptBestEffortServerLogout(server: serverURL)
                 }
+                // The logout suspended; a sync removal re-checks that sync is
+                // still on before anything local is dropped (TAL-91).
+                guard shouldContinue() else { return false }
                 try await advanceAfterRemoving(activeServer: serverURL)
             } else {
                 try serverRegistry.remove(id: account.id)
@@ -808,6 +877,7 @@ final class AuthManager {
     private func clearLocalArtifacts(for server: URL) {
         try? keychain.delete(.customHeaders, scope: server.absoluteString)
         try? keychain.delete(.authenticatedProfile, scope: server.absoluteString)
+        try? keychain.delete(.serverPassword, scope: server.absoluteString)
         clearSessionCookies(for: server)
     }
 
@@ -854,9 +924,17 @@ final class AuthManager {
             // The server is still valid; only the session cookie is stale. Keep the
             // Keychain entry so re-login is a one-field affair, and clear only this
             // server's cookies so other configured servers stay signed in (#16).
+            let wasLoggedIn = state == .loggedIn(server: server)
             clearSessionCookies(for: server)
             _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
             state = .loggedOut(server: server)
+            // A password retained for sync (TAL-91) gets one silent retry per
+            // server; a wrong one lands on the normal sign-in screen.
+            if wasLoggedIn,
+               let password = serverPassword(for: server.absoluteString), !password.isEmpty,
+               autoSignInAttempted.insert(server.absoluteString).inserted {
+                Task { await signInWithStoredPassword(serverID: server.absoluteString) }
+            }
         case .unconfigured:
             clearLocalAuth(for: nil)
         }
@@ -881,6 +959,7 @@ final class AuthManager {
         if let server {
             try? keychain.delete(.customHeaders, scope: server.absoluteString)
             try? keychain.delete(.authenticatedProfile, scope: server.absoluteString)
+            try? keychain.delete(.serverPassword, scope: server.absoluteString)
             clearSessionCookies(for: server)
         } else {
             clearAllSessionCookies()
@@ -899,6 +978,258 @@ final class AuthManager {
         // the previous server's profiles lingering in Shortcuts / Siri.
         profileEntityCache.save([])
         clearQuotaWidgetSnapshot()
+    }
+
+    // MARK: - Retained passwords and iCloud sync (TAL-91)
+
+    /// The password retained for `serverID` after its last successful sign-in:
+    /// nil when never captured, `noPasswordRequired` when the server needs none.
+    func serverPassword(for serverID: String) -> String? {
+        try? keychain.load(.serverPassword, scope: serverID)
+    }
+
+    /// Throwing variant for sync: a failed Keychain read must never be taken
+    /// for an absent password, which would erase the synced credential.
+    func serverPasswordReadingKeychain(for serverID: String) throws -> String? {
+        try keychain.load(.serverPassword, scope: serverID)
+    }
+
+    @discardableResult
+    private func persistServerPassword(_ password: String, for server: URL) -> Bool {
+        (try? keychain.save(password, forKey: .serverPassword, scope: server.absoluteString)) != nil
+    }
+
+    /// Servers signed in before passwords were retained carry no marker. Work
+    /// out which of them never needed one so sync does not ask: a server this
+    /// device signed in to with SSO (TAL-131 marker), one with auth off, a
+    /// trusted-header proxy, or one whose password login is disabled. Each
+    /// server is probed at most once per launch; a password-only server stays
+    /// unresolved until its next login or a manual entry.
+    func resolveMissingPasswordMarkers() async {
+        var changed = false
+        for account in serverRegistry.servers
+        where serverPassword(for: account.id) == nil && !passwordProbes.contains(account.id) {
+            passwordProbes.insert(account.id)
+            guard let serverURL = URL(string: account.urlString) else { continue }
+            if (try? keychain.load(.authenticatedProfile, scope: account.id)) != nil {
+                changed = persistServerPassword(Self.noPasswordRequired, for: serverURL) || changed
+                continue
+            }
+            let probeCookies = ServerCookieStore.makeIsolatedStorage()
+            let client = probeClientFactory(serverURL, customHeaders(for: account), probeCookies)
+            defer { probeCookies.cookies?.forEach(probeCookies.deleteCookie) }
+            guard let status = try? await testConnection(client: client) else { continue }
+            if status.authEnabled != true || status.isAlreadySignedIn || status.passwordAuthEnabled == false {
+                changed = persistServerPassword(Self.noPasswordRequired, for: serverURL) || changed
+            }
+        }
+        if changed {
+            notifyConfigurationChanged()
+        }
+    }
+
+    /// Puts back the password that existed before a failed configuration, or
+    /// removes the one just written when there was none.
+    private func restoreServerPassword(_ previous: String?, for server: URL) {
+        if let previous {
+            try? keychain.save(previous, forKey: .serverPassword, scope: server.absoluteString)
+        } else {
+            try? keychain.delete(.serverPassword, scope: server.absoluteString)
+        }
+    }
+
+    /// Checks `password` against `account` with a client scoped to that
+    /// server's headers and an isolated cookie jar, then retains it. A server
+    /// that turns out to need no password is recorded as such. Nothing about
+    /// the active server changes.
+    func verifyAndStorePassword(for account: ServerAccount, password: String) async -> Bool {
+        lastErrorMessage = nil
+        guard let serverURL = URL(string: account.urlString) else { return false }
+        let probeCookies = ServerCookieStore.makeIsolatedStorage()
+        let client = probeClientFactory(serverURL, customHeaders(for: account), probeCookies)
+        defer { probeCookies.cookies?.forEach(probeCookies.deleteCookie) }
+        do {
+            let authStatus = try await testConnection(client: client)
+            var retained = Self.noPasswordRequired
+            if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
+                guard !password.isEmpty else {
+                    lastErrorMessage = String(localized: "Enter the server password.")
+                    return false
+                }
+                guard try await client.login(password: password).ok == true else {
+                    lastErrorMessage = APIError.unauthorized.localizedDescription
+                    return false
+                }
+                _ = try? await client.logout()
+                retained = password
+            }
+            guard persistServerPassword(retained, for: serverURL) else {
+                lastErrorMessage = String(localized: "Could not save the password to the Keychain.")
+                return false
+            }
+            notifyConfigurationChanged()
+            return true
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Signs in to a configured server with its retained password and headers,
+    /// obtaining a fresh WebUI session rather than copying cookie state. When
+    /// that fails from an unconfigured state the server becomes the saved
+    /// server so the sign-in screen opens prefilled for it.
+    @discardableResult
+    func signInWithStoredPassword(serverID: String) async -> Bool {
+        guard let account = serverRegistry.servers.first(where: { $0.id == serverID }),
+              let serverURL = URL(string: account.urlString) else { return false }
+        let wasUnconfigured = state == .unconfigured
+        await configure(
+            serverURLString: account.urlString,
+            password: serverPassword(for: serverID) ?? "",
+            customHeaders: customHeaders(for: account)
+        )
+        if state == .loggedIn(server: serverURL) {
+            return true
+        }
+        if wasUnconfigured {
+            try? serverRegistry.setActive(id: serverID)
+            try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
+            hydrateCustomHeaders(for: serverURL)
+            refreshServers()
+            state = .loggedOut(server: serverURL)
+        }
+        return false
+    }
+
+    /// Applies what CloudKit reported: upserts `setups` (identity, headers,
+    /// password), removes `removing`, and restores `order`. On a device with no
+    /// active server the first restored server is signed in with its retained
+    /// password, so a second device opens ready to use. Returns false when a
+    /// registry write failed, so the caller must not record the download as
+    /// applied.
+    @discardableResult
+    func applySyncedServers(
+        _ setups: [SyncedServerSetup],
+        removing removedIDs: [String],
+        order: [String],
+        shouldContinue: () -> Bool = { true }
+    ) async -> Bool {
+        // Everything mutated so far in this batch, so any failure restores the
+        // whole batch rather than leaving earlier servers half-synced.
+        var rollbacks: [(id: String, previous: ServerAccount?, headers: String?, password: String?)] = []
+        let originalOrder = serverRegistry.servers.map(\.id)
+        func rollBackBatch() {
+            for entry in rollbacks.reversed() {
+                rollBackSyncedServer(id: entry.id, to: entry.previous, headers: entry.headers, password: entry.password)
+            }
+            try? serverRegistry.reorder(ids: originalOrder)
+            // The active server's headers may already have been rehydrated from
+            // the downloaded copy; put the restored Keychain value back in use.
+            if let server = state.server {
+                hydrateCustomHeaders(for: server)
+            }
+            refreshServers()
+        }
+        // Removals go first: a removed server cannot be recreated with its
+        // purged local state, so nothing else may have been mutated when a
+        // removal fails or sync is turned off during its logout suspension.
+        for id in removedIDs {
+            guard shouldContinue() else { return false }
+            guard let account = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
+            if await !removeServer(account, shouldContinue: shouldContinue) {
+                return false
+            }
+        }
+        for setup in setups {
+            guard shouldContinue() else {
+                rollBackBatch()
+                return false
+            }
+            guard let serverURL = URL(string: setup.urlString) else {
+                rollBackBatch()
+                return false
+            }
+            let existing = serverRegistry.servers.first { $0.id == setup.serverID }
+            let previousHeaders = try? keychain.load(.customHeaders, scope: existing?.customHeadersRef ?? setup.serverID)
+            let previousPassword = serverPassword(for: setup.serverID)
+            rollbacks.append((setup.serverID, existing, previousHeaders, previousPassword))
+            let account = ServerAccount(
+                id: setup.serverID,
+                urlString: setup.urlString,
+                displayName: setup.displayName,
+                initials: setup.initials,
+                headerLogoColorHex: setup.headerLogoColorHex,
+                customHeadersRef: existing?.customHeadersRef ?? setup.serverID,
+                createdAt: existing?.createdAt ?? setup.updatedAt,
+                updatedAt: setup.updatedAt
+            )
+            do {
+                try serverRegistry.upsert(account)
+            } catch {
+                lastErrorMessage = error.localizedDescription
+                rollBackBatch()
+                return false
+            }
+            let scope = account.customHeadersRef ?? account.urlString
+            var serverApplied = true
+            do {
+                if let encoded = setup.customHeaders.encodedForStorage() {
+                    try keychain.save(encoded, forKey: .customHeaders, scope: scope)
+                } else {
+                    try keychain.delete(.customHeaders, scope: scope)
+                }
+            } catch {
+                lastErrorMessage = error.localizedDescription
+                serverApplied = false
+            }
+            if serverApplied, let password = setup.password, !persistServerPassword(password, for: serverURL) {
+                lastErrorMessage = String(localized: "Could not save the password to the Keychain.")
+                serverApplied = false
+            }
+            if !serverApplied {
+                // Never leave a half-applied setup that the next pass would read
+                // as a local edit and upload over the valid CloudKit copy.
+                rollBackBatch()
+                return false
+            }
+            if state.server?.absoluteString == setup.serverID {
+                hydrateCustomHeaders(for: serverURL)
+            }
+        }
+        do {
+            try serverRegistry.reorder(ids: order)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            rollBackBatch()
+            return false
+        }
+        refreshServers()
+        if state == .unconfigured, shouldContinue(), let first = serverRegistry.servers.first {
+            await signInWithStoredPassword(serverID: first.id)
+        }
+        return true
+    }
+
+    /// Best-effort restore of one server after a failed remote application:
+    /// the previous registry row, headers, and password, or nothing at all when
+    /// the server was new.
+    private func rollBackSyncedServer(id: String, to previous: ServerAccount?, headers: String?, password: String?) {
+        if let previous {
+            try? serverRegistry.upsert(previous)
+        } else {
+            try? serverRegistry.remove(id: id)
+        }
+        if let headers {
+            try? keychain.save(headers, forKey: .customHeaders, scope: id)
+        } else {
+            try? keychain.delete(.customHeaders, scope: id)
+        }
+        if let password {
+            try? keychain.save(password, forKey: .serverPassword, scope: id)
+        } else {
+            try? keychain.delete(.serverPassword, scope: id)
+        }
     }
 
     /// Mirrors the in-memory header snapshot to `server`'s scoped Keychain entry:

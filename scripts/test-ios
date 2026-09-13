@@ -72,9 +72,23 @@ for selector in "$@"; do
     test_filters+=("-only-testing:$selector")
 done
 # The fuzz soak class reruns the PR fuzz properties at a far larger seed budget
-# and belongs to the scheduled Fuzz Soak workflow. Skip it in unfiltered runs,
-# matching PR CI; naming it as a selector still runs it.
-(( ${#test_filters} )) || test_filters+=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
+# and belongs to the scheduled Fuzz Soak workflow. The measurement-only
+# performance UI classes assert nothing and add minutes of scrolling and
+# relaunching; main-push CI records them. Skip both in unfiltered runs, matching
+# PR CI; naming a class as a selector still runs it.
+if (( ! ${#test_filters} )); then
+    test_filters+=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
+    for performance_class in \
+        TalariaUITests/SidebarPerformanceUITests \
+        TalariaUITests/LaunchPerformanceUITests \
+        TalariaUITests/TranscriptPerformanceUITests \
+        TalariaUITests/NavigationPerformanceUITests; do
+        test_filters+=("-skip-testing:$performance_class")
+    done
+fi
+# Xcode clones the leased simulator once per worker, like PR CI's two workers;
+# the clones are removed when the run ends and the pool erases the lease.
+TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-2}
 
 typeset -a contract_settings
 if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
@@ -109,7 +123,8 @@ while true; do
         -testRegion US \
         -derivedDataPath "$runtime_dir/derived-data" \
         -disableAutomaticPackageResolution \
-        -parallel-testing-enabled NO \
+        -parallel-testing-enabled YES \
+        -parallel-testing-worker-count "$TALARIA_TEST_WORKER_COUNT" \
         -enableCodeCoverage NO \
         -collect-test-diagnostics never \
         -resultBundlePath "$result_bundle" \

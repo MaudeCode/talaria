@@ -7,7 +7,11 @@ struct OnboardingView: View {
     @State private var hasCopiedAgentPrompt = false
     @State private var hasBypassedCopyReminder = false
     @State private var isShowingCopyReminder = false
+    @State private var isPresentingRestore = false
     @FocusState private var focusedField: OnboardingConnectField?
+    /// First run (no saved server) offers to restore a setup synced through
+    /// iCloud instead of typing it again (TAL-91).
+    private let offersRestore: Bool
 
     init(authManager: AuthManager, savedServer: URL? = nil) {
         self.authManager = authManager
@@ -25,6 +29,7 @@ struct OnboardingView: View {
         _currentPage = State(
             initialValue: savedServer == nil ? 0 : OnboardingFlowPolicy.connectPageIndex
         )
+        offersRestore = savedServer == nil
     }
 
     private var isEditingConnectionField: Bool {
@@ -73,6 +78,12 @@ struct OnboardingView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: isEditingConnectionField)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $isPresentingRestore) {
+            NavigationStack {
+                AppleAccountSettingsView(authManager: authManager, server: nil)
+            }
+            .preferredColorScheme(nil)
+        }
         .onChange(of: currentPage) { oldPage, newPage in
             handlePageChange(from: oldPage, to: newPage)
         }
@@ -97,6 +108,9 @@ struct OnboardingView: View {
             if currentPage == OnboardingFlowPolicy.connectPageIndex {
                 if !isEditingConnectionField {
                     connectActionButtons
+                    if offersRestore {
+                        restoreFromICloudButton
+                    }
                 }
             } else {
                 Button(action: handlePrimaryAction) {
@@ -184,6 +198,22 @@ struct OnboardingView: View {
                 }
             }
         }
+    }
+
+    private var restoreFromICloudButton: some View {
+        Button {
+            isPresentingRestore = true
+        } label: {
+            Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
+                .frame(minHeight: 44)
+                .background(Color.black)
+        }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(.white.opacity(0.55))
+        .buttonStyle(.plain)
+        .disabled(viewModel.isWorking)
+        .accessibilityHint("Signs in with Apple and restores servers synced through iCloud.")
+        .accessibilityIdentifier("onboarding-restore-from-icloud")
     }
 
     private var testConnectionButton: some View {

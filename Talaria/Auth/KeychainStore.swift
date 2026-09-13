@@ -35,6 +35,14 @@ struct KeychainStore: KeychainStoring {
         // Relay URL plus the one-time device id and bearer credential returned
         // by Talaria Relay enrollment.
         case talariaRelay = "talaria_relay"
+        // The password that last signed in to a server, scoped by normalized
+        // server URL, retained so iCloud sync can restore the server on another
+        // device (TAL-91). `AuthManager.noPasswordRequired` marks a server that
+        // authenticated without one.
+        case serverPassword = "server_password"
+        // JSON `ConfigurationSyncState`: Apple user id, whether sync is on, the
+        // CloudKit change token, and the server-id → record-name map (TAL-91).
+        case configurationSync = "configuration_sync"
     }
 
     private let keychain: Keychain

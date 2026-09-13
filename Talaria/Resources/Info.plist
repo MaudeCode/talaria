@@ -37,6 +37,8 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>TalariaCloudKitContainerIdentifier</key>
+	<string>$(ICLOUD_CONTAINER_IDENTIFIER)</string>
 	<key>TalariaAppGroupIdentifier</key>
 	<string>$(APP_GROUP_IDENTIFIER)</string>
 	<key>TalariaKeychainService</key>

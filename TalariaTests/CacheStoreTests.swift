@@ -951,7 +951,7 @@ final class CacheStoreTests: XCTestCase {
     }
 
     private func makeContext() throws -> ModelContext {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         let container = try ModelContainer(
             for: CachedSession.self,
             CachedMessage.self,

@@ -175,9 +175,10 @@ Owner task in Apple Developer / App Store Connect:
 4. Confirm the App Group is enabled for both the app and share-extension bundle IDs.
 5. Confirm the Live Activity widget bundle ID exists:
    - `dev.kil.talaria.liveactivitywidget`
-6. Confirm an active App Store provisioning profile using the CI distribution certificate exists for all three targets.
-7. Confirm Apple Developer Program agreements are accepted.
-8. Confirm App Store Connect API key used by GitHub has enough access for upload/provisioning.
+6. Confirm Sign in with Apple and iCloud (CloudKit, container `iCloud.dev.kil.talaria`) are enabled on the app bundle ID and the CloudKit schema is deployed to Production; see [`docs/icloud-sync-setup.md`](docs/icloud-sync-setup.md).
+7. Confirm an active App Store provisioning profile using the CI distribution certificate exists for all three targets.
+8. Confirm Apple Developer Program agreements are accepted.
+9. Confirm App Store Connect API key used by GitHub has enough access for upload/provisioning.
 
 Local validation:
 

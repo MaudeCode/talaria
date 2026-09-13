@@ -343,11 +343,17 @@ final class SettingsStructureUITests: SettingsUITestCase {
         openSettings()
 
         XCTAssertTrue(app.buttons["settings-user-profile"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["settings-apple-account"].exists)
-        XCTAssertTrue(app.buttons["settings-sign-in-with-apple"].exists)
+        let appleAccount = app.buttons["settings-apple-account"]
+        XCTAssertTrue(appleAccount.exists)
         for categoryID in ["appearance", "notificationsAndHaptics", "chats"] {
             XCTAssertTrue(app.buttons["settings-category-\(categoryID)"].exists)
         }
+        // The single Sign in with Apple lives on the account screen, not the root.
+        XCTAssertFalse(app.buttons["settings-sign-in-with-apple"].exists)
+        tapCenter(of: appleAccount)
+        XCTAssertTrue(app.navigationBars["Apple Account"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["settings-sign-in-with-apple"].waitForExistence(timeout: 3))
+        app.navigationBars.buttons.firstMatch.tap()
         XCTAssertFalse(app.descendants(matching: .any)["Haptic Feedback"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Default Model"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["Clear Offline Cache"].exists)
@@ -419,6 +425,10 @@ final class RelaySettingsUITests: SettingsUITestCase {
         launchFixture(additionalArguments: ["--ui-test-relay-connected"])
         openSettings()
 
+        let appleAccount = app.buttons["settings-apple-account"]
+        XCTAssertTrue(appleAccount.waitForExistence(timeout: 3))
+        tapCenter(of: appleAccount)
+        XCTAssertTrue(app.navigationBars["Apple Account"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["settings-sign-in-with-apple"].exists)
 
         let manageRelay = app.buttons["settings-manage-relay"]
@@ -1086,7 +1096,16 @@ final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
                 app.buttons["BackButton"].tap()
 
                 openSettings()
+                // The account rows above the category directory (User Profile,
+                // Apple Account) can fill the screen at accessibility sizes and in
+                // landscape, and a List does not create rows below the fold, so
+                // scroll until the directory renders.
                 let firstCategory = app.buttons["settings-category-appearance"]
+                if !firstCategory.waitForExistence(timeout: 3) {
+                    for _ in 0..<10 where !firstCategory.exists {
+                        scrollSettingsRoot(up: true)
+                    }
+                }
                 XCTAssertTrue(firstCategory.waitForExistence(timeout: 3), "Settings categories missing [\(variant.name)]")
                 try audit("Settings root", variant: variant)
 
