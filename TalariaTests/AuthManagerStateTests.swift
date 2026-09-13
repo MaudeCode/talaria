@@ -180,6 +180,27 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.pendingReauthentication, server)
     }
 
+    func testTrustedHeaderRecoveryKeepsGuidanceAndAcceptsCorrectedHeaders() async throws {
+        let (manager, client, server) = try recoveryManager(status: AuthStatusResponse(
+            authEnabled: true, loggedIn: false, passwordAuthEnabled: false, trustedAuthEnabled: true
+        ))
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        XCTAssertFalse(manager.reauthenticationOffersSSO)
+        XCTAssertFalse(manager.reauthenticationOffersPassword)
+        XCTAssertEqual(manager.lastErrorMessage, AuthManager.trustedAuthNotSignedInMessage)
+        client.authStatusResponse = AuthStatusResponse(
+            authEnabled: true, loggedIn: true, passwordAuthEnabled: false, trustedAuthEnabled: true
+        )
+        let headers = [CustomHeader(name: "X-Fixture-Authorization", value: "fixture-token")]
+        await manager.configure(serverURLString: server.absoluteString, password: "", customHeaders: headers)
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertEqual(manager.currentCustomHeaders, headers)
+        XCTAssertTrue(client.loginPasswords.isEmpty)
+    }
+
     func testNonUnauthorizedErrorDoesNotChangeState() async throws {
         let keychain = InMemoryKeychainStore()
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://example.test")

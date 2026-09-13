@@ -93,6 +93,9 @@ final class AuthManager {
         reauthenticationOffersSSO = usedSSO || status?.oidcNativeHandoffEnabled == true
         reauthenticationOffersPassword = status?.passwordAuthEnabled == true
             || (!reauthenticationOffersSSO && status?.passwordAuthEnabled != false)
+        if let status, let guidance = Self.unsupportedSignInMessage(for: status) {
+            lastErrorMessage = guidance
+        }
         pendingReauthentication = server
         APIClient.setReauthenticationRequired(server, owner: mutationBlockID)
     }
