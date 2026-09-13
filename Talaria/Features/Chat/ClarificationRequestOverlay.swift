@@ -8,8 +8,6 @@ struct ClarificationRequestCard: View {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
-    @ScaledMetric(relativeTo: .body) private var submitButtonSize: CGFloat = 40
-    @State private var draftResponse = ""
 
     var body: some View {
         card
@@ -88,33 +86,6 @@ struct ClarificationRequestCard: View {
         }
     }
 
-    private var responseField: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Type a response", text: $draftResponse, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(2...5)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .tint(actionButtonBackground)
-                .background(textFieldBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(textFieldBorder)
-                .disabled(isResponding)
-
-            Button {
-                submitDraft()
-            } label: {
-                submitButtonLabel
-                    .frame(width: submitButtonSize, height: submitButtonSize)
-                    .background(actionButtonBackground)
-                    .foregroundStyle(actionButtonForeground)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.chatTactile(.icon))
-            .disabled(isResponding || trimmedDraft.isEmpty)
-            .accessibilityLabel("Submit clarification")
-        }
-    }
-
     @ViewBuilder
     private var footer: some View {
         if let errorMessage = nonEmpty(errorMessage) {
@@ -158,10 +129,6 @@ struct ClarificationRequestCard: View {
         }
     }
 
-    private var trimmedDraft: String {
-        draftResponse.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
@@ -171,23 +138,10 @@ struct ClarificationRequestCard: View {
                 choicesList
             }
 
-            responseField
             footer
         }
         .padding(16)
         .frame(maxWidth: 560, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var submitButtonLabel: some View {
-        if isResponding {
-            ProgressView()
-                .tint(actionButtonForeground)
-                .scaleEffect(0.82)
-        } else {
-            Image(systemName: "arrow.up")
-                .font(.system(size: 15, weight: .semibold))
-        }
     }
 
     @ViewBuilder
@@ -213,31 +167,6 @@ struct ClarificationRequestCard: View {
         colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.04)
     }
 
-    private var textFieldBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.055) : Color.black.opacity(0.045)
-    }
-
-    private var textFieldBorder: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .stroke(.primary.opacity(colorScheme == .dark ? 0.13 : 0.10), lineWidth: 1)
-    }
-
-    private var actionButtonBackground: Color {
-        if isResponding || trimmedDraft.isEmpty {
-            return colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.12)
-        }
-
-        return colorScheme == .dark ? .white : .black
-    }
-
-    private var actionButtonForeground: Color {
-        if isResponding || trimmedDraft.isEmpty {
-            return Color(.secondaryLabel)
-        }
-
-        return colorScheme == .dark ? .black : .white
-    }
-
     private var progressFill: Color {
         colorScheme == .dark ? Color.white.opacity(0.72) : Color.black.opacity(0.58)
     }
@@ -253,12 +182,6 @@ struct ClarificationRequestCard: View {
     private var cardBorder: some View {
         RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
             .stroke(.primary.opacity(0.10), lineWidth: 1)
-    }
-
-    private func submitDraft() {
-        let value = trimmedDraft
-        guard !value.isEmpty else { return }
-        onSubmit(value)
     }
 
     private func remainingSeconds(now: Date) -> TimeInterval? {

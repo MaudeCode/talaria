@@ -45,7 +45,28 @@ final class ChatPendingActionCoordinator {
     private(set) var approvalErrorMessage: String?
     private(set) var isSessionApprovalBypassEnabled = false
 
-    private(set) var clarificationPrompt: ClarificationPromptState?
+    private(set) var clarificationPrompt: ClarificationPromptState? {
+        didSet {
+            if oldValue?.id != clarificationPrompt?.id {
+                clarificationDraftResponse = ""
+                clarificationErrorMessage = nil
+            }
+        }
+    }
+    private(set) var clarificationDraftResponse = ""
+
+    func setClarificationDraftResponse(_ text: String, promptID: String) {
+        guard clarificationPrompt?.id == promptID,
+              clarificationPrompt?.sessionID == delegate?.pendingActionSessionID,
+              !isRespondingToClarification else { return }
+        clarificationDraftResponse = text
+    }
+
+    func submitClarificationDraft(promptID: String) async -> Bool {
+        guard clarificationPrompt?.id == promptID else { return false }
+        return await respondToClarification(clarificationDraftResponse)
+    }
+
     private(set) var isRespondingToClarification = false
     private(set) var clarificationErrorMessage: String?
 
@@ -207,7 +228,8 @@ final class ChatPendingActionCoordinator {
 
     @discardableResult
     func respondToClarification(_ responseText: String) async -> Bool {
-        guard let prompt = clarificationPrompt,
+        guard !isRespondingToClarification,
+              let prompt = clarificationPrompt,
               prompt.sessionID == delegate?.pendingActionSessionID
         else { return false }
 
@@ -228,11 +250,15 @@ final class ChatPendingActionCoordinator {
                 response: response,
                 clarifyID: prompt.pending.clarifyId
             )
+            guard clarificationPrompt?.id == prompt.id,
+                  delegate?.pendingActionSessionID == prompt.sessionID else { return true }
             clarificationPendingBySession[prompt.sessionID] = nil
             clarificationPrompt = nil
             await refreshClarificationPending(sessionID: prompt.sessionID)
             return true
         } catch {
+            guard clarificationPrompt?.id == prompt.id,
+                  delegate?.pendingActionSessionID == prompt.sessionID else { return false }
             if (error as? APIError)?.indicatesExpiredPendingPrompt == true {
                 // The prompt already expired server-side: dismiss the stale card and
                 // explain, instead of leaving a stuck card behind a generic failure.
@@ -459,9 +485,7 @@ final class ChatPendingActionCoordinator {
         guard delegate?.pendingActionHasActiveStream == true,
               let prompt = clarificationPendingBySession[sessionID]
         else {
-            if clarificationPrompt?.sessionID == sessionID {
-                clarificationPrompt = nil
-            }
+            clarificationPrompt = nil
             return
         }
 

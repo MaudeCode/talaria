@@ -97,6 +97,8 @@ struct MessageComposerView: View {
     let onVoiceInputRequestHandled: () -> Void
     let onExpandedPresentationRequirementChange: (Bool) -> Void
 
+    var isAnsweringClarification = false
+
     @State private var textFieldHeight: CGFloat = 0
     @State private var textInputHeight: CGFloat = 22
     @State private var noticeMessage: String?
@@ -130,6 +132,7 @@ struct MessageComposerView: View {
     }
 
     private var showsSlashAutocomplete: Bool {
+        guard !isAnsweringClarification else { return false }
         let query = draftMessage.drop(while: { $0.isWhitespace })
         guard query.hasPrefix("/") else { return false }
 
@@ -504,11 +507,13 @@ struct MessageComposerView: View {
             .padding(.vertical, 8)
         } else {
             VStack(spacing: 0) {
-                ComposerAttachmentStripView(
-                    attachments: pendingAttachments,
-                    onRemove: onRemoveAttachment,
-                    onPreview: onPreviewAttachment
-                )
+                if !isAnsweringClarification {
+                    ComposerAttachmentStripView(
+                        attachments: pendingAttachments,
+                        onRemove: onRemoveAttachment,
+                        onPreview: onPreviewAttachment
+                    )
+                }
 
                 ComposerTextInputView(
                     text: $draftMessage,
@@ -516,26 +521,30 @@ struct MessageComposerView: View {
                     isFocused: $isFocused,
                     inputHeight: $textInputHeight,
                     measuredHeight: $textFieldHeight,
-                    isDisabled: isReadOnly,
+                    isDisabled: isReadOnly || (isAnsweringClarification && isSending),
                     isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
                     verticalPadding: textFieldVerticalPadding,
                     onKeyboardSend: actionButtonTapped,
                     onPasteFileProviders: onPasteFileProviders,
                     onPasteFileURLs: onPasteFileURLs,
                     onPasteImageProviders: onPasteImageProviders,
-                    onPasteImages: onPasteImages
+                    onPasteImages: onPasteImages,
+                    placeholder: isAnsweringClarification ? "Type a response" : "Ask anything... /commands"
                 )
 
                 HStack(alignment: .center, spacing: 12) {
-                    composerPlusMenu
-                    modelMenu
-
-                    if showsReasoningControl {
-                        reasoningMenu
+                    if !isAnsweringClarification {
+                        composerPlusMenu
+                        modelMenu
+                        if showsReasoningControl {
+                            reasoningMenu
+                        }
                     }
 
                     Spacer(minLength: 0)
-                    voiceButton
+                    if !isAnsweringClarification {
+                        voiceButton
+                    }
                     actionButton
                 }
                 .padding(.horizontal, 16)
@@ -573,7 +582,7 @@ struct MessageComposerView: View {
         }
         .buttonStyle(.chatTactile(.icon))
         .disabled(isActionButtonDisabled)
-        .accessibilityLabel(showsStopButton ? "Stop response" : "Send")
+        .accessibilityLabel(isAnsweringClarification ? "Submit clarification" : (showsStopButton ? "Stop response" : "Send"))
     }
 
     @ViewBuilder
@@ -710,7 +719,7 @@ struct MessageComposerView: View {
     }
 
     private var showsSecondaryChrome: Bool {
-        !keyboardIsVisible && !isChromeCompact && hasSecondaryControls
+        !isAnsweringClarification && !keyboardIsVisible && !isChromeCompact && hasSecondaryControls
     }
 
     private var hasSecondaryControls: Bool {
@@ -906,10 +915,11 @@ struct MessageComposerView: View {
     }
 
     private var isConfigurationControlDisabled: Bool {
-        isReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
+        isAnsweringClarification || isReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
     }
 
     private var isVoiceInputDisabled: Bool {
+        guard !isAnsweringClarification else { return true }
         if voiceInput.isListening {
             return false
         }
@@ -927,7 +937,7 @@ struct MessageComposerView: View {
     /// Recording mid-stream is fine (it queues like any send), so unlike dictation
     /// this does not block on `isWaitingForStream`.
     private var isVoiceNoteRecordingDisabled: Bool {
-        isReadOnly
+        isAnsweringClarification || isReadOnly
             || isSending
             || isSendingVoiceNote
             || isCompressingSession
@@ -974,16 +984,16 @@ struct MessageComposerView: View {
     }
 
     private var usesSingleLineShell: Bool {
-        isChromeCompact || (
+        !isAnsweringClarification && (isChromeCompact || (
             !isFocused
                 && draftMessage.isEmpty
                 && pendingAttachments.isEmpty
                 && !requiresExpandedPresentation
-        )
+        ))
     }
 
     private var requiresExpandedPresentation: Bool {
-        composerStatus != nil
+        isAnsweringClarification || composerStatus != nil
             || voiceStatus != nil
             || voiceNoteStatus != nil
             || voiceNoteRecorder.isRecording
@@ -1013,12 +1023,16 @@ struct MessageComposerView: View {
     }
 
     private var showsStopButton: Bool {
-        isWaitingForStream && trimmedDraftMessage.isEmpty && pendingAttachments.isEmpty
+        !isAnsweringClarification && isWaitingForStream && trimmedDraftMessage.isEmpty && pendingAttachments.isEmpty
     }
 
     private var isActionButtonDisabled: Bool {
         if isReadOnly {
             return true
+        }
+
+        if isAnsweringClarification {
+            return trimmedDraftMessage.isEmpty || isSending
         }
 
         if showsStopButton {
@@ -1033,6 +1047,7 @@ struct MessageComposerView: View {
     }
 
     private func actionButtonTapped() {
+        guard !isActionButtonDisabled else { return }
         if showsStopButton {
             onCancel()
         } else {
@@ -1063,6 +1078,7 @@ struct MessageComposerView: View {
 
     @MainActor
     private func performVoiceInputToggle() async {
+        guard !isVoiceInputDisabled else { return }
         voiceInput.apiClient = apiClient
         voiceInput.providerPreference = ComposerSTTProviderPreference.storedValue(sttProviderPreferenceRawValue)
         voiceInput.locale = .current

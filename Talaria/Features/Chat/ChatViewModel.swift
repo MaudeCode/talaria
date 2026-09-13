@@ -202,6 +202,16 @@ final class ChatViewModel {
     var approvalErrorMessage: String? { pendingActionCoordinator.approvalErrorMessage }
     var isSessionApprovalBypassEnabled: Bool { pendingActionCoordinator.isSessionApprovalBypassEnabled }
     var clarificationPrompt: ClarificationPromptState? { pendingActionCoordinator.clarificationPrompt }
+    var clarificationDraftResponse: String { pendingActionCoordinator.clarificationDraftResponse }
+
+    func setClarificationDraftResponse(_ text: String, promptID: String) {
+        pendingActionCoordinator.setClarificationDraftResponse(text, promptID: promptID)
+    }
+
+    func submitClarificationDraft(promptID: String) async -> Bool {
+        await pendingActionCoordinator.submitClarificationDraft(promptID: promptID)
+    }
+
     var isRespondingToClarification: Bool { pendingActionCoordinator.isRespondingToClarification }
     var clarificationErrorMessage: String? { pendingActionCoordinator.clarificationErrorMessage }
     private(set) var currentGoal: SubmittedGoal?

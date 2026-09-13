@@ -48,6 +48,11 @@ struct UITestFixtureEnvironment {
 
     static func make() -> UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
+        var initialDrafts: [ChatDraftKey: ChatDraft] = [:]
+        if chatScenario == .clarification {
+            UITestChatFixtureState.shared.startChat()
+            initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
+        }
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
         UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)
@@ -105,7 +110,7 @@ struct UITestFixtureEnvironment {
                 serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
             ),
             client: client,
-            draftStore: ChatDraftStore(persistence: UITestFixtureDraftPersistence())
+            draftStore: ChatDraftStore(persistence: UITestFixtureDraftPersistence(drafts: initialDrafts))
         )
     }
 }
@@ -170,7 +175,9 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
 }
 
 private actor UITestFixtureDraftPersistence: ChatDraftPersisting {
-    private var drafts: [ChatDraftKey: ChatDraft] = [:]
+    private var drafts: [ChatDraftKey: ChatDraft]
+
+    init(drafts: [ChatDraftKey: ChatDraft] = [:]) { self.drafts = drafts }
 
     func load() async -> [ChatDraftKey: ChatDraft] { drafts }
 
@@ -180,6 +187,7 @@ private actor UITestFixtureDraftPersistence: ChatDraftPersisting {
 }
 
 private enum UITestChatScenario: String, CaseIterable {
+    case clarification = "--ui-test-chat-clarification"
     case full = "--ui-test-chat-full"
     case controls = "--ui-test-chat-controls"
     case error = "--ui-test-chat-error"
@@ -728,6 +736,19 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private func runChatScript(connection: Int) {
         guard let scenario = UITestChatScenario.current else { return }
         switch scenario {
+        case .clarification:
+            send(events: [("clarify", [
+                "clarify_id": "ui-fixture-draft-clarify",
+                "question": "Which answer should continue?",
+                "choices_offered": ["Use the deterministic path"],
+                "session_id": Self.sessionID,
+                "kind": "clarify"
+            ])])
+            wait { $0.clarificationWasAnswered }
+            guard !isStopped else { return }
+            Self.chatState.settle()
+            send(events: [("done", [:]), ("stream_end", [:])])
+            finish()
         case .full:
             send(events: [
                 ("token", ["text": "Fixture opening."]),

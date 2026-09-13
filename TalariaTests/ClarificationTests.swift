@@ -286,7 +286,11 @@ final class ClarificationTests: APIClientTestCase {
         XCTAssertEqual(viewModel.clarificationPrompt?.question, "Which branch?")
         XCTAssertEqual(viewModel.clarificationPrompt?.choices, ["main", "release"])
 
-        await viewModel.respondToClarification("  Use main  ")
+        let promptID = try XCTUnwrap(viewModel.clarificationPrompt?.id)
+        viewModel.setClarificationDraftResponse("  Use main  ", promptID: promptID)
+        let didRespond = await viewModel.submitClarificationDraft(promptID: promptID)
+        XCTAssertTrue(didRespond)
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "")
 
         XCTAssertEqual(respondBody?["session_id"] as? String, "session-abc")
         XCTAssertEqual(respondBody?["response"] as? String, "Use main")
@@ -329,7 +333,10 @@ final class ClarificationTests: APIClientTestCase {
             pendingCount: 1
         )))
 
-        let didRespond = await viewModel.respondToClarification("Use main")
+        let promptID = try XCTUnwrap(viewModel.clarificationPrompt?.id)
+        viewModel.setClarificationDraftResponse("Use main", promptID: promptID)
+        let didRespond = await viewModel.submitClarificationDraft(promptID: promptID)
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "Use main")
 
         XCTAssertFalse(didRespond)
         XCTAssertEqual(viewModel.clarificationPrompt?.pending.clarifyId, "clarify-1")
@@ -375,6 +382,126 @@ final class ClarificationTests: APIClientTestCase {
         )
 
         XCTAssertEqual(viewModel.clarificationPrompt?.pending.clarifyId, "current-clarify")
+    }
+
+    @MainActor
+    func testClarificationDraftRejectsEmptyAndStaleSendsAndResetsOnReplacement() async throws {
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+        }
+        _ = await viewModel.sendMessage("Continue")
+        let first = ClarificationPendingResponse(
+            pending: PendingClarification(clarifyId: "first", question: "First?", sessionId: "session-abc"),
+            pendingCount: 2
+        )
+        viewModel.applyClarificationUpdate(first, sessionID: "session-abc")
+        let firstID = try XCTUnwrap(viewModel.clarificationPrompt?.id)
+        viewModel.setClarificationDraftResponse(" \n ", promptID: firstID)
+        let emptySent = await viewModel.submitClarificationDraft(promptID: firstID)
+        XCTAssertFalse(emptySent)
+        viewModel.setClarificationDraftResponse("/interrupt is a literal answer", promptID: firstID)
+        viewModel.applyClarificationUpdate(first, sessionID: "session-abc")
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "/interrupt is a literal answer")
+
+        viewModel.applyClarificationUpdate(ClarificationPendingResponse(
+            pending: PendingClarification(clarifyId: "second", question: "Second?", sessionId: "session-abc"),
+            pendingCount: 1
+        ), sessionID: "session-abc")
+        let secondID = try XCTUnwrap(viewModel.clarificationPrompt?.id)
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "")
+        XCTAssertNil(viewModel.clarificationErrorMessage)
+        viewModel.setClarificationDraftResponse("late keyboard callback", promptID: firstID)
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "")
+        let staleSent = await viewModel.submitClarificationDraft(promptID: firstID)
+        XCTAssertFalse(staleSent)
+        viewModel.setClarificationDraftResponse("Second answer", promptID: secondID)
+        viewModel.applyClarificationUpdate(ClarificationPendingResponse(pending: nil, pendingCount: 0), sessionID: "session-abc")
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "")
+        XCTAssertNil(viewModel.clarificationPrompt)
+    }
+
+    @MainActor
+    func testClarificationChoicePreservesAttachmentsAndClearsTemporaryAnswer() async throws {
+        var responseBody: [String: Any]?
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/upload":
+                return apiTestJSONResponse(#"{"filename":"draft.txt","path":"/fixture/draft.txt","size":5,"mime":"text/plain","is_image":false}"#, for: request)
+            case "/api/clarify/respond":
+                responseBody = try XCTUnwrap(apiTestJSONBody(from: request))
+                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            case "/api/clarify/pending":
+                return apiTestJSONResponse(#"{"pending":null}"#, for: request)
+            default:
+                XCTFail("Clarification must not send, queue, steer, or interrupt: \(request.url!.path)")
+                throw URLError(.badURL)
+            }
+        }
+        _ = await viewModel.sendMessage("Continue")
+        await viewModel.uploadAttachment(data: Data("draft".utf8), filename: "draft.txt")
+        let attachmentIDs = viewModel.pendingAttachments.map(\.id)
+        XCTAssertEqual(attachmentIDs.count, 1)
+        viewModel.applyClarificationUpdate(ClarificationPendingResponse(
+            pending: PendingClarification(clarifyId: "choice", question: "Pick?", choicesOffered: ["A", "B"], sessionId: "session-abc"),
+            pendingCount: 1
+        ), sessionID: "session-abc")
+        let promptID = try XCTUnwrap(viewModel.clarificationPrompt?.id)
+        viewModel.setClarificationDraftResponse("Unsent typed answer", promptID: promptID)
+        let didRespond = await viewModel.respondToClarification("B")
+        XCTAssertTrue(didRespond)
+        XCTAssertEqual(responseBody?["response"] as? String, "B")
+        XCTAssertNil(responseBody?["attachments"])
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.id), attachmentIDs)
+        XCTAssertEqual(viewModel.clarificationDraftResponse, "")
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+    }
+
+    @MainActor
+    func testLateClarificationResponseCannotClearReplacementOrSubmitTwice() async throws {
+        let requested = expectation(description: "Clarification request started")
+        let release = DispatchSemaphore(value: 0)
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/clarify/respond")
+            requested.fulfill()
+            XCTAssertEqual(release.wait(timeout: .now() + 10), .success)
+            return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+        }
+        let delegate = ClarificationTestDelegate()
+        let coordinator = ChatPendingActionCoordinator(
+            client: client,
+            approvalStreamClient: ClarificationSpySSEStreamingClient(),
+            clarifyStreamClient: ClarificationSpySSEStreamingClient(),
+            pollingIntervals: .standard
+        )
+        coordinator.delegate = delegate
+        coordinator.applyClarificationUpdate(ClarificationPendingResponse(
+            pending: PendingClarification(clarifyId: "old", question: "Old?", sessionId: "session-abc"), pendingCount: 1
+        ), sessionID: "session-abc")
+        let oldID = try XCTUnwrap(coordinator.clarificationPrompt?.id)
+        coordinator.setClarificationDraftResponse("Old answer", promptID: oldID)
+        let submit = Task { await coordinator.submitClarificationDraft(promptID: oldID) }
+        await fulfillment(of: [requested], timeout: 5)
+        let duplicate = await coordinator.submitClarificationDraft(promptID: oldID)
+        XCTAssertFalse(duplicate)
+        coordinator.applyClarificationUpdate(ClarificationPendingResponse(
+            pending: PendingClarification(clarifyId: "new", question: "New?", sessionId: "session-abc"), pendingCount: 1
+        ), sessionID: "session-abc")
+        release.signal()
+        let submitted = await submit.value
+        XCTAssertTrue(submitted)
+        XCTAssertEqual(coordinator.clarificationPrompt?.pending.clarifyId, "new")
+        XCTAssertEqual(coordinator.clarificationDraftResponse, "")
+        let newID = try XCTUnwrap(coordinator.clarificationPrompt?.id)
+        coordinator.setClarificationDraftResponse("New answer", promptID: newID)
+        delegate.pendingActionSessionID = "other-session"
+        coordinator.applyClarificationUpdate(ClarificationPendingResponse(pending: nil, pendingCount: 0), sessionID: "other-session")
+        XCTAssertNil(coordinator.clarificationPrompt)
+        XCTAssertEqual(coordinator.clarificationDraftResponse, "")
+        coordinator.setClarificationDraftResponse("Late answer", promptID: newID)
+        XCTAssertEqual(coordinator.clarificationDraftResponse, "")
     }
 
     @MainActor
@@ -435,4 +562,13 @@ private final class ClarificationSpySSEStreamingClient: SSEStreamingClient {
     func emit(_ event: SSEEvent) {
         onEvent?(event)
     }
+}
+
+@MainActor
+private final class ClarificationTestDelegate: ChatPendingActionCoordinatorDelegate {
+    var pendingActionSessionID: String? = "session-abc"
+    var pendingActionHasActiveStream = true
+    var pendingActionIsStreamConnectionSuspended = false
+    func pendingActionCoordinatorWillSubmitAction() {}
+    func pendingActionCoordinatorDidFailAction(_ error: Error) {}
 }

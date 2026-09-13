@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Answer clarification prompts in the chat composer while keeping your message draft and attachments.",
+      "highlight": false
+    }
+  ]
+}
