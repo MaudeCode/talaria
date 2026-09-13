@@ -647,6 +647,7 @@ final class AuthManager {
         let targetStorage = cookieStorageProvider(serverURL)
         targetStorage.cookies?.forEach(targetStorage.deleteCookie)
         cookies.forEach(targetStorage.setCookie)
+        let previousPassword = serverPassword(for: serverURL.absoluteString)
         do {
             try persistSessionCookies(serverURL)
             // Retained before the registry row exists: a server that cannot keep
@@ -657,6 +658,7 @@ final class AuthManager {
             try serverRegistry.activate(url: serverURL)
         } catch {
             clearStoredSessionCookies(serverURL)
+            restoreServerPassword(previousPassword, for: serverURL)
             throw error
         }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
@@ -676,10 +678,17 @@ final class AuthManager {
     ) throws {
         // Nothing durable is written until authentication has completed.
         try persistSessionCookies(serverURL)
+        let previousPassword = serverPassword(for: serverURL.absoluteString)
         guard persistServerPassword(password, for: serverURL) else {
             throw PasswordRetentionError()
         }
-        try serverRegistry.activate(url: serverURL)
+        do {
+            try serverRegistry.activate(url: serverURL)
+        } catch {
+            // Never leave a password stored for a server that was not registered.
+            restoreServerPassword(previousPassword, for: serverURL)
+            throw error
+        }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
         persistCustomHeaders(for: serverURL)
         refreshServers()
@@ -1019,6 +1028,16 @@ final class AuthManager {
         }
     }
 
+    /// Puts back the password that existed before a failed configuration, or
+    /// removes the one just written when there was none.
+    private func restoreServerPassword(_ previous: String?, for server: URL) {
+        if let previous {
+            try? keychain.save(previous, forKey: .serverPassword, scope: server.absoluteString)
+        } else {
+            try? keychain.delete(.serverPassword, scope: server.absoluteString)
+        }
+    }
+
     /// Checks `password` against `account` with a client scoped to that
     /// server's headers and an isolated cookie jar, then retains it. A server
     /// that turns out to need no password is recorded as such. Nothing about
@@ -1105,6 +1124,11 @@ final class AuthManager {
                 rollBackSyncedServer(id: entry.id, to: entry.previous, headers: entry.headers, password: entry.password)
             }
             try? serverRegistry.reorder(ids: originalOrder)
+            // The active server's headers may already have been rehydrated from
+            // the downloaded copy; put the restored Keychain value back in use.
+            if let server = state.server {
+                hydrateCustomHeaders(for: server)
+            }
             refreshServers()
         }
         // Removals go first: a removed server cannot be recreated with its
