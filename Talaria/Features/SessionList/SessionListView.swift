@@ -298,6 +298,10 @@ struct SessionListView: View {
                 openRequestedNewChatIfNeeded()
                 refreshAfterReturningIfNeeded()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .talariaReauthenticated)) { notification in
+                guard notification.object as? URL == server else { return }
+                Task { await refreshSessionsAndActiveProfile() }
+            }
             .onChange(of: pendingSharedImport) {
                 openPendingSharedImportIfNeeded()
             }
@@ -477,7 +481,7 @@ struct SessionListView: View {
             ChatView(
                 session: session,
                 server: server,
-                onAPIError: authManager.handleAPIError,
+                onAPIError: { authManager.handleAPIError($0, server: server) },
                 draftStore: draftStore
             )
                 .id(session.id)
@@ -490,7 +494,7 @@ struct SessionListView: View {
                 providerID: route.providerID,
                 server: server,
                 viewModel: viewModel,
-                onAPIError: authManager.handleAPIError,
+                onAPIError: { authManager.handleAPIError($0, server: server) },
                 onSessionCreated: rememberCreatedSession,
                 draftStore: draftStore
             )
@@ -514,19 +518,19 @@ struct SessionListView: View {
                     openProviderSettings: {
                         navigationState.select(.settings(.providerQuotas))
                     },
-                    onAPIError: authManager.handleAPIError
+                    onAPIError: { authManager.handleAPIError($0, server: server) }
                 )
                     .id(viewModel.activeProfileName)
             case .providerQuotaWidgetSettings:
                 ProviderQuotaWidgetAppearanceView()
             case .tasks:
-                TasksView(server: server, onAPIError: authManager.handleAPIError)
+                TasksView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
             case .kanban:
-                KanbanView(server: server, onAPIError: authManager.handleAPIError)
+                KanbanView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
             case .skills:
-                SkillsView(server: server, onAPIError: authManager.handleAPIError)
+                SkillsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
             case .memory:
-                MemoryView(server: server, onAPIError: authManager.handleAPIError)
+                MemoryView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
             case .insights:
                 InsightsView(
                     server: server,
@@ -534,11 +538,11 @@ struct SessionListView: View {
                     openProviderSettings: {
                         navigationState.select(.settings(.providerQuotas))
                     },
-                    onAPIError: authManager.handleAPIError
+                    onAPIError: { authManager.handleAPIError($0, server: server) }
                 )
                     .id(viewModel.activeProfileName)
             case .archived:
-                ArchivedSessionsView(server: server, onAPIError: authManager.handleAPIError)
+                ArchivedSessionsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
             case .scheduled:
                 GroupedSessionsView(
                     title: String(localized: "Scheduled sessions"),
@@ -1295,7 +1299,7 @@ struct SessionListView: View {
 
     private func handleLastError() {
         if let lastError = viewModel.lastError {
-            authManager.handleAPIError(lastError)
+            authManager.handleAPIError(lastError, server: server)
         }
     }
 

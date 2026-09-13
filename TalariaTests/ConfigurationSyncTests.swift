@@ -248,14 +248,15 @@ final class ConfigurationSyncTests: XCTestCase {
         let server = try XCTUnwrap(URL(string: serverA))
 
         device.authManager.handleAPIError(APIError.unauthorized)
-        try await waitUntil { device.authManager.state == .loggedIn(server: server) }
+        await device.authManager.recoveryTask?.value
 
         XCTAssertEqual(device.client.loginPasswords, ["pw-a", "pw-a"])
 
         // A second expiry in the same process falls through to the sign-in screen.
         device.authManager.handleAPIError(APIError.unauthorized)
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertEqual(device.authManager.state, .loggedOut(server: server))
+        await device.authManager.recoveryTask?.value
+        XCTAssertEqual(device.authManager.state, .loggedIn(server: server))
+        XCTAssertEqual(device.authManager.pendingReauthentication, server)
         XCTAssertEqual(device.client.loginPasswords.count, 2)
     }
 

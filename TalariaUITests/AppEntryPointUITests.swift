@@ -376,3 +376,29 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
             .firstMatch
     }
 }
+
+final class ReauthenticationUITests: AppEntryPointUITestCase {
+    func testSessionLossSignsInOverExistingSessionList() {
+        launchFixtureOnSessionList(additionalArguments: ["--ui-test-reauthentication"])
+        let row = app.staticTexts["UI Fixture Session"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        top.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        let password = app.secureTextFields["ReauthenticatePassword"]
+        XCTAssertTrue(password.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.textFields["Server URL"].exists)
+        XCTAssertTrue(password.isEnabled)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "In-place reauthentication"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        password.tap()
+        password.typeText("fixture-password")
+        app.buttons["ReauthenticateSignIn"].tap()
+        XCTAssertTrue(password.waitForNonExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars["Chats"].exists)
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 10))
+    }
+}

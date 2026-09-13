@@ -229,7 +229,7 @@ private extension ServerUpdateSettingsSection {
                 serverSettingsError = String(localized: "Unknown")
             }
         } catch {
-            authManager.handleAPIError(error)
+            authManager.handleAPIError(error, server: server)
             serverSettingsError = String(localized: "Unavailable")
         }
         isLoading = false
@@ -250,7 +250,7 @@ private extension ServerUpdateSettingsSection {
             serverUpdateState = response.webuiUpdateState
             forcedCheckOutcome = response.forcedCheckOutcome
         } catch {
-            authManager.handleAPIError(error)
+            authManager.handleAPIError(error, server: server)
             forcedCheckOutcome = .error
         }
         isCheckingForUpdates = false
@@ -272,7 +272,7 @@ private extension ServerUpdateSettingsSection {
         do {
             response = try await client.applyUpdate(target: "webui")
         } catch {
-            authManager.handleAPIError(error)
+            authManager.handleAPIError(error, server: server)
             updateApplyMessage = String(localized: "Could not reach the server to start the update.")
             updateApplyPhase = .failed
             return

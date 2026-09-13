@@ -10,6 +10,7 @@ extension APIClient {
     /// inspect `.error`. Only `401` maps to `.unauthorized`; a body that isn't the
     /// expected shape on a non-2xx status surfaces as `.http`.
     func transcribeAudio(data: Data, filename: String) async throws -> TranscribeResponse {
+        try requireMutationAuthorization()
         let boundary = "Boundary-\(UUID().uuidString)"
         var request = URLRequest(url: Endpoint.transcribe.url(relativeTo: baseURL))
         request.httpMethod = "POST"

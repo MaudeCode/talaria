@@ -917,6 +917,73 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testOIDCRecoveryPreservesCookiesOnCancellationAndDismissesOnSuccess() async throws {
+        let server = URL(string: "https://example.test")!
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(server.absoluteString, forKey: .serverURL)
+        try keychain.save("member", forKey: .authenticatedProfile, scope: server.absoluteString)
+        let cookies = ServerCookieStore.makeIsolatedStorage()
+        cookies.setCookie(Self.makeCookie(name: "hermes_session", value: "old-cookie", for: server))
+        let client = OIDCMockAuthAPIClient(onExchange: {
+            cookies.setCookie(Self.makeCookie(name: "hermes_session", value: "new-cookie", for: server))
+        })
+        var cancel = true
+        let manager = AuthManager(
+            keychain: keychain, clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                if cancel { throw OIDCSignInError.cancelled }
+                return URL(string: "\(scheme)://oidc-callback?code=exchange-code&state=\(client.state!)&flow_id=flow-1&server_id=server-1")!
+            },
+            cookieStorage: cookies, profileEntityCache: ProfileEntityCache(defaults: nil),
+            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
+        )
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        XCTAssertEqual(cookies.cookies(for: server)?.map(\.value), ["old-cookie"])
+        XCTAssertEqual(client.logoutCount, 0)
+        cancel = false
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertEqual(manager.authenticatedIdentityRevision, 0)
+        XCTAssertEqual(cookies.cookies(for: server)?.map(\.value), ["new-cookie"])
+        let status = try await client.authStatus()
+        XCTAssertTrue(status.isAlreadySignedIn)
+    }
+
+    func testRecoveryBlocksWritesAndUploadsButAllowsAuthAndReads() async throws {
+        let server = URL(string: "https://example.test")!
+        let owner = UUID()
+        APIClient.setReauthenticationRequired(server, owner: owner)
+        defer { APIClient.setReauthenticationRequired(nil, owner: owner) }
+        let client = makeClient { request in
+            XCTAssertTrue(["/health", "/api/auth/login"].contains(request.url!.path))
+            return apiTestJSONResponse(request.url!.path == "/health" ? "{\"status\":\"ok\"}" : "{\"ok\":true}", for: request)
+        }
+        let response = try await client.login(password: "fixture-password")
+        XCTAssertEqual(response.ok, true)
+        let health = try await client.health()
+        XCTAssertEqual(health.status, "ok")
+        do {
+            _ = try await client.sendData(endpoint: .health, method: "POST")
+            XCTFail("Write was allowed")
+        } catch APIError.unauthorized {} catch { XCTFail("Unexpected error: \(error)") }
+        do {
+            _ = try await client.uploadFile(sessionID: "fixture-session", data: Data(), filename: "fixture.txt")
+            XCTFail("Upload was allowed")
+        } catch APIError.unauthorized {} catch { XCTFail("Unexpected error: \(error)") }
+        do {
+            _ = try await client.transcribeAudio(data: Data(), filename: "fixture.wav")
+            XCTFail("Transcription was allowed")
+        } catch APIError.unauthorized {} catch { XCTFail("Unexpected error: \(error)") }
+        APIClient.setReauthenticationRequired(nil, owner: owner)
+        try await client.requireMutationAuthorization()
+    }
+
+    @MainActor
     func testPasswordSignInForgetsThePreviousOIDCProfileMarker() async throws {
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let keychain = InMemoryKeychainStore()
@@ -1495,7 +1562,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 
     @MainActor
-    func testSessionExpiryClearsOnlyExactSameHostServerCookieJar() throws {
+    func testSessionExpiryPreservesExactSameHostServerCookieJars() async throws {
         let keychain = InMemoryKeychainStore()
         let first = try XCTUnwrap(URL(string: "https://same.test:8443"))
         let second = try XCTUnwrap(URL(string: "https://same.test:9443"))
@@ -1511,15 +1578,18 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         store.storage(for: second).setCookie(try makeSessionCookie(value: "second"))
         let manager = AuthManager(
             keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(loggedIn: false)) },
             cookieStore: store,
             serverRegistry: registry
         )
 
         manager.handleAPIError(APIError.unauthorized)
 
-        XCTAssertTrue(store.storage(for: first).cookies?.isEmpty ?? true)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(store.storage(for: first).cookies(for: first)?.map(\.value), ["first"])
         XCTAssertEqual(store.storage(for: second).cookies(for: second)?.map(\.value), ["second"])
-        XCTAssertEqual(manager.state, .loggedOut(server: first))
+        XCTAssertEqual(manager.state, .loggedIn(server: first))
+        XCTAssertEqual(manager.pendingReauthentication, first)
     }
 
     private func makeSessionCookie(value: String) throws -> HTTPCookie {

@@ -68,6 +68,34 @@ final class AuthManager {
 
     private(set) var state: State = .unconfigured
     private(set) var lastErrorMessage: String?
+    private(set) var pendingReauthentication: URL?
+    private(set) var authenticatedIdentityRevision = 0
+    private(set) var reauthenticationOffersSSO = false
+    private(set) var reauthenticationOffersPassword = true
+    @ObservationIgnored private(set) var recoveryTask: Task<Void, Never>?
+    private var recoveryID = UUID()
+    private let mutationBlockID = UUID()
+
+    deinit {
+        APIClient.setReauthenticationRequired(nil, owner: mutationBlockID)
+    }
+
+    private func finishRecovery() {
+        recoveryID = UUID()
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        pendingReauthentication = nil
+        APIClient.setReauthenticationRequired(nil, owner: mutationBlockID)
+    }
+
+    private func requireReauthentication(for server: URL, status: AuthStatusResponse?) {
+        let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
+        reauthenticationOffersSSO = usedSSO || status?.oidcNativeHandoffEnabled == true
+        reauthenticationOffersPassword = status?.passwordAuthEnabled == true
+            || (!reauthenticationOffersSSO && status?.passwordAuthEnabled != false)
+        pendingReauthentication = server
+        APIClient.setReauthenticationRequired(server, owner: mutationBlockID)
+    }
 
     /// Observable snapshot of every configured server, mirrored from the
     /// `ServerRegistry` (the persistent source of truth) after each mutation so
@@ -304,7 +332,6 @@ final class AuthManager {
                 let loginResponse = try await client.login(password: password)
                 guard canCommit() else { return }
                 guard loginResponse.ok == true else {
-                    state = .loggedOut(server: serverURL)
                     lastErrorMessage = APIError.unauthorized.localizedDescription
                     return
                 }
@@ -531,14 +558,15 @@ final class AuthManager {
     }
 
     /// Runs the native OIDC handoff and returns the profile the server bound the
-    /// new session to. Any failure — including a missing or inconsistent active
-    /// profile — logs the partial session out and clears its cookies.
+    /// new session to. A failed exchange or profile check logs the partial
+    /// session out. Cancellation before exchange preserves the existing cookies.
     private func authenticateWithOIDC(
         client: any AuthAPIClient,
         serverURL: URL,
         cookieStorage: HTTPCookieStorage
     ) async throws -> String {
         var startedFlow: (id: String, state: String)?
+        var attemptedExchange = false
         do {
             let status = try await testConnection(client: client)
             guard status.oidcEnabled == true else { throw OIDCSignInError.unavailable }
@@ -568,6 +596,7 @@ final class AuthManager {
                 expectedServerID: start.serverId,
                 expiresAt: expiresAt
             )
+            attemptedExchange = true
             let response = try await client.exchangeNativeOIDC(
                 flowID: start.flowId,
                 code: code,
@@ -591,8 +620,10 @@ final class AuthManager {
                     state: startedFlow.state
                 )
             }
-            _ = try? await client.logout()
-            cookieStorage.cookies?.forEach(cookieStorage.deleteCookie)
+            if attemptedExchange {
+                _ = try? await client.logout()
+                cookieStorage.cookies?.forEach(cookieStorage.deleteCookie)
+            }
             throw error
         }
     }
@@ -619,6 +650,9 @@ final class AuthManager {
         let scope = server.absoluteString
         guard (try? keychain.load(.authenticatedProfile, scope: scope)) != profile else { return }
         try await resetServerScopedState(server)
+        // A different SSO identity must also lose the old views' in-memory data.
+        // Same-profile recovery preserves navigation and composer state.
+        if pendingReauthentication == server { authenticatedIdentityRevision += 1 }
         profileEntityCache.save([])
         clearQuotaWidgetSnapshot()
     }
@@ -667,6 +701,7 @@ final class AuthManager {
         refreshServers()
         clearQuotaWidgetSnapshot()
         recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
+        finishRecovery()
         state = .loggedIn(server: serverURL)
     }
 
@@ -697,6 +732,8 @@ final class AuthManager {
         }
         recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         state = .loggedIn(server: serverURL)
+        finishRecovery()
+        NotificationCenter.default.post(name: .talariaReauthenticated, object: serverURL)
     }
 
     private nonisolated static func oidcErrorMessage(_ error: Error) -> String {
@@ -782,8 +819,7 @@ final class AuthManager {
     /// Switches the active server to an already-registered one (the Settings
     /// switcher). Mirrors the cold-launch path: persist the URL, set it active,
     /// hydrate its scoped headers, and optimistically enter `.loggedIn`. A stale
-    /// cookie is demoted to `.loggedOut` by the first request's 401
-    /// (`handleAPIError`), exactly like a relaunch — so no extra round-trip here.
+    /// cookie triggers in-place recovery after a confirmed 401, as on relaunch.
     func switchActiveServer(to account: ServerAccount) {
         guard account.id != state.server?.absoluteString,
               let serverURL = URL(string: account.urlString) else { return }
@@ -803,6 +839,7 @@ final class AuthManager {
         profileEntityCache.save([])
         clearQuotaWidgetSnapshot()
         lastErrorMessage = nil
+        finishRecovery()
         state = .loggedIn(server: serverURL)
     }
 
@@ -833,6 +870,7 @@ final class AuthManager {
     /// shared core of `signOut` and active-server `removeServer` (#17).
     private func advanceAfterRemoving(activeServer server: URL) async throws {
         let nextActive = try serverRegistry.remove(id: server.absoluteString)
+        finishRecovery()
 
         // Always drop any pre-#16 global header remnant on a sign-out path.
         try? keychain.delete(.customHeaders)
@@ -912,41 +950,49 @@ final class AuthManager {
         timeoutTask.cancel()
     }
 
-    func handleAPIError(_ error: Error) {
-        guard case APIError.unauthorized = error else {
-            return
-        }
+    func handleAPIError(_ error: Error, server sourceServer: URL? = nil) {
+        guard case APIError.unauthorized = error,
+              case .loggedIn(let server) = state,
+              sourceServer == nil || sourceServer == server,
+              pendingReauthentication == nil, recoveryTask == nil else { return }
 
-        lastErrorMessage = String(localized: "Your session expired. Sign in again.")
-
-        switch state {
-        case .loggedIn(let server), .loggedOut(let server):
-            // The server is still valid; only the session cookie is stale. Keep the
-            // Keychain entry so re-login is a one-field affair, and clear only this
-            // server's cookies so other configured servers stay signed in (#16).
-            let wasLoggedIn = state == .loggedIn(server: server)
-            clearSessionCookies(for: server)
-            _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
-            state = .loggedOut(server: server)
-            // A password retained for sync (TAL-91) gets one silent retry per
-            // server; a wrong one lands on the normal sign-in screen.
-            if wasLoggedIn,
+        let id = UUID()
+        recoveryID = id
+        recoveryTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if recoveryID == id { recoveryTask = nil } }
+            let status: AuthStatusResponse?
+            do {
+                status = try await clientFactory(server).authStatus()
+                guard status?.loggedIn == false else { return }
+            } catch APIError.unauthorized {
+                status = nil
+            } catch {
+                // An offline or malformed probe cannot establish session loss.
+                return
+            }
+            guard recoveryID == id, state == .loggedIn(server: server) else { return }
+            APIClient.setReauthenticationRequired(server, owner: mutationBlockID)
+            let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
+            if !usedSSO, status?.passwordAuthEnabled != false,
                let password = serverPassword(for: server.absoluteString), !password.isEmpty,
                autoSignInAttempted.insert(server.absoluteString).inserted {
-                Task { await signInWithStoredPassword(serverID: server.absoluteString) }
+                if await signInWithStoredPassword(serverID: server.absoluteString, canCommit: {
+                    self.recoveryID == id && self.state == .loggedIn(server: server)
+                }) { return }
             }
-        case .unconfigured:
-            clearLocalAuth(for: nil)
+            guard recoveryID == id, state == .loggedIn(server: server) else { return }
+            lastErrorMessage = nil
+            _ = ProviderQuotaWidgetRefreshCredentialStore.clear()
+            requireReauthentication(for: server, status: status)
         }
     }
 
     /// Clears local auth for `server` (a full per-server sign-out): forgets that
     /// server's saved URL, its scoped custom headers, and its cookies, leaving any
-    /// other configured server untouched (#16). (Session-expiry via
-    /// `handleAPIError` keeps the URL + headers so re-login behind a proxy is a
-    /// one-field affair — see #255.)
+    /// other configured server untouched (#16).
     ///
-    /// When `server` is nil (a 401 while unconfigured) there's no active server to
+    /// When `server` is nil there's no active server to
     /// scope to, so we fall back to clearing the global remnants and the whole
     /// cookie jar as a safe reset.
     private func clearLocalAuth(for server: URL?) {
@@ -1077,27 +1123,33 @@ final class AuthManager {
 
     /// Signs in to a configured server with its retained password and headers,
     /// obtaining a fresh WebUI session rather than copying cookie state. When
-    /// that fails from an unconfigured state the server becomes the saved
-    /// server so the sign-in screen opens prefilled for it.
+    /// that fails from an unconfigured state, open the configured server with
+    /// an in-place sign-in prompt.
     @discardableResult
-    func signInWithStoredPassword(serverID: String) async -> Bool {
+    func signInWithStoredPassword(
+        serverID: String,
+        canCommit: @escaping @MainActor () -> Bool = { true }
+    ) async -> Bool {
         guard let account = serverRegistry.servers.first(where: { $0.id == serverID }),
               let serverURL = URL(string: account.urlString) else { return false }
         let wasUnconfigured = state == .unconfigured
         await configure(
             serverURLString: account.urlString,
             password: serverPassword(for: serverID) ?? "",
-            customHeaders: customHeaders(for: account)
+            customHeaders: customHeaders(for: account),
+            canCommit: canCommit
         )
-        if state == .loggedIn(server: serverURL) {
+        if lastErrorMessage == nil, state == .loggedIn(server: serverURL) {
             return true
         }
+        guard canCommit() else { return false }
         if wasUnconfigured {
             try? serverRegistry.setActive(id: serverID)
             try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
             hydrateCustomHeaders(for: serverURL)
             refreshServers()
-            state = .loggedOut(server: serverURL)
+            state = .loggedIn(server: serverURL)
+            requireReauthentication(for: serverURL, status: nil)
         }
         return false
     }
@@ -1274,7 +1326,7 @@ final class AuthManager {
     }
 
     /// Clears the entire configured cookie jar. Used only as a fallback when there's no
-    /// active server to scope to (a 401 while unconfigured).
+    /// active server to scope sign-out to.
     private func clearAllSessionCookies() {
         for account in serverRegistry.servers {
             if let server = URL(string: account.urlString) {
@@ -1601,4 +1653,8 @@ private final class OIDCWebAuthenticationPresenter: NSObject,
             .flatMap(\.windows)
         return windows.first(where: \.isKeyWindow) ?? windows.first ?? ASPresentationAnchor()
     }
+}
+
+extension Notification.Name {
+    static let talariaReauthenticated = Notification.Name("talariaReauthenticated")
 }

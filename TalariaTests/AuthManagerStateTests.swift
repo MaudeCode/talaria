@@ -5,56 +5,149 @@ import XCTest
 final class AuthManagerStateTests: XCTestCase {
     private struct PreconditionFailure: Error {}
 
-    private static let sessionExpiredMessage = "Your session expired. Sign in again."
     private let cookieStorage = URLSessionConfiguration.ephemeral.httpCookieStorage!
     private let profileEntityCache = ProfileEntityCache(defaults: nil)
 
-    func testUnauthorizedWhileLoggedInKeepsServerAndMovesToLoggedOut() async throws {
+    private func recoveryManager(
+        status: AuthStatusResponse = AuthStatusResponse(authEnabled: true, loggedIn: false),
+        password: String? = nil,
+        oidcProfile: String? = nil
+    ) throws -> (AuthManager, MockAuthAPIClient, URL) {
+        let server = URL(string: "https://recovery.test")!
         let keychain = InMemoryKeychainStore()
-        let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://example.test")
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
-        cookieStorage.setCookie(try makeSessionCookie(for: server))
-
-        manager.handleAPIError(APIError.unauthorized)
-
-        XCTAssertEqual(manager.state, .loggedOut(server: server))
-        XCTAssertEqual(keychain.savedValues[.serverURL], server.absoluteString)
-        XCTAssertEqual(cookieStorage.cookies?.isEmpty, true)
-        XCTAssertEqual(manager.lastErrorMessage, Self.sessionExpiredMessage)
-    }
-
-    func testUnauthorizedWhileAlreadyLoggedOutStaysLoggedOutWithServer() async throws {
-        let keychain = InMemoryKeychainStore()
-        let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://example.test")
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
-
-        manager.handleAPIError(APIError.unauthorized)
-        manager.handleAPIError(APIError.unauthorized)
-
-        XCTAssertEqual(manager.state, .loggedOut(server: server))
-        XCTAssertEqual(keychain.savedValues[.serverURL], server.absoluteString)
-    }
-
-    func testUnauthorizedWhileUnconfiguredKeepsFullClearBehavior() throws {
-        let keychain = InMemoryKeychainStore()
-        cookieStorage.setCookie(
-            try makeSessionCookie(for: XCTUnwrap(URL(string: "https://example.test")))
-        )
+        try keychain.save(server.absoluteString, forKey: .serverURL)
+        if let password { try keychain.save(password, forKey: .serverPassword, scope: server.absoluteString) }
+        if let oidcProfile { try keychain.save(oidcProfile, forKey: .authenticatedProfile, scope: server.absoluteString) }
+        let client = MockAuthAPIClient(authStatus: status)
         let manager = AuthManager(
-            keychain: keychain,
-            clientFactory: { _ in
-                MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
-            },
-            cookieStorage: cookieStorage,
-            profileEntityCache: profileEntityCache
+            keychain: keychain, clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client }, headerStore: CustomHeaderStore(),
+            cookieStorage: cookieStorage, profileEntityCache: profileEntityCache,
+            serverRegistry: ServerRegistry.inMemory()
         )
+        return (manager, client, server)
+    }
 
+    func testConfirmedSessionLossPreservesStateAndCookies() async throws {
+        let (manager, client, server) = try recoveryManager()
+        cookieStorage.setCookie(try makeSessionCookie(for: server))
         manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        XCTAssertEqual(cookieStorage.cookies(for: server)?.map(\.value), ["stale-session-token"])
+        XCTAssertEqual(client.authStatusCallCount, 1)
+        XCTAssertTrue(manager.reauthenticationOffersPassword)
+        XCTAssertFalse(manager.reauthenticationOffersSSO)
+    }
 
+    func testIntactSessionKeepsCookiesWithoutPromptOrRetry() async throws {
+        let (manager, client, server) = try recoveryManager(status: AuthStatusResponse(loggedIn: true), password: "secret")
+        cookieStorage.setCookie(try makeSessionCookie(for: server))
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(cookieStorage.cookies(for: server)?.count, 1)
+        XCTAssertTrue(client.loginPasswords.isEmpty)
+    }
+
+    func testTenConcurrentUnauthorizedErrorsCoalesceIntoOneProbe() async throws {
+        let (manager, client, server) = try recoveryManager()
+        client.authStatusDelay = .milliseconds(30)
+        for _ in 0..<10 { manager.handleAPIError(APIError.unauthorized) }
+        await manager.recoveryTask?.value
+        manager.handleAPIError(APIError.unauthorized)
+        XCTAssertEqual(client.authStatusCallCount, 1)
+        XCTAssertEqual(manager.pendingReauthentication, server)
+    }
+
+    func testProbeUnauthorizedConfirmsLossButNetworkFailureDoesNot() async throws {
+        let (manager, client, server) = try recoveryManager()
+        client.authStatusError = URLError(.notConnectedToInternet)
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertNil(manager.pendingReauthentication)
+        client.authStatusError = APIError.unauthorized
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.pendingReauthentication, server)
+    }
+
+    func testRecoverySignInMethodsFollowCapabilitiesAndOIDCMarker() async throws {
+        for (status, marker, sso, password) in [
+            (AuthStatusResponse(loggedIn: false), "fixture-profile", true, false),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: false, oidcNativeHandoffEnabled: true), nil, true, false),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: true, oidcNativeHandoffEnabled: true), nil, true, true),
+            (AuthStatusResponse(loggedIn: false, passwordAuthEnabled: true), nil, false, true)
+        ] {
+            let (manager, _, _) = try recoveryManager(status: status, oidcProfile: marker)
+            manager.handleAPIError(APIError.unauthorized)
+            await manager.recoveryTask?.value
+            XCTAssertEqual(manager.reauthenticationOffersSSO, sso)
+            XCTAssertEqual(manager.reauthenticationOffersPassword, password)
+        }
+    }
+
+    func testRetainedPasswordRetriesBeforePromptAndOnlyOnce() async throws {
+        let (manager, client, server) = try recoveryManager(password: "secret")
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(client.loginPasswords, ["secret"])
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        XCTAssertEqual(client.loginPasswords, ["secret"])
+    }
+
+    func testFailedRetainedPasswordShowsPromptAndManualRetryDismissesIt() async throws {
+        let (manager, client, server) = try recoveryManager(password: "stale")
+        client.loginResponse = LoginResponse(ok: false, message: nil, error: nil)
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        XCTAssertEqual(client.loginPasswords, ["stale"])
+        client.loginResponse = LoginResponse(ok: true, message: nil, error: nil)
+        await manager.configure(serverURLString: server.absoluteString, password: "fresh")
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(manager.state, .loggedIn(server: server))
+    }
+
+    func testSwitchServerIgnoresPendingProbeAndOldServerErrors() async throws {
+        let (manager, client, server) = try recoveryManager()
+        client.authStatusDelay = .milliseconds(30)
+        _ = await manager.addServer(serverURLString: "https://second.test", password: "secret")
+        let original = try XCTUnwrap(manager.servers.first { $0.id == server.absoluteString })
+        let second = try XCTUnwrap(manager.servers.first { $0.id != server.absoluteString })
+        manager.switchActiveServer(to: original)
+        manager.handleAPIError(APIError.unauthorized, server: server)
+        let recovery = manager.recoveryTask
+        manager.switchActiveServer(to: second)
+        await recovery?.value
+        manager.handleAPIError(APIError.unauthorized, server: server)
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertNil(manager.recoveryTask)
+        XCTAssertEqual(manager.activeServerID, second.id)
+    }
+
+    func testSignOutAndAddingAnotherServerDismissRecovery() async throws {
+        let (manager, _, server) = try recoveryManager()
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(manager.pendingReauthentication, server)
+        _ = await manager.addServer(serverURLString: "https://second.test", password: "secret")
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(manager.activeServerID, "https://second.test")
+        manager.switchActiveServer(to: try XCTUnwrap(manager.servers.first { $0.id == server.absoluteString }))
+        manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
+        await manager.signOut()
+        XCTAssertNil(manager.pendingReauthentication)
+        XCTAssertEqual(manager.activeServerID, "https://second.test")
+        await manager.signOut()
         XCTAssertEqual(manager.state, .unconfigured)
-        XCTAssertNil(keychain.savedValues[.serverURL])
-        XCTAssertEqual(cookieStorage.cookies?.isEmpty, true)
-        XCTAssertEqual(manager.lastErrorMessage, Self.sessionExpiredMessage)
     }
 
     func testNonUnauthorizedErrorDoesNotChangeState() async throws {
@@ -163,7 +256,7 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(cookieStorage.cookies(for: serverB)?.map(\.value), ["b-cookie"])
     }
 
-    func testUnauthorizedClearsOnlyActiveServerCookies() async throws {
+    func testUnauthorizedPreservesBothServersCookies() async throws {
         let keychain = InMemoryKeychainStore()
         let serverA = try XCTUnwrap(URL(string: "https://a.test"))
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
@@ -171,11 +264,14 @@ final class AuthManagerStateTests: XCTestCase {
         cookieStorage.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
         cookieStorage.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
+        try keychain.delete(.serverPassword, scope: serverA.absoluteString)
         manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
 
         // Only the active server's auth is affected by its 401.
-        XCTAssertEqual(manager.state, .loggedOut(server: serverA))
-        XCTAssertTrue(cookieStorage.cookies(for: serverA)?.isEmpty ?? true)
+        XCTAssertEqual(manager.state, .loggedIn(server: serverA))
+        XCTAssertEqual(manager.pendingReauthentication, serverA)
+        XCTAssertEqual(cookieStorage.cookies(for: serverA)?.map(\.value), ["a-cookie"])
         XCTAssertEqual(cookieStorage.cookies(for: serverB)?.map(\.value), ["b-cookie"])
     }
 

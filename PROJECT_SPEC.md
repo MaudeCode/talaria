@@ -401,7 +401,7 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 - [x] `Codable` models for `Session`, `ChatMessage`, etc. **Use optionals liberally.** Server adds fields constantly.
 - [x] Custom decoding strategy: convert snake_case to camelCase via `JSONDecoder.KeyDecodingStrategy.convertFromSnakeCase`.
 - [x] Error model: `APIError.network`, `.http(statusCode, body)`, `.decoding(underlying)`, `.unauthorized`.
-- [x] On `401`, clear cookie and bounce user to Onboarding.
+- [x] On `401`, confirm session loss with auth status and re-authenticate over the existing navigation stack; retain cookies and block mutations until sign-in succeeds.
 - [x] Tests: hitting a live personal server from CI is not appropriate — use `URLProtocol` mocks in tests.
 
 ### Phase 3 — Session list (2 days)
