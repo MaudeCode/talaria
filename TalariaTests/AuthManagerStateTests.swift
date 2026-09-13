@@ -74,6 +74,32 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.pendingReauthentication, server)
     }
 
+    func testUnauthorizedProbeOffersHeaderRepairBeforeRediscoveringSignInMethods() async throws {
+        for usesSSO in [false, true] {
+            let (manager, client, server) = try recoveryManager(oidcProfile: usesSSO ? "fixture-profile" : nil)
+            client.authStatusError = APIError.unauthorized
+            manager.handleAPIError(APIError.unauthorized)
+            await manager.recoveryTask?.value
+            XCTAssertEqual(manager.pendingReauthentication, server)
+            XCTAssertFalse(manager.reauthenticationOffersSSO)
+            XCTAssertFalse(manager.reauthenticationOffersPassword)
+
+            client.authStatusError = nil
+            client.authStatusResponse = AuthStatusResponse(
+                authEnabled: true, loggedIn: false, passwordAuthEnabled: !usesSSO,
+                oidcEnabled: usesSSO, oidcNativeHandoffEnabled: usesSSO
+            )
+            await manager.configure(
+                serverURLString: server.absoluteString, password: "",
+                customHeaders: [CustomHeader(name: "X-Fixture", value: "repaired")]
+            )
+            XCTAssertEqual(manager.pendingReauthentication, server)
+            XCTAssertEqual(manager.reauthenticationOffersSSO, usesSSO)
+            XCTAssertEqual(manager.reauthenticationOffersPassword, !usesSSO)
+            if usesSSO { XCTAssertNil(manager.lastErrorMessage) }
+        }
+    }
+
     func testRecoverySignInMethodsFollowCapabilitiesAndOIDCMarker() async throws {
         for (status, marker, sso, password) in [
             (AuthStatusResponse(loggedIn: false), "fixture-profile", true, false),

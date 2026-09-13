@@ -90,9 +90,10 @@ final class AuthManager {
 
     private func requireReauthentication(for server: URL, status: AuthStatusResponse?) {
         let usedSSO = (try? keychain.load(.authenticatedProfile, scope: server.absoluteString)) != nil
-        reauthenticationOffersSSO = usedSSO || status?.oidcNativeHandoffEnabled == true
-        reauthenticationOffersPassword = status?.passwordAuthEnabled == true
-            || (!reauthenticationOffersSSO && status?.passwordAuthEnabled != false)
+        // Without a successful capability probe, keep retry/header repair available.
+        reauthenticationOffersSSO = status != nil && (usedSSO || status?.oidcNativeHandoffEnabled == true)
+        reauthenticationOffersPassword = status != nil && (status?.passwordAuthEnabled == true
+            || (!reauthenticationOffersSSO && status?.passwordAuthEnabled != false))
         if let status, let guidance = Self.unsupportedSignInMessage(for: status) {
             lastErrorMessage = guidance
         }
@@ -321,6 +322,9 @@ final class AuthManager {
             let authStatus = try await testConnection(client: client)
             guard canCommit() else { return nil }
             discoveredStatus = authStatus
+            if pendingReauthentication == serverURL {
+                requireReauthentication(for: serverURL, status: authStatus)
+            }
 
             if let message = Self.unsupportedSignInMessage(for: authStatus) {
                 lastErrorMessage = message
@@ -333,7 +337,9 @@ final class AuthManager {
             var retainedPassword = Self.noPasswordRequired
             if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
-                    lastErrorMessage = String(localized: "Enter the server password.")
+                    if pendingReauthentication != serverURL || authStatus.oidcNativeHandoffEnabled != true {
+                        lastErrorMessage = String(localized: "Enter the server password.")
+                    }
                     return authStatus
                 }
 
