@@ -376,3 +376,85 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
             .firstMatch
     }
 }
+
+final class ReauthenticationUITests: AppEntryPointUITestCase {
+    func testSessionLossSignsInOverExistingSessionList() {
+        let row = triggerRecovery()
+        let password = app.secureTextFields["ReauthenticatePassword"]
+        XCTAssertTrue(password.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.textFields["Server URL"].exists)
+        XCTAssertTrue(password.isEnabled)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "In-place reauthentication"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        password.tap()
+        password.typeText("fixture-password")
+        app.buttons["ReauthenticateSignIn"].tap()
+        XCTAssertTrue(password.waitForNonExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars["Chats"].exists)
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.isEnabled)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 10))
+    }
+
+    func testTrustedHeaderRecoveryCanRetryWithoutSigningOut() {
+        _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-trusted"])
+        let retry = app.buttons["ReauthenticateRetry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "This server signs in through an identity proxy"
+        )).firstMatch.exists)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Trusted-header recovery"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["Connection Headers"].tap()
+        let addHeader = app.buttons["Add header"]
+        for _ in 0..<5 where !addHeader.exists || !addHeader.isHittable { app.swipeUp() }
+        addHeader.tap()
+        let name = app.textFields["Header name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("X-Fixture-Authorization")
+        let value = app.secureTextFields["Header value"]
+        value.tap()
+        value.typeText("fixture-token")
+        for _ in 0..<5 where !retry.exists || !retry.isHittable { app.swipeDown() }
+        retry.tap()
+        XCTAssertTrue(retry.waitForNonExistence(timeout: 15))
+        // This title is returned only by a new request carrying the repaired header.
+        XCTAssertTrue(app.staticTexts["Header recovery confirmed"].waitForExistence(timeout: 10))
+    }
+
+    func testSSOIsPrimaryWithPasswordAvailableThroughTextLink() {
+        _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-both"])
+        let sso = app.buttons["ReauthenticateSSO"]
+        let methodSwitch = app.buttons["ReauthenticateSwitchMethod"]
+        XCTAssertTrue(sso.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
+        XCTAssertEqual(methodSwitch.label, "Sign in with password")
+        methodSwitch.tap()
+        XCTAssertTrue(app.secureTextFields["ReauthenticatePassword"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ReauthenticateSignIn"].exists)
+        XCTAssertFalse(sso.exists)
+        methodSwitch.tap()
+        XCTAssertTrue(sso.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
+    }
+
+    private func triggerRecovery(additionalArguments: [String] = []) -> XCUIElement {
+        launchFixtureOnSessionList(additionalArguments: ["--ui-test-reauthentication"] + additionalArguments)
+        let row = app.buttons.containing(.staticText, identifier: "UI Fixture Session").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // Returning to the list triggers its normal refresh without leaving a
+        // pull-to-refresh animation running behind the authentication sheet.
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let back = app.buttons["BackButton"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+        return row
+    }
+}

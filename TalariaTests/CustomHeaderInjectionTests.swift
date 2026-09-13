@@ -390,6 +390,7 @@ final class CustomHeaderAuthManagerTests: XCTestCase {
         AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
             headerStore: store,
             cookieStorage: cookieStorage,
             profileEntityCache: profileEntityCache,

@@ -272,8 +272,11 @@ final class MockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
         case hang
     }
 
-    private let authStatusResponse: AuthStatusResponse
-    private let loginResponse: LoginResponse
+    var authStatusResponse: AuthStatusResponse
+    var loginResponse: LoginResponse
+    var authStatusError: Error?
+    var authStatusDelay: Duration?
+    private(set) var authStatusCallCount = 0
     private let logoutBehavior: LogoutBehavior
     private(set) var loginPasswords: [String] = []
     private(set) var logoutCallCount = 0
@@ -293,7 +296,10 @@ final class MockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     }
 
     func authStatus() async throws -> AuthStatusResponse {
-        authStatusResponse
+        authStatusCallCount += 1
+        if let authStatusDelay { try await Task.sleep(for: authStatusDelay) }
+        if let authStatusError { throw authStatusError }
+        return authStatusResponse
     }
 
     func login(password: String) async throws -> LoginResponse {

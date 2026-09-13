@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1900000000000000000002 /* ReauthenticationSheet.swift */; };
 		D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000022 /* ShareExtensionUITests.swift */; };
 		D81000000000000000000013 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
 		D81000000000000000000011 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
@@ -730,6 +731,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AA1900000000000000000002 /* ReauthenticationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthenticationSheet.swift; sourceTree = "<group>"; };
 		D81000000000000000000022 /* ShareExtensionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITests.swift; sourceTree = "<group>"; };
 		D81000000000000000000012 /* ShareOpenFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareOpenFixture.swift; sourceTree = "<group>"; };
 		D81000000000000000000002 /* ShareExtensionUITestHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITestHost.swift; sourceTree = "<group>"; };
@@ -1641,6 +1643,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */,
+				AA1900000000000000000002 /* ReauthenticationSheet.swift */,
 				1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */,
 				B11200000000000000000002 /* ServerCookieStore.swift */,
 			);
@@ -2536,6 +2539,7 @@
 				1A2B3C4D5E6F700000000338 /* TalariaAppIntents.swift in Sources */,
 				1A2B3C4D5E6F700000000343 /* ProfileEntity.swift in Sources */,
 				1A2B3C4D5E6F7000000000A1 /* AuthManager.swift in Sources */,
+				AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */,
 				B11200000000000000000001 /* ServerCookieStore.swift in Sources */,
 				1A2B3C4D5E6F700000000300 /* ServerAccount.swift in Sources */,
 				A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */,

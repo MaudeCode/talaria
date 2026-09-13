@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sign in again after a session expires without losing your place in a chat.",
+      "highlight": false
+    }
+  ]
+}

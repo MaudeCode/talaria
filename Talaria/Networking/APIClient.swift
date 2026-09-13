@@ -2,6 +2,18 @@ import Foundation
 import os
 
 actor APIClient {
+    private static let reauthenticationServers = OSAllocatedUnfairLock(initialState: [UUID: URL]())
+
+    nonisolated static func setReauthenticationRequired(_ server: URL?, owner: UUID) {
+        reauthenticationServers.withLock { $0[owner] = server }
+    }
+
+    func requireMutationAuthorization() throws {
+        guard !Self.reauthenticationServers.withLock({ $0.values.contains(baseURL) }) else {
+            throw APIError.unauthorized
+        }
+    }
+
     let baseURL: URL
     let session: URLSession
     let publicMediaSession: URLSession
@@ -276,6 +288,12 @@ actor APIClient {
         timeout: TimeInterval? = nil,
         accept: String = "application/json"
     ) async throws -> (Data, HTTPURLResponse) {
+        if method != "GET" && method != "HEAD" {
+            switch endpoint {
+            case .login, .logout, .nativeOIDCStart, .nativeOIDCExchange, .nativeOIDCCancel: break
+            default: try requireMutationAuthorization()
+            }
+        }
         var request = URLRequest(url: endpoint.url(relativeTo: baseURL))
         request.httpMethod = method
         request.cachePolicy = .reloadIgnoringLocalCacheData

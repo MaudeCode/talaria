@@ -2,6 +2,7 @@ import Foundation
 
 extension APIClient {
     func uploadFile(sessionID: String, data: Data, filename: String) async throws -> UploadResponse {
+        try requireMutationAuthorization()
         let boundary = "Boundary-\(UUID().uuidString)"
         var request = URLRequest(url: Endpoint.upload.url(relativeTo: baseURL))
         request.httpMethod = "POST"

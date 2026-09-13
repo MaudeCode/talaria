@@ -248,18 +248,37 @@ final class ConfigurationSyncTests: XCTestCase {
         let server = try XCTUnwrap(URL(string: serverA))
 
         device.authManager.handleAPIError(APIError.unauthorized)
-        try await waitUntil { device.authManager.state == .loggedIn(server: server) }
+        await device.authManager.recoveryTask?.value
 
         XCTAssertEqual(device.client.loginPasswords, ["pw-a", "pw-a"])
 
         // A second expiry in the same process falls through to the sign-in screen.
         device.authManager.handleAPIError(APIError.unauthorized)
-        try await Task.sleep(for: .milliseconds(50))
-        XCTAssertEqual(device.authManager.state, .loggedOut(server: server))
+        await device.authManager.recoveryTask?.value
+        XCTAssertEqual(device.authManager.state, .loggedIn(server: server))
+        XCTAssertEqual(device.authManager.pendingReauthentication, server)
         XCTAssertEqual(device.client.loginPasswords.count, 2)
     }
 
     // MARK: - Two-device sync
+
+    func testRestoredOIDCServerRetainsDiscoveredSignInMethods() async throws {
+        for passwordAvailable in [false, true] {
+            let client = MockAuthAPIClient(authStatus: AuthStatusResponse(
+                authEnabled: true, loggedIn: false, passwordAuthEnabled: passwordAvailable,
+                oidcEnabled: true, oidcNativeHandoffEnabled: true
+            ))
+            let device = try await makeDevice(client: client)
+            let setup = makeSetup(url: serverA, password: AuthManager.noPasswordRequired, updatedAt: fixedNow)
+            let applied = await device.authManager.applySyncedServers([setup], removing: [], order: [serverA])
+            XCTAssertTrue(applied)
+            XCTAssertEqual(device.authManager.pendingReauthentication?.absoluteString, serverA)
+            XCTAssertTrue(device.authManager.reauthenticationOffersSSO)
+            XCTAssertNil(device.authManager.lastErrorMessage, "SSO recovery must not ask for a password.")
+            XCTAssertEqual(device.authManager.reauthenticationOffersPassword, passwordAvailable)
+            XCTAssertTrue(client.loginPasswords.isEmpty)
+        }
+    }
 
     func testRestoreOnSecondDeviceSignsInWithSyncedPassword() async throws {
         let store = InMemoryConfigurationSyncStore()

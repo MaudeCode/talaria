@@ -474,6 +474,10 @@ struct ChatView: View {
                     onSettingsChange: syncDraftSettings
                 )
             )
+            .onReceive(NotificationCenter.default.publisher(for: .talariaReauthenticated)) { notification in
+                guard notification.object as? URL == server else { return }
+                Task { await loadMessages(appliesInitialFocus: false) }
+            }
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }

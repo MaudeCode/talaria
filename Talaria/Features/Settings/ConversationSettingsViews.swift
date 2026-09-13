@@ -288,7 +288,7 @@ struct ChatsSettingsView: View {
 
             SettingsCard(title: String(localized: "Archived Chats")) {
                 NavigationLink {
-                    ArchivedSessionsView(server: server, onAPIError: authManager.handleAPIError)
+                    ArchivedSessionsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
                 } label: {
                     SettingsAccessoryRow(title: String(localized: "Archived Chats"), systemImage: "archivebox")
                 }

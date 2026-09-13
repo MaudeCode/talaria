@@ -7,6 +7,8 @@ import UIKit
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = "--ui-test-fixture"
     nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
+    nonisolated static let reauthenticationArgument = "--ui-test-reauthentication"
+    nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
     /// Launches with no saved server so the fixture lands on onboarding.
     nonisolated static let onboardingArgument = "--ui-test-onboarding"
     /// Runs the "New Chat" App Intent at launch, so a UI test can exercise the real
@@ -90,13 +92,14 @@ struct UITestFixtureEnvironment {
         let defaultsName = "dev.kil.talaria.ui-test-fixture"
         let defaults = UserDefaults(suiteName: defaultsName)!
         defaults.removePersistentDomain(forName: defaultsName)
+        CustomHeaderStore.shared.replace(with: [])
         let client = APIClient(baseURL: serverURL)
         return UITestFixtureEnvironment(
             authManager: AuthManager(
                 keychain: keychain,
                 clientFactory: { _ in client },
                 probeClientFactory: { _, _, _ in client },
-                headerStore: CustomHeaderStore(),
+                headerStore: .shared,
                 cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
                 profileEntityCache: ProfileEntityCache(defaults: nil),
                 serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
@@ -286,6 +289,15 @@ private final class UITestChatFixtureState: @unchecked Sendable {
 final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionID = "ui-fixture-session"
     static let sessionTitle = "UI Fixture Session"
+    private static let recoveryState = NSLock()
+    nonisolated(unsafe) private static var sessionReads = 0
+    nonisolated(unsafe) private static var recovered = false
+    private static var testsReauthentication: Bool {
+        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
+    }
+    private static var testsTrustedReauthentication: Bool {
+        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.trustedReauthenticationArgument)
+    }
     private static let chatStreamID = "ui-fixture-stream"
     private static let chatState = UITestChatFixtureState.shared
     private let lifecycleLock = NSLock()
@@ -334,11 +346,27 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         let isEventStream = url.path.hasSuffix("/stream")
         let contentType = Self.workspaceContentType(for: url)
             ?? (isEventStream ? "text/event-stream" : "application/json")
+        let requiresSignIn = Self.recoveryState.withLock {
+            if Self.testsReauthentication, url.path == "/api/sessions" {
+                Self.sessionReads += 1
+                if Self.testsTrustedReauthentication {
+                    return Self.sessionReads > 1
+                        && request.value(forHTTPHeaderField: "X-Fixture-Authorization") != "fixture-token"
+                }
+                return Self.sessionReads > 1 && !Self.recovered
+            }
+            if Self.testsReauthentication, url.path == "/api/auth/login" { Self.recovered = true }
+            return false
+        }
+        var headers = ["Content-Type": contentType]
+        if Self.testsReauthentication, url.path == "/api/auth/login" {
+            headers["Set-Cookie"] = "hermes_session=fixture-renewed; Path=/; Secure; HttpOnly"
+        }
         let response = HTTPURLResponse(
             url: url,
-            statusCode: Self.workspaceStatusCode(for: request),
+            statusCode: requiresSignIn ? 401 : Self.workspaceStatusCode(for: request),
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": contentType]
+            headerFields: headers
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if UITestChatScenario.current != nil,
@@ -365,9 +393,29 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/health":
             return json(["status": "ok"])
         case "/api/auth/status":
+            if testsTrustedReauthentication {
+                return json([
+                    "auth_enabled": true,
+                    "logged_in": request.value(forHTTPHeaderField: "X-Fixture-Authorization") == "fixture-token",
+                    "password_auth_enabled": false,
+                    "trusted_auth_enabled": true
+                ])
+            }
+            if testsReauthentication {
+                let offersSSO = ProcessInfo.processInfo.arguments.contains("--ui-test-reauthentication-both")
+                return json([
+                    "auth_enabled": true, "logged_in": recoveryState.withLock { recovered },
+                    "password_auth_enabled": true, "oidc_enabled": offersSSO,
+                    "oidc_native_handoff_enabled": offersSSO
+                ])
+            }
             return json(["auth_enabled": false, "logged_in": true])
+        case "/api/auth/login":
+            return json(["ok": true])
         case "/api/sessions":
-            return sessionsResponse()
+            return sessionsResponse(firstTitle: testsTrustedReauthentication
+                && request.value(forHTTPHeaderField: "X-Fixture-Authorization") == "fixture-token"
+                ? "Header recovery confirmed" : sessionTitle)
         case "/api/sessions/search":
             return json(["sessions": [], "query": "", "count": 0])
         case "/api/session":
@@ -471,12 +519,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 
-    private static func sessionsResponse() -> Data {
+    private static func sessionsResponse(firstTitle: String) -> Data {
         let sessionCount = UITestFixtureEnvironment.isDense ? 300 : 18
         let sessions: [[String: Any]] = (0..<sessionCount).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
-                title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
+                title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
             )
         }
         return json(["sessions": sessions, "archived_count": 0])

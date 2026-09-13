@@ -439,6 +439,7 @@ final class ServerRegistryTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false, loggedIn: false)) },
+            probeClientFactory: { _, _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(loggedIn: false)) },
             cookieStorage: cookieStorage,
             serverRegistry: registry
         )
@@ -446,6 +447,7 @@ final class ServerRegistryTests: XCTestCase {
 
         // A stale session cookie must not forget the server (re-login keeps it).
         manager.handleAPIError(APIError.unauthorized)
+        await manager.recoveryTask?.value
 
         XCTAssertEqual(registry.activeServer?.urlString, "https://example.test")
     }

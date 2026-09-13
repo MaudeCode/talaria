@@ -144,7 +144,17 @@ struct ContentView: View {
             // per-server identity SwiftUI would reuse server-bound content.
             // Keying on the server tears the navigation tree down and rebuilds it against
             // the newly active server (#17).
-            .id(server)
+            .id("\(server.absoluteString)#\(authManager.authenticatedIdentityRevision)")
+            .disabled(authManager.pendingReauthentication != nil)
+            .sheet(isPresented: Binding(
+                get: { authManager.pendingReauthentication != nil },
+                set: { _ in }
+            )) {
+                if let server = authManager.pendingReauthentication {
+                    ReauthenticationSheet(authManager: authManager, server: server)
+                        .environment(\.isEnabled, true)
+                }
+            }
         }
     }
 
