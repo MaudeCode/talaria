@@ -262,6 +262,24 @@ final class ConfigurationSyncTests: XCTestCase {
 
     // MARK: - Two-device sync
 
+    func testRestoredOIDCServerRetainsDiscoveredSignInMethods() async throws {
+        for passwordAvailable in [false, true] {
+            let client = MockAuthAPIClient(authStatus: AuthStatusResponse(
+                authEnabled: true, loggedIn: false, passwordAuthEnabled: passwordAvailable,
+                oidcEnabled: true, oidcNativeHandoffEnabled: true
+            ))
+            let device = try await makeDevice(client: client)
+            let setup = makeSetup(url: serverA, password: AuthManager.noPasswordRequired, updatedAt: fixedNow)
+            let applied = await device.authManager.applySyncedServers([setup], removing: [], order: [serverA])
+            XCTAssertTrue(applied)
+            XCTAssertEqual(device.authManager.pendingReauthentication?.absoluteString, serverA)
+            XCTAssertTrue(device.authManager.reauthenticationOffersSSO)
+            XCTAssertNil(device.authManager.lastErrorMessage, "SSO recovery must not ask for a password.")
+            XCTAssertEqual(device.authManager.reauthenticationOffersPassword, passwordAvailable)
+            XCTAssertTrue(client.loginPasswords.isEmpty)
+        }
+    }
+
     func testRestoreOnSecondDeviceSignsInWithSyncedPassword() async throws {
         let store = InMemoryConfigurationSyncStore()
         let deviceA = try await makeDevice(store: store)

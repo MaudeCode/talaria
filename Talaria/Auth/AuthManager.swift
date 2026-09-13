@@ -295,14 +295,18 @@ final class AuthManager {
         return try await client.authStatus()
     }
 
+    /// Returns discovered capabilities even when sign-in needs user input,
+    /// so a restored setup can offer the server's actual sign-in methods.
+    @discardableResult
     func configure(
         serverURLString: String,
         password: String,
         customHeaders: [CustomHeader]? = nil,
         canCommit: @escaping @MainActor () -> Bool = { true }
-    ) async {
+    ) async -> AuthStatusResponse? {
         lastErrorMessage = nil
         let previousServerID = state.server?.absoluteString
+        var discoveredStatus: AuthStatusResponse?
 
         if let customHeaders {
             headerStore.replace(with: customHeaders.sanitizedForStorage())
@@ -312,11 +316,12 @@ final class AuthManager {
             let serverURL = try Self.normalizedServerURL(from: serverURLString)
             let client = clientFactory(serverURL)
             let authStatus = try await testConnection(client: client)
-            guard canCommit() else { return }
+            guard canCommit() else { return nil }
+            discoveredStatus = authStatus
 
             if let message = Self.unsupportedSignInMessage(for: authStatus) {
                 lastErrorMessage = message
-                return
+                return authStatus
             }
 
             // `logged_in` means the server already authenticated this client —
@@ -326,14 +331,14 @@ final class AuthManager {
             if authStatus.authEnabled == true, !authStatus.isAlreadySignedIn {
                 guard !password.isEmpty else {
                     lastErrorMessage = String(localized: "Enter the server password.")
-                    return
+                    return authStatus
                 }
 
                 let loginResponse = try await client.login(password: password)
-                guard canCommit() else { return }
+                guard canCommit() else { return nil }
                 guard loginResponse.ok == true else {
                     lastErrorMessage = APIError.unauthorized.localizedDescription
-                    return
+                    return authStatus
                 }
                 retainedPassword = password
             }
@@ -350,9 +355,10 @@ final class AuthManager {
                 throw error
             }
         } catch {
-            guard canCommit() else { return }
+            guard canCommit() else { return nil }
             lastErrorMessage = error.localizedDescription
         }
+        return discoveredStatus
     }
 
     func configureWithOIDC(
@@ -958,12 +964,13 @@ final class AuthManager {
 
         let id = UUID()
         recoveryID = id
+        let client = probeClientFactory(server, currentCustomHeaders, cookieStorageProvider(server))
         recoveryTask = Task { [weak self] in
-            guard let self else { return }
+            guard let self, recoveryID == id, state == .loggedIn(server: server) else { return }
             defer { if recoveryID == id { recoveryTask = nil } }
             let status: AuthStatusResponse?
             do {
-                status = try await clientFactory(server).authStatus()
+                status = try await client.authStatus()
                 guard status?.loggedIn == false else { return }
             } catch APIError.unauthorized {
                 status = nil
@@ -1133,7 +1140,7 @@ final class AuthManager {
         guard let account = serverRegistry.servers.first(where: { $0.id == serverID }),
               let serverURL = URL(string: account.urlString) else { return false }
         let wasUnconfigured = state == .unconfigured
-        await configure(
+        let authStatus = await configure(
             serverURLString: account.urlString,
             password: serverPassword(for: serverID) ?? "",
             customHeaders: customHeaders(for: account),
@@ -1149,7 +1156,11 @@ final class AuthManager {
             hydrateCustomHeaders(for: serverURL)
             refreshServers()
             state = .loggedIn(server: serverURL)
-            requireReauthentication(for: serverURL, status: nil)
+            if authStatus?.oidcNativeHandoffEnabled == true,
+               serverPassword(for: serverID)?.isEmpty != false {
+                lastErrorMessage = nil
+            }
+            requireReauthentication(for: serverURL, status: authStatus)
         }
         return false
     }

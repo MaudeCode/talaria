@@ -122,6 +122,7 @@ final class AuthManagerStateTests: XCTestCase {
         let original = try XCTUnwrap(manager.servers.first { $0.id == server.absoluteString })
         let second = try XCTUnwrap(manager.servers.first { $0.id != server.absoluteString })
         manager.switchActiveServer(to: original)
+        let probeCount = client.authStatusCallCount
         manager.handleAPIError(APIError.unauthorized, server: server)
         let recovery = manager.recoveryTask
         manager.switchActiveServer(to: second)
@@ -130,6 +131,7 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertNil(manager.pendingReauthentication)
         XCTAssertNil(manager.recoveryTask)
         XCTAssertEqual(manager.activeServerID, second.id)
+        XCTAssertEqual(client.authStatusCallCount, probeCount)
     }
 
     func testSignOutAndAddingAnotherServerDismissRecovery() async throws {
@@ -148,6 +150,34 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.activeServerID, "https://second.test")
         await manager.signOut()
         XCTAssertEqual(manager.state, .unconfigured)
+    }
+
+    func testRecoveryProbeCapturesOriginalHeadersAndCookieJar() async throws {
+        let server = URL(string: "https://probe.test")!
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(server.absoluteString, forKey: .serverURL)
+        let headers = [CustomHeader(name: "X-Fixture", value: "original")]
+        try keychain.save(try XCTUnwrap(headers.encodedForStorage()), forKey: .customHeaders, scope: server.absoluteString)
+        let client = MockAuthAPIClient(authStatus: AuthStatusResponse(loggedIn: false))
+        var capturedHeaders: [CustomHeader] = []
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in XCTFail("Recovery must use the explicit-header probe"); return client },
+            probeClientFactory: { url, snapshot, cookies in
+                XCTAssertEqual(url, server)
+                XCTAssertTrue(cookies === self.cookieStorage)
+                capturedHeaders = snapshot
+                return client
+            },
+            headerStore: CustomHeaderStore(), cookieStorage: cookieStorage,
+            profileEntityCache: profileEntityCache, serverRegistry: ServerRegistry.inMemory()
+        )
+        manager.handleAPIError(APIError.unauthorized)
+        manager.updateCustomHeaders([CustomHeader(name: "X-Fixture", value: "changed")], persist: false)
+        await manager.recoveryTask?.value
+        XCTAssertEqual(capturedHeaders, headers)
+        XCTAssertEqual(client.authStatusCallCount, 1)
+        XCTAssertEqual(manager.pendingReauthentication, server)
     }
 
     func testNonUnauthorizedErrorDoesNotChangeState() async throws {
@@ -746,6 +776,7 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
             cookieStorage: cookieStorage,
             profileEntityCache: profileEntityCache,
             logoutTimeout: logoutTimeout,

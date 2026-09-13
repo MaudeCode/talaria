@@ -930,6 +930,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         var cancel = true
         let manager = AuthManager(
             keychain: keychain, clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
             webAuthenticator: { _, scheme in
                 if cancel { throw OIDCSignInError.cancelled }
                 return URL(string: "\(scheme)://oidc-callback?code=exchange-code&state=\(client.state!)&flow_id=flow-1&server_id=server-1")!
@@ -1579,6 +1580,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let manager = AuthManager(
             keychain: keychain,
             clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(loggedIn: false)) },
+            probeClientFactory: { _, _, _ in MockAuthAPIClient(authStatus: AuthStatusResponse(loggedIn: false)) },
             cookieStore: store,
             serverRegistry: registry
         )
