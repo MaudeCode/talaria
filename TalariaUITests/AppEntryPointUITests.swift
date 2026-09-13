@@ -380,10 +380,14 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
 final class ReauthenticationUITests: AppEntryPointUITestCase {
     func testSessionLossSignsInOverExistingSessionList() {
         launchFixtureOnSessionList(additionalArguments: ["--ui-test-reauthentication"])
-        let row = app.staticTexts["UI Fixture Session"].firstMatch
+        let row = app.buttons.containing(.staticText, identifier: "UI Fixture Session").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        top.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        // Returning to the list triggers its normal refresh without leaving a
+        // pull-to-refresh animation running behind the authentication sheet.
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let back = app.buttons["BackButton"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
         let password = app.secureTextFields["ReauthenticatePassword"]
         XCTAssertTrue(password.waitForExistence(timeout: 15))
         XCTAssertFalse(app.textFields["Server URL"].exists)
@@ -398,7 +402,8 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         XCTAssertTrue(password.waitForNonExistence(timeout: 15))
         XCTAssertTrue(app.navigationBars["Chats"].exists)
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.tap()
+        XCTAssertTrue(row.isEnabled)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 10))
     }
 }
