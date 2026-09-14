@@ -46,6 +46,11 @@ struct ComposerTextView: UIViewRepresentable {
         return textView
     }
 
+    static func dismantleUIView(_ textView: PastingTextView, coordinator: Coordinator) {
+        // A replaced question's field must not clear the new field's focus.
+        textView.delegate = nil
+    }
+
     func updateUIView(_ textView: PastingTextView, context: Context) {
         context.coordinator.onHeightChange = onHeightChange
         context.coordinator.applyBoundText(text, revision: revision, to: textView)
@@ -118,8 +123,10 @@ struct ComposerTextView: UIViewRepresentable {
 
         func syncFocus(for textView: UITextView, shouldFocus: Bool, isDisabled: Bool) {
             if isDisabled, isFocused {
-                Task { @MainActor [weak self] in
-                    self?.isFocused = false
+                Task { @MainActor [weak self, weak textView] in
+                    guard let self, let textView, textView.delegate === self,
+                          !textView.isEditable else { return }
+                    self.isFocused = false
                 }
             }
 
@@ -139,12 +146,14 @@ struct ComposerTextView: UIViewRepresentable {
                     try? await Task.sleep(nanoseconds: 60_000_000)
                 }
 
+                guard textView.delegate === self, self.pendingFocusTarget == target else { return }
                 self.pendingFocusTarget = nil
 
                 if target {
                     guard self.isFocused, textView.isEditable, textView.window != nil else { return }
                     textView.becomeFirstResponder()
-                } else if textView.isFirstResponder {
+                } else if !self.isFocused, textView.isFirstResponder {
+                    // A tap may have focused the field since this work was queued.
                     textView.resignFirstResponder()
                 }
             }

@@ -45,6 +45,7 @@ struct ClarificationPendingResponse: Decodable, Equatable {
         return candidate["question"] != nil
             || candidate["choices_offered"] != nil
             || candidate["choicesOffered"] != nil
+            || candidate["questions"] != nil
     }
 }
 
@@ -65,6 +66,7 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
     let requestedAt: Double?
     let timeoutSeconds: Int?
     let expiresAt: Double?
+    let questions: [ClarificationQuestion]?
 
     var displayChoices: [String] {
         choicesOffered?.compactMap { choice in
@@ -87,6 +89,7 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
             && requestedAt == nil
             && timeoutSeconds == nil
             && expiresAt == nil
+            && (questions?.isEmpty ?? true)
     }
 
     init(
@@ -97,7 +100,8 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
         kind: String? = nil,
         requestedAt: Double? = nil,
         timeoutSeconds: Int? = nil,
-        expiresAt: Double? = nil
+        expiresAt: Double? = nil,
+        questions: [ClarificationQuestion]? = nil
     ) {
         self.clarifyId = clarifyId
         self.question = question
@@ -107,6 +111,7 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
         self.requestedAt = requestedAt
         self.timeoutSeconds = timeoutSeconds
         self.expiresAt = expiresAt
+        self.questions = questions
     }
 
     enum CodingKeys: String, CodingKey {
@@ -124,6 +129,7 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
         case timeoutSecondsSnake = "timeout_seconds"
         case expiresAt
         case expiresAtSnake = "expires_at"
+        case questions
     }
 
     init(from decoder: Decoder) throws {
@@ -141,6 +147,7 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
             ?? container.decodeLossyIntIfPresent(forKey: .timeoutSecondsSnake)
         expiresAt = container.decodeLossyDoubleIfPresent(forKey: .expiresAt)
             ?? container.decodeLossyDoubleIfPresent(forKey: .expiresAtSnake)
+        questions = try? container.decodeIfPresent([ClarificationQuestion].self, forKey: .questions)
     }
 
     private static func decodeStringArray(
@@ -162,6 +169,31 @@ struct PendingClarification: Decodable, Equatable, Identifiable {
         }
 
         return nil
+    }
+}
+
+/// WebUI HWEB-59 batch wire shape. `qid`, not the model's optional `id`, keys answers.
+struct ClarificationQuestion: Decodable, Equatable {
+    let qid: String?
+    let question: String?
+    let choices: [String]?
+    let multiSelect: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case qid, question, choices, choicesOffered, multiSelect
+        case choicesOfferedSnake = "choices_offered"
+        case multiSelectSnake = "multi_select"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        qid = container.decodeLossyStringIfPresent(forKey: .qid)
+        question = container.decodeLossyStringIfPresent(forKey: .question)
+        choices = (try? container.decodeIfPresent([String].self, forKey: .choices))
+            ?? (try? container.decodeIfPresent([String].self, forKey: .choicesOffered))
+            ?? (try? container.decodeIfPresent([String].self, forKey: .choicesOfferedSnake))
+        multiSelect = container.decodeLossyBoolIfPresent(forKey: .multiSelect)
+            ?? container.decodeLossyBoolIfPresent(forKey: .multiSelectSnake) ?? false
     }
 }
 

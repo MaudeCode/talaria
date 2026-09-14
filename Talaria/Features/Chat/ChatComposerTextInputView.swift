@@ -18,6 +18,8 @@ struct ComposerTextInputView: View {
     let onPasteImageProviders: ([NSItemProvider]) -> Void
     let onPasteImages: ([UIImage]) -> Void
 
+    var placeholder: LocalizedStringKey = "Ask anything... /commands"
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             ComposerTextView(
@@ -38,7 +40,7 @@ struct ComposerTextInputView: View {
             .padding(.horizontal, 16)
 
             if text.isEmpty {
-                Text("Ask anything... /commands")
+                Text(placeholder)
                     .foregroundStyle(Color(.placeholderText))
                     .padding(.horizontal, 16)
                     .padding(.vertical, verticalPadding)

@@ -202,6 +202,25 @@ final class ChatViewModel {
     var approvalErrorMessage: String? { pendingActionCoordinator.approvalErrorMessage }
     var isSessionApprovalBypassEnabled: Bool { pendingActionCoordinator.isSessionApprovalBypassEnabled }
     var clarificationPrompt: ClarificationPromptState? { pendingActionCoordinator.clarificationPrompt }
+    var clarificationDraftResponse: String { pendingActionCoordinator.clarificationDraftResponse }
+    var clarificationSelectedChoices: [String] { pendingActionCoordinator.clarificationSelectedChoices }
+
+    func selectClarificationQuestion(_ index: Int, promptID: String) {
+        pendingActionCoordinator.selectClarificationQuestion(index, promptID: promptID)
+    }
+
+    func toggleClarificationChoice(_ choice: String, promptID: String) {
+        pendingActionCoordinator.toggleClarificationChoice(choice, promptID: promptID)
+    }
+
+    func setClarificationDraftResponse(_ text: String, promptID: String) {
+        pendingActionCoordinator.setClarificationDraftResponse(text, promptID: promptID)
+    }
+
+    func submitClarificationDraft(promptID: String) async -> Bool {
+        await pendingActionCoordinator.submitClarificationDraft(promptID: promptID)
+    }
+
     var isRespondingToClarification: Bool { pendingActionCoordinator.isRespondingToClarification }
     var clarificationErrorMessage: String? { pendingActionCoordinator.clarificationErrorMessage }
     private(set) var currentGoal: SubmittedGoal?
@@ -5670,6 +5689,11 @@ final class ChatViewModel {
 extension ChatViewModel: ChatPendingActionCoordinatorDelegate {
     var pendingActionSessionID: String? { sessionID }
     var pendingActionHasActiveStream: Bool { activeStreamID != nil }
+    var pendingActionHasRunningClarificationTool: Bool {
+        liveToolCalls.contains {
+            !$0.isCompleted && ($0.name?.lowercased() == "clarify" || $0.args?["questions"] != nil)
+        }
+    }
     var pendingActionIsStreamConnectionSuspended: Bool { isStreamConnectionSuspended }
 
     func pendingActionCoordinatorWillSubmitAction() {

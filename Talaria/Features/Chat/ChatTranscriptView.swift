@@ -26,8 +26,6 @@ struct ChatTranscriptView: View {
     let liveTokensPerSecond: Double?
     let activeStreamRecoveryState: ActiveStreamRecoveryState
     let clarificationPrompt: ClarificationPromptState?
-    let isRespondingToClarification: Bool
-    let clarificationErrorMessage: String?
     let hidesRunStatusAccessibility: Bool
     let showsThinkingAndToolCards: Bool
     let showsAssistantTypingIndicator: Bool
@@ -73,7 +71,6 @@ struct ChatTranscriptView: View {
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
     let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
     let onToggleListening: (MessageActionContext) -> Void
-    let onSubmitClarification: (String) -> Void
     let onSelectText: (MessageActionContext) -> Void
     let onRegenerate: (MessageActionContext) -> Void
     let onEdit: (MessageActionContext) -> Void
@@ -317,7 +314,6 @@ struct ChatTranscriptView: View {
 
             transcriptLooseBlocks
             liveResponseBlocks
-            inlineClarificationCard
             typingIndicator
             turnChangesCard
             inlineCommitButton
@@ -428,21 +424,6 @@ struct ChatTranscriptView: View {
                     .accessibilityHidden(hidesRunStatusAccessibility)
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
-        }
-    }
-
-    @ViewBuilder
-    private var inlineClarificationCard: some View {
-        if let clarificationPrompt {
-            ClarificationRequestCard(
-                prompt: clarificationPrompt,
-                isResponding: isRespondingToClarification,
-                errorMessage: clarificationErrorMessage,
-                onSubmit: onSubmitClarification
-            )
-            .id(clarificationPrompt.id)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
     }
 

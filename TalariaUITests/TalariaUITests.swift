@@ -95,6 +95,92 @@ final class ChatMessageInteractionUITests: ChatUITestCase {
 }
 
 final class ChatPrimaryStreamUITests: ChatUITestCase {
+    func testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers() throws {
+        launchChatFixture(argument: "--ui-test-chat-batch-clarification", trace: "batch prompt -> typed answer -> next -> selected answers -> agent result")
+        _ = try openFixtureSession()
+        XCTAssertTrue(app.staticTexts["What sounds best for a quiet evening?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["A movie"].exists)
+        XCTAssertTrue(app.buttons["A book"].exists)
+        XCTAssertTrue(app.staticTexts["Question 1 of 2"].exists)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        let resize = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Resize question area")).firstMatch
+        XCTAssertTrue(resize.exists)
+        let originalTop = resize.frame.minY
+        let grip = resize.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        grip.press(forDuration: 0.1, thenDragTo: grip.withOffset(CGVector(dx: 0, dy: -70)))
+        XCTAssertLessThan(resize.frame.minY, originalTop - 30)
+        let input = app.textViews.firstMatch
+        input.tap()
+        input.typeText("A movie")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertLessThanOrEqual(app.buttons["Next"].frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
+        app.buttons["Next"].tap()
+        XCTAssertTrue(app.staticTexts["Which drinks?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Question 2 of 2"].exists)
+        XCTAssertEqual(app.textViews.firstMatch.value as? String, "")
+        tapCenter(of: app.buttons["Tea"])
+        tapCenter(of: app.buttons["Water"])
+        tapCenter(of: app.buttons["Previous question"])
+        XCTAssertEqual(app.textViews.firstMatch.value as? String, "A movie")
+        tapCenter(of: app.buttons["Next question"])
+        XCTAssertTrue(app.buttons["Submit clarification"].isEnabled)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Batch questions inside the composer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["Submit clarification"].tap()
+        XCTAssertTrue(app.staticTexts["Agent received: A movie | Tea, Water"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
+    }
+
+    func testClarificationRestoresOrdinaryDraftAfterAnswerAndNavigation() throws {
+        launchChatFixture(argument: "--ui-test-chat-clarification", trace: "saved draft -> clarification -> answer -> restore -> navigate")
+        _ = try openFixtureSession()
+        XCTAssertTrue(app.staticTexts["Clarification Required"].waitForExistence(timeout: 5))
+        let input = app.textViews.firstMatch
+        XCTAssertEqual(input.value as? String, "")
+        input.tap()
+        input.typeText("Temporary fixture answer")
+        app.buttons["Submit clarification"].tap()
+        XCTAssertTrue(app.staticTexts["Clarification Required"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Agent received: Temporary fixture answer"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
+        tapCenter(of: app.buttons["BackButton"])
+        XCTAssertTrue(fixtureSessionButton.waitForExistence(timeout: 5))
+        tapCenter(of: fixtureSessionButton)
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
+    }
+
+    func testClarificationUsesOnlyTheComposerAndSendsSlashTextAsAnAnswer() throws {
+        launchChatFixture(argument: "--ui-test-chat-full", trace: "clarification -> composer answer -> done")
+        try sendFixtureMessage("Run the deterministic fixture")
+        XCTAssertTrue(app.buttons["Allow once"].waitForExistence(timeout: 5))
+        app.buttons["Allow once"].tap()
+        XCTAssertTrue(app.staticTexts["Clarification Required"].waitForExistence(timeout: 5))
+        let question = app.staticTexts["Which deterministic path should continue?"]
+        XCTAssertTrue(question.exists)
+        XCTAssertEqual(app.textViews.count, 1)
+        XCTAssertFalse(app.textFields["Type a response"].exists)
+        XCTAssertFalse(app.buttons["Stop response"].exists)
+        XCTAssertFalse(app.buttons["Composer options"].exists)
+        let send = app.buttons["Submit clarification"]
+        XCTAssertFalse(send.isEnabled)
+        let input = app.textViews.firstMatch
+        input.tap()
+        input.typeText("/interrupt is my answer")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Clarification in the chat composer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(app.navigationBars["Deterministic Stream Complete"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Clarification Required"].exists)
+        XCTAssertFalse(app.staticTexts["/interrupt is my answer"].exists)
+    }
+
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
         launchChatFixture(
             argument: "--ui-test-chat-full",

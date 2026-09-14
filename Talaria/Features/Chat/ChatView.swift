@@ -133,6 +133,8 @@ struct ChatView: View {
     @State private var gitToastState = GitActionToastState()
     @State private var gitAlert: GitChatAlert?
     @State private var composerHeight: CGFloat = 52
+    @State private var clarificationPanelHeight: CGFloat = 320
+    @State private var composerAvailableHeight: CGFloat = 0
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
     @State private var didHydrateDraft = false
@@ -203,21 +205,37 @@ struct ChatView: View {
     // call alongside the rest of the screen in one expression (#316 pushed it over the
     // "unable to type-check in reasonable time" limit).
     private var messageComposer: some View {
+        let prompt = viewModel.clarificationPrompt
+        return messageComposerInput(prompt: prompt)
+            // Replacing the input also cancels dictation and picker presentation.
+            .id(prompt?.id ?? "message")
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+        .environment(\.layoutDirection, chatLayoutDirection)
+        .background(
+            NavigationAppearanceCompletionObserver(action: handleInitialAppearanceCompletion)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        )
+    }
+
+    private func messageComposerInput(prompt: ClarificationPromptState?) -> some View {
         MessageComposerView(
-            draftMessage: persistedDraftBinding,
+            draftMessage: composerDraftBinding(promptID: prompt?.id),
             draftWriteRevision: draftWriteRevision,
+            clarificationPanelHeight: $clarificationPanelHeight,
+            availableHeight: composerAvailableHeight,
             isFocused: $composerIsFocused,
-            isSending: viewModel.isStartingChat || viewModel.isSendingVoiceNote,
-            isCompressingSession: viewModel.isCompressingSession,
-            isWaitingForStream: viewModel.activeStreamID != nil,
-            isCancellingStream: viewModel.isCancellingStream,
+            isSending: prompt != nil ? viewModel.isRespondingToClarification : viewModel.isStartingChat || viewModel.isSendingVoiceNote,
+            isCompressingSession: prompt == nil && viewModel.isCompressingSession,
+            isWaitingForStream: prompt == nil && viewModel.activeStreamID != nil,
+            isCancellingStream: prompt == nil && viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isSessionReadOnly: session.isSessionReadOnly,
             isChromeCompact: isComposerChromeCompact,
             hidesSecondaryChrome: false,
-            joinsSecondaryChrome: !usesCompactComposer && composerSecondaryControlsState.hasControls,
-            errorMessage: viewModel.sendErrorMessage,
-            configurationErrorMessage: viewModel.composerConfigurationErrorMessage,
+            joinsSecondaryChrome: prompt == nil && !usesCompactComposer && composerSecondaryControlsState.hasControls,
+            errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
+            configurationErrorMessage: prompt == nil ? viewModel.composerConfigurationErrorMessage : nil,
             contextWindowSnapshot: viewModel.contextWindowSnapshot,
             gitViewModel: gitAvailabilityViewModel,
             modelGroups: viewModel.modelCatalogGroups,
@@ -244,16 +262,23 @@ struct ChatView: View {
             // An in-flight draft restore counts as an upload in progress: until
             // it finishes, the composer does not yet hold the attachments the
             // user expects this message to carry.
-            isUploadingAttachment: viewModel.isUploadingAttachment || isRestoringDraftAttachments,
+            isUploadingAttachment: prompt == nil && (viewModel.isUploadingAttachment || isRestoringDraftAttachments),
             attachmentUploadCount: viewModel.attachmentUploadCount,
             attachmentUploadGeneration: viewModel.attachmentUploadGeneration,
             isSendingVoiceNote: viewModel.isSendingVoiceNote,
-            autoStartsVoiceInput: autoStartsVoiceInput,
+            autoStartsVoiceInput: prompt == nil && autoStartsVoiceInput,
             voiceInputRequestID: 0,
             apiClient: viewModel.client,
-            uploadAttachmentErrorMessage: viewModel.uploadAttachmentErrorMessage,
+            uploadAttachmentErrorMessage: prompt == nil ? viewModel.uploadAttachmentErrorMessage : nil,
             onSend: {
-                Task { await sendDraftMessage() }
+                Task {
+                    guard prompt?.id == viewModel.clarificationPrompt?.id else { return }
+                    if let prompt {
+                        await submitClarification(promptID: prompt.id)
+                    } else {
+                        await sendDraftMessage()
+                    }
+                }
             },
             onSendVoiceNote: { data, filename in
                 Task { await sendVoiceNote(audioData: data, filename: filename) }
@@ -263,6 +288,7 @@ struct ChatView: View {
             },
             onSelectModel: { option in
                 Task {
+                    guard viewModel.clarificationPrompt == nil else { return }
                     let didSelect = await viewModel.selectComposerModel(option)
                     if didSelect {
                         ChatHaptics.configurationSelected(isEnabled: isHapticsEnabled)
@@ -285,6 +311,7 @@ struct ChatView: View {
                 await viewModel.loadSkillSlashSuggestions()
             },
             onSelectWorkspace: { path in
+                guard viewModel.clarificationPrompt == nil else { return }
                 let didSelect = await viewModel.selectWorkspacePath(path)
                 if didSelect {
                     ChatHaptics.configurationSelected(isEnabled: isHapticsEnabled)
@@ -295,15 +322,14 @@ struct ChatView: View {
             },
             onSelectReasoningEffort: { effort in
                 Task {
+                    guard viewModel.clarificationPrompt == nil else { return }
                     let didSelect = await viewModel.selectReasoningEffort(effort)
                     if didSelect {
                         ChatHaptics.configurationSelected(isEnabled: isHapticsEnabled)
                     }
                 }
             },
-            onHeightChange: { height in
-                composerHeight = height
-            },
+            onHeightChange: { _ in },
             onPhotoItemSelected: { item in
                 Task { await handlePhotoSelection(item) }
             },
@@ -351,15 +377,22 @@ struct ChatView: View {
             onVoiceInputRequestHandled: {},
             onExpandedPresentationRequirementChange: { isRequired in
                 composerRequiresExpandedPresentation = isRequired
+            },
+            clarificationPrompt: prompt,
+            clarificationErrorMessage: viewModel.clarificationErrorMessage,
+            clarificationSelectedChoices: viewModel.clarificationSelectedChoices,
+            onToggleClarificationChoice: { choice in
+                guard let prompt else { return }
+                viewModel.toggleClarificationChoice(choice, promptID: prompt.id)
+            },
+            onSelectClarificationQuestion: { index in
+                guard let prompt else { return }
+                viewModel.selectClarificationQuestion(index, promptID: prompt.id)
+            },
+            onSubmitClarification: { response in
+                guard let prompt else { return }
+                Task { await submitClarification(response, promptID: prompt.id) }
             }
-        )
-        // The composer flips wholesale with the transcript under the RTL
-        // toggle (#259): input, placeholder, and chrome mirror together.
-        .environment(\.layoutDirection, chatLayoutDirection)
-        .background(
-            NavigationAppearanceCompletionObserver(action: handleInitialAppearanceCompletion)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
         )
     }
 
@@ -386,52 +419,56 @@ struct ChatView: View {
     }
 
     private var chatLayout: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                if viewModel.isViewingCachedData {
-                    ChatOfflineCacheBanner()
-                }
-
-                listenPlaybackBar
-
-                messageContent
-                    // Scope RTL to the chat transcript only (#259): the offline
-                    // banner above stays in the app's default direction.
-                    .environment(\.layoutDirection, chatLayoutDirection)
-            }
-            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
-
-            BottomComposerMaterialFade(composerHeight: composerHeight)
-
-            composerAccessoryStack
-
-            messageComposer
-
-            if let approvalPrompt = viewModel.approvalPrompt {
-                ApprovalRequestOverlay(
-                    prompt: approvalPrompt,
-                    isResponding: viewModel.isRespondingToApproval,
-                    errorMessage: viewModel.approvalErrorMessage,
-                    onChoice: { choice in
-                        Task {
-                            let didRespond = await viewModel.respondToApproval(choice)
-                            if didRespond {
-                                ChatHaptics.approvalSubmitted(choice, isEnabled: isHapticsEnabled)
-                            }
-                        }
-                    },
-                    onSkipAll: {
-                        Task {
-                            let didSkip = await viewModel.skipApprovalsForCurrentSession()
-                            if didSkip {
-                                ChatHaptics.approvalBypassEnabled(isEnabled: isHapticsEnabled)
-                            }
-                        }
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    if viewModel.isViewingCachedData {
+                        ChatOfflineCacheBanner()
                     }
-                )
-                .zIndex(10)
+
+                    listenPlaybackBar
+
+                    messageContent
+                        // Scope RTL to the chat transcript only (#259): the offline
+                        // banner above stays in the app's default direction.
+                        .environment(\.layoutDirection, chatLayoutDirection)
+                }
+                .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
+
+                BottomComposerMaterialFade(composerHeight: composerHeight)
+
+                composerAccessoryStack
+
+                messageComposer
+
+                if let approvalPrompt = viewModel.approvalPrompt {
+                    ApprovalRequestOverlay(
+                        prompt: approvalPrompt,
+                        isResponding: viewModel.isRespondingToApproval,
+                        errorMessage: viewModel.approvalErrorMessage,
+                        onChoice: { choice in
+                            Task {
+                                let didRespond = await viewModel.respondToApproval(choice)
+                                if didRespond {
+                                    ChatHaptics.approvalSubmitted(choice, isEnabled: isHapticsEnabled)
+                                }
+                            }
+                        },
+                        onSkipAll: {
+                            Task {
+                                let didSkip = await viewModel.skipApprovalsForCurrentSession()
+                                if didSkip {
+                                    ChatHaptics.approvalBypassEnabled(isEnabled: isHapticsEnabled)
+                                }
+                            }
+                        }
+                    )
+                    .zIndex(10)
+                }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerAvailableHeight = $0 }
         .overlay(alignment: .top) {
             GitActionToastOverlay(state: gitToastState)
         }
@@ -442,6 +479,11 @@ struct ChatView: View {
 
     private var chatWithLifecycle: some View {
         chatLayout
+        .onChange(of: viewModel.clarificationPrompt?.requestID, initial: true) { _, requestID in
+            guard requestID != nil else { return }
+            clarificationPanelHeight = 320
+            dismissKeyboard()
+        }
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
@@ -990,8 +1032,6 @@ struct ChatView: View {
             liveTokensPerSecond: viewModel.liveTokensPerSecond,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             clarificationPrompt: viewModel.clarificationPrompt,
-            isRespondingToClarification: viewModel.isRespondingToClarification,
-            clarificationErrorMessage: viewModel.clarificationErrorMessage,
             hidesRunStatusAccessibility: activeRunStatusPresentation != nil,
             showsThinkingAndToolCards: showsThinkingAndToolCards,
             showsAssistantTypingIndicator: showsAssistantTypingIndicator,
@@ -1060,14 +1100,6 @@ struct ChatView: View {
             },
             onToggleListening: { context in
                 viewModel.toggleListening(to: context)
-            },
-            onSubmitClarification: { response in
-                Task {
-                    let didRespond = await viewModel.respondToClarification(response)
-                    if didRespond {
-                        ChatHaptics.clarificationSubmitted(isEnabled: isHapticsEnabled)
-                    }
-                }
             },
             onSelectText: { context in
                 selectableResponseText = SelectableTextPresentation(context: context)
@@ -1171,7 +1203,7 @@ struct ChatView: View {
             hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,
             isLoadingComposerConfiguration: viewModel.isLoadingComposerConfiguration,
             isBusyOrUnavailable: isComposerBusyOrUnavailable,
-            requiresExpandedPresentation: composerRequiresExpandedPresentation
+            requiresExpandedPresentation: composerRequiresExpandedPresentation || viewModel.clarificationPrompt != nil
         )
     }
 
@@ -1450,7 +1482,22 @@ struct ChatView: View {
         }
     }
 
+    private func submitClarification(_ response: String? = nil, promptID: String) async {
+        guard viewModel.clarificationPrompt?.id == promptID,
+              !viewModel.isViewingCachedData, !session.isSessionReadOnly else { return }
+        let didRespond: Bool
+        if let response {
+            didRespond = await viewModel.respondToClarification(response)
+        } else {
+            didRespond = await viewModel.submitClarificationDraft(promptID: promptID)
+        }
+        if didRespond {
+            ChatHaptics.clarificationSubmitted(isEnabled: isHapticsEnabled)
+        }
+    }
+
     private func sendDraftMessage() async {
+        guard viewModel.clarificationPrompt == nil else { return }
         let submittedDraft = draftMessage
         let submittedDraftRevision = draftRevision
         let shouldRestoreFocusAfterSend = composerIsFocused
@@ -1510,6 +1557,7 @@ struct ChatView: View {
     }
 
     private func sendVoiceNote(audioData: Data, filename: String) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         prepareTranscriptForExplicitSend()
 
         let didSend = await viewModel.sendVoiceNote(
@@ -1655,13 +1703,20 @@ struct ChatView: View {
         )
     }
 
-    private var persistedDraftBinding: Binding<String> {
+    private func composerDraftBinding(promptID: String?) -> Binding<String> {
         Binding(
-            get: { draftMessage },
+            get: { promptID == nil ? draftMessage : viewModel.clarificationDraftResponse },
             set: { newValue in
-                draftMessage = newValue
-                draftRevision &+= 1
-                draftStore.setDraft(newValue, for: draftKey)
+                // UIKit and voice callbacks can outlive the input they belong to.
+                guard promptID == viewModel.clarificationPrompt?.id else { return }
+                if let promptID {
+                    viewModel.setClarificationDraftResponse(newValue, promptID: promptID)
+                    draftWriteRevision &+= 1
+                } else {
+                    draftMessage = newValue
+                    draftRevision &+= 1
+                    draftStore.setDraft(newValue, for: draftKey)
+                }
             }
         )
     }
@@ -1855,6 +1910,7 @@ struct ChatView: View {
     }
 
     private func cancelStream() async {
+        guard viewModel.clarificationPrompt == nil else { return }
         let didCancel = await viewModel.cancelActiveStream()
         if didCancel {
             ChatHaptics.streamCancelled(isEnabled: isHapticsEnabled)
@@ -1878,6 +1934,7 @@ struct ChatView: View {
     }
 
     private func handleProfileSelection(_ profile: ProfileSummary) {
+        guard viewModel.clarificationPrompt == nil else { return }
         viewModel.markComposerConfigurationInteraction()
         if viewModel.isSelectedProfile(profile) {
             return
@@ -1939,6 +1996,7 @@ struct ChatView: View {
     }
 
     private func handlePhotoSelection(_ item: PhotosPickerItem) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 viewModel.setUploadAttachmentError(String(localized: "Could not read the selected photo."))
@@ -1952,6 +2010,7 @@ struct ChatView: View {
     }
 
     private func handleSelectedFileURLs(_ urls: [URL]) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         let fileURLs = urls.filter(\.isFileURL)
 
         guard !fileURLs.isEmpty else {
@@ -1976,6 +2035,7 @@ struct ChatView: View {
     }
 
     private func handlePastedFileProviders(_ providers: [NSItemProvider]) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         let fileProviders = providers.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
         }
@@ -1996,6 +2056,7 @@ struct ChatView: View {
     }
 
     private func handlePastedImageProviders(_ providers: [NSItemProvider]) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         let imageProviders = providers.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
         }
@@ -2016,6 +2077,7 @@ struct ChatView: View {
     }
 
     private func handlePastedImages(_ images: [UIImage]) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         guard !images.isEmpty else {
             viewModel.setUploadAttachmentError(String(localized: "Paste a copied image to attach it."))
             return
@@ -2057,6 +2119,7 @@ struct ChatView: View {
     }
 
     private func handlePastedFileURLs(_ urls: [URL]) async {
+        guard viewModel.clarificationPrompt == nil else { return }
         let fileURLs = urls.filter(\.isFileURL)
 
         guard !fileURLs.isEmpty else {
@@ -2429,7 +2492,7 @@ struct ChatView: View {
         guard !didApplyInitialComposerFocusPolicy else { return }
         guard didCompleteInitialAppearance, isInitialComposerFocusContentReady else { return }
 
-        if !viewModel.messages.isEmpty {
+        if viewModel.clarificationPrompt != nil || !viewModel.messages.isEmpty {
             didApplyInitialComposerFocusPolicy = true
             return
         }
@@ -2455,10 +2518,11 @@ struct ChatView: View {
 
     private func requestComposerFocusIfPossible() {
         guard canFocusComposer else { return }
+        let promptID = viewModel.clarificationPrompt?.id
 
         Task { @MainActor in
             await Task.yield()
-            guard canFocusComposer else { return }
+            guard canFocusComposer, viewModel.clarificationPrompt?.id == promptID else { return }
             composerIsFocused = true
         }
     }

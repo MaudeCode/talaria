@@ -453,8 +453,15 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         // pull-to-refresh animation running behind the authentication sheet.
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let back = app.buttons["BackButton"]
-        XCTAssertTrue(back.waitForExistence(timeout: 10))
-        back.tap()
+        let recovery = app.staticTexts["Your session expired. Sign in again."]
+        // A foreground refresh can expire the session before navigation finishes,
+        // for example when a native permission alert interrupts the row tap.
+        let reachedChatOrRecovery = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in back.exists || recovery.exists },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [reachedChatOrRecovery], timeout: 10), .completed)
+        if !recovery.exists { back.tap() }
         return row
     }
 }
