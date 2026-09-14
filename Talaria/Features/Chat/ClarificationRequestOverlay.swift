@@ -25,6 +25,7 @@ struct ClarificationRequestContent: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isResponding || prompt.questionIndex == 0)
@@ -58,6 +59,7 @@ struct ClarificationRequestContent: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isResponding || prompt.isLastQuestion)
@@ -171,6 +173,7 @@ struct ClarificationRequestContent: View {
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .foregroundStyle(.primary)
                 .choiceButtonSurface(reduceTransparency: reduceTransparency)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.chatTactile(.capsule))
         .disabled(isResponding)
