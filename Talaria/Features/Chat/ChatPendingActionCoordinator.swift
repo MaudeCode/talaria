@@ -31,6 +31,7 @@ struct PendingPromptExpiredError: LocalizedError, Equatable {
 protocol ChatPendingActionCoordinatorDelegate: AnyObject {
     var pendingActionSessionID: String? { get }
     var pendingActionHasActiveStream: Bool { get }
+    var pendingActionHasRunningClarificationTool: Bool { get }
     var pendingActionIsStreamConnectionSuspended: Bool { get }
 
     func pendingActionCoordinatorWillSubmitAction()
@@ -47,13 +48,59 @@ final class ChatPendingActionCoordinator {
 
     private(set) var clarificationPrompt: ClarificationPromptState? {
         didSet {
+            if oldValue?.requestID != clarificationPrompt?.requestID {
+                clarificationUpdateRevision &+= 1
+                clarificationAnswers = [:]
+                clarificationQuestionDrafts = [:]
+            }
             if oldValue?.id != clarificationPrompt?.id {
-                clarificationDraftResponse = ""
+                let saved = clarificationQuestionDrafts[clarificationPrompt?.questionID ?? ""]
+                clarificationDraftResponse = saved?.text ?? ""
+                clarificationSelectedChoices = saved?.choices ?? []
                 clarificationErrorMessage = nil
             }
         }
     }
     private(set) var clarificationDraftResponse = ""
+    private(set) var clarificationSelectedChoices: [String] = []
+    private var clarificationAnswers: [String: JSONValue] = [:]
+    private var clarificationQuestionDrafts: [String: (text: String, choices: [String])] = [:]
+
+    func selectClarificationQuestion(_ index: Int, promptID: String) {
+        guard let prompt = clarificationPrompt, prompt.id == promptID,
+              prompt.sessionID == delegate?.pendingActionSessionID,
+              !isRespondingToClarification,
+              (0..<prompt.questionCount).contains(index), index != prompt.questionIndex else { return }
+        saveClarificationDraft(for: prompt)
+        var next = prompt
+        next.questionIndex = index
+        clarificationPendingBySession[prompt.sessionID] = next
+        clarificationPrompt = next
+    }
+
+    private func saveClarificationDraft(for prompt: ClarificationPromptState) {
+        guard let questionID = prompt.questionID else { return }
+        clarificationQuestionDrafts[questionID] = (clarificationDraftResponse, clarificationSelectedChoices)
+        let text = clarificationDraftResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        if prompt.isMultiSelect {
+            let values = clarificationSelectedChoices + (text.isEmpty ? [] : [text])
+            clarificationAnswers[questionID] = values.isEmpty ? nil : .array(values.map(JSONValue.string))
+        } else {
+            clarificationAnswers[questionID] = text.isEmpty ? nil : .string(text)
+        }
+    }
+
+    func toggleClarificationChoice(_ choice: String, promptID: String) {
+        guard let prompt = clarificationPrompt, prompt.id == promptID,
+              prompt.isMultiSelect, prompt.choices.contains(choice),
+              prompt.sessionID == delegate?.pendingActionSessionID,
+              !isRespondingToClarification else { return }
+        if clarificationSelectedChoices.contains(choice) {
+            clarificationSelectedChoices.removeAll { $0 == choice }
+        } else {
+            clarificationSelectedChoices.append(choice)
+        }
+    }
 
     func setClarificationDraftResponse(_ text: String, promptID: String) {
         guard clarificationPrompt?.id == promptID,
@@ -84,6 +131,8 @@ final class ChatPendingActionCoordinator {
     private var clarificationPendingBySession: [String: ClarificationPromptState] = [:]
     private var clarificationMonitoringSessionID: String?
     @ObservationIgnored private var clarificationPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var clarificationUpdateRevision = 0
+    private var clarificationUsesPollingFallback = false
 
     var hasPendingPrompt: Bool {
         approvalPrompt != nil || clarificationPrompt != nil
@@ -234,10 +283,30 @@ final class ChatPendingActionCoordinator {
         else { return false }
 
         let response = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !response.isEmpty else {
+        guard !response.isEmpty || (prompt.isMultiSelect && !clarificationSelectedChoices.isEmpty) else {
             clarificationErrorMessage = String(localized: "Enter a response before submitting.")
             return false
         }
+
+        if prompt.questionID != nil {
+            clarificationDraftResponse = responseText
+            saveClarificationDraft(for: prompt)
+            if !prompt.isLastQuestion {
+                selectClarificationQuestion(prompt.questionIndex + 1, promptID: prompt.id)
+                return true
+            }
+            // Manual paging must not let the final page submit missing answers.
+            for index in 0..<prompt.questionCount {
+                var question = prompt
+                question.questionIndex = index
+                if let id = question.questionID, clarificationAnswers[id] == nil {
+                    selectClarificationQuestion(index, promptID: prompt.id)
+                    clarificationErrorMessage = String(localized: "Answer each question before submitting.")
+                    return false
+                }
+            }
+        }
+        let answers = clarificationAnswers
 
         isRespondingToClarification = true
         clarificationErrorMessage = nil
@@ -245,9 +314,13 @@ final class ChatPendingActionCoordinator {
         defer { isRespondingToClarification = false }
 
         do {
+            // The endpoint still takes a string; the Agent parses batch answers
+            // from JSON inside that string. Plain text becomes an empty answer map.
+            let wireResponse = prompt.questionID == nil ? response
+                : String(decoding: try JSONEncoder().encode(["answers": answers]), as: UTF8.self)
             _ = try await client.respondClarification(
                 sessionID: prompt.sessionID,
-                response: response,
+                response: wireResponse,
                 clarifyID: prompt.pending.clarifyId
             )
             guard clarificationPrompt?.id == prompt.id,
@@ -276,12 +349,16 @@ final class ChatPendingActionCoordinator {
     }
 
     func applyClarificationUpdate(_ update: ClarificationPendingResponse, sessionID: String) {
+        clarificationUpdateRevision &+= 1
         if let pending = update.pending, !pending.isEmpty {
-            let prompt = ClarificationPromptState(
+            var prompt = ClarificationPromptState(
                 sessionID: sessionID,
                 pending: pending,
                 pendingCount: max(update.pendingCount ?? 1, 1)
             )
+            if let current = clarificationPendingBySession[sessionID], current.requestID == prompt.requestID {
+                prompt.questionIndex = min(current.questionIndex, prompt.questionCount - 1)
+            }
             clarificationPendingBySession[sessionID] = prompt
         } else {
             clarificationPendingBySession[sessionID] = nil
@@ -397,9 +474,11 @@ final class ChatPendingActionCoordinator {
 
         stopClarificationMonitoring(clearPrompt: false)
         clarificationMonitoringSessionID = sessionID
+        let initialRevision = clarificationUpdateRevision
         clarifyStreamClient.start(url: client.clarifyStreamURL(sessionID: sessionID)) { [weak self] event in
-            self?.handleClarificationMonitorEvent(event, sessionID: sessionID)
+            self?.handleClarificationMonitorEvent(event, sessionID: sessionID, initialRevision: initialRevision)
         }
+        startClarificationPolling(sessionID: sessionID)
     }
 
     private func stopClarificationMonitoring(clearPrompt: Bool) {
@@ -410,6 +489,7 @@ final class ChatPendingActionCoordinator {
             clarifyStreamClient.stop()
         }
         clarificationMonitoringSessionID = nil
+        clarificationUsesPollingFallback = false
 
         guard clearPrompt else { return }
         if let sessionID = delegate?.pendingActionSessionID {
@@ -419,12 +499,15 @@ final class ChatPendingActionCoordinator {
         clarificationErrorMessage = nil
     }
 
-    private func handleClarificationMonitorEvent(_ event: SSEEvent, sessionID: String) {
+    private func handleClarificationMonitorEvent(_ event: SSEEvent, sessionID: String, initialRevision: Int) {
         switch event {
         case .clarificationPending(let update):
             applyClarificationUpdate(update, sessionID: sessionID)
         case .approvalPending(let update):
-            if update.pending == nil {
+            // An empty initial snapshot has no clarification markers, so the
+            // shared decoder classifies it as approvalPending. It can arrive
+            // after the chat stream already delivered a newer clarification.
+            if update.pending == nil, clarificationUpdateRevision == initialRevision {
                 applyClarificationUpdate(
                     ClarificationPendingResponse(pending: nil, pendingCount: update.pendingCount),
                     sessionID: sessionID
@@ -440,22 +523,27 @@ final class ChatPendingActionCoordinator {
 
     private func startClarificationFallbackPolling(sessionID: String) {
         guard clarificationMonitoringSessionID == sessionID else { return }
-
+        clarificationUsesPollingFallback = true
         clarifyStreamClient.stop()
-        clarificationPollingTask?.cancel()
+        startClarificationPolling(sessionID: sessionID)
+    }
+
+    private func startClarificationPolling(sessionID: String) {
+        guard clarificationMonitoringSessionID == sessionID, clarificationPollingTask == nil else { return }
         let pollingInterval = pollingIntervals.clarificationNanoseconds
         clarificationPollingTask = Task { @MainActor [weak self] in
-            pollingLoop: while !Task.isCancelled {
-                do {
-                    guard let self,
-                          self.delegate?.pendingActionSessionID == sessionID,
-                          self.delegate?.pendingActionHasActiveStream == true,
-                          self.delegate?.pendingActionIsStreamConnectionSuspended != true
-                    else { break pollingLoop }
+            while !Task.isCancelled {
+                guard let self,
+                      self.delegate?.pendingActionSessionID == sessionID,
+                      self.delegate?.pendingActionHasActiveStream == true,
+                      self.delegate?.pendingActionIsStreamConnectionSuspended != true else { break }
 
+                // Healthy streams need HTTP only when a running clarification
+                // tool has no visible prompt, including a missed startup event.
+                if self.clarificationUsesPollingFallback
+                    || (self.clarificationPrompt == nil && self.delegate?.pendingActionHasRunningClarificationTool == true) {
                     await self.refreshClarificationPending(sessionID: sessionID)
                 }
-
                 guard !Task.isCancelled else { break }
                 try? await Task.sleep(nanoseconds: pollingInterval)
             }
@@ -464,9 +552,14 @@ final class ChatPendingActionCoordinator {
 
     private func refreshClarificationPending(sessionID: String) async {
         guard delegate?.pendingActionHasActiveStream == true else { return }
+        let revision = clarificationUpdateRevision
 
         do {
             let response = try await client.clarifyPending(sessionID: sessionID)
+            guard !Task.isCancelled, revision == clarificationUpdateRevision,
+                  delegate?.pendingActionSessionID == sessionID,
+                  delegate?.pendingActionHasActiveStream == true,
+                  delegate?.pendingActionIsStreamConnectionSuspended != true else { return }
             applyClarificationUpdate(response, sessionID: sessionID)
         } catch {
             // The web UI also ignores degraded-mode polling failures.

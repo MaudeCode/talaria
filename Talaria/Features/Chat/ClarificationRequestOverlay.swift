@@ -1,55 +1,49 @@
 import SwiftUI
 
-struct ClarificationRequestCard: View {
+struct ClarificationRequestContent: View {
     let prompt: ClarificationPromptState
     let isResponding: Bool
     let errorMessage: String?
     let onSubmit: (String) -> Void
+    var selectedChoices: [String] = []
+    var onToggleChoice: (String) -> Void = { _ in }
+    var onSelectQuestion: (Int) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        card
+        cardContent
             .accessibilityElement(children: .contain)
     }
 
-    private var card: some View {
-        cardSurface
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.12), radius: 18, x: 0, y: 12)
-    }
-
-    @ViewBuilder
-    private var cardSurface: some View {
-        if reduceTransparency {
-            cardContent
-                .background(
-                    Color(.secondarySystemBackground),
-                    in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                )
-                .overlay(cardBorder)
-        } else if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 14) {
-                cardContent
-                    .glassEffect(.regular.tint(cardTint), in: .rect(cornerRadius: cardCornerRadius))
-            }
-        } else {
-            cardContent
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
-                .overlay(cardBorder)
-        }
-    }
-
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "questionmark.circle")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+        HStack(alignment: .center, spacing: 6) {
+            if prompt.questionCount > 1 {
+                Button {
+                    onSelectQuestion(prompt.questionIndex - 1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(isResponding || prompt.questionIndex == 0)
+                .accessibilityLabel("Previous question")
+            } else {
+                Image(systemName: "questionmark.circle")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Clarification Required")
-                    .font(.headline)
+                if prompt.questionCount > 1 {
+                    Text("Question \(prompt.questionIndex + 1) of \(prompt.questionCount)")
+                        .font(.subheadline.weight(.semibold))
+                } else {
+                    Text("Clarification Required")
+                        .font(.headline)
+                }
 
                 if prompt.pendingCount > 1 {
                     Text("1 of \(prompt.pendingCount) pending")
@@ -58,8 +52,19 @@ struct ClarificationRequestCard: View {
                 }
             }
 
-            Spacer(minLength: 8)
+            if prompt.questionCount > 1 {
+                Button {
+                    onSelectQuestion(prompt.questionIndex + 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(isResponding || prompt.isLastQuestion)
+                .accessibilityLabel("Next question")
+            }
 
+            Spacer(minLength: 0)
             expirationView
         }
     }
@@ -71,11 +76,6 @@ struct ClarificationRequestCard: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(questionBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(.primary.opacity(0.06), lineWidth: 1)
-            )
     }
 
     private var choicesList: some View {
@@ -130,26 +130,39 @@ struct ClarificationRequestCard: View {
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            question
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
 
-            if !prompt.choices.isEmpty {
-                choicesList
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    question
+                    if !prompt.choices.isEmpty {
+                        choicesList
+                    }
+                    footer
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
-
-            footer
         }
-        .padding(16)
         .frame(maxWidth: 560, alignment: .leading)
     }
 
     @ViewBuilder
     private func choiceButton(_ choice: String) -> some View {
         Button {
-            onSubmit(choice)
+            if prompt.isMultiSelect { onToggleChoice(choice) } else { onSubmit(choice) }
         } label: {
-            Text(choice)
+            HStack {
+                Text(choice)
+                if prompt.isMultiSelect {
+                    Spacer(minLength: 8)
+                    Image(systemName: selectedChoices.contains(choice) ? "checkmark.circle.fill" : "circle")
+                        .accessibilityHidden(true)
+                }
+            }
                 .font(.callout.weight(.semibold))
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -161,27 +174,11 @@ struct ClarificationRequestCard: View {
         }
         .buttonStyle(.chatTactile(.capsule))
         .disabled(isResponding)
-    }
-
-    private var questionBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.04)
+        .accessibilityAddTraits(selectedChoices.contains(choice) ? .isSelected : [])
     }
 
     private var progressFill: Color {
         colorScheme == .dark ? Color.white.opacity(0.72) : Color.black.opacity(0.58)
-    }
-
-    private var cardTint: Color {
-        colorScheme == .dark ? Color.white.opacity(0.035) : Color.white.opacity(0.16)
-    }
-
-    private var cardCornerRadius: CGFloat {
-        24
-    }
-
-    private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-            .stroke(.primary.opacity(0.10), lineWidth: 1)
     }
 
     private func remainingSeconds(now: Date) -> TimeInterval? {

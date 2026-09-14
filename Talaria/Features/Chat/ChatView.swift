@@ -133,6 +133,8 @@ struct ChatView: View {
     @State private var gitToastState = GitActionToastState()
     @State private var gitAlert: GitChatAlert?
     @State private var composerHeight: CGFloat = 52
+    @State private var clarificationPanelHeight: CGFloat = 320
+    @State private var composerAvailableHeight: CGFloat = 0
     @State private var composerIsFocused = false
     @State private var composerRequiresExpandedPresentation = false
     @State private var didHydrateDraft = false
@@ -204,27 +206,9 @@ struct ChatView: View {
     // "unable to type-check in reasonable time" limit).
     private var messageComposer: some View {
         let prompt = viewModel.clarificationPrompt
-        return VStack(spacing: 8) {
-            if let prompt {
-                ScrollView {
-                    ClarificationRequestCard(
-                        prompt: prompt,
-                        isResponding: viewModel.isRespondingToClarification || viewModel.isViewingCachedData || session.isSessionReadOnly,
-                        errorMessage: viewModel.clarificationErrorMessage,
-                        onSubmit: { response in
-                            Task { await submitClarification(response, promptID: prompt.id) }
-                        }
-                    )
-                }
-                .frame(maxHeight: 180)
-                .padding(.horizontal)
-                .id(prompt.id)
-            }
-
-            messageComposerInput(prompt: prompt)
-                // Replacing the input also cancels dictation and picker presentation.
-                .id(prompt?.id ?? "message")
-        }
+        return messageComposerInput(prompt: prompt)
+            // Replacing the input also cancels dictation and picker presentation.
+            .id(prompt?.id ?? "message")
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         .environment(\.layoutDirection, chatLayoutDirection)
         .background(
@@ -238,6 +222,8 @@ struct ChatView: View {
         MessageComposerView(
             draftMessage: composerDraftBinding(promptID: prompt?.id),
             draftWriteRevision: draftWriteRevision,
+            clarificationPanelHeight: $clarificationPanelHeight,
+            availableHeight: composerAvailableHeight,
             isFocused: $composerIsFocused,
             isSending: prompt != nil ? viewModel.isRespondingToClarification : viewModel.isStartingChat || viewModel.isSendingVoiceNote,
             isCompressingSession: prompt == nil && viewModel.isCompressingSession,
@@ -392,7 +378,21 @@ struct ChatView: View {
             onExpandedPresentationRequirementChange: { isRequired in
                 composerRequiresExpandedPresentation = isRequired
             },
-            isAnsweringClarification: prompt != nil
+            clarificationPrompt: prompt,
+            clarificationErrorMessage: viewModel.clarificationErrorMessage,
+            clarificationSelectedChoices: viewModel.clarificationSelectedChoices,
+            onToggleClarificationChoice: { choice in
+                guard let prompt else { return }
+                viewModel.toggleClarificationChoice(choice, promptID: prompt.id)
+            },
+            onSelectClarificationQuestion: { index in
+                guard let prompt else { return }
+                viewModel.selectClarificationQuestion(index, promptID: prompt.id)
+            },
+            onSubmitClarification: { response in
+                guard let prompt else { return }
+                Task { await submitClarification(response, promptID: prompt.id) }
+            }
         )
     }
 
@@ -419,52 +419,56 @@ struct ChatView: View {
     }
 
     private var chatLayout: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                if viewModel.isViewingCachedData {
-                    ChatOfflineCacheBanner()
-                }
-
-                listenPlaybackBar
-
-                messageContent
-                    // Scope RTL to the chat transcript only (#259): the offline
-                    // banner above stays in the app's default direction.
-                    .environment(\.layoutDirection, chatLayoutDirection)
-            }
-            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
-
-            BottomComposerMaterialFade(composerHeight: composerHeight)
-
-            composerAccessoryStack
-
-            messageComposer
-
-            if let approvalPrompt = viewModel.approvalPrompt {
-                ApprovalRequestOverlay(
-                    prompt: approvalPrompt,
-                    isResponding: viewModel.isRespondingToApproval,
-                    errorMessage: viewModel.approvalErrorMessage,
-                    onChoice: { choice in
-                        Task {
-                            let didRespond = await viewModel.respondToApproval(choice)
-                            if didRespond {
-                                ChatHaptics.approvalSubmitted(choice, isEnabled: isHapticsEnabled)
-                            }
-                        }
-                    },
-                    onSkipAll: {
-                        Task {
-                            let didSkip = await viewModel.skipApprovalsForCurrentSession()
-                            if didSkip {
-                                ChatHaptics.approvalBypassEnabled(isEnabled: isHapticsEnabled)
-                            }
-                        }
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    if viewModel.isViewingCachedData {
+                        ChatOfflineCacheBanner()
                     }
-                )
-                .zIndex(10)
+
+                    listenPlaybackBar
+
+                    messageContent
+                        // Scope RTL to the chat transcript only (#259): the offline
+                        // banner above stays in the app's default direction.
+                        .environment(\.layoutDirection, chatLayoutDirection)
+                }
+                .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
+
+                BottomComposerMaterialFade(composerHeight: composerHeight)
+
+                composerAccessoryStack
+
+                messageComposer
+
+                if let approvalPrompt = viewModel.approvalPrompt {
+                    ApprovalRequestOverlay(
+                        prompt: approvalPrompt,
+                        isResponding: viewModel.isRespondingToApproval,
+                        errorMessage: viewModel.approvalErrorMessage,
+                        onChoice: { choice in
+                            Task {
+                                let didRespond = await viewModel.respondToApproval(choice)
+                                if didRespond {
+                                    ChatHaptics.approvalSubmitted(choice, isEnabled: isHapticsEnabled)
+                                }
+                            }
+                        },
+                        onSkipAll: {
+                            Task {
+                                let didSkip = await viewModel.skipApprovalsForCurrentSession()
+                                if didSkip {
+                                    ChatHaptics.approvalBypassEnabled(isEnabled: isHapticsEnabled)
+                                }
+                            }
+                        }
+                    )
+                    .zIndex(10)
+                }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerAvailableHeight = $0 }
         .overlay(alignment: .top) {
             GitActionToastOverlay(state: gitToastState)
         }
@@ -475,6 +479,11 @@ struct ChatView: View {
 
     private var chatWithLifecycle: some View {
         chatLayout
+        .onChange(of: viewModel.clarificationPrompt?.requestID, initial: true) { _, requestID in
+            guard requestID != nil else { return }
+            clarificationPanelHeight = 320
+            dismissKeyboard()
+        }
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
@@ -2483,7 +2492,7 @@ struct ChatView: View {
         guard !didApplyInitialComposerFocusPolicy else { return }
         guard didCompleteInitialAppearance, isInitialComposerFocusContentReady else { return }
 
-        if !viewModel.messages.isEmpty {
+        if viewModel.clarificationPrompt != nil || !viewModel.messages.isEmpty {
             didApplyInitialComposerFocusPolicy = true
             return
         }
@@ -2509,10 +2518,11 @@ struct ChatView: View {
 
     private func requestComposerFocusIfPossible() {
         guard canFocusComposer else { return }
+        let promptID = viewModel.clarificationPrompt?.id
 
         Task { @MainActor in
             await Task.yield()
-            guard canFocusComposer else { return }
+            guard canFocusComposer, viewModel.clarificationPrompt?.id == promptID else { return }
             composerIsFocused = true
         }
     }

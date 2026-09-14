@@ -17,6 +17,8 @@ struct MessageComposerView: View {
 
     @Binding var draftMessage: String
     let draftWriteRevision: Int
+    @Binding var clarificationPanelHeight: CGFloat
+    let availableHeight: CGFloat
     @Binding var isFocused: Bool
     let isSending: Bool
     let isCompressingSession: Bool
@@ -97,9 +99,18 @@ struct MessageComposerView: View {
     let onVoiceInputRequestHandled: () -> Void
     let onExpandedPresentationRequirementChange: (Bool) -> Void
 
-    var isAnsweringClarification = false
+    var clarificationPrompt: ClarificationPromptState? = nil
+    var clarificationErrorMessage: String? = nil
+    var clarificationSelectedChoices: [String] = []
+    var onToggleClarificationChoice: (String) -> Void = { _ in }
+    var onSelectClarificationQuestion: (Int) -> Void = { _ in }
+    var onSubmitClarification: (String) -> Void = { _ in }
+
+    private var isAnsweringClarification: Bool { clarificationPrompt != nil }
 
     @State private var textFieldHeight: CGFloat = 0
+    @State private var composerSurfaceHeight: CGFloat = 110
+    @GestureState private var clarificationResizeTranslation: CGFloat = 0
     @State private var textInputHeight: CGFloat = 22
     @State private var noticeMessage: String?
     @State private var showsAllModelsSheet = false
@@ -469,7 +480,26 @@ struct MessageComposerView: View {
     @ViewBuilder
     private var composerChrome: some View {
         VStack(spacing: 0) {
+            if let clarificationPrompt {
+                clarificationResizeHandle
+                ClarificationRequestContent(
+                    prompt: clarificationPrompt,
+                    isResponding: isSending || isReadOnly,
+                    errorMessage: clarificationErrorMessage,
+                    onSubmit: onSubmitClarification,
+                    selectedChoices: clarificationSelectedChoices,
+                    onToggleChoice: onToggleClarificationChoice,
+                    onSelectQuestion: onSelectClarificationQuestion
+                )
+                .frame(height: displayedClarificationHeight)
+                .clipped()
+                .id(clarificationPrompt.id)
+                Divider()
+                    .padding(.horizontal, 16)
+            }
+
             composerSurface
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerSurfaceHeight = $0 }
 
             if joinsSecondaryChrome {
                 secondaryBar
@@ -478,6 +508,56 @@ struct MessageComposerView: View {
                     .padding(.bottom, 8)
             }
         }
+    }
+
+    private var maximumClarificationHeight: CGFloat {
+        // Leave the answer field, send controls, and resize handle on screen.
+        availableHeight > 0 ? max(0, availableHeight - composerSurfaceHeight - 64) : 420
+    }
+
+    private func clampedClarificationHeight(_ height: CGFloat) -> CGFloat {
+        min(max(min(140, maximumClarificationHeight), height), maximumClarificationHeight)
+    }
+
+    private var displayedClarificationHeight: CGFloat {
+        clampedClarificationHeight(clampedClarificationHeight(clarificationPanelHeight) - clarificationResizeTranslation)
+    }
+
+    private var clarificationResizeHandle: some View {
+        Capsule()
+            .fill(.secondary.opacity(0.5))
+            .frame(width: 36, height: 5)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                    .onChanged { _ in
+                        // Reading a larger question takes the keyboard's space.
+                        if isFocused { isFocused = false }
+                    }
+                    .updating($clarificationResizeTranslation) { value, translation, _ in
+                        translation = value.translation.height
+                    }
+                    .onEnded { value in
+                        clarificationPanelHeight = clampedClarificationHeight(
+                            clampedClarificationHeight(clarificationPanelHeight) - value.translation.height
+                        )
+                    }
+            )
+            .accessibilityLabel("Resize question area")
+            .accessibilityValue("\(Int(displayedClarificationHeight / max(1, maximumClarificationHeight) * 100))%")
+            .accessibilityHint("Swipe up or down to resize the question area.")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment:
+                    clarificationPanelHeight = clampedClarificationHeight(displayedClarificationHeight + 60)
+                case .decrement:
+                    clarificationPanelHeight = clampedClarificationHeight(displayedClarificationHeight - 60)
+                @unknown default:
+                    break
+                }
+            }
     }
 
     @ViewBuilder
@@ -582,7 +662,9 @@ struct MessageComposerView: View {
         }
         .buttonStyle(.chatTactile(.icon))
         .disabled(isActionButtonDisabled)
-        .accessibilityLabel(isAnsweringClarification ? "Submit clarification" : (showsStopButton ? "Stop response" : "Send"))
+        .accessibilityLabel(isAnsweringClarification
+            ? (clarificationPrompt?.isLastQuestion == false ? "Next" : "Submit clarification")
+            : (showsStopButton ? "Stop response" : "Send"))
     }
 
     @ViewBuilder
@@ -595,7 +677,7 @@ struct MessageComposerView: View {
             Image(systemName: "stop.fill")
                 .font(.system(size: actionIconSize, weight: .semibold))
         } else {
-            Image(systemName: "arrow.up")
+            Image(systemName: clarificationPrompt?.isLastQuestion == false ? "arrow.right" : "arrow.up")
                 .font(.system(size: actionIconSize, weight: .semibold))
         }
     }
@@ -1032,7 +1114,7 @@ struct MessageComposerView: View {
         }
 
         if isAnsweringClarification {
-            return trimmedDraftMessage.isEmpty || isSending
+            return (trimmedDraftMessage.isEmpty && clarificationSelectedChoices.isEmpty) || isSending
         }
 
         if showsStopButton {

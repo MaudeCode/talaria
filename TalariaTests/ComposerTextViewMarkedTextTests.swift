@@ -210,6 +210,38 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         XCTAssertEqual(textView.text, "")
     }
 
+    func testQueuedBlurCannotDismissAFieldTheUserJustFocused() async {
+        let (draft, coordinator, _) = makeComposer()
+        let view = FocusTextView()
+        view.delegate = coordinator
+        let dismissed = expectation(description: "A stale blur must not dismiss the keyboard")
+        dismissed.isInverted = true
+        view.onResign = { dismissed.fulfill() }
+        coordinator.syncFocus(for: view, shouldFocus: false, isDisabled: false)
+        draft.isFocused = true
+        await fulfillment(of: [dismissed], timeout: 0.1)
+        XCTAssertTrue(draft.isFocused)
+    }
+
+    func testQueuedBlurStillAppliesWhenFocusRemainsFalse() async {
+        let (_, coordinator, _) = makeComposer()
+        let view = FocusTextView()
+        view.delegate = coordinator
+        let dismissed = expectation(description: "Current blur is applied")
+        view.onResign = { dismissed.fulfill() }
+        coordinator.syncFocus(for: view, shouldFocus: false, isDisabled: false)
+        await fulfillment(of: [dismissed], timeout: 1)
+    }
+
+    private final class FocusTextView: UITextView {
+        var onResign: () -> Void = {}
+        override var isFirstResponder: Bool { true }
+        override func resignFirstResponder() -> Bool {
+            onResign()
+            return true
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeComposer() -> (Draft, ComposerTextView.Coordinator, ComposerTextView.PastingTextView) {

@@ -49,7 +49,7 @@ struct UITestFixtureEnvironment {
     static func make() -> UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
         var initialDrafts: [ChatDraftKey: ChatDraft] = [:]
-        if chatScenario == .clarification {
+        if chatScenario == .clarification || chatScenario == .batchClarification {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
         }
@@ -187,6 +187,7 @@ private actor UITestFixtureDraftPersistence: ChatDraftPersisting {
 }
 
 private enum UITestChatScenario: String, CaseIterable {
+    case batchClarification = "--ui-test-chat-batch-clarification"
     case clarification = "--ui-test-chat-clarification"
     case full = "--ui-test-chat-full"
     case controls = "--ui-test-chat-controls"
@@ -207,6 +208,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     private var settled = false
     private var approvalAnswered = false
     private var clarificationAnswered = false
+    private var clarificationResponse = ""
     private var steerID: String?
     private var cancelled = false
     private var streamConnectionCount = 0
@@ -232,11 +234,18 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         condition.unlock()
     }
 
-    func answerClarification() {
+    func answerClarification(_ response: String) {
         condition.lock()
         clarificationAnswered = true
+        clarificationResponse = response
         condition.broadcast()
         condition.unlock()
+    }
+
+    func receivedClarificationResponse() -> String {
+        condition.lock()
+        defer { condition.unlock() }
+        return clarificationResponse
     }
 
     func acceptSteer(id: String?) {
@@ -514,8 +523,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/approval/pending":
             return json(["pending_count": 0])
         case "/api/clarify/respond":
-            chatState.answerClarification()
-            return json(["ok": true, "response": "Use the deterministic path"])
+            let response = requestJSON(request)["response"] as? String ?? ""
+            chatState.answerClarification(response)
+            return json(["ok": !response.isEmpty, "response": response])
         case "/api/clarify/pending":
             return json(["pending_count": 0])
         case "/api/session/yolo":
@@ -736,18 +746,39 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private func runChatScript(connection: Int) {
         guard let scenario = UITestChatScenario.current else { return }
         switch scenario {
-        case .clarification:
-            send(events: [("clarify", [
+        case .clarification, .batchClarification:
+            var prompt: [String: Any] = [
                 "clarify_id": "ui-fixture-draft-clarify",
                 "question": "Which answer should continue?",
                 "choices_offered": ["Use the deterministic path"],
                 "session_id": Self.sessionID,
                 "kind": "clarify"
-            ])])
+            ]
+            if scenario == .batchClarification {
+                prompt["question"] = ""
+                prompt["choices_offered"] = []
+                prompt["questions"] = [
+                    ["qid": "q0", "question": "What sounds best for a quiet evening?", "choices": ["A movie", "A book", "A game", "Some music"], "multi_select": false],
+                    ["qid": "q1", "question": "Which drinks?", "choices": ["Tea", "Water"], "multi_select": true]
+                ]
+            }
+            send(events: [("clarify", prompt)])
             wait { $0.clarificationWasAnswered }
             guard !isStopped else { return }
             Self.chatState.settle()
-            send(events: [("done", [:]), ("stream_end", [:])])
+            let raw = Self.chatState.receivedClarificationResponse()
+            var answer = raw
+            if scenario == .batchClarification {
+                // Like the Agent's batch callback, plain text has no answer map.
+                let envelope = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any]
+                let answers = envelope?["answers"] as? [String: Any] ?? [:]
+                answer = (answers["q0"] as? String ?? "") + " | "
+                    + (answers["q1"] as? [String] ?? []).joined(separator: ", ")
+            }
+            send(events: [
+                ("token", ["text": "Agent received: \(answer)"]),
+                ("done", [:]), ("stream_end", [:])
+            ])
             finish()
         case .full:
             send(events: [

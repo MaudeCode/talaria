@@ -69,6 +69,22 @@ the existing CSRF probe expected `POST /api/auth/login` to reject a request that
 the merged server accepts. The operator directed that no additional validation
 run be performed; the preserved artifact records that held probe mismatch.
 
+## Clarification batches
+
+Talaria also accepts the additive `questions` payload introduced by WebUI commit
+`f190f680d0d04b0decc416ae7f7cb86e4465eb81` without changing the legacy single-question
+contract or advancing `UPSTREAM_TESTED_SHA`. Each question carries its wire `qid`,
+question text, choices, and optional `multi_select` flag. A batch-only `initial`
+event is a clarification, not an approval.
+
+The POST route and outer request stay unchanged. Its `response` string contains
+JSON `{"answers":{"q0":"typed answer","q1":["first choice","second choice"]}}`.
+The Agent's batch callback parses this envelope; sending plain text instead yields
+blank answers. Talaria submits the batch only after collecting each question's
+answer. `ClarificationTests` covers decoding, wire values, question progression,
+and retry retention; `ChatPrimaryStreamUITests` verifies choices, composer input,
+and the answer map received through the HTTP fixture.
+
 ## Pin advance
 
 The runner never writes `UPSTREAM_TESTED_SHA`. A changed fork commit cannot move
