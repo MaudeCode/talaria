@@ -374,6 +374,121 @@ final class APIClientCronEndpointTests: APIClientTestCase {
         XCTAssertTrue(expectedRequests.isEmpty)
     }
 
+    func testCronHistoryBuildsExpectedQueryAndSkipsMalformedRows() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/history")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertNil(request.httpBody)
+
+            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
+            XCTAssertEqual(query["job_id"], "job123")
+            XCTAssertEqual(query["offset"], "20")
+            XCTAssertEqual(query["limit"], "20")
+
+            return apiTestJSONResponse("""
+            {
+              "job_id": "job123",
+              "runs": [
+                {
+                  "filename": "2026-05-04_10-00-00.md",
+                  "size": 2048,
+                  "modified": 1777892400.5,
+                  "usage": {
+                    "model": "fixture-model",
+                    "input_tokens": "1,200",
+                    "output_tokens": 300,
+                    "total_tokens": 1500,
+                    "estimated_cost_usd": 0.0123,
+                    "duration_seconds": 4.5,
+                    "unexpected": true
+                  }
+                },
+                "not-a-run",
+                {"filename": "2026-05-04_09-00-00.md", "size": "oops", "modified": "garbage", "usage": []},
+                {"filename": "2026-05-04_08-00-00.md", "size": 0, "modified": 1777885200, "usage": {}}
+              ],
+              "total": 57,
+              "offset": 20
+            }
+            """, for: request)
+        }
+
+        let response = try await client.cronHistory(jobID: "job123", offset: 20, limit: 20)
+
+        XCTAssertEqual(response.jobId, "job123")
+        XCTAssertEqual(response.total, 57)
+        XCTAssertEqual(response.offset, 20)
+        let runs = try XCTUnwrap(response.runs)
+        XCTAssertEqual(runs.map(\.filename), ["2026-05-04_10-00-00.md", "2026-05-04_09-00-00.md", "2026-05-04_08-00-00.md"])
+
+        let first = runs[0]
+        XCTAssertEqual(first.size, 2048)
+        XCTAssertEqual(try XCTUnwrap(first.modified).date.timeIntervalSince1970, 1_777_892_400.5, accuracy: 0.01)
+        XCTAssertEqual(first.usage?.model, "fixture-model")
+        XCTAssertEqual(first.usage?.inputTokens, nil, "Non-numeric token strings decode to nil rather than failing the row.")
+        XCTAssertEqual(first.usage?.outputTokens, 300)
+        XCTAssertEqual(first.usage?.totalTokens, 1500)
+        XCTAssertEqual(first.usage?.estimatedCostUsd, 0.0123)
+        XCTAssertEqual(first.usage?.durationSeconds, 4.5)
+
+        let malformed = runs[1]
+        XCTAssertNil(malformed.size)
+        XCTAssertNil(malformed.modified)
+        XCTAssertNil(malformed.usage)
+
+        let empty = runs[2]
+        XCTAssertEqual(empty.size, 0)
+        XCTAssertEqual(empty.usage?.isEmpty, true)
+    }
+
+    func testCronHistoryDecodesEmptyAndMissingRuns() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse(#"{"job_id": "job123", "runs": [], "total": 0, "offset": 0}"#, for: request)
+        }
+        let response = try await client.cronHistory(jobID: "job123", offset: 0, limit: 20)
+        XCTAssertEqual(response.runs, [])
+        XCTAssertEqual(response.total, 0)
+
+        let legacyClient = makeClient { request in
+            apiTestJSONResponse("{}", for: request)
+        }
+        let legacy = try await legacyClient.cronHistory(jobID: "job123", offset: 0, limit: 20)
+        XCTAssertNil(legacy.runs)
+        XCTAssertNil(legacy.total)
+    }
+
+    func testCronRunDetailUsesGetWithoutTriggeringRunAction() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/run")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertNil(request.httpBody)
+            XCTAssertNil(request.httpBodyStream)
+
+            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
+            XCTAssertEqual(query["job_id"], "job123")
+            XCTAssertEqual(query["filename"], "2026-05-04_10-00-00.md")
+
+            return apiTestJSONResponse("""
+            {
+              "job_id": "job123",
+              "filename": "2026-05-04_10-00-00.md",
+              "content": "**Model:** fixture-model\\n\\n## Response\\n\\nAll clear.",
+              "snippet": "All clear.",
+              "usage": {"model": "fixture-model"}
+            }
+            """, for: request)
+        }
+
+        let response = try await client.cronRunDetail(jobID: "job123", filename: "2026-05-04_10-00-00.md")
+
+        XCTAssertEqual(response.filename, "2026-05-04_10-00-00.md")
+        XCTAssertEqual(response.content, "**Model:** fixture-model\n\n## Response\n\nAll clear.")
+        XCTAssertEqual(response.snippet, "All clear.")
+        XCTAssertEqual(response.usage?.model, "fixture-model")
+    }
+
     func testCronOutputOmitsLimitWhenNil() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/crons/output")

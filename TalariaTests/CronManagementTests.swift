@@ -631,9 +631,318 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertEqual(viewModel.job.jobId, "job123")
     }
 
+    @MainActor
+    func testTaskDetailViewModelPagesHistoryByRequestedLimit() async throws {
+        let requestedOffsets = LockedValues<String>()
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": [{"filename": "latest.md", "content": "recent"}]}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/history":
+                let query = try Self.queryItems(from: request)
+                XCTAssertEqual(query["job_id"], "job123")
+                XCTAssertEqual(query["limit"], "20")
+                let offset = try XCTUnwrap(query["offset"])
+                requestedOffsets.append(offset)
+                // Page 1 lost two unreadable files after slicing; the cursor must still advance by 20.
+                let pageSize = ["0": 18, "20": 20, "40": 5][offset] ?? 0
+                return apiTestJSONResponse(Self.historyJSON(offset: Int(offset) ?? 0, count: pageSize, total: 45), for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.outputs.count, 1)
+        XCTAssertEqual(viewModel.runs.count, 18)
+        XCTAssertEqual(viewModel.runs.first?.filename, "run-0.md", "History must keep the server's newest-first order.")
+        XCTAssertEqual(viewModel.runsTotal, 45)
+        XCTAssertTrue(viewModel.hasMoreRuns)
+        XCTAssertTrue(viewModel.isHistorySupported)
+
+        await viewModel.loadRunHistory()
+        XCTAssertEqual(viewModel.runs.count, 38)
+        XCTAssertTrue(viewModel.hasMoreRuns)
+
+        await viewModel.loadRunHistory()
+        XCTAssertEqual(viewModel.runs.count, 43)
+        XCTAssertFalse(viewModel.hasMoreRuns)
+
+        await viewModel.loadRunHistory()
+        XCTAssertEqual(requestedOffsets.values, ["0", "20", "40"], "An exhausted cursor must not request another page.")
+    }
+
+    @MainActor
+    func testTaskDetailViewModelHistoryFailureKeepsOutputAndRetries() async throws {
+        let historyRequests = LockedCounter()
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": [{"filename": "latest.md", "content": "recent"}]}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/history":
+                if historyRequests.increment() == 1 {
+                    return apiTestJSONResponse(#"{"error": "boom"}"#, statusCode: 500, for: request)
+                }
+                return apiTestJSONResponse(Self.historyJSON(offset: 0, count: 2, total: 2), for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.outputs.count, 1, "Recent output must survive a history failure.")
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertNotNil(viewModel.runsErrorMessage)
+        XCTAssertTrue(viewModel.isHistorySupported)
+        XCTAssertTrue(viewModel.runs.isEmpty)
+
+        await viewModel.loadRunHistory(reset: true)
+
+        XCTAssertNil(viewModel.runsErrorMessage)
+        XCTAssertEqual(viewModel.runs.count, 2)
+        XCTAssertFalse(viewModel.hasMoreRuns)
+    }
+
+    @MainActor
+    func testTaskDetailViewModelRetryAfterFailedRefreshReloadsExhaustedHistory() async throws {
+        let historyRequests = LockedCounter()
+        let requestedOffsets = LockedValues<String>()
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": []}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/history":
+                requestedOffsets.append(try Self.queryItems(from: request)["offset"] ?? "")
+                switch historyRequests.increment() {
+                case 2:
+                    return apiTestJSONResponse(#"{"error": "boom"}"#, statusCode: 500, for: request)
+                default:
+                    return apiTestJSONResponse(Self.historyJSON(offset: 0, count: 2, total: 2), for: request)
+                }
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+        XCTAssertEqual(viewModel.runs.count, 2)
+        XCTAssertFalse(viewModel.hasMoreRuns)
+
+        await viewModel.load()
+        XCTAssertNotNil(viewModel.runsErrorMessage)
+        XCTAssertEqual(viewModel.runs.count, 2, "A failed refresh keeps the rows already on screen.")
+
+        await viewModel.retryRunHistory()
+        XCTAssertNil(viewModel.runsErrorMessage)
+        XCTAssertEqual(viewModel.runs.count, 2)
+        XCTAssertEqual(requestedOffsets.values, ["0", "0", "0"], "Retrying a failed refresh must request the first page again.")
+    }
+
+    @MainActor
+    func testTaskDetailViewModelUnsupportedHistoryDegradesToRecentOutput() async throws {
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": [{"filename": "latest.md", "content": "recent"}]}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/history":
+                return apiTestJSONResponse(#"{"error": "not found"}"#, statusCode: 404, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.outputs.count, 1)
+        XCTAssertFalse(viewModel.isHistorySupported)
+        XCTAssertNil(viewModel.runsErrorMessage)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertNil(viewModel.lastError)
+    }
+
+    @MainActor
+    func testTaskDetailViewModelRefreshFencesStaleHistoryPageAndRunOutput() async throws {
+        let host = "tal166-fence.test"
+        let historyRequests = LockedValues<DeferredMockURLProtocol>()
+        let runRequests = LockedValues<DeferredMockURLProtocol>()
+        let historyStarted = [expectation(description: "history 1"), expectation(description: "history 2")]
+        let runStarted = [expectation(description: "run 1"), expectation(description: "run 2")]
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.request.url?.path {
+            case "/api/crons/output":
+                request.complete(withJSON: #"{"outputs": []}"#)
+            case "/api/crons/delivery-options":
+                request.complete(withJSON: #"{"platforms": []}"#)
+            case "/api/crons/history":
+                historyStarted[historyRequests.append(request) - 1].fulfill()
+            case "/api/crons/run":
+                XCTAssertEqual(request.request.httpMethod, "GET")
+                runStarted[runRequests.append(request) - 1].fulfill()
+            default:
+                XCTFail("Unexpected request: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: server,
+            client: APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        )
+
+        let staleLoad = Task { @MainActor in await viewModel.load() }
+        await fulfillment(of: [historyStarted[0]], timeout: 5)
+        let freshLoad = Task { @MainActor in await viewModel.loadRunHistory(reset: true) }
+        await fulfillment(of: [historyStarted[1]], timeout: 5)
+
+        historyRequests.values[1].complete(withJSON: Self.historyJSON(offset: 0, count: 1, total: 1, prefix: "fresh"))
+        await freshLoad.value
+        XCTAssertEqual(viewModel.runs.map(\.filename), ["fresh-0.md"])
+
+        historyRequests.values[0].complete(withJSON: Self.historyJSON(offset: 0, count: 3, total: 3, prefix: "stale"))
+        await staleLoad.value
+        XCTAssertEqual(viewModel.runs.map(\.filename), ["fresh-0.md"], "A page from before the refresh must be dropped.")
+        XCTAssertEqual(viewModel.runsTotal, 1)
+        XCTAssertFalse(viewModel.isLoadingRuns)
+
+        let staleRun = try XCTUnwrap(viewModel.runs.first)
+        let freshRun = try decodeRun(#"{"filename": "fresh-1.md"}"#)
+        let staleDetail = Task { @MainActor in await viewModel.loadRunDetail(staleRun) }
+        await fulfillment(of: [runStarted[0]], timeout: 5)
+        let freshDetail = Task { @MainActor in await viewModel.loadRunDetail(freshRun) }
+        await fulfillment(of: [runStarted[1]], timeout: 5)
+
+        runRequests.values[1].complete(withJSON: #"{"filename": "fresh-1.md", "content": "output of fresh-1.md"}"#)
+        await freshDetail.value
+        XCTAssertEqual(viewModel.selectedRunDetail?.content, "output of fresh-1.md")
+
+        runRequests.values[0].complete(withJSON: #"{"filename": "fresh-0.md", "content": "output of fresh-0.md"}"#)
+        await staleDetail.value
+        XCTAssertEqual(viewModel.selectedRun?.filename, "fresh-1.md")
+        XCTAssertEqual(viewModel.selectedRunDetail?.content, "output of fresh-1.md", "An earlier run's output must not replace the selected run.")
+        XCTAssertFalse(viewModel.isLoadingRunDetail)
+
+        viewModel.dismissRun()
+        XCTAssertNil(viewModel.selectedRun)
+        XCTAssertNil(viewModel.selectedRunDetail)
+    }
+
+    @MainActor
+    func testTaskDetailViewModelRunDetailFailureKeepsSelectionForRetry() async throws {
+        let runRequests = LockedCounter()
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/run":
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertNil(request.httpBody)
+                if runRequests.increment() == 1 {
+                    return apiTestJSONResponse(#"{"error": "run not found"}"#, statusCode: 404, for: request)
+                }
+                return apiTestJSONResponse(#"{"filename": "run-0.md", "content": ""}"#, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+        let run = try decodeRun(#"{"filename": "run-0.md", "size": 0}"#)
+
+        await viewModel.loadRunDetail(run)
+        XCTAssertEqual(viewModel.selectedRun?.filename, "run-0.md")
+        XCTAssertNil(viewModel.selectedRunDetail)
+        XCTAssertNotNil(viewModel.runDetailErrorMessage)
+
+        await viewModel.loadRunDetail(run)
+        XCTAssertNil(viewModel.runDetailErrorMessage)
+        XCTAssertEqual(viewModel.selectedRunDetail?.content, "")
+    }
+
+    private static func historyJSON(offset: Int, count: Int, total: Int, prefix: String = "run") -> String {
+        let runs = (0..<count).map { index in
+            #"{"filename": "\#(prefix)-\#(offset + index).md", "size": 10, "modified": \#(2_000_000_000 - offset - index)}"#
+        }
+        return #"{"job_id": "job123", "runs": [\#(runs.joined(separator: ","))], "total": \#(total), "offset": \#(offset)}"#
+    }
+
+    private static func queryItems(from request: URLRequest) throws -> [String: String] {
+        let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+        return Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+    }
+
+    private func decodeRun(_ json: String) throws -> CronRunSummary {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(CronRunSummary.self, from: Data(json.utf8))
+    }
+
     private func decodeCronJob(_ json: String) throws -> CronJob {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(CronJob.self, from: Data(json.utf8))
+    }
+}
+
+private final class LockedValues<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Value] = []
+
+    /// Returns the new count so callers can index the value they just appended.
+    @discardableResult
+    func append(_ value: Value) -> Int {
+        lock.withLock {
+            storage.append(value)
+            return storage.count
+        }
+    }
+
+    var values: [Value] {
+        lock.withLock { storage }
     }
 }

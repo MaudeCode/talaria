@@ -143,6 +143,10 @@ extension UITestFixtureURLProtocol {
             return body(isEmpty ? #"{"running":{}}"# : #"{"running":{"ui-fixture-cron-digest":42.5}}"#)
         case "/api/crons/output":
             return body(isEmpty ? #"{"outputs":[]}"# : cronOutputs)
+        case "/api/crons/history":
+            return body(isEmpty ? #"{"runs":[],"total":0,"offset":0}"# : cronHistory)
+        case "/api/crons/run" where request.httpMethod == "GET":
+            return body(cronRunDetail)
         case "/api/crons/delivery-options":
             return body(#"{"platforms":[{"value":"local","label":"Local"}]}"#)
         case "/api/skills":
@@ -188,6 +192,17 @@ extension UITestFixtureURLProtocol {
     {"job_id":"ui-fixture-cron-digest","outputs":[
       {"filename":"fixture-digest.md","content":"Deterministic fixture digest output."}
     ]}
+    """
+
+    private static let cronHistory = """
+    {"job_id":"ui-fixture-cron-digest","runs":[
+      {"filename":"fixture-digest.md","size":42,"modified":2000000000,"usage":{"model":"fixture-model","total_tokens":1200}}
+    ],"total":1,"offset":0}
+    """
+
+    private static let cronRunDetail = """
+    {"job_id":"ui-fixture-cron-digest","filename":"fixture-digest.md",\
+    "content":"# Run\\n\\n## Response\\n\\nDeterministic fixture digest output.","snippet":"Deterministic fixture digest output.","usage":{}}
     """
 
     // MARK: - Skills

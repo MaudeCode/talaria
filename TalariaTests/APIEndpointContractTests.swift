@@ -225,6 +225,18 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["job_id": "job-123", "limit": "5"]
             ),
             .init(
+                name: "cron history",
+                endpoint: .cronHistory(jobID: "job-123", offset: 40, limit: 20),
+                path: "/api/crons/history",
+                query: ["job_id": "job-123", "offset": "40", "limit": "20"]
+            ),
+            .init(
+                name: "cron run detail",
+                endpoint: .cronRunDetail(jobID: "job-123", filename: "2026-05-04_10-00-00.md"),
+                path: "/api/crons/run",
+                query: ["job_id": "job-123", "filename": "2026-05-04_10-00-00.md"]
+            ),
+            .init(
                 name: "cron delivery options",
                 endpoint: .cronDeliveryOptions,
                 path: "/api/crons/delivery-options"

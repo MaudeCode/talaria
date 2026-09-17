@@ -94,6 +94,18 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             element(labelContaining: "Deterministic fixture digest output").waitForExistence(timeout: 10),
             "Task detail did not render its recent output"
         )
+
+        let run = app.descendants(matching: .any)["task-run-fixture-digest.md"].firstMatch
+        XCTAssertTrue(run.waitForExistence(timeout: 10), "Task detail did not render its run history")
+        tapCenter(of: run)
+        let copyOutput = app.buttons["Copy Output"]
+        XCTAssertTrue(copyOutput.waitForExistence(timeout: 10), "The run output sheet did not open")
+        XCTAssertTrue(
+            element(labelContaining: "## Response").waitForExistence(timeout: 10),
+            "The run output sheet did not render the full output"
+        )
+        tapCenter(of: app.buttons["Done"].firstMatch)
+        XCTAssertTrue(copyOutput.waitForNonExistence(timeout: 10), "The run output sheet did not dismiss")
         tapBack(from: detail)
         XCTAssertTrue(
             job.waitForExistence(timeout: 10),

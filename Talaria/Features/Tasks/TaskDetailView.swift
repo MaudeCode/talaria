@@ -55,8 +55,26 @@ struct TaskDetailView: View {
                 } else {
                     outputsSection
                 }
+
+                if viewModel.isHistorySupported {
+                    TaskRunHistorySection(
+                        viewModel: viewModel,
+                        onSelect: { run in Task { await viewModel.loadRunDetail(run) } },
+                        onLoadMore: { Task { await viewModel.loadRunHistory() } },
+                        onRetry: { Task { await viewModel.retryRunHistory() } }
+                    )
+                    .padding(.top, 8)
+                }
             }
             .padding()
+        }
+        .sheet(item: selectedRunBinding) { run in
+            TaskRunOutputSheet(
+                viewModel: viewModel,
+                run: run,
+                onRetry: { Task { await viewModel.loadRunDetail(run) } },
+                onDismiss: { viewModel.dismissRun() }
+            )
         }
         .navigationTitle(viewModel.job.displayName)
         .toolbar {
@@ -264,6 +282,14 @@ struct TaskDetailView: View {
                 .padding(.vertical, 8)
             }
         }
+    }
+
+    /// Dismissing the sheet clears the selection so a late response is dropped.
+    private var selectedRunBinding: Binding<CronRunSummary?> {
+        Binding(
+            get: { viewModel.selectedRun },
+            set: { if $0 == nil { viewModel.dismissRun() } }
+        )
     }
 
     private var statusColor: Color {
