@@ -200,13 +200,17 @@ struct ComposerModelPickerSheet: View {
 
                 LazyVStack(spacing: 1) {
                     ForEach(group.models, id: \.self) { option in
-                        modelOptionRow(option, allowsDelete: group.id == savedCustomGroupID)
+                        modelOptionRow(option, in: group)
                     }
                 }
             }
             .padding(.top, 4)
         } label: {
             HStack(spacing: 8) {
+                if group.providerID != nil {
+                    ProviderIconView(providerID: group.providerID, label: group.name, size: 18)
+                }
+
                 Text(group.name)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -224,8 +228,13 @@ struct ComposerModelPickerSheet: View {
         .tint(Color(.secondaryLabel))
     }
 
-    private func modelOptionRow(_ option: ModelCatalogOption, allowsDelete: Bool) -> some View {
-        HStack(spacing: 8) {
+    /// Rows under a provider heading inherit its glyph; the custom groups mix
+    /// providers, so each of their rows carries its own.
+    private func modelOptionRow(_ option: ModelCatalogOption, in group: ModelCatalogGroup) -> some View {
+        let allowsDelete = group.id == savedCustomGroupID
+        let rowProviderLabel = group.providerID == nil ? modelGroups.providerName(for: option.providerID) : nil
+
+        return HStack(spacing: 8) {
             Button {
                 onSelect(option)
                 dismiss()
@@ -235,6 +244,10 @@ struct ComposerModelPickerSheet: View {
                         .font(.system(size: 15, weight: .regular))
                         .foregroundStyle(isSelected(option) ? Color.accentColor : Color(.tertiaryLabel))
                         .frame(width: 18)
+
+                    if let rowProviderLabel {
+                        ProviderIconView(providerID: option.providerID, label: rowProviderLabel, size: 18)
+                    }
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(option.displayName)

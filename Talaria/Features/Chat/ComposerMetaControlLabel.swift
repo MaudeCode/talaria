@@ -2,10 +2,12 @@ import SwiftUI
 import UIKit
 
 struct ComposerMetaControlLabel: View {
-    @ScaledMetric(relativeTo: .footnote) private var brainIconSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .footnote) private var iconSize: CGFloat = 13
 
     let title: String
     let systemImage: String?
+    /// Provider whose registry glyph (or initials fallback) leads the title.
+    var providerIcon: (id: String, label: String)? = nil
     var minWidth: CGFloat?
     let maxWidth: CGFloat
     let color: Color
@@ -14,10 +16,17 @@ struct ComposerMetaControlLabel: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let systemImage {
+            if let providerIcon {
+                ProviderIconView(
+                    providerID: providerIcon.id,
+                    label: providerIcon.label,
+                    tint: color,
+                    size: iconSize
+                )
+            } else if let systemImage {
                 if systemImage == "lucide.brain" {
                     LucideBrainIcon()
-                        .frame(width: brainIconSize, height: brainIconSize)
+                        .frame(width: iconSize, height: iconSize)
                 } else {
                     Image(systemName: systemImage)
                         .font(controlFont)

@@ -91,6 +91,15 @@ struct ProviderQualifiedModelID: Equatable, Hashable, Sendable {
     }
 }
 
+extension Array where Element == ModelCatalogGroup {
+    /// The catalog group's name for a provider, or the id itself when no group
+    /// lists it, so a custom provider still labels its icon fallback.
+    func providerName(for providerID: String?) -> String? {
+        guard let providerID, !providerID.isEmpty else { return nil }
+        return first { $0.providerID == providerID }?.name ?? providerID
+    }
+}
+
 extension ModelCatalogOption {
     func matchesSelection(modelID: String?, providerID: String?) -> Bool {
         guard let modelID else { return false }

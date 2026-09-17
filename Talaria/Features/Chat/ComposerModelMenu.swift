@@ -22,6 +22,11 @@ struct ComposerModelMenu: View {
             ComposerMetaControlLabel(
                 title: selectedModelTitle,
                 systemImage: nil,
+                providerIcon: Self.providerIcon(
+                    modelGroups: modelGroups,
+                    selectedModelID: selectedModelID,
+                    selectedModelProviderID: selectedModelProviderID
+                ),
                 maxWidth: maxWidth,
                 color: color,
                 controlFont: controlFont,
@@ -56,7 +61,7 @@ struct ComposerModelMenu: View {
         children.append(UIMenu(
             title: String(localized: "Model"),
             options: [.displayInline],
-            children: compactOptions.map(modelAction)
+            children: compactOptions.map { modelAction($0, subtitle: nil) }
                 + [
                     UIAction(title: String(localized: "All Models...")) { _ in
                         Task { @MainActor in
@@ -71,16 +76,18 @@ struct ComposerModelMenu: View {
     }
 
     private func modelSection(title: String, options: [ModelCatalogOption]) -> UIMenu {
-        UIMenu(
+        let subtitles = Self.providerSubtitles(for: options, in: modelGroups)
+        return UIMenu(
             title: title,
             options: [.displayInline],
-            children: options.map(modelAction)
+            children: zip(options, subtitles).map { modelAction($0, subtitle: $1) }
         )
     }
 
-    private func modelAction(_ option: ModelCatalogOption) -> UIAction {
+    private func modelAction(_ option: ModelCatalogOption, subtitle: String?) -> UIAction {
         UIAction(
             title: option.displayName,
+            subtitle: subtitle,
             state: isSelected(option) ? .on : .off
         ) { _ in
             Task { @MainActor in
@@ -110,7 +117,11 @@ struct ComposerModelMenu: View {
             result.append(option)
         }
 
-        append(selectedModelOption(in: allModels))
+        append(Self.selectedModelOption(
+            in: allModels,
+            selectedModelID: selectedModelID,
+            selectedModelProviderID: selectedModelProviderID
+        ))
 
         return result
     }
@@ -130,7 +141,39 @@ struct ComposerModelMenu: View {
         )
     }
 
-    private func selectedModelOption(in options: [ModelCatalogOption]) -> ModelCatalogOption? {
+    /// Provider identity behind the active-model control, resolved through the
+    /// catalog so a bare active-provider model id still finds its group, then
+    /// the server's `@provider:` tag. Nil when the selection names no provider
+    /// anywhere; the model name itself is never used to guess one.
+    static func providerIcon(
+        modelGroups: [ModelCatalogGroup],
+        selectedModelID: String?,
+        selectedModelProviderID: String?
+    ) -> (id: String, label: String)? {
+        let providerID = selectedModelOption(
+            in: modelGroups.flatMap(\.models),
+            selectedModelID: selectedModelID,
+            selectedModelProviderID: selectedModelProviderID
+        )?.providerID ?? selectedModelID.flatMap { ProviderQualifiedModelID($0).providerPrefix }
+        guard let providerID, let label = modelGroups.providerName(for: providerID) else { return nil }
+        return (providerID, label)
+    }
+
+    /// Provider names for one section's rows, present only when the section
+    /// mixes providers so two same-named models stay distinguishable.
+    static func providerSubtitles(
+        for options: [ModelCatalogOption],
+        in modelGroups: [ModelCatalogGroup]
+    ) -> [String?] {
+        guard Set(options.map(\.providerID)).count > 1 else { return options.map { _ in nil } }
+        return options.map { modelGroups.providerName(for: $0.providerID) }
+    }
+
+    private static func selectedModelOption(
+        in options: [ModelCatalogOption],
+        selectedModelID: String?,
+        selectedModelProviderID: String?
+    ) -> ModelCatalogOption? {
         guard let selectedModelID, !selectedModelID.isEmpty else { return nil }
 
         if let selectedModelProviderID {
