@@ -130,6 +130,15 @@ final class ChatViewModel {
         compressionAnchorMetadata = CompressionAnchorMetadata(from: session)
         recomputeCompressionReferenceCard()
     }
+    /// Mirrors the list-row merge rule: an explicit server value (or subagent
+    /// classification) replaces the seeded flag; a detail that omits both keeps it.
+    private func applyReadOnlyState(from session: SessionDetail?) {
+        guard let session else { return }
+        let detail = SessionSummary(from: session)
+        if detail.readOnly != nil || detail.isReadOnly != nil || detail.isDelegatedSubagentSession {
+            isSessionReadOnly = detail.isSessionReadOnly
+        }
+    }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil
         compressionReferenceCard = nil
@@ -234,7 +243,9 @@ final class ChatViewModel {
     private var currentModelProvider: String?
     private var currentProfile: String?
     private let isCLISession: Bool
-    private let isSessionReadOnly: Bool
+    /// Server-owned view-only state (TAL-152). Seeded from the list row and
+    /// refreshed from every applied `SessionDetail`, which is authoritative.
+    private(set) var isSessionReadOnly: Bool
     private let server: URL
     let client: APIClient
     private let streamCoordinator: ChatStreamCoordinator
@@ -1223,6 +1234,7 @@ final class ChatViewModel {
                 expandRenderable: true
             )
             let session = response.session
+            applyReadOnlyState(from: session)
             let loadedMessages = session?.messages ?? []
             let loadedActiveStreamID = session?.activeStreamId?.trimmingCharacters(in: .whitespacesAndNewlines)
             let reloadedMessages: [ChatMessage]
@@ -1548,6 +1560,7 @@ final class ChatViewModel {
                 return false
             }
 
+            applyReadOnlyState(from: session)
             let olderMessages = session.messages ?? []
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
@@ -3474,6 +3487,7 @@ final class ChatViewModel {
                 return .unsupported(friendlyMessage: String(localized: "The server did not return the compressed session."))
             }
 
+            applyReadOnlyState(from: session)
             applyCompressionAnchorMetadata(from: session)
             messages = session.messages ?? []
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
@@ -4660,6 +4674,7 @@ final class ChatViewModel {
             return
         }
 
+        applyReadOnlyState(from: completedSession)
         applyCompressionAnchorMetadata(from: completedSession)
 
         var didApplyCompletedTranscript = false

@@ -224,9 +224,10 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(streamClient.startedURLs.count, 1)
     }
 
+    /// The list row said nothing about read-only; the loaded detail is authoritative.
     @MainActor
     func testReadOnlySessionRejectsEditAndRegenerateWithoutTruncating() async throws {
-        let viewModel = try makeViewModel(sessionSummary: makeSession(readOnly: true)) { request in
+        let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/session":
                 return apiTestJSONResponse("""
@@ -247,7 +248,9 @@ extension ChatViewModelSendTests {
             }
         }
 
+        XCTAssertFalse(viewModel.isSessionReadOnly)
         await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.isSessionReadOnly)
         let userContext = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
         let assistantContext = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[1], visibleIndex: 1))
 
@@ -260,6 +263,18 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messageActionErrorMessage, "This session is view-only and can't be regenerated.")
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question", "Answer"])
         XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
+    func testLoadedDetailRefreshesStaleReadOnlySeedFromTheListRow() async throws {
+        let viewModel = try makeViewModel(sessionSummary: makeSession(readOnly: true)) { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            return apiTestJSONResponse(#"{"session": {"session_id": "session-abc", "read_only": false, "messages": []}}"#, for: request)
+        }
+
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+        await viewModel.loadMessages()
+        XCTAssertFalse(viewModel.isSessionReadOnly)
     }
 
     @MainActor
