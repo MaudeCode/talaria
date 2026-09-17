@@ -107,14 +107,14 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          simulator_id=$(xcrun simctl list devices available --json | python3 -c '
-          import json, sys
-          data = json.load(sys.stdin)
+          # scripts/select-ios-simulator picks the newest *released* runtime
+          # (docs/ios-simulator-pool.md); within it prefer the pool's phone model.
+          runtime=$(scripts/select-ios-simulator | cut -f2)
+          simulator_id=$(xcrun simctl list devices available --json | RUNTIME="${runtime}" python3 -c '
+          import json, os, sys
           phones = [
               device
-              for runtime, devices in data["devices"].items()
-              if "iOS" in runtime
-              for device in devices
+              for device in json.load(sys.stdin)["devices"].get(os.environ["RUNTIME"], [])
               if device.get("isAvailable") and device["name"].startswith("iPhone")
           ]
           preferred = "iPhone 17"
@@ -126,7 +126,7 @@ jobs:
             xcrun simctl list devices available >&2
             exit 1
           fi
-          echo "Using simulator: ${simulator_id}"
+          echo "Using simulator: ${simulator_id} on ${runtime}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
 
       - name: Build for testing
