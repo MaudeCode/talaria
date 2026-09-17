@@ -277,6 +277,41 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(viewModel.isSessionReadOnly)
     }
 
+    /// A superseded load's response arriving last must not overwrite the
+    /// read-only flag the accepted load applied.
+    @MainActor
+    func testSupersededLoadResponseDoesNotOverwriteReadOnlyState() async throws {
+        let requests = DeferredRequests()
+        let host = "tal152-readonly-overlap.test"
+        let firstRequestStarted = expectation(description: "first session request started")
+        let secondRequestStarted = expectation(description: "second session request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            XCTAssertEqual(request.request.url?.path, "/api/session")
+            (requests.append(request) == 1 ? firstRequestStarted : secondRequestStarted).fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let olderLoad = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [firstRequestStarted], timeout: 2)
+        let newerLoad = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [secondRequestStarted], timeout: 2)
+
+        requests.request(at: 1).complete(withJSON: #"{"session": {"session_id": "session-abc", "read_only": true, "messages": []}}"#)
+        await newerLoad.value
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+
+        requests.request(at: 0).complete(withJSON: #"{"session": {"session_id": "session-abc", "read_only": false, "messages": []}}"#)
+        await olderLoad.value
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+    }
+
     @MainActor
     func testForkFromMessageUsesKeepCountThroughMessageAndHandlesMissingForkID() async throws {
         var branchBodies: [[String: Any]] = []

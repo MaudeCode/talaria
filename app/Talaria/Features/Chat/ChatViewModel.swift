@@ -1234,7 +1234,6 @@ final class ChatViewModel {
                 expandRenderable: true
             )
             let session = response.session
-            applyReadOnlyState(from: session)
             let loadedMessages = session?.messages ?? []
             let loadedActiveStreamID = session?.activeStreamId?.trimmingCharacters(in: .whitespacesAndNewlines)
             let reloadedMessages: [ChatMessage]
@@ -1298,6 +1297,7 @@ final class ChatViewModel {
                     else { continue }
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
+                applyReadOnlyState(from: session)
                 applyReloadedMessages(
                     mergedMessages,
                     from: session,
@@ -1316,6 +1316,9 @@ final class ChatViewModel {
                 return
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
+            // After load arbitration only: a superseded response must not leave its
+            // read-only flag behind once its transcript has been rejected.
+            applyReadOnlyState(from: session)
             applyCompressionAnchorMetadata(from: session)
             applyReloadedMessages(
                 reloadedMessages,
