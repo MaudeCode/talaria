@@ -10,8 +10,12 @@ scripts/test-ios
 ```
 
 Setup fills missing slots and reuses the existing pool's runtime and model.
-On a new machine it selects an available iPhone runtime; select one explicitly
-with `IOS_SIMULATOR_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-4`.
+On a new machine it selects the newest available *released* iPhone runtime.
+Prerelease runtimes are skipped, identified by Apple's seed build numbering
+(`24A5408d` for the iOS 27 beta against `23E254a` for 26.4), so installing a
+beta SDK never silently changes what local runs and CI test against. Select any
+runtime explicitly, including a beta, with
+`IOS_SIMULATOR_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-4`.
 `IOS_SIMULATOR_POOL_SIZE` defaults to six. `--refresh` recreates the entire shared
 pool and refuses to run while any pool device is leased or booted. Refresh affects
 all adopting projects. It does not copy accounts or app data.
