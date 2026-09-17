@@ -1051,6 +1051,7 @@ struct ChatView: View {
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
             isViewingCachedData: viewModel.isViewingCachedData,
+            isSessionReadOnly: session.isSessionReadOnly,
             hasOlderMessages: viewModel.hasOlderMessages,
             isLoadingOlderMessages: viewModel.isLoadingOlderMessages,
             isRegeneratingMessage: viewModel.isRegeneratingMessage,

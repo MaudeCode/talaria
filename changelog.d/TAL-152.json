@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "View-only sessions no longer offer Edit Message or Regenerate Response.",
+      "highlight": false
+    }
+  ]
+}

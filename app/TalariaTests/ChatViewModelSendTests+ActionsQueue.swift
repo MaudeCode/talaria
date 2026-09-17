@@ -225,6 +225,44 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testReadOnlySessionRejectsEditAndRegenerateWithoutTruncating() async throws {
+        let viewModel = try makeViewModel(sessionSummary: makeSession(readOnly: true)) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "read_only": true,
+                    "messages": [
+                      {"role": "user", "content": "Question", "timestamp": 1, "message_id": "u-1"},
+                      {"role": "assistant", "content": "Answer", "timestamp": 2, "message_id": "a-2"}
+                    ]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Read-only session must not mutate the transcript: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let userContext = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let assistantContext = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[1], visibleIndex: 1))
+
+        let didEdit = await viewModel.editMessage(userContext, newText: "Edited")
+        XCTAssertFalse(didEdit)
+        XCTAssertEqual(viewModel.messageActionErrorMessage, "This session is view-only and can't be edited.")
+
+        let didRegenerate = await viewModel.regenerateAssistantResponse(assistantContext)
+        XCTAssertFalse(didRegenerate)
+        XCTAssertEqual(viewModel.messageActionErrorMessage, "This session is view-only and can't be regenerated.")
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question", "Answer"])
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
     func testForkFromMessageUsesKeepCountThroughMessageAndHandlesMissingForkID() async throws {
         var branchBodies: [[String: Any]] = []
         let viewModel = try makeViewModel { request in

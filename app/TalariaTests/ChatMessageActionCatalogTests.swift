@@ -19,6 +19,7 @@ final class ChatMessageActionCatalogTests: XCTestCase {
         let actions = catalog(for: .assistant, state: ChatMessageActionState(
             listeningMessageID: messageID,
             isViewingCachedData: false,
+            isSessionReadOnly: false,
             hasActiveStream: false,
             isRegeneratingMessage: false,
             isEditingMessage: false,
@@ -33,6 +34,7 @@ final class ChatMessageActionCatalogTests: XCTestCase {
         let actions = catalog(for: .assistant, state: ChatMessageActionState(
             listeningMessageID: nil,
             isViewingCachedData: false,
+            isSessionReadOnly: false,
             hasActiveStream: true,
             isRegeneratingMessage: false,
             isEditingMessage: false,
@@ -47,6 +49,7 @@ final class ChatMessageActionCatalogTests: XCTestCase {
         let actions = catalog(for: .user, state: ChatMessageActionState(
             listeningMessageID: nil,
             isViewingCachedData: true,
+            isSessionReadOnly: false,
             hasActiveStream: false,
             isRegeneratingMessage: false,
             isEditingMessage: false,
@@ -59,10 +62,27 @@ final class ChatMessageActionCatalogTests: XCTestCase {
         XCTAssertTrue(actions.last?.isEnabled == true)
     }
 
+    func testReadOnlySessionDisablesEditAndRegenerateButKeepsFork() {
+        let readOnly = ChatMessageActionState(
+            listeningMessageID: nil,
+            isViewingCachedData: false,
+            isSessionReadOnly: true,
+            hasActiveStream: false,
+            isRegeneratingMessage: false,
+            isEditingMessage: false,
+            isForkingMessage: false,
+            disablesHistoryActions: false
+        )
+
+        XCTAssertEqual(disabledIDs(catalog(for: .user, state: readOnly)), ["edit"])
+        XCTAssertEqual(disabledIDs(catalog(for: .assistant, state: readOnly)), ["regenerate"])
+    }
+
     func testInFlightForkOnlyDisablesForking() {
         let actions = catalog(for: .assistant, state: ChatMessageActionState(
             listeningMessageID: nil,
             isViewingCachedData: false,
+            isSessionReadOnly: false,
             hasActiveStream: false,
             isRegeneratingMessage: false,
             isEditingMessage: false,
@@ -91,6 +111,7 @@ final class ChatMessageActionCatalogTests: XCTestCase {
         ChatMessageActionState(
             listeningMessageID: nil,
             isViewingCachedData: false,
+            isSessionReadOnly: false,
             hasActiveStream: false,
             isRegeneratingMessage: false,
             isEditingMessage: false,

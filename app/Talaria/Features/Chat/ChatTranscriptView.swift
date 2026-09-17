@@ -47,6 +47,7 @@ struct ChatTranscriptView: View {
     let localAttachmentPreviews: [String: [String: Data]]
     let listeningMessageID: String?
     let isViewingCachedData: Bool
+    let isSessionReadOnly: Bool
     let hasOlderMessages: Bool
     let isLoadingOlderMessages: Bool
     let isRegeneratingMessage: Bool
@@ -282,6 +283,7 @@ struct ChatTranscriptView: View {
                     localAttachmentPreviews: localAttachmentPreviews[transcriptMessage.message.id],
                     listeningMessageID: listeningMessageID,
                     isViewingCachedData: isViewingCachedData,
+                    isSessionReadOnly: isSessionReadOnly,
                     hasActiveStream: activeStreamID != nil,
                     isRegeneratingMessage: isRegeneratingMessage,
                     isEditingMessage: isEditingMessage,
