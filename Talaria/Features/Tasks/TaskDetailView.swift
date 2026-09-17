@@ -61,7 +61,7 @@ struct TaskDetailView: View {
                         viewModel: viewModel,
                         onSelect: { run in Task { await viewModel.loadRunDetail(run) } },
                         onLoadMore: { Task { await viewModel.loadRunHistory() } },
-                        onRetry: { Task { await viewModel.loadRunHistory(reset: viewModel.runs.isEmpty) } }
+                        onRetry: { Task { await viewModel.retryRunHistory() } }
                     )
                     .padding(.top, 8)
                 }

@@ -112,6 +112,12 @@ final class TaskDetailViewModel {
         }
     }
 
+    /// Repeats the failed request: a failed reset leaves the cursor at zero,
+    /// a failed "load more" leaves it past the loaded rows.
+    func retryRunHistory() async {
+        await loadRunHistory(reset: runsOffset == 0)
+    }
+
     /// Reads one run's full output. Selecting another run fences the earlier response.
     func loadRunDetail(_ run: CronRunSummary) async {
         guard let jobID = job.jobId, let filename = run.filename, !filename.isEmpty else { return }

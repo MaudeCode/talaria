@@ -724,6 +724,50 @@ final class CronManagementViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testTaskDetailViewModelRetryAfterFailedRefreshReloadsExhaustedHistory() async throws {
+        let historyRequests = LockedCounter()
+        let requestedOffsets = LockedValues<String>()
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": []}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/history":
+                requestedOffsets.append(try Self.queryItems(from: request)["offset"] ?? "")
+                switch historyRequests.increment() {
+                case 2:
+                    return apiTestJSONResponse(#"{"error": "boom"}"#, statusCode: 500, for: request)
+                default:
+                    return apiTestJSONResponse(Self.historyJSON(offset: 0, count: 2, total: 2), for: request)
+                }
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+        XCTAssertEqual(viewModel.runs.count, 2)
+        XCTAssertFalse(viewModel.hasMoreRuns)
+
+        await viewModel.load()
+        XCTAssertNotNil(viewModel.runsErrorMessage)
+        XCTAssertEqual(viewModel.runs.count, 2, "A failed refresh keeps the rows already on screen.")
+
+        await viewModel.retryRunHistory()
+        XCTAssertNil(viewModel.runsErrorMessage)
+        XCTAssertEqual(viewModel.runs.count, 2)
+        XCTAssertEqual(requestedOffsets.values, ["0", "0", "0"], "Retrying a failed refresh must request the first page again.")
+    }
+
+    @MainActor
     func testTaskDetailViewModelUnsupportedHistoryDegradesToRecentOutput() async throws {
         let client = makeClient { request in
             switch request.url?.path {
