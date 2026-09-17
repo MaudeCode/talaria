@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Task details now list every past run and open any run's full output with a copy button.",
+      "highlight": true
+    }
+  ]
+}

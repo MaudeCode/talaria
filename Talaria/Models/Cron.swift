@@ -242,6 +242,131 @@ struct CronOutputItem: Decodable, Equatable, Identifiable {
     }
 }
 
+/// `GET /api/crons/history`: newest-first run listing without content.
+struct CronHistoryResponse: Decodable, Equatable {
+    let jobId: String?
+    let runs: [CronRunSummary]?
+    let total: Int?
+    let offset: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId
+        case runs
+        case total
+        case offset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = container.decodeLossyStringIfPresent(forKey: .jobId)
+        total = container.decodeLossyIntIfPresent(forKey: .total)
+        offset = container.decodeLossyIntIfPresent(forKey: .offset)
+
+        // Skip malformed rows instead of dropping the whole page.
+        guard var rows = try? container.nestedUnkeyedContainer(forKey: .runs) else {
+            runs = nil
+            return
+        }
+        var decoded: [CronRunSummary] = []
+        while !rows.isAtEnd {
+            if let run = try? rows.decode(CronRunSummary.self) {
+                decoded.append(run)
+            } else if (try? rows.decode(JSONValue.self)) == nil {
+                break
+            }
+        }
+        runs = decoded
+    }
+}
+
+struct CronRunSummary: Decodable, Equatable, Identifiable {
+    private let fallbackIdentity = DecodedIdentityToken()
+    var id: String { filename ?? fallbackIdentity.value }
+
+    let filename: String?
+    let size: Int?
+    let modified: CronDateValue?
+    let usage: CronRunUsage?
+
+    enum CodingKeys: String, CodingKey {
+        case filename
+        case size
+        case modified
+        case usage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        filename = container.decodeLossyStringIfPresent(forKey: .filename)
+        size = container.decodeLossyIntIfPresent(forKey: .size)
+        modified = try? container.decodeIfPresent(CronDateValue.self, forKey: .modified)
+        usage = try? container.decodeIfPresent(CronRunUsage.self, forKey: .usage)
+    }
+}
+
+/// Optional token/cost metadata the server parses from a run's front matter.
+struct CronRunUsage: Decodable, Equatable {
+    let model: String?
+    let provider: String?
+    let estimatedCostUsd: Double?
+    let durationSeconds: Double?
+    let inputTokens: Int?
+    let outputTokens: Int?
+    let totalTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case provider
+        case estimatedCostUsd
+        case durationSeconds
+        case inputTokens
+        case outputTokens
+        case totalTokens
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        model = container.decodeLossyStringIfPresent(forKey: .model)
+        provider = container.decodeLossyStringIfPresent(forKey: .provider)
+        estimatedCostUsd = container.decodeLossyDoubleIfPresent(forKey: .estimatedCostUsd)
+        durationSeconds = container.decodeLossyDoubleIfPresent(forKey: .durationSeconds)
+        inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
+        outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
+        totalTokens = container.decodeLossyIntIfPresent(forKey: .totalTokens)
+    }
+
+    var isEmpty: Bool {
+        model == nil && provider == nil && estimatedCostUsd == nil && durationSeconds == nil
+            && inputTokens == nil && outputTokens == nil && totalTokens == nil
+    }
+}
+
+/// `GET /api/crons/run`: one run's full output.
+struct CronRunDetailResponse: Decodable, Equatable {
+    let jobId: String?
+    let filename: String?
+    let content: String?
+    let snippet: String?
+    let usage: CronRunUsage?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId
+        case filename
+        case content
+        case snippet
+        case usage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = container.decodeLossyStringIfPresent(forKey: .jobId)
+        filename = container.decodeLossyStringIfPresent(forKey: .filename)
+        content = container.decodeLossyStringIfPresent(forKey: .content)
+        snippet = container.decodeLossyStringIfPresent(forKey: .snippet)
+        usage = try? container.decodeIfPresent(CronRunUsage.self, forKey: .usage)
+    }
+}
+
 struct CronDeliveryOptionsResponse: Decodable, Equatable {
     let platforms: [CronDeliveryOption]?
 
