@@ -1563,7 +1563,8 @@ final class ChatViewModel {
                 return false
             }
 
-            applyReadOnlyState(from: session)
+            // Pagination is outside session-load arbitration, so it must not
+            // refresh read-only state; the cold load and live paths own that.
             let olderMessages = session.messages ?? []
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
