@@ -31,6 +31,8 @@ with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
     fake.write_text('''#!/bin/zsh
 if [[ "$1 $2 $3" == "simctl list devices" ]]; then
     cat "$POOL_FIXTURE"
+elif [[ "$1 $2 $3" == "simctl list runtimes" ]]; then
+    cat "$POOL_RUNTIMES"
 elif [[ "$1 $2" == "simctl delete" ]]; then
     print "$3" >> "$POOL_DELETIONS"
 elif [[ "$1 $2" == "simctl erase" ]]; then
@@ -39,8 +41,13 @@ elif [[ "$1 $2" == "simctl erase" ]]; then
 fi
 ''')
     fake.chmod(0o755)
+    runtimes = work / 'runtimes.json'
+    runtimes.write_text(json.dumps({'runtimes': [
+        dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-26-4', buildversion='23E254a'),
+        dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-27-0', buildversion='24A5408d')]}))
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
                IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
+               POOL_RUNTIMES=str(runtimes),
                POOL_DELETIONS=str(work / 'deletions'), POOL_ERASURES=str(work / 'erasures'),
                POOL_ERASE_FAIL=str(work / 'erase-fail'))
     for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME'):
@@ -69,7 +76,27 @@ fi
             assert process.poll() is None, process.stderr.read().decode()
             time.sleep(.02)
         raise AssertionError('lease owner did not start')
+    def select(expected=0, **overrides):
+        result = subprocess.run([str(root / 'select-ios-simulator')], env=dict(env, **overrides),
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
+        return result.stdout.strip().split('\t') if expected == 0 else result.stderr.strip()
+    def selector_fixture(released, beta):
+        fixture.write_text(json.dumps({'devices': {
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-4': [released],
+            'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [beta]}}))
     try:
+        # Selection ignores prerelease runtimes unless one is requested explicitly.
+        released = dict(personal, udid='00000000-0000-0000-0000-000000000264')
+        beta = dict(personal, udid='00000000-0000-0000-0000-000000000270')
+        selector_fixture(released, beta)
+        assert select() == [released['udid'], 'com.apple.CoreSimulator.SimRuntime.iOS-26-4',
+                            personal['deviceTypeIdentifier']]
+        assert select(IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-27-0')[0] == beta['udid']
+        ipad = dict(released, deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4')
+        selector_fixture(ipad, beta)
+        assert select(expected=69) == 'No available iPhone simulator was found.'
+        save()
         first, child = owner()
         assert invoke() == devices[1]['udid']  # Independent checkout chooses another slot.
         assert erasures() == [devices[1]['udid']]  # Release wipes the device it leased.
@@ -153,4 +180,4 @@ fi
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-print('Shared pool checks passed: independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
+print('Shared pool checks passed: released-runtime selection, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
