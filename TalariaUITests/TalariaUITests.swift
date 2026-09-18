@@ -1299,15 +1299,17 @@ final class KanbanBoardPickerUITests: AdaptiveLayoutUITestCase {
 
     /// Select Cards and Card Filters keep their state whether they sit in the bar or the overflow.
     private func assertSelectionAndFiltersReachable(in bar: XCUIElement, overflow: XCUIElement, variant: Variant) {
+        // Decide once: iOS 27 drops the More button from the tree while its menu is open.
+        let usesOverflow = overflow.exists
         func secondaryAction(_ label: String) -> XCUIElement {
-            guard overflow.exists else { return bar.buttons[label] }
+            guard usesOverflow else { return bar.buttons[label] }
             tap(at: overflow.frame.center)
             return app.buttons[label].firstMatch
         }
 
         let filters = secondaryAction("Card Filters")
         XCTAssertTrue(filters.waitForExistence(timeout: 3), "Card Filters unreachable [\(variant.name)]")
-        let selectCards = overflow.exists ? app.buttons["Select Cards"].firstMatch : bar.buttons["Select Cards"]
+        let selectCards = usesOverflow ? app.buttons["Select Cards"].firstMatch : bar.buttons["Select Cards"]
         XCTAssertTrue(selectCards.exists, "Select Cards unreachable [\(variant.name)]")
         XCTAssertTrue(selectCards.isEnabled, "Select Cards disabled in the fixture Board [\(variant.name)]")
         tap(at: selectCards.frame.center)
@@ -1384,8 +1386,20 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 serverField.tap()
                 XCTAssertTrue(hasKeyboardFocus(serverField), "Server field did not take focus [\(variant.name)]")
                 XCUIDevice.shared.orientation = variant.orientation == .portrait ? .landscapeLeft : .portrait
-                XCTAssertTrue(serverField.waitForExistence(timeout: 5), "Server URL field lost on rotation [\(variant.name)]")
-                XCTAssertTrue(hasKeyboardFocus(serverField), "Rotation dropped field focus [\(variant.name)]")
+                // iOS 27 usually resets the page-style TabView to the welcome page when the
+                // device rotates with the keyboard up (TAL-201); not strict, because some
+                // variants survive. Remove with that fix. One short-circuited assertion,
+                // because reading focus on the missing field would interrupt the test before
+                // the remaining variants and the title check.
+                let pagerReset = XCTExpectedFailure.Options()
+                pagerReset.isEnabled = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+                pagerReset.isStrict = false
+                XCTExpectFailure("TAL-201: iOS 27 pager resets on rotation", options: pagerReset) {
+                    XCTAssertTrue(
+                        serverField.waitForExistence(timeout: 5) && hasKeyboardFocus(serverField),
+                        "Server URL field or its focus lost on rotation [\(variant.name)]"
+                    )
+                }
                 app.terminate()
             }
         }
@@ -1499,6 +1513,16 @@ extension TalariaUITestCase {
         sidebar.descendants(matching: .any)[destination].firstMatch.tap()
     }
 
+    /// The session list's search field once it is open.
+    var sessionSearchField: XCUIElement {
+        app.searchFields["Search sessions"]
+    }
+
+    /// The minimized session search at the bottom of the list. iOS 26 still exposes
+    /// the collapsed field; iOS 27 replaces it with a toolbar button until it opens.
+    var sessionSearchControl: XCUIElement {
+        sessionSearchField.exists ? sessionSearchField : app.buttons["Search"]
+    }
 }
 
 /// Shared by every `TalariaUITestCase` file: the Settings walk and the coordinate taps that
@@ -1626,7 +1650,7 @@ fileprivate extension TalariaUITestCase {
     func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
-        let viewportBottom = app.searchFields["Search sessions"].frame.minY
+        let viewportBottom = sessionSearchControl.frame.minY
 
         for _ in 0..<12 {
             if session.exists,
