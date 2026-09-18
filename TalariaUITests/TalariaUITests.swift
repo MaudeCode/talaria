@@ -1521,8 +1521,18 @@ extension TalariaUITestCase {
 
     /// The minimized session search at the bottom of the list. iOS 26 still exposes
     /// the collapsed field; iOS 27 replaces it with a toolbar button until it opens.
-    var sessionSearchControl: XCUIElement {
-        sessionSearchField.exists ? sessionSearchField : app.buttons["Search"]
+    /// Polls for either, so the choice does not depend on which appears first.
+    func waitForSessionSearchControl(timeout: TimeInterval) -> XCUIElement? {
+        let button = app.buttons["Search"]
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if sessionSearchField.exists { return sessionSearchField }
+            if button.exists { return button }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < deadline
+
+        return nil
     }
 }
 
@@ -1651,7 +1661,9 @@ fileprivate extension TalariaUITestCase {
     func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
-        let viewportBottom = sessionSearchControl.frame.minY
+        let searchControl = waitForSessionSearchControl(timeout: 5)
+        XCTAssertNotNil(searchControl, "Missing the session search control")
+        let viewportBottom = searchControl?.frame.minY ?? 0
 
         for _ in 0..<12 {
             if session.exists,
