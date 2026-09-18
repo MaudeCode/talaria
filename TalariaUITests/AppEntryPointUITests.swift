@@ -228,12 +228,12 @@ final class KeyboardCommandUITests: AppEntryPointUITestCase {
     func testSearchCommandFocusesSessionSearch() throws {
         launchFixtureOnSessionList()
 
-        let search = app.searchFields["Search sessions"]
-        XCTAssertTrue(search.waitForExistence(timeout: 15), "Missing the session search field")
-        XCTAssertFalse(hasKeyboardFocus(search), "Session search starts unfocused")
+        XCTAssertNotNil(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
+        let search = sessionSearchField
+        XCTAssertFalse(search.exists && hasKeyboardFocus(search), "Session search starts unfocused")
 
         XCTAssertTrue(
-            pressCommand("f", until: hasKeyboardFocus(search)),
+            pressCommand("f", until: search.exists && hasKeyboardFocus(search)),
             "Command-F did not focus session search"
         )
     }
