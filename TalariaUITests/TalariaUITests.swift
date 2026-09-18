@@ -1388,17 +1388,18 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 XCUIDevice.shared.orientation = variant.orientation == .portrait ? .landscapeLeft : .portrait
                 // iOS 27 usually resets the page-style TabView to the welcome page when the
                 // device rotates with the keyboard up (TAL-201); not strict, because some
-                // variants survive. Remove with that fix. One short-circuited assertion,
-                // because reading focus on the missing field would interrupt the test before
-                // the remaining variants and the title check.
+                // variants survive. Remove with that fix. Only the reset is expected: a
+                // surviving field must still keep focus, and reading focus on a missing
+                // field would interrupt the test before the remaining variants.
                 let pagerReset = XCTExpectedFailure.Options()
                 pagerReset.isEnabled = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
                 pagerReset.isStrict = false
+                let fieldSurvived = serverField.waitForExistence(timeout: 5)
                 XCTExpectFailure("TAL-201: iOS 27 pager resets on rotation", options: pagerReset) {
-                    XCTAssertTrue(
-                        serverField.waitForExistence(timeout: 5) && hasKeyboardFocus(serverField),
-                        "Server URL field or its focus lost on rotation [\(variant.name)]"
-                    )
+                    XCTAssertTrue(fieldSurvived, "Server URL field lost on rotation [\(variant.name)]")
+                }
+                if fieldSurvived {
+                    XCTAssertTrue(hasKeyboardFocus(serverField), "Rotation dropped field focus [\(variant.name)]")
                 }
                 app.terminate()
             }
