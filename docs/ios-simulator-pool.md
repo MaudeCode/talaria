@@ -2,7 +2,9 @@
 
 Oar, Talaria and future iOS projects share `iOS Test 1` through `iOS Test 6`.
 These are disposable synthetic-test devices, not signed-in development phones.
-The current local pool uses iPhone 17 Pro on iOS 26.4.
+The current local pool uses iPhone 17 Pro on iOS 27.0. CI selects its
+`iPhone 17` device from the newest released runtime installed on the runner,
+so it tracks whatever the runner has (`maude` currently offers iOS 26.5).
 
 ```sh
 scripts/setup-ios-test-pool
