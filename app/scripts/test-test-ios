@@ -89,6 +89,7 @@ for (( index = 1; index <= ${#args}; index++ )); do
     esac
 done
 
+print -rl -- "$@" > "$state/last-args"
 lock="$state/counter.lock"
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -248,5 +249,10 @@ read -r maximum < "$state/maximum"
 read -r active < "$state/active"
 [[ "$maximum" == 1 && "$active" == 0 ]]
 [[ ! -e "$common_dir/talaria-xctest-runner.lock.owner" ]]
+
+"$repo/scripts/test-ios" TalariaTests > "$state/whole-target.log" 2>&1
+rg -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
+"$repo/scripts/test-ios" TalariaTests/UntrustedInputFuzzSoakTests > "$state/explicit-soak.log" 2>&1
+! rg -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
 
 print "test-ios admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."
