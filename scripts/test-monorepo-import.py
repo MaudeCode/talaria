@@ -36,6 +36,7 @@ def main():
         (upstream / "server.py").write_text("upstream = 1\n")
         (upstream / "settings.py").write_text("setting = 1\n")
         (upstream / "legacy.py").write_text("# unchanged imported source\n")
+        (upstream / "asset.bin").write_bytes(b"original\0asset")
         git(upstream, "add", ".")
         git(upstream, "commit", "-m", "initial upstream")
         original = git(upstream, "rev-parse", "HEAD")
@@ -50,6 +51,7 @@ def main():
         git(mono, "subtree", "add", "--prefix=web", str(upstream), original)
         web_import = git(mono, "rev-parse", "HEAD")
         (mono / "web/server.py").write_text("talaria = 2\n")
+        (mono / "web/asset.bin").write_bytes(b"integrated\0asset")
         git(mono, "commit", "-am", "downstream server")
         (upstream / "settings.py").write_text("setting = 3\n")
         git(upstream, "commit", "-am", "selected upstream change")
@@ -61,6 +63,22 @@ def main():
         assert not (mono / "settings.py").exists()
         git(mono, "commit", "-m", "import selected upstream change")
         git(mono, "merge-base", "--is-ancestor", selected, "HEAD")
+        integration_tip = git(mono, "rev-parse", "HEAD")
+        git(mono, "checkout", "-b", "released", app_base)
+        git(mono, "merge", "--no-ff", "-m", "merge migration PR", integration_tip)
+        merged_tip = git(mono, "rev-parse", "HEAD")
+        spec = importlib.util.spec_from_file_location(
+            "rehearsal", SCRIPT.with_name("rehearse-monorepo.py"),
+        )
+        rehearsal = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rehearsal)
+        for index, target in enumerate((web_import, integration_tip, merged_tip)):
+            rebuilt = root / f"rebuilt-{index}"
+            git(root, "clone", "--no-checkout", str(mono), str(rebuilt))
+            git(rebuilt, "checkout", "--detach", web_import)
+            rehearsal.apply_integration_tree(mono, rebuilt, web_import, target, env)
+            assert git(rebuilt, "write-tree") == git(mono, "rev-parse", f"{target}^{{tree}}")
+            git(rebuilt, "merge-base", "--is-ancestor", original, "HEAD")
         (mono / "web/settings.py").write_text("uncommitted work\n")
         rejected = subprocess.run([str(SCRIPT), selected, str(upstream)], cwd=mono, env=env,
                                   capture_output=True, text=True)
@@ -101,7 +119,7 @@ def main():
             assert "Invalid monorepo" in str(error)
         else:
             raise AssertionError("Modified Web tree was accepted as a pure import")
-    print("Prefix-aware import, downstream preservation, ancestry, and dirty-state checks passed.")
+    print("Prefix-aware import, merged/binary rehearsal, ancestry, and dirty-state checks passed.")
 
 
 if __name__ == "__main__":
