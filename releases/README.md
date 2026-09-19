@@ -5,11 +5,16 @@ Its identifier is the monorepo source SHA. Each changed component is built from
 that SHA; an unchanged component retains its previous tag, artifact, source and
 original release-set identifier. Versions are independent. Supported contract
 versions are explicit capability sets; peers must share a capability, and the
-new servers must still support the previously released App, and Relay must
-still support the previously released Web while installations upgrade. Changed components
+new servers must still support the previously released App. App and Relay must
+support the latest completed Web release in both stable and experimental channels
+while installations upgrade. The selected App runs live contract tests against
+those retained Web sources; Relay checks their publisher fixtures. Changed components
 must advance beyond every published version in their namespace. Web stable and
 experimental versions advance independently; switching channels does not reset
 that channel's published version history.
+
+New release sources require current main CI evidence. Reused components retain
+their authenticated release manifest's evidence when old Actions runs expire.
 
 `release_set.py MANIFEST --previous PREVIOUS --output DESTINATION` validates the
 schema and cross-field rules before writing a new file. Omit `--previous` only

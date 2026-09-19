@@ -11,6 +11,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def verify_app_web(plan, output):
+    app = plan["components"]["app"]["sourceRevision"]
+    web_refs = list(dict.fromkeys([plan["components"]["web"]["sourceRevision"], *plan["supportedWebSources"]]))
+    for index, web in enumerate(web_refs):
+        subprocess.run([
+            "python3", str(ROOT / "scripts/check-previous-app.py"), "--app-ref", app, "--web-ref", web,
+            "--shared-contracts", "--output", str(output / f"app-web-{index}"),
+        ], check=True)
+    return web_refs
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
@@ -20,10 +31,7 @@ def main():
     refs = {name: component["sourceRevision"] for name, component in plan["components"].items()}
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    subprocess.run([
-        "python3", str(ROOT / "scripts/check-previous-app.py"), "--app-ref", refs["app"], "--web-ref", refs["web"],
-        "--shared-contracts", "--output", str(output / "app-web"),
-    ], check=True)
+    web_refs = verify_app_web(plan, output)
     with tempfile.TemporaryDirectory(prefix="talaria-release-contracts-") as temporary:
         state = Path(temporary)
         for name in ("web", "relay"):
@@ -44,12 +52,15 @@ def main():
                 else:
                     # Producer and consumer fixtures come from their actual refs,
                     # not whichever unreleased code happens to be on main.
-                    for fixture, owner in (("publisher-snapshot", "web"), ("app-registration", "app"), ("relay-snapshot", "app")):
-                        data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{refs[owner]}:contracts/fixtures/{fixture}.json"])
+                    for fixture in ("app-registration", "relay-snapshot"):
+                        data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{refs['app']}:contracts/fixtures/{fixture}.json"])
                         (checkout / f"contracts/fixtures/{fixture}.json").write_bytes(data)
                     subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-                    subprocess.run(["pnpm", "exec", "vitest", "run", "tests/sharedContracts.test.ts"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-    (output / "verification.json").write_text(json.dumps({"sourceRefs": refs, "result": "success"}, indent=2) + "\n")
+                    for web_ref in web_refs:
+                        data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_ref}:contracts/fixtures/publisher-snapshot.json"])
+                        (checkout / "contracts/fixtures/publisher-snapshot.json").write_bytes(data)
+                        subprocess.run(["pnpm", "exec", "vitest", "run", "tests/sharedContracts.test.ts"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+    (output / "verification.json").write_text(json.dumps({"sourceRefs": refs, "supportedWebSources": web_refs, "result": "success"}, indent=2) + "\n")
 
 
 if __name__ == "__main__":

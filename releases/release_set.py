@@ -33,7 +33,8 @@ def require_compatible_contracts(contracts, previous=None):
             raise ValueError(f"incompatible {contract} capabilities")
     if previous:
         for contract, client, server in (("appWeb", "app", "web"), ("appRelay", "app", "relay"),
-                                         ("activityScene", "app", "relay"), ("webRelay", "web", "relay")):
+                                         ("activityScene", "app", "relay"), ("webRelay", "web", "relay"),
+                                         ("appWeb", "web", "app")):
             if not set(previous["contracts"][contract][client]) & set(contracts[contract][server]):
                 raise ValueError(f"previous {client.title()} is incompatible with {contract}")
 
