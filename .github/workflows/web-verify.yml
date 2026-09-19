@@ -80,6 +80,11 @@ jobs:
       - name: Deterministic production build
         run: npm run build:fast
 
+      - name: Verify committed frontend assets
+        run: |
+          git diff --exit-code -- ../static/dist
+          test -z "$(git status --porcelain --untracked-files=all -- ../static/dist)"
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 

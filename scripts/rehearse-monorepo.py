@@ -4,11 +4,22 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def verify_web_base(repo, recipe, env):
+    command = ["git", "-C", str(repo)]
+    pin = subprocess.check_output(command + ["show", f"{recipe}:web/UPSTREAM_BASE_SHA"],
+                                  env=env, text=True, stderr=subprocess.PIPE).strip()
+    if not re.fullmatch(r"[a-f0-9]{40}", pin):
+        raise ValueError("Web upstream base must be an immutable commit")
+    subprocess.run(command + ["merge-base", "--is-ancestor", pin, recipe], env=env,
+                   check=True, stderr=subprocess.PIPE)
 
 
 def apply_integration_tree(source, destination, base, target, env):
@@ -44,6 +55,7 @@ def main():
                                        env=env, text=True).strip()
 
     recipe = git(ROOT, "rev-parse", "--verify", f"{args.recipe_ref}^{{commit}}")
+    verify_web_base(ROOT, recipe, env)
     metadata = json.loads(git(ROOT, "show", f"{recipe}:docs/monorepo-sources.json"))
     sources = metadata["sources"]
     for component, source in sources.items():

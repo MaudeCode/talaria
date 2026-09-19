@@ -77,6 +77,21 @@ def main():
         )
         rehearsal = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(rehearsal)
+        rehearsal.verify_web_base(mono, merged_tip, env)
+        # Check committed content, independent of a clean or dirty worktree.
+        invalid_pin = root / "invalid-pin"
+        git(root, "clone", str(mono), str(invalid_pin))
+        orphan = git(invalid_pin, "commit-tree", "HEAD^{tree}", "-m", "unrelated source")
+        for pin in ("not-a-sha", "f" * 40, orphan):
+            (invalid_pin / "web/UPSTREAM_BASE_SHA").write_text(pin + "\n")
+            git(invalid_pin, "commit", "-am", "invalid committed upstream base")
+            (invalid_pin / "web/UPSTREAM_BASE_SHA").write_text(selected + "\n")
+            try:
+                rehearsal.verify_web_base(invalid_pin, "HEAD", env)
+            except (ValueError, subprocess.CalledProcessError):
+                pass
+            else:
+                raise AssertionError("Invalid committed Web base was accepted")
         for index, target in enumerate((web_import, integration_tip, merged_tip)):
             rebuilt = root / f"rebuilt-{index}"
             git(root, "clone", "--no-checkout", str(mono), str(rebuilt))

@@ -82,8 +82,12 @@ def path_suites(path):
             return {"app_tooling", "tooling"}
         return {"app"}
     if component == "web":
-        if local.startswith(("frontend/", "static/")):
+        if local.startswith(("frontend/", "static/dist/")):
             return {"web_frontend"}
+        if local.startswith("static/"):
+            return {"web_frontend", "web_python"}
+        if local == "UPSTREAM_BASE_SHA":
+            return {"tooling"}
         if local.startswith(("Dockerfile", "docker", ".docker", ".env.docker")):
             return {"docker", "web_python"}
         if local in ("pyproject.toml", "setup.cfg", "setup.py", "uv.lock", "flake.nix", "flake.lock", ".env.example") or local.startswith("requirements"):
@@ -95,7 +99,7 @@ def path_suites(path):
         if local == "server.py" or local.startswith("api/"):
             return {"web_python", "web_frontend", "contracts"}
         if local.startswith(("scripts/", "skills/")) or local in (
-                "bootstrap.py", "mcp_server.py", "pytest.ini", "start.sh", "start.ps1", "ctl.sh", "UPSTREAM_BASE_SHA"):
+                "bootstrap.py", "mcp_server.py", "pytest.ini", "start.sh", "start.ps1", "ctl.sh"):
             return {"web_python"}
         return WEB_BUILD
     if component == "relay":

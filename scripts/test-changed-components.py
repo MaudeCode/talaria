@@ -25,6 +25,8 @@ class RoutingTests(unittest.TestCase):
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
             (["web/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
             (["web/frontend/package-lock.json"], {"web_frontend"}),
+            (["web/static/brand/favicon.ico", "web/static/__init__.py"], {"web_frontend", "web_python"}),
+            (["web/UPSTREAM_BASE_SHA"], {"tooling"}),
             (["web/mcp_server.py", "web/tests/test_config.py"], {"web_python"}),
             (["web/api/providers.py"], {"web_python", "web_frontend", "contracts"}),
             (["web/api/profiles.py"], {"web_python", "web_frontend", "contracts"}),
