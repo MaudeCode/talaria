@@ -35,7 +35,9 @@ Source updates advance the monorepo checkout; deployment remains component-speci
 The operation stamps the new Web provenance and schedules a Web restart. Existing
 active-run guards still apply. The compatibility `force` and `clear_lock` endpoints
 use this same clean-only path for Web. Git owns its locks; the server never deletes
-them. External Agent update and gateway-restart behavior stays separate.
+them. External Agent update and gateway-restart behavior stays separate. Settings
+provides an independent **Update Agent** action, including when Web is current
+or requires manual handling. Applying Web does not also update Agent.
 
 Matching source alone does not complete an update. If the release stamp or
 running identity is still pending, update status reports `metadata_repair: true`
