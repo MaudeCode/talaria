@@ -425,6 +425,7 @@ final class LiveActivityTests: XCTestCase {
             let body: String
             switch request.url?.path {
             case "/v1/auth/apple":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
                 body = #"{"userId":"user-1","sessionToken":"secret","expiresAt":1900000000000}"#
             case "/v1/pairings/publisher":
                 body = #"{"invitation":"invite-once","expiresAt":1787845600000}"#

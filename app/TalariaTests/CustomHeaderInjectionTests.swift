@@ -4,6 +4,35 @@ import XCTest
 // MARK: - Model, storage, and store
 
 final class CustomHeaderModelTests: XCTestCase {
+    func testStampedReleaseIdentityRejectsMismatchedBuildAndIgnoresUnrelatedMetadata() throws {
+        let source = String(repeating: "a", count: 40)
+        var info: [String: Any] = [
+            "CFBundleShortVersionString": "2.1.0", "CFBundleVersion": "321",
+            "secret": "synthetic-secret",
+            "TalariaRelease": ["version": "2.1.0", "buildNumber": 321,
+                               "sourceRevision": source, "releaseSet": source,
+                               "contracts": ["appWeb": [1], "appRelay": [1], "activityScene": ["activity_scene_v1"]]]
+        ]
+        let encoded = try AppConfig.releaseIdentity(info: info)
+        let metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any])
+        XCTAssertEqual(metadata["sourceRevision"] as? String, source)
+        XCTAssertEqual(metadata["releaseSet"] as? String, source)
+        XCTAssertFalse(encoded.contains("synthetic-secret"))
+        info["CFBundleVersion"] = "322"
+        let mismatched = try AppConfig.releaseIdentity(info: info)
+        let rejected = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(mismatched.utf8)) as? [String: Any])
+        XCTAssertTrue(rejected["sourceRevision"] is NSNull)
+        XCTAssertTrue(rejected["releaseSet"] is NSNull)
+        info["CFBundleVersion"] = "321"
+        var invalid = try XCTUnwrap(info["TalariaRelease"] as? [String: Any])
+        invalid["sourceRevision"] = source + "\n"
+        invalid["releaseSet"] = source + "\n"
+        info["TalariaRelease"] = invalid
+        let malformed = try AppConfig.releaseIdentity(info: info)
+        let missing = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(malformed.utf8)) as? [String: Any])
+        XCTAssertTrue(missing["sourceRevision"] is NSNull)
+    }
+
     func testStorageRoundTripPreservesNameAndValueAndOrder() throws {
         let headers = [
             CustomHeader(name: "Authorization", value: "Bearer abc"),
@@ -74,11 +103,12 @@ final class CustomHeaderModelTests: XCTestCase {
 
     func testMergedUnderBuiltInsLetsBuiltInsWin() {
         let merged = [
-            CustomHeader(name: "Accept", value: "application/evil"),
+            CustomHeader(name: "accept", value: "application/evil"),
             CustomHeader(name: "Authorization", value: "Bearer abc")
         ].merged(under: ["Accept": "text/event-stream"])
 
         XCTAssertEqual(merged["Accept"], "text/event-stream")
+        XCTAssertNil(merged["accept"])
         XCTAssertEqual(merged["Authorization"], "Bearer abc")
     }
 }
@@ -133,6 +163,24 @@ final class CustomHeaderAuthStatusDecodeTests: XCTestCase {
 // MARK: - APIClient request injection
 
 final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
+    func testRequestsAdvertiseReleaseIdentityWithoutCustomHeaderSecrets() async throws {
+        let (client, _) = makeHeaderClient([CustomHeader(name: "Authorization", value: "Bearer synthetic-secret")]) { request in
+            let value = try XCTUnwrap(request.value(forHTTPHeaderField: "X-Talaria-Client"))
+            let identity = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any])
+            XCTAssertEqual(identity["version"] as? String, Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+            XCTAssertEqual(identity["buildNumber"] as? String, Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+            XCTAssertTrue(identity["sourceRevision"] is NSNull)
+            XCTAssertTrue(identity["releaseSet"] is NSNull)
+            let contracts = try XCTUnwrap(identity["contracts"] as? [String: Any])
+            XCTAssertEqual(contracts["appWeb"] as? [Int], [1])
+            XCTAssertEqual(contracts["appRelay"] as? [Int], [1])
+            XCTAssertEqual(contracts["activityScene"] as? [String], ["activity_scene_v1"])
+            XCTAssertFalse(value.contains("synthetic-secret"))
+            return try self.ok(request)
+        }
+        _ = try? await client.sessions()
+    }
+
     private func makeHeaderClient(
         _ customHeaders: [CustomHeader],
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
@@ -204,6 +252,7 @@ final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
             CustomHeader(name: "Content-Type", value: "application/evil")
         ]) { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer upload")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
             // The built-in multipart Content-Type is set after the custom
             // headers, so it wins its key.
             XCTAssertEqual(
@@ -221,6 +270,7 @@ final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
             CustomHeader(name: "Authorization", value: "Bearer stt")
         ]) { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer stt")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
             return try self.ok(request)
         }
 
@@ -232,6 +282,7 @@ final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
             CustomHeader(name: "Authorization", value: "Bearer media")
         ]) { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer media")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
             XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "*/*")
             return try self.ok(request, body: "binary")
         }
@@ -250,6 +301,7 @@ final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
             // A third-party transcript image must never receive the (possibly
             // secret) custom headers — off-origin leak guard.
             XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Talaria-Client"))
             return try self.ok(request, body: "img")
         }
 
@@ -274,6 +326,7 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         let captured = expectation(description: "sse request captured")
         MockURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sse")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
             // Built-in Accept must win over a user-supplied Accept.
             XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
             captured.fulfill()
@@ -294,6 +347,7 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
             customHeaderProvider: {
                 [
                     CustomHeader(name: "Authorization", value: "Bearer sse"),
+                    CustomHeader(name: "x-talaria-client", value: "forged"),
                     CustomHeader(name: "Accept", value: "application/evil")
                 ]
             }

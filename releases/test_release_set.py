@@ -76,6 +76,10 @@ class ReleaseSetTests(unittest.TestCase):
             lambda d: d["evidence"][0].update(result="failure"),
             lambda d: d["evidence"][0].update(runUrl="https://example.com/unrelated"),
             lambda d: d["notes"].update(combined="unrelated notes"),
+            lambda d: d.update(releaseSet=d["releaseSet"] + "\n"),
+            lambda d: d["components"]["web"].update(image=d["components"]["web"]["image"] + "\n"),
+            lambda d: d["components"]["app"].update(tag="app-v1.0.0\n", version="1.0.0\n"),
+            lambda d: d["evidence"][0].update(runUrl=d["evidence"][0]["runUrl"] + "\n"),
         ]
         for change in changes:
             with self.subTest(change=change):

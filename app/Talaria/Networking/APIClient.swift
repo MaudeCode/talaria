@@ -302,6 +302,7 @@ actor APIClient {
         if let timeout { request.timeoutInterval = timeout }
         // Custom headers first, then built-ins so Accept/Content-Type always win.
         customHeaderProvider().apply(to: &request)
+        AppConfig.applyClientIdentity(to: &request)
         request.setValue(accept, forHTTPHeaderField: "Accept")
 
         if let encodedBody {
@@ -351,6 +352,7 @@ actor APIClient {
         // so it wins (#255).
         if Self.isSameOrigin(url, as: baseURL) {
             customHeaderProvider().apply(to: &request)
+            AppConfig.applyClientIdentity(to: &request)
         }
         request.setValue("*/*", forHTTPHeaderField: "Accept")
 

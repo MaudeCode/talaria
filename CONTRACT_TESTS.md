@@ -7,6 +7,18 @@ Talaria's server contract is the checked-out `web/` tree in this monorepo.
 standalone provenance; they no longer select the source for this check.
 Shared versions, schemas, and synthetic fixtures live in root `contracts/`.
 
+App requests to Web and Relay include public build metadata in `X-Talaria-Client`:
+version, build number, source revision, release-set identifier and supported
+contracts. The same JSON is logged once at launch in the `release` OSLog category.
+It contains no account, device, server or credential data. Source/release IDs are
+null for development or inconsistent stamps. External media requests omit this
+header. These diagnostics never enforce identical peer versions.
+
+Release builds use root `scripts/stamp-release.py app --version X.Y.Z
+--build-number N --source-revision SHA` before archiving. The helper stamps the
+App Info.plist from a clean exact checkout; the existing archive-version gate
+still checks the App and both extensions against the selected version/build.
+
 ## One command
 
 From `app/`, run:

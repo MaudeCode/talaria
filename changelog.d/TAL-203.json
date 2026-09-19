@@ -1,6 +1,12 @@
 {
   "entries": [
     {
+      "category": "Added",
+      "summary": "Support diagnostics identify the app release and compatibility details.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
       "category": "Changed",
       "summary": "New Web installations use a tested Hermes Agent version.",
       "highlight": false,
