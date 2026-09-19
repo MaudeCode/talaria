@@ -179,7 +179,7 @@ def finalize(plan, manifest, previous, artifacts):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("relay", "web", "build-app-receipt", "verify-app", "app-receipt", "finalize"))
+    parser.add_argument("operation", choices=("relay", "web", "build-app-receipt", "verify-app", "app", "finalize"))
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--build", type=Path)
     parser.add_argument("--directory", type=Path)
@@ -205,16 +205,26 @@ def main():
             raise ValueError("App build must contain one IPA and a selected build number")
         digest = verify_ipa(files[0], component)
         write(args.output, receipt("buildApp", plan["releaseSet"], tag=component["tag"], buildNumber=args.build_number, ipaSha256=digest))
-    elif args.operation in ("verify-app", "app-receipt"):
+    elif args.operation in ("verify-app", "app"):
         build = load(args.build)
         component = {**plan["components"]["app"], "buildNumber": build["buildNumber"],
                      "contracts": {name: peers["app"] for name, peers in plan["contracts"].items() if "app" in peers}}
-        if build.get("result") != "success" or build.get("sourceRevision") != plan["releaseSet"] or build.get("tag") != component["tag"]:
+        if build.get("gate") != "buildApp" or build.get("result") != "success" or build.get("sourceRevision") != plan["releaseSet"] or build.get("tag") != component["tag"]:
             raise ValueError("App build receipt differs from the plan")
         files = list(args.directory.glob("*.ipa"))
         if len(files) != 1 or verify_ipa(files[0], component) != build["ipaSha256"]:
             raise ValueError("App upload artifact differs from the verified build")
-        if args.operation == "app-receipt":
+        if args.operation == "app":
+            result = json.loads(subprocess.check_output([
+                "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
+                str(component["buildNumber"]), build["ipaSha256"],
+            ], text=True))
+            if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
+                    or result.get("ipaSha256") != build["ipaSha256"] or result.get("processingState") != "VALID"
+                    or not result.get("buildId") or not result.get("uploadId")):
+                raise ValueError("App Store Connect readback differs from the verified build")
+            print(json.dumps(result, sort_keys=True))
+            write(args.output.with_name("apple-build.json"), result)
             write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
     else:
         finalize(plan, load(args.manifest), load(args.previous) if args.previous else None, args.directory)

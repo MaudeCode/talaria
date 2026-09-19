@@ -21,6 +21,37 @@ from test_release_set import candidate, complete
 
 
 class PublicationTests(unittest.TestCase):
+    def test_app_receipt_requires_verified_apple_readback(self):
+        plan = {"releaseSet": "a" * 40, "changed": {"app": True}, "contracts": {"appWeb": {"app": [1]}},
+                "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0"}}}
+        build = {"gate": "buildApp", "result": "success", "sourceRevision": plan["releaseSet"],
+                 "tag": "app-v1.9.0", "buildNumber": 7, "ipaSha256": "b" * 64}
+        apple = {"buildId": "synthetic-build", "uploadId": "synthetic-upload", "version": "1.9.0",
+                 "buildNumber": 7, "ipaSha256": "b" * 64, "processingState": "VALID"}
+        env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "2"}
+        for field in (None, "version", "buildNumber", "ipaSha256", "processingState", "buildId", "uploadId"):
+            with self.subTest(field=field), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "plan.json").write_text(json.dumps(plan))
+                (root / "build.json").write_text(json.dumps(build))
+                (root / "synthetic.ipa").write_bytes(b"IPA verification covered separately")
+                response = {**apple, **({field: ""} if field else {})}
+                output = root / "publication/receipt.json"
+                argv = ["publish.py", "app", "--plan", str(root / "plan.json"), "--build", str(root / "build.json"),
+                        "--directory", str(root), "--output", str(output)]
+                with patch("sys.argv", argv), patch.dict(os.environ, env), patch("publish.authorize"), \
+                        patch("publish.verify_ipa", return_value=build["ipaSha256"]), \
+                        patch("publish.subprocess.check_output", return_value=json.dumps(response)) as upload:
+                    if field:
+                        with self.assertRaisesRegex(ValueError, "readback differs"):
+                            publish.main()
+                        self.assertFalse(output.exists())
+                    else:
+                        publish.main()
+                        self.assertEqual(json.loads(output.read_text())["gate"], "uploadApp")
+                        self.assertEqual(json.loads(output.with_name("apple-build.json").read_text()), apple)
+                    self.assertEqual(upload.call_args.args[0][-1], build["ipaSha256"])
+
     def test_partial_release_publication_resumes_without_recreating_releases(self):
         for failure in ("web-create", "root-upload", "root-edit", "root-upload-after", "root-edit-after"):
             with self.subTest(failure=failure), TemporaryDirectory() as temporary:

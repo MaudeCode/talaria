@@ -390,26 +390,13 @@ jobs:
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" app-build'
     - name: Restore ios-ipa
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" ios-ipa'
-    - name: Verify the exact IPA before upload
-      id: ipa
+    - name: Upload or recover the verified TestFlight build
+      env:
+        APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
       run: |
-        set -euo pipefail
-        "$RELEASE_PYTHON" releases/publish.py verify-app --plan "$RUNNER_TEMP/release-plan/plan.json" \
-          --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa"
-        "$RELEASE_PYTHON" -c 'import os; from pathlib import Path; print("path="+str(next(Path(os.environ["RUNNER_TEMP"]).joinpath("ios-ipa").glob("*.ipa"))))' >> "$GITHUB_OUTPUT"
-    - name: Upload and await App Store Connect processing
-      uses: apple-actions/upload-testflight-build@v5
-      with:
-        app-path: ${{ steps.ipa.outputs.path }}
-        app-type: ios
-        issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-        api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-        wait-for-processing: 'true'
-        backend: AppStoreAPI
-    - name: Record successful upload of the verified build
-      run: |
-        "$RELEASE_PYTHON" releases/publish.py app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
+        "$RELEASE_PYTHON" releases/publish.py app --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa" \
           --output "$RUNNER_TEMP/app-publish/receipt.json"
     - name: Store app-publish on the release runner
@@ -470,7 +457,7 @@ jobs:
           printf '\n```\n'
         } >> "$GITHUB_STEP_SUMMARY"
         cat "$RUNNER_TEMP/completed/release-set.json"
-        "$RELEASE_PYTHON" releases/artifacts.py clean release-set-complete release-contract-diagnostics
+        "$RELEASE_PYTHON" releases/artifacts.py clean release-set-complete release-contract-diagnostics app-publish
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   build-gate:

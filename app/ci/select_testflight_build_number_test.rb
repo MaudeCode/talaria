@@ -217,6 +217,10 @@ class TestFlightBuildNumberSelectorTest < Minitest::Test
       assert_equal(3, token_parts.length)
       assert_equal(20 * 60, payload.fetch("exp") - payload.fetch("iat"))
       assert_equal(64, base64url_decode(token_parts[2]).bytesize)
+      selector.instance_variable_set(:@now, Time.at(1_700_001_200))
+      renewed = JSON.parse(base64url_decode(selector.send(:jwt_token).split(".")[1]))
+      assert_operator(renewed.fetch("iat"), :>, payload.fetch("iat"))
+      assert_operator(renewed.fetch("exp"), :>, 1_700_001_200)
     end
   end
 

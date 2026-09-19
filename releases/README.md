@@ -139,8 +139,20 @@ notes and asset checksums before reusing matching component/root releases,
 finishing missing draft uploads and publishing the root last. Conflicting
 records are rejected; published assets are never overwritten.
 
-For failures in earlier deployment or upload jobs, inspect their live side
-effects before retrying. A fresh dispatch or **Re-run all jobs** can create new
-build identities and is not a recovery path for partially published releases.
+The App publication job also supports **Re-run failed jobs** on the same run.
+It resumes the existing Apple upload, verifies the remote file's SHA-256 against
+the retained IPA, and waits for both file delivery and the matching build's
+`VALID` processing state before writing a receipt. A lost upload response,
+processing timeout, or receipt/handoff failure does not upload a duplicate build.
+Ambiguous records, changed checksums, failed processing, and unverified existing
+builds fail closed. Apple build/upload IDs are retained in `apple-build.json`
+and the job log; successful cleanup retains this small publication evidence.
+The helper uses Apple's [build-upload API](https://developer.apple.com/documentation/appstoreconnectapi/build-uploads).
+API tokens renew during the processing wait; signing keys stay
+in a private temporary file and never reach the asset-upload host.
+
+Inspect Relay/Web deployment side effects before retrying their failed jobs.
+A fresh dispatch or **Re-run all jobs** can create new build identities and is
+not a recovery path for partially published releases.
 Never describe a partial run as complete. Retain the previous manifest's
 component identities for rollback.

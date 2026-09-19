@@ -36,6 +36,7 @@ case "$component" in
     python3 app/ci/load_env_test.py
     python3 app/scripts/test-ios-device-selection
     ruby app/ci/select_testflight_build_number_test.rb
+    ruby app/ci/upload_testflight_test.rb
     ruby app/ci/test_ios_runner_test.rb
     app/ci/require_successful_main_ci_test.sh
     app/ci/validate_release_tag_test.sh
