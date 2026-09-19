@@ -167,8 +167,9 @@ def check_web_update(web_path, current_version, channel, run_git):
                   image=release["image"])
     if root is None:
         current = RELEASE_INFO.get("sourceRevision")
-        version = re.fullmatch(r"web-(?:exp-)?v" + _VERSION, current_version or "")
-        behind = 0 if current == release["sourceRevision"] else None
+        prefix = "web-exp-v" if channel == "experimental" else "web-v"
+        version = re.fullmatch(prefix + _VERSION, current_version or "")
+        behind = 0 if version and current == release["sourceRevision"] else None
         if behind is None and version:
             installed = tuple(int(value) for value in version.groups())
             latest = tuple(int(value) for value in release["version"].split("."))

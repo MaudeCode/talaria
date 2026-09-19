@@ -1,6 +1,7 @@
 """Local Git and synthetic job receipts; no publication or cloud credentials."""
 
 import os
+import json
 import shutil
 import subprocess
 import tempfile
@@ -122,6 +123,30 @@ class PlanTests(unittest.TestCase):
             self.git("tag", "-a", tag, "-m", "synthetic regressed version")
             request = {**self.request, "sourceRevision": source, "tags": {**self.tags, name: tag}}
             with self.subTest(component=name), self.assertRaisesRegex(ValueError, "must advance"):
+                resolve(self.root, request, previous)
+
+    def test_relay_upgrade_preserves_previous_web_capability(self):
+        first = resolve(self.root, self.request)
+        previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
+        web = self.root / "web/api/contract_versions.json"
+        relay = self.root / "relay/convex/releaseInfo.json"
+        versions, info = json.loads(web.read_text()), json.loads(relay.read_text())
+        old = versions["webRelay"]["protocolVersion"]
+        versions["webRelay"]["protocolVersion"] = old + 1
+        web.write_text(json.dumps(versions))
+        for supported in ([old + 1], [old, old + 1]):
+            info["contracts"]["webRelay"] = supported
+            relay.write_text(json.dumps(info))
+            self.git("commit", "-am", "next Web and Relay capabilities")
+            source = self.git("rev-parse", "HEAD")
+            tags = {**self.tags, "web": f"web-v2.0.{len(supported)}", "relay": f"relay-v3.0.{len(supported)}"}
+            for name in ("web", "relay"):
+                self.git("tag", "-a", tags[name], "-m", "synthetic upgrade")
+            request = {**self.request, "sourceRevision": source, "tags": tags}
+            if old not in supported:
+                with self.assertRaisesRegex(ValueError, "previous Web"):
+                    resolve(self.root, request, previous)
+            else:
                 resolve(self.root, request, previous)
 
     def test_changed_components_must_contain_previously_released_sources(self):

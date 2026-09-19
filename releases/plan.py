@@ -7,7 +7,7 @@ import subprocess
 from copy import deepcopy
 
 from jsonschema import Draft202012Validator
-from release_set import COMPONENTS, SCHEMA, VALIDATOR, require_version_advance, validate
+from release_set import COMPONENTS, SCHEMA, VALIDATOR, require_compatible_contracts, require_version_advance, validate
 
 SHA = re.compile(r"[a-f0-9]{40}")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -110,14 +110,7 @@ def resolve(root, request, previous=None):
         raise ValueError("select at least one changed component")
     for key in ("contracts", "agent"):
         Draft202012Validator({"$defs": SCHEMA["$defs"], **SCHEMA["properties"][key]}).validate(plan[key])
-    for contract, peers in plan["contracts"].items():
-        if not set.intersection(*(set(values) for values in peers.values())):
-            raise ValueError(f"incompatible {contract} capabilities")
-    if previous:
-        for contract in ("appWeb", "appRelay", "activityScene"):
-            server = "web" if contract == "appWeb" else "relay"
-            if not set(previous["contracts"][contract]["app"]) & set(plan["contracts"][contract][server]):
-                raise ValueError(f"previous App is incompatible with {contract}")
+    require_compatible_contracts(plan["contracts"], previous)
     return plan
 
 

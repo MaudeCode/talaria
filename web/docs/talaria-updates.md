@@ -89,3 +89,7 @@ Validation lives in `tests/test_tal203_source_update.py`,
 `tests/test_tal203_published_releases.py`, and the frontend System settings/browser
 tests. Source tests own their repositories, tags, worktrees, locks, and state;
 browser fixtures own release responses and never install updates.
+
+Packaged installations compare version numbers only within the selected channel.
+Switching between stable and experimental reports a manual update with unknown
+distance, even when both tags refer to the same source.
