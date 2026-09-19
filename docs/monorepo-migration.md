@@ -56,7 +56,8 @@ dependency, or Python cache artifacts.
 
 The source inventories contain seven app tags, no Web tags, and thirteen Relay
 tags, with no collisions. Preserve existing tag objects without resigning or
-retargeting them; future release namespaces belong to TAL-203.
+retargeting them. TAL-203 adds `app-v*`, `web-v*`, `web-exp-v*` and `relay-v*`
+namespaces; see the [root release procedure](../releases/README.md).
 
 Historical tag publication is a separate approved cutover operation. In
 particular, Relay's old tag trees contain standalone `push: v*` deployment
@@ -74,7 +75,7 @@ upstream ancestry remain reachable through the import merge parents.
 
 | Colliding item | Recorded ownership |
 |---|---|
-| `.github/` | Shared root orchestration. App workflows remain; Web and Relay checks have prefixed reusable workflows. Standalone release/deploy workflows are inert templates under `.github/release-templates/` until TAL-203. |
+| `.github/` | Shared root orchestration. Component checks use reusable workflows; `release-set.yml` coordinates releases through the authorized `production-cutover.yml` caller. Standalone release/deploy templates under `.github/release-templates/` remain inert. |
 | `FUNDING.yml` | Root funding remains canonical; original Web attribution is preserved as `.github/WEB_FUNDING.yml`. |
 | `.gitignore` | Root rules protect shared local state; component rules retain toolchain-specific exclusions. |
 | `.gitattributes` | Root owns LF text rules; Web retains generated-dist attributes in `web/.gitattributes`. |
