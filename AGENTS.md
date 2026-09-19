@@ -10,7 +10,7 @@ Kaneo Talaria is the canonical tracker. Work only on the selected ticket and its
 required dependencies. Move it to In Progress before edits, In Review after
 verified commits, and Done only after its commit is verified on `main`.
 Use `<type>/TAL-<number>-<slug>` branches and `TAL-<number>:` commit/PR subjects.
-Keep coherent verified slices separate. Add `app/changelog.d/TAL-<number>.json`
+Keep coherent verified slices separate. Add `changelog.d/TAL-<number>.json`
 following `app/docs/release-notes.md` for every tracked change.
 
 Pushing, PR publication/updates, merging, releases, deployments, TestFlight

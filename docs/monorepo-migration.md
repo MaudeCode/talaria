@@ -17,7 +17,8 @@ and final standalone heads must be reconciled again by TAL-204.
 ## App ownership
 
 App source, Xcode configuration, test targets, scripts, CI helpers, release
-fragments, app documentation, and upstream pins move together into `app/`.
+fragments, app documentation, and upstream pins moved together into `app/` in
+TAL-202. TAL-203 shares release fragments from root `changelog.d/`.
 Their relative paths and runtime identity stay unchanged. Root community/legal
 files, GitHub workflows, shared contract documentation, and agent configuration
 remain at the root. `app/.gitignore` retains app-specific rules. Root instructions
@@ -25,8 +26,8 @@ and README become component routers; their original app content lives in `app/`.
 `CLAUDE.md` remains a symlink to the root instructions.
 
 App workflows run commands in `app/`; artifact paths stay relative to the
-checkout. Release-note tooling reads historical root-level fragments and new
-`app/changelog.d` fragments, rejecting edits to historical fragments.
+checkout. Release-note tooling reads root `changelog.d/` and historical
+`app/changelog.d/` fragments, rejecting edits to historical fragments.
 
 ## Reachable-history scanning
 

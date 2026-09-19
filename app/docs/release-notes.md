@@ -1,9 +1,9 @@
 # Release-note authoring
 
-Run these commands from `app/`. Fragments live in `app/changelog.d/` from the
-repository root. Historical fragments before the source migration remain readable
-at their original root path in older commits. Byte-identical moves to `app/`
-are repository-only; edits or deletions of historical fragments still fail.
+Run these commands from `app/`. All components share the repository-root
+`changelog.d/` directory. Historical fragments also remain readable under
+`app/changelog.d/` in source-migration commits. Byte-identical moves preserve
+fragment identities; edits or deletions of historical fragments still fail.
 
 Agents add release metadata with each implementation. Once the PR merges, the
 signed-tag workflow does everything else: finds the preceding successful
@@ -28,7 +28,7 @@ are not parsed into release notes.
 
 ## Fragment format
 
-Add `changelog.d/TAL-<number>.json`, using the selected ticket's number. Each file
+Add `../changelog.d/TAL-<number>.json`, using the selected ticket's number. Each file
 contains either a non-empty `entries` array or one `skip` reason. For example:
 
 ```json
@@ -54,6 +54,11 @@ without surrounding whitespace. Use `highlight: true` for a few important
 changes; these appear first under Featured and retain their category entry.
 Avoid ticket numbers, commit hashes, implementation jargon, and Markdown in
 summaries. The renderer escapes Markdown; the JSON preserves the authored text.
+
+An entry may add `"components": ["app", "web", "relay"]` to select its consumers.
+Use only the affected components, without duplicates; omitted `components`
+means `app` so historical notes retain their meaning. `generate --component web`
+or `--component relay` filters the same source. The app catalog format is unchanged.
 
 For repository, documentation, or test maintenance with no app behavior change:
 
@@ -98,7 +103,8 @@ python3 ci/release_notes.py generate \
 ```
 
 For an offline preview, omit `--previous` to select the highest lower numeric
-`vX.Y.Z` tag reachable from the target. This tag-only preview does not prove that
+component tag reachable from the target (`app-vX.Y.Z`, `web-vX.Y.Z`, or
+`relay-vX.Y.Z`). App history also accepts legacy `vX.Y.Z` tags. This tag-only preview does not prove that
 an earlier release succeeded. Non-semantic tags and tags on unmerged branches are
 ignored. An explicit baseline must be an ancestor or the target itself; a repository with no prior release
 tag requires `--previous <baseline-ref>`.

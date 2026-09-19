@@ -28,6 +28,7 @@ class ReleaseNotesTests(unittest.TestCase):
             "GIT_AUTHOR_DATE": "2026-01-02T03:04:05+00:00", "GIT_COMMITTER_DATE": "2026-01-02T03:04:05+00:00",
         }
         self.git("init", "-b", "main")
+        self.write(".gitignore", "out/\n")
         self.write("CHANGELOG.md", "# Handwritten history\n\nUnchanged.\n")
         self.add_fragment(1, "Old release")
         self.commit("TAL-1: old release")
@@ -84,8 +85,50 @@ class ReleaseNotesTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "validate", "--base", base],
                                 cwd=self.root / "app", env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.write("app/changelog.d/TAL-1.json", '{"skip":"Rewritten history"}')
+        # Shared release fragments can move back to the monorepo root without
+        # changing their historical identities or breaking app/ invocations.
+        moved_base = self.git("rev-parse", "HEAD")
+        self.git("mv", "app/changelog.d", "changelog.d")
+        self.write("changelog.d/TAL-3.json", '{"skip":"Shared release metadata"}')
+        self.commit("TAL-3: share fragments")
+        self.cli("validate", "--base", moved_base)
+        self.write("changelog.d/TAL-1.json", '{"skip":"Rewritten history"}')
         self.cli("validate", "--base", base, error="out-of-range")
+
+    def test_component_notes_share_fragments_without_changing_app_catalog_shape(self):
+        entries = [
+            {"category": "Added", "summary": "App detail", "highlight": False},
+            {"category": "Fixed", "summary": "Web update", "highlight": False, "components": ["web"]},
+            {"category": "Changed", "summary": "Shared compatibility", "highlight": True,
+             "components": ["app", "web", "relay"]},
+        ]
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": entries}))
+        self.commit("TAL-2: component releases")
+        for component, expected in (
+            ("app", {"App detail", "Shared compatibility"}),
+            ("web", {"Web update", "Shared compatibility"}),
+            ("relay", {"Shared compatibility"}),
+        ):
+            self.generate("--previous", "v1.0.0", "--component", component)
+            catalog = json.loads((self.root / "out/release-notes.json").read_text())
+            rendered = [entry for section in catalog["releases"][0]["sections"] for entry in section["entries"]]
+            self.assertEqual({entry["summary"] for entry in rendered}, expected)
+            self.assertTrue(all("components" not in entry for entry in rendered))
+
+    def test_component_selection_rejects_empty_unknown_and_duplicate_owners(self):
+        for components in ([], ["unknown"], ["web", "web"], "web"):
+            self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+                {"category": "Fixed", "summary": "Fixture", "highlight": False, "components": components}
+            ]}))
+            self.cli("validate", error="components")
+
+    def test_app_tag_preview_uses_its_namespace_and_legacy_history(self):
+        self.git("tag", "app-v1.0.10")
+        self.git("tag", "web-v9.0.0")
+        self.git("tag", "relay-v9.0.0")
+        self.add_fragment(2)
+        self.commit("TAL-2: app update")
+        self.assertIn("app-v1.0.10..", self.generate().stdout)
 
     def mock_github(self, responses):
         binary = self.root / "bin/gh"

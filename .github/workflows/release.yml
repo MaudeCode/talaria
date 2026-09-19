@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "app-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing signed vX.Y.Z tag to validate and build.
+        description: Existing signed app-vX.Y.Z tag to validate and build.
         required: true
         type: string
       upload:
@@ -72,7 +72,7 @@ jobs:
           ci/validate_release_tag
           sha="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
           echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
-          echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
+          echo "version=${RELEASE_TAG#app-v}" >> "${GITHUB_OUTPUT}"
         id: tag
 
       - name: Verify exact commit passed main CI

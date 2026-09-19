@@ -8,16 +8,16 @@ to `app/`. GitHub workflows and shared contract documentation remain at the root
 
 # Talaria release
 
-Pushing a signed `vX.Y.Z` tag starts the TestFlight release workflow. The tag
+Pushing a signed `app-vX.Y.Z` tag starts the TestFlight release workflow. The tag
 push is the publish boundary and requires explicit user authorization.
 
 1. Confirm `main` is clean, equals current `origin/main`, has successful exact-SHA
-   CI, and the requested `X.Y.Z` tag does not exist.
+   CI, and the requested `app-vX.Y.Z` tag does not exist.
 2. After the user authorizes the tag push, create and push it:
 
    ```zsh
-   git tag -s vX.Y.Z -m "Talaria vX.Y.Z"
-   git push origin vX.Y.Z
+   git tag -s app-vX.Y.Z -m "Talaria app vX.Y.Z"
+   git push origin app-vX.Y.Z
    ```
 
 3. Watch `.github/workflows/release.yml` through completion. Report archive,

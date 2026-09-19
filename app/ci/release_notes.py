@@ -15,6 +15,7 @@ import zipfile
 
 DIRECTORY = "changelog.d"
 CATEGORIES = ("Added", "Changed", "Fixed", "Security")
+COMPONENTS = ("app", "web", "relay")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 FILENAME = re.compile(r"TAL-([1-9][0-9]*)\.json")
 
@@ -58,8 +59,15 @@ def fragment(path, source):
             plain_text(data["skip"], "skip reason")
         elif set(data) == {"entries"} and isinstance(data["entries"], list) and data["entries"]:
             for entry in data["entries"]:
-                if not isinstance(entry, dict) or set(entry) != {"category", "summary", "highlight"}:
-                    raise ValueError("each entry requires only category, summary, and highlight")
+                required = {"category", "summary", "highlight"}
+                if (not isinstance(entry, dict) or not required <= set(entry)
+                        or not set(entry) <= required | {"components"}):
+                    raise ValueError("each entry requires only category, summary, highlight, and optional components")
+                components = entry.get("components", ["app"])
+                if (not isinstance(components, list) or not components
+                        or any(component not in COMPONENTS for component in components)
+                        or len(set(components)) != len(components)):
+                    raise ValueError("components must be a non-empty unique list of app, web, or relay")
                 if entry["category"] not in CATEGORIES:
                     raise ValueError(f"unsupported category; use {', '.join(CATEGORIES)}")
                 plain_text(entry["summary"], "summary")
@@ -147,7 +155,9 @@ def validate(base=None, target=None):
         changed = changes(base, target)
         if changed and not selected:
             raise ValueError(f"missing release metadata: add {DIRECTORY}/TAL-<number>.json with entries or an explicit skip reason")
-        if any(not repository_only(path) for path in changed) and not any("entries" in data for data in selected.values()):
+        has_app_entries = any("app" in entry.get("components", ["app"])
+                              for data in selected.values() for entry in data.get("entries", []))
+        if any(not repository_only(path) for path in changed) and not has_app_entries:
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.
         subjects = git("log", "--first-parent", "--no-merges", "--format=%s", f"{base}..{target or 'HEAD'}")
@@ -162,12 +172,21 @@ def validate(base=None, target=None):
     print(f"Validated {len(current)} release fragments.")
 
 
-def previous_tag(target, version):
+def version_from_tag(tag, component="app"):
+    prefixes = ("app-v", "v") if component == "app" else (f"{component}-v",)
+    for prefix in prefixes:
+        if tag.startswith(prefix) and re.fullmatch(VERSION, tag[len(prefix):]):
+            return tag[len(prefix):]
+    return None
+
+
+def previous_tag(target, version, component="app"):
     target_version = tuple(map(int, version.split(".")))
     candidates = []
     for tag in git("tag", "--merged", target).splitlines():
-        if re.fullmatch("v" + VERSION, tag):
-            parts = tuple(map(int, tag[1:].split(".")))
+        parsed = version_from_tag(tag, component)
+        if parsed:
+            parts = tuple(map(int, parsed.split(".")))
             if parts < target_version:
                 candidates.append((parts, tag))
     if not candidates:
@@ -203,9 +222,10 @@ def previous_published(target, version, repository):
     for _, run in sorted(published, key=lambda item: item[0], reverse=True):
         if run["event"] == "push":
             tag = run["head_branch"] or ""
-            if not re.fullmatch("v" + VERSION, tag):
+            released_version = version_from_tag(tag)
+            if not released_version:
                 continue
-            released_version, sha = tag[1:], run["head_sha"]
+            sha = run["head_sha"]
             if tuple(map(int, released_version.split("."))) >= target_version:
                 continue
             if commit(f"refs/tags/{tag}") != sha:
@@ -247,12 +267,14 @@ def markdown_text(value):
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
 
 
-def generate(previous, target, version, output):
+def generate(previous, target, version, output, component="app"):
+    if component not in COMPONENTS:
+        raise ValueError("component must be app, web, or relay")
     if not re.fullmatch(VERSION, version):
         raise ValueError("version must use X.Y.Z numeric semantic versioning")
     target = commit(target)
     if previous == "auto":
-        previous = previous_tag(target, version)
+        previous = previous_tag(target, version, component)
     base = commit(previous)
     if git("merge-base", base, target) != base:
         raise ValueError("previous release must be an ancestor of target")
@@ -264,7 +286,10 @@ def generate(previous, target, version, output):
     highlights = []
     for path in sorted(selected, key=lambda path: int(FILENAME.fullmatch(Path(path).name)[1])):
         for index, entry in enumerate(selected[path].get("entries", [])):
-            item = {"id": f"{Path(path).stem}-{index + 1}", "ticket": Path(path).stem, **entry}
+            if component not in entry.get("components", ["app"]):
+                continue
+            item = {"id": f"{Path(path).stem}-{index + 1}", "ticket": Path(path).stem,
+                    **{key: value for key, value in entry.items() if key != "components"}}
             sections[entry["category"]].append(item)
             if entry["highlight"]:
                 highlights.append(item)
@@ -280,7 +305,9 @@ def generate(previous, target, version, output):
             lines.extend(f"- {markdown_text(entry['summary'])}" for entry in entries)
             lines.append("")
     if not any(sections.values()):
-        lines.extend(["No app-facing release notes were recorded for this release.", ""])
+        empty_message = ("No app-facing release notes were recorded for this release." if component == "app"
+                         else "No component-specific release notes were recorded for this release.")
+        lines.extend([empty_message, ""])
     output.mkdir(parents=True, exist_ok=True)
     (output / "release-notes.md").write_text("\n".join(lines), encoding="utf-8")
     (output / "release-notes.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -294,7 +321,8 @@ def main():
     check.add_argument("--base", help="require metadata for the change since this commit")
     check.add_argument("--target", help="scope --base checks to this Git ref; still validate all working-tree fragments")
     render = commands.add_parser("generate", help="render the target Git tree, ignoring working-tree edits")
-    render.add_argument("--previous", default="auto", help="previous release tag; default: highest lower reachable vX.Y.Z tag")
+    render.add_argument("--previous", default="auto", help="previous release tag; default: highest lower reachable component tag")
+    render.add_argument("--component", choices=COMPONENTS, default="app")
     render.add_argument("--target", required=True)
     render.add_argument("--version", required=True)
     render.add_argument("--output", type=Path, required=True)
@@ -312,7 +340,7 @@ def main():
         elif args.command == "previous-published":
             print(previous_published(args.target, args.version, args.repo))
         else:
-            generate(args.previous, args.target, args.version, args.output)
+            generate(args.previous, args.target, args.version, args.output, args.component)
     except (ValueError, OSError, KeyError, IndexError, TypeError, zipfile.BadZipFile) as error:
         parser.exit(1, f"release notes: {error}\n")
 

@@ -16,7 +16,7 @@ TAL-
 
 ## Release notes
 
-<!-- Add app/changelog.d/TAL-<number>.json for each ticket. State its path and the
+<!-- Add changelog.d/TAL-<number>.json for each ticket. State its path and the
 user-visible outcome, or its explicit repository-only skip reason. Follow
 app/docs/release-notes.md; CI validates the fragments, not this prose. -->
 

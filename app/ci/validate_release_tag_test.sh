@@ -17,21 +17,26 @@ printf 'release fixture\n' > "$repo/release-fixture.txt"
 git -C "$repo" add .
 git -C "$repo" commit -m "Release fixture" >/dev/null
 git -C "$repo" push origin main >/dev/null
-git -C "$repo" tag -a -m "Release fixture" v1.6.0
+git -C "$repo" tag -a -m "Release fixture" app-v1.6.0
 
 (
   cd "$repo"
   source "$source_root/ci/validate_release_tag"
   export GITHUB_REPOSITORY=synthetic/release
-  local_tag_sha="$(git rev-parse 'refs/tags/v1.6.0^{tag}')"
+  local_tag_sha="$(git rev-parse 'refs/tags/app-v1.6.0^{tag}')"
   gh() {
-    if [[ "$*" == *"/git/ref/tags/v1.6.0"* ]]; then
+    if [[ "$*" == *"/git/ref/tags/app-v1.6.0"* ]]; then
       printf '{"object":{"type":"tag","sha":"%s"}}\n' "$local_tag_sha"
     else
-      printf 'true\n'
+      printf '%s\n' "${fixture_signature:-true}"
     fi
   }
-  tag_signature_verified v1.6.0
+  tag_signature_verified app-v1.6.0
+  fixture_signature=false
+  if tag_signature_verified app-v1.6.0; then
+    echo "Expected an unverified signature to fail." >&2
+    exit 1
+  fi
 )
 
 if (
@@ -39,7 +44,7 @@ if (
   source "$source_root/ci/validate_release_tag"
   export GITHUB_REPOSITORY=synthetic/release
   gh() { printf '{"object":{"type":"tag","sha":"0000000000000000000000000000000000000000"}}\n'; }
-  tag_signature_verified v1.6.0 >/dev/null 2>&1
+  tag_signature_verified app-v1.6.0 >/dev/null 2>&1
 ); then
   echo "Expected a moved remote tag object to fail verification." >&2
   exit 1
@@ -49,33 +54,66 @@ fi
   cd "$repo"
   source "$source_root/ci/validate_release_tag"
   tag_signature_verified() { return 0; }
-  export RELEASE_TAG=v1.6.0
+  export RELEASE_TAG=app-v1.6.0
   export EXPECTED_SHA="$(git rev-parse HEAD)"
   validate_release_tag >/dev/null
 )
 
-git -C "$repo" tag -a -m "Bad version" v1.6
+git -C "$repo" tag -a -m "Bad version" app-v1.6
 if (
   cd "$repo"
   source "$source_root/ci/validate_release_tag"
   tag_signature_verified() { return 0; }
-  export RELEASE_TAG=v1.6
+  export RELEASE_TAG=app-v1.6
   validate_release_tag >/dev/null 2>&1
 ); then
   echo "Expected malformed release tag to fail." >&2
   exit 1
 fi
 
+for component in web relay; do
+  git -C "$repo" tag -a -m "Component fixture" "${component}-v1.6.0"
+  (
+    cd "$repo"
+    source "$source_root/ci/validate_release_tag"
+    tag_signature_verified() { return 0; }
+    export RELEASE_COMPONENT="$component" RELEASE_TAG="${component}-v1.6.0"
+    validate_release_tag >/dev/null
+  )
+done
+
+git -C "$repo" tag -a -m "Experimental fixture" web-exp-v1.6.0
+(
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
+  tag_signature_verified() { return 0; }
+  export RELEASE_COMPONENT=web RELEASE_TAG=web-exp-v1.6.0
+  validate_release_tag >/dev/null
+)
+
+for rejected_tag in v1.6.0 exp-v1.6.0 web-v1.6.0 relay-v1.6.0 app-v01.6.0; do
+  if (
+    cd "$repo"
+    source "$source_root/ci/validate_release_tag"
+    tag_signature_verified() { return 0; }
+    export RELEASE_COMPONENT=app RELEASE_TAG="$rejected_tag"
+    validate_release_tag >/dev/null 2>&1
+  ); then
+    echo "Expected historical, wrong-component or malformed tag to fail: $rejected_tag" >&2
+    exit 1
+  fi
+done
+
 git -C "$repo" switch -c side >/dev/null
 printf 'off-main\n' >> "$repo/release-fixture.txt"
 git -C "$repo" add .
 git -C "$repo" commit -m "Off-main fixture" >/dev/null
-git -C "$repo" tag -a -m "Off-main fixture" v1.7.0
+git -C "$repo" tag -a -m "Off-main fixture" app-v1.7.0
 if (
   cd "$repo"
   source "$source_root/ci/validate_release_tag"
   tag_signature_verified() { return 0; }
-  export RELEASE_TAG=v1.7.0
+  export RELEASE_TAG=app-v1.7.0
   unset EXPECTED_SHA
   validate_release_tag >/dev/null 2>&1
 ); then

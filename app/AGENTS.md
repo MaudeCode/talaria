@@ -30,13 +30,13 @@ explicitly adopted it.
 - `main` is the default release branch. Keep it buildable. For one issue, name the
   tracked-work branch `<type>/TAL-<number>-<slug>`. A human-selected issue batch
   may share one branch named for its lead issue or the batch.
-- The current private-repository plan cannot enforce branch protection. CI must
-  validate every push to `main`; require the `CI Gate` check when protection is available.
+- The active `Protect main` ruleset requires pull requests, `CI Gate`, and verified
+  signatures on new commits. CI must validate every push to `main`.
 - Commit each coherent, verified slice as it is completed so it has a rollback
   point. Start every tracked-work commit subject with the Kaneo key it addresses,
   for example `TAL-29: require ticket keys`; include every addressed key if a
   commit intentionally spans issues. Keep unrelated changes out of the commit.
-- Every tracked PR must add `changelog.d/TAL-<number>.json` for each addressed
+- Every tracked PR must add `../changelog.d/TAL-<number>.json` for each addressed
   ticket, including an explicit skip reason for repository-only work. Before
   committing or opening a PR, follow [release-note authoring](docs/release-notes.md)
   for the JSON schema, commit/PR format, and validation command. Agents author
