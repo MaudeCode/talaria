@@ -27,6 +27,17 @@ def require_version_advance(tag, prior_tag):
         raise ValueError(f"{tag} must advance the published version {prior_tag}")
 
 
+def require_compatible_contracts(contracts, previous=None):
+    for contract, peers in contracts.items():
+        if not set.intersection(*(set(versions) for versions in peers.values())):
+            raise ValueError(f"incompatible {contract} capabilities")
+    if previous:
+        for contract, client, server in (("appWeb", "app", "web"), ("appRelay", "app", "relay"),
+                                         ("activityScene", "app", "relay"), ("webRelay", "web", "relay")):
+            if not set(previous["contracts"][contract][client]) & set(contracts[contract][server]):
+                raise ValueError(f"previous {client.title()} is incompatible with {contract}")
+
+
 def validate(document, previous=None):
     """Reject mutable references, incomplete receipts and incompatible peers."""
     VALIDATOR.validate(document)
@@ -67,14 +78,7 @@ def validate(document, previous=None):
     if not changed:
         raise ValueError("a release set must change at least one component")
 
-    for contract, peers in document["contracts"].items():
-        if not set.intersection(*(set(versions) for versions in peers.values())):
-            raise ValueError(f"incompatible {contract} capabilities")
-    if previous:
-        for contract in ("appWeb", "appRelay", "activityScene"):
-            server = "web" if contract == "appWeb" else "relay"
-            if not set(previous["contracts"][contract]["app"]) & set(document["contracts"][contract][server]):
-                raise ValueError(f"previous App is incompatible with {contract}")
+    require_compatible_contracts(document["contracts"], previous)
 
     gates = {}
     for receipt in document["evidence"]:

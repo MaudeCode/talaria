@@ -172,8 +172,24 @@ def test_packaged_installs_advertise_manual_updates_without_rewinds(source_insta
     monkeypatch.setattr(releases, "RELEASE_INFO", {"sourceRevision": "c" * 40})
     older = releases.check_web_update(None, "web-v1.0.0", "stable", run_git)
     assert older["behind"] == 1 and older["manual_update"] is True and older["no_git"] is True
-    newer = releases.check_web_update(None, "web-exp-v3.0.0", "stable", run_git)
+    newer = releases.check_web_update(None, "web-v3.0.0", "stable", run_git)
     assert newer["behind"] == 0
+
+
+@pytest.mark.parametrize("installed,target,channel", [
+    ("web-v2.0.0", "web-exp-v1.5.0", "experimental"),
+    ("web-exp-v3.0.0", "web-v2.0.0", "stable"),
+    ("web-v2.0.0", "web-exp-v2.0.0", "experimental"),
+])
+@pytest.mark.parametrize("same_source", [False, True])
+def test_packaged_channel_switch_is_manual_unknown(source_install, monkeypatch, installed, target, channel, same_source):
+    _, _, _, new, release, _, run_git, _ = source_install
+    release.update(tag=target, version=target.rsplit("-v", 1)[1])
+    monkeypatch.setattr(releases, "RELEASE_INFO", {"sourceRevision": new if same_source else "c" * 40})
+    result = releases.check_web_update(None, installed, channel, run_git)
+    assert result["behind"] is None
+    assert result["manual_update"] is True
+    assert result["release_url"] == release["release_url"]
 
 
 def test_web_lock_retry_preserves_git_lock_and_then_updates(source_install, monkeypatch):

@@ -169,6 +169,21 @@ class ReleaseSetTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
             self.assertFalse(output.exists())
 
+    def test_manifest_preserves_previous_web_during_relay_upgrade(self):
+        previous = complete(candidate())
+        document = candidate("e" * 40)
+        document["previousReleaseSet"] = previous["releaseSet"]
+        for name in ("app", "web", "relay"):
+            version = document["components"][name]["version"].split(".")
+            version[-1] = str(int(version[-1]) + 1)
+            version = ".".join(version)
+            document["components"][name].update(tag=f"{name}-v{version}", version=version)
+        document["contracts"]["webRelay"] = {"web": [3], "relay": [3]}
+        with self.assertRaisesRegex(ValueError, "previous Web"):
+            validate(document, previous)
+        document["contracts"]["webRelay"]["relay"] = [2, 3]
+        validate(document, previous)
+
 
 if __name__ == "__main__":
     unittest.main()
