@@ -1,0 +1,26 @@
+{
+  "body": {
+    "boards": [
+      {
+        "archived": false,
+        "color": "",
+        "counts": {},
+        "created_at": null,
+        "db_path": "/tmp/hermes-state/kanban.db",
+        "default_workdir": null,
+        "description": "",
+        "icon": "",
+        "is_current": true,
+        "name": "Default",
+        "project_id": null,
+        "slug": "default",
+        "total": 0
+      }
+    ],
+    "current": "default",
+    "read_only": false
+  },
+  "method": "GET",
+  "path": "/api/kanban/boards",
+  "status": 200
+}

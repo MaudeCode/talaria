@@ -3,7 +3,7 @@ enabledWorkflows:
   - simulator
   - ui-automation
 sessionDefaults:
-  projectPath: "./Talaria.xcodeproj"
+  projectPath: "./app/Talaria.xcodeproj"
   scheme: "Talaria"
   configuration: "Debug"
   simulatorName: "i17Pro 26.4"

@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "session_id is required"
+  },
+  "method": "GET",
+  "path": "/api/list?path=.&file=README.md",
+  "status": 400
+}

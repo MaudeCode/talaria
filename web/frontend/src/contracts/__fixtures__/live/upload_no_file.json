@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "No boundary in Content-Type"
+  },
+  "method": "POST",
+  "path": "/api/upload",
+  "status": 400
+}

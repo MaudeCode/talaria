@@ -1,0 +1,18 @@
+{
+  "extensions": [
+    {
+      "id": "hello-panel",
+      "name": "Hello Panel",
+      "version": "1.0.0",
+      "description": "Minimal protocol v1 extension: a panel with settings, storage, a toast, and lifecycle events.",
+      "panel": "hello-panel/index.html",
+      "nav": { "label": "Hello" },
+      "capabilities": ["settings", "storage", "toast", "session", "lifecycle", "theme"],
+      "settings_schema": [
+        { "key": "greeting", "type": "string", "label": "Greeting", "description": "Shown at the top of the panel.", "default": "Hello from the sandbox" },
+        { "key": "show_counter", "type": "boolean", "label": "Show the click counter", "default": true }
+      ],
+      "theme": { "key": "hello-mint", "name": "Hello Mint", "scheme": "light", "colors": ["#e8fff5", "#0b6b4a", "#0b6b4a"], "tokens": { "--bg": "#f4fffa", "--surface": "#e8fff5", "--accent": "#0b6b4a", "--accent-text": "#0b6b4a", "--border": "#b9e9d3" } }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+/* Imports every component sheet (see the header of each file). */
+@import './approvals.css';
+@import './base.css';
+@import './chat.css';
+@import './composer.css';
+@import './dialogs.css';
+@import './hubs.css';
+@import './misc.css';
+@import './sessions.css';
+@import './settings.css';
+@import './shell.css';
+@import './tools.css';
+@import './workspace.css';

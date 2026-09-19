@@ -1,0 +1,9 @@
+{
+  "body": {
+    "pending": null,
+    "pending_count": 0
+  },
+  "method": "GET",
+  "path": "/api/clarify/pending?session_id=3ca40cdfc145",
+  "status": 200
+}

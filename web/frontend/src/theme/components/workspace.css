@@ -1,0 +1,68 @@
+/* workspace: component rules for this feature, in @layer app (after utilities). Colours, radii and
+   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. Origin:
+   the legacy stylesheet, converted by scripts/css-convert.mjs (see docs/architecture/css-conversion-ledger.md). */
+@layer app{
+:root[data-font-size="small"] .file-item{font-size:11px}
+:root[data-font-size="large"] .file-item{font-size:14px}
+:root[data-font-size="xlarge"] .file-item{font-size:16px}
+.file-input-visually-hidden{position:absolute;left:-9999px;top:auto;width:1px;height:1px;opacity:0;overflow:hidden}
+.rightpanel{width:300px;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;min-width:0;opacity:1;transform:translateX(0);transform-origin:right center;transition:width .24s cubic-bezier(.22,1,.36,1),opacity .18s ease,transform .24s cubic-bezier(.22,1,.36,1),border-color .24s ease;container-type:inline-size;container-name:rightpanel}
+/* left:1px: the tab reaches 1px into the panel (canvas over canvas), so the hover outline's clip, 1px in from the tab's right edge, cuts at the panel edge and exposes no card. */
+.workspace-panel-edge-toggle{position:absolute;left:1px;top:50%;transform:translate(-100%,-50%);z-index:120;width:34px;height:44px;border:1px solid var(--border2);border-radius:999px;background:var(--float-btn-bg);color:var(--muted);box-shadow:var(--float-shadow);display:none;align-items:center;justify-content:center;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease,color .15s ease,background .15s ease,border-color .15s ease}
+.workspace-panel-edge-toggle:hover{color:var(--text);background:var(--hover-bg);border-color:var(--accent)}
+.workspace-panel-edge-toggle:disabled{opacity:.3;cursor:not-allowed}
+.file-tree{flex:1;overflow-y:auto;padding:8px}
+.file-item{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px;color:var(--muted);transition:all .12s;min-width:0}
+.file-item:hover{background:var(--file-item-hover-bg);color:var(--text)}
+.file-item.active{background:var(--accent-bg);color:var(--accent-text)}
+.file-item.drag-over{background:var(--accent-bg);color:var(--accent-text);outline:1px solid var(--accent-bg-strong);outline-offset:-1px}
+@media (min-width:901px){html[data-workspace-panel="closed"] .rightpanel{width:0 !important;min-width:0 !important;padding-left:0;padding-right:0;border-left-color:transparent;pointer-events:none}}
+@media (min-width:901px){html[data-workspace-panel="closed"] .rightpanel .rightpanel-body{visibility:hidden}}
+@media (min-width:901px){.workspace-panel-edge-toggle{display:inline-flex;opacity:1;pointer-events:auto}}
+@media (min-width:901px){.rightpanel{flex-shrink:1;min-width:180px}}
+@media (max-width:900px){.workspace-panel-edge-toggle{display:none !important}}
+@media (max-width:900px){.rightpanel{display:none}}
+@media (max-width:640px){.rightpanel{display:flex !important;position:fixed;--mobile-rightpanel-width:min(300px, 100vw);right:calc(-1 * var(--mobile-rightpanel-width)) !important;top:0;bottom:0;width:var(--mobile-rightpanel-width) !important;max-width:100vw !important;z-index:200;padding-top:var(--app-titlebar-safe-top);box-sizing:border-box;transition:right .25s ease;box-shadow:none !important}}
+@media (max-width:640px){.rightpanel.mobile-open{right:0 !important;box-shadow:-4px 0 24px rgba(0,0,0,.4) !important}}
+@media (max-width:640px){.rightpanel .resize-handle{display:none}}
+/* z above .composer-wrap (10): the resize handle and edge tab overlap the card's right edge, which the composer wrap spans. */
+@media (min-width:641px){.rightpanel{position:relative;z-index:11}}
+.rightpanel[data-active-tab="artifacts"] .file-tree{display:none !important}
+.rightpanel[data-active-tab="todos"] .file-tree{display:none !important}
+.rightpanel{border:0;border-radius:0;background:transparent}
+.rightpanel{transition:width .24s ease,min-width .24s ease,padding .24s ease,opacity .18s ease,transform .24s ease,margin .24s ease}
+html[data-workspace-panel="closed"] .rightpanel{margin-left:0;border-color:transparent}
+/* A tab on the panel's left edge, in the frame's own tone with no border, so it is one piece with the panel and
+   the frame; the panel must not clip it. The two .edge-tab-join children are the inverse-rounded joins where the
+   tab meets the panel edge, so it flows into the panel instead of butting against it (real elements, because the
+   tooltip owns the button's pseudo-elements). */
+.rightpanel{overflow:visible}
+.workspace-panel-edge-toggle{width:18px;height:40px;padding:0;border:0;border-radius:var(--r-md) 0 0 var(--r-md);box-shadow:none;background:var(--canvas);color:var(--muted);overflow:visible}
+.edge-tab-join{position:absolute;right:1px;width:var(--r-md);height:var(--r-md);pointer-events:none}
+.edge-tab-join-top{top:calc(-1 * var(--r-md));background:radial-gradient(circle at 0 0,transparent calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+.edge-tab-join-bottom{bottom:calc(-1 * var(--r-md));background:radial-gradient(circle at 0 100%,transparent calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+.workspace-panel-edge-toggle:hover{background:var(--canvas);color:var(--text)}
+@media (max-width:768px){.rightpanel{border-radius:0;border:0}}
+@media (max-width:768px){.rightpanel{border-left:1px solid var(--border)}}
+@media (max-width:768px){html[data-workspace-panel="closed"] .rightpanel{margin-left:0}}
+.file-item{border-radius:var(--r-sm);padding:6px 10px;transition:background var(--dur) var(--ease),color var(--dur) var(--ease)}
+.file-item:hover{background:var(--file-item-hover-bg);color:var(--text)}
+.file-item.active{background:var(--accent-bg);color:var(--accent-text)}
+
+.file-item{font-size:12.5px}
+.rightpanel[data-resizing]{transition:none}
+.rightpanel[data-resizing] ~ *,.rightpanel[data-resizing] *{pointer-events:none;user-select:none}
+@media (max-width:640px){.rightpanel{background:var(--sidebar-bg)}}
+/* Resize hover: the highlight leaves a gap where the edge tab sits and runs around the tab instead of passing behind
+   it. Every piece lies on the card side of the silhouette, 3px thick: the handle's bar at panel x -3..0, stopping one
+   join radius above and below the 40px tab; a spread box-shadow around the tab, clipped on its panel side; and a
+   ring inside each join's arc, which at the join's outer row spans exactly the bar's column, so the pieces meet. */
+.rightpanel .resize-handle{left:-4px;width:7px;transition:none}
+.rightpanel .resize-handle:hover{background:linear-gradient(var(--accent),var(--accent)) 1px var(--island-radius)/3px calc(50% - 20px - var(--r-md) - var(--island-radius) + 1px) no-repeat,linear-gradient(var(--accent),var(--accent)) 1px calc(100% - var(--island-radius))/3px calc(50% - 20px - var(--r-md) - var(--island-radius) + 1px) no-repeat}
+/* Seam rings on the card side of the arc, meeting the bar's column at the arc's end. */
+.rightpanel:has(> .resize-handle:hover) .seam-tl{background:radial-gradient(circle at 100% 100%,transparent calc(var(--island-radius) - .5px),var(--accent) var(--island-radius),var(--accent) calc(var(--island-radius) + 3px),var(--main-surface) calc(var(--island-radius) + 3.5px))}
+.rightpanel:has(> .resize-handle:hover) .seam-bl{background:radial-gradient(circle at 100% 0,transparent calc(var(--island-radius) - .5px),var(--accent) var(--island-radius),var(--accent) calc(var(--island-radius) + 3px),var(--main-surface) calc(var(--island-radius) + 3.5px))}
+.rightpanel:has(> .resize-handle:hover) .workspace-panel-edge-toggle{box-shadow:0 0 0 3px var(--accent);clip-path:inset(calc(-1 * var(--r-md) - 3px) 1px calc(-1 * var(--r-md) - 3px) -3px)}
+.rightpanel:has(> .resize-handle:hover) .edge-tab-join-top{background:radial-gradient(circle at 0 0,transparent calc(var(--r-md) - 3.5px),var(--accent) calc(var(--r-md) - 3px),var(--accent) calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+.rightpanel:has(> .resize-handle:hover) .edge-tab-join-bottom{background:radial-gradient(circle at 0 100%,transparent calc(var(--r-md) - 3.5px),var(--accent) calc(var(--r-md) - 3px),var(--accent) calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+}

@@ -1,0 +1,168 @@
+"""
+Tests for issues #373, #374, and #375.
+
+#373: Chat silently swallows errors — no feedback when agent fails to respond
+#374: Remove stale OpenAI models from default list (gpt-4o, o3)
+#375: Model dropdown should fetch live models from provider
+"""
+import pathlib
+import re
+
+REPO = pathlib.Path(__file__).parent.parent
+STREAMING_PY = (REPO / "api" / "streaming.py").read_text(encoding="utf-8")
+CONFIG_PY    = (REPO / "api" / "config.py").read_text(encoding="utf-8")
+ROUTES_PY    = (REPO / "api" / "routes.py").read_text(encoding="utf-8")
+# ── Issue #373: Silent error detection ──────────────────────────────────────
+
+# ── Issue #374: Stale model list cleanup ─────────────────────────────────────
+
+class TestStaleModelListCleanup:
+    """gpt-4o and o3 must be removed from the primary OpenAI model lists."""
+
+    def test_gpt4o_removed_from_fallback_models(self):
+        """_FALLBACK_MODELS must not contain gpt-4o (issue #374)."""
+        fallback_block_start = CONFIG_PY.find("_FALLBACK_MODELS = [")
+        fallback_block_end = CONFIG_PY.find("]", fallback_block_start)
+        fallback_block = CONFIG_PY[fallback_block_start:fallback_block_end]
+        assert "gpt-4o" not in fallback_block, (
+            "_FALLBACK_MODELS still contains gpt-4o — remove it per issue #374"
+        )
+
+    def test_o3_removed_from_fallback_models(self):
+        """_FALLBACK_MODELS must not contain o3 (issue #374)."""
+        fallback_block_start = CONFIG_PY.find("_FALLBACK_MODELS = [")
+        fallback_block_end = CONFIG_PY.find("]", fallback_block_start)
+        fallback_block = CONFIG_PY[fallback_block_start:fallback_block_end]
+        assert '"o3"' not in fallback_block and "'o3'" not in fallback_block, (
+            "_FALLBACK_MODELS still contains o3 — remove it per issue #374"
+        )
+
+    def test_gpt4o_removed_from_provider_models_openai(self):
+        """_PROVIDER_MODELS['openai'] must not contain gpt-4o (issue #374)."""
+        openai_start = CONFIG_PY.find('"openai": [')
+        openai_end = CONFIG_PY.find("],", openai_start)
+        openai_block = CONFIG_PY[openai_start:openai_end]
+        assert "gpt-4o" not in openai_block, (
+            "_PROVIDER_MODELS['openai'] still contains gpt-4o — remove per issue #374"
+        )
+
+    def test_o3_removed_from_provider_models_openai(self):
+        """_PROVIDER_MODELS['openai'] must not contain o3 (issue #374)."""
+        openai_start = CONFIG_PY.find('"openai": [')
+        openai_end = CONFIG_PY.find("],", openai_start)
+        openai_block = CONFIG_PY[openai_start:openai_end]
+        assert '"o3"' not in openai_block and "'o3'" not in openai_block, (
+            "_PROVIDER_MODELS['openai'] still contains o3 — remove per issue #374"
+        )
+
+    def test_fallback_still_has_gpt54_mini(self):
+        """_FALLBACK_MODELS must still contain gpt-5.4-mini (not over-trimmed)."""
+        assert "gpt-5.4-mini" in CONFIG_PY, (
+            "_FALLBACK_MODELS must keep gpt-5.4-mini as primary OpenAI model (#374)"
+        )
+
+    def test_fallback_has_gpt54(self):
+        """_FALLBACK_MODELS must contain gpt-5.4-mini as the primary OpenAI option."""
+        from api.config import _FALLBACK_MODELS
+        ids = [m["id"] for m in _FALLBACK_MODELS]
+        assert any("gpt-5.4-mini" in mid for mid in ids), (
+            "_FALLBACK_MODELS must include gpt-5.4-mini as the primary OpenAI option"
+        )
+
+    def test_copilot_list_unchanged(self):
+        """Copilot provider model list should still include gpt-4o (it's a valid Copilot model)."""
+        copilot_start = CONFIG_PY.find('"copilot": [')
+        copilot_end = CONFIG_PY.find("],", copilot_start)
+        if copilot_start == -1:
+            return  # No copilot list — that's fine
+        copilot_block = CONFIG_PY[copilot_start:copilot_end]
+        assert "gpt-4o" in copilot_block, (
+            "Copilot provider model list should keep gpt-4o (it's available via Copilot) (#374)"
+        )
+
+
+# ── Issue #375: Live model fetching ─────────────────────────────────────────
+
+# ── #669: Gemini model IDs must be valid for Google AI Studio endpoint ────────
+
+class TestGeminiModelIds:
+    """Gemini 3.x model IDs must be valid for the native Google AI Studio provider.
+
+    The original code had gemini-3.1-flash-lite-preview missing from the
+    dropdown. The fallback list also erroneously used gemini-3.1-pro-preview
+    in some provider sections while omitting gemini-3.1-flash-lite-preview.
+    All provider sections must now include the full current Gemini 3.x lineup.
+    """
+
+    VALID_GEMINI_3 = [
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite-preview",
+    ]
+
+    def test_gemini_provider_models_has_3x(self):
+        """_PROVIDER_MODELS['gemini'] must contain valid Gemini 3.x model IDs (#669)."""
+        gemini_block_start = CONFIG_PY.find('"gemini": [')
+        assert gemini_block_start != -1, "_PROVIDER_MODELS['gemini'] block not found"
+        gemini_block = CONFIG_PY[gemini_block_start:gemini_block_start + 600]
+        for mid in self.VALID_GEMINI_3:
+            assert mid in gemini_block, (
+                f"_PROVIDER_MODELS['gemini'] must contain {mid!r} — "
+                f"this is a valid Google AI Studio model ID (#669)"
+            )
+
+    def test_gemini_provider_models_has_flash_lite(self):
+        """_PROVIDER_MODELS['gemini'] must contain gemini-3.1-flash-lite-preview (#669).
+
+        This was the model the reporter selected from the wizard — it must appear
+        in the native gemini provider model list so users can select it.
+        """
+        gemini_block_start = CONFIG_PY.find('"gemini": [')
+        assert gemini_block_start != -1
+        gemini_block = CONFIG_PY[gemini_block_start:gemini_block_start + 600]
+        assert "gemini-3.1-flash-lite-preview" in gemini_block, (
+            "_PROVIDER_MODELS['gemini'] missing gemini-3.1-flash-lite-preview — "
+            "this was the exact model the #669 reporter tried and got API_KEY_INVALID"
+        )
+
+    def test_fallback_models_has_gemini_3x(self):
+        """_FALLBACK_MODELS must contain valid Gemini 3.x OpenRouter model IDs (#669)."""
+        fallback_start = CONFIG_PY.find("_FALLBACK_MODELS = [")
+        fallback_end = CONFIG_PY.find("]", fallback_start + len("_FALLBACK_MODELS = ["))
+        # Find the closing bracket for the list (multi-line)
+        depth = 0
+        pos = fallback_start + len("_FALLBACK_MODELS = [")
+        for i, ch in enumerate(CONFIG_PY[pos:], start=pos):
+            if ch == '[':
+                depth += 1
+            elif ch == ']':
+                if depth == 0:
+                    fallback_end = i
+                    break
+                depth -= 1
+        fallback_block = CONFIG_PY[fallback_start:fallback_end]
+        for mid in ("google/gemini-3.1-pro-preview", "google/gemini-3-flash-preview"):
+            assert mid in fallback_block, (
+                f"_FALLBACK_MODELS must contain {mid!r} for OpenRouter Google models (#669)"
+            )
+
+    def test_gemini_provider_also_has_stable_25(self):
+        """_PROVIDER_MODELS['gemini'] must retain stable Gemini 2.5 models (#669)."""
+        gemini_block_start = CONFIG_PY.find('"gemini": [')
+        assert gemini_block_start != -1
+        gemini_block = CONFIG_PY[gemini_block_start:gemini_block_start + 600]
+        assert "gemini-2.5-pro" in gemini_block, (
+            "_PROVIDER_MODELS['gemini'] must keep gemini-2.5-pro as a stable fallback"
+        )
+
+    def test_no_invalid_gemini_3_pro_model(self):
+        """gemini-3-pro-preview must not appear — it was shut down March 9 2026 (#669)."""
+        assert "gemini-3-pro-preview" not in CONFIG_PY or "gemini-3.1-pro-preview" in CONFIG_PY, (
+            "gemini-3-pro-preview was shut down — use gemini-3.1-pro-preview instead (#669)"
+        )
+        # More precise: ensure the bare (non-.1) version isn't the only one present
+        count_bare = CONFIG_PY.count('"gemini-3-pro-preview"')
+        assert count_bare == 0, (
+            f"gemini-3-pro-preview appears {count_bare} time(s) in config.py — "
+            "it was shut down March 9 2026, use gemini-3.1-pro-preview (#669)"
+        )

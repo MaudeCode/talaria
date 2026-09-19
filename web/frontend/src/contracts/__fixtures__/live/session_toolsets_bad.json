@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "toolsets must be a non-empty list or null"
+  },
+  "method": "POST",
+  "path": "/api/session/toolsets",
+  "status": 400
+}

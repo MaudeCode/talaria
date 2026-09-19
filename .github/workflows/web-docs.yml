@@ -1,0 +1,85 @@
+name: Talaria Web docs CI
+
+# Check rendering-breaking Markdown defects with the repository-owned script.
+# The standalone informational third-party link action is omitted under the
+# root repository's existing Actions allowlist.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**/*.md'
+      - 'web/**/*.markdown'
+      - 'web/**/*.rst'
+      - 'web/docs/**'
+      - 'web/CHANGELOG*'
+      - 'web/**/README*'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**/*.md'
+      - 'web/**/*.markdown'
+      - 'web/**/*.rst'
+      - 'web/docs/**'
+      - 'web/CHANGELOG*'
+      - 'web/**/README*'
+
+# Read-only; no secrets needed. Fork PRs already get a read-only token, but pin it.
+permissions:
+  contents: read
+
+jobs:
+  docs-ci:
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Resolve changed doc files (NUL-safe, untrusted names)
+        id: docs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          # Compute the changed markdown/doc files and write them to a file, ONE PER
+          # LINE. We never echo untrusted names into another shell; downstream steps
+          # read this file. Fall back to all tracked docs if the diff can't compute.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || git fetch --no-tags origin main || true
+            RANGE="$BASE_SHA...$HEAD_SHA"
+          else
+            RANGE="${{ github.event.before }}...${{ github.sha }}"
+          fi
+          : > doc_files.txt
+          if CHANGED="$(git diff --name-only --no-renames --diff-filter=ACMR "$RANGE" 2>/dev/null)"; then
+            printf '%s\n' "$CHANGED" | grep -Ei '\.(md|markdown|rst)$' > doc_files.txt || true
+          fi
+          if [ ! -s doc_files.txt ]; then
+            git ls-files '*.md' '*.markdown' '*.rst' > doc_files.txt 2>/dev/null || true
+          fi
+          # Keep only files that still exist (skip deletions), preserving exact names.
+          : > doc_files_existing.txt
+          while IFS= read -r f; do
+            [ -n "$f" ] && [ -f "$f" ] && printf '%s\n' "$f" >> doc_files_existing.txt
+          done < doc_files.txt
+          mv doc_files_existing.txt doc_files.txt
+          echo "Doc files to check:"; cat doc_files.txt
+          echo "count=$(wc -l < doc_files.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Critical Markdown check (rendering-breaks only, not style)
+        if: steps.docs.outputs.count != '0'
+        run: |
+          set -uo pipefail
+          # Read the NUL-safe-ish file list (one path per line) into an array. Names
+          # are passed as ARGUMENTS to python, never evaluated as shell.
+          mapfile -t FILES < doc_files.txt
+          if [ "${#FILES[@]}" -eq 0 ]; then echo "No doc files."; exit 0; fi
+          python3 web/scripts/critical_markdown_check.py "${FILES[@]}"

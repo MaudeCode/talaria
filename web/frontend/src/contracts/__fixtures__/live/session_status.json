@@ -1,0 +1,23 @@
+{
+  "body": {
+    "active_stream_id": null,
+    "agent_running": false,
+    "created_at": 1789438261.182715,
+    "estimated_cost": null,
+    "hermes_home": "/tmp/hermes-state",
+    "input_tokens": 0,
+    "message_count": 0,
+    "model": "openai/gpt-5.4-mini",
+    "output_tokens": 0,
+    "personality": null,
+    "profile": "default",
+    "session_id": "3ca40cdfc145",
+    "title": "Untitled",
+    "total_tokens": 0,
+    "updated_at": 1789438261.182715,
+    "workspace": "/tmp/hermes-state/workspace"
+  },
+  "method": "GET",
+  "path": "/api/session/status?session_id=3ca40cdfc145",
+  "status": 200
+}

@@ -1,0 +1,470 @@
+#!/usr/bin/env python3
+"""Exercise Talaria's adopted HTTP and SSE contract against disposable Hermes state."""
+
+from __future__ import annotations
+
+import argparse
+import http.cookiejar
+import json
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+class ContractFailure(RuntimeError):
+    pass
+
+
+class Probe:
+    def __init__(self, base_url: str, password: str, output: Path) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.cookies = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self.cookies)
+        )
+        self.password = password
+        self.output = output
+        self.fixtures: dict[str, Any] = {}
+
+    def request(
+        self,
+        boundary: str,
+        path: str,
+        *,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
+        expected_status: int = 200,
+        headers: dict[str, str] | None = None,
+        expect_json: bool = True,
+        fixture: str | None = None,
+    ) -> Any:
+        data = None
+        request_headers = dict(headers or {})
+        if body is not None:
+            data = json.dumps(body).encode()
+            request_headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            self.base_url + path,
+            data=data,
+            headers=request_headers,
+            method=method,
+        )
+        try:
+            response = self.opener.open(request, timeout=15)
+        except urllib.error.HTTPError as error:
+            response = error
+        except urllib.error.URLError as error:
+            raise ContractFailure(
+                f"{boundary}: {method} {path} failed: {error.reason}"
+            ) from error
+        payload = response.read()
+        if response.status != expected_status:
+            raise ContractFailure(
+                f"{boundary}: {method} {path} returned HTTP {response.status}, "
+                f"expected {expected_status}: {payload.decode(errors='replace')}"
+            )
+        print(f"PASS [{boundary}] {method} {path} -> {response.status}")
+        if not expect_json:
+            return payload
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError as error:
+            raise ContractFailure(
+                f"{boundary}: {method} {path} returned invalid JSON: "
+                f"{payload.decode(errors='replace')}"
+            ) from error
+        if fixture:
+            self.fixtures[fixture] = decoded
+        return decoded
+
+    @staticmethod
+    def require_keys(boundary: str, payload: Any, *keys: str) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ContractFailure(
+                f"{boundary}: expected an object, got {type(payload).__name__}"
+            )
+        missing = [key for key in keys if key not in payload]
+        if missing:
+            raise ContractFailure(f"{boundary}: missing keys: {', '.join(missing)}")
+        return payload
+
+    @staticmethod
+    def read_sse_event(response: Any, boundary: str) -> tuple[str, Any]:
+        event = "message"
+        data_lines: list[str] = []
+        while True:
+            try:
+                raw_line = response.readline()
+            except OSError as error:
+                raise ContractFailure(f"{boundary}: SSE read failed: {error}") from error
+            if not raw_line:
+                raise ContractFailure(
+                    f"{boundary}: SSE stream ended before an event arrived"
+                )
+            line = raw_line.decode("utf-8").rstrip("\r\n")
+            if not line:
+                break
+            if line.startswith(":"):
+                continue
+            field, _, value = line.partition(":")
+            value = value.lstrip()
+            if field == "event":
+                event = value
+            elif field == "data":
+                data_lines.append(value)
+        try:
+            payload = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError as error:
+            raise ContractFailure(
+                f"{boundary}: SSE data was not JSON: {data_lines!r}"
+            ) from error
+        return event, payload
+
+    def run(self, workspace: Path) -> None:
+        health = self.require_keys(
+            "health response",
+            self.request("health response", "/health", fixture="health"),
+            "status",
+            "sessions",
+            "uptime_seconds",
+        )
+        if health["status"] != "ok":
+            raise ContractFailure(
+                f"health response: unexpected status {health['status']!r}"
+            )
+
+        status = self.require_keys(
+            "authentication status",
+            self.request("authentication status", "/api/auth/status"),
+            "auth_enabled",
+            "logged_in",
+        )
+        if status["auth_enabled"] is not True or status["logged_in"] is not False:
+            raise ContractFailure(
+                f"authentication status: unexpected unauthenticated state {status!r}"
+            )
+
+        self.request(
+            "authentication rejection", "/api/sessions", expected_status=401
+        )
+        self.request(
+            "invalid password",
+            "/api/auth/login",
+            method="POST",
+            body={"password": "wrong-contract-password"},
+            expected_status=401,
+        )
+        login = self.require_keys(
+            "login response",
+            self.request(
+                "login response",
+                "/api/auth/login",
+                method="POST",
+                body={"password": self.password},
+            ),
+            "ok",
+        )
+        if login["ok"] is not True or not any(
+            cookie.name == "hermes_session" for cookie in self.cookies
+        ):
+            raise ContractFailure(
+                "login response: missing success flag or hermes_session cookie"
+            )
+
+        authenticated = self.require_keys(
+            "authenticated status",
+            self.request(
+                "authenticated status", "/api/auth/status", fixture="auth_status"
+            ),
+            "auth_enabled",
+            "logged_in",
+        )
+        if authenticated["logged_in"] is not True:
+            raise ContractFailure("authenticated status: login cookie was not accepted")
+
+        # Login is explicitly CSRF-exempt in the adopted Web contract. Exercise
+        # the authenticated mutation boundary; native requests omit Origin.
+        self.request(
+            "CSRF rejection",
+            "/api/session/new",
+            method="POST",
+            body={"workspace": str(workspace)},
+            headers={"Origin": "https://cross-origin.invalid"},
+            expected_status=403,
+        )
+
+        read_only_checks = (
+            ("sessions list", "/api/sessions", ("sessions", "cli_count", "server_time"), "sessions"),
+            ("projects list", "/api/projects", ("projects",), "projects"),
+            ("workspaces list", "/api/workspaces", ("workspaces", "last"), "workspaces"),
+            ("workspace suggestions", "/api/workspaces/suggest?prefix=%2F", ("suggestions", "prefix"), "workspace_suggestions"),
+            ("models list", "/api/models", ("default_model", "active_provider"), "models"),
+            ("providers list", "/api/providers", ("providers", "active_provider"), "providers"),
+            ("settings response", "/api/settings", ("webui_version", "agent_version", "bot_name"), "settings"),
+            ("reasoning response", "/api/reasoning", ("show_reasoning",), "reasoning"),
+            ("profiles list", "/api/profiles", ("profiles", "active"), "profiles"),
+            ("personalities list", "/api/personalities", ("personalities",), "personalities"),
+            ("commands list", "/api/commands", ("commands",), "commands"),
+            ("memory response", "/api/memory", ("memory", "memory_path"), "memory"),
+        )
+        for boundary, path, keys, fixture in read_only_checks:
+            self.require_keys(
+                boundary, self.request(boundary, path, fixture=fixture), *keys
+            )
+
+        created = self.require_keys(
+            "session creation",
+            self.request(
+                "session creation",
+                "/api/session/new",
+                method="POST",
+                body={"workspace": str(workspace)},
+                fixture="session_new",
+            ),
+            "session",
+        )
+        session = self.require_keys(
+            "session creation", created["session"], "session_id", "messages"
+        )
+        session_id = str(session["session_id"])
+
+        query = urllib.parse.urlencode({"session_id": session_id, "messages": 1})
+        self.require_keys(
+            "session detail",
+            self.request(
+                "session detail", f"/api/session?{query}", fixture="session_detail"
+            ),
+            "session",
+        )
+        status_query = urllib.parse.urlencode({"session_id": session_id})
+        self.require_keys(
+            "session status",
+            self.request(
+                "session status",
+                f"/api/session/status?{status_query}",
+                fixture="session_status",
+            ),
+            "session_id",
+            "agent_running",
+        )
+        list_query = urllib.parse.urlencode({"session_id": session_id, "path": ""})
+        self.require_keys(
+            "workspace listing",
+            self.request(
+                "workspace listing",
+                f"/api/list?{list_query}",
+                fixture="directory_list",
+            ),
+            "entries",
+            "path",
+        )
+        file_query = urllib.parse.urlencode(
+            {"session_id": session_id, "path": "contract-fixture.txt"}
+        )
+        self.require_keys(
+            "file response",
+            self.request(
+                "file response", f"/api/file?{file_query}", fixture="file"
+            ),
+            "content",
+            "path",
+        )
+        raw = self.request(
+            "raw file response",
+            f"/api/file/raw?{file_query}",
+            expect_json=False,
+        )
+        if raw != b"talaria contract fixture\n":
+            raise ContractFailure(f"raw file response: unexpected bytes {raw!r}")
+
+        mutation_checks = (
+            ("session rename", "/api/session/rename", {"session_id": session_id, "title": "talaria-contract-disposable"}),
+            ("session pin", "/api/session/pin", {"session_id": session_id, "pinned": True}),
+            ("session archive", "/api/session/archive", {"session_id": session_id, "archived": True}),
+            ("session move", "/api/session/move", {"session_id": session_id, "project_id": None}),
+            ("session truncate", "/api/session/truncate", {"session_id": session_id, "keep_count": 0}),
+        )
+        for boundary, path, body in mutation_checks:
+            result = self.request(
+                boundary,
+                path,
+                method="POST",
+                body=body,
+                fixture="session_mutation" if boundary == "session pin" else None,
+            )
+            if boundary == "session rename":
+                renamed = self.require_keys(boundary, result, "session")["session"]
+                renamed = self.require_keys(boundary, renamed, "session_id", "title")
+                if renamed["title"] != "talaria-contract-disposable":
+                    raise ContractFailure(f"{boundary}: title did not change")
+            else:
+                result = self.require_keys(boundary, result, "ok")
+                if result["ok"] is not True:
+                    raise ContractFailure(f"{boundary}: mutation did not return ok=true")
+
+        branch = self.require_keys(
+            "session branch",
+            self.request(
+                "session branch",
+                "/api/session/branch",
+                method="POST",
+                body={
+                    "session_id": session_id,
+                    "keep_count": 0,
+                    "title": "talaria-contract-branch",
+                },
+                fixture="session_branch",
+            ),
+            "session_id",
+            "parent_session_id",
+        )
+        branch_id = str(branch["session_id"])
+        if branch["parent_session_id"] != session_id:
+            raise ContractFailure(
+                "session branch: parent_session_id does not match source"
+            )
+
+        stream_status_query = urllib.parse.urlencode(
+            {"stream_id": "talaria_contract_missing"}
+        )
+        stream_status = self.require_keys(
+            "stream status",
+            self.request(
+                "stream status",
+                f"/api/chat/stream/status?{stream_status_query}",
+                fixture="stream_status",
+            ),
+            "active",
+            "stream_id",
+            "replay_available",
+        )
+        if stream_status["active"] is not False:
+            raise ContractFailure("stream status: nonexistent stream reported active")
+
+        stream_query = urllib.parse.urlencode({"session_id": session_id})
+        try:
+            stream_response = self.opener.open(
+                self.base_url + f"/api/approval/stream?{stream_query}", timeout=15
+            )
+        except urllib.error.URLError as error:
+            raise ContractFailure(
+                f"SSE boundary: stream request failed: {error.reason}"
+            ) from error
+        content_type = stream_response.headers.get_content_type()
+        if content_type != "text/event-stream":
+            raise ContractFailure(
+                f"SSE boundary: unexpected content type {content_type!r}"
+            )
+        event, payload = self.read_sse_event(
+            stream_response, "SSE initial event"
+        )
+        if (
+            event != "initial"
+            or not isinstance(payload, dict)
+            or "pending_count" not in payload
+        ):
+            raise ContractFailure(
+                f"SSE initial event: unexpected event {event!r} {payload!r}"
+            )
+        self.request(
+            "SSE fixture injection",
+            "/api/approval/inject_test?"
+            + urllib.parse.urlencode(
+                {
+                    "session_id": session_id,
+                    "pattern_key": "talaria_contract_fixture",
+                    "command": "printf talaria-contract",
+                }
+            ),
+        )
+        event, payload = self.read_sse_event(
+            stream_response, "SSE approval event"
+        )
+        stream_response.close()
+        pending = payload.get("pending") if isinstance(payload, dict) else None
+        if event != "approval" or not isinstance(pending, dict) or (
+            pending.get("pattern_key") != "talaria_contract_fixture"
+        ):
+            raise ContractFailure(
+                f"SSE approval event: unexpected event {event!r} {payload!r}"
+            )
+        print("PASS [SSE boundary] initial and approval events decoded")
+
+        for disposable_id in (branch_id, session_id):
+            deleted = self.require_keys(
+                "session cleanup",
+                self.request(
+                    "session cleanup",
+                    "/api/session/delete",
+                    method="POST",
+                    body={"session_id": disposable_id},
+                ),
+                "ok",
+            )
+            if deleted["ok"] is not True:
+                raise ContractFailure(
+                    f"session cleanup: delete failed for {disposable_id}"
+                )
+
+        sessions = self.require_keys(
+            "cleanup verification",
+            self.request("cleanup verification", "/api/sessions?all_profiles=1"),
+            "sessions",
+        )["sessions"]
+        remaining_ids = {
+            row.get("session_id") for row in sessions if isinstance(row, dict)
+        }
+        if session_id in remaining_ids or branch_id in remaining_ids:
+            raise ContractFailure(
+                "cleanup verification: disposable session remained visible"
+            )
+
+        logout = self.require_keys(
+            "logout response",
+            self.request(
+                "logout response", "/api/auth/logout", method="POST", body={}
+            ),
+            "ok",
+        )
+        if logout["ok"] is not True:
+            raise ContractFailure("logout response: ok was not true")
+        final_status = self.require_keys(
+            "logged-out status",
+            self.request("logged-out status", "/api/auth/status"),
+            "logged_in",
+        )
+        if final_status["logged_in"] is not False:
+            raise ContractFailure(
+                "logged-out status: session cookie remained valid"
+            )
+        self.output.parent.mkdir(parents=True, exist_ok=True)
+        self.output.write_text(
+            json.dumps(self.fixtures, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"PASS wrote {len(self.fixtures)} live decoder fixtures to {self.output}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--password", required=True)
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        Probe(args.base_url, args.password, args.output.resolve()).run(
+            args.workspace.resolve()
+        )
+    except ContractFailure as error:
+        print(f"FAIL {error}", file=sys.stderr)
+        return 1
+    print("PASS disposable upstream HTTP/SSE contract")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

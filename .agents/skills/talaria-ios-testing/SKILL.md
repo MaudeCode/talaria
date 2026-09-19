@@ -3,6 +3,9 @@ name: talaria-ios-testing
 description: Run Talaria XCTest and simulator validation for code changes. Use for focused or full test requests, simulator build-and-launch checks, UI runtime validation, and pre-commit verification.
 ---
 
+Run app commands from `app/`; unqualified source and tooling paths are relative
+to `app/`. GitHub workflows and shared contract documentation remain at the root.
+
 # Talaria iOS testing
 
 Use terminal validation. Prefer XcodeBuildMCP when it is available; otherwise use
@@ -29,7 +32,7 @@ worktrees. Let the current run finish instead of starting an overlapping run.
   with `CODE_SIGNING_ALLOWED=NO` break Keychain entitlements when installed.
 
 If simulator setup, selection, or raw `xcodebuild` fallback is needed, read the
-relevant sections of [DEVELOPMENT.md](../../../DEVELOPMENT.md#local-validation-with-xcodebuildmcp).
+relevant sections of [DEVELOPMENT.md](../../../app/DEVELOPMENT.md#local-validation-with-xcodebuildmcp).
 
 Report each validation command and result. Distinguish failures caused by the
 change from unrelated environment failures.

@@ -1,0 +1,31 @@
+{
+  "body": {
+    "counts": {
+      "manifest_extensions": 0,
+      "script_urls": 0,
+      "sidecars": 0,
+      "stylesheet_urls": 0,
+      "user_disabled": 0
+    },
+    "enabled": false,
+    "extension_dir_configured": true,
+    "extension_dir_valid": false,
+    "extensions": [],
+    "manifest": {
+      "configured": false,
+      "entry_count": 0,
+      "loaded": false,
+      "script_count": 0,
+      "sidecar_count": 0,
+      "status": "not_configured",
+      "stylesheet_count": 0
+    },
+    "script_urls": [],
+    "sidecars": [],
+    "stylesheet_urls": [],
+    "warnings": []
+  },
+  "method": "GET",
+  "path": "/api/extensions/status",
+  "status": 200
+}

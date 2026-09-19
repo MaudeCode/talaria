@@ -1,0 +1,387 @@
+{
+  "body": {
+    "activity_by_day": [
+      {
+        "day": "Mon",
+        "sessions": 0
+      },
+      {
+        "day": "Tue",
+        "sessions": 0
+      },
+      {
+        "day": "Wed",
+        "sessions": 0
+      },
+      {
+        "day": "Thu",
+        "sessions": 0
+      },
+      {
+        "day": "Fri",
+        "sessions": 0
+      },
+      {
+        "day": "Sat",
+        "sessions": 0
+      },
+      {
+        "day": "Sun",
+        "sessions": 0
+      }
+    ],
+    "activity_by_hour": [
+      {
+        "hour": 0,
+        "sessions": 0
+      },
+      {
+        "hour": 1,
+        "sessions": 0
+      },
+      {
+        "hour": 2,
+        "sessions": 0
+      },
+      {
+        "hour": 3,
+        "sessions": 0
+      },
+      {
+        "hour": 4,
+        "sessions": 0
+      },
+      {
+        "hour": 5,
+        "sessions": 0
+      },
+      {
+        "hour": 6,
+        "sessions": 0
+      },
+      {
+        "hour": 7,
+        "sessions": 0
+      },
+      {
+        "hour": 8,
+        "sessions": 0
+      },
+      {
+        "hour": 9,
+        "sessions": 0
+      },
+      {
+        "hour": 10,
+        "sessions": 0
+      },
+      {
+        "hour": 11,
+        "sessions": 0
+      },
+      {
+        "hour": 12,
+        "sessions": 0
+      },
+      {
+        "hour": 13,
+        "sessions": 0
+      },
+      {
+        "hour": 14,
+        "sessions": 0
+      },
+      {
+        "hour": 15,
+        "sessions": 0
+      },
+      {
+        "hour": 16,
+        "sessions": 0
+      },
+      {
+        "hour": 17,
+        "sessions": 0
+      },
+      {
+        "hour": 18,
+        "sessions": 0
+      },
+      {
+        "hour": 19,
+        "sessions": 0
+      },
+      {
+        "hour": 20,
+        "sessions": 0
+      },
+      {
+        "hour": 21,
+        "sessions": 0
+      },
+      {
+        "hour": 22,
+        "sessions": 0
+      },
+      {
+        "hour": 23,
+        "sessions": 0
+      }
+    ],
+    "daily_tokens": [
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-16",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-17",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-18",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-19",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-20",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-21",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-22",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-23",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-24",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-25",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-26",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-27",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-28",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-29",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-30",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-08-31",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-01",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-02",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-03",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-04",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-05",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-06",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-07",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-08",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-09",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-10",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-11",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-12",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-13",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      },
+      {
+        "cache_read_tokens": 0,
+        "cost": 0.0,
+        "date": "2026-09-14",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "sessions": 0
+      }
+    ],
+    "models": [],
+    "period_days": 30,
+    "total_cache_hit_percent": null,
+    "total_cache_read_tokens": 0,
+    "total_cost": 0.0,
+    "total_input_tokens": 0,
+    "total_messages": 0,
+    "total_output_tokens": 0,
+    "total_sessions": 0,
+    "total_tokens": 0
+  },
+  "method": "GET",
+  "path": "/api/insights?days=30",
+  "status": 200
+}

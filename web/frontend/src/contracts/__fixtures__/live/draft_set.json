@@ -1,0 +1,14 @@
+{
+  "body": {
+    "draft": {
+      "files": [],
+      "text": ""
+    },
+    "draft_version": null,
+    "ok": true,
+    "unchanged": true
+  },
+  "method": "POST",
+  "path": "/api/session/draft",
+  "status": 200
+}

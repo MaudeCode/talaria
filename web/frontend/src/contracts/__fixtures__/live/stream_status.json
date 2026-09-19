@@ -1,0 +1,10 @@
+{
+  "body": {
+    "active": false,
+    "replay_available": false,
+    "stream_id": "nope"
+  },
+  "method": "GET",
+  "path": "/api/chat/stream/status?stream_id=nope",
+  "status": 200
+}

@@ -1,0 +1,197 @@
+/* shell: component rules for this feature, in @layer app (after utilities). Colours, radii and
+   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. Origin:
+   the legacy stylesheet, converted by scripts/css-convert.mjs (see docs/architecture/css-conversion-ledger.md). */
+@layer app{
+.pwa-standalone{overscroll-behavior:none}
+.pwa-standalone body{-webkit-tap-highlight-color:transparent}
+.app-titlebar-new-chat{display:none}
+.pwa-standalone .app-titlebar-reload{display:inline-flex}
+@supports (padding-top: env(safe-area-inset-top)){.app-titlebar-new-chat,.app-titlebar-reload{display:none;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0;background:none;border:none;color:var(--muted);border-radius:8px;cursor:pointer;padding:0;-webkit-tap-highlight-color:transparent;transition:background-color .15s,color .15s}}
+@supports (padding-top: env(safe-area-inset-top)){.app-titlebar-new-chat:hover,.app-titlebar-reload:hover{background:var(--hover-bg);color:var(--text)}}
+@supports (padding-top: env(safe-area-inset-top)){@media (display-mode: standalone), (display-mode: fullscreen){.app-titlebar-reload{display:inline-flex}}}
+.app-titlebar-sub[hidden]{display:none}
+.app-titlebar-hamburger:hover{background:var(--hover-bg);color:var(--text)}
+.sidebar-search{position:relative;padding:8px 12px;flex-shrink:0}
+.sidebar-search input{width:100%;background:var(--search-bg);border:1px solid var(--search-border);border-radius:8px;color:var(--text);padding:7px 10px 7px 32px;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s,background .15s;box-sizing:border-box;-webkit-appearance:none;appearance:none}
+.sidebar-search input::-webkit-search-cancel-button,.sidebar-search input::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
+.sidebar-search input:focus{border-color:var(--accent);box-shadow:var(--search-focus-shadow);background:var(--search-focus-bg)}
+.sidebar-search input::placeholder{color:var(--muted);opacity:.7}
+.sidebar-search-icon{position:absolute;left:22px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted);opacity:.7;pointer-events:none}
+.rail-btn.active::before{content:'';position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:var(--accent);border-radius:0 2px 2px 0}
+.has-tooltip{position:relative}
+.has-tooltip::after{content:attr(data-tooltip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%);background:var(--surface);border:1px solid var(--accent-bg-strong);color:var(--text);font-size:11.5px;font-weight:600;letter-spacing:.02em;padding:5px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:1500;box-shadow:0 8px 24px rgba(0,0,0,.65),0 0 0 1px rgba(0,0,0,.35),0 1px 0 var(--overlay-faint) inset;opacity:0;transition:opacity .14s ease;transition-delay:0s}
+.has-tooltip:hover::after,.has-tooltip:focus-visible::after{opacity:1;transition-delay:.15s}
+.has-tooltip--bottom::after{left:50%;top:auto;bottom:auto;transform:translateX(-50%);top:calc(100% + 8px)}
+.has-tooltip--bottom-right::after{left:auto;right:0;top:calc(100% + 8px);bottom:auto;transform:none}
+.has-tooltip--left::after{left:auto;right:calc(100% + 8px);top:50%;transform:translateY(-50%)}
+@media (prefers-reduced-motion:reduce){.has-tooltip::after{transition:none;transition-delay:0s}}
+.rail .nav-tab.active::before{content:'';position:absolute;left:-6px;top:50%;bottom:auto;transform:translateY(-50%);width:3px;height:16px;background:var(--accent);border-radius:0 2px 2px 0}
+.dashboard-link{position:relative}
+@media (min-width:641px){.sidebar > .sidebar-nav{display:none}}
+.nav-tab{flex:1;padding:10px 4px 8px;font-size:20px;text-align:center;cursor:pointer;color:var(--muted);border:none;background:none;transition:color .15s;border-bottom:2px solid transparent;white-space:nowrap;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;border-radius:var(--nav-tab-radius)}
+.nav-tab:hover{color:var(--text);background:var(--nav-hover-bg)}
+.sidebar-nav .nav-tab:hover::after{content:attr(data-label);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent-bg-strong);color:var(--accent-text);font-size:12px;font-weight:700;letter-spacing:.02em;padding:6px 12px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.nav-tab.active{color:var(--nav-active-fg);background:var(--nav-active-bg);box-shadow:var(--nav-active-shadow);font-weight:var(--nav-active-weight)}
+.nav-tab.active::before{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:20px;height:2px;background:var(--accent);border-radius:2px 2px 0 0}
+.panel-view{display:none;flex:1;overflow:hidden;flex-direction:column}
+.panel-view.active{display:flex}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:24px 20px 4px;color:var(--muted)}
+html[data-session-boot="1"] .empty-state{display:none}
+.empty-hero-title{font-size:26px;line-height:1.25;color:var(--text);font-weight:600;letter-spacing:-.02em;text-align:center;max-width:var(--msg-max);opacity:0;transition:opacity .2s ease}
+.empty-hero-title.ready{opacity:1}
+.icon-btn.composer-mobile-config-btn{position:relative;display:inline-flex;flex-shrink:0}
+.icon-btn{width:34px;height:34px;border-radius:var(--btn-radius);background:none;border:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .15s}
+.icon-btn{opacity:.75}
+.icon-btn:hover{background:var(--icon-btn-hover-bg);color:var(--text);opacity:1}
+.icon-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){width:0 !important;min-width:0;border-right-color:transparent;pointer-events:none;overflow:visible}}
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) > :not(.workspace-panel-edge-toggle){visibility:hidden}}
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) .workspace-panel-edge-toggle{pointer-events:auto}}
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar .resize-handle{display:none}}
+@media (min-width:641px){html[data-sidebar-collapsed="1"] .sidebar:not(.mobile-open){width:0 !important;min-width:0;opacity:0;transform:translateX(-14px);border-right-color:transparent;pointer-events:none;overflow:hidden;transition:none}}
+@media (max-width:640px){.sidebar .resize-handle{display:none}}
+@media (max-width:640px){.app-titlebar-new-chat,.app-titlebar-reload{display:inline-flex;width:44px;height:44px}}
+@media (max-width:640px){.sidebar-nav .nav-tab{flex:0 0 44px;width:44px;min-width:44px;min-height:44px;padding:0;border-bottom:0;border-radius:var(--nav-tab-radius-mobile)}}
+@media (max-width:640px){.sidebar-nav .nav-tab svg{width:20px;height:20px}}
+@media (max-width:640px){.sidebar-nav .nav-tab.active{background:var(--accent-bg)}}
+@media (max-width:640px){.sidebar-nav .nav-tab.active::before{left:-4px;top:50%;bottom:auto;transform:translateY(-50%);width:3px;height:16px;border-radius:0 2px 2px 0}}
+@media (max-width:640px){.sidebar .panel-view{height:100%;margin-left:52px}}
+@media (max-width:640px){.sidebar .panel-head{padding-right:52px}}
+@media (max-width:640px){.mobile-sidebar-close{display:inline-flex !important;position:absolute;right:4px;top:calc(4px + var(--app-titlebar-safe-top));width:44px;height:44px;z-index:4}}
+@media (max-width:640px){.icon-btn{min-width:44px;min-height:44px}}
+@media (max-width:640px){.mobile-sidebar-close{line-height:1;overflow:hidden}}
+@media (max-width:640px){.app-titlebar-new-chat,.app-titlebar-reload,.sidebar-nav .nav-tab,.icon-btn{line-height:1;overflow:hidden}}
+@media (max-width:640px){.app-titlebar-hamburger svg,.app-titlebar-new-chat svg,.app-titlebar-reload svg,.mobile-sidebar-close svg,.sidebar-nav .nav-tab svg,.icon-btn svg{display:block;flex:0 0 auto}}
+@media (max-width:640px){.empty-hero-title{font-size:21px}}
+@media (max-width: 640px){.panel-head-btn.mobile-sidebar-close{display:inline-flex !important;align-items:center;justify-content:center;right:4px;top:calc(var(--app-titlebar-safe-top) - 2px);width:44px !important;height:44px !important;min-width:44px;min-height:44px;line-height:1;overflow:hidden}}
+@media (max-width: 640px){.panel-head-btn.mobile-sidebar-close svg{width:14px;height:14px;display:block}}
+@media (prefers-reduced-motion:reduce){.empty-hero-title{transition:none}}
+/* Collapse/expand animation (a Tailwind transition-[…] class cannot carry durations, so it lives here). */
+@media (min-width:641px){.sidebar{transition:width .24s ease,min-width .24s ease,padding .24s ease,opacity .18s ease,transform .24s ease,margin .24s ease}}
+@media (max-width:640px){.sidebar{transition:transform .25s ease}}
+/* Handle spans sidebar x -3..4; the hover bar is 3px on the card side (x 0..3), one seam radius short of top and bottom. */
+.sidebar .resize-handle{right:-4px;width:7px;transition:none}
+.sidebar .resize-handle:hover{background:linear-gradient(var(--accent),var(--accent)) 3px var(--island-radius)/3px calc(100% - 2 * var(--island-radius)) no-repeat}
+.sidebar:has(> .resize-handle:hover) .seam-tr{background:radial-gradient(circle at 0 100%,transparent calc(var(--island-radius) - .5px),var(--accent) var(--island-radius),var(--accent) calc(var(--island-radius) + 3px),var(--main-surface) calc(var(--island-radius) + 3.5px))}
+.sidebar:has(> .resize-handle:hover) .seam-br{background:radial-gradient(circle at 0 0,transparent calc(var(--island-radius) - .5px),var(--accent) var(--island-radius),var(--accent) calc(var(--island-radius) + 3px),var(--main-surface) calc(var(--island-radius) + 3.5px))}
+.sidebar{overflow:visible}
+.sidebar[data-resizing]{transition:none}
+.sidebar[data-resizing] ~ *,.sidebar[data-resizing] *{pointer-events:none;user-select:none}
+/* Mirror of the right panel's edge tab: on the sidebar's right edge, rounded on its outer side, joins facing left. */
+@media (min-width:641px){.sidebar .workspace-panel-edge-toggle{display:inline-flex;opacity:1;pointer-events:auto;left:auto;right:1px;transform:translate(100%,-50%);border-radius:0 var(--r-md) var(--r-md) 0}}
+.sidebar .edge-tab-join{right:auto;left:1px}
+.sidebar .edge-tab-join-top{background:radial-gradient(circle at 100% 0,transparent calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+.sidebar .edge-tab-join-bottom{background:radial-gradient(circle at 100% 100%,transparent calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+/* Resize hover runs around the tab instead of behind it (see the right panel's rules in workspace.css). */
+.sidebar .resize-handle:hover{background:linear-gradient(var(--accent),var(--accent)) 3px var(--island-radius)/3px calc(50% - 20px - var(--r-md) - var(--island-radius) + 1px) no-repeat,linear-gradient(var(--accent),var(--accent)) 3px calc(100% - var(--island-radius))/3px calc(50% - 20px - var(--r-md) - var(--island-radius) + 1px) no-repeat}
+.sidebar:has(> .resize-handle:hover) .workspace-panel-edge-toggle{box-shadow:0 0 0 3px var(--accent);clip-path:inset(calc(-1 * var(--r-md) - 3px) -3px calc(-1 * var(--r-md) - 3px) 1px)}
+.sidebar:has(> .resize-handle:hover) .edge-tab-join-top{background:radial-gradient(circle at 100% 0,transparent calc(var(--r-md) - 3.5px),var(--accent) calc(var(--r-md) - 3px),var(--accent) calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+.sidebar:has(> .resize-handle:hover) .edge-tab-join-bottom{background:radial-gradient(circle at 100% 100%,transparent calc(var(--r-md) - 3.5px),var(--accent) calc(var(--r-md) - 3px),var(--accent) calc(var(--r-md) - .5px),var(--canvas) var(--r-md))}
+/* z above .composer-wrap (10): the resize handle overlaps the card's left edge, which the composer wrap spans. */
+@media (min-width:641px){.sidebar{z-index:11}}
+main.main > #mainChat,main.main > #mainSettings{display:none}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs):not(.showing-plugin) > #mainChat{display:flex}
+main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto}
+.panel-view#panelSettings{gap:0;padding:0}
+.mobile-sidebar-close{display:none}
+.panel-head-btn:disabled,.panel-head-btn[aria-busy="true"]{opacity:.5;cursor:wait}
+.panel-head-btn:disabled:hover,.panel-head-btn[aria-busy="true"]:hover{background:transparent;color:var(--muted)}
+.app-titlebar-new-chat:disabled,.app-titlebar-new-chat[aria-busy="true"]{opacity:.5;cursor:wait}
+.app-titlebar-new-chat:disabled:hover,.app-titlebar-new-chat[aria-busy="true"]:hover{background:transparent;color:var(--muted)}
+main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-header:has(.main-view-title:empty){display:none}
+.nav-tab{position:relative;border-radius:var(--nav-tab-radius)}
+.panel-head-btn.primary{background:var(--accent,var(--link));color:var(--panel-head-primary-fg);border:none}
+.panel-head-btn.primary:hover{background:var(--accent-hover,var(--accent,var(--link)));color:var(--panel-head-primary-fg)}
+.panel-head-btn.primary svg{color:var(--panel-head-primary-fg)}
+.layout.sidebar-collapsed .sidebar:not(.mobile-open){border-color:transparent}
+@media (max-width:768px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){margin-left:0}}
+.rail-btn.active::before{display:none}
+.rail .rail-btn.has-tooltip::after{content:attr(data-tooltip);position:static;transform:none;opacity:1;visibility:visible;pointer-events:none;background:none;border:0;box-shadow:none;padding:0;margin:0;font-size:10px;font-weight:500;letter-spacing:0;line-height:1;color:inherit;white-space:nowrap;max-width:54px;overflow:hidden;text-overflow:ellipsis;transition:none}
+.rail .rail-btn.has-tooltip:hover::after{opacity:1;transform:none}
+.rail .rail-btn[data-panel="profiles"]::after{content:"Profiles"}
+.rail .rail-btn[data-panel="todos"]::after{content:"Todos"}
+.rail .rail-btn[data-panel="workspaces"]::after{content:"Spaces"}
+.rail .rail-btn[data-panel="chat"]{order:1}
+.rail .rail-btn[data-panel="workspaces"]{order:2}
+.rail .rail-btn[data-panel="tasks"]{order:10}
+.rail .rail-btn[data-panel="kanban"]{order:11}
+.rail .rail-btn[data-panel="todos"]{order:12}
+.rail .rail-btn[data-panel="skills"]{order:20}
+.rail .rail-btn[data-panel="memory"]{order:21}
+.rail .rail-btn[data-panel="profiles"]{order:22}
+.rail .rail-btn[data-panel="insights"]{order:30}
+.rail .rail-btn.dashboard-link{order:31}
+.rail .rail-btn[data-panel="logs"]{order:32}
+.rail .rail-spacer{order:90}
+.rail .rail-btn[data-panel="settings"]{order:99}
+.rail .rail-btn[data-panel="tasks"],.rail .rail-btn[data-panel="skills"],.rail .rail-btn[data-panel="insights"]{margin-top:10px;position:relative}
+.rail .rail-btn[data-panel="tasks"]::before,.rail .rail-btn[data-panel="skills"]::before,.rail .rail-btn[data-panel="insights"]::before{content:'';position:absolute;left:8px;right:8px;top:-6px;height:1px;background:var(--border);transform:none;width:auto;border-radius:0}
+.sidebar-search{padding:4px 12px 8px}
+.empty-state{padding-bottom:16px}
+.empty-hero-title{font-size:24px;font-weight:600;letter-spacing:-.01em;color:var(--text);background:none;-webkit-text-fill-color:currentColor;transition:opacity .2s var(--ease)}
+.icon-btn{border-radius:var(--btn-radius);transition:background var(--dur) var(--ease),color var(--dur) var(--ease),opacity var(--dur) var(--ease)}
+.icon-btn:hover{background:var(--icon-btn-hover-bg);color:var(--text)}
+.has-tooltip::after{border-radius:var(--r-sm);border-color:var(--border);box-shadow:var(--shadow-md);font-size:11.5px;font-weight:500;padding:4px 8px}
+.main-view.hub-page .main-view-header{padding:16px 28px 8px;gap:10px;border-bottom:1px solid var(--border)}
+.hub-toolbar .panel-view{display:none}
+.hub-toolbar .panel-view.active{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.hub-toolbar .panel-head > span,.hub-toolbar .panel-head > [data-i18n]{display:none}
+.hub-toolbar .panel-head-actions{order:99;margin-left:auto;display:flex;gap:4px}
+.hub-toolbar label{display:inline-flex;align-items:center;font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted);margin:0}
+.hub-toolbar select,.hub-toolbar input[type="text"],.hub-toolbar input[type="number"]{width:auto !important;min-width:110px;margin:0;height:30px;padding:0 26px 0 10px;font-size:12.5px}
+.hub-toolbar button{height:30px;padding:0 12px}
+.hub-toolbar > .panel-view > *{margin:0}
+.panel-view.active{animation:none}
+@media (max-width:768px){.main-view.hub-page .main-view-header{padding:12px 14px 6px}}
+@media (min-width:641px){.app-titlebar{display:none}}
+@media (min-width:641px) and (display-mode: window-controls-overlay){.app-titlebar{display:flex}}
+.rail .rail-btn.has-tooltip::after{font-size:10px;font-weight:500;letter-spacing:-.01em;line-height:1.3;padding:0 3px 1px;max-width:52px;box-sizing:border-box}
+.sidebar-search{padding:2px 10px 8px}
+.icon-btn{width:30px;height:30px}
+@media (max-width:768px){.icon-btn{width:44px;height:44px}}
+.main-view.hub-page .main-view-header{padding:14px 28px 6px}
+.has-tooltip::after{font-size:11px}
+.rail-brand svg,.rail-brand .app-titlebar-icon{width:30px;height:30px;display:inline-flex}
+.rail-brand .app-titlebar-icon svg{width:30px;height:30px}
+html.hub-active .rightpanel{width:0 !important;min-width:0 !important;opacity:0;pointer-events:none;overflow:hidden;border-color:transparent;margin-left:0;content-visibility:hidden}
+html.hub-active .rightpanel .workspace-panel-edge-toggle{display:none !important}
+.rail-brand .rail-brandmark{width:30px;height:30px;color:var(--accent)}
+.main-view-actions .panel-head-btn{width:32px;height:32px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--surface)}
+.main-view-actions .panel-head-btn:hover{background:var(--hover-bg)}
+.main-view-actions .panel-head-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+@media (max-width:640px){.tabbar-sheet-item svg{width:18px;height:18px;color:var(--muted)}}
+@media (max-width:640px){.tabbar-sheet-item:active{background:var(--hover-bg)}}
+@media (max-width:640px){.sidebar > .sidebar-nav{display:none !important}}
+@media (max-width:640px){.sidebar > .panel-view{margin-left:0 !important;padding-left:0 !important}}
+.chat,.panel-view,.empty-state{background:var(--pane-bg)}
+.nav-tab.active svg{color:var(--nav-active-icon-fg)}
+/* Inset shell: the card keeps the frame gap on the sides where no frame element sits. */
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){padding:0}}
+@media (min-width:641px){.sidebar .panel-head{border-bottom-color:transparent}}
+/* First paint. #app is empty until the module entry mounts (about 50ms built, longer under the dev server),
+   so the inset frame (rail divider + main card) is drawn from pseudo-elements meanwhile; prepaint.js has
+   already set the theme, skin and sidebar state on <html>. A reload then keeps its frame instead of flashing
+   a bare canvas. */
+#app:empty{flex-direction:row;background:var(--canvas)}
+#app:empty::before{content:"";width:64px;flex-shrink:0;background:var(--rail-bg);border-right:1px solid var(--border)}
+#app:empty::after{content:"";flex:1;min-width:0;margin:0 0 0 300px;background:var(--main-surface);border:var(--island-ring-width) solid var(--island-ring)}
+html[data-sidebar-collapsed="1"] #app:empty::after{margin-left:0}
+@media (max-width:768px){#app:empty::after{margin:0 0 0 300px;border:0;border-radius:0;box-shadow:none}}
+@media (max-width:640px){#app:empty::before{display:none}#app:empty::after{margin:0}}
+/* Phone titlebar: one hamburger on the left against two buttons on the right, so flex centring lands the title
+   off-centre (legacy had the same offset). Centre the title block on the bar itself and drop the balancing spacer,
+   which only matched the hamburger when the right side had no buttons. */
+@media (max-width:640px){.app-titlebar-spacer{display:none}.app-titlebar-new-chat{margin-left:auto}.app-titlebar-inner{position:absolute;left:50%;top:var(--app-titlebar-safe-top);bottom:0;transform:translateX(-50%);flex:none;max-width:calc(100% - 200px)}}
+/* Seams: where the sidebar, the rail (sidebar collapsed) or the workspace panel meets the main card, a card-coloured
+   concave fillet at the top and bottom, the same construction as the edge tab's joins, so the card flows into its
+   neighbours instead of ending in a rounded corner with a wedge of canvas. Desktop only; the card has square corners. */
+.seam{position:absolute;width:calc(var(--island-radius) + 3px);height:var(--island-radius);pointer-events:none;z-index:1}
+.seam-tr{right:-3px;top:0;background:radial-gradient(circle at 0 100%,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
+.seam-br{right:-3px;bottom:0;background:radial-gradient(circle at 0 0,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
+.seam-tl{left:-3px;top:0;background:radial-gradient(circle at 100% 100%,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
+.seam-bl{left:-3px;bottom:0;background:radial-gradient(circle at 100% 0,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
+.rail-seam{display:none}
+.layout.sidebar-collapsed .rail-seam{display:block}
+.layout.sidebar-collapsed .sidebar .seam,html.hub-active .rightpanel .seam,html[data-workspace-panel="closed"] .rightpanel .seam{display:none}
+@media (max-width:769px){.seam{display:none}}
+}

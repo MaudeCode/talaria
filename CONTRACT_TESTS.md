@@ -1,38 +1,40 @@
 # Upstream contract validation
 
-Talaria's server contract is the fork and branch in `UPSTREAM_REPOSITORY` and
-`UPSTREAM_BRANCH`. `UPSTREAM_TESTED_SHA` is the reviewed commit the app supports.
-The current pin is the untagged `master` merge commit `14105699`, which includes
-the native OIDC handoff from Hermes WebUI PR #15.
+App commands and source paths in this document are relative to `app/`.
+
+Talaria's server contract is the checked-out `web/` tree in this monorepo.
+`app/UPSTREAM_TESTED_SHA` and the other `UPSTREAM_*` files retain historical
+standalone provenance; they no longer select the source for this check.
+Shared versions, schemas, and synthetic fixtures live in root `contracts/`.
 
 ## One command
 
-Run the complete pinned contract check with:
+From `app/`, run:
 
 ```bash
 scripts/validate-upstream-contract
 ```
 
-The command clones the configured fork, verifies its default branch, checks out
-the pin into an isolated run directory, starts the server with synthetic home,
-state, workspace, password, and file data, then runs the live HTTP/SSE
-probe and focused Swift tests. It never reads or mutates an owner's Hermes state.
+The command uses the current local Web source, including uncommitted edits,
+and starts it with test-owned home, state, workspace, password, and file data.
+It runs the live HTTP/SSE probe and focused Swift decoders without cloning a
+standalone Web repository or reading the owner's Hermes state.
 
-To test a candidate tag or commit without moving the pin:
+To validate an immutable monorepo revision, export its `web/` tree with:
 
 ```bash
-scripts/validate-upstream-contract --ref <tag-or-commit>
+scripts/validate-upstream-contract --ref <monorepo-tag-or-commit>
 ```
 
-Logs, the resolved commit, and test output remain under
-`.codex-tmp/upstream-contract/`. A failure names the endpoint, fixture, decoder,
-or stream boundary that failed.
+Logs, source identity, live fixtures, and test output remain under
+`app/.codex-tmp/upstream-contract/` from the repository root. `--server-only`
+runs the HTTP/SSE half on Linux; the app job runs the Swift tests.
 
 ## Executable map
 
 | Adopted behavior | Executable evidence |
 | :--- | :--- |
-| Fork identity, default branch, candidate ancestry, immutable pin | `scripts/validate-upstream-contract` |
+| Local Web source identity and isolated candidate export | `scripts/validate-upstream-contract` |
 | Health, password auth, cookie state, unauthorized access, native-client CSRF behavior | `scripts/upstream-contract-probe` |
 | Server-independent sessions, projects, workspaces, models, providers, settings, reasoning, profiles, personalities, commands, and memory response keys | `scripts/upstream-contract-probe` |
 | Synthetic workspace list/file/raw-file reads | `scripts/upstream-contract-probe` |
@@ -48,7 +50,7 @@ or stream boundary that failed.
 | Fork drift, route/request-key/SSE changes, and machine-readable feature-gap classifications | `scripts/upstream-watch` |
 
 The fork-only plural provider quota endpoint remains covered by the Swift
-contract tests and is included in the current fork pin.
+contract tests against the local Web implementation.
 
 `Endpoint` owns only the URL, so the matrix proves path and query and nothing
 else; each call site's method is asserted where that call's request is
@@ -57,17 +59,20 @@ intercepted. The SSE endpoints (`/api/chat/stream`, `/api/approval/stream`,
 `EventSource` opens them from a URL and never sets `httpMethod`, so they carry
 URLSession's default GET rather than a method Talaria chooses.
 
-Native WebUI OIDC is capability-gated in the current pin. Compatible servers
+Native WebUI OIDC remains capability-gated. Compatible servers
 report `oidc_native_handoff_enabled` and expose
 `POST /api/auth/oidc/native/start`, `/exchange`, and `/cancel`. Talaria completes
 that flow through `ASWebAuthenticationSession` and exact-server cookie jars.
 
-The 2026-08-31 advance was explicitly accepted after the WebUI focused auth
-suite, five-shard CI, two bot-review passes, and Talaria's focused/full XCTest
-runs. The disposable candidate runner stopped before its Swift phase because
-the existing CSRF probe expected `POST /api/auth/login` to reject a request that
-the merged server accepts. The operator directed that no additional validation
-run be performed; the preserved artifact records that held probe mismatch.
+The historical standalone probe expected login to reject a cross-origin request.
+The adopted Web source explicitly exempts pre-login requests from CSRF checks.
+The monorepo probe instead requires rejection at `POST /api/session/new` after
+login, and still verifies native mutations without an Origin header succeed.
+
+`SharedContractTests`, `web/tests/test_monorepo_contracts.py`, the frontend
+contract suite, and `relay/tests/sharedContracts.test.ts` consume the same root
+fixtures. They exercise Web publication, signed Relay HTTP ingestion, native
+registration, aggregate responses, and Activity Scene decoding.
 
 ## Clarification batches
 
@@ -85,21 +90,16 @@ answer. `ClarificationTests` covers decoding, wire values, question progression,
 and retry retention; `ChatPrimaryStreamUITests` verifies choices, composer input,
 and the answer map received through the HTTP fixture.
 
-## Pin advance
+## Source updates
 
-The runner never writes `UPSTREAM_TESTED_SHA`. A changed fork commit cannot move
-the support claim as a side effect of drift detection or validation.
-
-To advance the pin, validate the candidate first. On a ticket branch, update
-`UPSTREAM_TESTED_SHA` and the human-readable tag here and in `DEVELOPMENT.md`,
-then rerun the command with no `--ref`. Commit the pin only with the preserved
-run directory and green Swift result recorded in the Kaneo or PR handoff.
+`app/UPSTREAM_TESTED_SHA` remains historical metadata. Current contract changes
+ship as one monorepo diff with fixtures and checks for every affected consumer.
+Use `scripts/import-web-upstream` from the root for public Hermes WebUI imports;
+read `docs/monorepo-migration.md` before resolving conflicts or committing.
 
 ## Drift watch
 
-`scripts/upstream-watch --fetch` reads the same configured fork and branch. The
-weekly workflow uploads its report as an artifact. A report is triage evidence,
-not permission to edit the pin or sync the public parent into the fork.
-
-`docs/agents/feature-gap-index.md` remains the machine-readable classification
-source. Keep tracker, branch, and handoff instructions outside its parsed table.
+The weekly root workflow compares the current shared upstream ancestry with
+`nesquena/hermes-webui`. It produces a maintainer report without applying changes.
+The old app `scripts/upstream-watch` remains available for historical standalone
+comparisons using the recorded `UPSTREAM_*` files.

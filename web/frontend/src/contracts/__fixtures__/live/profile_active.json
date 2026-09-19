@@ -1,0 +1,11 @@
+{
+  "body": {
+    "default_workspace": "/tmp/hermes-state/workspace",
+    "is_default": true,
+    "name": "default",
+    "path": "/tmp/hermes-state"
+  },
+  "method": "GET",
+  "path": "/api/profile/active",
+  "status": 200
+}

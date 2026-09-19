@@ -1,0 +1,13 @@
+/* hubs: component rules for this feature, in @layer app (after utilities). Colours, radii and
+   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. Origin:
+   the legacy stylesheet, converted by scripts/css-convert.mjs (see docs/architecture/css-conversion-ledger.md). */
+@layer app{
+.cron-list{flex:1;overflow-y:auto;padding:8px}
+.skills-list{flex:1;overflow-y:auto;padding:0 8px 8px}
+.kanban-board{display:flex;gap:12px;min-height:100%;overflow-x:auto;padding-bottom:8px}
+.kanban-column{display:flex;flex-direction:column;min-width:260px;max-width:320px;flex:1;background:var(--panel);border:1px solid var(--border);border-radius:10px;min-height:240px}
+.kanban-card{border:1px solid var(--border);border-radius:9px;background:var(--bg);padding:10px;cursor:pointer;box-shadow:var(--shadow-sm)}
+.kanban-card:hover,.kanban-card.selected{border-color:var(--accent)}
+@media (max-width: 640px){.kanban-board{scroll-snap-type:x mandatory}}
+@media (max-width: 640px){.kanban-column{min-width:82vw;scroll-snap-align:start}}
+}

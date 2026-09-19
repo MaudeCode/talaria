@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello Panel</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; color: #1a1610; background: #fefcf7; }
+    button { padding: 6px 12px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    .muted { color: #5c5344; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1 id="greeting">…</h1>
+  <p class="muted" id="session">Connecting…</p>
+  <p id="counter"></p>
+  <button id="bump">Count a click</button>
+  <button id="toast">Show a toast</button>
+  <ul id="events" class="muted"></ul>
+  <!-- The SDK is served by the WebUI; the relative path works under any mount. -->
+  <script src="../../static/dist/extension-sdk.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

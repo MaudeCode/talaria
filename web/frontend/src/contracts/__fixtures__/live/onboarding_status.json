@@ -1,0 +1,736 @@
+{
+  "body": {
+    "completed": true,
+    "models": {
+      "active_provider": null,
+      "aliases": {},
+      "configured_model_badges": {},
+      "default_model": "openai/gpt-5.4-mini",
+      "groups": [
+        {
+          "models": [
+            {
+              "id": "openai/gpt-5.4-mini",
+              "label": "GPT 5.4 Mini"
+            }
+          ],
+          "provider": "Default",
+          "provider_id": "default"
+        }
+      ]
+    },
+    "settings": {
+      "bot_name": "Hermes",
+      "default_model": "openai/gpt-5.4-mini",
+      "default_workspace": "/tmp/hermes-state/workspace",
+      "password_enabled": false
+    },
+    "setup": {
+      "categories": [
+        {
+          "id": "easy_start",
+          "label": "Easy start",
+          "providers": [
+            "anthropic",
+            "openai",
+            "openrouter"
+          ]
+        },
+        {
+          "id": "self_hosted",
+          "label": "Open / self-hosted",
+          "providers": [
+            "custom",
+            "lmstudio",
+            "ollama"
+          ]
+        },
+        {
+          "id": "specialized",
+          "label": "Specialized",
+          "providers": [
+            "deepseek",
+            "gemini",
+            "mistralai",
+            "nvidia",
+            "xiaomi",
+            "zai",
+            "x-ai"
+          ]
+        }
+      ],
+      "current": {
+        "base_url": "",
+        "model": "anthropic/claude-sonnet-4.6",
+        "provider": "openrouter"
+      },
+      "current_is_oauth": false,
+      "providers": [
+        {
+          "category": "easy_start",
+          "default_base_url": "",
+          "default_model": "claude-sonnet-4.6",
+          "env_var": "ANTHROPIC_API_KEY",
+          "id": "anthropic",
+          "key_optional": false,
+          "label": "Anthropic",
+          "models": [
+            {
+              "id": "claude-opus-4.7",
+              "label": "Claude Opus 4.7"
+            },
+            {
+              "id": "claude-opus-4.6",
+              "label": "Claude Opus 4.6"
+            },
+            {
+              "id": "claude-sonnet-4.6",
+              "label": "Claude Sonnet 4.6"
+            },
+            {
+              "id": "claude-sonnet-4-5",
+              "label": "Claude Sonnet 4.5"
+            },
+            {
+              "id": "claude-haiku-4-5",
+              "label": "Claude Haiku 4.5"
+            },
+            {
+              "id": "claude-fable-5.1",
+              "label": "Claude Fable 5.1"
+            },
+            {
+              "id": "claude-fable-5",
+              "label": "Claude Fable 5"
+            },
+            {
+              "id": "claude-opus-5",
+              "label": "Claude Opus 5"
+            },
+            {
+              "id": "claude-sonnet-5",
+              "label": "Claude Sonnet 5"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "label": "Claude Opus 4 8"
+            },
+            {
+              "id": "claude-opus-4-5-20251101",
+              "label": "Claude Opus 4 5 20251101"
+            },
+            {
+              "id": "claude-sonnet-4-5-20250929",
+              "label": "Claude Sonnet 4 5 20250929"
+            },
+            {
+              "id": "claude-opus-4-20250514",
+              "label": "Claude Opus 4 20250514"
+            },
+            {
+              "id": "claude-sonnet-4-20250514",
+              "label": "Claude Sonnet 4 20250514"
+            },
+            {
+              "id": "claude-haiku-4-5-20251001",
+              "label": "Claude Haiku 4 5 20251001"
+            }
+          ],
+          "oauth_label": "Claude Code OAuth",
+          "oauth_provider": "anthropic",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "easy_start",
+          "default_base_url": "https://api.openai.com/v1",
+          "default_model": "gpt-4o",
+          "env_var": "OPENAI_API_KEY",
+          "id": "openai",
+          "key_optional": false,
+          "label": "OpenAI",
+          "models": [
+            {
+              "id": "gpt-5.5",
+              "label": "GPT-5.5"
+            },
+            {
+              "id": "gpt-5.5-mini",
+              "label": "GPT-5.5 Mini"
+            },
+            {
+              "id": "gpt-5.4-mini",
+              "label": "GPT-5.4 Mini"
+            },
+            {
+              "id": "gpt-5.4",
+              "label": "GPT-5.4"
+            },
+            {
+              "id": "gpt-5-mini",
+              "label": "GPT 5 Mini"
+            },
+            {
+              "id": "gpt-5.3-codex",
+              "label": "GPT 5.3 Codex"
+            },
+            {
+              "id": "gpt-5.2-codex",
+              "label": "GPT 5.2 Codex"
+            },
+            {
+              "id": "gpt-4.1",
+              "label": "GPT 4.1"
+            },
+            {
+              "id": "gpt-4o",
+              "label": "GPT 4O"
+            },
+            {
+              "id": "gpt-4o-mini",
+              "label": "GPT 4O Mini"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "easy_start",
+          "default_base_url": "",
+          "default_model": "anthropic/claude-sonnet-4.6",
+          "env_var": "OPENROUTER_API_KEY",
+          "id": "openrouter",
+          "key_optional": false,
+          "label": "OpenRouter",
+          "models": [
+            {
+              "id": "openai/gpt-5.4-mini",
+              "label": "GPT-5.4 Mini"
+            },
+            {
+              "id": "openai/gpt-5.4",
+              "label": "GPT-5.4"
+            },
+            {
+              "id": "anthropic/claude-opus-4.7",
+              "label": "Claude Opus 4.7"
+            },
+            {
+              "id": "anthropic/claude-opus-4.6",
+              "label": "Claude Opus 4.6"
+            },
+            {
+              "id": "anthropic/claude-sonnet-4.6",
+              "label": "Claude Sonnet 4.6"
+            },
+            {
+              "id": "anthropic/claude-sonnet-4-5",
+              "label": "Claude Sonnet 4.5"
+            },
+            {
+              "id": "anthropic/claude-haiku-4-5",
+              "label": "Claude Haiku 4.5"
+            },
+            {
+              "id": "google/gemini-3.1-pro-preview",
+              "label": "Gemini 3.1 Pro Preview"
+            },
+            {
+              "id": "google/gemini-3-flash-preview",
+              "label": "Gemini 3 Flash Preview"
+            },
+            {
+              "id": "google/gemini-3.1-flash-lite-preview",
+              "label": "Gemini 3.1 Flash Lite Preview"
+            },
+            {
+              "id": "google/gemini-2.5-pro",
+              "label": "Gemini 2.5 Pro"
+            },
+            {
+              "id": "google/gemini-2.5-flash",
+              "label": "Gemini 2.5 Flash"
+            },
+            {
+              "id": "deepseek/deepseek-v4-flash",
+              "label": "DeepSeek V4 Flash"
+            },
+            {
+              "id": "deepseek/deepseek-v4-pro",
+              "label": "DeepSeek V4 Pro"
+            },
+            {
+              "id": "deepseek/deepseek-chat-v3-0324",
+              "label": "DeepSeek V3 (legacy)"
+            },
+            {
+              "id": "deepseek/deepseek-r1",
+              "label": "DeepSeek R1 (legacy)"
+            },
+            {
+              "id": "qwen/qwen3-coder",
+              "label": "Qwen3 Coder"
+            },
+            {
+              "id": "qwen/qwen3.6-plus",
+              "label": "Qwen3.6 Plus"
+            },
+            {
+              "id": "x-ai/grok-4.20",
+              "label": "Grok 4.20"
+            },
+            {
+              "id": "mistralai/mistral-large-latest",
+              "label": "Mistral Large"
+            },
+            {
+              "id": "minimax/MiniMax-M3",
+              "label": "MiniMax M3"
+            },
+            {
+              "id": "minimax/MiniMax-M2.7",
+              "label": "MiniMax M2.7"
+            },
+            {
+              "id": "minimax/MiniMax-M2.7-highspeed",
+              "label": "MiniMax M2.7 Highspeed"
+            },
+            {
+              "id": "z-ai/glm-5.3",
+              "label": "GLM-5.3"
+            },
+            {
+              "id": "z-ai/glm-5.3-flash",
+              "label": "GLM-5.3 Flash"
+            },
+            {
+              "id": "z-ai/glm-5.2",
+              "label": "GLM-5.2"
+            },
+            {
+              "id": "z-ai/glm-5.1",
+              "label": "GLM-5.1"
+            },
+            {
+              "id": "z-ai/glm-5",
+              "label": "GLM-5"
+            },
+            {
+              "id": "z-ai/glm-5-turbo",
+              "label": "GLM-5 Turbo"
+            },
+            {
+              "id": "z-ai/glm-4.7",
+              "label": "GLM-4.7"
+            },
+            {
+              "id": "z-ai/glm-4.5",
+              "label": "GLM-4.5"
+            },
+            {
+              "id": "z-ai/glm-4.5-flash",
+              "label": "GLM-4.5 Flash"
+            },
+            {
+              "id": "openrouter/elephant-alpha",
+              "label": "Elephant Alpha (free)"
+            },
+            {
+              "id": "openrouter/owl-alpha",
+              "label": "Owl Alpha (free)"
+            },
+            {
+              "id": "tencent/hy3-preview:free",
+              "label": "Hy3 Preview (free)"
+            },
+            {
+              "id": "nvidia/nemotron-3-super-120b-a12b:free",
+              "label": "Nemotron 3 Super (free)"
+            },
+            {
+              "id": "arcee-ai/trinity-large-preview:free",
+              "label": "Trinity Large Preview (free)"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": true,
+          "requires_base_url": false
+        },
+        {
+          "category": "self_hosted",
+          "default_base_url": "",
+          "default_model": "gpt-4o-mini",
+          "env_var": "OPENAI_API_KEY",
+          "id": "custom",
+          "key_optional": true,
+          "label": "Custom OpenAI-compatible",
+          "models": [],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": true
+        },
+        {
+          "category": "self_hosted",
+          "default_base_url": "http://localhost:1234/v1",
+          "default_model": "gpt-4o-mini",
+          "env_var": "LM_API_KEY",
+          "id": "lmstudio",
+          "key_optional": true,
+          "label": "LM Studio",
+          "models": [],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": true
+        },
+        {
+          "category": "self_hosted",
+          "default_base_url": "http://localhost:11434/v1",
+          "default_model": "qwen3:32b",
+          "env_var": "OLLAMA_API_KEY",
+          "id": "ollama",
+          "key_optional": true,
+          "label": "Ollama",
+          "models": [],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": true
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://api.deepseek.com",
+          "default_model": "deepseek-v4-flash",
+          "env_var": "DEEPSEEK_API_KEY",
+          "id": "deepseek",
+          "key_optional": false,
+          "label": "DeepSeek",
+          "models": [
+            {
+              "id": "deepseek-v4-flash",
+              "label": "DeepSeek V4 Flash"
+            },
+            {
+              "id": "deepseek-v4-pro",
+              "label": "DeepSeek V4 Pro"
+            },
+            {
+              "id": "deepseek-chat-v3-0324",
+              "label": "DeepSeek V3 (legacy)"
+            },
+            {
+              "id": "deepseek-reasoner",
+              "label": "DeepSeek Reasoner (legacy)"
+            },
+            {
+              "id": "deepseek-flash",
+              "label": "Deepseek Flash"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+          "default_model": "gemini-3.1-pro-preview",
+          "env_var": "GOOGLE_API_KEY",
+          "id": "gemini",
+          "key_optional": false,
+          "label": "Google Gemini",
+          "models": [
+            {
+              "id": "gemini-3.1-pro-preview",
+              "label": "Gemini 3.1 Pro Preview"
+            },
+            {
+              "id": "gemini-3-flash-preview",
+              "label": "Gemini 3 Flash Preview"
+            },
+            {
+              "id": "gemini-3.1-flash-lite-preview",
+              "label": "Gemini 3.1 Flash Lite Preview"
+            },
+            {
+              "id": "gemini-2.5-pro",
+              "label": "Gemini 2.5 Pro"
+            },
+            {
+              "id": "gemini-2.5-flash",
+              "label": "Gemini 2.5 Flash"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://api.mistral.ai/v1",
+          "default_model": "mistral-large-latest",
+          "env_var": "MISTRAL_API_KEY",
+          "id": "mistralai",
+          "key_optional": false,
+          "label": "Mistral",
+          "models": [
+            {
+              "id": "mistral-large-latest",
+              "label": "Mistral Large"
+            },
+            {
+              "id": "mistral-small-latest",
+              "label": "Mistral Small"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://integrate.api.nvidia.com/v1",
+          "default_model": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+          "env_var": "NVIDIA_API_KEY",
+          "id": "nvidia",
+          "key_optional": false,
+          "label": "NVIDIA NIM",
+          "models": [
+            {
+              "id": "nvidia/nemotron-3-super-120b-a12b",
+              "label": "Nemotron 3 Super 120B"
+            },
+            {
+              "id": "nvidia/nemotron-3-nano-30b-a3b",
+              "label": "Nemotron 3 Nano 30B"
+            },
+            {
+              "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+              "label": "Llama 3.3 Nemotron Super 49B"
+            },
+            {
+              "id": "qwen/qwen3-next-80b-a3b-instruct",
+              "label": "Qwen3 Next 80B"
+            },
+            {
+              "id": "nvidia/nemotron-3-ultra-550b-a55b",
+              "label": "Nemotron 3 Ultra 550b A55b"
+            },
+            {
+              "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+              "label": "Nemotron 3.5 Lightning 30B A3B"
+            },
+            {
+              "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+              "label": "Nemotron 3 Nano Omni 30B A3B Reasoning"
+            },
+            {
+              "id": "z-ai/glm-5.3",
+              "label": "GLM 5.3"
+            },
+            {
+              "id": "z-ai/glm-5.2",
+              "label": "GLM 5.2"
+            },
+            {
+              "id": "moonshotai/kimi-k2.6",
+              "label": "Kimi K2.6"
+            },
+            {
+              "id": "minimaxai/minimax-m3",
+              "label": "Minimax M3"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://api.xiaomimimo.com/v1",
+          "default_model": "mimo-v2.5-pro",
+          "env_var": "XIAOMI_API_KEY",
+          "id": "xiaomi",
+          "key_optional": false,
+          "label": "Xiaomi MiMo",
+          "models": [
+            {
+              "id": "mimo-v2.5-pro",
+              "label": "MiMo V2.5 Pro"
+            },
+            {
+              "id": "mimo-v2.5",
+              "label": "MiMo V2.5"
+            },
+            {
+              "id": "mimo-v2-pro",
+              "label": "MiMo V2 Pro"
+            },
+            {
+              "id": "mimo-v2-omni",
+              "label": "MiMo V2 Omni"
+            },
+            {
+              "id": "mimo-v2-flash",
+              "label": "MiMo V2 Flash"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+          "default_model": "glm-5.1",
+          "env_var": "GLM_API_KEY",
+          "id": "zai",
+          "key_optional": false,
+          "label": "Z.AI / GLM (智谱)",
+          "models": [
+            {
+              "id": "glm-5.3",
+              "label": "GLM-5.3"
+            },
+            {
+              "id": "glm-5.3-flash",
+              "label": "GLM-5.3 Flash"
+            },
+            {
+              "id": "glm-5.2",
+              "label": "GLM-5.2"
+            },
+            {
+              "id": "glm-5.1",
+              "label": "GLM-5.1"
+            },
+            {
+              "id": "glm-5",
+              "label": "GLM-5"
+            },
+            {
+              "id": "glm-5-turbo",
+              "label": "GLM-5 Turbo"
+            },
+            {
+              "id": "glm-4.7",
+              "label": "GLM-4.7"
+            },
+            {
+              "id": "glm-4.5",
+              "label": "GLM-4.5"
+            },
+            {
+              "id": "glm-4.5-flash",
+              "label": "GLM-4.5 Flash"
+            },
+            {
+              "id": "glm-5v-turbo",
+              "label": "GLM 5V Turbo"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        },
+        {
+          "category": "specialized",
+          "default_base_url": "https://api.x.ai/v1",
+          "default_model": "grok-4.20",
+          "env_var": "XAI_API_KEY",
+          "id": "x-ai",
+          "key_optional": false,
+          "label": "xAI (Grok)",
+          "models": [
+            {
+              "id": "grok-4.20",
+              "label": "Grok 4.20"
+            },
+            {
+              "id": "grok-4.6",
+              "label": "Grok 4.6"
+            },
+            {
+              "id": "grok-composer-2.5-fast",
+              "label": "Grok Composer 2.5 Fast"
+            },
+            {
+              "id": "grok-build-0.1",
+              "label": "Grok Build 0.1"
+            },
+            {
+              "id": "grok-4.5",
+              "label": "Grok 4.5"
+            },
+            {
+              "id": "grok-4.3",
+              "label": "Grok 4.3"
+            },
+            {
+              "id": "grok-4.20-0309-reasoning",
+              "label": "Grok 4.20 0309 Reasoning"
+            },
+            {
+              "id": "grok-4.20-0309-non-reasoning",
+              "label": "Grok 4.20 0309 NON Reasoning"
+            },
+            {
+              "id": "grok-4.20-multi-agent-0309",
+              "label": "Grok 4.20 Multi Agent 0309"
+            }
+          ],
+          "oauth_label": "",
+          "oauth_provider": "",
+          "quick": false,
+          "requires_base_url": false
+        }
+      ],
+      "unsupported_note": "Advanced provider flows such as Nous Portal and GitHub Copilot are still terminal-first. OpenAI Codex and Anthropic Claude Code can be authenticated in this onboarding flow when your Hermes config selects the corresponding provider."
+    },
+    "system": {
+      "chat_ready": false,
+      "config_exists": false,
+      "config_path": "/tmp/hermes-state/config.yaml",
+      "current_base_url": null,
+      "current_model": null,
+      "current_provider": null,
+      "env_path": "/tmp/hermes-state/.env",
+      "hermes_found": true,
+      "import_errors": {
+        "run_agent": "ModuleNotFoundError: No module named 'requests'"
+      },
+      "imports_ok": false,
+      "missing_modules": [
+        "run_agent"
+      ],
+      "provider_configured": false,
+      "provider_note": "Hermes is not fully importable from the Web UI yet. Finish bootstrap or fix the agent install before provider setup will work.",
+      "provider_note_args": [],
+      "provider_note_key": "onboarding_notice_system_unavailable",
+      "provider_ready": false,
+      "setup_state": "agent_unavailable"
+    },
+    "workspaces": {
+      "items": [
+        {
+          "name": "Home",
+          "path": "/tmp/hermes-state/workspace"
+        }
+      ],
+      "last": "/tmp/hermes-state/workspace"
+    }
+  },
+  "method": "GET",
+  "path": "/api/onboarding/status",
+  "status": 200
+}

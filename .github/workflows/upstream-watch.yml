@@ -1,73 +1,41 @@
-# Weekly drift report for Talaria's configured Hermes WebUI fork.
-name: Upstream Hermes-WebUI Watch
+name: Public Hermes WebUI watch
 
 on:
   schedule:
     - cron: "0 14 * * 1"
   workflow_dispatch:
-    inputs:
-      target_ref:
-        description: "Fork tag or commit to compare with UPSTREAM_TESTED_SHA."
-        required: false
-        type: string
-
-run-name: "Upstream watch from ${{ github.ref_name }}"
 
 permissions:
   contents: read
 
 concurrency:
-  group: upstream-webui-watch
+  group: public-hermes-webui-watch
   cancel-in-progress: false
 
 jobs:
   report:
-    name: Generate Digest
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 15
-
     steps:
-      - name: Check out Talaria
-        uses: actions/checkout@v7
-
-      - name: Clone configured fork
-        env:
-          INPUT_TARGET_REF: ${{ inputs.target_ref }}
-        run: |
-          set -euo pipefail
-          repository="$(tr -d '[:space:]' < UPSTREAM_REPOSITORY)"
-          branch="$(tr -d '[:space:]' < UPSTREAM_BRANCH)"
-          url="https://github.com/${repository}.git"
-          default_branch="$(git ls-remote --symref "${url}" HEAD | sed -n 's#^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$#\1#p')"
-          test "${default_branch}" = "${branch}"
-          mkdir -p .codex-tmp
-          git clone --filter=blob:none --branch "${branch}" "${url}" .codex-tmp/hermes-webui
-          target_ref="${INPUT_TARGET_REF:-origin/${branch}}"
-          if [[ -n "${INPUT_TARGET_REF}" ]]; then
-            git -C .codex-tmp/hermes-webui fetch origin "${INPUT_TARGET_REF}"
-            target_ref="FETCH_HEAD"
-          fi
-          echo "TARGET_REF=${target_ref}" >> "${GITHUB_ENV}"
-
-      - name: Generate upstream watch report
-        run: |
-          set -euo pipefail
-          scripts/upstream-watch \
-            --target-ref "${TARGET_REF}" \
-            --route-limit 80 \
-            --file-limit 80 \
-            --commit-limit 60 \
-            > upstream-watch-report.md \
-            2> upstream-watch-errors.log
-          cat upstream-watch-report.md
-          cat upstream-watch-errors.log >&2
-
-      - name: Upload report artifact
-        if: always()
-        uses: actions/upload-artifact@v7
+      - uses: actions/checkout@v7
         with:
-          name: upstream-watch-report
-          path: |
-            upstream-watch-report.md
-            upstream-watch-errors.log
-          if-no-files-found: warn
+          fetch-depth: 0
+      - name: Report changes from public upstream
+        run: |
+          set -euo pipefail
+          git fetch --no-tags https://github.com/nesquena/hermes-webui.git \
+            +refs/heads/master:refs/remotes/hermes-upstream/master
+          base=$(git merge-base HEAD refs/remotes/hermes-upstream/master)
+          mkdir -p .codex-tmp
+          {
+            echo "Shared upstream ancestor: $base"
+            echo "Public head: $(git rev-parse refs/remotes/hermes-upstream/master)"
+            git log --oneline "$base..refs/remotes/hermes-upstream/master"
+            git diff --stat "$base..refs/remotes/hermes-upstream/master"
+          } > .codex-tmp/upstream-watch-report.txt
+          cat .codex-tmp/upstream-watch-report.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: public-upstream-watch
+          path: .codex-tmp/upstream-watch-report.txt
+          if-no-files-found: error

@@ -1,0 +1,45 @@
+{
+  "body": {
+    "assignees": [],
+    "changed": true,
+    "columns": [
+      {
+        "name": "triage",
+        "tasks": []
+      },
+      {
+        "name": "todo",
+        "tasks": []
+      },
+      {
+        "name": "ready",
+        "tasks": []
+      },
+      {
+        "name": "running",
+        "tasks": []
+      },
+      {
+        "name": "blocked",
+        "tasks": []
+      },
+      {
+        "name": "done",
+        "tasks": []
+      }
+    ],
+    "filters": {
+      "assignee": null,
+      "include_archived": false,
+      "only_mine": false,
+      "profile": null,
+      "tenant": null
+    },
+    "latest_event_id": 0,
+    "read_only": false,
+    "tenants": []
+  },
+  "method": "GET",
+  "path": "/api/kanban/board",
+  "status": 200
+}

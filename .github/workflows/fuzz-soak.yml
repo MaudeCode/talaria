@@ -21,6 +21,10 @@ concurrency:
   group: fuzz-soak
   cancel-in-progress: false
 
+defaults:
+  run:
+    working-directory: app
+
 jobs:
   soak:
     name: Untrusted input fuzz soak
@@ -94,5 +98,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: fuzz-soak-results
-          path: ${{ env.RESULT_BUNDLE_PATH }}
+          path: app/${{ env.RESULT_BUNDLE_PATH }}
           if-no-files-found: ignore

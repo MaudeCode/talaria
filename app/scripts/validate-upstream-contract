@@ -1,0 +1,160 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+candidate_ref=""
+run_swift_tests=1
+
+usage() {
+  echo "usage: scripts/validate-upstream-contract [--ref MONOREPO_COMMIT_OR_TAG] [--server-only]"
+}
+
+while (( $# )); do
+  case "$1" in
+    --ref)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      candidate_ref="$2"
+      shift 2
+      ;;
+    --server-only)
+      run_swift_tests=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+read_config() {
+  local value
+  value="$(tr -d '[:space:]' < "$repo_root/$1")"
+  [[ -n "$value" ]] || { echo "$1 is empty" >&2; exit 1; }
+  echo "$value"
+}
+
+tested_sha_before="$(read_config UPSTREAM_TESTED_SHA)"
+monorepo_root="$(cd "$repo_root/.." && pwd)"
+run_stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+run_dir="$repo_root/.codex-tmp/upstream-contract/$run_stamp"
+upstream_dir="$monorepo_root/web"
+workspace_dir="$run_dir/workspace"
+hermes_home="$run_dir/hermes-home"
+state_dir="$run_dir/state"
+venv_dir="$run_dir/venv"
+responses_file="$run_dir/live-responses.json"
+mkdir -p "$workspace_dir" "$hermes_home" "$state_dir"
+printf 'talaria contract fixture\n' > "$workspace_dir/contract-fixture.txt"
+
+server_pid=""
+finish() {
+  local exit_code=$?
+  trap - EXIT INT TERM
+  if [[ -n "$server_pid" ]]; then
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
+  echo "Contract artifacts: $run_dir"
+  exit "$exit_code"
+}
+trap finish EXIT INT TERM
+
+candidate_sha="$(git -C "$monorepo_root" rev-parse --verify --end-of-options "${candidate_ref:-HEAD}^{commit}")"
+if [[ -n "$candidate_ref" ]]; then
+  upstream_dir="$run_dir/web"
+  mkdir -p "$upstream_dir"
+  git -C "$monorepo_root" archive "$candidate_sha:web" | tar -x -C "$upstream_dir"
+fi
+[[ -f "$upstream_dir/server.py" ]] || { echo "Missing checked-out web/server.py" >&2; exit 1; }
+printf '%s\n' "$candidate_sha" > "$run_dir/candidate-sha.txt"
+{
+  printf 'Monorepo commit: %s\nWeb tree: %s\n' "$candidate_sha" "$upstream_dir"
+  if [[ -z "$candidate_ref" ]]; then
+    git -C "$monorepo_root" status --short -- web
+  fi
+} > "$run_dir/source-identity.log"
+
+echo "Preparing isolated Python environment"
+"${HERMES_WEBUI_TEST_PYTHON:-python3.13}" -m venv "$venv_dir"
+"$venv_dir/bin/python" -m pip install --disable-pip-version-check \
+  -r "$upstream_dir/requirements.txt" >"$run_dir/setup.log" 2>&1 || {
+    echo "Server fixture: Python environment setup failed; see $run_dir/setup.log" >&2
+    exit 1
+  }
+
+port="$("$venv_dir/bin/python" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+password="talaria-contract-password"
+typeset -a loader_environment
+loader_environment=()
+if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
+(
+  cd "$upstream_dir"
+  env -i "${loader_environment[@]}" \
+    PATH="$venv_dir/bin:/usr/bin:/bin" \
+    HOME="$run_dir/home" \
+    PYTHONPATH="$upstream_dir" \
+    HERMES_HOME="$hermes_home" \
+    HERMES_WEBUI_STATE_DIR="$state_dir" \
+    HERMES_WEBUI_DEFAULT_WORKSPACE="$workspace_dir" \
+    HERMES_WEBUI_HOST=127.0.0.1 \
+    HERMES_WEBUI_PORT="$port" \
+    HERMES_WEBUI_PASSWORD="$password" \
+    "$venv_dir/bin/python" server.py
+) >"$run_dir/server.log" 2>&1 &
+server_pid=$!
+
+base_url="http://127.0.0.1:$port"
+for _ in {1..80}; do
+  if curl --silent --fail "$base_url/health" >/dev/null; then
+    break
+  fi
+  kill -0 "$server_pid" 2>/dev/null || {
+    echo "Disposable server exited during startup; see $run_dir/server.log" >&2
+    exit 1
+  }
+  sleep 0.25
+done
+curl --silent --fail "$base_url/health" >/dev/null || {
+  echo "Disposable server did not become healthy; see $run_dir/server.log" >&2
+  exit 1
+}
+
+echo "Running live HTTP/SSE probe at $candidate_sha"
+"$repo_root/scripts/upstream-contract-probe" \
+  --base-url "$base_url" \
+  --password "$password" \
+  --workspace "$workspace_dir" \
+  --output "$responses_file" \
+  2>&1 | tee "$run_dir/probe.log"
+
+if (( run_swift_tests )); then
+  echo "Running Talaria request and SSE contract tests"
+  encoded_responses="base64:$(base64 < "$responses_file" | tr -d '\n')"
+  (
+    cd "$repo_root"
+    TALARIA_UPSTREAM_CONTRACT_RESPONSES="$encoded_responses" scripts/test-ios \
+      TalariaTests/ContractReadinessTests \
+      TalariaTests/SharedContractTests \
+      TalariaTests/APIClientAuthAndErrorTests \
+      TalariaTests/APIClientSessionListTests \
+      TalariaTests/APIClientSessionMutationTests \
+      TalariaTests/SSEClientTests \
+      TalariaTests/StreamReconnectContractTests
+  ) 2>&1 | tee "$run_dir/swift-tests.log"
+else
+  echo "Swift contract tests skipped by --server-only"
+fi
+
+tested_sha_after="$(read_config UPSTREAM_TESTED_SHA)"
+[[ "$tested_sha_after" == "$tested_sha_before" ]] || {
+  echo "UPSTREAM_TESTED_SHA changed during validation; refusing silent pin advancement" >&2
+  exit 1
+}
+
+echo "PASS local web/ at monorepo $candidate_sha"
+echo "Historical standalone UPSTREAM_TESTED_SHA remains $tested_sha_before; local web/ is the tested source."

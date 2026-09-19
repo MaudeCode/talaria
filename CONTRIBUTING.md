@@ -1,5 +1,11 @@
 # Contributing to Talaria
 
+The repository contains the Apple app in `app/`, Talaria Web in `web/`, Relay in
+`relay/`, and shared fixtures in `contracts/`. Read the owning component README
+and AGENTS.md before editing. Use root `scripts/check` entry points; interface
+changes validate every affected component. The Apple-specific setup below is
+relative to the repository root.
+
 Thanks for your interest in contributing! This document covers local setup,
 running tests, code signing for contributors, and the PR workflow. Please also
 read the [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -8,7 +14,7 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - **Xcode 26 or newer** (the project builds with the iOS 18 SDK or later; the
   deployment target is iOS 18).
-- Clone the repo and open `Talaria.xcodeproj`. Dependencies resolve
+- Clone the repo and open `app/Talaria.xcodeproj`. Dependencies resolve
   automatically via Swift Package Manager — the dependency list is locked in
   `PROJECT_SPEC.md`; do not add new ones without maintainer approval.
 - Build and run the **`Talaria`** scheme on an iPhone simulator
@@ -24,7 +30,7 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 The full XCTest suite is the repo's local green bar — it must pass before any PR:
 
 ```zsh
-xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
+app/scripts/test-ios
 ```
 
 If that simulator name isn't installed, pick a nearby iPhone from
@@ -40,7 +46,7 @@ The project's committed signing identity (`DEVELOPMENT_TEAM`, bundle IDs)
 belongs to the maintainer. **Never edit `project.pbxproj` to sign with your own
 team** — override locally instead:
 
-1. Create `Config/Local.xcconfig` (it is gitignored, so it never lands in a PR):
+1. Create `app/Config/Local.xcconfig` (it is gitignored, so it never lands in a PR):
 
    ```xcconfig
    DEVELOPMENT_TEAM = YOUR_TEAM_ID
@@ -51,7 +57,7 @@ team** — override locally instead:
    // ICLOUD_CONTAINER_IDENTIFIER = iCloud.com.yourname.talaria
    ```
 
-2. Build normally. `Config/Shared.xcconfig` is wired into the project and ends
+2. Build normally. `app/Config/Shared.xcconfig` is wired into the project and ends
    with `#include? "Local.xcconfig"`, so your local values override the
    committed defaults for every target — no project-file changes needed.
 

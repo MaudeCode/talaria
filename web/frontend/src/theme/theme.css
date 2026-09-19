@@ -1,0 +1,33 @@
+/* Root typography and the user preferences that are not skin tokens. Token values come from
+   `virtual:hermes-theme.css`, rendered from src/theme/skins.ts by the Vite plugin in vite.config.ts. */
+:root {
+  font-family: var(--font-ui);
+  font-size: var(--root-font-size);
+  line-height: var(--root-line-height);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+:root[data-font-size="small"] { --message-body-font-size: 12px; --message-code-font-size: 10.5px; --message-pre-code-font-size: 11px; --message-table-font-size: 11px; font-size: 12px; }
+:root[data-font-size="large"] { --message-body-font-size: 16px; --message-code-font-size: 14.5px; --message-pre-code-font-size: 15px; --message-table-font-size: 14px; font-size: 16px; }
+:root[data-font-size="xlarge"] { --message-body-font-size: 18px; --message-code-font-size: 16px; --message-pre-code-font-size: 16.5px; --message-table-font-size: 16px; font-size: 18px; }
+:root[data-chat-width="full"] { --msg-max: 100%; }
+
+/* Skin traits: the two structural variants a skin can opt into (SkinSpec.traits). Everything else a skin
+   changes is a token value. */
+@layer app {
+  /* square-controls: one radius on every control, whatever the component's own radius token says. */
+  [data-skin-traits~="square-controls"] :is(button, input, select, textarea) { border-radius: var(--control-radius) !important; }
+
+  /* card-sessions: the active session row becomes a padded card with its actions column reserved on hover. */
+  [data-skin-traits~="card-sessions"] .session-item.active { padding: 10px 12px 10px 18px; gap: 8px; }
+  [data-skin-traits~="card-sessions"] .session-item.active .session-text { min-width: 0; width: 100%; }
+  [data-skin-traits~="card-sessions"] .session-item.active .session-time { padding-left: 4px; }
+  [data-skin-traits~="card-sessions"] .session-item.active.streaming,
+  [data-skin-traits~="card-sessions"] .session-item.active.needs-attention { padding-right: 40px; }
+  [data-skin-traits~="card-sessions"] .session-item.active:focus-within { padding-right: 64px; }
+  @media (hover: hover) {
+    [data-skin-traits~="card-sessions"] .session-item.active:hover { padding-right: 64px; }
+  }
+  [data-skin-traits~="card-sessions"] .session-item.active:hover .session-time:not(.is-hidden),
+  [data-skin-traits~="card-sessions"] .session-item.active:focus-within .session-time:not(.is-hidden) { display: inline-flex; visibility: hidden; }
+}

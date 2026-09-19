@@ -1,0 +1,316 @@
+import json
+import shutil
+import subprocess
+import tempfile
+import textwrap
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+CONFIG_PY = (ROOT / "api" / "config.py").read_text(encoding="utf-8")
+NODE = shutil.which("node")
+requires_node = pytest.mark.skipif(NODE is None, reason="node not on PATH")
+
+_PANELS_DASHBOARD_DRIVER = textwrap.dedent(
+    """\
+    const fs = require('fs');
+    const path = require('path');
+
+    function extractFn(src, name) {
+      const markers = [`async function ${name}(`, `function ${name}(`];
+      let start = -1;
+      for (const marker of markers) {
+        start = src.indexOf(marker);
+        if (start >= 0) break;
+      }
+      if (start < 0) throw new Error(`${name}() not found`);
+      let i = src.indexOf('{', start);
+      let depth = 0;
+      let inString = null;
+      let escaped = false;
+      let inLineComment = false;
+      let inBlockComment = false;
+      for (; i < src.length; i++) {
+        const ch = src[i];
+        const nxt = src[i + 1] || '';
+        if (inLineComment) {
+          if (ch === '\\n') inLineComment = false;
+          continue;
+        }
+        if (inBlockComment) {
+          if (ch === '*' && nxt === '/') inBlockComment = false;
+          continue;
+        }
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (ch === '\\\\') {
+            escaped = true;
+          } else if (ch === inString) {
+            inString = null;
+          }
+          continue;
+        }
+        if (ch === '/' && nxt === '/') { inLineComment = true; continue; }
+        if (ch === '/' && nxt === '*') { inBlockComment = true; continue; }
+        if (ch === '\\'' || ch === '\"' || ch === '`') { inString = ch; continue; }
+        if (ch === '{') depth += 1;
+        if (ch === '}') {
+          depth -= 1;
+          if (depth === 0) return src.slice(start, i + 1);
+        }
+      }
+      throw new Error(`could not extract ${name}`);
+    }
+
+    function makeEl() {
+      return {
+        children: [],
+        style: {},
+        classList: {
+          _set: new Set(),
+          add(c) { this._set.add(c); },
+          remove(c) { this._set.delete(c); },
+          toggle(c, on) {
+            const want = on === undefined ? !this._set.has(c) : Boolean(on);
+            if (want) this._set.add(c); else this._set.delete(c);
+          },
+          contains(c) { return this._set.has(c); },
+        },
+        dataset: {},
+        _attrs: {},
+        textContent: '',
+        setAttribute(name, value) {
+          this._attrs[name] = String(value);
+          if (name === 'data-tab-panel') this.dataset.tabPanel = String(value);
+        },
+        getAttribute(name) {
+          return Object.prototype.hasOwnProperty.call(this._attrs, name)
+            ? this._attrs[name]
+            : null;
+        },
+        hasAttribute(name) {
+          return Object.prototype.hasOwnProperty.call(this._attrs, name);
+        },
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      };
+    }
+
+    const action = process.argv[2] || 'render';
+    const mode = process.argv[3] || 'auto';
+    const priorMode = process.argv[4] || '';
+    const forceNoRestore = process.argv[5] === '1';
+    const failSave = process.argv[6] === '1';
+    const panelsSrc = fs.readFileSync(process.argv[7], 'utf8');
+    const uiSrc = fs.readFileSync(process.argv[8], 'utf8');
+
+    const container = makeEl();
+    const modeEl = makeEl();
+    modeEl.id = 'settingsDashboardMode';
+    modeEl.value = mode;
+    const urlEl = makeEl();
+    urlEl.id = 'settingsDashboardUrl';
+    urlEl.value = '';
+
+    const registry = Object.create(null);
+    registry.tabVisibilityChips = container;
+    registry.settingsDashboardMode = modeEl;
+    registry.settingsDashboardUrl = urlEl;
+
+    let apiCalls = [];
+    let renderCalls = 0;
+    let hiddenCalls = 0;
+    let tabOrderCalls = 0;
+
+    global._dashboardLastNonNeverMode = 'auto';
+    global.window = {};
+    global.localStorage = {
+      _store: Object.create(null),
+      getItem(k) {
+        return Object.prototype.hasOwnProperty.call(this._store, k) ? this._store[k] : null;
+      },
+      setItem(k, v) {
+        this._store[k] = String(v);
+      },
+    };
+    global.document = {
+      createElement: () => makeEl(),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+    };
+    global.$ = (id) => registry[id] || null;
+    global._orderedSidebarPanels = () => [];
+    global._getHiddenTabs = () => [];
+    global._wireTabChipDrag = () => {};
+    global._tabVisibilityDragSuppressUntil = 0;
+    global._ALWAYS_VISIBLE_TABS = new Set(['chat', 'settings']);
+    global.t = (key) => key === 'tab_dashboard' ? 'Hermes Dashboard' : String(key);
+
+    let failNextSave = failSave;
+    global.api = (url, opts = {}) => {
+      apiCalls.push({ url: String(url), method: (opts.method || 'GET').toUpperCase(), body: opts.body || '' });
+      if (String(url) === '/api/dashboard/config' && failNextSave) {
+        failNextSave = false;
+        return Promise.reject(new Error('save failed'));
+      }
+      const payload = opts.body ? JSON.parse(opts.body) : {};
+      return Promise.resolve({ enabled: payload.enabled || 'auto', url: payload.url || '' });
+    };
+    global.saveDashboardSettings = async function (opts = {}) {
+      const payload = { enabled: modeEl.value || 'auto', url: (urlEl.value || '').trim() };
+      try {
+        const saved = await api('/api/dashboard/config', { method: 'POST', body: JSON.stringify(payload) });
+        const normalized = _normalizeDashboardEnabledMode(saved && saved.enabled);
+        modeEl.value = normalized;
+        _setDashboardModeForChip(normalized);
+        return saved;
+      } catch (err) {
+        if (opts.raiseOnError) throw err;
+      }
+    };
+    global._setHiddenTabs = () => { hiddenCalls += 1; };
+    global._setTabOrder = () => { tabOrderCalls += 1; };
+    global._renderTabVisibilityChips = () => { renderCalls += 1; };
+
+    for (const name of ['_normalizeDashboardEnabledMode', '_setDashboardModeForChip', '_getDashboardChipRestoreMode']) {
+      eval(extractFn(uiSrc, name));
+    }
+    for (const name of [
+      '_dashboardPanelMode',
+      '_isDashboardChipOn',
+      '_renderDashboardVisibilityChip',
+      '_renderTabVisibilityChips',
+      '_toggleDashboardVisibilityChip'
+    ]) {
+      eval(extractFn(panelsSrc, name));
+    }
+    const realRenderTabVisibilityChips = _renderTabVisibilityChips;
+    _renderTabVisibilityChips = function () {
+      renderCalls += 1;
+      return realRenderTabVisibilityChips();
+    };
+
+    (async () => {
+      if (forceNoRestore) global._dashboardLastNonNeverMode = null;
+      if (priorMode) _setDashboardModeForChip(priorMode);
+
+      if (action === 'render') {
+        _renderTabVisibilityChips();
+        const chip = container.children.find((node) => node.getAttribute('data-tab-panel') === '__hermes_dashboard__');
+        console.log(JSON.stringify({
+          chipCount: container.children.length,
+          hasChip: !!chip,
+          chipText: chip && chip.textContent,
+          chipAriaChecked: chip && chip.getAttribute('aria-checked'),
+          chipIsOff: chip && chip.classList.contains('chip-off'),
+        }));
+        return;
+      }
+
+      _toggleDashboardVisibilityChip();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const firstMode = modeEl.value;
+
+      if (action === 'toggle-fail') {
+        console.log(JSON.stringify({
+          firstMode,
+          dashboardLastNonNeverMode: global._dashboardLastNonNeverMode,
+          apiCalls,
+          hiddenCalls,
+          tabOrderCalls,
+          renderCalls,
+        }));
+        return;
+      }
+
+      _toggleDashboardVisibilityChip();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const secondMode = modeEl.value;
+
+      console.log(JSON.stringify({
+        firstMode,
+        secondMode,
+        dashboardLastNonNeverMode: global._dashboardLastNonNeverMode,
+        apiCalls,
+        hiddenCalls,
+        tabOrderCalls,
+        renderCalls,
+      }));
+    })().catch((err) => { console.error(err); process.exit(1); });
+    """
+)
+
+
+def test_backend_round_trip_and_validation(monkeypatch, tmp_path):
+    """hidden_tabs defaults to [], saves/reloads, rejects non-list, filters empty strings."""
+    import api.config as config
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_path)
+
+    loaded = config.load_settings()
+    assert loaded["hidden_tabs"] == [], "default must be empty list"
+    assert loaded["tab_order"] == [], "tab order default must be empty list"
+
+    saved = config.save_settings({"hidden_tabs": ["kanban", "insights"]})
+    assert saved["hidden_tabs"] == ["kanban", "insights"]
+    assert config.load_settings()["hidden_tabs"] == ["kanban", "insights"]
+
+    saved = config.save_settings({"tab_order": ["logs", "tasks", "kanban"]})
+    assert saved["tab_order"] == ["logs", "tasks", "kanban"]
+    assert config.load_settings()["tab_order"] == ["logs", "tasks", "kanban"]
+
+    bad_order = config.save_settings({"tab_order": "logs,tasks"})
+    assert bad_order["tab_order"] == ["logs", "tasks", "kanban"]
+
+    # Non-list is rejected, default preserved
+    bad = config.save_settings({"hidden_tabs": "not-a-list"})
+    assert bad["hidden_tabs"] == ["kanban", "insights"]
+
+    # Empty strings filtered, empty list clears
+    saved = config.save_settings({"hidden_tabs": ["kanban", "", "  ", "logs"]})
+    assert saved["hidden_tabs"] == ["kanban", "logs"]
+    cleared = config.save_settings({"hidden_tabs": []})
+    assert cleared["hidden_tabs"] == []
+
+    # Must NOT be in bool keys (would corrupt the list)
+    assert "hidden_tabs" not in config._SETTINGS_BOOL_KEYS
+    assert "hidden_tabs" in config._SETTINGS_ALLOWED_KEYS
+
+
+def test_backend_rejects_chat_and_settings_in_hidden_tabs(monkeypatch, tmp_path):
+    """Server-side belt-and-suspenders: a malicious POST that tries to hide
+    `chat` or `settings` (the always-visible nav tabs) must be filtered out
+    server-side, not just client-side. The client already applies the same
+    filter at apply time, but the server should not let a tampered payload
+    persist the forbidden values."""
+    import api.config as config
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_path)
+
+    saved = config.save_settings({"hidden_tabs": ["chat", "kanban", "settings", "logs"]})
+    assert saved["hidden_tabs"] == ["kanban", "logs"], \
+        "chat and settings must be stripped server-side"
+
+    # Even an all-forbidden payload reduces to empty (not rejected — empty is fine)
+    saved = config.save_settings({"hidden_tabs": ["chat", "settings"]})
+    assert saved["hidden_tabs"] == []
+
+
+def test_tab_order_excludes_always_visible_tabs(monkeypatch, tmp_path):
+    """Server-side tab_order validation mirrors hidden_tabs: chat and settings
+    remain fixed, so a tampered payload must not persist them in custom order."""
+    import api.config as config
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_path)
+
+    saved = config.save_settings({"tab_order": ["chat", "logs", "settings", "tasks", "logs"]})
+    assert saved["tab_order"] == ["logs", "tasks"], \
+        "chat/settings must be stripped and duplicate panel ids collapsed server-side"

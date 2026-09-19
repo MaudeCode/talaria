@@ -1,0 +1,9 @@
+{
+  "body": {
+    "enabled": "auto",
+    "running": false
+  },
+  "method": "GET",
+  "path": "/api/dashboard/status",
+  "status": 200
+}

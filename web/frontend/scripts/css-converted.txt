@@ -1,0 +1,118 @@
+# Selectors whose declarations now live as Tailwind utilities in JSX (see css-convert.mjs).
+# Later base rules of equal specificity reset parts of some media rules in the legacy sheet; only the surviving
+# declarations became utilities (settings-section-head keeps flex-direction, settings-version-badge drops display).
+# One key per line: "[<at-rule context joined by | >] <selector>"; empty brackets for top-level rules.
+[] .layout
+[@media (max-width:640px)] .layout
+[@media (max-width:768px)] .layout
+[] .main
+[@media (min-width:901px)] .main
+[@media (max-width:768px)] .main
+[] .main-view
+[] .main-view-header
+[@media (max-width:700px)] .main-view-header
+[@media (max-width:768px)] .main-view-header
+[] .main-view-title
+[@media (max-width:768px)] .main-view-title
+[] .main-view-actions
+[] .main-view-body
+[@media (max-width:700px)] .main-view-body
+[@media (max-width:768px)] .main-view-body
+[] .hub-toolbar
+[@media (max-width:768px)] .hub-toolbar
+[] .rail
+[@media (min-width:641px)] .rail
+[] .rail-brand
+[] .rail-brand:hover
+[] .rail-btn
+[] .rail-btn:hover
+[] .rail-btn.active
+[] .rail-btn svg
+[] .rail-spacer
+[] .rail .nav-tab
+[] .sidebar
+[@media (min-width:901px)] .sidebar
+[@media (max-width:640px)] .sidebar
+[@media (max-width:640px)] .sidebar.mobile-open
+[@media (min-width:641px)] .sidebar
+[@media (max-width:768px)] .sidebar
+[] .sidebar-nav
+[@media (max-width:640px)] .sidebar-nav
+[] .resize-handle
+[] .resize-handle:hover
+[] .panel-head
+[] .panel-head-actions
+[] .panel-head-btn
+[] .panel-head-btn:hover
+[] .panel-head-btn svg
+[] .app-titlebar
+[@media (max-width:900px)] .app-titlebar
+[@media (max-width:640px)] .app-titlebar
+[@media (max-width:768px)] .app-titlebar
+[] .app-titlebar-left
+[] .app-titlebar-inner
+[@media (max-width:640px)] .app-titlebar-inner
+[] .app-titlebar-icon
+[] .app-titlebar-title
+[@media (max-width:640px)] .app-titlebar-title
+[] .app-titlebar-sub
+[@media (max-width:640px)] .app-titlebar-sub
+[] .app-titlebar-hamburger
+[@media (max-width:900px)] .app-titlebar-hamburger
+[@media (max-width:640px)] .app-titlebar-hamburger
+[] .app-titlebar-spacer
+[@media (max-width:900px)] .app-titlebar-spacer
+[@media (max-width:640px)] .app-titlebar-spacer
+[] .tabbar
+[] .tabbar-sheet
+[@media (max-width:640px)] .tabbar
+[@media (max-width:640px)] .tabbar-btn
+[@media (max-width:640px)] .tabbar-btn svg
+[@media (max-width:640px)] .tabbar-btn.active
+[@media (max-width:640px)] .tabbar-btn.open
+[@media (max-width:640px)] .tabbar-sheet
+[@media (max-width:640px)] .tabbar-sheet-item
+[@media (max-width:640px)] .tabbar-sheet-item:hover
+[] .chat-header
+[@media (max-width:768px)] .chat-header !
+[@media (max-width:640px)] .mobile-sidebar-close !background,border
+[@media (max-width:640px)] .chat-header
+[] .chat-header-text
+[] .chat-header-title
+[] .chat-header-meta
+[] .chat-context
+[@media (max-width:640px)] .chat-context
+[] .chat-context-item
+[] .chat-context-item:hover
+[] .messages-shell
+[] .messages
+[@media (hover:hover) and (pointer:fine)] .messages
+[@media (max-width:640px)] .messages
+[] .messages-inner
+[@media (max-width:640px)] .messages-inner
+[] .composer-box
+[] .composer-box:focus-within
+[@media (max-width:640px)] .composer-box
+[] .composer-left
+[@media (max-width:640px)] .composer-left
+[@media (max-width: 340px)] .composer-left
+[] .composer-right
+[@media (max-width:640px)] .composer-right
+[] .side-menu
+[] .side-menu-item
+[] .side-menu-item:hover
+[] .side-menu-item.active
+[] .side-menu-item.active svg
+[] .side-menu-item svg
+[] #settingsMenu
+[] #settingsMenu .settings-menu-items
+[] .settings-main
+[@media (max-width:640px)] .settings-main
+[@media (max-width: 768px)] .settings-main
+[@media (max-width:768px)] .settings-main
+[] .settings-section-head
+[@media (max-width: 768px)] .settings-section-head
+[] .settings-section-title
+[@media (max-width: 768px)] .settings-section-title !
+[] .settings-version-badge
+[@media (max-width: 768px)] .settings-version-badge

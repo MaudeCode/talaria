@@ -1,0 +1,10 @@
+{
+  "mode": "per_session",
+  "publisherId": "https://contract.example",
+  "sessionId": "contract-session",
+  "streamId": "contract-stream",
+  "attributesType": "AgentRunActivityAttributes",
+  "schemaVersion": 1,
+  "activityPushToken": "contract-activity-token",
+  "seededLocally": false
+}

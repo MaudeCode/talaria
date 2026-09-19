@@ -1,0 +1,14 @@
+{
+  "body": {
+    "attach_supported": false,
+    "automatic_recall_unchanged": true,
+    "enabled": false,
+    "inventory_scope": "disabled_by_default",
+    "recent_ai_notes": [],
+    "source": "disabled",
+    "sources": []
+  },
+  "method": "GET",
+  "path": "/api/notes/sources",
+  "status": 200
+}

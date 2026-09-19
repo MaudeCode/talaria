@@ -1,0 +1,8 @@
+{
+  "body": {
+    "skills": []
+  },
+  "method": "GET",
+  "path": "/api/skills",
+  "status": 200
+}

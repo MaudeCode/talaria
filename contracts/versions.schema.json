@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "appWeb",
+    "webRelay",
+    "appRelay",
+    "activityScene"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "appWeb": {
+      "type": "object",
+      "required": [
+        "fixtureVersion",
+        "transport"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fixtureVersion": {
+          "const": 1
+        },
+        "transport": {
+          "const": "HTTP+SSE"
+        }
+      }
+    },
+    "webRelay": {
+      "type": "object",
+      "required": [
+        "protocolVersion",
+        "httpPrefix"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 2
+        },
+        "httpPrefix": {
+          "const": "/v1"
+        }
+      }
+    },
+    "appRelay": {
+      "type": "object",
+      "required": [
+        "httpPrefix",
+        "aggregateSchemaVersion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "httpPrefix": {
+          "const": "/v1"
+        },
+        "aggregateSchemaVersion": {
+          "const": 1
+        }
+      }
+    },
+    "activityScene": {
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "activity_scene_v1"
+        }
+      }
+    }
+  }
+}

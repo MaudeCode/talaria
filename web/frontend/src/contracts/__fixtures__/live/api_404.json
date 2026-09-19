@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "not found"
+  },
+  "method": "GET",
+  "path": "/api/not-a-route",
+  "status": 404
+}

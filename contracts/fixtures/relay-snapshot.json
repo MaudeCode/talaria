@@ -1,0 +1,22 @@
+{
+  "aggregate": {
+    "schemaVersion": 1,
+    "activeCount": 1,
+    "title": "Talaria",
+    "subtitle": "1 active session",
+    "updatedAt": 1800000000000,
+    "rows": [
+      {
+        "sessionId": "contract-session",
+        "streamId": "contract-stream",
+        "title": "Contract fixture",
+        "phase": "running",
+        "updatedAt": 1800000000000,
+        "deepLink": "/sessions/contract-session",
+        "publisherId": "https://contract.example",
+        "publisherLabel": "Contract publisher",
+        "status": "Working"
+      }
+    ]
+  }
+}

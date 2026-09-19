@@ -1,0 +1,12 @@
+{
+  "body": {
+    "estimated_cost": null,
+    "input_tokens": 0,
+    "model": "openai/gpt-5.4-mini",
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "method": "GET",
+  "path": "/api/session/usage?session_id=3ca40cdfc145",
+  "status": 200
+}

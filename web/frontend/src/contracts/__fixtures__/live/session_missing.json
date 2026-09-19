@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "Session not found"
+  },
+  "method": "GET",
+  "path": "/api/session?session_id=doesnotexist",
+  "status": 404
+}

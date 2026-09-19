@@ -3,6 +3,9 @@ name: talaria-device-deploy
 description: Build, install, and launch Talaria on a connected physical iPhone. Use for physical-device builds, phone installs, phone launches, and fresh local device builds.
 ---
 
+Run app commands from `app/`; unqualified source and tooling paths are relative
+to `app/`. GitHub workflows and shared contract documentation remain at the root.
+
 # Talaria physical-device deployment
 
 Use this workflow only when the user asks to build, install, or launch Talaria on
@@ -11,7 +14,7 @@ Developer resources.
 
 ## Run
 
-Use the repository script from the repository root:
+Use the repository script from the `app/` directory:
 
 ```zsh
 scripts/run-ios-device
@@ -51,5 +54,5 @@ identifier reported by `xcrun devicectl list devices`.
   stops partway through.
 
 Use `$talaria-ios-testing` for XCTest and simulator validation. Follow
-[TESTFLIGHT.md](../../../TESTFLIGHT.md) for an explicitly requested TestFlight
+[TESTFLIGHT.md](../../../app/TESTFLIGHT.md) for an explicitly requested TestFlight
 workflow.
