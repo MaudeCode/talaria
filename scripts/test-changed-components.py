@@ -45,6 +45,9 @@ class RoutingTests(unittest.TestCase):
             (["app/scripts/validate-upstream-contract"], {"contracts", "tooling"}),
             (["relay/convex/cleanup.ts", "relay/tests/crypto.test.ts"], {"relay"}),
             (["relay/convex/http.ts"], {"relay", "app", "web_python", "contracts"}),
+            (["relay/convex/completions.ts"], {"relay", "app", "web_python", "contracts"}),
+            (["relay/convex/subscriptions.ts"], {"relay", "app", "web_python", "contracts"}),
+            (["relay/convex/new-response.ts"], {"relay", "app", "web_python", "contracts"}),
             (["relay/package.json", "relay/pnpm-lock.yaml"], {"relay"}),
             (["contracts/versions.json"], CONSUMERS),
             (["web/api/contract_versions.json"], CONSUMERS),
@@ -114,6 +117,24 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(classify("0" * 40, head), ALL)
             self.assertEqual(classify("--output=should-not-exist", head), ALL)
             self.assertFalse((root / "should-not-exist").exists())
+
+            def check_diff(*options):
+                return subprocess.run([os.sys.executable, str(SCRIPT), "--check-diff", *options],
+                                      cwd=root, env=env, text=True, capture_output=True)
+
+            self.assertEqual(check_diff("--base", base, "--head", other).returncode, 0)
+            self.assertEqual(check_diff().returncode, 0)
+            (root / "app/README.md").write_text("docs with trailing spaces  \n")
+            bad = commit("committed whitespace error")
+            self.assertNotEqual(check_diff().returncode, 0)
+            (root / "README.md").write_text("unrelated clean change\n")
+            final = commit("later clean commit")
+            self.assertEqual(git("status", "--porcelain"), "")
+            self.assertEqual(check_diff("--base", bad, "--head", final).returncode, 0)
+            result = check_diff("--base", other, "--head", final)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("trailing whitespace", result.stdout)
+            self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"test": {"app"}, "app-tooling": {"app_tooling"},

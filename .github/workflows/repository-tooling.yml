@@ -81,14 +81,18 @@ jobs:
         run: |
           set -euo pipefail
           options=()
+          diff_options=()
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             # The event's base SHA can lag main; HEAD is GitHub's merged test tree.
-            options=(--base "$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" "${PR_HEAD}")" --target "${PR_HEAD}")
+            base=$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" "${PR_HEAD}")
+            options=(--base "$base" --target "${PR_HEAD}")
+            diff_options=(--base "$base" --head "${PR_HEAD}")
           elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" && -n "${CHANGE_BASE}" && ! "${CHANGE_BASE}" =~ ^0+$ ]]; then
             options=(--base "${CHANGE_BASE}")
+            diff_options=(--base "${CHANGE_BASE}" --head HEAD)
           fi
           python3 ci/release_notes.py validate "${options[@]}"
-          git diff --check
+          python3 ../scripts/changed-components.py --check-diff "${diff_options[@]}"
 
       - name: Validate property lists
         if: inputs.full

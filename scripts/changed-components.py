@@ -99,7 +99,10 @@ def path_suites(path):
             return {"web_python"}
         return WEB_BUILD
     if component == "relay":
-        if local in ("convex/http.ts", "convex/lib/model.ts", "convex/lib/validators.ts", "convex/lib/apnsPayload.ts"):
+        # HTTP handlers forward results from many Convex modules. Default new
+        # modules to consumer coverage; only known maintenance code stays local.
+        internal = {"convex/cleanup.ts", "convex/crons.ts", "convex/workpool.ts", "convex/convex.config.ts"}
+        if local.startswith("convex/") and local not in internal:
             return {"relay", "app", "web_python", "contracts"}
         return {"relay"}
     return SUITES
@@ -110,23 +113,39 @@ def affected(paths):
     return set().union(*(path_suites(path) for path in paths)) if paths else set(SUITES)
 
 
-def git_diff(base, head, merge_base=False):
-    def git(*args):
-        return subprocess.check_output(["git", *args], stderr=subprocess.PIPE)
+def git(*args):
+    return subprocess.check_output(["git", *args], stderr=subprocess.PIPE)
 
-    def commit(ref):
-        result = git("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}").decode().strip()
-        if not re.fullmatch(r"[a-f0-9]{40}", result):
-            raise ValueError("invalid commit")
-        return result
 
-    base, head = commit(base), commit(head)
+def revision(ref):
+    result = git("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}").decode().strip()
+    if not re.fullmatch(r"[a-f0-9]{40}", result):
+        raise ValueError("invalid commit")
+    return result
+
+
+def diff_refs(base, head, merge_base=False):
+    base, head = revision(base), revision(head)
     if merge_base:
         base = git("merge-base", base, head).decode().strip()
+    return base, head
+
+
+def git_diff(base, head, merge_base=False):
+    base, head = diff_refs(base, head, merge_base)
     data = git("diff", "--no-renames", "--name-only", "-z", base, head, "--")
     if data and not data.endswith(b"\0"):
         raise ValueError("invalid NUL-delimited diff")
     return [os.fsdecode(path) for path in data.split(b"\0") if path]
+
+
+def check_diff(base, head, merge_base=False):
+    if base:
+        base, head = diff_refs(base, head, merge_base)
+        command = ["git", "diff", "--check", base, head, "--"]
+    else:
+        command = ["git", "show", "--format=", "--check", "--diff-merges=first-parent", revision(head)]
+    subprocess.run(command, check=True)
 
 
 def check_results(needs):
@@ -147,9 +166,13 @@ def main():
     parser.add_argument("--merge-base", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--check-results", action="store_true")
+    parser.add_argument("--check-diff", action="store_true")
     args = parser.parse_args()
     if args.self_test:
         subprocess.run([sys.executable, str(Path(__file__).with_name("test-changed-components.py"))], check=True)
+        return
+    if args.check_diff:
+        check_diff(args.base, args.head, args.merge_base)
         return
     if args.check_results:
         check_results(json.loads(os.environ["CI_NEEDS"]))
