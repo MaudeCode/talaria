@@ -11,3 +11,13 @@ frontend/dist/
 frontend/.tanstack/
 frontend/playwright-report/
 frontend/test-results/
+
+# Local toolchains and test-owned state never enter a runtime image.
+.venv/
+.codex-tmp/
+build/
+dist/
+*.egg-info/
+api/_scm_version.py
+api/_version.py
+frontend/src/paraglide/

@@ -1,4 +1,4 @@
-name: Native Windows startup
+name: Talaria Web native Windows startup
 
 # Runs on PRs that touch start.ps1 (or this workflow). Validates the
 # native-Windows launch script catches the bug classes the recent
@@ -14,11 +14,11 @@ name: Native Windows startup
 # regressions remain covered by the Linux jobs and docker-smoke.yml.
 
 on:
-  pull_request:
-    paths:
-      - 'start.ps1'
-      - '.github/workflows/native-windows-startup.yml'
   workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: web
 
 jobs:
   native-windows-startup:

@@ -58,6 +58,8 @@ jobs:
 
       - name: Test repository tooling
         run: |
+          python3 ../scripts/changed-components.py --self-test
+          python3 ../scripts/test-monorepo-import.py
           python3 ci/release_notes_test.py
           python3 ci/load_env_test.py
           python3 scripts/test-ios-device-selection

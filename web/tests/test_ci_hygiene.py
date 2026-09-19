@@ -15,7 +15,7 @@ def _make_executable(path):
 
 def test_github_actions_quotes_pyyaml_version_specifier():
     """Unquoted `pyyaml>=6.0` is parsed by the shell as stdout redirection."""
-    workflow = ROOT / ".github" / "workflows" / "tests.yml"
+    workflow = ROOT.parent / ".github" / "workflows" / "web-verify.yml"
     text = workflow.read_text(encoding="utf-8")
 
     assert '"pyyaml>=6.0"' in text or "'pyyaml>=6.0'" in text
@@ -25,7 +25,7 @@ def test_github_actions_quotes_pyyaml_version_specifier():
 def test_github_actions_use_python_313_only():
     workflows = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (ROOT / ".github" / "workflows").glob("*.yml")
+        for path in (ROOT.parent / ".github" / "workflows").glob("web-*.yml")
     )
 
     assert "python-version: ['3.13']" in workflows

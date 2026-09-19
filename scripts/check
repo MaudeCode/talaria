@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+component=${1:-all}
+if [[ $# -gt 0 ]]; then shift; fi
+case "$component" in
+  app) exec app/scripts/test-ios "$@" ;;
+  web)
+    cd web
+    # Test-owned HOME prevents Agent and credential discovery outside this run.
+    "$root/scripts/check-web-python" "$@"
+    cd frontend
+    npm ci --no-audit --no-fund
+    npm run i18n:gate
+    npm run typecheck
+    npm run lint
+    npm test
+    npm run build:fast
+    "$root/scripts/check-web-browser"
+    ;;
+  relay)
+    cd relay
+    pnpm install --frozen-lockfile
+    pnpm check
+    exec python3 "$root/scripts/check-relay-local.py"
+    ;;
+  contracts) exec app/scripts/validate-upstream-contract ;;
+  docker) exec python3 scripts/check-docker.py ;;
+  tooling)
+    python3 scripts/changed-components.py --self-test
+    python3 scripts/test-monorepo-import.py
+    python3 app/ci/release_notes_test.py
+    python3 app/ci/load_env_test.py
+    python3 app/scripts/test-ios-device-selection
+    ruby app/ci/select_testflight_build_number_test.rb
+    ruby app/ci/test_ios_runner_test.rb
+    app/ci/require_successful_main_ci_test.sh
+    app/ci/validate_release_tag_test.sh
+    actionlint
+    git diff --check
+    ;;
+  all)
+    for selected in tooling app web relay contracts docker; do "$root/scripts/check" "$selected"; done
+    ;;
+  *) echo "usage: scripts/check [app|web|relay|contracts|docker|tooling|all] [test selectors]" >&2; exit 2 ;;
+esac

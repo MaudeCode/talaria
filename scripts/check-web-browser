@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+state=$(mktemp -d "${TMPDIR:-/tmp}/talaria-browser.XXXXXX")
+trap 'rm -rf -- "$state"' EXIT
+node_bin=$(node -p process.execPath)
+python_bin=${HERMES_E2E_PYTHON:-$root/web/.venv/bin/python}
+port=$("$python_bin" - <<'PY'
+import socket
+for _ in range(100):
+    with socket.socket() as first, socket.socket() as second:
+        first.bind(('127.0.0.1', 0))
+        port = first.getsockname()[1]
+        if port >= 65535:
+            continue
+        try:
+            second.bind(('127.0.0.1', port + 1))
+        except OSError:
+            continue
+        print(port)
+        break
+else:
+    raise SystemExit('No available test port pair')
+PY
+)
+cd "$root/web/frontend"
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
+npx playwright install chromium
+env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \
+  PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+  HERMES_E2E_PORT="$port" HERMES_E2E_PYTHON="$python_bin" npm run e2e -- "$@"

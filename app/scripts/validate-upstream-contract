@@ -6,7 +6,7 @@ candidate_ref=""
 run_swift_tests=1
 
 usage() {
-  echo "usage: scripts/validate-upstream-contract [--ref COMMIT_OR_TAG] [--server-only]"
+  echo "usage: scripts/validate-upstream-contract [--ref MONOREPO_COMMIT_OR_TAG] [--server-only]"
 }
 
 while (( $# )); do
@@ -38,14 +38,11 @@ read_config() {
   echo "$value"
 }
 
-upstream_repository="$(read_config UPSTREAM_REPOSITORY)"
-upstream_branch="$(read_config UPSTREAM_BRANCH)"
 tested_sha_before="$(read_config UPSTREAM_TESTED_SHA)"
-[[ -n "$candidate_ref" ]] || candidate_ref="$tested_sha_before"
-upstream_url="https://github.com/${upstream_repository}.git"
+monorepo_root="$(cd "$repo_root/.." && pwd)"
 run_stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir="$repo_root/.codex-tmp/upstream-contract/$run_stamp"
-upstream_dir="$run_dir/hermes-webui"
+upstream_dir="$monorepo_root/web"
 workspace_dir="$run_dir/workspace"
 hermes_home="$run_dir/hermes-home"
 state_dir="$run_dir/state"
@@ -67,42 +64,23 @@ finish() {
 }
 trap finish EXIT INT TERM
 
-git ls-remote --symref "$upstream_url" HEAD >"$run_dir/source-identity.log" 2>&1 || {
-  echo "Source identity: could not read $upstream_repository; see $run_dir/source-identity.log" >&2
-  exit 1
-}
-default_branch="$(sed -n 's#^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$#\1#p' "$run_dir/source-identity.log")"
-[[ "$default_branch" == "$upstream_branch" ]] || {
-  echo "Source identity: configured branch '$upstream_branch' does not match fork default '$default_branch'" >&2
-  exit 1
-}
-
-echo "Cloning $upstream_repository ($upstream_branch)"
-git clone --filter=blob:none --branch "$upstream_branch" "$upstream_url" "$upstream_dir" \
-  >"$run_dir/clone.log" 2>&1 || {
-    echo "Source identity: clone failed; see $run_dir/clone.log" >&2
-    exit 1
-  }
-if candidate_sha="$(git -C "$upstream_dir" rev-parse --verify "${candidate_ref}^{commit}" 2>/dev/null)"; then
-  :
-elif candidate_sha="$(git -C "$upstream_dir" rev-parse --verify "origin/${candidate_ref}^{commit}" 2>/dev/null)"; then
-  :
-else
-  git -C "$upstream_dir" fetch --tags origin "$candidate_ref" >>"$run_dir/clone.log" 2>&1 || {
-    echo "Source identity: candidate '$candidate_ref' did not resolve in $upstream_repository; see $run_dir/clone.log" >&2
-    exit 1
-  }
-  candidate_sha="$(git -C "$upstream_dir" rev-parse --verify 'FETCH_HEAD^{commit}')"
+candidate_sha="$(git -C "$monorepo_root" rev-parse --verify --end-of-options "${candidate_ref:-HEAD}^{commit}")"
+if [[ -n "$candidate_ref" ]]; then
+  upstream_dir="$run_dir/web"
+  mkdir -p "$upstream_dir"
+  git -C "$monorepo_root" archive "$candidate_sha:web" | tar -x -C "$upstream_dir"
 fi
-git -C "$upstream_dir" merge-base --is-ancestor "$candidate_sha" "origin/$upstream_branch" || {
-  echo "Candidate $candidate_sha is not on $upstream_repository/$upstream_branch" >&2
-  exit 1
-}
-git -C "$upstream_dir" checkout --detach "$candidate_sha" >>"$run_dir/clone.log" 2>&1
+[[ -f "$upstream_dir/server.py" ]] || { echo "Missing checked-out web/server.py" >&2; exit 1; }
 printf '%s\n' "$candidate_sha" > "$run_dir/candidate-sha.txt"
+{
+  printf 'Monorepo commit: %s\nWeb tree: %s\n' "$candidate_sha" "$upstream_dir"
+  if [[ -z "$candidate_ref" ]]; then
+    git -C "$monorepo_root" status --short -- web
+  fi
+} > "$run_dir/source-identity.log"
 
 echo "Preparing isolated Python environment"
-python3 -m venv "$venv_dir"
+"${HERMES_WEBUI_TEST_PYTHON:-python3.13}" -m venv "$venv_dir"
 "$venv_dir/bin/python" -m pip install --disable-pip-version-check \
   -r "$upstream_dir/requirements.txt" >"$run_dir/setup.log" 2>&1 || {
     echo "Server fixture: Python environment setup failed; see $run_dir/setup.log" >&2
@@ -157,7 +135,8 @@ if (( run_swift_tests )); then
   (
     cd "$repo_root"
     TALARIA_UPSTREAM_CONTRACT_RESPONSES="$encoded_responses" scripts/test-ios \
-      TalariaTests/APIEndpointContractTests \
+      TalariaTests/ContractReadinessTests \
+      TalariaTests/SharedContractTests \
       TalariaTests/APIClientAuthAndErrorTests \
       TalariaTests/APIClientSessionListTests \
       TalariaTests/APIClientSessionMutationTests \
@@ -174,7 +153,5 @@ tested_sha_after="$(read_config UPSTREAM_TESTED_SHA)"
   exit 1
 }
 
-echo "PASS $upstream_repository@$candidate_sha"
-if [[ "$candidate_sha" != "$tested_sha_before" ]]; then
-  echo "Candidate validated; UPSTREAM_TESTED_SHA remains $tested_sha_before until reviewed separately."
-fi
+echo "PASS local web/ at monorepo $candidate_sha"
+echo "Historical standalone UPSTREAM_TESTED_SHA remains $tested_sha_before; local web/ is the tested source."

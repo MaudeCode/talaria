@@ -2,6 +2,14 @@
 from unittest.mock import patch
 
 import api.updates as updates
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_update_repository(tmp_path, monkeypatch):
+    repository = tmp_path / "checkout"
+    (repository / ".git").mkdir(parents=True)
+    monkeypatch.setattr(updates, "REPO_ROOT", repository)
 
 
 def test_pull_failure_untracked_overwrite_flags_conflict(tmp_path):

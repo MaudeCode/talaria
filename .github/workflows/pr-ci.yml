@@ -1,10 +1,6 @@
-# Build and run the full XCTest suite on every push to main and every pull
-# request that touches app code. Docs-only PRs (markdown, docs/, community
-# files) skip the macOS runner entirely and pass via the cheap gate job.
-#
-# The required branch-protection check is "CI Gate", not "Build and Test":
-# a skipped required check would block merges forever, so the gate always
-# runs and passes when the suite either succeeded or was legitimately skipped.
+# Main pushes verify every component. Pull requests route component paths and
+# run all affected checks for shared policy or contract changes.
+# The always-reporting CI Gate is the required check, including skipped jobs.
 #
 # Uses no repository secrets, so PRs from forks get green CI too.
 #
@@ -38,35 +34,27 @@ jobs:
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 5
     outputs:
-      run_ios: ${{ steps.filter.outputs.run_ios }}
+      run_ios: ${{ steps.filter.outputs.app }}
+      web: ${{ steps.filter.outputs.web }}
+      relay: ${{ steps.filter.outputs.relay }}
+      contracts: ${{ steps.filter.outputs.contracts }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Classify changed files
         working-directory: .
         id: filter
         env:
-          GH_TOKEN: ${{ github.token }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            echo "Push to main — running the full suite."
-            echo "run_ios=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --paginate --jq '.[].filename')
-          echo "Changed files:"
-          echo "${files}"
-          # Fail closed: anything NOT on the docs-only allowlist triggers the
-          # full suite (including workflow, project, and config changes).
-          non_docs=$(echo "${files}" | grep -vE '^(docs/.*|changelog\.d/.*|LICENSE|\.gitignore|\.github/ISSUE_TEMPLATE/.*|\.github/CODEOWNERS|\.github/dependabot\.yml|\.github/FUNDING\.yml|.*\.md)$' || true)
-          if [[ -n "${non_docs}" ]]; then
-            echo "Non-docs changes detected — running the full suite:"
-            echo "${non_docs}"
-            echo "run_ios=true" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            printf 'app=true\nweb=true\nrelay=true\ncontracts=true\n' >> "$GITHUB_OUTPUT"
           else
-            echo "Docs-only change — skipping the macOS runner."
-            echo "run_ios=false" >> "$GITHUB_OUTPUT"
+            base=$(git merge-base "$PR_BASE" "$PR_HEAD")
+            python3 scripts/changed-components.py --base "$base" --head "$PR_HEAD" >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -320,9 +308,36 @@ jobs:
   tooling:
     uses: ./.github/workflows/repository-tooling.yml
 
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    uses: ./.github/workflows/web-verify.yml
+
+  web-docker:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    uses: ./.github/workflows/web-docker-smoke.yml
+
+  relay:
+    needs: changes
+    if: needs.changes.outputs.relay == 'true'
+    uses: ./.github/workflows/relay-verify.yml
+
+  contracts:
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: maude-mac
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check local App to Web HTTP and SSE contracts
+        run: scripts/validate-upstream-contract
+
   gate:
     name: CI Gate
-    needs: [changes, test, tooling]
+    needs: [changes, test, tooling, web, web-docker, relay, contracts]
     if: always()
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 5
@@ -342,7 +357,10 @@ jobs:
             echo "Repository Tooling did not pass — failing the gate." >&2
             exit 1
           fi
-          case "${{ needs.test.result }}" in
-            success|skipped) echo "Gate passed." ;;
-            *) echo "Build and Test did not pass — failing the gate." >&2; exit 1 ;;
-          esac
+          for result in "${{ needs.test.result }}" "${{ needs.web.result }}" "${{ needs.web-docker.result }}" "${{ needs.relay.result }}" "${{ needs.contracts.result }}"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "A required component check did not pass." >&2; exit 1 ;;
+            esac
+          done
+          echo "Gate passed."

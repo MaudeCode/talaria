@@ -151,14 +151,6 @@ class Probe:
             "authentication rejection", "/api/sessions", expected_status=401
         )
         self.request(
-            "CSRF rejection",
-            "/api/auth/login",
-            method="POST",
-            body={"password": self.password},
-            headers={"Origin": "https://cross-origin.invalid"},
-            expected_status=403,
-        )
-        self.request(
             "invalid password",
             "/api/auth/login",
             method="POST",
@@ -192,6 +184,17 @@ class Probe:
         )
         if authenticated["logged_in"] is not True:
             raise ContractFailure("authenticated status: login cookie was not accepted")
+
+        # Login is explicitly CSRF-exempt in the adopted Web contract. Exercise
+        # the authenticated mutation boundary; native requests omit Origin.
+        self.request(
+            "CSRF rejection",
+            "/api/session/new",
+            method="POST",
+            body={"workspace": str(workspace)},
+            headers={"Origin": "https://cross-origin.invalid"},
+            expected_status=403,
+        )
 
         read_only_checks = (
             ("sessions list", "/api/sessions", ("sessions", "cli_count", "server_time"), "sessions"),

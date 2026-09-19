@@ -16,14 +16,14 @@ TAL-
 
 ## Release notes
 
-<!-- Add changelog.d/TAL-<number>.json for each ticket. State its path and the
+<!-- Add app/changelog.d/TAL-<number>.json for each ticket. State its path and the
 user-visible outcome, or its explicit repository-only skip reason. Follow
-docs/release-notes.md; CI validates the fragments, not this prose. -->
+app/docs/release-notes.md; CI validates the fragments, not this prose. -->
 
 ## Checklist
 
-- [ ] Release fragments validate (`python3 ci/release_notes.py validate --base origin/main` after staging)
-- [ ] The full test suite passes locally (`scripts/test-ios`)
+- [ ] Release fragments validate (`python3 app/ci/release_notes.py validate --base origin/main` after staging)
+- [ ] Affected component checks pass locally (`scripts/check app|web|relay|contracts|docker`)
 - [ ] New/changed `Codable` models decode tolerantly (optionals for fields the server might add or rename)
-- [ ] No new third-party dependencies (the list in `PROJECT_SPEC.md` is locked)
+- [ ] No new third-party dependencies (the list in `app/PROJECT_SPEC.md` is locked)
 - [ ] No invented API endpoints or JSON shapes (verified against upstream source or a running server)

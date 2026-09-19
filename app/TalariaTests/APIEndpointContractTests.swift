@@ -339,3 +339,64 @@ private struct EndpointContract {
         self.query = query
     }
 }
+
+final class SharedContractTests: XCTestCase {
+    private func fixture(_ name: String) throws -> Data {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/\(name).json"))
+    }
+
+    private func session(_ handler: @escaping MockURLProtocol.Handler) -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register(handler)]
+        return URLSession(configuration: configuration)
+    }
+
+    func testSharedWebSessionAndActivityScene() async throws {
+        let data = try fixture("web-session")
+        let session = session { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = APIClient(baseURL: URL(string: "https://contract.example")!, session: session)
+        let response = try await client.session(id: "contract-session")
+        let message = try XCTUnwrap(response.session?.messages?.first)
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+        XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "tools", "prose"])
+        XCTAssertEqual(timeline.toolCalls.map(\.id), ["contract-call"])
+        XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Contract answer.")
+    }
+
+    func testSharedRelaySnapshotAndRegistration() async throws {
+        let snapshot = try fixture("relay-snapshot")
+        let registration = try JSONSerialization.jsonObject(with: fixture("app-registration")) as! NSDictionary
+        let session = session { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer contract-session-token")
+            if request.httpMethod == "PUT" {
+                let body = try XCTUnwrap(apiTestBodyData(from: request))
+                XCTAssertEqual(try JSONSerialization.jsonObject(with: body) as? NSDictionary, registration)
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("{}".utf8))
+            }
+            XCTAssertEqual(request.url?.path, "/v1/activity-snapshot")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Device-Id"), "contract-device")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, snapshot)
+        }
+        defer { session.invalidateAndCancel() }
+        let credentials = TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay.example")!, deviceID: "contract-device",
+            userID: "contract-user", appleUserID: "contract-apple", sessionToken: "contract-session-token"
+        )
+        let client = TalariaRelayClient(credentials: credentials, session: session)
+        let aggregate = try await client.snapshot()
+        XCTAssertEqual(aggregate?.schemaVersion, 1)
+        XCTAssertEqual(aggregate?.rows.first?.publisherId, "https://contract.example")
+        XCTAssertEqual(aggregate?.rows.first?.sessionId, "contract-session")
+        try await client.registerPerSession(
+            activityID: "contract-activity", pushToken: "contract-activity-token",
+            publisherID: "https://contract.example", sessionID: "contract-session", streamID: "contract-stream"
+        )
+    }
+}

@@ -98,7 +98,12 @@ Local validation defaults for XcodeBuildMCP users live in `.xcodebuildmcp/config
 
 ## Server compatibility
 
-The app is developed and tested against the `hermes-webui` commit pinned in [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA). Upstream does not yet guarantee API stability (its README declares version skew unsupported pending their stable-API work), so newer or older server versions may break individual features — please include your server version in bug reports. The app decodes tolerantly (unknown fields never crash it) and endpoint shapes are verified against upstream source, never invented; see [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md) for the contract-testing approach.
+The app is developed and tested against the monorepo's local `web/` source.
+The historical standalone source pin remains in `UPSTREAM_TESTED_SHA` for
+provenance. Current changes share synthetic fixtures in root `contracts/` and
+run the disposable HTTP/SSE and Swift checks described in
+[CONTRACT_TESTS.md](../CONTRACT_TESTS.md). Deployed versions may differ when their
+advertised capabilities and contracts remain compatible.
 
 ## Documentation map
 

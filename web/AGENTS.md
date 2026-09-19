@@ -1,9 +1,13 @@
-# Agent instructions for Hermes WebUI
+# Talaria Web instructions
 
 This file is the shared entry point for AI assistants working in this
 repository. Keep it project-specific and safe to publish. Do not put personal
 machine setup, private network details, credentials, tokens, or local-only
 workflow notes here.
+
+Commands and component paths below are relative to `web/`. Shared policy is in
+`../AGENTS.md`; workflows live in `../.github/workflows/web-*.yml`.
+The root tracker/release-note rules also apply to Web changes.
 
 ## Read first
 
@@ -55,7 +59,7 @@ Follow that checklist's safety rules:
   system/Homebrew interpreter directly.
   If a direct pytest invocation reports an unsupported interpreter, rerun through
   `./scripts/test.sh` before debugging product code.
-- Prefer the existing Python + vanilla JavaScript structure. Do not add
+- Preserve the existing Python server and TanStack Start/React frontend structure. Do not add
   dependencies, build tools, frameworks, or long-lived processes without clear
   justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,

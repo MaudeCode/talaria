@@ -1,0 +1,29 @@
+name: Relay verification
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: relay
+
+jobs:
+  check:
+    runs-on: ["ghar-set-maudecode"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: relay/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: relay/.node-version
+          cache: pnpm
+          cache-dependency-path: relay/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Validate anonymous local Convex deployment
+        run: python3 ../scripts/check-relay-local.py

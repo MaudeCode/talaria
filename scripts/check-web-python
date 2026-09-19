@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python_bin=$("${HERMES_WEBUI_TEST_PYTHON:-python3.13}" -c 'import sys; print(sys.executable)')
+state=$(mktemp -d "${TMPDIR:-/tmp}/talaria-web-python.XXXXXX")
+trap 'rm -rf -- "$state"' EXIT
+mkdir -p "$state/home" "$state/tmp"
+cd "$root/web"
+browser_path="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
+run_env=(env -i PATH="$(dirname "$python_bin"):$PATH" HOME="$state/home" TMPDIR="$state/tmp" \
+  PLAYWRIGHT_BROWSERS_PATH="$browser_path" \
+  HERMES_WEBUI_TEST_PYTHON="$python_bin")
+"${run_env[@]}" ./scripts/test.sh --collect-only -q tests/test_ci_hygiene.py > /dev/null
+"${run_env[@]}" .venv/bin/python -m playwright install chromium
+"${run_env[@]}" ./scripts/test.sh "$@"

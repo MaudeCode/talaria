@@ -1,0 +1,46 @@
+{
+  "session": {
+    "session_id": "contract-session",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "Contract answer.",
+        "message_id": "contract-assistant",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "contract-prose",
+              "order_index": 0,
+              "role": "prose",
+              "text": "Inspecting fixture."
+            },
+            {
+              "row_id": "contract-tool",
+              "order_index": 1,
+              "role": "tool",
+              "status": "completed",
+              "tool_call_id": "contract-call",
+              "tool": {
+                "id": "contract-call",
+                "name": "read_file",
+                "args": {
+                  "path": "fixture.txt"
+                },
+                "snippet": "Synthetic contents",
+                "done": true
+              }
+            },
+            {
+              "row_id": "contract-answer",
+              "order_index": 2,
+              "role": "prose",
+              "text": "Contract answer."
+            }
+          ]
+        }
+      }
+    ],
+    "title": "Contract fixture"
+  }
+}

@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -71,8 +72,22 @@ def _changed_py_files(base: str) -> tuple[str, list[str]]:
     """Resolve the merge-base with `base` and return (merge_base, changed .py files)."""
     mb = _run(["git", "merge-base", base, "HEAD"])
     merge_base = mb.stdout.strip() if mb.returncode == 0 and mb.stdout.strip() else base
+    metadata = Path(REPO_ROOT).parent / "docs" / "monorepo-sources.json"
+    if metadata.is_file() and _run(["git", "cat-file", "-e", f"{merge_base}:web"]).returncode:
+        # An app-only base has no Web lint baseline. Verify the pure import
+        # before comparing integration edits; later PRs use their normal base.
+        sources = json.loads(metadata.read_text())
+        imported = sources["webImportCommit"]
+        source = sources["sources"]["web"]["commit"]
+        imported_tree = _run(["git", "rev-parse", f"{imported}:web"])
+        source_tree = _run(["git", "rev-parse", f"{source}^{{tree}}"])
+        if (imported_tree.returncode or source_tree.returncode
+                or imported_tree.stdout != source_tree.stdout
+                or _run(["git", "merge-base", "--is-ancestor", imported, "HEAD"]).returncode):
+            raise RuntimeError("Invalid monorepo Web import lint baseline")
+        merge_base = imported
     diff = _run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", merge_base, "HEAD"]
+        ["git", "diff", "--relative", "--name-only", "--diff-filter=ACMR", merge_base, "HEAD", "--", "."]
     )
     files = [
         f

@@ -1,5 +1,9 @@
 # Talaria Relay
 
+Run component commands from `relay/` in the Talaria monorepo. Repository
+workflows live in `../.github/`; standalone release templates remain inactive
+until TAL-203 integrates the independent release namespaces.
+
 Profile-isolated Convex relay for Talaria notifications and aggregate Live Activities.
 
 Talaria signs in natively with Apple and receives a relay session. An owner registers each Hermes server once, and Hermes stores its Ed25519 signing key locally. Any authenticated Hermes profile can then redeem its relay invitation through that registered publisher. Hermes publishes a separate signed snapshot for each opaque profile scope, and the relay copies state only into relay accounts granted that scope.

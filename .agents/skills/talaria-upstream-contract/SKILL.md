@@ -1,65 +1,25 @@
 ---
 name: talaria-upstream-contract
-description: Verify Talaria against the adopted hermes-webui contract. Use when changing API requests, JSON decoding, SSE or streaming, session transport, or server-version compatibility.
+description: Verify Talaria API requests, decoding, HTTP/SSE transport, and server compatibility against the local monorepo Web component.
 ---
 
-Run app commands from `app/`; unqualified source and tooling paths are relative
-to `app/`. GitHub workflows and shared contract documentation remain at the root.
+# Talaria Web contract
 
-# Talaria upstream contract
+Read root `CONTRACT_TESTS.md` and the relevant `web/api/` implementation before
+changing app requests, JSON decoding, or streaming. `web/` is the current source
+of truth; `app/UPSTREAM_*` records the pre-monorepo support history.
 
-Treat the pinned upstream source as the authority for behavior Talaria supports.
-Use official documentation only as secondary context.
+Verify method, route, parameters, response shape, and SSE event sequence. Reuse
+root `contracts/` versions and synthetic fixtures across Swift, Python, and
+TypeScript. Unknown response fields remain tolerated; required values remain
+validated. Keep request building, decoding, persistence, and presentation aligned.
 
-## Establish the contract
+From `app/`, run `scripts/validate-upstream-contract`. It boots local Web source
+with disposable state and runs the HTTP/SSE probe plus focused Swift checks.
+`--ref <monorepo-ref>` exports an immutable candidate's Web tree; `--server-only`
+is the Linux half. Neither option edits historical pins or live state.
 
-1. Read `UPSTREAM_REPOSITORY`, `UPSTREAM_BRANCH`, and `UPSTREAM_TESTED_SHA`.
-2. Read only the relevant sections of `CONTRACT_TESTS.md`.
-3. Inspect `hermes-webui` at the exact pinned commit. Prefer `git show` against an
-   existing `.codex-tmp/hermes-webui` clone so its checkout stays unchanged.
-4. Verify the route, HTTP method, query or body keys, response shape, and SSE event
-   sequence touched by the task.
-
-Cloning, fetching, or checking out upstream requires the user's permission under
-the repository workflow boundaries. Keep existing upstream checkouts read-only.
-
-## Complete validation
-
-Run `scripts/validate-upstream-contract` for the pinned fork commit or pass
-`--ref <tag-or-commit>` for a candidate. The command preserves source identity,
-server, live JSON fixtures, probe, and Swift-test logs under
-`.codex-tmp/upstream-contract/`.
-
-Treat a named endpoint, fixture, decoder, or stream failure as the handoff's
-boundary. Inspect the matching fork source and Talaria test before changing a
-fixture or client contract. A candidate run leaves `UPSTREAM_TESTED_SHA`
-unchanged. Advance the pin only on the selected ticket branch after a green
-candidate run, then rerun the command against the new pin.
-
-Record the resolved fork SHA, artifact directory, focused/full XCTest results,
-and any held drift in the Kaneo or PR handoff.
-
-## Running-server evidence
-
-Use a running server to reproduce behavior only for that server's known version.
-Keep read-only checks read-only. Run state-changing checks only with explicit
-permission and only against disposable sessions or data.
-
-The running server explains its own behavior. It does not silently replace the
-pinned support contract. Stop and report a version mismatch instead of shaping
-the client around an unidentified server version.
-
-## Client behavior
-
-- Define endpoints and request fields from verified upstream source. Do not infer
-  them from names or nearby routes.
-- Decode missing and version-varying fields tolerantly. Ignore unknown keys and
-  validate required values before use.
-- Keep request building, streaming, decoding, persistence, and rendering aligned
-  when the same contract state crosses those boundaries.
-- Add or update the smallest focused request, decode, or stream test that proves
-  the adopted shape, then use `$talaria-ios-testing` for XCTest validation.
-
-Update `UPSTREAM_TESTED_SHA` only when the user selected a pin advance and the
-advance policy in `CONTRACT_TESTS.md` has passed. Fork synchronization remains
-outside this repository.
+Record the monorepo revision, dirty-source status, artifact directory, checks,
+and any failed endpoint/decoder boundary. Use `$talaria-ios-testing` for the
+required app suite. Public upstream imports use root
+`scripts/import-web-upstream`; inspect their diff before adopting changed behavior.

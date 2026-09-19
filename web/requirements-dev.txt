@@ -16,3 +16,6 @@ mcp>=1.28,<2
 python-docx
 openpyxl
 python-pptx
+
+# Existing CI browser checks also run through the isolated local runner.
+playwright

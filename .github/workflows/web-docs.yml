@@ -1,4 +1,4 @@
-name: Docs CI
+name: Talaria Web docs CI
 
 # Lightweight checks for documentation changes. Intentionally MINIMAL (Nathan,
 # 2026-07-18): NOT a Markdown style linter — no line length, heading levels, list
@@ -19,23 +19,23 @@ name: Docs CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
     paths:
-      - '**/*.md'
-      - '**/*.markdown'
-      - '**/*.rst'
-      - 'docs/**'
-      - 'CHANGELOG*'
-      - '**/README*'
+      - 'web/**/*.md'
+      - 'web/**/*.markdown'
+      - 'web/**/*.rst'
+      - 'web/docs/**'
+      - 'web/CHANGELOG*'
+      - 'web/**/README*'
   push:
-    branches: [master]
+    branches: [main]
     paths:
-      - '**/*.md'
-      - '**/*.markdown'
-      - '**/*.rst'
-      - 'docs/**'
-      - 'CHANGELOG*'
-      - '**/README*'
+      - 'web/**/*.md'
+      - 'web/**/*.markdown'
+      - 'web/**/*.rst'
+      - 'web/docs/**'
+      - 'web/CHANGELOG*'
+      - 'web/**/README*'
 
 # Read-only; no secrets needed. Fork PRs already get a read-only token, but pin it.
 permissions:
@@ -43,7 +43,7 @@ permissions:
 
 jobs:
   docs-ci:
-    runs-on: ubuntu-latest
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
           # LINE. We never echo untrusted names into another shell; downstream steps
           # read this file. Fall back to all tracked docs if the diff can't compute.
           if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || git fetch --no-tags origin master || true
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || git fetch --no-tags origin main || true
             RANGE="$BASE_SHA...$HEAD_SHA"
           else
             RANGE="${{ github.event.before }}...${{ github.sha }}"
@@ -95,7 +95,7 @@ jobs:
           # are passed as ARGUMENTS to python, never evaluated as shell.
           mapfile -t FILES < doc_files.txt
           if [ "${#FILES[@]}" -eq 0 ]; then echo "No doc files."; exit 0; fi
-          python3 scripts/critical_markdown_check.py "${FILES[@]}"
+          python3 web/scripts/critical_markdown_check.py "${FILES[@]}"
 
       # Broken-link check. Handed a FIXED glob (not the attacker-controlled list) so
       # no untrusted filename ever reaches lychee's `eval`. Over-checking docs is

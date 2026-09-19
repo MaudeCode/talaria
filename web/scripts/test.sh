@@ -109,6 +109,7 @@ import importlib.util
 modules = [
     "cryptography",
     "mcp",
+    "playwright",
     "pytest",
     "pytest_asyncio",
     "pytest_shard",

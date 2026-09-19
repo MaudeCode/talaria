@@ -1,5 +1,11 @@
 # Contributing to Talaria
 
+The repository contains the Apple app in `app/`, Talaria Web in `web/`, Relay in
+`relay/`, and shared fixtures in `contracts/`. Read the owning component README
+and AGENTS.md before editing. Use root `scripts/check` entry points; interface
+changes validate every affected component. The Apple-specific setup below is
+relative to the repository root.
+
 Thanks for your interest in contributing! This document covers local setup,
 running tests, code signing for contributors, and the PR workflow. Please also
 read the [Code of Conduct](CODE_OF_CONDUCT.md).

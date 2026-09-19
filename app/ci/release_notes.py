@@ -126,10 +126,10 @@ def repository_only(path):
     return (
         path.endswith(".md")
         or path.startswith((
-            "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
+            "web/", "relay/", "contracts/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
             ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/",
         ))
-        or path in {"LICENSE", ".gitignore", ".gitleaksignore", "CLAUDE.md"}
+        or path in {"LICENSE", ".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
     )
 
 
@@ -150,7 +150,7 @@ def validate(base=None, target=None):
         if any(not repository_only(path) for path in changed) and not any("entries" in data for data in selected.values()):
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.
-        subjects = git("log", "--no-merges", "--format=%s", f"{base}..{target or 'HEAD'}")
+        subjects = git("log", "--first-parent", "--no-merges", "--format=%s", f"{base}..{target or 'HEAD'}")
         tickets = set()
         for subject in subjects.splitlines():
             prefix = subject.split(":", 1)[0]

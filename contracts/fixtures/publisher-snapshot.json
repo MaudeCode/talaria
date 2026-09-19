@@ -1,0 +1,16 @@
+{
+  "snapshotId": "webui:00000000000000000000000000000001",
+  "states": [
+    {
+      "sessionId": "contract-session",
+      "streamId": "contract-stream",
+      "eventId": "snapshot:1800000000000:contract-session",
+      "revision": 1800000000000,
+      "title": "Contract fixture",
+      "phase": "running",
+      "updatedAt": 1800000000000,
+      "deepLink": "/sessions/contract-session",
+      "alertEligible": false
+    }
+  ]
+}

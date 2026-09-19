@@ -1,4 +1,10 @@
-# Hermes Web UI
+# Talaria Web
+
+Run component commands from `web/` in the Talaria monorepo. The Python and
+container runtime retain Hermes-compatible identifiers. Source installation and
+release-distribution cutover are tracked separately in TAL-203 and TAL-204.
+The shared license is [MIT](../LICENSE); upstream contributor attribution is
+preserved in [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 [Hermes Agent](https://hermes-agent.nousresearch.com/) is a sophisticated autonomous agent that lives on your server, accessed via a terminal or messaging apps, that remembers what it learns and gets more capable the longer it runs.
 

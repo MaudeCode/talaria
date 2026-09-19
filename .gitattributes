@@ -1,0 +1,4 @@
+# Repository text uses LF; component generated assets retain their existing rules.
+* text=auto
+*.sh text eol=lf
+*.bash text eol=lf
