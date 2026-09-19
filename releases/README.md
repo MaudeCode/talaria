@@ -34,3 +34,11 @@ and Relay source/deployment identity are the rollback inputs.
 Run `scripts/check-releases` for isolated synthetic validation. It installs the
 pinned release-tool dependencies in a disposable virtual environment and
 requires no accounts, credentials, tags or running services.
+
+The Web updater's publication contract is a GitHub release named
+`release-set-<releaseSet SHA>` with a `release-set.json` asset. Prepare it as a
+draft; publication of the completed manifest is the final step after component
+build, compatibility and publication receipts succeed. Never replace a published
+manifest. Component notes and signed tags keep their own App/Web/Relay namespaces.
+See [Web update behavior](../web/docs/talaria-updates.md) for authentication and
+source-install safety boundaries.

@@ -185,7 +185,7 @@ class TestUpdateChecker:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        result = upd._check_repo(tmp_path, 'webui')
+        result = upd._check_repo(tmp_path, 'agent')
 
         assert result['current_sha'] is None
         assert result['latest_sha'] == 'def5678'
@@ -212,7 +212,7 @@ class TestUpdateChecker:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        result = upd._check_repo(tmp_path, 'webui')
+        result = upd._check_repo(tmp_path, 'agent')
 
         assert result['repo_url'] == 'https://github.com/nesquena/hermes-webui'
 
@@ -262,7 +262,7 @@ class TestUpdateChecker:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        result = upd._check_repo(tmp_path, 'webui')
+        result = upd._check_repo(tmp_path, 'agent')
 
         assert result['repo_url'] == 'https://github.com/nesquena/hermes-webui'
 
@@ -315,7 +315,7 @@ class TestUpdateChecker:
             return '', False
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        result = upd._check_repo(tmp_path, 'webui')
+        result = upd._check_repo(tmp_path, 'agent')
 
         assert result['release_based'] is True
         assert result['current_version'] == 'v0.51.34'
@@ -332,7 +332,7 @@ class TestUpdateChecker:
         (package_dir / '__init__.py').write_text('__version__ = "0.14.0"\n', encoding='utf-8')
 
         monkeypatch.setattr(upd, '_AGENT_DIR', str(agent_dir))
-        monkeypatch.setattr(upd, '_describe_git_version', lambda path: None)
+        monkeypatch.setattr(upd, '_describe_git_version', lambda path, **kwargs: None)
         monkeypatch.setattr(upd, '_detect_agent_version_from_gateway_health', lambda: None)
 
         assert upd._detect_agent_version() == '0.14.0'
@@ -386,10 +386,10 @@ class TestConflictError:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        monkeypatch.setattr(upd, 'REPO_ROOT', tmp_path)
+        monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
 
-        result = upd.apply_update('webui')
+        result = upd.apply_update('agent')
         assert result['ok'] is False
         assert result.get('conflict') is True, "conflict flag must be True"
         assert 'checkout' in result['message'] or 'pull' in result['message'], (
@@ -656,12 +656,12 @@ class TestSuccessfulUpdateReturnsRestartScheduled:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        monkeypatch.setattr(upd, 'REPO_ROOT', tmp_path)
+        monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         # Don't actually restart
         monkeypatch.setattr(upd, '_schedule_restart', lambda delay=2.0: None)
 
-        result = upd.apply_update('webui')
+        result = upd.apply_update('agent')
         assert result['ok'] is True
         assert result.get('restart_scheduled') is True, (
             "successful update must set restart_scheduled: True"
@@ -692,11 +692,11 @@ class TestSuccessfulUpdateReturnsRestartScheduled:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        monkeypatch.setattr(upd, 'REPO_ROOT', tmp_path)
+        monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_schedule_restart', lambda delay=2.0: None)
 
-        result = upd.apply_update('webui')
+        result = upd.apply_update('agent')
         assert result['ok'] is True
         assert ['fetch', 'origin', '--quiet', '--tags', '--force'] in ran
         assert ['pull', '--ff-only', 'origin', 'v0.51.106'] in ran
@@ -760,11 +760,11 @@ class TestApplyForceUpdate:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        monkeypatch.setattr(upd, 'REPO_ROOT', tmp_path)
+        monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_schedule_restart', lambda delay=2.0: None)
 
-        result = upd.apply_force_update('webui')
+        result = upd.apply_force_update('agent')
         assert result['ok'] is True
         assert result.get('restart_scheduled') is True
 
@@ -801,11 +801,11 @@ class TestApplyForceUpdate:
             return '', True
 
         monkeypatch.setattr(upd, '_run_git', fake_run)
-        monkeypatch.setattr(upd, 'REPO_ROOT', tmp_path)
+        monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_schedule_restart', lambda delay=2.0: None)
 
-        result = upd.apply_force_update('webui')
+        result = upd.apply_force_update('agent')
 
         # Clean failed, but reset --hard succeeded → the force update must STILL
         # succeed (clean failure is non-fatal, #4914).
@@ -1587,6 +1587,7 @@ class TestAgentUpdateRequiresGatewayRestart:
         monkeypatch.setattr(upd, 'REPO_ROOT', tmp_path)
         monkeypatch.setattr(upd, '_AGENT_DIR', tmp_path)
         monkeypatch.setattr(upd, '_schedule_restart', lambda delay=2.0: None)
+        monkeypatch.setattr('api.talaria_releases.apply_web_update', lambda *args: {'ok': True, 'target': 'webui'})
 
         result = upd.apply_update('webui')
         assert result['ok'] is True
@@ -2204,3 +2205,10 @@ class TestWhatsNewSummaryToggle:
 # ── Regression: force button reset on retry ──────────────────────────────────
 
 # ── #785: Manual 'Check for Updates' button ───────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def isolate_legacy_agent_gateway_for_git_cases(request, monkeypatch):
+    if request.cls and request.cls.__name__ in {"TestUpdateChecker", "TestConflictError", "TestSuccessfulUpdateReturnsRestartScheduled", "TestApplyForceUpdate"}:
+        import api.updates as updates
+        monkeypatch.setattr(updates, "_ensure_gateway_restart_for_agent_update", lambda: (True, {"status": "restarted"}))

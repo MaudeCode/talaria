@@ -1,12 +1,8 @@
-"""
-Hermes Web UI -- Self-update checker.
+"""Talaria Web release-set updates and the separate external Agent updater.
 
-Checks if the webui and hermes-agent git repos are behind their latest
-release tags. Results are cached server-side (30-min TTL) so git fetch runs
-at most twice per hour regardless of client count.
-
-Skips repos that are not git checkouts (e.g. Docker baked images where
-.git does not exist).
+Web accepts completed monorepo releases and clean fast-forwards only. Agent
+updates retain their existing Git/tag and gateway restart behavior. Results
+share the existing cache and active-run restart guards.
 """
 import hashlib
 import json
@@ -46,7 +42,6 @@ _check_in_progress = False
 _apply_lock = threading.Lock()   # prevents concurrent stash/pull/pop on same repo
 CACHE_TTL = 1800  # 30 minutes
 _AGENT_GATEWAY_RESTART_RETRY_DELAY_S = 1.0
-_FORCE_DIRTY_PROBE_TIMEOUT = 5
 _GIT_DIAGNOSTIC_MAX_CHARS = 300
 _CREDENTIAL_IN_URL_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^/@\s'\"]+)@")
 _GITHUB_TOKEN_RE = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b")
@@ -63,7 +58,6 @@ _FETCH_NETWORK_FAILURE_SIGNATURES = (
     'tls connection was non-properly terminated',
     'ssl certificate problem',
 )
-_RELEASE_TAG_RE = re.compile(r'^v[0-9][0-9A-Za-z.+-]*$')
 # Phrases git emits when its own short-lived index/refs lock files block a
 # subsequent operation. Tuned to match only the true "lock file already exists"
 # semantics that warrant a lock-conflict response -- v2 deliberately drops the
@@ -337,6 +331,10 @@ def apply_clear_lock(target: str) -> dict:
         (now that the lock is gone) will take the success branch and
         re-run the normal apply.
     """
+    if target == 'webui':
+        # Git owns locks in both normal checkouts and worktrees. Retry the
+        # ordinary clean-only path; never enumerate or delete guessed .git paths.
+        return {**apply_update(target), 'lock_recovery': {'action': 'retry-only'}}
     blocker_snapshot = _restart_blocker_snapshot()
     if blocker_snapshot.get('restart_blocked'):
         return _restart_blocked_response(target, blocker_snapshot)
@@ -489,10 +487,11 @@ def _dirty_suffix(path: Path, timeout=1) -> str:
 _GIT_DESCRIBE_ABBREV = 8
 
 
-def _describe_git_version(path: Path, *, timeout=5, dirty_timeout=1) -> str | None:
+def _describe_git_version(path: Path, *, timeout=5, dirty_timeout=1, matches=()) -> str | None:
     """Return a fast git version string for a checkout, if available."""
     out, ok = _run_git(
-        ['describe', '--tags', '--always', f'--abbrev={_GIT_DESCRIBE_ABBREV}'],
+        ['describe', '--tags', '--always', f'--abbrev={_GIT_DESCRIBE_ABBREV}',
+         *(argument for pattern in matches for argument in ('--match', pattern))],
         path,
         timeout=timeout,
     )
@@ -502,23 +501,17 @@ def _describe_git_version(path: Path, *, timeout=5, dirty_timeout=1) -> str | No
 
 
 def _detect_webui_version() -> str:
-    """Detect the running WebUI version from git or installed fallback files.
+    """Read stamped Web identity, namespaced Git tags or packaged versions.
 
-    Resolution order:
-      1. ``git describe --tags --always --dirty`` — works in any git checkout.
-         Returns the exact tag on tagged commits (e.g. ``v0.50.124``), a
-         post-tag descriptor between releases (e.g. ``v0.50.124-1-ge91325d``),
-         or a bare SHA when no tags exist (shallow clones, fresh forks).
-      2. ``api/_version.py`` — a fallback written by the Docker / CI release
-         workflow when ``.git`` is not present in the image.  Expected to define
-         ``__version__ = 'vX.Y.Z'``.
-      3. ``api/_scm_version.py`` — setuptools-scm output in an installed wheel.
-         Its PEP 440 value is normalized to the channel-neutral ``v...`` form.
-      4. ``'unknown'`` — last resort; displayed as-is in the settings badge.
+    The process-lifetime value is independent of the selected update channel;
+    App/Relay tags cannot become Web's version or asset-cache identity.
     """
+    from api.release_info import RELEASE_INFO
+    if RELEASE_INFO.get('tag'):
+        return RELEASE_INFO['tag']
     # Timeout capped at 3s: git describe on a healthy local repo is <50ms;
     # a 10s stall on import (NFS-mounted .git, broken git binary) is unacceptable.
-    out = _describe_git_version(REPO_ROOT)
+    out = _describe_git_version(REPO_ROOT, matches=('web-v[0-9]*', 'web-exp-v[0-9]*'))
     if out:
         return out
 
@@ -544,7 +537,7 @@ def _detect_webui_version() -> str:
         from api._scm_version import __version__ as scm_version
         scm_version = str(scm_version).strip()
         if scm_version:
-            return scm_version if scm_version.startswith(('v', 'exp-v')) else f'v{scm_version}'
+            return scm_version if scm_version.startswith(('web-v', 'web-exp-v')) else f'web-v{scm_version}'
     except Exception:
         pass
 
@@ -788,7 +781,7 @@ def channel_version_badge(channel=None) -> str:
     # channel-neutral WEBUI_VERSION keeps the badge showing "v0.52.0 · Experimental".
     # (#5862)
     out, ok = _run_git(
-        ['describe', '--tags', '--match', _channel_tag_glob(channel)],
+        ['describe', '--tags', '--match', 'web-exp-v*' if channel == 'experimental' else 'web-v*'],
         REPO_ROOT,
     )
     if ok and out:
@@ -847,101 +840,6 @@ def _count_channel_tags_ahead(path, channel=DEFAULT_UPDATE_CHANNEL):
     if not (ok and out):
         return 0
     return sum(1 for line in out.splitlines() if line.strip())
-
-
-def _release_tag_sort_key(tag):
-    """Return a version-sort key that keeps release tags newest-first."""
-    raw = str(tag or '').strip()
-    if raw.startswith('v'):
-        raw = raw[1:]
-    parts = []
-    for chunk in re.split(r'(\d+)', raw):
-        if not chunk:
-            continue
-        parts.append((0, int(chunk)) if chunk.isdigit() else (1, chunk.lower()))
-    return tuple(parts)
-
-
-def _is_stable_release_tag(tag):
-    """Return True for stable release tags and False for prerelease tags."""
-    raw = str(tag or '').strip()
-    return bool(_RELEASE_TAG_RE.fullmatch(raw) and '-' not in raw[1:])
-
-
-def _github_release_tags(url='https://api.github.com/repos/nesquena/hermes-webui/tags?per_page=100', *, timeout=3.0):
-    """Return GitHub release tags newest-first, including commit SHAs when available."""
-    request = urllib.request.Request(
-        url,
-        headers={
-            'Accept': 'application/vnd.github+json',
-            'User-Agent': 'hermes-webui',
-        },
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode('utf-8'))
-    if not isinstance(payload, list):
-        return []
-    tags = []
-    for item in payload:
-        if not isinstance(item, dict):
-            continue
-        name = item.get('name')
-        if not isinstance(name, str):
-            continue
-        name = name.strip()
-        if not _is_stable_release_tag(name):
-            continue
-        commit = item.get('commit')
-        sha = None
-        if isinstance(commit, dict):
-            commit_sha = commit.get('sha')
-            if isinstance(commit_sha, str):
-                commit_sha = commit_sha.strip()
-                if commit_sha:
-                    sha = commit_sha
-        tags.append({'name': name, 'sha': sha})
-    return sorted(tags, key=lambda item: _release_tag_sort_key(item['name']), reverse=True)
-
-
-def _check_webui_published_release_update():
-    """Return a manual-update payload when the baked WebUI version trails GitHub tags."""
-    current_version = str(WEBUI_VERSION or '').strip()
-    if not _RELEASE_TAG_RE.fullmatch(current_version):
-        return None
-    try:
-        tags = _github_release_tags()
-    except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError, UnicodeDecodeError, ValueError):
-        return None
-    if not tags:
-        return None
-
-    tag_names = [item['name'] for item in tags]
-    if current_version not in tag_names:
-        return None
-
-    latest = tags[0]
-    latest_version = latest['name']
-    behind = _release_gap(tag_names, current_version, latest_version)
-    if behind <= 0:
-        return None
-
-    current = next((item for item in tags if item['name'] == current_version), None) or {}
-    current_ref = current.get('sha') or current_version
-    latest_ref = latest.get('sha') or latest_version
-    repo_url = 'https://github.com/nesquena/hermes-webui'
-    return {
-        'name': 'webui',
-        'behind': behind,
-        'current_sha': current_ref,
-        'latest_sha': latest_ref,
-        'branch': latest_version,
-        'repo_url': repo_url,
-        'release_based': True,
-        'current_version': current_version,
-        'latest_version': latest_version,
-        'compare_url': _build_compare_url(repo_url, current_ref, latest_ref),
-        'manual_update': True,
-    }
 
 
 def _head_is_past_latest_tag(path, current_tag, channel=DEFAULT_UPDATE_CHANNEL):
@@ -1268,13 +1166,10 @@ def _check_repo(path, name, channel=DEFAULT_UPDATE_CHANNEL):
     "can't check" from "up to date" (issue #4356).
     """
     channel = _normalize_channel(channel)
+    if name == 'webui':
+        from api.talaria_releases import check_web_update
+        return check_web_update(path, WEBUI_VERSION, channel, _run_git)
     if path is None or not (path / '.git').exists():
-        if name == 'webui':
-            release_info = _check_webui_published_release_update()
-            if release_info is not None:
-                release_info = dict(release_info)
-                release_info['no_git'] = True
-                return release_info
         return {
             'name': name,
             'behind': None,
@@ -1951,23 +1846,15 @@ def _discard_local_changes(path: Path, reset_ref: str) -> bool:
 
 
 def apply_force_update(target: str, channel=None) -> dict:
-    """Discard local changes for the requested update target.
+    """Force-update the external Agent; Web retains its clean-only policy.
 
-    Unlike apply_update() which requires a clean working tree and refuses
-    merge conflicts, this discards all local modifications (checkout .) and
-    resets to the selected update ref. A dirty stable WebUI checkout with no
-    promoted ref resets to its symbolic HEAD so the commit itself is unchanged.
-
-    The endpoint is called after the user has confirmed they want to discard
-    local changes, including the stable no-ref dirty-checkout recovery path.
-
-    CHANNEL SAFETY (rewind guard): ``reset --hard`` is destructive. When the
-    selected channel resolves to a ref that is an ANCESTOR of HEAD (i.e. the
-    checkout is already ahead of the channel — e.g. an ex-experimental install
-    switching back to stable), resetting to it would REWIND code and on-disk
-    state. We refuse and return a clear message instead of silently downgrading.
-    A deliberate rollback would be a separate, explicit feature.
+    The compatibility force endpoint cannot discard monorepo work. Both paths
+    still use the active-run guard and shared update lock.
     """
+    if target == 'webui':
+        # Web is a shared monorepo checkout. A force action must never discard
+        # unrelated App/Relay changes or replace a published immutable tag.
+        return apply_update(target, channel)
     if channel is None:
         channel = _read_update_channel()
     channel = _normalize_channel(channel)
@@ -1978,9 +1865,7 @@ def apply_force_update(target: str, channel=None) -> dict:
     if not _apply_lock.acquire(blocking=False):
         return {'ok': False, 'message': 'Update already in progress'}
     try:
-        if target == 'webui':
-            path = REPO_ROOT
-        elif target == 'agent':
+        if target == 'agent':
             path = _AGENT_DIR
             # Channel is WebUI-only — the Agent always uses the default channel.
             channel = DEFAULT_UPDATE_CHANNEL
@@ -2017,19 +1902,13 @@ def apply_force_update(target: str, channel=None) -> dict:
         # force to. Do NOT fall back to origin/master (firehose). See
         # _select_apply_compare_ref channel semantics.
         if compare_ref is None:
-            dirty_state = None
-            if target == 'webui' and channel == 'stable':
-                dirty_state = _probe_dirty(path, timeout=_FORCE_DIRTY_PROBE_TIMEOUT)
-            if dirty_state is True:
-                compare_ref = 'HEAD'
-            else:
-                return {
-                    'ok': True,
-                    'message': f'{target} is already up to date on the {channel} channel.',
-                    'target': target,
-                    'up_to_date': True,
-                    'channel': channel,
-                }
+            return {
+                'ok': True,
+                'message': f'{target} is already up to date on the {channel} channel.',
+                'target': target,
+                'up_to_date': True,
+                'channel': channel,
+            }
 
         # Rewind guard (Codex CORE #3): refuse to reset --hard onto a ref that
         # is an ANCESTOR of HEAD — that would downgrade the checkout. This is the
@@ -2138,8 +2017,15 @@ def _apply_update_inner(target, channel=DEFAULT_UPDATE_CHANNEL):
     """Inner implementation of apply_update, called under _apply_lock."""
     channel = _normalize_channel(channel)
     if target == 'webui':
-        path = REPO_ROOT
-    elif target == 'agent':
+        from api.talaria_releases import apply_web_update
+        result = apply_web_update(REPO_ROOT, channel, _run_git)
+        if result.get('ok') and not result.get('up_to_date'):
+            with _cache_lock:
+                _update_cache['checked_at'] = 0
+            _schedule_restart()
+            result['restart_scheduled'] = True
+        return result
+    if target == 'agent':
         path = _AGENT_DIR
         # Channel is WebUI-only — the Agent always uses the default channel
         # regardless of the user's WebUI selection (see check_for_updates).

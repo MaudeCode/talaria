@@ -306,7 +306,7 @@ export const SystemHealthSchema = z.looseObject({
   errors: z.array(z.looseObject({ code: z.string().optional(), metric: z.string().optional() })).optional(),
   webui_runtime: z.unknown().optional(),
 })
-export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), behind: z.number().optional(), current_sha: z.string().optional(), latest_sha: z.string().optional(), compare_url: z.string().optional(), repo_url: z.string().optional(), error: z.string().optional(), ok: z.boolean().optional() })
+export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), behind: z.number().nullable().optional(), current_sha: z.string().nullable().optional(), latest_sha: z.string().optional(), compare_url: z.string().optional(), repo_url: z.string().optional(), error: z.string().optional(), ok: z.boolean().optional(), manual_update: z.boolean().optional(), no_git: z.boolean().optional(), dirty: z.boolean().optional(), release_url: z.string().optional() })
 export const UpdatesCheckSchema = z.looseObject({
   disabled: z.boolean().optional(),
   cached: z.boolean().optional(),

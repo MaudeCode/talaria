@@ -68,9 +68,10 @@ def _auto_test_port(repo_root) -> int:
     (to verify a change) spun a server on the SAME port as a developer's
     concurrently-running suite — and the fixture's ``_kill_port_owner(TEST_PORT)``
     at setup then reaped the other run's server mid-suite, cascading every
-    HTTP-dependent test with ConnectionRefused. A per-process free port removes
-    the shared resource entirely, so gates + local suite + CI shards can all run
-    at once. Pin with ``HERMES_WEBUI_TEST_PORT`` for a reproducible/fixed port.
+    HTTP-dependent test with ConnectionRefused. A bind race is still possible
+    after releasing the probe socket; readiness also checks the child's own
+    listening log so another listener cannot satisfy this session's gate.
+    Pin with ``HERMES_WEBUI_TEST_PORT`` for a reproducible/fixed port.
     """
     import socket
     for _ in range(10):
@@ -194,6 +195,9 @@ os.environ['HERMES_CONFIG_PATH'] = str(TEST_STATE_DIR / 'config.yaml')
 # test server env is scrubbed identically in the test_server fixture below.
 for _model_env in ('HERMES_MODEL', 'OPENAI_MODEL', 'LLM_MODEL'):
     os.environ.pop(_model_env, None)
+
+# Release lookup tests supply synthetic credentials explicitly.
+os.environ.pop('TALARIA_RELEASE_TOKEN', None)
 
 # Authentication settings from the developer's live WebUI must not turn on
 # auth in the isolated test process or its shared test-server subprocess.
@@ -820,6 +824,14 @@ def _wait_for_server(base, timeout=45, proc=None, log_path=None):
         try:
             with urllib.request.urlopen(base + "/health", timeout=2) as r:
                 if json.loads(r.read()).get("status") == "ok":
+                    # A free port can be claimed between allocation and bind.
+                    # Health alone must not borrow a concurrent run's server.
+                    if proc is not None and log_path is not None:
+                        own_log = pathlib.Path(log_path).read_text(encoding="utf-8", errors="replace")
+                        if f"Hermes Web UI listening on {base}" not in own_log:
+                            last_err = "child has not confirmed its listening socket"
+                            time.sleep(0.3)
+                            continue
                     return True, ""
                 last_err = "/health responded but status != 'ok'"
         except Exception as e:  # noqa: BLE001 — diagnostic capture, re-raised as text
@@ -1080,7 +1092,7 @@ def test_server():
         'FIRECRAWL_API_KEY', 'FAL_KEY', 'TAVILY_API_KEY',
         'SERPER_API_KEY', 'BRAVE_API_KEY',
         # Github tokens (PR/issue tools shouldn't be exercised in tests)
-        'GH_TOKEN', 'GITHUB_TOKEN',
+        'GH_TOKEN', 'GITHUB_TOKEN', 'TALARIA_RELEASE_TOKEN',
     )
     # Derive the rest from the canonical provider→env-var mapping instead of
     # hand-maintaining it here. Every name the WebUI recognises for provider
@@ -1158,7 +1170,8 @@ def test_server():
     # and every HTTP-dependent test then cascaded with ConnectionRefused —
     # hundreds of opaque failures from a single root cause.
     import tempfile as _tempfile
-    _server_log = pathlib.Path(_tempfile.gettempdir()) / f"hermes-webui-test-server-{TEST_PORT}.log"
+    # Include the parent PID: concurrent port claims must not share a log file.
+    _server_log = pathlib.Path(_tempfile.gettempdir()) / f"hermes-webui-test-server-{os.getpid()}-{TEST_PORT}.log"
 
     # Boot the server, retrying once if it dies early or fails to bind. Boot
     # failures here are most often transient (a port not yet released by a prior

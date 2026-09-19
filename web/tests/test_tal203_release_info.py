@@ -30,12 +30,16 @@ def test_packaged_contract_versions_match_canonical_source():
 def test_stamped_release_metadata_is_validated(tmp_path):
     path = tmp_path / "release.json"
     document = {
+        "tag": "web-v2.1.0",
         "version": "2.1.0", "sourceRevision": "a" * 40, "releaseSet": "a" * 40,
         "upstreamBase": "b" * 40, "contracts": {"appWeb": [1], "webRelay": [2]},
         "compatibleAgent": release_info.COMPATIBLE_AGENT,
     }
     path.write_text(json.dumps(document))
     assert release_info.load_release_info(path) == document
+    document["tag"] = "web-exp-v2.1.0"
+    path.write_text(json.dumps(document))
+    assert release_info.load_release_info(path)["tag"] == "web-exp-v2.1.0"
     for field, value in (("sourceRevision", "main"), ("releaseSet", "c" * 40), ("compatibleAgent", {}), ("contracts", {}), ("version", "latest"), ("secret", "must not be exposed")):
         path.write_text(json.dumps({**document, field: value}))
         with pytest.raises(ValueError):

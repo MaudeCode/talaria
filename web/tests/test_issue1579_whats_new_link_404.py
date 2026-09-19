@@ -146,7 +146,7 @@ def test_current_sha_is_merge_base_not_local_HEAD(tmp_path, monkeypatch, upd):
     head_sha = _short_sha(repo, 'HEAD')
     expected_base = _short_sha(repo, 'HEAD~2')  # merge-base in this scenario
 
-    result = upd._check_repo(repo, 'webui')
+    result = upd._check_repo(repo, 'agent')
 
     assert result is not None, "non-bare repo with origin should return a result"
     assert result['behind'] == 3, f"expected 3 commits behind, got {result['behind']}"
@@ -186,7 +186,7 @@ def test_current_sha_equals_HEAD_when_no_local_commits(tmp_path, upd):
     we shipped before #1579.
     """
     repo = _make_throwaway_repo(tmp_path, local_only_commits=0, upstream_advanced=4)
-    result = upd._check_repo(repo, 'webui')
+    result = upd._check_repo(repo, 'agent')
 
     head_sha = _short_sha(repo, 'HEAD')
     assert result['current_sha'] == head_sha, (
@@ -212,7 +212,7 @@ def test_current_sha_falls_back_to_None_when_merge_base_fails(tmp_path, upd):
         return real_run(args, *a, **kw)
 
     with patch.object(upd, '_run_git', side_effect=fake_run):
-        result = upd._check_repo(repo, 'webui')
+        result = upd._check_repo(repo, 'agent')
 
     assert result is not None
     assert result['current_sha'] is None, (
@@ -237,7 +237,7 @@ def test_reporter_url_shape_no_longer_produces_invalid_compare_url(tmp_path, upd
     a SHA that exists upstream.
     """
     repo = _make_throwaway_repo(tmp_path, local_only_commits=2, upstream_advanced=5)
-    result = upd._check_repo(repo, 'webui')
+    result = upd._check_repo(repo, 'agent')
 
     head_sha = _short_sha(repo, 'HEAD')
     base_sha = _short_sha(repo, 'HEAD~2')  # the merge-base

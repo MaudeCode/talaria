@@ -198,7 +198,7 @@ def test_force_update_refuses_rewind_when_ref_is_ancestor(channel_repo, monkeypa
     """The rewind guard: apply_force_update must refuse to reset --hard onto a
     ref that is a strict ANCESTOR of HEAD (a downgrade). HEAD is on v0.52.5;
     we force to a ref resolving to the older v0.52.2 (an ancestor)."""
-    monkeypatch.setattr(updates, 'REPO_ROOT', channel_repo)
+    monkeypatch.setattr(updates, '_AGENT_DIR', channel_repo)
     monkeypatch.setattr(
         updates, '_restart_blocker_snapshot',
         lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
@@ -216,7 +216,7 @@ def test_force_update_refuses_rewind_when_ref_is_ancestor(channel_repo, monkeypa
         return real_run_git(args, cwd, timeout=timeout)
 
     monkeypatch.setattr(updates, '_run_git', no_fetch)
-    result = updates.apply_force_update('webui', channel='stable')
+    result = updates.apply_force_update('agent', channel='stable')
     assert result.get('refused_rewind') is True, result
     assert result['ok'] is False
     # HEAD must not have moved (no rewind actually happened).
@@ -284,7 +284,7 @@ def test_clear_lock_retry_preserves_experimental_channel(tmp_path, monkeypatch):
         'clear-lock retry must preserve the experimental channel, not default to stable'
     )
     assert result['ok'] is True
-    assert result['lock_recovery']['action'] == 'no-lock-found'
+    assert result['lock_recovery']['action'] == 'retry-only'
 
 
 # ── Stable-tagged install opting into Experimental (#5862) ───────────────────

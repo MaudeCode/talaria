@@ -12,6 +12,7 @@ with no clue as to the cause) into a single actionable failure:
 from __future__ import annotations
 
 import tests.conftest as conftest
+import io
 
 
 class _FakeProc:
@@ -26,6 +27,18 @@ class _FakeProc:
     @property
     def returncode(self):
         return self._returncode
+
+
+def test_wait_for_server_requires_its_child_to_have_bound_the_port(tmp_path, monkeypatch):
+    log = tmp_path / "server.log"
+    log.write_text("still importing, no listening socket yet\n")
+    monkeypatch.setattr(conftest.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(b'{"status":"ok"}'))
+    base = "http://127.0.0.1:9"
+    ready, reason = conftest._wait_for_server(base, timeout=0.01, proc=_FakeProc(), log_path=log)
+    assert ready is False, "a healthy unrelated listener must not satisfy this child's readiness gate"
+    assert "listening" in reason
+    log.write_text(f"  Hermes Web UI listening on {base}\n")
+    assert conftest._wait_for_server(base, timeout=1, proc=_FakeProc(), log_path=log) == (True, "")
 
 
 def test_wait_for_server_fails_fast_on_early_exit(tmp_path):

@@ -18,7 +18,7 @@ SUPPORTED_CONTRACTS = {
 
 
 def validate_release_info(metadata: dict) -> dict:
-    fields = {"version", "sourceRevision", "releaseSet", "upstreamBase", "contracts", "compatibleAgent"}
+    fields = {"tag", "version", "sourceRevision", "releaseSet", "upstreamBase", "contracts", "compatibleAgent"}
     if not isinstance(metadata, dict) or set(metadata) != fields:
         raise ValueError("Invalid Web release metadata fields")
     for key in ("sourceRevision", "releaseSet", "upstreamBase"):
@@ -28,6 +28,8 @@ def validate_release_info(metadata: dict) -> dict:
         raise ValueError("Web release-set identity must match its source")
     if not isinstance(metadata["version"], str) or not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", metadata["version"]):
         raise ValueError("Web release version must be X.Y.Z")
+    if metadata["tag"] not in (f"web-v{metadata['version']}", f"web-exp-v{metadata['version']}"):
+        raise ValueError("Web release tag must match its namespaced version")
     if metadata["contracts"] != SUPPORTED_CONTRACTS or metadata["compatibleAgent"] != COMPATIBLE_AGENT:
         raise ValueError("Web release metadata disagrees with its packaged contracts or Agent pin")
     return metadata
@@ -38,7 +40,7 @@ def load_release_info(path: Path) -> dict:
         return validate_release_info(json.loads(path.read_text()))
     except FileNotFoundError:
         return {
-            "version": "development", "sourceRevision": None, "releaseSet": None,
+            "tag": None, "version": "development", "sourceRevision": None, "releaseSet": None,
             "upstreamBase": None, "contracts": SUPPORTED_CONTRACTS,
             "compatibleAgent": COMPATIBLE_AGENT,
         }

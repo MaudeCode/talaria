@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--deployment-id", help="Required for Relay; non-secret deployment identity.")
     parser.add_argument("--build-number", type=int, help="Required for App; selected TestFlight build number.")
+    parser.add_argument("--tag", help="Web tag; defaults to web-vVERSION. Use web-exp-vVERSION for experimental releases.")
     args = parser.parse_args()
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     if head != args.source_revision:
@@ -35,6 +36,7 @@ def main():
         parser.error("release version must be X.Y.Z")
     metadata = {"version": args.version, "sourceRevision": head, "releaseSet": head}
     if args.component == "web":
+        metadata["tag"] = args.tag or f"web-v{args.version}"
         metadata.update(upstreamBase=(ROOT / "web/UPSTREAM_BASE_SHA").read_text().strip(),
                         contracts=SUPPORTED_CONTRACTS, compatibleAgent=COMPATIBLE_AGENT)
         validate_release_info(metadata)

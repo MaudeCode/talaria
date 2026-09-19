@@ -1,6 +1,4 @@
 """Tests for self-update diagnostics (api/updates.py)."""
-import json
-import logging
 import os
 import subprocess
 import time
@@ -16,29 +14,6 @@ def _git(repo, *args):
         ['git', *args], cwd=str(repo), check=True,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-
-
-def _dirty_stable_repo(tmp_path):
-    repo = tmp_path / 'repo'
-    repo.mkdir()
-    _git(repo, 'init', '-q')
-    _git(repo, 'config', 'user.email', 't@t.co')
-    _git(repo, 'config', 'user.name', 'Test')
-    _git(repo, 'remote', 'add', 'origin', 'https://github.com/nesquena/hermes-webui.git')
-    (repo / '.gitignore').write_text('ignored/\n', encoding='utf-8')
-    tracked = repo / 'tracked.txt'
-    tracked.write_text('stable content\n', encoding='utf-8')
-    _git(repo, 'add', '.gitignore', 'tracked.txt')
-    _git(repo, 'commit', '-q', '-m', 'stable')
-    _git(repo, 'tag', 'v0.52.5')
-    tracked.write_text('experimental content\n', encoding='utf-8')
-    _git(repo, 'commit', '-q', '-am', 'experimental')
-    _git(repo, 'tag', 'exp-v0.52.6')
-    (repo / 'ignored').mkdir()
-    (repo / 'ignored' / 'cache.bin').write_text('keep\n', encoding='utf-8')
-    (repo / 'untracked.txt').write_text('remove\n', encoding='utf-8')
-    tracked.write_text('local modification\n', encoding='utf-8')
-    return repo, tracked
 
 
 @pytest.fixture(autouse=True)
@@ -75,7 +50,7 @@ def test_check_repo_reports_release_gap_even_when_tag_fetch_fails(tmp_path):
     """A tag fetch error must not collapse the UI state to "up to date"."""
     (tmp_path / '.git').mkdir()
     with patch.object(updates, '_run_git', side_effect=_fake_git_for_release_fetch_failure):
-        info = updates._check_repo(tmp_path, 'webui')
+        info = updates._check_repo(tmp_path, 'agent')
 
     assert info is not None
     assert info['behind'] == 1
@@ -146,7 +121,7 @@ def test_check_repo_redacts_credentialed_fetch_failure(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git):
-        info = updates._check_repo(tmp_path, 'webui')
+        info = updates._check_repo(tmp_path, 'agent')
 
     assert info is not None
     assert info['behind'] is None
@@ -155,66 +130,6 @@ def test_check_repo_redacts_credentialed_fetch_failure(tmp_path):
     assert 'ash:' not in info['error']
     assert '<redacted>' in info['error']
     assert 'Authentication failed' in info['error']
-
-
-def test_check_repo_reports_manual_update_for_baked_webui_version(tmp_path, monkeypatch):
-    """Docker WebUI installs should banner a manual update when GitHub tags are newer."""
-
-    class FakeResponse:
-        def __init__(self, body):
-            self._body = body
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def read(self):
-            return self._body
-
-    payload = [
-        {'name': 'v0.51.833', 'commit': {'sha': 'current-sha'}},
-        {'name': 'v0.51.914-rc1', 'commit': {'sha': 'prerelease-sha'}},
-        {'name': 'v0.51.914', 'commit': {'sha': 'stable-sha'}},
-    ]
-    seen = {}
-
-    def fake_urlopen(request, timeout=0):
-        seen['url'] = request.full_url
-        seen['timeout'] = timeout
-        return FakeResponse(json.dumps(payload).encode('utf-8'))
-
-    monkeypatch.setattr(updates.urllib.request, 'urlopen', fake_urlopen)
-    monkeypatch.setattr(updates, 'WEBUI_VERSION', 'v0.51.833')
-
-    info = updates._check_repo(tmp_path, 'webui')
-
-    assert info['name'] == 'webui'
-    assert info['no_git'] is True
-    assert info['manual_update'] is True
-    assert info['release_based'] is True
-    assert info['behind'] == 1
-    assert info['current_version'] == 'v0.51.833'
-    assert info['latest_version'] == 'v0.51.914'
-    assert info['current_sha'] == 'current-sha'
-    assert info['latest_sha'] == 'stable-sha'
-    assert info['compare_url'] == (
-        'https://github.com/nesquena/hermes-webui/compare/current-sha...stable-sha'
-    )
-    assert seen['url'] == 'https://api.github.com/repos/nesquena/hermes-webui/tags?per_page=100'
-    assert seen['timeout'] == 3.0
-
-
-def test_check_repo_webui_no_git_falls_back_to_old_payload_on_tags_failure(tmp_path, monkeypatch):
-    """If GitHub tags cannot be read, the Docker path must stay on can't-check."""
-
-    monkeypatch.setattr(updates.urllib.request, 'urlopen', lambda *args, **kwargs: (_ for _ in ()).throw(updates.urllib.error.URLError('boom')))
-    monkeypatch.setattr(updates, 'WEBUI_VERSION', 'v0.51.833')
-
-    info = updates._check_repo(tmp_path, 'webui')
-
-    assert info == {'name': 'webui', 'behind': None, 'no_git': True}
 
 
 def test_check_repo_no_git_agent_stays_cant_check(tmp_path):
@@ -239,7 +154,7 @@ def test_check_repo_fetch_failure_without_tags_is_not_up_to_date(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git):
-        info = updates._check_repo(tmp_path, 'webui')
+        info = updates._check_repo(tmp_path, 'agent')
 
     assert info is not None
     assert info['behind'] is None
@@ -257,9 +172,9 @@ def test_apply_force_update_fetch_failure_reports_local_diagnostic(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git), \
-         patch.object(updates, 'REPO_ROOT', tmp_path), \
+         patch.object(updates, '_AGENT_DIR', tmp_path), \
          patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-        result = updates.apply_force_update('webui')
+        result = updates.apply_force_update('agent')
 
     assert result == {
         'ok': False,
@@ -277,9 +192,9 @@ def test_apply_update_fetch_failure_reports_local_diagnostic(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git), \
-         patch.object(updates, 'REPO_ROOT', tmp_path), \
+         patch.object(updates, '_AGENT_DIR', tmp_path), \
          patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-        result = updates.apply_update('webui')
+        result = updates.apply_update('agent')
 
     assert result == {
         'ok': False,
@@ -303,9 +218,9 @@ def test_apply_fetch_failure_keeps_connectivity_guidance_for_network_errors(tmp_
 
     for apply_fn, expected_message in cases:
         with patch.object(updates, '_run_git', side_effect=fake_git), \
-             patch.object(updates, 'REPO_ROOT', tmp_path), \
+             patch.object(updates, '_AGENT_DIR', tmp_path), \
              patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-            result = apply_fn('webui')
+            result = apply_fn('agent')
 
         assert result == {'ok': False, 'message': expected_message}
 
@@ -326,9 +241,9 @@ def test_apply_fetch_failure_keeps_connectivity_guidance_for_timeout_shape(tmp_p
 
     for apply_fn, expected_message in cases:
         with patch.object(updates, '_run_git', side_effect=fake_git), \
-             patch.object(updates, 'REPO_ROOT', tmp_path), \
+             patch.object(updates, '_AGENT_DIR', tmp_path), \
              patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-            result = apply_fn('webui')
+            result = apply_fn('agent')
 
         assert result == {'ok': False, 'message': expected_message}
 
@@ -347,9 +262,9 @@ def test_apply_force_update_fetch_failure_redacts_credentials(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git), \
-         patch.object(updates, 'REPO_ROOT', tmp_path), \
+         patch.object(updates, '_AGENT_DIR', tmp_path), \
          patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-        result = updates.apply_force_update('webui')
+        result = updates.apply_force_update('agent')
 
     assert secret not in result['message']
     assert 'ash:' not in result['message']
@@ -382,279 +297,15 @@ def test_apply_force_update_fetch_failure_redacts_query_secrets(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git), \
-         patch.object(updates, 'REPO_ROOT', tmp_path), \
+         patch.object(updates, '_AGENT_DIR', tmp_path), \
          patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-        result = updates.apply_force_update('webui')
+        result = updates.apply_force_update('agent')
 
     for name, value in secrets.items():
         assert value not in result['message'], f'{name} value leaked: {result["message"]!r}'
     # The fetch failure (non-network) is still surfaced as a diagnostic.
     assert result['message'].startswith('fetch failed:')
     assert '<redacted>' in result['message']
-
-
-def test_force_update_cleans_dirty_stable_checkout_without_changing_head(tmp_path, monkeypatch):
-    repo, tracked = _dirty_stable_repo(tmp_path)
-    head, ok = updates._run_git(['rev-parse', 'HEAD'], repo)
-    assert ok
-    calls = []
-    real_run_git = updates._run_git
-
-    def no_fetch(args, cwd, timeout=10):
-        calls.append(args)
-        if args[:2] == ['fetch', 'origin']:
-            return '', True
-        return real_run_git(args, cwd, timeout=timeout)
-
-    monkeypatch.setattr(updates, 'REPO_ROOT', repo)
-    monkeypatch.setattr(
-        updates, '_restart_blocker_snapshot',
-        lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
-    )
-    restart = MagicMock()
-    monkeypatch.setattr(updates, '_schedule_restart', restart)
-    monkeypatch.setattr(updates, '_run_git', no_fetch)
-
-    result = updates.apply_force_update('webui', channel='stable')
-    status, status_ok = real_run_git(['status', '--porcelain'], repo)
-    after_head, after_head_ok = real_run_git(['rev-parse', 'HEAD'], repo)
-    reset_refs = [args[2] for args in calls if args[:2] == ['reset', '--hard']]
-
-    assert (
-        result == {
-            'ok': True,
-            'message': 'webui force-updated to HEAD',
-            'target': 'webui',
-            'restart_scheduled': True,
-        }
-        and tracked.read_text(encoding='utf-8') == 'experimental content\n'
-        and status_ok and status == ''
-        and after_head_ok and after_head == head
-        and (repo / 'ignored' / 'cache.bin').exists()
-        and not (repo / 'untracked.txt').exists()
-        and reset_refs == ['HEAD']
-        and all(not ref.startswith('origin/') and not ref.startswith('exp-v') for ref in reset_refs)
-    ), (
-        f'result={result!r}, content={tracked.read_text(encoding="utf-8")!r}, '
-        f'status={status!r}, head={after_head!r}, original_head={head!r}, '
-        f'reset_refs={reset_refs!r}, calls={calls!r}'
-    )
-    restart.assert_called_once_with()
-
-
-def test_force_update_clean_stable_no_ref_is_an_exact_noop(tmp_path, monkeypatch):
-    (tmp_path / '.git').mkdir()
-    calls = []
-
-    def fake_git(args, cwd, timeout=10):
-        calls.append(args)
-        if args == ['fetch', 'origin', '--quiet', '--tags', '--force']:
-            return '', True
-        raise AssertionError(f'unexpected git args: {args!r}')
-
-    dirty = MagicMock(return_value=False)
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
-    monkeypatch.setattr(
-        updates, '_restart_blocker_snapshot',
-        lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
-    )
-    monkeypatch.setattr(updates, '_select_apply_compare_ref', lambda *args: None)
-    monkeypatch.setattr(updates, '_probe_dirty', dirty)
-    monkeypatch.setattr(updates, '_run_git', fake_git)
-    restart = MagicMock()
-    monkeypatch.setattr(updates, '_schedule_restart', restart)
-
-    checked_at = 1_700_000_001.0
-    with patch.dict(updates._update_cache, {'checked_at': checked_at}, clear=False):
-        result = updates.apply_force_update('webui', channel='stable')
-        assert updates._update_cache['checked_at'] == checked_at
-
-    assert result == {
-        'ok': True,
-        'message': 'webui is already up to date on the stable channel.',
-        'target': 'webui',
-        'up_to_date': True,
-        'channel': 'stable',
-    }
-    dirty.assert_called_once_with(tmp_path, timeout=updates._FORCE_DIRTY_PROBE_TIMEOUT)
-    assert calls == [['fetch', 'origin', '--quiet', '--tags', '--force']]
-    restart.assert_not_called()
-
-
-def test_force_update_dirty_probe_error_keeps_stable_no_ref_as_an_exact_noop(tmp_path, monkeypatch):
-    (tmp_path / '.git').mkdir()
-    calls = []
-
-    def fake_git(args, cwd, timeout=10):
-        calls.append(args)
-        if args == ['fetch', 'origin', '--quiet', '--tags', '--force']:
-            return '', True
-        if args == ['diff-index', '--quiet', 'HEAD', '--']:
-            return 'fatal: unable to read index', False
-        raise AssertionError(f'unexpected git args: {args!r}')
-
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
-    monkeypatch.setattr(
-        updates, '_restart_blocker_snapshot',
-        lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
-    )
-    monkeypatch.setattr(updates, '_select_apply_compare_ref', lambda *args: None)
-    monkeypatch.setattr(updates, '_run_git', fake_git)
-    restart = MagicMock()
-    monkeypatch.setattr(updates, '_schedule_restart', restart)
-
-    checked_at = 1_700_000_002.0
-    with patch.dict(updates._update_cache, {'checked_at': checked_at}, clear=False):
-        result = updates.apply_force_update('webui', channel='stable')
-        assert updates._update_cache['checked_at'] == checked_at
-
-    assert result == {
-        'ok': True,
-        'message': 'webui is already up to date on the stable channel.',
-        'target': 'webui',
-        'up_to_date': True,
-        'channel': 'stable',
-    }
-    assert calls == [
-        ['fetch', 'origin', '--quiet', '--tags', '--force'],
-        ['diff-index', '--quiet', 'HEAD', '--'],
-    ]
-    restart.assert_not_called()
-
-
-def test_force_update_dirty_probe_timeout_keeps_stable_no_ref_as_an_exact_noop(
-    tmp_path, monkeypatch, caplog,
-):
-    (tmp_path / '.git').mkdir()
-    calls = []
-
-    def fake_git(args, cwd, timeout=10):
-        calls.append((args, timeout))
-        if args == ['fetch', 'origin', '--quiet', '--tags', '--force']:
-            return '', True
-        if args == ['diff-index', '--quiet', 'HEAD', '--']:
-            return 'git diff-index --quiet HEAD -- timed out after 5s', False
-        raise AssertionError(f'unexpected git args: {args!r}')
-
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
-    monkeypatch.setattr(
-        updates, '_restart_blocker_snapshot',
-        lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
-    )
-    monkeypatch.setattr(updates, '_select_apply_compare_ref', lambda *args: None)
-    monkeypatch.setattr(updates, '_run_git', fake_git)
-    restart = MagicMock()
-    monkeypatch.setattr(updates, '_schedule_restart', restart)
-
-    checked_at = 1_700_000_003.0
-    with caplog.at_level(logging.WARNING, logger='api.updates'):
-        with patch.dict(updates._update_cache, {'checked_at': checked_at}, clear=False):
-            result = updates.apply_force_update('webui', channel='stable')
-            assert updates._update_cache['checked_at'] == checked_at
-
-    assert result == {
-        'ok': True,
-        'message': 'webui is already up to date on the stable channel.',
-        'target': 'webui',
-        'up_to_date': True,
-        'channel': 'stable',
-    }
-    assert calls == [
-        (['fetch', 'origin', '--quiet', '--tags', '--force'], 15),
-        (['diff-index', '--quiet', 'HEAD', '--'], updates._FORCE_DIRTY_PROBE_TIMEOUT),
-    ]
-    assert 'working-tree state as unknown' in caplog.text
-    restart.assert_not_called()
-
-
-def test_force_update_dirty_probe_non_dirty_status_keeps_stable_no_ref_as_an_exact_noop(
-    tmp_path, monkeypatch, caplog,
-):
-    (tmp_path / '.git').mkdir()
-    calls = []
-
-    def fake_git(args, cwd, timeout=10):
-        calls.append((args, timeout))
-        if args == ['fetch', 'origin', '--quiet', '--tags', '--force']:
-            return '', True
-        if args == ['diff-index', '--quiet', 'HEAD', '--']:
-            return 'git exited with status 2', False
-        raise AssertionError(f'unexpected git args: {args!r}')
-
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
-    monkeypatch.setattr(
-        updates, '_restart_blocker_snapshot',
-        lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
-    )
-    monkeypatch.setattr(updates, '_select_apply_compare_ref', lambda *args: None)
-    monkeypatch.setattr(updates, '_run_git', fake_git)
-    restart = MagicMock()
-    monkeypatch.setattr(updates, '_schedule_restart', restart)
-
-    checked_at = 1_700_000_004.0
-    with caplog.at_level(logging.WARNING, logger='api.updates'):
-        with patch.dict(updates._update_cache, {'checked_at': checked_at}, clear=False):
-            result = updates.apply_force_update('webui', channel='stable')
-            assert updates._update_cache['checked_at'] == checked_at
-
-    assert result == {
-        'ok': True,
-        'message': 'webui is already up to date on the stable channel.',
-        'target': 'webui',
-        'up_to_date': True,
-        'channel': 'stable',
-    }
-    assert calls == [
-        (['fetch', 'origin', '--quiet', '--tags', '--force'], 15),
-        (['diff-index', '--quiet', 'HEAD', '--'], updates._FORCE_DIRTY_PROBE_TIMEOUT),
-    ]
-    assert 'working-tree state as unknown' in caplog.text
-    restart.assert_not_called()
-
-
-def test_force_update_dirty_stable_reset_failure_reports_head(tmp_path, monkeypatch):
-    (tmp_path / '.git').mkdir()
-    calls = []
-
-    def fake_git(args, cwd, timeout=10):
-        calls.append(args)
-        if args == ['fetch', 'origin', '--quiet', '--tags', '--force']:
-            return '', True
-        if args == ['diff-index', '--quiet', 'HEAD', '--']:
-            return 'git exited with status 1', False
-        if args == ['checkout', '.']:
-            return '', True
-        if args == ['clean', '-fd']:
-            return '', True
-        if args == ['merge-base', '--is-ancestor', 'HEAD', 'HEAD']:
-            return '', True
-        if args == ['reset', '--hard', 'HEAD']:
-            return 'unable to reset', False
-        raise AssertionError(f'unexpected git args: {args!r}')
-
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
-    monkeypatch.setattr(
-        updates, '_restart_blocker_snapshot',
-        lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
-    )
-    monkeypatch.setattr(updates, '_select_apply_compare_ref', lambda *args: None)
-    monkeypatch.setattr(updates, '_run_git', fake_git)
-    restart = MagicMock()
-    monkeypatch.setattr(updates, '_schedule_restart', restart)
-
-    result = updates.apply_force_update('webui', channel='stable')
-
-    assert result == {'ok': False, 'message': 'Force reset to HEAD failed'}
-    assert calls == [
-        ['fetch', 'origin', '--quiet', '--tags', '--force'],
-        ['diff-index', '--quiet', 'HEAD', '--'],
-        ['merge-base', '--is-ancestor', 'HEAD', 'HEAD'],
-        ['merge-base', '--is-ancestor', 'HEAD', 'HEAD'],
-        ['checkout', '.'],
-        ['clean', '-fd'],
-        ['reset', '--hard', 'HEAD'],
-    ]
-    restart.assert_not_called()
 
 
 @pytest.mark.parametrize('reset_ok', [True, False])
@@ -674,7 +325,7 @@ def test_force_update_clean_failure_preserves_reset_boundary(tmp_path, monkeypat
             return '', reset_ok
         raise AssertionError(f'unexpected git args: {args!r}')
 
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_restart_blocker_snapshot',
         lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0},
@@ -685,7 +336,7 @@ def test_force_update_clean_failure_preserves_reset_boundary(tmp_path, monkeypat
     restart = MagicMock()
     monkeypatch.setattr(updates, '_schedule_restart', restart)
 
-    result = updates.apply_force_update('webui', channel='stable')
+    result = updates.apply_force_update('agent', channel='stable')
 
     assert calls == [
         ['fetch', 'origin', '--quiet', '--tags', '--force'],
@@ -696,8 +347,9 @@ def test_force_update_clean_failure_preserves_reset_boundary(tmp_path, monkeypat
     if reset_ok:
         assert result == {
             'ok': True,
-            'message': 'webui force-updated to origin/main',
-            'target': 'webui',
+            'message': 'agent force-updated to origin/main',
+            'gateway_restart': 'restarted',
+            'target': 'agent',
             'restart_scheduled': True,
         }
         restart.assert_called_once_with()
@@ -906,7 +558,7 @@ def test_check_repo_fetches_tags_with_force(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git):
-        updates._check_repo(tmp_path, 'webui')
+        updates._check_repo(tmp_path, 'agent')
 
     fetch_calls = [a for a in seen_args if a[:2] == ['fetch', 'origin']]
     assert fetch_calls, 'expected at least one fetch call'
@@ -931,9 +583,9 @@ def test_apply_force_update_fetches_tags_with_force(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git), \
-         patch.object(updates, 'REPO_ROOT', tmp_path), \
+         patch.object(updates, '_AGENT_DIR', tmp_path), \
          patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-        updates.apply_force_update('webui')
+        updates.apply_force_update('agent')
 
     fetch_calls = [a for a in seen_args if a[:2] == ['fetch', 'origin']]
     assert fetch_calls, 'expected at least one fetch call'
@@ -956,9 +608,9 @@ def test_apply_update_fetches_tags_with_force(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git), \
-         patch.object(updates, 'REPO_ROOT', tmp_path), \
+         patch.object(updates, '_AGENT_DIR', tmp_path), \
          patch.object(updates, '_restart_blocker_snapshot', return_value={'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}):
-        updates.apply_update('webui')
+        updates.apply_update('agent')
 
     fetch_calls = [a for a in seen_args if a[:2] == ['fetch', 'origin']]
     assert fetch_calls, 'expected at least one fetch call'
@@ -1000,7 +652,7 @@ def test_check_repo_recovers_from_remote_retag(tmp_path):
         return '', True
 
     with patch.object(updates, '_run_git', side_effect=fake_git):
-        info = updates._check_repo(tmp_path, 'webui')
+        info = updates._check_repo(tmp_path, 'agent')
 
     assert info is not None
     assert info.get('error') is None, (
@@ -1447,12 +1099,12 @@ def test_apply_update_fetch_lock_error_returns_lock_conflict(tmp_path):
     """Fetch failure caused by .git/index.lock returns lock_conflict: True."""
     (tmp_path / '.git').mkdir()
     from api import updates as mod
-    with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+    with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
          patch(f'{_MODULE}._run_git') as mock_run_git:
         mock_run_git.side_effect = [
             ("fatal: Unable to create '/app/.git/index.lock': File exists.", False),
         ]
-        result = mod._apply_update_inner('webui')
+        result = mod._apply_update_inner('agent')
     _assert_lock_conflict_result(result)
 
 
@@ -1460,12 +1112,12 @@ def test_apply_update_fetch_lock_error_does_not_attempt_pull(tmp_path):
     """If fetch fails with a lock error, no further git calls are made."""
     (tmp_path / '.git').mkdir()
     from api import updates as mod
-    with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+    with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
          patch(f'{_MODULE}._run_git') as mock_run_git:
         mock_run_git.side_effect = [
             ("fatal: Unable to create '.git/index.lock': File exists.", False),
         ]
-        mod._apply_update_inner('webui')
+        mod._apply_update_inner('agent')
     assert mock_run_git.call_count == 1
 
 
@@ -1473,14 +1125,14 @@ def test_apply_update_status_lock_error_returns_lock_conflict(tmp_path):
     """Status failure caused by .git/index.lock returns lock_conflict: True."""
     (tmp_path / '.git').mkdir()
     from api import updates as mod
-    with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+    with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
          patch(f'{_MODULE}._select_apply_compare_ref', return_value='origin/main'), \
          patch(f'{_MODULE}._run_git') as mock_run_git:
         mock_run_git.side_effect = [
             ('', True),   # fetch succeeds
             ("fatal: Unable to create '.git/index.lock': File exists.", False),  # status fails
         ]
-        result = mod._apply_update_inner('webui')
+        result = mod._apply_update_inner('agent')
     _assert_lock_conflict_result(result)
 
 
@@ -1488,7 +1140,7 @@ def test_apply_update_pull_lock_error_returns_lock_conflict(tmp_path):
     """Pull failure caused by .git/index.lock returns lock_conflict: True."""
     (tmp_path / '.git').mkdir()
     from api import updates as mod
-    with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+    with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
          patch(f'{_MODULE}._select_apply_compare_ref', return_value='origin/main'), \
          patch(f'{_MODULE}.STREAMS', {}), \
          patch(f'{_MODULE}._run_git') as mock_run_git:
@@ -1497,7 +1149,7 @@ def test_apply_update_pull_lock_error_returns_lock_conflict(tmp_path):
             ('', True),    # status --porcelain (clean)
             ("fatal: Unable to create '.git/index.lock': File exists.", False),  # pull fails
         ]
-        result = mod._apply_update_inner('webui')
+        result = mod._apply_update_inner('agent')
     _assert_lock_conflict_result(result)
 
 
@@ -1505,12 +1157,12 @@ def test_apply_update_non_lock_fetch_failure_does_not_include_lock_conflict(tmp_
     """A non-lock fetch failure does NOT return lock_conflict."""
     (tmp_path / '.git').mkdir()
     from api import updates as mod
-    with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+    with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
          patch(f'{_MODULE}._run_git') as mock_run_git:
         mock_run_git.side_effect = [
             ("fatal: unable to access 'https://github.com/repo.git/': Could not resolve host", False),
         ]
-        result = mod._apply_update_inner('webui')
+        result = mod._apply_update_inner('agent')
     assert result['ok'] is False
     assert result.get('lock_conflict') is None
 
@@ -1640,7 +1292,7 @@ def test_apply_clear_lock_with_no_lock_runs_normal_update(tmp_path, monkeypatch)
     # No lock file written.
     monkeypatch.setattr(updates, '_run_git',
                          MagicMock(return_value=('', True)))
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_restart_blocker_snapshot',
         lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}
@@ -1649,7 +1301,7 @@ def test_apply_clear_lock_with_no_lock_runs_normal_update(tmp_path, monkeypatch)
         updates, '_select_apply_compare_ref',
         lambda path, channel='stable', target=None: 'origin/main'
     )
-    result = updates.apply_clear_lock('webui')
+    result = updates.apply_clear_lock('agent')
     assert result['ok'] is True, result
     assert result['lock_recovery']['action'] == 'no-lock-found'
     assert 'manual_command' in result['lock_recovery']
@@ -1677,13 +1329,13 @@ def test_apply_clear_lock_with_lock_present_returns_manual_instruction(tmp_path,
     # Patch os.remove + Path.unlink on the instance/module to record any
     # destructive attempt. apply_clear_lock must NOT call them.
     monkeypatch.setattr(updates.os, 'remove', forbid_delete)
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_restart_blocker_snapshot',
         lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}
     )
 
-    result = updates.apply_clear_lock('webui')
+    result = updates.apply_clear_lock('agent')
     assert result['ok'] is False
     assert result.get('lock_held') is True
     assert result.get('manual_command', '').startswith('rm -f')
@@ -1708,13 +1360,13 @@ def test_apply_clear_lock_listing_includes_other_locks(tmp_path, monkeypatch):
     (tmp_path / '.git' / 'index.lock').write_text('')
     (tmp_path / '.git' / 'refs').mkdir()
     (tmp_path / '.git' / 'refs' / 'main.lock').write_text('')
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_restart_blocker_snapshot',
         lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}
     )
 
-    result = updates.apply_clear_lock('webui')
+    result = updates.apply_clear_lock('agent')
     assert result['ok'] is False
     assert result['lock_held'] is True
     assert result['other_locks'] == ['refs/main.lock']
@@ -1734,12 +1386,12 @@ def test_apply_clear_lock_rejects_unknown_target(tmp_path, monkeypatch):
 def test_apply_clear_lock_rejects_not_git_repo(tmp_path, monkeypatch):
     """If REPO_ROOT has no .git, apply_clear_lock must refuse."""
     # tmp_path has no .git
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_restart_blocker_snapshot',
         lambda: {'restart_blocked': False, 'active_streams': 0, 'active_runs': 0}
     )
-    result = updates.apply_clear_lock('webui')
+    result = updates.apply_clear_lock('agent')
     assert result['ok'] is False
     assert 'Not a git repository' in result['message']
 def test_apply_update_pull_lock_restores_stash(tmp_path, monkeypatch):
@@ -1761,13 +1413,13 @@ def test_apply_update_pull_lock_restores_stash(tmp_path, monkeypatch):
         return '', True
 
     monkeypatch.setattr(updates, '_run_git', fake_git)
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_select_apply_compare_ref',
         lambda path, channel='stable', target=None: 'origin/main'
     )
 
-    result = updates._apply_update_inner('webui')
+    result = updates._apply_update_inner('agent')
     assert result['ok'] is False
     assert result.get('lock_conflict') is True
     assert 'Local modifications were restored' in result['message'], (
@@ -1813,15 +1465,21 @@ def test_apply_update_pull_lock_no_stash_when_clean(tmp_path, monkeypatch):
         return '', True
 
     monkeypatch.setattr(updates, '_run_git', fake_git)
-    monkeypatch.setattr(updates, 'REPO_ROOT', tmp_path)
+    monkeypatch.setattr(updates, '_AGENT_DIR', tmp_path)
     monkeypatch.setattr(
         updates, '_select_apply_compare_ref',
         lambda path, channel='stable', target=None: 'origin/main'
     )
 
-    result = updates._apply_update_inner('webui')
+    result = updates._apply_update_inner('agent')
     assert result['ok'] is False
     assert result.get('lock_conflict') is True
     # No stash pop on a clean pull-lock path.
     assert not any(c[0] == 'stash' for c in git_calls)
 
+
+@pytest.fixture(autouse=True)
+def isolate_legacy_agent_gateway_restart(monkeypatch):
+    # Stash/reset diagnostics now exercise the separate Agent updater.
+    # Web's clean-only policy is covered by test_tal203_source_update.py.
+    monkeypatch.setattr(updates, "_ensure_gateway_restart_for_agent_update", lambda: (True, {"status": "restarted"}))

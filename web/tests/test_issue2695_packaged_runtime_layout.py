@@ -116,7 +116,7 @@ print(WEBUI_VERSION)
         str((extract_dir / "api" / "config.py").resolve()),
         str((extract_dir / "static").resolve()),
         str((extract_dir / "static" / "dist" / "index.html").resolve()),
-        "v0.52.2695",
+        "web-v0.52.2695",
     ]
     assert Path(lines[0]).exists()
     assert Path(lines[1]).is_dir()
