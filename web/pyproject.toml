@@ -36,6 +36,7 @@ packages = ["api", "static"]
 py-modules = ["bootstrap", "server", "mcp_server"]
 
 [tool.setuptools.package-data]
+api = ["agent_dependency.json"]
 static = ["**/*"]
 
 [tool.setuptools.dynamic]

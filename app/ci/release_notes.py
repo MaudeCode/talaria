@@ -134,7 +134,7 @@ def repository_only(path):
     return (
         path.endswith(".md")
         or path.startswith((
-            "web/", "relay/", "contracts/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
+            "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
             ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/",
         ))
         or path in {"LICENSE", ".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}

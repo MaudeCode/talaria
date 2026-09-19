@@ -1,1 +1,10 @@
-{"skip":"Shared component release-note metadata and signed-tag validation tooling."}
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "New Web installations use a tested Hermes Agent version.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

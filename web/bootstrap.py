@@ -18,8 +18,10 @@ import venv
 import webbrowser
 from pathlib import Path
 
+from api.release_info import COMPATIBLE_AGENT
 
-INSTALLER_URL = "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh"
+
+INSTALLER_URL = f"https://raw.githubusercontent.com/NousResearch/hermes-agent/{COMPATIBLE_AGENT['sourceRevision']}/scripts/install.sh"
 REPO_ROOT = Path(__file__).resolve().parent
 
 
@@ -360,7 +362,9 @@ def install_hermes_agent() -> None:
         )
     info(f"Hermes Agent not found. Attempting install via {INSTALLER_URL}")
     subprocess.run(
-        ["/bin/bash", "-lc", f"curl -fsSL {INSTALLER_URL} | bash"], check=True
+        ["/bin/bash", "-o", "pipefail", "-c",
+         f"curl -fsSL {INSTALLER_URL} | bash -s -- --commit {COMPATIBLE_AGENT['sourceRevision']}"],
+        check=True,
     )
 
 

@@ -17,6 +17,24 @@ fixtures.
 
 ## Current boundary
 
+Talaria's tested external Agent identity is recorded in
+`api/agent_dependency.json`: an exact package version, source commit and image
+digest. Bootstrap fetches the installer from that commit and passes its commit
+pin. Existing Agent installations are discovered and retained; the Web launcher
+does not force a downgrade. Both multi-container Compose variants inherit their
+Agent image from the same JSON file using Compose `extends`. The file is also
+included in Python wheels.
+
+Run `python3 scripts/check-agent-compatibility.py` from the monorepo root when
+changing the pin or preparing a release. The gate fetches only the pinned source,
+installs its locked dependencies, exercises real Agent imports and SessionDB
+projection, runs Web's native tests with that Agent, and repeats the projection
+against the digest-pinned container with networking disabled. It uses disposable
+homes and databases, never production credentials or provider requests. Optional
+test paths restrict the Web suite for local development; release runs use the
+full default suite. A passing identity is a tested combination, not a requirement
+that independently installed Agent or peer component versions be equal.
+
 The multi-container setup still shares the agent source tree with the WebUI:
 
 - `docker-compose.two-container.yml` mounts `hermes-agent-src` at `/opt/hermes`

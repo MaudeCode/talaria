@@ -40,7 +40,9 @@
 
 services:
   hermes-agent:
-    image: nousresearch/hermes-agent:latest
+    extends:
+      file: api/agent_dependency.json
+      service: hermes-agent
     container_name: hermes-agent
     command: gateway run
     ports:
@@ -87,7 +89,9 @@ services:
       - hermes-net
 
   hermes-dashboard:
-    image: nousresearch/hermes-agent:latest
+    extends:
+      file: api/agent_dependency.json
+      service: hermes-agent
     container_name: hermes-dashboard
     command: dashboard --host 0.0.0.0 --insecure
     ports:

@@ -2,6 +2,12 @@
 
 This is the comprehensive Docker reference. For a 5-minute quickstart, see the [README Docker section](../README.md#docker).
 
+Talaria's multi-container files use the tested Agent image digest from
+[`api/agent_dependency.json`](../api/agent_dependency.json), shared by the gateway
+and dashboard. Keep that file alongside the Compose files when copying a setup.
+Updating an existing source volume still requires the source-volume procedure
+below; changing an image does not replace files already stored in a named volume.
+
 ## TL;DR — pick one
 
 | Setup | When to use | File |
