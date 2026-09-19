@@ -16,33 +16,106 @@ import zipfile
 from check_results import check
 from collect import collect
 from publish import authorize, finalize, relay, verify_ipa
+import publish
 from test_release_set import candidate, complete
 
 
 class PublicationTests(unittest.TestCase):
+    def test_partial_release_publication_resumes_without_recreating_releases(self):
+        for failure in ("web-create", "root-upload", "root-edit", "root-upload-after", "root-edit-after"):
+            with self.subTest(failure=failure), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                manifest = complete(candidate())
+                if failure == "root-edit":
+                    manifest["components"]["web"]["tag"] = "web-exp-v2.0.0"
+                plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
+                wheel = root / "web-build/wheel/talaria_web-1.0.0-py3-none-any.whl"
+                wheel.parent.mkdir(parents=True)
+                wheel.write_bytes(b"synthetic wheel")
+                releases, assets, commands = {}, {}, []
+                failed = False
+
+                def unused(tag):
+                    if tag in releases:
+                        raise ValueError("release already exists")
+
+                def command(args, **kwargs):
+                    nonlocal failed
+                    commands.append(args)
+                    operation, tag = args[2:4]
+                    key = ("root" if tag.startswith("release-set-") else "web") + "-" + operation
+                    fail_here = not failed and key == failure.removesuffix("-after") and (tag.startswith("release-set-") or tag.startswith("web-"))
+                    if fail_here and not failure.endswith("-after"):
+                        failed = True
+                        raise subprocess.CalledProcessError(1, args)
+                    if operation == "create":
+                        self.assertNotIn(tag, releases)
+                        releases[tag] = {"tag_name": tag, "name": tag, "draft": True, "prerelease": "--prerelease" in args,
+                                         "body": Path(args[args.index("--notes-file") + 1]).read_text(), "assets": []}
+                    elif operation == "upload":
+                        path = Path(args[4])
+                        identifier = len(assets) + 1
+                        assets[identifier] = path.read_bytes()
+                        releases[tag]["assets"].append({"id": identifier, "name": path.name})
+                    elif operation == "edit":
+                        releases[tag]["draft"] = False
+                    else:
+                        self.fail("unexpected mutation " + operation)
+                    if fail_here and failure.endswith("-after"):
+                        failed = True
+                        raise subprocess.CalledProcessError(1, args)
+
+                with patch.object(publish, "_release_info", side_effect=lambda tag: deepcopy(releases.get(tag)), create=True), \
+                        patch.object(publish, "unused_release", side_effect=unused), \
+                        patch.object(publish.subprocess, "run", side_effect=command), \
+                        patch.object(publish.subprocess, "check_output", side_effect=lambda args: assets[int(args[2].rsplit("/", 1)[1])]):
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        finalize(plan, manifest, None, root)
+                    self.assertFalse(releases[plan["components"]["app"]["tag"]]["draft"])
+                    finalize(plan, manifest, None, root)
+                    self.assertEqual(len(releases), 4)
+                    self.assertTrue(all(not value["draft"] for value in releases.values()))
+                    published = [args[3] for args in commands if args[2] == "edit"]
+                    self.assertEqual(published.count(plan["components"]["app"]["tag"]), 1)
+                    self.assertEqual(published[-1], "release-set-" + plan["releaseSet"])
+                    before = len(commands)
+                    finalize(plan, manifest, None, root)
+                    self.assertEqual(len(commands), before)
+                    another_run = deepcopy(manifest)
+                    for receipt in another_run["evidence"]:
+                        receipt["runUrl"] = "https://github.com/MaudeCode/talaria/actions/runs/2/attempts/1"
+                    with self.assertRaises(ValueError):
+                        finalize(plan, another_run, None, root)
+                    wheel_id = releases[plan["components"]["web"]["tag"]]["assets"][0]["id"]
+                    assets[wheel_id] = b"changed after publication"
+                    with self.assertRaisesRegex(ValueError, "asset differs"):
+                        finalize(plan, manifest, None, root)
+                    assets[wheel_id] = wheel.read_bytes()
+                    releases[plan["components"]["app"]["tag"]]["body"] = "unrelated release"
+                    with self.assertRaises(ValueError):
+                        finalize(plan, manifest, None, root)
+
     def test_completed_manifest_is_published_last(self):
         manifest = complete(candidate())
         plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
-        with TemporaryDirectory() as temporary, patch("publish.unused_release"), patch("publish.subprocess.run") as run:
+        with TemporaryDirectory() as temporary, patch("publish._publish_release") as run:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "built wheel"):
-                finalize(plan, manifest, None, root, root)
+                finalize(plan, manifest, None, root)
             run.assert_not_called()
             wheel = root / "web-build/wheel/talaria_web-1.0.0-py3-none-any.whl"
             wheel.parent.mkdir(parents=True)
             wheel.write_bytes(b"synthetic archive; no publication")
-            finalize(plan, manifest, None, root, root)
-            commands = [call.args[0] for call in run.call_args_list]
-            self.assertEqual(len(commands), 8)
-            self.assertEqual(commands[-1][:4], ["gh", "release", "edit", "release-set-" + plan["releaseSet"]])
-            self.assertIn("--draft=false", commands[-1])
-            self.assertIn("--draft", commands[-2])
-            self.assertIn(str(wheel), commands[2])
+            finalize(plan, manifest, None, root)
+            self.assertEqual(run.call_count, 4)
+            self.assertEqual(run.call_args.args[0], "release-set-" + plan["releaseSet"])
+            self.assertTrue(run.call_args.kwargs["latest"])
+            self.assertEqual(run.call_args_list[1].args[3], [wheel])
             run.reset_mock()
             broken = deepcopy(manifest)
             broken["agent"]["sourceRevision"] = "f" * 40
             with self.assertRaisesRegex(ValueError, "compatibility metadata"):
-                finalize(plan, broken, None, root, root)
+                finalize(plan, broken, None, root)
             run.assert_not_called()
 
     def test_workflow_credentials_and_final_gate(self):

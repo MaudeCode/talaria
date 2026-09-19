@@ -37,6 +37,10 @@ def verify_ipa(path, component):
             or any(info.get("TalariaRelease", {}).get(key) != component[key]
                    for key in ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts"))):
         raise ValueError("IPA identity differs from the release plan")
+    return file_digest(path)
+
+
+def file_digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
@@ -87,7 +91,60 @@ def web(plan, build, directory, output):
     write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image))
 
 
-def finalize(plan, manifest, previous, notes, artifacts):
+def _release_info(tag):
+    result = subprocess.run(["gh", "api", f"repos/{REPOSITORY}/releases/tags/{tag}"], capture_output=True, text=True)
+    if result.returncode == 0:
+        return json.loads(result.stdout)
+    unused_release(tag)  # Only an explicit 404 permits creation.
+    return None
+
+
+def _publish_release(tag, source, notes, files, identity, *, latest=False):
+    hashes = {path.name: file_digest(path) for path in files}
+    marker = hashlib.sha256(json.dumps({"source": source, "manifest": identity, "files": hashes}, sort_keys=True).encode()).hexdigest()
+    body = notes.rstrip() + "\n\n<!-- talaria-publication:" + marker + " -->\n"
+    prerelease = tag.startswith("web-exp-")
+
+    def matching(info):
+        if (not info or info.get("tag_name") != tag or info.get("name") != tag
+                or (info.get("body") or "").strip() != body.strip()
+                or info.get("prerelease") is not prerelease or type(info.get("draft")) is not bool
+                or {asset["name"] for asset in info.get("assets", [])} - hashes.keys()):
+            raise ValueError("existing release does not match this run's verified publication")
+
+    info = _release_info(tag)
+    if info is None:
+        with tempfile.TemporaryDirectory(prefix="talaria-release-notes-") as temporary:
+            note_file = Path(temporary) / "notes.md"
+            note_file.write_text(body)
+            subprocess.run(["gh", "release", "create", tag, "--repo", REPOSITORY, "--target", source,
+                            "--draft", "--title", tag, "--notes-file", str(note_file),
+                            *([] if latest else ["--verify-tag"]), *( ["--prerelease"] if prerelease else [])], check=True)
+        info = _release_info(tag)
+    matching(info)
+    for path in files:
+        assets = [asset for asset in info["assets"] if asset["name"] == path.name]
+        if not assets and info["draft"]:
+            subprocess.run(["gh", "release", "upload", tag, str(path), "--repo", REPOSITORY], check=True)
+            info = _release_info(tag)
+            matching(info)
+            assets = [asset for asset in info["assets"] if asset["name"] == path.name]
+        if len(assets) != 1:
+            raise ValueError("release asset is missing or duplicated")
+        data = subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/assets/{assets[0]['id']}",
+                                        "-H", "Accept: application/octet-stream"])
+        if hashlib.sha256(data).hexdigest() != hashes[path.name]:
+            raise ValueError("release asset differs from the verified build")
+    if info["draft"]:
+        subprocess.run(["gh", "release", "edit", tag, "--repo", REPOSITORY, "--draft=false",
+                        "--latest" if latest else "--latest=false"], check=True)
+        info = _release_info(tag)
+        matching(info)
+        if info["draft"]:
+            raise ValueError("release publication readback is still a draft")
+
+
+def finalize(plan, manifest, previous, artifacts):
     validate(manifest, previous)
     if manifest["status"] != "complete" or manifest["releaseSet"] != plan["releaseSet"]:
         raise ValueError("only this completed set may be published")
@@ -101,29 +158,19 @@ def finalize(plan, manifest, previous, notes, artifacts):
     wheels = sorted((artifacts / "web-build/wheel").glob("*.whl"))
     if plan["changed"]["web"] and (len(wheels) != 1 or wheels[0].stat().st_size == 0):
         raise ValueError("Web publication requires the built wheel")
-    unused_release(root_tag)
+    identity = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
     # Component releases are prepared first. The updater consumes only the root
     # completed manifest, which is published as the final operation.
     for name, changed in plan["changed"].items():
         if not changed:
             continue
         tag = plan["components"][name]["tag"]
-        unused_release(tag)
-        command = ["gh", "release", "create", tag, "--repo", REPOSITORY, "--verify-tag", "--draft",
-                   "--title", tag, "--notes-file", str(notes / name / "release-notes.md")]
-        if name == "web":
-            command.extend(str(path) for path in wheels)
-        subprocess.run(command, check=True)
-        subprocess.run(["gh", "release", "edit", tag, "--repo", REPOSITORY, "--draft=false", "--latest=false",
-                        *( ["--prerelease"] if tag.startswith("web-exp-") else [])], check=True)
+        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], wheels if name == "web" else [], identity)
     with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
         directory = Path(temporary)
         write(directory / "release-set.json", manifest)
-        (directory / "release-notes.md").write_text(manifest["notes"]["combined"] + "\n")
-        subprocess.run(["gh", "release", "create", root_tag, str(directory / "release-set.json"),
-                        "--repo", REPOSITORY, "--target", plan["releaseSet"], "--draft", "--title", root_tag,
-                        "--notes-file", str(directory / "release-notes.md")], check=True)
-        subprocess.run(["gh", "release", "edit", root_tag, "--repo", REPOSITORY, "--draft=false", "--latest"], check=True)
+        _publish_release(root_tag, plan["releaseSet"], manifest["notes"]["combined"],
+                         [directory / "release-set.json"], identity, latest=True)
 
 
 def main():
@@ -135,7 +182,6 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--previous", type=Path)
-    parser.add_argument("--notes", type=Path)
     parser.add_argument("--build-number", type=int)
     args = parser.parse_args()
     plan = load(args.plan)
@@ -167,7 +213,7 @@ def main():
         if args.operation == "app-receipt":
             write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
     else:
-        finalize(plan, load(args.manifest), load(args.previous) if args.previous else None, args.notes, args.directory)
+        finalize(plan, load(args.manifest), load(args.previous) if args.previous else None, args.directory)
 
 
 if __name__ == "__main__":

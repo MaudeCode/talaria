@@ -129,8 +129,15 @@ environments to allow the trusted `main` workflow before the first cutover.
 There is no live Web host in this migration; Web publication is followed by
 isolated legacy-upgrade validation, not host provisioning.
 
-The root manifest is published last. If a run fails after a deployment, upload
-or component release, inspect those side effects before retrying. Existing
-release names are rejected, including drafts. Never overwrite a completed
-manifest or describe a partial run as a completed release. Retain the previous
-manifest's component identities for rollback.
+The root manifest is published last. Fresh dispatches require unused component
+release names. If only the final `publish-set` job fails, use **Re-run failed
+jobs** on that same Actions run. It verifies the original manifest fingerprint,
+notes and asset checksums before reusing matching component/root releases,
+finishing missing draft uploads and publishing the root last. Conflicting
+records are rejected; published assets are never overwritten.
+
+For failures in earlier deployment or upload jobs, inspect their live side
+effects before retrying. A fresh dispatch or **Re-run all jobs** can create new
+build identities and is not a recovery path for partially published releases.
+Never describe a partial run as complete. Retain the previous manifest's
+component identities for rollback.

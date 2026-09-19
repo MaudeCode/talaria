@@ -457,7 +457,7 @@ jobs:
           --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/release-results/release-plan/notes" \
           --output "$RUNNER_TEMP/completed/release-set.json" "${options[@]}"
         "$RELEASE_PYTHON" releases/publish.py finalize --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
-          --manifest "$RUNNER_TEMP/completed/release-set.json" --notes "$RUNNER_TEMP/release-results/release-plan/notes" \
+          --manifest "$RUNNER_TEMP/completed/release-set.json" \
           --directory "$RUNNER_TEMP/release-results" "${options[@]}"
     - name: Retain completed manifest locally
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"'
