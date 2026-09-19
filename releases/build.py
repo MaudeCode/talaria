@@ -63,11 +63,12 @@ def main():
         number = component["buildNumber"]
         subprocess.run([*stamp, "--build-number", str(number)], cwd=ROOT, check=True)
         archive = output / "Talaria.xcarchive"
+        derived_data = output.with_name(output.name + "-derived-data")
         subprocess.run(["xcodebuild", "-resolvePackageDependencies", "-project", "Talaria.xcodeproj", "-scheme", "Talaria",
-                        "-derivedDataPath", str(output.parent / "app-derived-data"), "-disableAutomaticPackageResolution"], cwd=ROOT / "app", check=True)
+                        "-derivedDataPath", str(derived_data), "-disableAutomaticPackageResolution"], cwd=ROOT / "app", check=True)
         subprocess.run([
             "xcodebuild", "archive", "-project", "Talaria.xcodeproj", "-scheme", "Talaria", "-configuration", "Release",
-            "-destination", "generic/platform=iOS", "-archivePath", str(archive), "-derivedDataPath", str(output.parent / "app-derived-data"),
+            "-destination", "generic/platform=iOS", "-archivePath", str(archive), "-derivedDataPath", str(derived_data),
             "-disableAutomaticPackageResolution", "CODE_SIGNING_ALLOWED=NO",
             "MARKETING_VERSION=" + component["version"], "CURRENT_PROJECT_VERSION=" + str(number),
         ], cwd=ROOT / "app", check=True)
