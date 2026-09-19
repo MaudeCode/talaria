@@ -27,6 +27,9 @@ concurrency:
 jobs:
   validate-release:
     name: Validate release tag
+    defaults:
+      run:
+        working-directory: app
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 95
     outputs:
@@ -35,6 +38,7 @@ jobs:
       version: ${{ steps.tag.outputs.version }}
     steps:
       - name: Resolve release tag
+        working-directory: .
         id: release
         env:
           RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
@@ -100,8 +104,8 @@ jobs:
         with:
           name: release-notes-${{ steps.tag.outputs.version }}
           path: |
-            release-notes/release-notes.md
-            release-notes/release-notes.json
+            app/release-notes/release-notes.md
+            app/release-notes/release-notes.json
           if-no-files-found: error
           retention-days: 90
 

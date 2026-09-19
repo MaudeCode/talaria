@@ -3,6 +3,9 @@ name: talaria-upstream-contract
 description: Verify Talaria against the adopted hermes-webui contract. Use when changing API requests, JSON decoding, SSE or streaming, session transport, or server-version compatibility.
 ---
 
+Run app commands from `app/`; unqualified source and tooling paths are relative
+to `app/`. GitHub workflows and shared contract documentation remain at the root.
+
 # Talaria upstream contract
 
 Treat the pinned upstream source as the authority for behavior Talaria supports.

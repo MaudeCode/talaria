@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    working-directory: app
+
 jobs:
   build:
     name: Build signed iOS release

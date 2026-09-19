@@ -2,14 +2,14 @@ version = 1
 name = "Talaria"
 
 [setup]
-script = "xcodebuild -resolvePackageDependencies -project Talaria.xcodeproj -scheme Talaria -derivedDataPath .codex-tmp/build-derived-data"
+script = "cd app && xcodebuild -resolvePackageDependencies -project Talaria.xcodeproj -scheme Talaria -derivedDataPath .codex-tmp/build-derived-data"
 
 [[actions]]
 name = "Build"
 icon = "run"
-command = "xcodebuild -quiet -project Talaria.xcodeproj -scheme Talaria -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath .codex-tmp/build-derived-data build"
+command = "cd app && xcodebuild -quiet -project Talaria.xcodeproj -scheme Talaria -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath .codex-tmp/build-derived-data build"
 
 [[actions]]
 name = "Test"
 icon = "test"
-command = "./scripts/test-ios"
+command = "./app/scripts/test-ios"

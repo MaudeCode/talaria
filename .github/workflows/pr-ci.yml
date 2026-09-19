@@ -28,6 +28,10 @@ concurrency:
   group: pr-ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    working-directory: app
+
 jobs:
   changes:
     name: Detect changed paths
@@ -37,6 +41,7 @@ jobs:
       run_ios: ${{ steps.filter.outputs.run_ios }}
     steps:
       - name: Classify changed files
+        working-directory: .
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
@@ -299,8 +304,8 @@ jobs:
         with:
           name: performance-metrics
           path: |
-            performance-metrics.json
-            performance-metrics.txt
+            app/performance-metrics.json
+            app/performance-metrics.txt
           retention-days: 90
           if-no-files-found: ignore
 
@@ -309,7 +314,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          path: ${{ env.RESULT_BUNDLE_PATH }}
+          path: app/${{ env.RESULT_BUNDLE_PATH }}
           if-no-files-found: ignore
 
   tooling:
@@ -323,6 +328,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check results
+        working-directory: .
         run: |
           set -euo pipefail
           echo "changes: ${{ needs.changes.result }}"

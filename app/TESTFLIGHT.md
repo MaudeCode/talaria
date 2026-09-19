@@ -1,5 +1,7 @@
 # External TestFlight Launch Runbook
 
+Run commands in this document from `app/`. Workflows live in `../.github/`.
+
 > **Maintainer-only ops.** Everything in this file requires the maintainer's Apple Developer account, App Store Connect access, and signing credentials. Contributors never need this runbook to build, test, or contribute to the app.
 
 This is the maintainer runbook for Talaria's existing App Store Connect record.

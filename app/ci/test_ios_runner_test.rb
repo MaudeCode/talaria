@@ -12,7 +12,7 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_pr_ci_uses_a_unique_simulator_destination
     workflow = File.read(
-      File.expand_path("../.github/workflows/pr-ci.yml", __dir__),
+      File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
       encoding: "UTF-8"
     )
 
@@ -23,7 +23,7 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_pr_ci_runs_ui_tests_with_two_workers
     workflow = File.read(
-      File.expand_path("../.github/workflows/pr-ci.yml", __dir__),
+      File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
       encoding: "UTF-8"
     )
     scheme = File.read(

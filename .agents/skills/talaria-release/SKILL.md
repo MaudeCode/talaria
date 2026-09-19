@@ -3,6 +3,9 @@ name: talaria-release
 description: Publish Talaria to TestFlight from a signed semantic tag when the user requests a versioned release or authorizes a release tag.
 ---
 
+Run app commands from `app/`; unqualified source and tooling paths are relative
+to `app/`. GitHub workflows and shared contract documentation remain at the root.
+
 # Talaria release
 
 Pushing a signed `vX.Y.Z` tag starts the TestFlight release workflow. The tag

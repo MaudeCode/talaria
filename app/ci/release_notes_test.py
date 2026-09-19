@@ -67,6 +67,26 @@ class ReleaseNotesTests(unittest.TestCase):
     def generate(self, *args, **kwargs):
         return self.cli("generate", "--target", "HEAD", "--version", "1.1.0", "--output", "out", *args, **kwargs)
 
+    def test_app_relocation_preserves_history_and_rejects_fragment_edits(self):
+        self.write("Talaria/App.swift", "// unchanged app\n")
+        self.commit("fixture app")
+        base = self.git("rev-parse", "HEAD")
+        (self.root / "app").mkdir()
+        self.git("mv", "changelog.d", "app/changelog.d")
+        self.git("mv", "Talaria", "app/Talaria")
+        self.write("app/changelog.d/TAL-2.json", '{"skip":"Source relocation only"}')
+        self.commit("TAL-2: move app")
+        self.cli("validate", "--base", base)
+        self.generate("--previous", base)
+        notes = json.loads((self.root / "out/release-notes.json").read_text())
+        self.assertEqual(notes["releases"][0]["sections"], [])
+        # Running from app/ must still resolve committed paths from the Git root.
+        result = subprocess.run([sys.executable, str(SCRIPT), "validate", "--base", base],
+                                cwd=self.root / "app", env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.write("app/changelog.d/TAL-1.json", '{"skip":"Rewritten history"}')
+        self.cli("validate", "--base", base, error="out-of-range")
+
     def mock_github(self, responses):
         binary = self.root / "bin/gh"
         binary.parent.mkdir(exist_ok=True)

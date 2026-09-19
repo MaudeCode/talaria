@@ -1,5 +1,7 @@
 # Development
 
+Run commands in this document from `app/`. Workflows live in `../.github/`.
+
 This app is developed against a self-hosted `hermes-webui` server exposed over real HTTPS. See [`PROJECT_SPEC.md`](PROJECT_SPEC.md) for the full product and API plan.
 
 > Sections covering TestFlight and App Store Connect are **maintainer-only ops** — they require the maintainer's Apple Developer account and App Store Connect access. Contributors never need them to build, test, or run the app.
@@ -34,7 +36,7 @@ The app is currently tested against the untagged `hermes-webui` `master` merge c
 The pin was reviewed and merged on 2026-08-31. WebUI focused auth tests and five-shard CI passed; the disposable candidate runner stopped at a held CSRF-probe expectation before its Swift phase, and the operator directed that no additional validation run be performed. Authenticated settings/version checks require server credentials.
 
 Run `scripts/validate-upstream-contract` for the complete disposable fork-server,
-HTTP/SSE, and focused Swift contract check. [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md)
+HTTP/SSE, and focused Swift contract check. [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md)
 maps adopted behavior to each executable check.
 
 ## SSE and Cloudflare Stream Verification

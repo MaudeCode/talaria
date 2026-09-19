@@ -20,6 +20,10 @@ concurrency:
   group: upstream-webui-watch
   cancel-in-progress: false
 
+defaults:
+  run:
+    working-directory: app
+
 jobs:
   report:
     name: Generate Digest
@@ -68,6 +72,6 @@ jobs:
         with:
           name: upstream-watch-report
           path: |
-            upstream-watch-report.md
-            upstream-watch-errors.log
+            app/upstream-watch-report.md
+            app/upstream-watch-errors.log
           if-no-files-found: warn

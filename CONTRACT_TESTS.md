@@ -1,5 +1,7 @@
 # Upstream contract validation
 
+App commands and source paths in this document are relative to `app/`.
+
 Talaria's server contract is the fork and branch in `UPSTREAM_REPOSITORY` and
 `UPSTREAM_BRANCH`. `UPSTREAM_TESTED_SHA` is the reviewed commit the app supports.
 The current pin is the untagged `master` merge commit `14105699`, which includes

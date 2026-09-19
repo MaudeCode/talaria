@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import html
 import io
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -18,11 +19,11 @@ VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 FILENAME = re.compile(r"TAL-([1-9][0-9]*)\.json")
 
 
-def git(*args):
+def git(*args, strip=True):
     result = subprocess.run(["git", *args], encoding="utf-8", capture_output=True)
     if result.returncode:
         raise ValueError(f"git {' '.join(args)}: {result.stderr.strip()}")
-    return result.stdout.rstrip("\n")
+    return result.stdout.rstrip("\n") if strip else result.stdout
 
 
 def commit(ref):
@@ -71,22 +72,51 @@ def fragment(path, source):
         raise ValueError(f"{path}: {error}") from error
 
 
+def snapshot_sources(ref):
+    paths = git("ls-tree", "-r", "--name-only", "-z", ref, "--", DIRECTORY, "app/" + DIRECTORY).split("\0")
+    result = {}
+    for path in filter(None, paths):
+        key = path.removeprefix("app/")
+        if key in result:
+            raise ValueError(f"duplicate release fragment across layouts: {key}")
+        result[key] = git("show", f"{ref}:{path}", strip=False)
+    return result
+
+
 def snapshot(ref):
-    paths = git("ls-tree", "-r", "--name-only", "-z", ref, "--", DIRECTORY).split("\0")
-    return {path: fragment(path, git("show", f"{ref}:{path}")) for path in paths if path}
+    return {path: fragment(path, source) for path, source in snapshot_sources(ref).items()}
 
 
 def changes(base, target=None):
-    args = ["diff", "--no-renames", "--name-only", "-z", base]
+    args = ["diff", "--find-renames=100%", "--name-status", "-z", base]
     if target:
         args.append(target)
-    return [path for path in git(*args, "--").split("\0") if path]
+    fields = iter(git(*args, "--").split("\0"))
+    paths = []
+    for status in fields:
+        if not status:
+            continue
+        path = next(fields)
+        if status.startswith("R"):
+            destination = next(fields)
+            # A byte-identical app relocation has no app-facing release note.
+            if status == "R100" and destination == "app/" + path:
+                continue
+            paths.append(destination.removeprefix("app/"))
+        paths.append(path.removeprefix("app/"))
+    return paths
 
 
 def introduced(base, target, current):
-    old = snapshot(base)
-    for path in changes(base, target):
-        if path.startswith(DIRECTORY + "/") and path in old:
+    old = snapshot_sources(base)
+    if target:
+        sources = snapshot_sources(target)
+    else:
+        directory = Path("app") if Path("app/changelog.d").is_dir() else Path(".")
+        sources = {path: (directory / path).read_text(encoding="utf-8")
+                   for path in current}
+    for path, source in old.items():
+        if sources.get(path) != source:
             raise ValueError(f"{path}: out-of-range fragment already exists at base; add a new ticket fragment")
     return {path: data for path, data in current.items() if path not in old}
 
@@ -99,15 +129,17 @@ def repository_only(path):
             "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
             ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/",
         ))
-        or path in {"LICENSE", ".gitignore", "CLAUDE.md"}
+        or path in {"LICENSE", ".gitignore", ".gitleaksignore", "CLAUDE.md"}
     )
 
 
 def validate(base=None, target=None):
     if target and not base:
         raise ValueError("--target requires --base for change-scope validation")
-    paths = sorted(path for path in Path(DIRECTORY).rglob("*") if path.is_file())
-    current = {path.as_posix(): fragment(path.as_posix(), path.read_text(encoding="utf-8")) for path in paths}
+    directory = Path("app") if Path("app/changelog.d").is_dir() else Path(".")
+    paths = sorted(path for path in (directory / DIRECTORY).rglob("*") if path.is_file())
+    current = {path.relative_to(directory).as_posix(): fragment(
+        path.relative_to(directory).as_posix(), path.read_text(encoding="utf-8")) for path in paths}
     if base:
         base = commit(base)
         target = commit(target) if target else None
@@ -271,7 +303,10 @@ def main():
     published.add_argument("--version", required=True)
     published.add_argument("--repo", required=True)
     args = parser.parse_args()
+    if args.command == "generate":
+        args.output = args.output.resolve()
     try:
+        os.chdir(git("rev-parse", "--show-toplevel"))
         if args.command == "validate":
             validate(args.base, args.target)
         elif args.command == "previous-published":

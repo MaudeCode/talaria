@@ -1,5 +1,10 @@
 # Release-note authoring
 
+Run these commands from `app/`. Fragments live in `app/changelog.d/` from the
+repository root. Historical fragments before the source migration remain readable
+at their original root path in older commits. Byte-identical moves to `app/`
+are repository-only; edits or deletions of historical fragments still fail.
+
 Agents add release metadata with each implementation. Once the PR merges, the
 signed-tag workflow does everything else: finds the preceding successful
 TestFlight publication, validates the target Git tree, renders Markdown and JSON,
