@@ -135,6 +135,10 @@ class RoutingTests(unittest.TestCase):
             head = commit("frontend change")
             self.assertEqual(classify(moved, head, expected_ui=False), {"web_frontend"})
             self.assertEqual(classify(base, head), {"web_python", "web_frontend"})
+            git("update-ref", "refs/remotes/origin/main", moved)
+            # A parent change merged since the event's base SHA must not make
+            # the child PR rerun the parent's component checks.
+            self.assertEqual(classify("refs/remotes/origin/main", head, "--merge-base", expected_ui=False), {"web_frontend"})
             git("checkout", "-b", "diverged", base)
             (root / "app").mkdir()
             (root / "app/README.md").write_text("docs")

@@ -51,7 +51,7 @@ jobs:
         working-directory: .
         id: filter
         env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BASE: ${{ github.event.before }}
         run: |
@@ -59,7 +59,9 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             python3 scripts/changed-components.py --base="$PUSH_BASE" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           else
-            python3 scripts/changed-components.py --base="$PR_BASE" --head="$PR_HEAD" --merge-base >> "$GITHUB_OUTPUT"
+            # Event base.sha can predate a merged parent PR. Checkout fetched
+            # the current base branch, as release-fragment validation also uses.
+            python3 scripts/changed-components.py --base="refs/remotes/origin/${PR_BASE_REF}" --head="$PR_HEAD" --merge-base >> "$GITHUB_OUTPUT"
           fi
 
   app-tooling:
