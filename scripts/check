@@ -31,6 +31,7 @@ case "$component" in
     python3 scripts/rehearse-monorepo.py --verify-only
     python3 scripts/changed-components.py --self-test
     python3 scripts/test-monorepo-import.py
+    scripts/check-releases
     python3 app/ci/release_notes_test.py
     python3 app/ci/load_env_test.py
     python3 app/scripts/test-ios-device-selection

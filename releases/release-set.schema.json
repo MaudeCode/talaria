@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MaudeCode/talaria/releases/release-set.schema.json",
+  "title": "Talaria release set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "releaseSet", "status", "previousReleaseSet", "components", "agent", "contracts", "evidence", "notes"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "releaseSet": {"$ref": "#/$defs/sha"},
+    "status": {"enum": ["candidate", "complete"]},
+    "previousReleaseSet": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app", "web", "relay"],
+      "properties": {
+        "app": {
+          "allOf": [{"$ref": "#/$defs/component"}],
+          "unevaluatedProperties": false,
+          "required": ["buildNumber"],
+          "properties": {
+            "tag": {"pattern": "^app-v"},
+            "buildNumber": {"type": "integer", "minimum": 1}
+          }
+        },
+        "web": {
+          "allOf": [{"$ref": "#/$defs/component"}],
+          "unevaluatedProperties": false,
+          "required": ["image", "upstreamBase"],
+          "properties": {
+            "tag": {"pattern": "^web-(exp-)?v"},
+            "image": {"type": "string", "pattern": "^ghcr\\.io/maudecode/talaria-web@sha256:[a-f0-9]{64}$"},
+            "upstreamBase": {"$ref": "#/$defs/sha"}
+          }
+        },
+        "relay": {
+          "allOf": [{"$ref": "#/$defs/component"}],
+          "unevaluatedProperties": false,
+          "required": ["deploymentId", "deployedRevision"],
+          "properties": {
+            "tag": {"pattern": "^relay-v"},
+            "deploymentId": {"type": "string", "pattern": "^[a-z][a-z0-9-]+$"},
+            "deployedRevision": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}
+          }
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "anyOf": [{"required": ["sourceRevision"]}, {"required": ["image"]}],
+      "properties": {
+        "version": {"$ref": "#/$defs/version"},
+        "sourceRevision": {"$ref": "#/$defs/sha"},
+        "image": {"type": "string", "pattern": "^docker\\.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appWeb", "webRelay", "appRelay", "activityScene"],
+      "properties": {
+        "appWeb": {"$ref": "#/$defs/appWeb"},
+        "webRelay": {"$ref": "#/$defs/webRelay"},
+        "appRelay": {"$ref": "#/$defs/appRelay"},
+        "activityScene": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["app", "relay"],
+          "properties": {
+            "app": {"$ref": "#/$defs/scenes"},
+            "relay": {"$ref": "#/$defs/scenes"}
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gate", "sourceRevision", "runUrl", "result"],
+        "properties": {
+          "gate": {"enum": ["signedTags", "mainCI", "buildApp", "buildWeb", "buildRelay", "currentContracts", "previousAppContracts", "agentCompatibility", "deployRelay", "publishWeb", "uploadApp"]},
+          "sourceRevision": {"$ref": "#/$defs/sha"},
+          "runUrl": {"type": "string", "pattern": "^https://github\\.com/MaudeCode/talaria/actions/runs/[1-9][0-9]*(/attempts/[1-9][0-9]*)?$"},
+          "result": {"const": "success"}
+        }
+      }
+    },
+    "notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["combined", "app", "web", "relay"],
+      "properties": {
+        "combined": {"type": "string", "minLength": 1},
+        "app": {"type": "string", "minLength": 1},
+        "web": {"type": "string", "minLength": 1},
+        "relay": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "component": {
+      "type": "object",
+      "required": ["tag", "version", "sourceRevision", "releaseSet"],
+      "properties": {
+        "tag": {"type": "string", "pattern": "^(app|web|web-exp|relay)-v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+        "version": {"$ref": "#/$defs/version"},
+        "sourceRevision": {"$ref": "#/$defs/sha"},
+        "releaseSet": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}},
+    "scenes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^activity_scene_v[1-9][0-9]*$"}},
+    "appWeb": {
+      "type": "object", "additionalProperties": false, "required": ["app", "web"],
+      "properties": {"app": {"$ref": "#/$defs/versions"}, "web": {"$ref": "#/$defs/versions"}}
+    },
+    "webRelay": {
+      "type": "object", "additionalProperties": false, "required": ["web", "relay"],
+      "properties": {"web": {"$ref": "#/$defs/versions"}, "relay": {"$ref": "#/$defs/versions"}}
+    },
+    "appRelay": {
+      "type": "object", "additionalProperties": false, "required": ["app", "relay"],
+      "properties": {"app": {"$ref": "#/$defs/versions"}, "relay": {"$ref": "#/$defs/versions"}}
+    }
+  }
+}

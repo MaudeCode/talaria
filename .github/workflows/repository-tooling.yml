@@ -37,7 +37,7 @@ jobs:
         run: |
           sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zsh
+          sudo apt-get install -y --no-install-recommends zsh python3-venv
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -61,6 +61,7 @@ jobs:
           python3 ../scripts/rehearse-monorepo.py --verify-only
           python3 ../scripts/changed-components.py --self-test
           python3 ../scripts/test-monorepo-import.py
+          ../scripts/check-releases
           python3 ci/release_notes_test.py
           python3 ci/load_env_test.py
           python3 scripts/test-ios-device-selection

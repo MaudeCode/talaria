@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+state=$(mktemp -d "${TMPDIR:-/tmp}/talaria-release-tests.XXXXXX")
+trap 'rm -rf -- "$state"' EXIT
+mkdir -p "$state/home" "$state/tmp"
+env -i PATH="$PATH" HOME="$state/home" TMPDIR="$state/tmp" \
+  "${RELEASE_PYTHON:-python3}" -m venv "$state/venv"
+env -i PATH="$PATH" HOME="$state/home" TMPDIR="$state/tmp" PIP_CONFIG_FILE=/dev/null \
+  "$state/venv/bin/python" -m pip --disable-pip-version-check install --quiet \
+  --only-binary=:all: -r "$root/releases/requirements.txt"
+env -i PATH="$PATH" HOME="$state/home" TMPDIR="$state/tmp" PYTHONDONTWRITEBYTECODE=1 \
+  "$state/venv/bin/python" "$root/releases/test_release_set.py"
