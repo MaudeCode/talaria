@@ -5,6 +5,12 @@
       "summary": "New Web installations use a tested Hermes Agent version.",
       "highlight": false,
       "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Web health checks include release and compatibility details.",
+      "highlight": false,
+      "components": ["web"]
     }
   ]
 }

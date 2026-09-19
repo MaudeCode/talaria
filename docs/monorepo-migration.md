@@ -132,6 +132,10 @@ The command fetches the selected public commit into a dedicated
 `refs/remotes/hermes-upstream/selected` ref and uses Git's `ort` merge with
 `-Xsubtree=web`. The original Web history supplies the real merge base. Review
 the uncommitted result, resolve any conflicts, and commit only after validation.
+Successful imports stage `web/UPSTREAM_BASE_SHA` for release provenance and
+reject revisions that do not extend the recorded public base. If the merge
+stops for conflicts, resolve them and set that file to the selected immutable
+upstream SHA before committing; aborting the import must retain the old base.
 The synthetic proof covers nonconflicting updates, retained downstream edits,
 untouched app files, ancestry, dirty-state rejection, and conflicting edits.
 

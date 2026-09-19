@@ -13,8 +13,14 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 git fetch --no-tags -- "${2:-https://github.com/nesquena/hermes-webui.git}" "$1"
 candidate=$(git rev-parse --verify 'FETCH_HEAD^{commit}')
+if [[ -f web/UPSTREAM_BASE_SHA ]] && ! git merge-base --is-ancestor "$(cat web/UPSTREAM_BASE_SHA)" "$candidate"; then
+  echo "Selected upstream commit does not extend the recorded Web base." >&2
+  exit 1
+fi
 git update-ref refs/remotes/hermes-upstream/selected "$candidate"
 # The original Web history is a merge parent, so Git has a real shared base.
 # Keep conflicts visible and leave the result uncommitted for contract review.
 git merge --no-commit --no-ff -s ort -Xsubtree=web "$candidate"
+printf '%s\n' "$candidate" > web/UPSTREAM_BASE_SHA
+git add web/UPSTREAM_BASE_SHA
 echo "Review the staged web/ changes, run component/contract checks, then commit."

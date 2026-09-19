@@ -35,6 +35,17 @@ test paths restrict the Web suite for local development; release runs use the
 full default suite. A passing identity is a tested combination, not a requirement
 that independently installed Agent or peer component versions be equal.
 
+`/health` includes a `release` object with Web version, source revision,
+release-set identifier, upstream base, supported contracts and `compatibleAgent`.
+The Agent field identifies the tested dependency, not whichever Agent an operator
+may currently run. Unstamped development builds explicitly report `development`
+and null source/release identifiers. Release builds stamp `api/_release.json`
+from a clean exact checkout using root `scripts/stamp-web-release.py`; malformed
+or inconsistent stamped metadata fails startup instead of claiming provenance.
+The packaged `api/contract_versions.json` is checked against root
+`contracts/versions.json`. Extra health fields do not change readiness or require
+clients to use identical semantic versions.
+
 The multi-container setup still shares the agent source tree with the WebUI:
 
 - `docker-compose.two-container.yml` mounts `hermes-agent-src` at `/opt/hermes`

@@ -23,6 +23,7 @@ def _copy_repo_without_heavy_dirs(dst: Path) -> Path:
             "node_modules",
             ".pytest_cache",
             ".ruff_cache",
+            ".codex-tmp",
             "__pycache__",
         ),
     )
@@ -77,6 +78,7 @@ def test_wheel_build_contains_runtime_tree(extracted_wheel):
         assert "api/config.py" in names
         assert "api/_scm_version.py" in names
         assert "api/agent_dependency.json" in names
+        assert "api/contract_versions.json" in names
         assert "static/__init__.py" in names
         # HWEB-100: the committed frontend build ships inside the wheel.
         assert "static/dist/index.html" in names

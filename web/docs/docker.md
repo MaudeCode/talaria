@@ -8,6 +8,12 @@ and dashboard. Keep that file alongside the Compose files when copying a setup.
 Updating an existing source volume still requires the source-volume procedure
 below; changing an image does not replace files already stored in a named volume.
 
+Published images carry the same release metadata as `/health` in the
+`dev.talaria.provenance` label. The build rejects a label that differs from its
+stamped metadata. Local, unstamped images use an empty provenance label and
+report development metadata. Release identity contains no credentials or host
+paths.
+
 ## TL;DR — pick one
 
 | Setup | When to use | File |
