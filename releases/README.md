@@ -43,6 +43,22 @@ manifest. Component notes and signed tags keep their own App/Web/Relay namespace
 See [Web update behavior](../web/docs/talaria-updates.md) for authentication and
 source-install safety boundaries.
 
+Release jobs run on the existing `maude-mac` self-hosted runner. Build handoffs
+stay under its `~/.local/share/talaria-release-runs/<run>/<attempt>/` directory;
+there are no GitHub Actions artifact uploads. Producer jobs record content
+digests in GitHub job outputs. Consumers verify those digests, the workflow
+source, run and runner identity before restoring files. Keep the `maude-mac`
+label assigned to this single runner; a different runner cannot consume its
+handoffs.
+
+Successful final jobs retain the manifest and sanitized contract diagnostics,
+then remove large build handoffs from all attempts of that run. The manifest is
+also printed in the final job log and summary. Failed runs retain their local
+files for inspection and same-run retries. After preserving required failure
+evidence, the runner owner may remove that specific run directory. Each
+component still has a separate environment and job token. No spending-budget
+change is required.
+
 ## Workflow commands
 
 `cli.py prepare` checks exact-main CI, resolves component tags, generates notes,

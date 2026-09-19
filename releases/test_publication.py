@@ -54,6 +54,13 @@ class PublicationTests(unittest.TestCase):
                 str(root / ".github/workflows" / name),
             ], text=True))
         document = workflow("release-set.yml")
+        for release_workflow in (document, workflow("ios-release-build.yml")):
+            for job in release_workflow["jobs"].values():
+                if "steps" in job:
+                    self.assertEqual(job["runs-on"], "maude-mac")
+                    for step in job["steps"]:
+                        self.assertNotIn("upload-artifact", step.get("uses", ""))
+                        self.assertNotIn("download-artifact", step.get("uses", ""))
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
         environments = {"relay-publish": "relay-production", "web-publish": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}

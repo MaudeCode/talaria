@@ -7,8 +7,9 @@ fragment identities; edits or deletions of historical fragments still fail.
 
 Agents add release metadata with each implementation. The root release-set
 workflow validates the selected source and generates component Markdown and
-JSON notes before building. It retains them in the `release-plan` artifact and
-publishes component notes and combined notes with the completed release set.
+JSON notes before building. Jobs pass the release plan through verified local
+handoffs on the self-hosted runner. The completed release set retains component
+notes and combined notes.
 No release-time writing or LLM call is needed.
 
 ## Commits and PR descriptions
