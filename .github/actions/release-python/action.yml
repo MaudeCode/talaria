@@ -34,3 +34,4 @@ runs:
         "$RUNNER_TEMP/release-tools/bin/python" -m pip install --disable-pip-version-check -r releases/requirements.txt
         echo "RELEASE_PYTHON=$RUNNER_TEMP/release-tools/bin/python" >> "$GITHUB_ENV"
         echo "HERMES_WEBUI_TEST_PYTHON=$python_bin" >> "$GITHUB_ENV"
+        echo "$RUNNER_TEMP/release-tools/bin" >> "$GITHUB_PATH"
