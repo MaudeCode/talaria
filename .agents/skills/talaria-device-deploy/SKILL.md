@@ -14,7 +14,7 @@ Developer resources.
 
 ## Run
 
-Use the repository script from the repository root:
+Use the repository script from the `app/` directory:
 
 ```zsh
 scripts/run-ios-device

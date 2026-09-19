@@ -124,8 +124,8 @@ ecosystem. See [docs/why-hermes.md](docs/why-hermes.md) for the full side-by-sid
 Run the repo bootstrap:
 
 ```bash
-git clone https://github.com/nesquena/hermes-webui.git hermes-webui
-cd hermes-webui
+git clone https://github.com/MaudeCode/talaria.git talaria
+cd talaria/web
 python3 bootstrap.py
 ```
 
@@ -543,8 +543,8 @@ For a comprehensive setup guide covering all 3 compose files, common failure mod
 The simplest setup: one WebUI container that runs the agent in-process.
 
 ```bash
-git clone https://github.com/nesquena/hermes-webui
-cd hermes-webui
+git clone https://github.com/MaudeCode/talaria.git talaria
+cd talaria/web
 cp .env.docker.example .env
 # Edit .env if your host UID isn't 1000 (e.g. macOS where UIDs start at 501)
 docker compose up -d
@@ -635,7 +635,7 @@ system Python. It creates/uses `.venv` with Python 3.11, 3.12, or 3.13 and
 installs the dev test dependencies from `requirements-dev.txt` when missing.
 
 ```bash
-cd hermes-webui
+cd talaria/web
 ./scripts/test.sh
 ```
 

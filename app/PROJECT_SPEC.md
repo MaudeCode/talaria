@@ -1,5 +1,10 @@
 # Talaria — iOS App Project Specification
 
+Monorepo scope: this document describes the native app in `app/`. Current server
+contract validation uses the checked-out `../web/` component and root
+`CONTRACT_TESTS.md`; historical standalone pin and repository guidance below
+is superseded by the TAL-202 source consolidation.
+
 **Status:** v0.4 spec — revised pre-polish plan with a glass-forward native mobile UI direction
 **Author:** Project owner + planning assistant
 **Target:** Native iOS client for the [`MaudeCode/hermes-webui`](https://github.com/MaudeCode/hermes-webui) Python server

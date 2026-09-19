@@ -92,7 +92,8 @@ test target. Python packaging resolves Git at the shared root and selects only `
 version tags, preventing app or Relay tags from becoming Web package versions.
 The source updater's monorepo distribution behavior is TAL-203; the
 standalone updater is intentionally not enabled against the whole monorepo here.
-Optional Windows smoke remains manually dispatched; default verification uses
+Native Docker and pnpm commands satisfy the existing root Actions allowlist;
+the optional standalone lychee action is omitted. Optional Windows smoke remains manually dispatched; default verification uses
 existing self-hosted runners without introducing hosted-runner charges.
 
 ## Repeat the migration
@@ -138,6 +139,8 @@ checks without a workspace framework. Python and browser tests get disposable
 home/state directories. Convex checks use an anonymous local deployment with no
 production credentials. Docker smoke uses unique project/container/volume names,
 loopback-only ephemeral ports, and test-owned mounts for all three Compose variants.
+The native Docker check also verifies state-directory UID detection and explicit
+UID preservation. It runs on the existing macOS runner with Docker Desktop.
 A trap/finally block cleans up only each check's resources.
 
 CI routes component paths individually. Shared policy/docs and interface paths

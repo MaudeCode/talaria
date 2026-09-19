@@ -26,7 +26,7 @@ case "$component" in
     exec python3 "$root/scripts/check-relay-local.py"
     ;;
   contracts) exec app/scripts/validate-upstream-contract ;;
-  docker) exec python3 scripts/check-docker.py ;;
+  docker) exec python3 scripts/check-docker.py "$@" ;;
   tooling)
     python3 scripts/changed-components.py --self-test
     python3 scripts/test-monorepo-import.py

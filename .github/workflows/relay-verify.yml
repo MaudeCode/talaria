@@ -15,14 +15,13 @@ jobs:
     runs-on: ["ghar-set-maudecode"]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: relay/package.json
       - uses: actions/setup-node@v4
         with:
           node-version-file: relay/.node-version
-          cache: pnpm
-          cache-dependency-path: relay/pnpm-lock.yaml
+      - name: Install the pinned native package manager
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pnpm" "$(node -p 'require("./package.json").packageManager')"
+          echo "$RUNNER_TEMP/pnpm/bin" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - name: Validate anonymous local Convex deployment

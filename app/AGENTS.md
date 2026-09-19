@@ -19,8 +19,9 @@ explicitly adopted it.
   or invent backlog work. If selected work has no Kaneo issue, create one before
   coding.
 - Read only the `PROJECT_SPEC.md` sections relevant to the task. Treat the spec as
-  product intent; code, tests, configuration, `UPSTREAM_TESTED_SHA`, and
-  `../CONTRACT_TESTS.md` describe implemented behavior.
+  product intent; code, tests, configuration, and
+  `../CONTRACT_TESTS.md` describe implemented behavior. `UPSTREAM_*` files retain
+  historical standalone provenance; current app contracts use local `../web/`.
 - Stop and ask when selected work conflicts with adopted product intent or an
   unresolved product question.
 
