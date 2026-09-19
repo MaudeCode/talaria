@@ -1,0 +1,68 @@
+/* approvals: component rules for this feature, in @layer app (after utilities). Colours, radii and
+   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. Origin:
+   the legacy stylesheet, converted by scripts/css-convert.mjs (see docs/architecture/css-conversion-ledger.md). */
+@layer app{
+.approval-card[hidden],.clarify-card[hidden]{display:none !important}
+.approval-card{position:absolute;left:0;right:0;bottom:-24px;max-width:var(--msg-max);margin:0 auto;box-sizing:border-box;width:100%;overflow:hidden;pointer-events:none}
+.approval-card.visible{pointer-events:auto;z-index:3}
+.approval-inner{background:var(--surface);backdrop-filter:blur(8px);border:1px solid var(--accent-bg-strong);border-radius:14px;padding:16px 18px 40px;transform:translateY(100%);opacity:0;transition:transform .4s cubic-bezier(.32,.72,.16,1),opacity .25s ease}
+.approval-card.visible .approval-inner{transform:translateY(0);opacity:1}
+.approval-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--error)}
+.approval-card.collapsed{max-height:56px;bottom:8px}
+.approval-card.collapsed .approval-inner{max-height:48px;overflow:hidden;padding:10px 14px}
+.approval-card.collapsed .approval-header{margin-bottom:0}
+.approval-card.collapsed .approval-desc,.approval-card.collapsed .approval-cmd,.approval-card.collapsed .approval-counter,.approval-card.collapsed .approval-btns{display:none}
+.approval-desc{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5}
+.approval-cmd{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-family:var(--font-mono);font-size:12px;color:var(--pre-text);white-space:pre-wrap;word-break:break-all;margin-bottom:14px;max-height:120px;overflow-y:auto}
+.approval-counter{font-size:11px;color:var(--muted);margin:0 0 12px;font-variant-numeric:tabular-nums;letter-spacing:0.01em}
+.approval-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.approval-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid var(--border2);background:var(--hover-bg);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap}
+.approval-btn:hover{background:var(--overlay-strong);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,0.2)}
+.approval-btn:active{transform:translateY(0);box-shadow:none}
+.approval-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.approval-btn.yolo{background:color-mix(in srgb,var(--amber) 12%,transparent);border-color:color-mix(in srgb,var(--amber) 30%,transparent);color:var(--amber)}
+.approval-btn.yolo:hover{background:color-mix(in srgb,var(--amber) 22%,transparent);border-color:color-mix(in srgb,var(--amber) 50%,transparent);color:var(--amber-strong)}
+.approval-btn.once{border-color:var(--primary-border);color:var(--primary-fg);background:var(--primary-bg)}
+.approval-btn.once:hover{background:var(--primary-hover-bg);border-color:var(--primary-hover-border);transform:var(--primary-hover-transform);box-shadow:var(--primary-hover-shadow)}
+.approval-btn.session{border-color:var(--accent-bg-strong);color:var(--accent-text)}
+.approval-btn.session:hover{background:var(--accent-bg);border-color:var(--accent)}
+.approval-btn.always{border-color:var(--accent-bg-strong);color:var(--accent-text)}
+.approval-btn.always:hover{background:var(--accent-bg);border-color:var(--accent)}
+.approval-btn.deny{border-color:var(--error);color:var(--error)}
+.approval-btn.deny:hover{background:color-mix(in srgb,var(--error) 12%,transparent);border-color:var(--error)}
+.approval-btn.loading{opacity:.7;cursor:wait}
+.approval-btn.more{border-color:var(--border2);color:var(--muted);background:transparent}
+.approval-btn.more:hover{color:var(--text);border-color:var(--accent-bg-strong);background:var(--hover-bg)}
+.approval-btn.more[aria-expanded="true"]{color:var(--text);border-color:var(--accent-bg-strong);background:var(--hover-bg)}
+.clarify-card{position:absolute;left:0;right:0;bottom:-24px;max-width:var(--msg-max);margin:0 auto;box-sizing:border-box;width:100%;overflow:hidden;pointer-events:none;max-height:clamp(180px,min(68vh,calc(100vh - 220px)),420px)}
+.clarify-card.visible{pointer-events:auto}
+.clarify-card .clarify-inner{max-height:clamp(180px,min(68vh,calc(100vh - 220px)),420px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box;transform:translateY(100%);opacity:0;transition:transform .4s cubic-bezier(.32,.72,.16,1),opacity .25s ease,max-height .2s ease}
+@supports (height:100dvh){.clarify-card,.clarify-card .clarify-inner{max-height:clamp(180px,min(68dvh,calc(100dvh - 220px)),420px)}}
+.clarify-card.visible .clarify-inner{transform:translateY(0);opacity:1}
+.clarify-inner{background:var(--surface);backdrop-filter:blur(8px);border:1px solid var(--accent-bg-strong);border-radius:12px;padding:12px 14px 36px;box-shadow:0 1px 0 var(--overlay-faint) inset}
+.clarify-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--blue);letter-spacing:.01em}
+.clarify-countdown{margin-left:auto;min-width:42px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:700}
+.clarify-question{font-size:14px;color:var(--text);line-height:1.7;white-space:pre-wrap;margin-bottom:12px}
+.clarify-choices{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.clarify-hint{margin-top:8px;font-size:11px;line-height:1.45;color:var(--muted)}
+.clarify-card.visible .clarify-question{padding-left:1px}
+.clarify-card.collapsed{max-height:56px;bottom:8px}
+.clarify-card.collapsed .clarify-inner{max-height:48px;overflow:hidden;padding:10px 14px}
+.clarify-card.collapsed .clarify-header{margin-bottom:0}
+.clarify-card.collapsed .clarify-question,.clarify-card.collapsed .clarify-choices,.clarify-card.collapsed .clarify-hint{display:none}
+.approval-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+@media (max-width: 640px){.approval-card{bottom:8px;overflow:visible}}
+@media (max-width: 640px){.approval-inner{max-height:min(52vh,360px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:12px 12px 14px;border-radius:12px;box-shadow:0 -10px 30px rgba(0,0,0,.24);min-width:min(100%,280px)}}
+@media (max-width: 640px){@supports (height:100dvh){.approval-inner{max-height:min(60dvh,420px)}}}
+@media (max-width: 640px){.approval-header{margin-bottom:8px}}
+@media (max-width: 640px){.approval-cmd{max-height:86px;margin-bottom:10px}}
+@media (max-width: 640px){.approval-btns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}}
+@media (max-width: 640px){.approval-btn{justify-content:center;padding:8px 10px;font-size:12px;min-height:44px;min-width:0;line-height:1.2}}
+@media (max-width: 640px){.approval-btn.more{grid-column:1 / -1}}
+@media (max-width: 640px){.clarify-card{overflow:visible;max-height:clamp(180px,min(62vh,calc(100vh - 180px)),360px)}}
+@media (max-width: 640px){.clarify-card .clarify-inner{max-height:clamp(180px,min(62vh,calc(100vh - 180px)),360px)}}
+@media (max-width: 640px){@supports (height:100dvh){.clarify-card,.clarify-card .clarify-inner{max-height:clamp(180px,min(62dvh,calc(100dvh - 180px)),360px)}}}
+@media (max-width: 640px){.clarify-inner{padding:12px 12px 36px;min-width:min(100%,280px)}}
+.approval-btn:focus{outline:2px solid var(--blue);outline-offset:2px}
+.approval-card,.clarify-card{bottom:8px}
+}

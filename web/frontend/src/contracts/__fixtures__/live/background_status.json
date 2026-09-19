@@ -1,0 +1,8 @@
+{
+  "body": {
+    "results": []
+  },
+  "method": "GET",
+  "path": "/api/background/status?session_id=3ca40cdfc145",
+  "status": 200
+}

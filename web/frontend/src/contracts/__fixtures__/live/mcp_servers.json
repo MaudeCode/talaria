@@ -1,0 +1,11 @@
+{
+  "body": {
+    "health_pending": false,
+    "reload_required": true,
+    "servers": [],
+    "toggle_supported": true
+  },
+  "method": "GET",
+  "path": "/api/mcp/servers",
+  "status": 200
+}

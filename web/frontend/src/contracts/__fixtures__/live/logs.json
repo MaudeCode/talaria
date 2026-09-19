@@ -1,0 +1,14 @@
+{
+  "body": {
+    "file": "agent",
+    "hint": "Log file for agent not found yet.",
+    "lines": [],
+    "mtime": null,
+    "tail": 200,
+    "total_bytes": 0,
+    "truncated": false
+  },
+  "method": "GET",
+  "path": "/api/logs?file=agent&tail=50",
+  "status": 200
+}

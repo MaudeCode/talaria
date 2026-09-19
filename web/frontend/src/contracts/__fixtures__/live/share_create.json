@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "This conversation has no shareable messages yet."
+  },
+  "method": "POST",
+  "path": "/api/share/create",
+  "status": 400
+}

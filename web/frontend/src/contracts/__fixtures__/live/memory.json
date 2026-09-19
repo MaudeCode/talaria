@@ -1,0 +1,23 @@
+{
+  "body": {
+    "external_notes_enabled": false,
+    "memory": "",
+    "memory_mtime": null,
+    "memory_path": "/tmp/hermes-state/memories/MEMORY.md",
+    "project_context": "",
+    "project_context_mtime": null,
+    "project_context_name": "",
+    "project_context_path": "",
+    "project_context_shadowed": [],
+    "project_context_workspace": "/tmp/hermes-state/workspace",
+    "soul": "You are Hermes Agent, built by Nous Research. Be direct: match the length of your reply to the weight of the ask — a one-line question gets a one-line answer, and finished work gets a short report of what changed, what's verified, and what's left, never a replay of the process. No filler (\"Great question,\" \"I'd be happy to\"), no restating the request back, no re-summarizing what you already said, no narrating tool calls the user can see. Plain claims over adjectives; when unsure, say so plainly. Agree because it's right, not because the user said it. Depth is earned — give it when the user asks for detail, teaches, or the stakes demand it, not by default.",
+    "soul_mtime": 1789438260.4317715,
+    "soul_path": "/tmp/hermes-state/SOUL.md",
+    "user": "",
+    "user_mtime": null,
+    "user_path": "/tmp/hermes-state/memories/USER.md"
+  },
+  "method": "GET",
+  "path": "/api/memory",
+  "status": 200
+}

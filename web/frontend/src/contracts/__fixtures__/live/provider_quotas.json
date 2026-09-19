@@ -1,0 +1,69 @@
+{
+  "body": {
+    "active_provider": null,
+    "missing_source": false,
+    "profile_id": "default",
+    "requested_source_id": null,
+    "scope_id": "qscope_f14fd9a331ff23dc871ee311e7f44207",
+    "sources": [
+      {
+        "account_label": "AWS Bedrock",
+        "balances": [],
+        "details": [],
+        "fetched_at": null,
+        "is_active_provider": false,
+        "message": "No verified server-side quota or balance endpoint is available for AWS Bedrock.",
+        "plan": null,
+        "provider_id": "bedrock",
+        "provider_label": "AWS Bedrock",
+        "quota": null,
+        "retry_after": null,
+        "source_id": "qsrc_2600650b18e484c923bf25fa9d9c76ed",
+        "status": "unsupported",
+        "supported": false,
+        "unavailable_reason": null,
+        "windows": []
+      },
+      {
+        "account_label": "GitHub Copilot",
+        "balances": [],
+        "details": [],
+        "fetched_at": null,
+        "is_active_provider": false,
+        "message": "No verified server-side quota or balance endpoint is available for GitHub Copilot.",
+        "plan": null,
+        "provider_id": "copilot",
+        "provider_label": "GitHub Copilot",
+        "quota": null,
+        "retry_after": null,
+        "source_id": "qsrc_81ce2259276b8cebfbe4cf8dbbb74254",
+        "status": "unsupported",
+        "supported": false,
+        "unavailable_reason": null,
+        "windows": []
+      },
+      {
+        "account_label": "OpenCode Free",
+        "balances": [],
+        "details": [],
+        "fetched_at": null,
+        "is_active_provider": false,
+        "message": "No verified server-side quota or balance endpoint is available for Opencode Free.",
+        "plan": null,
+        "provider_id": "opencode-free",
+        "provider_label": "OpenCode Free",
+        "quota": null,
+        "retry_after": null,
+        "source_id": "qsrc_6554be5d735d1984f66834fa24175202",
+        "status": "unsupported",
+        "supported": false,
+        "unavailable_reason": null,
+        "windows": []
+      }
+    ],
+    "version": 1
+  },
+  "method": "GET",
+  "path": "/api/provider/quotas",
+  "status": 200
+}

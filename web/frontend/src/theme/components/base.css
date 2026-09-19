@@ -1,0 +1,47 @@
+/* base: component rules for this feature, in @layer app (after utilities). Colours, radii and
+   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. Origin:
+   the legacy stylesheet, converted by scripts/css-convert.mjs (see docs/architecture/css-conversion-ledger.md). */
+@layer base{
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button,input,select,textarea{font-family:var(--font-ui)}
+body,header,footer,aside,nav,main,div,button,input,textarea,select{transition-property:background-color,border-color,color;transition-duration:.15s;transition-timing-function:ease;font-weight:var(--body-weight);text-rendering:var(--text-rendering)}
+@supports (padding-top: env(safe-area-inset-top)){@media (display-mode: standalone), (display-mode: fullscreen){:root{--app-titlebar-safe-top:env(safe-area-inset-top,0px)}}}
+@supports (padding-top: env(safe-area-inset-top)){@media (display-mode: standalone), (display-mode: fullscreen){:root{--app-titlebar-safe-top:env(safe-area-inset-top,0px)}}}
+html{background:var(--sidebar)}
+body{background:var(--body-bg);color:var(--text);height:100vh;height:100dvh;overflow:hidden;display:flex;flex-direction:column;font-weight:var(--body-weight);text-rendering:var(--text-rendering)}
+select{width:100%;background:var(--input-bg);border:1px solid var(--border2);border-radius:var(--input-radius);color:var(--text);padding:8px 28px 8px 10px;font-size:12px;outline:none;appearance:none;margin-bottom:6px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238888aa' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+select:focus{border-color:var(--input-focus-border);box-shadow:var(--input-focus-shadow)}
+optgroup{color:var(--muted);font-size:11px;font-weight:700}
+option{background:var(--bg);color:var(--text);padding:6px}
+button,[onclick]{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border-radius:99px;transition:background .2s}
+::-webkit-scrollbar-thumb:hover{background:var(--scrollbar-thumb-hover)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--scrollbar-thumb-hover)}
+*{scrollbar-width:thin;scrollbar-color:var(--scrollbar-thumb) transparent}
+body code[class*="language-"],body pre[class*="language-"],body pre code[class*="language-"]{font-family:var(--font-mono)}
+@media (hover:none) and (pointer:coarse){input,textarea,select{font-size:max(16px,1em) !important}}
+body{background:var(--body-bg);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-weight:var(--body-weight);text-rendering:var(--text-rendering)}
+input[type="text"],input[type="password"],input[type="number"],input[type="search"],input[type="url"],input[type="email"],textarea,select{background:var(--input-bg);border:1px solid var(--border);border-radius:var(--input-radius);color:var(--text);transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+input[type="text"]:focus,input[type="password"]:focus,input[type="number"]:focus,input[type="search"]:focus,input[type="url"]:focus,input[type="email"]:focus,textarea:focus,select:focus{border-color:var(--input-focus-border);box-shadow:var(--input-focus-shadow);outline:none}
+select{padding:8px 28px 8px 10px;font-size:13px}
+input[type="checkbox"],input[type="radio"]{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+input[type="range"]{accent-color:var(--accent)}
+::placeholder{color:var(--muted);opacity:.8}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--scrollbar-thumb-hover);background-clip:padding-box}
+:where(button,a,[role="button"]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+html,body,button,input,select,textarea{font-family:var(--font-ui);font-feature-settings:"cv11","ss01","cv02";font-weight:var(--body-weight);text-rendering:var(--text-rendering)}
+body{font-size:14px;letter-spacing:var(--body-tracking);font-weight:var(--body-weight);text-rendering:var(--text-rendering)}
+select{padding:6px 26px 6px 10px;font-size:13px;height:32px}
+input[type="text"],input[type="password"],input[type="number"],input[type="search"],input[type="url"],input[type="email"]{height:32px;font-size:13px}
+input[type="text"],input[type="password"],input[type="number"],input[type="search"],input[type="url"],input[type="email"],textarea,select{background:var(--input-bg);border-color:var(--select-border)}
+input[type="text"]:hover,input[type="password"]:hover,input[type="number"]:hover,input[type="search"]:hover,textarea:hover,select:hover{border-color:var(--border)}
+input[type="text"]:focus,input[type="password"]:focus,input[type="number"]:focus,input[type="search"]:focus,textarea:focus,select:focus{background:var(--surface);border-color:var(--input-focus-border);box-shadow:var(--input-focus-shadow)}
+::selection{background:var(--selection-bg);color:var(--selection-fg)}
+}

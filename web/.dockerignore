@@ -1,0 +1,13 @@
+.git
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+tests/
+.env*
+/AGENTS.md
+frontend/node_modules/
+frontend/dist/
+frontend/.tanstack/
+frontend/playwright-report/
+frontend/test-results/

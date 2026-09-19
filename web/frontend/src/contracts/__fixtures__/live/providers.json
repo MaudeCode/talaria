@@ -1,0 +1,2513 @@
+{
+  "body": {
+    "active_provider": null,
+    "providers": [
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "AWS Bedrock",
+        "has_key": true,
+        "id": "bedrock",
+        "is_oauth": true,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "oauth",
+        "models": [
+          {
+            "id": "global.anthropic.claude-opus-4-7",
+            "label": "Global Anthropic Claude Opus 4.7"
+          },
+          {
+            "id": "global.anthropic.claude-opus-4-6-v1",
+            "label": "Global Anthropic Claude Opus 4.6"
+          },
+          {
+            "id": "global.anthropic.claude-sonnet-4-6",
+            "label": "Global Anthropic Claude Sonnet 4.6"
+          },
+          {
+            "id": "global.anthropic.claude-opus-4-5-20251101-v1:0",
+            "label": "GLOBAL Anthropic Claude Opus 4.5"
+          },
+          {
+            "id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "label": "Global Claude Sonnet 4.5"
+          },
+          {
+            "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "label": "Global Anthropic Claude Haiku 4.5"
+          },
+          {
+            "id": "us.anthropic.claude-sonnet-5",
+            "label": "Claude Sonnet 5"
+          },
+          {
+            "id": "us.anthropic.claude-sonnet-4-6",
+            "label": "Claude Sonnet 4 6"
+          },
+          {
+            "id": "us.anthropic.claude-opus-4-6-v1",
+            "label": "Claude Opus 4 6 V1"
+          },
+          {
+            "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "label": "Claude Haiku 4 5 20251001 V1"
+          },
+          {
+            "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "label": "Claude Sonnet 4 5 20250929 V1"
+          },
+          {
+            "id": "openai.gpt-5.5",
+            "label": "GPT 5.5"
+          },
+          {
+            "id": "openai.gpt-5.6-sol",
+            "label": "GPT 5.6 SOL"
+          },
+          {
+            "id": "openai.gpt-5.6-terra",
+            "label": "GPT 5.6 Terra"
+          },
+          {
+            "id": "openai.gpt-5.6-luna",
+            "label": "GPT 5.6 Luna"
+          },
+          {
+            "id": "us.amazon.nova-pro-v1:0",
+            "label": "Nova PRO V1"
+          },
+          {
+            "id": "us.amazon.nova-lite-v1:0",
+            "label": "Nova Lite V1"
+          },
+          {
+            "id": "us.amazon.nova-micro-v1:0",
+            "label": "Nova Micro V1"
+          },
+          {
+            "id": "deepseek.v3.2",
+            "label": "Deepseek.v3.2"
+          },
+          {
+            "id": "us.meta.llama4-maverick-17b-instruct-v1:0",
+            "label": "Llama4 Maverick 17B Instruct V1"
+          },
+          {
+            "id": "us.meta.llama4-scout-17b-instruct-v1:0",
+            "label": "Llama4 Scout 17B Instruct V1"
+          }
+        ],
+        "models_total": 21
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "GitHub Copilot",
+        "has_key": true,
+        "id": "copilot",
+        "is_oauth": true,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "gh auth token",
+        "models": [
+          {
+            "id": "claude-opus-4.8",
+            "label": "Claude Opus 4.8"
+          },
+          {
+            "id": "claude-opus-4.7",
+            "label": "Claude Opus 4.7"
+          },
+          {
+            "id": "claude-opus-4.6",
+            "label": "Claude Opus 4.6"
+          },
+          {
+            "id": "claude-sonnet-5",
+            "label": "Claude Sonnet 5"
+          },
+          {
+            "id": "claude-sonnet-4.6",
+            "label": "Claude Sonnet 4.6"
+          },
+          {
+            "id": "claude-sonnet-4.5",
+            "label": "Claude Sonnet 4.5"
+          },
+          {
+            "id": "claude-haiku-4.5",
+            "label": "Claude Haiku 4.5"
+          },
+          {
+            "id": "gpt-5.5",
+            "label": "GPT-5.5"
+          },
+          {
+            "id": "gpt-5.4",
+            "label": "GPT-5.4"
+          },
+          {
+            "id": "gpt-5.4-mini",
+            "label": "GPT-5.4 Mini"
+          },
+          {
+            "id": "gpt-5.3-codex",
+            "label": "GPT-5.3 Codex"
+          },
+          {
+            "id": "gpt-5-mini",
+            "label": "GPT-5 Mini"
+          },
+          {
+            "id": "gemini-3.1-pro-preview",
+            "label": "Gemini 3.1 Pro Preview"
+          },
+          {
+            "id": "gemini-3.5-flash",
+            "label": "Gemini 3.5 Flash"
+          },
+          {
+            "id": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro"
+          },
+          {
+            "id": "mai-code-1-flash-picker",
+            "label": "MAI Code 1 Flash"
+          },
+          {
+            "id": "gpt-4o",
+            "label": "GPT-4o"
+          },
+          {
+            "id": "gpt-5.2-codex",
+            "label": "GPT 5.2 Codex"
+          },
+          {
+            "id": "gpt-4.1",
+            "label": "GPT 4.1"
+          },
+          {
+            "id": "gpt-4o-mini",
+            "label": "GPT 4O Mini"
+          },
+          {
+            "id": "claude-sonnet-4",
+            "label": "Claude Sonnet 4"
+          },
+          {
+            "id": "gemini-3-pro-preview",
+            "label": "Gemini 3 PRO Preview"
+          },
+          {
+            "id": "gemini-3-flash-preview",
+            "label": "Gemini 3 Flash Preview"
+          }
+        ],
+        "models_total": 23
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "OpenCode Free",
+        "has_key": true,
+        "id": "opencode-free",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "keyless",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Actual Computer",
+        "has_key": false,
+        "id": "actual",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "ai-gateway",
+        "has_key": false,
+        "id": "ai-gateway",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Alibaba",
+        "has_key": false,
+        "id": "alibaba",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Alibaba Cloud DashScope (China)",
+        "has_key": false,
+        "id": "alibaba-cn",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Alibaba Cloud (Coding Plan)",
+        "has_key": false,
+        "id": "alibaba-coding-plan",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Alibaba Cloud (Coding Plan, China)",
+        "has_key": false,
+        "id": "alibaba-coding-plan-cn",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Alibaba Cloud (Token Plan)",
+        "has_key": false,
+        "id": "alibaba-token-plan",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Alibaba Cloud (Token Plan, China)",
+        "has_key": false,
+        "id": "alibaba-token-plan-cn",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Anthropic",
+        "has_key": false,
+        "id": "anthropic",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "claude-opus-4.7",
+            "label": "Claude Opus 4.7"
+          },
+          {
+            "id": "claude-opus-4.6",
+            "label": "Claude Opus 4.6"
+          },
+          {
+            "id": "claude-sonnet-4.6",
+            "label": "Claude Sonnet 4.6"
+          },
+          {
+            "id": "claude-sonnet-4-5",
+            "label": "Claude Sonnet 4.5"
+          },
+          {
+            "id": "claude-haiku-4-5",
+            "label": "Claude Haiku 4.5"
+          },
+          {
+            "id": "claude-fable-5.1",
+            "label": "Claude Fable 5.1"
+          },
+          {
+            "id": "claude-fable-5",
+            "label": "Claude Fable 5"
+          },
+          {
+            "id": "claude-opus-5",
+            "label": "Claude Opus 5"
+          },
+          {
+            "id": "claude-sonnet-5",
+            "label": "Claude Sonnet 5"
+          },
+          {
+            "id": "claude-opus-4-8",
+            "label": "Claude Opus 4 8"
+          },
+          {
+            "id": "claude-opus-4-5-20251101",
+            "label": "Claude Opus 4 5 20251101"
+          },
+          {
+            "id": "claude-sonnet-4-5-20250929",
+            "label": "Claude Sonnet 4 5 20250929"
+          },
+          {
+            "id": "claude-opus-4-20250514",
+            "label": "Claude Opus 4 20250514"
+          },
+          {
+            "id": "claude-sonnet-4-20250514",
+            "label": "Claude Sonnet 4 20250514"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "label": "Claude Haiku 4 5 20251001"
+          }
+        ],
+        "models_total": 15
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "arcee",
+        "has_key": false,
+        "id": "arcee",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Azure Foundry",
+        "has_key": false,
+        "id": "azure-foundry",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "CommandCode",
+        "has_key": false,
+        "id": "commandcode",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "deepseek/deepseek-v4-pro",
+            "label": "DeepSeek V4 Pro"
+          },
+          {
+            "id": "deepseek/deepseek-v4-flash",
+            "label": "DeepSeek V4 Flash"
+          },
+          {
+            "id": "Qwen/Qwen3.7-Max",
+            "label": "Qwen3.7 Max"
+          },
+          {
+            "id": "Qwen/Qwen3.6-Plus",
+            "label": "Qwen3.6 Plus"
+          },
+          {
+            "id": "moonshotai/Kimi-K2.6",
+            "label": "Kimi K2.6"
+          },
+          {
+            "id": "zai-org/GLM-5.1",
+            "label": "GLM-5.1"
+          },
+          {
+            "id": "MiniMaxAI/MiniMax-M2.7",
+            "label": "MiniMax M2.7"
+          },
+          {
+            "id": "stepfun/Step-3.5-Flash",
+            "label": "Step 3.5 Flash"
+          },
+          {
+            "id": "xiaomi/mimo-v2.5-pro",
+            "label": "MiMo V2.5 Pro"
+          },
+          {
+            "id": "google/gemini-3.5-flash",
+            "label": "Gemini 3.5 Flash"
+          },
+          {
+            "id": "gpt-5.5",
+            "label": "GPT-5.5"
+          }
+        ],
+        "models_total": 11
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "CommandCode (Anthropic)",
+        "has_key": false,
+        "id": "commandcode-anthropic",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "claude-sonnet-4-6",
+            "label": "claude-sonnet-4-6"
+          },
+          {
+            "id": "claude-opus-4-7",
+            "label": "claude-opus-4-7"
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "label": "claude-haiku-4-5-20251001"
+          }
+        ],
+        "models_total": 3
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "copilot-acp",
+        "has_key": false,
+        "id": "copilot-acp",
+        "is_oauth": true,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "oauth",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Cursor ACP",
+        "has_key": false,
+        "id": "cursor-acp",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "cursor/composer-2.5",
+            "label": "Composer 2.5"
+          },
+          {
+            "id": "cursor/composer-2",
+            "label": "Composer 2"
+          },
+          {
+            "id": "cursor/default",
+            "label": "Default"
+          },
+          {
+            "id": "cursor-acp",
+            "label": "Cursor ACP"
+          }
+        ],
+        "models_total": 4
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "DeepInfra",
+        "has_key": false,
+        "id": "deepinfra",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "DeepSeek",
+        "has_key": false,
+        "id": "deepseek",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "deepseek-v4-flash",
+            "label": "DeepSeek V4 Flash"
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "label": "DeepSeek V4 Pro"
+          },
+          {
+            "id": "deepseek-chat-v3-0324",
+            "label": "DeepSeek V3 (legacy)"
+          },
+          {
+            "id": "deepseek-reasoner",
+            "label": "DeepSeek Reasoner (legacy)"
+          },
+          {
+            "id": "deepseek-flash",
+            "label": "Deepseek Flash"
+          }
+        ],
+        "models_total": 5
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Fireworks AI",
+        "has_key": false,
+        "id": "fireworks",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "accounts/fireworks/models/kimi-k2p6",
+            "label": "accounts/fireworks/models/kimi-k2p6"
+          },
+          {
+            "id": "accounts/fireworks/models/glm-5p2",
+            "label": "accounts/fireworks/models/glm-5p2"
+          },
+          {
+            "id": "accounts/fireworks/models/kimi-k2p7-code",
+            "label": "accounts/fireworks/models/kimi-k2p7-code"
+          }
+        ],
+        "models_total": 3
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Gemini",
+        "has_key": false,
+        "id": "gemini",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "gemini-3.1-pro-preview",
+            "label": "Gemini 3.1 Pro Preview"
+          },
+          {
+            "id": "gemini-3-flash-preview",
+            "label": "Gemini 3 Flash Preview"
+          },
+          {
+            "id": "gemini-3.1-flash-lite-preview",
+            "label": "Gemini 3.1 Flash Lite Preview"
+          },
+          {
+            "id": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro"
+          },
+          {
+            "id": "gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash"
+          },
+          {
+            "id": "gemini-3.8-flash",
+            "label": "Gemini 3.8 Flash"
+          },
+          {
+            "id": "gemini-3.7-flash",
+            "label": "Gemini 3.7 Flash"
+          },
+          {
+            "id": "gemini-3-pro-preview",
+            "label": "Gemini 3 PRO Preview"
+          },
+          {
+            "id": "gemini-3.6-flash",
+            "label": "Gemini 3.6 Flash"
+          }
+        ],
+        "models_total": 9
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "GMI Cloud",
+        "has_key": false,
+        "id": "gmi",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "zai-org/GLM-5.1-FP8",
+            "label": "zai-org/GLM-5.1-FP8"
+          },
+          {
+            "id": "deepseek-ai/DeepSeek-V3.2",
+            "label": "deepseek-ai/DeepSeek-V3.2"
+          },
+          {
+            "id": "moonshotai/Kimi-K2.5",
+            "label": "moonshotai/Kimi-K2.5"
+          },
+          {
+            "id": "google/gemini-3.1-flash-lite-preview",
+            "label": "google/gemini-3.1-flash-lite-preview"
+          },
+          {
+            "id": "anthropic/claude-sonnet-5",
+            "label": "anthropic/claude-sonnet-5"
+          },
+          {
+            "id": "anthropic/claude-sonnet-4.6",
+            "label": "anthropic/claude-sonnet-4.6"
+          },
+          {
+            "id": "openai/gpt-5.4",
+            "label": "openai/gpt-5.4"
+          }
+        ],
+        "models_total": 7
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Google",
+        "has_key": false,
+        "id": "google",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "gemini-3.1-pro-preview",
+            "label": "Gemini 3.1 Pro Preview"
+          },
+          {
+            "id": "gemini-3-flash-preview",
+            "label": "Gemini 3 Flash Preview"
+          },
+          {
+            "id": "gemini-3.1-flash-lite-preview",
+            "label": "Gemini 3.1 Flash Lite Preview"
+          },
+          {
+            "id": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro"
+          },
+          {
+            "id": "gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash"
+          }
+        ],
+        "models_total": 5
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "HuggingFace",
+        "has_key": false,
+        "id": "huggingface",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "kilocode",
+        "has_key": false,
+        "id": "kilocode",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Kimi / Moonshot",
+        "has_key": false,
+        "id": "kimi-coding",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "moonshot-v1-8k",
+            "label": "Moonshot v1 8k"
+          },
+          {
+            "id": "moonshot-v1-32k",
+            "label": "Moonshot v1 32k"
+          },
+          {
+            "id": "moonshot-v1-128k",
+            "label": "Moonshot v1 128k"
+          },
+          {
+            "id": "kimi-latest",
+            "label": "Kimi Latest"
+          },
+          {
+            "id": "kimi-k2.5",
+            "label": "Kimi K2.5"
+          },
+          {
+            "id": "kimi-k3",
+            "label": "Kimi K3"
+          },
+          {
+            "id": "kimi-k2.7-code",
+            "label": "Kimi K2.7 Code"
+          },
+          {
+            "id": "kimi-k2.6",
+            "label": "Kimi K2.6"
+          },
+          {
+            "id": "kimi-for-coding",
+            "label": "Kimi FOR Coding"
+          },
+          {
+            "id": "kimi-for-coding-highspeed",
+            "label": "Kimi FOR Coding Highspeed"
+          },
+          {
+            "id": "kimi-k2-thinking",
+            "label": "Kimi K2 Thinking"
+          },
+          {
+            "id": "kimi-k2-thinking-turbo",
+            "label": "Kimi K2 Thinking Turbo"
+          },
+          {
+            "id": "kimi-k2-turbo-preview",
+            "label": "Kimi K2 Turbo Preview"
+          },
+          {
+            "id": "kimi-k2-0905-preview",
+            "label": "Kimi K2 0905 Preview"
+          }
+        ],
+        "models_total": 14
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "kimi-coding-cn",
+        "has_key": false,
+        "id": "kimi-coding-cn",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "LM Studio",
+        "has_key": false,
+        "id": "lmstudio",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": true,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Meta Model API",
+        "has_key": false,
+        "id": "meta-ai",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "muse-spark-1.2",
+            "label": "Muse Spark 1.2"
+          },
+          {
+            "id": "muse-spark-1.2-contributor",
+            "label": "Muse Spark 1.2 Contributor"
+          }
+        ],
+        "models_total": 2
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Meta Llama",
+        "has_key": false,
+        "id": "meta-llama",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "MiniMax",
+        "has_key": false,
+        "id": "minimax",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "MiniMax-M3",
+            "label": "MiniMax M3"
+          },
+          {
+            "id": "MiniMax-M2.7",
+            "label": "MiniMax M2.7"
+          },
+          {
+            "id": "MiniMax-M2.7-highspeed",
+            "label": "MiniMax M2.7 Highspeed"
+          },
+          {
+            "id": "MiniMax-M2.5",
+            "label": "Minimax M2.5"
+          },
+          {
+            "id": "MiniMax-M2.1",
+            "label": "Minimax M2.1"
+          },
+          {
+            "id": "MiniMax-M2",
+            "label": "Minimax M2"
+          }
+        ],
+        "models_total": 6
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "MiniMax (China)",
+        "has_key": false,
+        "id": "minimax-cn",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "MiniMax-M3",
+            "label": "MiniMax M3"
+          },
+          {
+            "id": "MiniMax-M2.7",
+            "label": "MiniMax M2.7"
+          },
+          {
+            "id": "MiniMax-M2.5",
+            "label": "Minimax M2.5"
+          },
+          {
+            "id": "MiniMax-M2.1",
+            "label": "Minimax M2.1"
+          },
+          {
+            "id": "MiniMax-M2",
+            "label": "Minimax M2"
+          }
+        ],
+        "models_total": 5
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "MiniMax (OAuth)",
+        "has_key": false,
+        "id": "minimax-oauth",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Mistral",
+        "has_key": false,
+        "id": "mistralai",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "mistral-large-latest",
+            "label": "Mistral Large"
+          },
+          {
+            "id": "mistral-small-latest",
+            "label": "Mistral Small"
+          }
+        ],
+        "models_total": 2
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Mixture of Agents",
+        "has_key": false,
+        "id": "moa",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Nebius Token Factory",
+        "has_key": false,
+        "id": "nebius-token-factory",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "Qwen/Qwen3.5-397B-A17B-fast",
+            "label": "Qwen3.5 397B A17B (fast)"
+          },
+          {
+            "id": "deepseek-ai/DeepSeek-V4-Pro",
+            "label": "DeepSeek V4 Pro"
+          },
+          {
+            "id": "zai-org/GLM-5.1",
+            "label": "GLM-5.1"
+          },
+          {
+            "id": "moonshotai/Kimi-K2.5-fast",
+            "label": "Kimi K2.5 (fast)"
+          },
+          {
+            "id": "MiniMaxAI/MiniMax-M2.5-fast",
+            "label": "MiniMax M2.5 (fast)"
+          },
+          {
+            "id": "deepseek-ai/DeepSeek-V3.2-fast",
+            "label": "DeepSeek V3.2 (fast)"
+          },
+          {
+            "id": "NousResearch/Hermes-4-70B",
+            "label": "Hermes 4 70B"
+          },
+          {
+            "id": "openai/gpt-oss-120b-fast",
+            "label": "GPT-OSS 120B (fast)"
+          },
+          {
+            "id": "meta-llama/Llama-3.3-70B-Instruct",
+            "label": "Llama 3.3 70B Instruct"
+          }
+        ],
+        "models_total": 9
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Nous Portal",
+        "has_key": false,
+        "id": "nous",
+        "is_oauth": true,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "oauth",
+        "models": [
+          {
+            "id": "@nous:openai/gpt-5.4-mini",
+            "label": "GPT 5.4 Mini (via Nous)"
+          },
+          {
+            "id": "@nous:google/gemini-3.1-pro-preview",
+            "label": "Gemini 3.1 PRO Preview (via Nous)"
+          },
+          {
+            "id": "@nous:anthropic/claude-fable-5.1",
+            "label": "Claude Fable 5.1 (via Nous)"
+          },
+          {
+            "id": "@nous:anthropic/claude-fable-5",
+            "label": "Claude Fable 5 (via Nous)"
+          },
+          {
+            "id": "@nous:anthropic/claude-opus-5",
+            "label": "Claude Opus 5 (via Nous)"
+          },
+          {
+            "id": "@nous:anthropic/claude-opus-4.8",
+            "label": "Claude Opus 4.8 (via Nous)"
+          },
+          {
+            "id": "@nous:anthropic/claude-sonnet-5",
+            "label": "Claude Sonnet 5 (via Nous)"
+          },
+          {
+            "id": "@nous:anthropic/claude-haiku-4.5",
+            "label": "Claude Haiku 4.5 (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-6-astra",
+            "label": "GPT 6 Astra (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-6-astra-fast",
+            "label": "GPT 6 Astra Fast (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-6-astra-flex",
+            "label": "GPT 6 Astra Flex (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-6-astra-pro",
+            "label": "GPT 6 Astra PRO (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-6-astra-pro-fast",
+            "label": "GPT 6 Astra PRO Fast (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-6-astra-pro-flex",
+            "label": "GPT 6 Astra PRO Flex (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.6-sol",
+            "label": "GPT 5.6 SOL (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.6-sol-pro",
+            "label": "GPT 5.6 SOL PRO (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.6-terra",
+            "label": "GPT 5.6 Terra (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.6-terra-pro",
+            "label": "GPT 5.6 Terra PRO (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.6-luna",
+            "label": "GPT 5.6 Luna (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.6-luna-pro",
+            "label": "GPT 5.6 Luna PRO (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.5",
+            "label": "GPT 5.5 (via Nous)"
+          },
+          {
+            "id": "@nous:openai/gpt-5.5-pro",
+            "label": "GPT 5.5 PRO (via Nous)"
+          },
+          {
+            "id": "@nous:google/gemini-3.8-flash",
+            "label": "Gemini 3.8 Flash (via Nous)"
+          },
+          {
+            "id": "@nous:google/gemini-3.7-flash",
+            "label": "Gemini 3.7 Flash (via Nous)"
+          },
+          {
+            "id": "@nous:x-ai/grok-4.6",
+            "label": "Grok 4.6 (via Nous)"
+          },
+          {
+            "id": "@nous:deepseek/deepseek-v4-pro",
+            "label": "Deepseek V4 PRO (via Nous)"
+          },
+          {
+            "id": "@nous:deepseek/deepseek-v4-pro-0813",
+            "label": "Deepseek V4 PRO 0813 (via Nous)"
+          },
+          {
+            "id": "@nous:deepseek/deepseek-v4.1-flash",
+            "label": "Deepseek V4.1 Flash (via Nous)"
+          },
+          {
+            "id": "@nous:deepseek/deepseek-v4-flash-0731",
+            "label": "Deepseek V4 Flash 0731 (via Nous)"
+          },
+          {
+            "id": "@nous:qwen/qwen3.8-max-0902",
+            "label": "Qwen3.8 MAX 0902 (via Nous)"
+          },
+          {
+            "id": "@nous:qwen/qwen3.8-flash",
+            "label": "Qwen3.8 Flash (via Nous)"
+          },
+          {
+            "id": "@nous:moonshotai/kimi-k3",
+            "label": "Kimi K3 (via Nous)"
+          },
+          {
+            "id": "@nous:minimax/minimax-m3",
+            "label": "MiniMax M3 (via Nous)"
+          },
+          {
+            "id": "@nous:z-ai/glm-5.3",
+            "label": "GLM 5.3 (via Nous)"
+          },
+          {
+            "id": "@nous:z-ai/glm-5.3-flash",
+            "label": "GLM 5.3 Flash (via Nous)"
+          },
+          {
+            "id": "@nous:z-ai/glm-5.2",
+            "label": "GLM 5.2 (via Nous)"
+          },
+          {
+            "id": "@nous:xiaomi/mimo-v2.5-pro",
+            "label": "Mimo V2.5 PRO (via Nous)"
+          },
+          {
+            "id": "@nous:tencent/hy4-preview",
+            "label": "Hy4 Preview (via Nous)"
+          },
+          {
+            "id": "@nous:tencent/hy3",
+            "label": "Hy3 (via Nous)"
+          },
+          {
+            "id": "@nous:stepfun/step-3.7-flash",
+            "label": "Step 3.7 Flash (via Nous)"
+          },
+          {
+            "id": "@nous:nvidia/nemotron-3-super-120b-a12b",
+            "label": "Nemotron 3 Super 120B A12b (via Nous)"
+          },
+          {
+            "id": "@nous:sakana/fugu-ultra",
+            "label": "Fugu Ultra (via Nous)"
+          }
+        ],
+        "models_total": 42
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "NovitaAI",
+        "has_key": false,
+        "id": "novita",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "moonshotai/kimi-k2.5",
+            "label": "moonshotai/kimi-k2.5"
+          },
+          {
+            "id": "minimax/minimax-m2.7",
+            "label": "minimax/minimax-m2.7"
+          },
+          {
+            "id": "zai-org/glm-5",
+            "label": "zai-org/glm-5"
+          },
+          {
+            "id": "deepseek/deepseek-v3-0324",
+            "label": "deepseek/deepseek-v3-0324"
+          },
+          {
+            "id": "deepseek/deepseek-r1-0528",
+            "label": "deepseek/deepseek-r1-0528"
+          },
+          {
+            "id": "qwen/qwen3-235b-a22b-fp8",
+            "label": "qwen/qwen3-235b-a22b-fp8"
+          }
+        ],
+        "models_total": 6
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "NVIDIA NIM",
+        "has_key": false,
+        "id": "nvidia",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "nvidia/nemotron-3-super-120b-a12b",
+            "label": "Nemotron 3 Super 120B"
+          },
+          {
+            "id": "nvidia/nemotron-3-nano-30b-a3b",
+            "label": "Nemotron 3 Nano 30B"
+          },
+          {
+            "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+            "label": "Llama 3.3 Nemotron Super 49B"
+          },
+          {
+            "id": "qwen/qwen3-next-80b-a3b-instruct",
+            "label": "Qwen3 Next 80B"
+          },
+          {
+            "id": "nvidia/nemotron-3-ultra-550b-a55b",
+            "label": "Nemotron 3 Ultra 550b A55b"
+          },
+          {
+            "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+            "label": "Nemotron 3.5 Lightning 30B A3B"
+          },
+          {
+            "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            "label": "Nemotron 3 Nano Omni 30B A3B Reasoning"
+          },
+          {
+            "id": "z-ai/glm-5.3",
+            "label": "GLM 5.3"
+          },
+          {
+            "id": "z-ai/glm-5.2",
+            "label": "GLM 5.2"
+          },
+          {
+            "id": "moonshotai/kimi-k2.6",
+            "label": "Kimi K2.6"
+          },
+          {
+            "id": "minimaxai/minimax-m3",
+            "label": "Minimax M3"
+          }
+        ],
+        "models_total": 11
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Ollama",
+        "has_key": false,
+        "id": "ollama",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": true,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Ollama Cloud",
+        "has_key": false,
+        "id": "ollama-cloud",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "OpenAI",
+        "has_key": false,
+        "id": "openai",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "gpt-5.5",
+            "label": "GPT-5.5"
+          },
+          {
+            "id": "gpt-5.5-mini",
+            "label": "GPT-5.5 Mini"
+          },
+          {
+            "id": "gpt-5.4-mini",
+            "label": "GPT-5.4 Mini"
+          },
+          {
+            "id": "gpt-5.4",
+            "label": "GPT-5.4"
+          },
+          {
+            "id": "gpt-5-mini",
+            "label": "GPT 5 Mini"
+          },
+          {
+            "id": "gpt-5.3-codex",
+            "label": "GPT 5.3 Codex"
+          },
+          {
+            "id": "gpt-5.2-codex",
+            "label": "GPT 5.2 Codex"
+          },
+          {
+            "id": "gpt-4.1",
+            "label": "GPT 4.1"
+          },
+          {
+            "id": "gpt-4o",
+            "label": "GPT 4O"
+          },
+          {
+            "id": "gpt-4o-mini",
+            "label": "GPT 4O Mini"
+          }
+        ],
+        "models_total": 10
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "OpenAI API",
+        "has_key": false,
+        "id": "openai-api",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "gpt-5.5",
+            "label": "GPT-5.5"
+          },
+          {
+            "id": "gpt-5.5-mini",
+            "label": "GPT-5.5 Mini"
+          },
+          {
+            "id": "gpt-5.4-mini",
+            "label": "GPT-5.4 Mini"
+          },
+          {
+            "id": "gpt-5.4",
+            "label": "GPT-5.4"
+          },
+          {
+            "id": "gpt-5.6-sol",
+            "label": "GPT 5.6 SOL"
+          },
+          {
+            "id": "gpt-5.6-sol-pro",
+            "label": "GPT 5.6 SOL PRO"
+          },
+          {
+            "id": "gpt-5.6-terra",
+            "label": "GPT 5.6 Terra"
+          },
+          {
+            "id": "gpt-5.6-terra-pro",
+            "label": "GPT 5.6 Terra PRO"
+          },
+          {
+            "id": "gpt-5.6-luna",
+            "label": "GPT 5.6 Luna"
+          },
+          {
+            "id": "gpt-5.6-luna-pro",
+            "label": "GPT 5.6 Luna PRO"
+          },
+          {
+            "id": "gpt-5.5-pro",
+            "label": "GPT 5.5 PRO"
+          },
+          {
+            "id": "gpt-5.4-nano",
+            "label": "GPT 5.4 Nano"
+          },
+          {
+            "id": "gpt-5-mini",
+            "label": "GPT 5 Mini"
+          },
+          {
+            "id": "gpt-5.3-codex",
+            "label": "GPT 5.3 Codex"
+          },
+          {
+            "id": "gpt-4.1",
+            "label": "GPT 4.1"
+          },
+          {
+            "id": "gpt-4o",
+            "label": "GPT 4O"
+          },
+          {
+            "id": "gpt-4o-mini",
+            "label": "GPT 4O Mini"
+          }
+        ],
+        "models_total": 17
+      },
+      {
+        "auth_error": "No Codex credentials stored. Run `hermes auth` to authenticate.",
+        "base_url": null,
+        "configurable": false,
+        "display_name": "OpenAI Codex",
+        "has_key": false,
+        "id": "openai-codex",
+        "is_oauth": true,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "oauth",
+        "models": [
+          {
+            "id": "gpt-5.6-sol",
+            "label": "GPT 5.6 SOL"
+          },
+          {
+            "id": "gpt-5.6-sol-900k",
+            "label": "GPT 5.6 SOL 900k"
+          },
+          {
+            "id": "gpt-5.6-terra",
+            "label": "GPT 5.6 Terra"
+          },
+          {
+            "id": "gpt-5.6-terra-900k",
+            "label": "GPT 5.6 Terra 900k"
+          },
+          {
+            "id": "gpt-5.6-luna",
+            "label": "GPT 5.6 Luna"
+          },
+          {
+            "id": "gpt-5.6-luna-900k",
+            "label": "GPT 5.6 Luna 900k"
+          },
+          {
+            "id": "gpt-5.5",
+            "label": "GPT 5.5"
+          },
+          {
+            "id": "gpt-5.4-mini",
+            "label": "GPT 5.4 Mini"
+          },
+          {
+            "id": "gpt-5.4",
+            "label": "GPT 5.4"
+          },
+          {
+            "id": "gpt-5.4-900k",
+            "label": "GPT 5.4 900k"
+          },
+          {
+            "id": "gpt-5.3-codex",
+            "label": "GPT 5.3 Codex"
+          },
+          {
+            "id": "gpt-5.3-codex-spark",
+            "label": "GPT 5.3 Codex Spark"
+          },
+          {
+            "id": "gpt-6-astra",
+            "label": "GPT 6 Astra"
+          }
+        ],
+        "models_total": 13
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "OpenCode Go",
+        "has_key": false,
+        "id": "opencode-go",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "minimax-m3",
+            "label": "MiniMax M3"
+          },
+          {
+            "id": "minimax-m2.7",
+            "label": "MiniMax M2.7"
+          },
+          {
+            "id": "minimax-m2.5",
+            "label": "MiniMax M2.5"
+          },
+          {
+            "id": "kimi-k2.7-code",
+            "label": "Kimi K2.7 Code"
+          },
+          {
+            "id": "kimi-k2.6",
+            "label": "Kimi K2.6"
+          },
+          {
+            "id": "kimi-k2.5",
+            "label": "Kimi K2.5"
+          },
+          {
+            "id": "glm-5.2",
+            "label": "GLM-5.2"
+          },
+          {
+            "id": "glm-5.1",
+            "label": "GLM-5.1"
+          },
+          {
+            "id": "glm-5",
+            "label": "GLM-5"
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "label": "DeepSeek V4 Pro"
+          },
+          {
+            "id": "deepseek-v4-flash",
+            "label": "DeepSeek V4 Flash"
+          },
+          {
+            "id": "qwen3.7-max",
+            "label": "Qwen3.7 Max"
+          },
+          {
+            "id": "qwen3.7-plus",
+            "label": "Qwen3.7 Plus"
+          },
+          {
+            "id": "qwen3.6-plus",
+            "label": "Qwen3.6 Plus"
+          },
+          {
+            "id": "qwen3.5-plus",
+            "label": "Qwen3.5 Plus"
+          },
+          {
+            "id": "mimo-v2-pro",
+            "label": "MiMo V2 Pro"
+          },
+          {
+            "id": "mimo-v2-omni",
+            "label": "MiMo V2 Omni"
+          },
+          {
+            "id": "mimo-v2.5-pro",
+            "label": "MiMo V2.5 Pro"
+          },
+          {
+            "id": "mimo-v2.5",
+            "label": "MiMo V2.5"
+          },
+          {
+            "id": "kimi-k3",
+            "label": "Kimi K3"
+          },
+          {
+            "id": "gpt-5.6-luna",
+            "label": "GPT 5.6 Luna"
+          },
+          {
+            "id": "grok-4.5",
+            "label": "Grok 4.5"
+          },
+          {
+            "id": "glm-5.3",
+            "label": "GLM 5.3"
+          },
+          {
+            "id": "glm-5.3-flash",
+            "label": "GLM 5.3 Flash"
+          },
+          {
+            "id": "qwen3.8-max",
+            "label": "Qwen3.8 MAX"
+          },
+          {
+            "id": "hy3",
+            "label": "HY3"
+          },
+          {
+            "id": "hy3-preview",
+            "label": "HY3 Preview"
+          },
+          {
+            "id": "muse-spark-1.2-contributor",
+            "label": "Muse Spark 1.2 Contributor"
+          },
+          {
+            "id": "muse-spark-1.3-contributor",
+            "label": "Muse Spark 1.3 Contributor"
+          }
+        ],
+        "models_total": 29
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "OpenCode Zen",
+        "has_key": false,
+        "id": "opencode-zen",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "gpt-5.4-pro",
+            "label": "GPT-5.4 Pro"
+          },
+          {
+            "id": "gpt-5.4",
+            "label": "GPT-5.4"
+          },
+          {
+            "id": "gpt-5.4-mini",
+            "label": "GPT-5.4 Mini"
+          },
+          {
+            "id": "gpt-5.4-nano",
+            "label": "GPT-5.4 Nano"
+          },
+          {
+            "id": "gpt-5.3-codex",
+            "label": "GPT-5.3 Codex"
+          },
+          {
+            "id": "gpt-5.3-codex-spark",
+            "label": "GPT-5.3 Codex Spark"
+          },
+          {
+            "id": "gpt-5.2",
+            "label": "GPT-5.2"
+          },
+          {
+            "id": "gpt-5.2-codex",
+            "label": "GPT-5.2 Codex"
+          },
+          {
+            "id": "gpt-5.1",
+            "label": "GPT-5.1"
+          },
+          {
+            "id": "gpt-5.1-codex",
+            "label": "GPT-5.1 Codex"
+          },
+          {
+            "id": "gpt-5.1-codex-max",
+            "label": "GPT-5.1 Codex Max"
+          },
+          {
+            "id": "gpt-5.1-codex-mini",
+            "label": "GPT-5.1 Codex Mini"
+          },
+          {
+            "id": "gpt-5",
+            "label": "GPT-5"
+          },
+          {
+            "id": "gpt-5-codex",
+            "label": "GPT-5 Codex"
+          },
+          {
+            "id": "gpt-5-nano",
+            "label": "GPT-5 Nano"
+          },
+          {
+            "id": "claude-opus-4-7",
+            "label": "Claude Opus 4.7"
+          },
+          {
+            "id": "claude-opus-4-6",
+            "label": "Claude Opus 4.6"
+          },
+          {
+            "id": "claude-opus-4-5",
+            "label": "Claude Opus 4.5"
+          },
+          {
+            "id": "claude-opus-4-1",
+            "label": "Claude Opus 4.1"
+          },
+          {
+            "id": "claude-sonnet-4-6",
+            "label": "Claude Sonnet 4.6"
+          },
+          {
+            "id": "claude-sonnet-4-5",
+            "label": "Claude Sonnet 4.5"
+          },
+          {
+            "id": "claude-sonnet-4",
+            "label": "Claude Sonnet 4"
+          },
+          {
+            "id": "claude-haiku-4-5",
+            "label": "Claude Haiku 4.5"
+          },
+          {
+            "id": "claude-3-5-haiku",
+            "label": "Claude 3.5 Haiku"
+          },
+          {
+            "id": "gemini-3.1-pro-preview",
+            "label": "Gemini 3.1 Pro Preview"
+          },
+          {
+            "id": "gemini-3-flash-preview",
+            "label": "Gemini 3 Flash Preview"
+          },
+          {
+            "id": "gemini-3.1-flash-lite-preview",
+            "label": "Gemini 3.1 Flash Lite Preview"
+          },
+          {
+            "id": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro"
+          },
+          {
+            "id": "gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash"
+          },
+          {
+            "id": "glm-5.1",
+            "label": "GLM-5.1"
+          },
+          {
+            "id": "glm-5",
+            "label": "GLM-5"
+          },
+          {
+            "id": "kimi-k2.5",
+            "label": "Kimi K2.5"
+          },
+          {
+            "id": "minimax-m2.5",
+            "label": "MiniMax M2.5"
+          },
+          {
+            "id": "minimax-m2.5-free",
+            "label": "MiniMax M2.5 Free"
+          },
+          {
+            "id": "nemotron-3-super-free",
+            "label": "Nemotron 3 Super Free"
+          },
+          {
+            "id": "big-pickle",
+            "label": "Big Pickle"
+          },
+          {
+            "id": "x-preview-f-free",
+            "label": "X Preview F Free"
+          },
+          {
+            "id": "kimi-k3",
+            "label": "Kimi K3"
+          },
+          {
+            "id": "kimi-k2.6",
+            "label": "Kimi K2.6"
+          },
+          {
+            "id": "gpt-5.6-sol",
+            "label": "GPT 5.6 SOL"
+          },
+          {
+            "id": "gpt-5.6-terra",
+            "label": "GPT 5.6 Terra"
+          },
+          {
+            "id": "gpt-5.6-luna",
+            "label": "GPT 5.6 Luna"
+          },
+          {
+            "id": "gpt-5.5",
+            "label": "GPT 5.5"
+          },
+          {
+            "id": "gpt-5.5-pro",
+            "label": "GPT 5.5 PRO"
+          },
+          {
+            "id": "claude-fable-5",
+            "label": "Claude Fable 5"
+          },
+          {
+            "id": "claude-opus-5",
+            "label": "Claude Opus 5"
+          },
+          {
+            "id": "claude-sonnet-5",
+            "label": "Claude Sonnet 5"
+          },
+          {
+            "id": "claude-opus-4-8",
+            "label": "Claude Opus 4 8"
+          },
+          {
+            "id": "gemini-3.8-flash",
+            "label": "Gemini 3.8 Flash"
+          },
+          {
+            "id": "gemini-3.7-flash",
+            "label": "Gemini 3.7 Flash"
+          },
+          {
+            "id": "gemini-3.6-flash",
+            "label": "Gemini 3.6 Flash"
+          },
+          {
+            "id": "gemini-3.5-flash",
+            "label": "Gemini 3.5 Flash"
+          },
+          {
+            "id": "gemini-3.5-flash-lite",
+            "label": "Gemini 3.5 Flash Lite"
+          },
+          {
+            "id": "gemini-3.1-pro",
+            "label": "Gemini 3.1 PRO"
+          },
+          {
+            "id": "gemini-3-flash",
+            "label": "Gemini 3 Flash"
+          },
+          {
+            "id": "grok-4.6",
+            "label": "Grok 4.6"
+          },
+          {
+            "id": "grok-4.5",
+            "label": "Grok 4.5"
+          },
+          {
+            "id": "grok-build-0.1",
+            "label": "Grok Build 0.1"
+          },
+          {
+            "id": "muse-spark-1.2",
+            "label": "Muse Spark 1.2"
+          },
+          {
+            "id": "minimax-m3",
+            "label": "Minimax M3"
+          },
+          {
+            "id": "minimax-m2.7",
+            "label": "Minimax M2.7"
+          },
+          {
+            "id": "glm-5.3",
+            "label": "GLM 5.3"
+          },
+          {
+            "id": "glm-5.3-flash",
+            "label": "GLM 5.3 Flash"
+          },
+          {
+            "id": "glm-5.2",
+            "label": "GLM 5.2"
+          },
+          {
+            "id": "kimi-k2.7-code",
+            "label": "Kimi K2.7 Code"
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "label": "Deepseek V4 PRO"
+          },
+          {
+            "id": "deepseek-v4-flash",
+            "label": "Deepseek V4 Flash"
+          },
+          {
+            "id": "deepseek-v4-flash-free",
+            "label": "Deepseek V4 Flash Free"
+          },
+          {
+            "id": "qwen3.6-plus",
+            "label": "Qwen3.6 Plus"
+          },
+          {
+            "id": "qwen3.5-plus",
+            "label": "Qwen3.5 Plus"
+          },
+          {
+            "id": "mimo-v2.5-free",
+            "label": "Mimo V2.5 Free"
+          },
+          {
+            "id": "hy3-free",
+            "label": "HY3 Free"
+          },
+          {
+            "id": "laguna-s-2.1-free",
+            "label": "Laguna S 2.1 Free"
+          },
+          {
+            "id": "nemotron-3-ultra-free",
+            "label": "Nemotron 3 Ultra Free"
+          },
+          {
+            "id": "nemotron-3.5-lightning-free",
+            "label": "Nemotron 3.5 Lightning Free"
+          },
+          {
+            "id": "muse-spark-1.2-contributor-free",
+            "label": "Muse Spark 1.2 Contributor Free"
+          },
+          {
+            "id": "muse-spark-1.3-contributor-free",
+            "label": "Muse Spark 1.3 Contributor Free"
+          }
+        ],
+        "models_total": 77
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "OpenRouter",
+        "has_key": false,
+        "id": "openrouter",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "Qwen",
+        "has_key": false,
+        "id": "qwen",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "qwen3-coder",
+            "label": "Qwen3 Coder"
+          },
+          {
+            "id": "qwen3.6-plus",
+            "label": "Qwen3.6 Plus"
+          },
+          {
+            "id": "qwen3.8-max",
+            "label": "Qwen3.8 MAX"
+          },
+          {
+            "id": "qwen3.7-max",
+            "label": "Qwen3.7 MAX"
+          },
+          {
+            "id": "qwen3.7-plus",
+            "label": "Qwen3.7 Plus"
+          },
+          {
+            "id": "qwen3.6-flash",
+            "label": "Qwen3.6 Flash"
+          },
+          {
+            "id": "kimi-k2.5",
+            "label": "Kimi K2.5"
+          },
+          {
+            "id": "qwen3.5-plus",
+            "label": "Qwen3.5 Plus"
+          },
+          {
+            "id": "qwen3-coder-plus",
+            "label": "Qwen3 Coder Plus"
+          },
+          {
+            "id": "qwen3-coder-next",
+            "label": "Qwen3 Coder Next"
+          },
+          {
+            "id": "glm-5.2",
+            "label": "GLM 5.2"
+          },
+          {
+            "id": "glm-5",
+            "label": "GLM 5"
+          },
+          {
+            "id": "glm-4.7",
+            "label": "GLM 4.7"
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "label": "Deepseek V4 PRO"
+          },
+          {
+            "id": "deepseek-v4-flash-0731",
+            "label": "Deepseek V4 Flash 0731"
+          },
+          {
+            "id": "MiniMax-M2.5",
+            "label": "Minimax M2.5"
+          }
+        ],
+        "models_total": 16
+      },
+      {
+        "auth_error": "Qwen CLI credentials not found. Run 'qwen auth qwen-oauth' first.",
+        "base_url": null,
+        "configurable": false,
+        "display_name": "qwen-oauth",
+        "has_key": false,
+        "id": "qwen-oauth",
+        "is_oauth": true,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "oauth",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Ramp Router",
+        "has_key": false,
+        "id": "router",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "stepfun",
+        "has_key": false,
+        "id": "stepfun",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Tencent TokenHub",
+        "has_key": false,
+        "id": "tencent-tokenhub",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "hy4-preview",
+            "label": "Hy4 Preview"
+          },
+          {
+            "id": "hy3",
+            "label": "Hy3"
+          },
+          {
+            "id": "hy3-preview",
+            "label": "Hy3 Preview"
+          }
+        ],
+        "models_total": 3
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Tencent TokenPlan",
+        "has_key": false,
+        "id": "tencent-tokenplan",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "hy4-preview",
+            "label": "Hy4 Preview"
+          },
+          {
+            "id": "hy3",
+            "label": "Hy3"
+          },
+          {
+            "id": "hy3-preview",
+            "label": "Hy3 Preview"
+          }
+        ],
+        "models_total": 3
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Upstage Solar",
+        "has_key": false,
+        "id": "upstage",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "solar-pro3",
+            "label": "solar-pro3"
+          }
+        ],
+        "models_total": 1
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": false,
+        "display_name": "vertex",
+        "has_key": false,
+        "id": "vertex",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "xAI",
+        "has_key": false,
+        "id": "x-ai",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "grok-4.20",
+            "label": "Grok 4.20"
+          },
+          {
+            "id": "grok-4.6",
+            "label": "Grok 4.6"
+          },
+          {
+            "id": "grok-composer-2.5-fast",
+            "label": "Grok Composer 2.5 Fast"
+          },
+          {
+            "id": "grok-build-0.1",
+            "label": "Grok Build 0.1"
+          },
+          {
+            "id": "grok-4.5",
+            "label": "Grok 4.5"
+          },
+          {
+            "id": "grok-4.3",
+            "label": "Grok 4.3"
+          },
+          {
+            "id": "grok-4.20-0309-reasoning",
+            "label": "Grok 4.20 0309 Reasoning"
+          },
+          {
+            "id": "grok-4.20-0309-non-reasoning",
+            "label": "Grok 4.20 0309 NON Reasoning"
+          },
+          {
+            "id": "grok-4.20-multi-agent-0309",
+            "label": "Grok 4.20 Multi Agent 0309"
+          }
+        ],
+        "models_total": 9
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "xai",
+        "has_key": false,
+        "id": "xai",
+        "is_oauth": false,
+        "is_plugin_provider": true,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [],
+        "models_total": 0
+      },
+      {
+        "auth_error": "No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `hermes model`.",
+        "base_url": null,
+        "configurable": false,
+        "display_name": "xAI Grok OAuth",
+        "has_key": false,
+        "id": "xai-oauth",
+        "is_oauth": true,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "oauth",
+        "models": [
+          {
+            "id": "grok-4.6",
+            "label": "Grok 4.6"
+          },
+          {
+            "id": "grok-composer-2.5-fast",
+            "label": "Grok Composer 2.5 Fast"
+          },
+          {
+            "id": "grok-build-0.1",
+            "label": "Grok Build 0.1"
+          },
+          {
+            "id": "grok-4.5",
+            "label": "Grok 4.5"
+          },
+          {
+            "id": "grok-4.3",
+            "label": "Grok 4.3"
+          },
+          {
+            "id": "grok-4.20-0309-reasoning",
+            "label": "Grok 4.20 0309 Reasoning"
+          },
+          {
+            "id": "grok-4.20-0309-non-reasoning",
+            "label": "Grok 4.20 0309 NON Reasoning"
+          },
+          {
+            "id": "grok-4.20-multi-agent-0309",
+            "label": "Grok 4.20 Multi Agent 0309"
+          }
+        ],
+        "models_total": 8
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Xiaomi",
+        "has_key": false,
+        "id": "xiaomi",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "mimo-v2.5-pro",
+            "label": "MiMo V2.5 Pro"
+          },
+          {
+            "id": "mimo-v2.5",
+            "label": "MiMo V2.5"
+          },
+          {
+            "id": "mimo-v2-pro",
+            "label": "MiMo V2 Pro"
+          },
+          {
+            "id": "mimo-v2-omni",
+            "label": "MiMo V2 Omni"
+          },
+          {
+            "id": "mimo-v2-flash",
+            "label": "MiMo V2 Flash"
+          }
+        ],
+        "models_total": 5
+      },
+      {
+        "auth_error": null,
+        "base_url": null,
+        "configurable": true,
+        "display_name": "Z.AI / GLM",
+        "has_key": false,
+        "id": "zai",
+        "is_oauth": false,
+        "is_plugin_provider": false,
+        "is_self_hosted": false,
+        "key_source": "none",
+        "models": [
+          {
+            "id": "glm-5.3",
+            "label": "GLM-5.3"
+          },
+          {
+            "id": "glm-5.3-flash",
+            "label": "GLM-5.3 Flash"
+          },
+          {
+            "id": "glm-5.2",
+            "label": "GLM-5.2"
+          },
+          {
+            "id": "glm-5.1",
+            "label": "GLM-5.1"
+          },
+          {
+            "id": "glm-5",
+            "label": "GLM-5"
+          },
+          {
+            "id": "glm-5-turbo",
+            "label": "GLM-5 Turbo"
+          },
+          {
+            "id": "glm-4.7",
+            "label": "GLM-4.7"
+          },
+          {
+            "id": "glm-4.5",
+            "label": "GLM-4.5"
+          },
+          {
+            "id": "glm-4.5-flash",
+            "label": "GLM-4.5 Flash"
+          },
+          {
+            "id": "glm-5v-turbo",
+            "label": "GLM 5V Turbo"
+          }
+        ],
+        "models_total": 10
+      }
+    ]
+  },
+  "method": "GET",
+  "path": "/api/providers",
+  "status": 200
+}

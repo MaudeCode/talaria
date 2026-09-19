@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+/* `app` holds the component sheets (src/theme/components). It is ordered after utilities so state and
+   descendant rules keep winning over the structural utilities in JSX. Token values come from
+   `virtual:hermes-theme.css` (src/theme/skins.ts); extension skins set tokens inline on <html>. */
+@layer theme, base, components, utilities, app;
+@import './theme.css';
+@import './keyframes.css';
+@import './components/index.css';
+
+/* Tailwind consumes the legacy design tokens as its theme. Utilities such as
+   bg-surface, text-muted, border-border, rounded-card resolve to the same
+   custom properties the skins override, so every theme and skin keeps working. */
+/* The legacy design is specified in px on a 14px root; Tailwind's spacing scale is px-based here so
+   `p-2`, `gap-1`, `size-6` mean exactly 8px, 4px, 24px as the legacy rules did. */
+@theme {
+  --spacing: 4px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-subtle-hover: var(--surface-subtle-hover);
+  --color-main: var(--main-bg);
+  --color-topbar: var(--topbar-bg);
+  --color-input: var(--input-bg);
+  --color-hover: var(--hover-bg);
+  --color-border: var(--border);
+  --color-border2: var(--border2);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-muted: var(--border-muted);
+  --color-text: var(--text);
+  --color-strong: var(--strong);
+  --color-muted: var(--muted);
+  --color-em: var(--em);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-bg-strong: var(--accent-bg-strong);
+  --color-accent-text: var(--accent-text);
+  --color-accent-fg: var(--accent-fg);
+  --color-blue: var(--blue);
+  --color-gold: var(--gold);
+  --color-code-bg: var(--code-bg);
+  --color-code-text: var(--code-text);
+  --color-code-inline-bg: var(--code-inline-bg);
+  --color-pre-text: var(--pre-text);
+  --color-error: var(--error);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-focus-ring: var(--focus-ring);
+  --color-focus-glow: var(--focus-glow);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-card: var(--radius-card);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
+  --font-ui: var(--font-ui);
+  --font-conversation: var(--font-conversation);
+  --font-mono: var(--font-mono);
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-md: var(--font-size-md);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+}
+
+@layer base {
+  /* The SPA mounts into #app; the legacy shell was <body> itself, so #app takes over body's column layout. */
+  #app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  }
+}

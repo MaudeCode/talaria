@@ -1,0 +1,8 @@
+{
+  "body": {
+    "error": "session_id required"
+  },
+  "method": "GET",
+  "path": "/api/git-info",
+  "status": 400
+}

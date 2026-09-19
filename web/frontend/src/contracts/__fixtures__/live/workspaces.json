@@ -1,0 +1,15 @@
+{
+  "body": {
+    "last": "/tmp/hermes-state/workspace",
+    "terminal_remote_backend": false,
+    "workspaces": [
+      {
+        "name": "Home",
+        "path": "/tmp/hermes-state/workspace"
+      }
+    ]
+  },
+  "method": "GET",
+  "path": "/api/workspaces",
+  "status": 200
+}

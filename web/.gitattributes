@@ -1,0 +1,15 @@
+# Normalize line endings to LF in the repository.
+* text=auto
+
+# Shell scripts must stay LF on checkout too. A CRLF shebang (`#!/bin/bash\r`)
+# breaks the Docker image: the kernel can't find interpreter `/bin/bash\r`, so
+# local `docker compose up -d --build` on Windows machines with
+# `core.autocrlf=true` fails with `exec /hermeswebui_init.bash: no such file
+# or directory`.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Committed frontend build output: generated, minified vendor code. Not diffed
+# by default and exempt from whitespace checks (template literals in bundled
+# grammars carry trailing spaces that are part of the source).
+static/dist/** linguist-generated -diff -whitespace

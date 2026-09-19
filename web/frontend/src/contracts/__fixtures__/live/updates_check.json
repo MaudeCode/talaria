@@ -1,0 +1,13 @@
+{
+  "body": {
+    "agent": null,
+    "cached": true,
+    "channel": "stable",
+    "checked_at": 0,
+    "include_agent": true,
+    "webui": null
+  },
+  "method": "GET",
+  "path": "/api/updates/check",
+  "status": 200
+}

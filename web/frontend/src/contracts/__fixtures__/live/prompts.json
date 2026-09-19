@@ -1,0 +1,8 @@
+{
+  "body": {
+    "prompts": []
+  },
+  "method": "GET",
+  "path": "/api/prompts",
+  "status": 200
+}

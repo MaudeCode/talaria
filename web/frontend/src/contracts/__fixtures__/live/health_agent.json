@@ -1,0 +1,19 @@
+{
+  "body": {
+    "alive": null,
+    "checked_at": "2026-09-15T02:11:17.381595+00:00",
+    "details": {
+      "reason": "gateway_not_configured",
+      "state": "unknown"
+    },
+    "gateway_chat": {
+      "api_key_configured": false,
+      "backend": "legacy",
+      "base_url_configured": true,
+      "enabled": false
+    }
+  },
+  "method": "GET",
+  "path": "/api/health/agent",
+  "status": 200
+}

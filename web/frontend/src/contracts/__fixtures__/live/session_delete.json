@@ -1,0 +1,9 @@
+{
+  "body": {
+    "ok": true,
+    "state_db_cleanup_failed": false
+  },
+  "method": "POST",
+  "path": "/api/session/delete",
+  "status": 200
+}

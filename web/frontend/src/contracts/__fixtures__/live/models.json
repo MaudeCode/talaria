@@ -1,0 +1,23 @@
+{
+  "body": {
+    "active_provider": null,
+    "aliases": {},
+    "configured_model_badges": {},
+    "default_model": "openai/gpt-5.4-mini",
+    "groups": [
+      {
+        "models": [
+          {
+            "id": "openai/gpt-5.4-mini",
+            "label": "GPT 5.4 Mini"
+          }
+        ],
+        "provider": "Default",
+        "provider_id": "default"
+      }
+    ]
+  },
+  "method": "GET",
+  "path": "/api/models",
+  "status": 200
+}

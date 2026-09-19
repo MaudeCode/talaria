@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-eu92a5pu.js";import{t}from"./ChatPage-kuwup7ap.js";import{l as n}from"./index-k3ppw9cq.js";var r=e();function i(){let{sessionId:e}=n.useParams();return(0,r.jsx)(t,{sessionId:e})}export{i as component};

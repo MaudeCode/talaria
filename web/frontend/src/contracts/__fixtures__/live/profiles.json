@@ -1,0 +1,25 @@
+{
+  "body": {
+    "active": "default",
+    "profiles": [
+      {
+        "enabled_skills": 0,
+        "gateway_running": false,
+        "has_env": false,
+        "is_active": true,
+        "is_default": true,
+        "model": null,
+        "name": "default",
+        "path": "/tmp/hermes-state",
+        "provider": null,
+        "skill_count": 0,
+        "total_skills": 0,
+        "visible": true
+      }
+    ],
+    "single_profile_mode": false
+  },
+  "method": "GET",
+  "path": "/api/profiles",
+  "status": 200
+}

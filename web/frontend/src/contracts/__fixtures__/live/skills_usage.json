@@ -1,0 +1,11 @@
+{
+  "body": {
+    "skill_names": [],
+    "total_invocations": 0,
+    "unique_skills_used": 0,
+    "usage": {}
+  },
+  "method": "GET",
+  "path": "/api/skills/usage",
+  "status": 200
+}

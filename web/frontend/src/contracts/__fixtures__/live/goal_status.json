@@ -1,0 +1,12 @@
+{
+  "body": {
+    "action": "status",
+    "goal": null,
+    "message": "No active goal. Set one with /goal <text>.",
+    "message_key": "goal_status_none",
+    "ok": true
+  },
+  "method": "POST",
+  "path": "/api/goal",
+  "status": 200
+}
