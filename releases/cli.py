@@ -9,8 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from plan import assemble, git, resolve, validate_request
-from release_set import COMPONENTS, VALIDATOR
+from plan import VERSION, assemble, git, resolve, validate_request
+from release_set import COMPONENTS, VALIDATOR, require_version_advance
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "MaudeCode/talaria"
@@ -71,12 +71,24 @@ def require_latest_predecessor(previous):
         "gh", "api", "--paginate", "--slurp", f"repos/{REPOSITORY}/releases?per_page=100",
     ]))
     published = [release for page in pages for release in page
-                 if release.get("draft") is False and release.get("published_at")
-                 and re.fullmatch(r"release-set-[a-f0-9]{40}", release.get("tag_name", ""))]
-    latest = max(published, key=lambda release: release["published_at"]) if published else None
+                 if release.get("draft") is False and release.get("published_at")]
+    sets = [release for release in published if re.fullmatch(r"release-set-[a-f0-9]{40}", release.get("tag_name", ""))]
+    latest = max(sets, key=lambda release: release["published_at"]) if sets else None
     expected = latest["tag_name"].removeprefix("release-set-") if latest else None
     if (previous["releaseSet"] if previous else None) != expected:
         raise ValueError("previous_release_set must identify the latest published release set; empty is valid only before bootstrap")
+    return published
+
+
+def require_component_versions(tags, previous, published):
+    for name, tag in tags.items():
+        if previous and tag == previous["components"][name]["tag"]:
+            continue
+        prefix = tag.rsplit("-v", 1)[0] + "-v"
+        for release in published:
+            prior_tag = release.get("tag_name", "")
+            if re.fullmatch(re.escape(prefix) + VERSION, prior_tag):
+                require_version_advance(tag, prior_tag)
 
 
 def prepare(args):
@@ -85,7 +97,8 @@ def prepare(args):
     previous = load(args.previous) if args.previous else None
     source = request["sourceRevision"]
     run_url()  # Fail before doing work if provenance cannot be recorded.
-    require_latest_predecessor(previous)
+    published = require_latest_predecessor(previous)
+    require_component_versions(request["tags"], previous, published)
     env = {**os.environ, "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_SHA": source}
     subprocess.run([str(ROOT / "app/ci/require_successful_main_ci")], cwd=ROOT, env=env, check=True)
     with tempfile.TemporaryDirectory(prefix="talaria-release-refs-") as temporary:

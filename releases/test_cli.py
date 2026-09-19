@@ -15,6 +15,22 @@ import cli
 
 
 class WorkflowCommandTests(unittest.TestCase):
+    def test_version_history_survives_channel_switches(self):
+        from release_set import require_version_advance
+
+        tags = {"app": "app-v1.1.0", "web": "web-v2.1.0", "relay": "relay-v3.1.0"}
+        previous = {"components": {name: {"tag": tag} for name, tag in tags.items()}}
+        previous["components"]["web"]["tag"] = "web-exp-v0.5.0"
+        published = [{"tag_name": "web-v2.0.0"}, {"tag_name": "web-exp-v0.5.0"}]
+        cli.require_component_versions(tags, previous, published)
+        for version in ("1.9.0", "2.0.0"):
+            with self.assertRaisesRegex(ValueError, "must advance"):
+                cli.require_component_versions({**tags, "web": "web-v" + version}, previous, published)
+        require_version_advance("web-v2.10.0", "web-v2.9.0")
+        require_version_advance("web-exp-v0.6.0", "web-v2.0.0")
+        with self.assertRaises(ValueError):
+            require_version_advance("web-exp-v0.5.0", "web-exp-v0.5.0")
+
     def test_bootstrap_requires_no_published_predecessor(self):
         old, current = "a" * 40, "b" * 40
         releases = [[{"tag_name": "release-set-" + old, "draft": False, "published_at": "2026-01-01T00:00:00Z"}],

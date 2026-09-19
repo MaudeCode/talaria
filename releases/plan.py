@@ -7,7 +7,7 @@ import subprocess
 from copy import deepcopy
 
 from jsonschema import Draft202012Validator
-from release_set import COMPONENTS, SCHEMA, VALIDATOR, validate
+from release_set import COMPONENTS, SCHEMA, VALIDATOR, require_version_advance, validate
 
 SHA = re.compile(r"[a-f0-9]{40}")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -75,6 +75,8 @@ def resolve(root, request, previous=None):
             if name == "relay" and deployment != component["deploymentId"]:
                 raise ValueError("unchanged Relay cannot move deployments")
         else:
+            if prior:
+                require_version_advance(tag, prior["tag"])
             if revision != source:
                 raise ValueError(f"changed {name} must use the release-set source")
             component = {"tag": tag, "version": tag.split("-v")[-1],

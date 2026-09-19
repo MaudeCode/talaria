@@ -20,6 +20,13 @@ COMMON_GATES = {"signedTags", "mainCI", "currentContracts", "previousAppContract
 PUBLISH_GATES = {"app": "uploadApp", "web": "publishWeb", "relay": "deployRelay"}
 
 
+def require_version_advance(tag, prior_tag):
+    channel, version = tag.rsplit("-v", 1)
+    prior_channel, prior_version = prior_tag.rsplit("-v", 1)
+    if channel == prior_channel and tuple(map(int, version.split("."))) <= tuple(map(int, prior_version.split("."))):
+        raise ValueError(f"{tag} must advance the published version {prior_tag}")
+
+
 def validate(document, previous=None):
     """Reject mutable references, incomplete receipts and incompatible peers."""
     VALIDATOR.validate(document)
@@ -52,6 +59,8 @@ def validate(document, previous=None):
             continue
         if prior and component["tag"] == prior["tag"]:
             raise ValueError(f"{name} cannot mutate an existing component tag")
+        if prior:
+            require_version_advance(component["tag"], prior["tag"])
         if component["sourceRevision"] != document["releaseSet"]:
             raise ValueError(f"changed {name} must use the release-set commit")
         changed.append(name)

@@ -112,6 +112,18 @@ class PlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 assemble(plan, receipts, self.notes, complete=True)
 
+    def test_changed_components_cannot_regress_versions(self):
+        first = resolve(self.root, self.request)
+        previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
+        (self.root / "seed").write_text("next release source")
+        self.git("commit", "-am", "next source")
+        source = self.git("rev-parse", "HEAD")
+        for name, tag in (("app", "app-v0.9.0"), ("web", "web-v1.9.0"), ("relay", "relay-v2.9.0")):
+            self.git("tag", "-a", tag, "-m", "synthetic regressed version")
+            request = {**self.request, "sourceRevision": source, "tags": {**self.tags, name: tag}}
+            with self.subTest(component=name), self.assertRaisesRegex(ValueError, "must advance"):
+                resolve(self.root, request, previous)
+
 
 if __name__ == "__main__":
     unittest.main()
