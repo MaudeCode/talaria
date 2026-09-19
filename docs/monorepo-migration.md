@@ -145,9 +145,16 @@ The native Docker check also verifies state-directory UID detection and explicit
 UID preservation. It runs on the existing macOS runner with Docker Desktop.
 A trap/finally block cleans up only each check's resources.
 
-CI routes component paths individually. Shared policy/docs and interface paths
-run all affected components and contract validation. Main pushes run every
-component. `CI Gate` always reports, including when component jobs are skipped.
+CI classifies the complete PR or main-push diff with `scripts/changed-components.py`.
+App, App tooling, Web Python, Web frontend, Docker, Relay, shared contracts and
+repository tooling have independent gates. A frontend change plus its changelog
+fragment runs frontend checks; changelog-only edits run release metadata
+validation without App tests. Documentation keeps its existing lightweight
+checks. Shared contracts select their consumers, and unknown paths or missing
+diff evidence select every suite. Renames include both old and new paths.
+`CI Gate` always reports and requires success from every selected suite; an
+unexpected skip fails the gate. Repository tooling always validates release
+fragments and runs its full tests only when tooling is affected.
 The release templates contain their original credentials and approvals but do
 not execute during source consolidation.
 

@@ -3,12 +3,22 @@ name: Repository Tooling
 on:
   workflow_call:
     inputs:
+      full:
+        description: Run tooling tests in addition to required release metadata validation.
+        required: false
+        type: boolean
+        default: true
       ref:
         required: false
         type: string
         default: ""
   workflow_dispatch:
     inputs:
+      full:
+        description: Run tooling tests in addition to required release metadata validation.
+        required: false
+        type: boolean
+        default: true
       ref:
         description: Optional branch, tag, or commit to validate.
         required: false
@@ -34,17 +44,20 @@ jobs:
           fetch-depth: 0
 
       - name: Prepare tooling runtime
+        if: inputs.full
         run: |
           sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends zsh
 
       - name: Set up Ruby
+        if: inputs.full
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
 
-      - name: Run actionlint
+      - name: Install actionlint
+        if: inputs.full
         env:
           ACTIONLINT_VERSION: 1.7.12
           ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
@@ -54,20 +67,11 @@ jobs:
           curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
           echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check
           tar -xzf "${archive}" actionlint
-          ./actionlint -config-file ../.github/actionlint.yaml ../.github/workflows/*.yml
+          echo "$PWD" >> "$GITHUB_PATH"
 
       - name: Test repository tooling
-        run: |
-          python3 ../scripts/rehearse-monorepo.py --verify-only
-          python3 ../scripts/changed-components.py --self-test
-          python3 ../scripts/test-monorepo-import.py
-          python3 ci/release_notes_test.py
-          python3 ci/load_env_test.py
-          python3 scripts/test-ios-device-selection
-          ruby ci/select_testflight_build_number_test.rb
-          ruby ci/test_ios_runner_test.rb
-          ci/require_successful_main_ci_test.sh
-          ci/validate_release_tag_test.sh
+        if: inputs.full
+        run: ../scripts/check tooling
 
       - name: Validate release fragments
         env:
@@ -80,12 +84,14 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             # The event's base SHA can lag main; HEAD is GitHub's merged test tree.
             options=(--base "$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" "${PR_HEAD}")" --target "${PR_HEAD}")
-          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" && -n "${CHANGE_BASE}" && ! "${CHANGE_BASE}" =~ ^0+$ ]]; then
             options=(--base "${CHANGE_BASE}")
           fi
           python3 ci/release_notes.py validate "${options[@]}"
+          git diff --check
 
       - name: Validate property lists
+        if: inputs.full
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -98,6 +104,7 @@ jobs:
           PY
 
       - name: Check script syntax
+        if: inputs.full
         run: |
           set -euo pipefail
           bash -n ci/require_successful_main_ci ci/require_successful_main_ci_test.sh ci/validate_release_tag ci/validate_release_tag_test.sh scripts/check-swift-file-sizes scripts/webui-json
