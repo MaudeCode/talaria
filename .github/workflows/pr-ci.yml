@@ -288,6 +288,7 @@ jobs:
 
       - name: Upload performance metrics
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: performance-metrics
@@ -299,6 +300,7 @@ jobs:
 
       - name: Upload test results on failure
         if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results
@@ -329,9 +331,21 @@ jobs:
     runs-on: maude-mac
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
+      - name: Install Python in job-owned storage
+        env:
+          UV_VERSION: "0.11.3"
+          UV_SHA256: 2bc3d0c7bf2bd08325b1e170abac6f7e5b3346e1d4eab3370d17cefec934996f
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/uv.tar.gz"
+          curl -fsSL "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-aarch64-apple-darwin.tar.gz" -o "$archive"
+          echo "$UV_SHA256  $archive" | shasum -a 256 --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          uv_bin="$RUNNER_TEMP/uv-aarch64-apple-darwin/uv"
+          export UV_PYTHON_INSTALL_DIR="$RUNNER_TEMP/python"
+          "$uv_bin" --no-config python install 3.13
+          contract_python=$("$uv_bin" --no-config python find --managed-python --no-project 3.13)
+          echo "HERMES_WEBUI_TEST_PYTHON=$contract_python" >> "$GITHUB_ENV"
       - name: Check local App to Web HTTP and SSE contracts
         run: scripts/validate-upstream-contract
 

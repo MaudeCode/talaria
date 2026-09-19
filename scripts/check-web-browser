@@ -26,6 +26,8 @@ PY
 cd "$root/web/frontend"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
 npx playwright install chromium
-env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \
+run_env=(env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \
   PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
-  HERMES_E2E_PORT="$port" HERMES_E2E_PYTHON="$python_bin" npm run e2e -- "$@"
+  HERMES_E2E_PORT="$port" HERMES_E2E_PYTHON="$python_bin")
+if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then run_env+=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
+"${run_env[@]}" npm run e2e -- "$@"

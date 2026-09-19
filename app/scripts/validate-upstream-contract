@@ -89,9 +89,12 @@ echo "Preparing isolated Python environment"
 
 port="$("$venv_dir/bin/python" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 password="talaria-contract-password"
+typeset -a loader_environment
+loader_environment=()
+if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
 (
   cd "$upstream_dir"
-  env -i \
+  env -i "${loader_environment[@]}" \
     PATH="$venv_dir/bin:/usr/bin:/bin" \
     HOME="$run_dir/home" \
     PYTHONPATH="$upstream_dir" \

@@ -4,10 +4,31 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_monorepo_runner_retains_loader_path_without_owner_state(tmp_path):
+    """Relocated setup-python runtimes need their loader path in child processes."""
+    expected = os.pathsep.join(filter(None, [os.environ.get("LD_LIBRARY_PATH"), str(tmp_path / "runtime-library")]))
+    probe = tmp_path / "test_loader_probe.py"
+    probe.write_text(
+        "import os\n"
+        "def test_environment():\n"
+        f"    assert os.environ['LD_LIBRARY_PATH'] == {expected!r}\n"
+        "    assert os.environ['HERMES_HOME'] != '/synthetic-owner-state'\n"
+        "    assert 'HERMES_WEBUI_PASSWORD' not in os.environ\n"
+    )
+    env = dict(os.environ, LD_LIBRARY_PATH=expected, HERMES_WEBUI_TEST_PYTHON=sys.executable,
+               HERMES_HOME="/synthetic-owner-state", HERMES_WEBUI_PASSWORD="synthetic-owner-password")
+    result = subprocess.run(
+        [str(ROOT.parent / "scripts/check-web-python"), str(probe), "-q"],
+        env=env, cwd=ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 def _make_executable(path):
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

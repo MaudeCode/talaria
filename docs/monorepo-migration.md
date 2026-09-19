@@ -155,3 +155,11 @@ standalone source and requires that source to be an ancestor. Rehearsals may
 recreate the import commit while retaining the original source history. Later PRs use
 their normal merge base. Existing upstream lint debt remains visible in the
 informational report; integration edits still pass the forward gate.
+
+The isolated Python launchers preserve an explicit `LD_LIBRARY_PATH` supplied by
+the toolchain while dropping application credentials and state. This is required
+by GitHub's relocated Linux Python binaries. The macOS contract job installs a
+portable CPython under its job-owned temporary directory using the same uv
+toolchain already used by the Web image. Diagnostic uploads are non-blocking;
+the test result and job summary remain authoritative when artifact storage is
+unavailable. Release-artifact validation and delivery remain separate strict gates.
