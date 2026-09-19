@@ -30,13 +30,17 @@ def authorize(plan):
 
 def verify_ipa(path, component):
     with zipfile.ZipFile(path) as archive:
-        info = plistlib.loads(archive.read("Payload/Talaria.app/Info.plist"))
-    if (info.get("CFBundleIdentifier") != "dev.kil.talaria"
-            or info.get("CFBundleShortVersionString") != component["version"]
-            or info.get("CFBundleVersion") != str(component["buildNumber"])
-            or any(info.get("TalariaRelease", {}).get(key) != component[key]
-                   for key in ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts"))):
-        raise ValueError("IPA identity differs from the release plan")
+        bundles = (("", "dev.kil.talaria", True),
+                   ("PlugIns/TalariaShareExtension.appex/", "dev.kil.talaria.shareextension", False),
+                   ("PlugIns/TalariaLiveActivityWidget.appex/", "dev.kil.talaria.liveactivitywidget", True))
+        for directory, identifier, sends_requests in bundles:
+            info = plistlib.loads(archive.read("Payload/Talaria.app/" + directory + "Info.plist"))
+            if (info.get("CFBundleIdentifier") != identifier
+                    or info.get("CFBundleShortVersionString") != component["version"]
+                    or info.get("CFBundleVersion") != str(component["buildNumber"])
+                    or (sends_requests and any(info.get("TalariaRelease", {}).get(key) != component[key]
+                        for key in ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts")))):
+                raise ValueError("IPA identity differs from the release plan")
     return file_digest(path)
 
 

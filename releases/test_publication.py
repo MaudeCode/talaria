@@ -216,9 +216,16 @@ class PublicationTests(unittest.TestCase):
                 "CFBundleVersion": "4", "TalariaRelease": component}
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "synthetic.ipa"
-            def save(value):
+            def save(value, widget_release=None):
                 with zipfile.ZipFile(path, "w") as archive:
                     archive.writestr("Payload/Talaria.app/Info.plist", plistlib.dumps(value))
+                    for name, identifier in (("TalariaShareExtension", "dev.kil.talaria.shareextension"),
+                                             ("TalariaLiveActivityWidget", "dev.kil.talaria.liveactivitywidget")):
+                        extension = {**info, "CFBundleIdentifier": identifier}
+                        if name == "TalariaLiveActivityWidget" and widget_release is not None:
+                            extension["TalariaRelease"] = widget_release
+                        archive.writestr(f"Payload/Talaria.app/PlugIns/{name}.appex/Info.plist",
+                                         plistlib.dumps(extension))
             save(info)
             self.assertEqual(verify_ipa(path, component), hashlib.sha256(path.read_bytes()).hexdigest())
             for key in info:
@@ -227,6 +234,9 @@ class PublicationTests(unittest.TestCase):
                 save(broken)
                 with self.assertRaises(ValueError):
                     verify_ipa(path, component)
+            save(info, widget_release={})
+            with self.assertRaises(ValueError):
+                verify_ipa(path, component)
             for key in component:
                 broken = deepcopy(info)
                 broken["TalariaRelease"][key] = "wrong"

@@ -682,6 +682,7 @@ final class ProviderQuotaWidgetTests: XCTestCase {
                 "1"
             )
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Test"), "widget")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
             let cookie = request.value(forHTTPHeaderField: "Cookie") ?? ""
             XCTAssertTrue(
                 cookie.contains("live=value"),
@@ -879,7 +880,10 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             serverURLString: "https://example.test",
             serverLabel: "Test server",
             refreshIntervalSeconds: refreshIntervalSeconds,
-            headers: [ProviderQuotaWidgetRefreshHeader(name: "X-Test", value: "widget")],
+            headers: [
+                ProviderQuotaWidgetRefreshHeader(name: "X-Test", value: "widget"),
+                ProviderQuotaWidgetRefreshHeader(name: "x-talaria-client", value: "forged identity"),
+            ],
             cookies: [
                 ProviderQuotaWidgetRefreshCookie(
                     HTTPCookie(properties: [

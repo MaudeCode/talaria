@@ -91,6 +91,7 @@ final class KanbanEventStreamClient: KanbanEventStreamingClient {
         config.connectionErrorHandler = { _ in .shutdown }
         let cookieStorage = ServerCookieStore.shared.storage(for: url)
         var builtInHeaders = [
+            AppConfig.clientIdentityHeaderName: AppConfig.clientIdentity,
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
             "Accept-Encoding": "identity"

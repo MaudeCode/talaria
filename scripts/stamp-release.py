@@ -64,13 +64,17 @@ def main():
             "appRelay": [versions["appRelay"]["aggregateSchemaVersion"]],
             "activityScene": [versions["activityScene"]["version"]],
         })
-        destination = ROOT / "app/Talaria/Resources/Info.plist"
-        info = plistlib.loads(destination.read_bytes())
-        if info.get("TalariaRelease", {}).get("sourceRevision"):
-            parser.error("refusing to replace an already stamped App artifact")
-        info.update(TalariaRelease=metadata, CFBundleShortVersionString=args.version,
-                    CFBundleVersion=str(args.build_number))
-        destination.write_bytes(plistlib.dumps(info, sort_keys=False))
+        bundles = []
+        for name in ("Talaria", "TalariaLiveActivityWidget"):
+            destination = ROOT / "app" / name / "Resources/Info.plist"
+            info = plistlib.loads(destination.read_bytes())
+            if info.get("TalariaRelease", {}).get("sourceRevision"):
+                parser.error("refusing to replace an already stamped App artifact")
+            info.update(TalariaRelease=metadata, CFBundleShortVersionString=args.version,
+                        CFBundleVersion=str(args.build_number))
+            bundles.append((destination, info))
+        for destination, info in bundles:
+            destination.write_bytes(plistlib.dumps(info, sort_keys=False))
     if args.component != "app":
         with destination.open(mode) as stream:
             stream.write(json.dumps(metadata, indent=2) + "\n")

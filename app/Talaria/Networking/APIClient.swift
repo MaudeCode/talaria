@@ -518,7 +518,7 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         // slip through unstripped (a sub-second live-edit race; see #277 review).
         // Accepted as a known narrow gap; closing it would require carrying the
         // applied-name set through the redirect.
-        var namesToStrip: Set<String> = ["cookie"]
+        var namesToStrip: Set<String> = ["cookie", AppConfig.clientIdentityHeaderName.lowercased()]
         namesToStrip.formUnion(
             customHeaderProvider()
                 .filter { $0.isApplicable }

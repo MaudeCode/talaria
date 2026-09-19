@@ -49,7 +49,7 @@ def test_stamped_release_metadata_is_validated(tmp_path):
 @pytest.mark.parametrize("component", ["app", "web", "relay"])
 def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path, component):
     root = Path(__file__).resolve().parents[2]
-    for relative in ("scripts/stamp-release.py", "web/api/__init__.py", "web/api/release_info.py", "web/api/agent_dependency.json", "web/api/contract_versions.json", "contracts/versions.json", "relay/convex/releaseInfo.json", "app/Talaria/Resources/Info.plist"):
+    for relative in ("scripts/stamp-release.py", "web/api/__init__.py", "web/api/release_info.py", "web/api/agent_dependency.json", "web/api/contract_versions.json", "contracts/versions.json", "relay/convex/releaseInfo.json", "app/Talaria/Resources/Info.plist", "app/TalariaLiveActivityWidget/Resources/Info.plist"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / relative, target)
@@ -79,10 +79,11 @@ def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path, comp
     assert metadata["sourceRevision"] == sha
     assert metadata["releaseSet"] == sha
     if component == "app":
-        info = plistlib.loads((tmp_path / "app/Talaria/Resources/Info.plist").read_bytes())
-        assert info["TalariaRelease"] == metadata
-        assert info["CFBundleVersion"] == "321"
-        assert info["CFBundleShortVersionString"] == "2.1.0"
+        for bundle in ("Talaria", "TalariaLiveActivityWidget"):
+            info = plistlib.loads((tmp_path / f"app/{bundle}/Resources/Info.plist").read_bytes())
+            assert info["TalariaRelease"] == metadata
+            assert info["CFBundleVersion"] == "321"
+            assert info["CFBundleShortVersionString"] == "2.1.0"
     else:
         destination = "web/api/_release.json" if component == "web" else "relay/convex/releaseInfo.json"
         assert json.loads((tmp_path / destination).read_text()) == metadata
