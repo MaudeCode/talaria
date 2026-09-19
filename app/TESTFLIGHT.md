@@ -10,14 +10,13 @@ Goal: invite external testers only after a clean release-candidate build has bee
 
 ## Supported release path
 
-- From clean, validated `main`, create and push an explicitly authorized signed
-  `vX.Y.Z` tag. No App Store Connect credential is needed locally.
-- `.github/workflows/release.yml` validates the signed tag, exact-SHA main CI,
-  main ancestry, and App Store Connect state. The tag supplies the marketing
-  version and App Store Connect supplies the next build number. The workflow
-  builds one external-capable IPA and uploads it to TestFlight.
-- Use the manual workflow with `upload = false` to prove an existing signed tag
-  through artifact creation without uploading it.
+- Follow the [root release procedure](../releases/README.md) from clean,
+  validated `main`. Signed `app-vX.Y.Z` tags run validation only.
+- Run the root dry-run workflow, then the separately authorized
+  `production-cutover.yml` dispatch. The App tag supplies the marketing version;
+  App Store Connect supplies the next build number. After the server publication
+  gates, the workflow uploads the verified external-capable IPA and awaits processing.
+- Root dry runs build an unsigned archive without publication credentials.
 - App Store Connect agreements, processing or compliance prompts, tester-group
   assignment, external tester selection, and Beta App Review remain manual.
 
@@ -544,16 +543,10 @@ Version-train rule (bitten 2026-06-02 with `1.0` → `1.0.1` and 2026-08-04 with
 
 Current workflow path:
 
-1. Create an explicitly authorized signed `vX.Y.Z` tag on clean, validated `main`.
-2. Push the tag. GitHub Actions selects the next App Store Connect build number and uploads the exact tagged SHA.
-3. Wait for App Store Connect processing.
-
-Manual path, if chosen instead:
-
-1. Archive Release in Xcode from the RC commit.
-2. Distribute through App Store Connect upload.
-3. Do not choose an internal-only TestFlight upload option.
-4. Wait for App Store Connect processing.
+1. Create and push an authorized signed `app-vX.Y.Z` tag on clean, validated `main`.
+2. Follow the root dry-run and production-cutover procedure linked above, including
+   the selected Web/Relay identities and latest completed predecessor.
+3. Verify App Store Connect processing and the completed release-set manifest.
 
 Exit criteria:
 

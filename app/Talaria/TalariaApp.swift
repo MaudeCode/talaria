@@ -111,6 +111,7 @@ struct TalariaApp: App {
     #endif
 
     init() {
+        AppConfig.logReleaseIdentity()
         let arguments = ProcessInfo.processInfo.arguments
 
         #if DEBUG

@@ -92,6 +92,7 @@ extension Array where Element == CustomHeader {
     func merged(under builtIns: [String: String]) -> [String: String] {
         var result: [String: String] = [:]
         for header in self where header.isApplicable {
+            guard !builtIns.keys.contains(where: { $0.caseInsensitiveCompare(header.sanitizedName) == .orderedSame }) else { continue }
             result[header.sanitizedName] = header.sanitizedValue
         }
         for (key, value) in builtIns {

@@ -82,6 +82,7 @@ final class KanbanEventStreamClientTests: XCTestCase {
                 [
                     CustomHeader(name: "Accept", value: "application/json"),
                     CustomHeader(name: "X-Api-Key", value: "secret"),
+                    CustomHeader(name: "x-talaria-client", value: "forged identity"),
                     CustomHeader(name: "X-Talaria-Redirect-Policy", value: "user-value")
                 ]
             }
@@ -102,6 +103,7 @@ final class KanbanEventStreamClientTests: XCTestCase {
         let firstHop = try XCTUnwrap(RedirectingMockURLProtocol.firstHopRequest)
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "Accept"), "text/event-stream")
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Api-Key"), "secret")
+        XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "X-Talaria-Redirect-Policy"), "user-value")
         XCTAssertEqual(firstHop.value(forHTTPHeaderField: "Cookie"), "hermes_session=secret-cookie")
         XCTAssertFalse(firstHop.hasInternalRedirectPolicyHeader)
@@ -110,6 +112,7 @@ final class KanbanEventStreamClientTests: XCTestCase {
         XCTAssertEqual(secondHop.url?.host, "third-party.example")
         XCTAssertEqual(secondHop.value(forHTTPHeaderField: "Accept"), "text/event-stream")
         XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Api-Key"))
+        XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Talaria-Client"))
         XCTAssertNil(secondHop.value(forHTTPHeaderField: "X-Talaria-Redirect-Policy"))
         XCTAssertNil(secondHop.value(forHTTPHeaderField: "Cookie"))
         XCTAssertFalse(secondHop.hasInternalRedirectPolicyHeader)

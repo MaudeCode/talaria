@@ -11,6 +11,7 @@ extension APIClient {
         // always wins. Without them the upload is rejected by auth reverse
         // proxies that every other request path already passes (#61).
         customHeaderProvider().apply(to: &request)
+        AppConfig.applyClientIdentity(to: &request)
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
@@ -36,4 +37,3 @@ extension APIClient {
         return try decode(UploadResponse.self, from: responseData)
     }
 }
-

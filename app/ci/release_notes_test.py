@@ -28,6 +28,7 @@ class ReleaseNotesTests(unittest.TestCase):
             "GIT_AUTHOR_DATE": "2026-01-02T03:04:05+00:00", "GIT_COMMITTER_DATE": "2026-01-02T03:04:05+00:00",
         }
         self.git("init", "-b", "main")
+        self.write(".gitignore", "out/\n")
         self.write("CHANGELOG.md", "# Handwritten history\n\nUnchanged.\n")
         self.add_fragment(1, "Old release")
         self.commit("TAL-1: old release")
@@ -84,8 +85,50 @@ class ReleaseNotesTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "validate", "--base", base],
                                 cwd=self.root / "app", env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.write("app/changelog.d/TAL-1.json", '{"skip":"Rewritten history"}')
+        # Shared release fragments can move back to the monorepo root without
+        # changing their historical identities or breaking app/ invocations.
+        moved_base = self.git("rev-parse", "HEAD")
+        self.git("mv", "app/changelog.d", "changelog.d")
+        self.write("changelog.d/TAL-3.json", '{"skip":"Shared release metadata"}')
+        self.commit("TAL-3: share fragments")
+        self.cli("validate", "--base", moved_base)
+        self.write("changelog.d/TAL-1.json", '{"skip":"Rewritten history"}')
         self.cli("validate", "--base", base, error="out-of-range")
+
+    def test_component_notes_share_fragments_without_changing_app_catalog_shape(self):
+        entries = [
+            {"category": "Added", "summary": "App detail", "highlight": False},
+            {"category": "Fixed", "summary": "Web update", "highlight": False, "components": ["web"]},
+            {"category": "Changed", "summary": "Shared compatibility", "highlight": True,
+             "components": ["app", "web", "relay"]},
+        ]
+        self.write("changelog.d/TAL-2.json", json.dumps({"entries": entries}))
+        self.commit("TAL-2: component releases")
+        for component, expected in (
+            ("app", {"App detail", "Shared compatibility"}),
+            ("web", {"Web update", "Shared compatibility"}),
+            ("relay", {"Shared compatibility"}),
+        ):
+            self.generate("--previous", "v1.0.0", "--component", component)
+            catalog = json.loads((self.root / "out/release-notes.json").read_text())
+            rendered = [entry for section in catalog["releases"][0]["sections"] for entry in section["entries"]]
+            self.assertEqual({entry["summary"] for entry in rendered}, expected)
+            self.assertTrue(all("components" not in entry for entry in rendered))
+
+    def test_component_selection_rejects_empty_unknown_and_duplicate_owners(self):
+        for components in ([], ["unknown"], ["web", "web"], "web"):
+            self.write("changelog.d/TAL-2.json", json.dumps({"entries": [
+                {"category": "Fixed", "summary": "Fixture", "highlight": False, "components": components}
+            ]}))
+            self.cli("validate", error="components")
+
+    def test_app_tag_preview_uses_its_namespace_and_legacy_history(self):
+        self.git("tag", "app-v1.0.10")
+        self.git("tag", "web-v9.0.0")
+        self.git("tag", "relay-v9.0.0")
+        self.add_fragment(2)
+        self.commit("TAL-2: app update")
+        self.assertIn("app-v1.0.10..", self.generate().stdout)
 
     def mock_github(self, responses):
         binary = self.root / "bin/gh"
@@ -121,6 +164,35 @@ class ReleaseNotesTests(unittest.TestCase):
     def published_baseline(self, error=None):
         return self.cli("previous-published", "--target", "HEAD", "--version", "1.1.0",
                         "--repo", "fixture/app", error=error).stdout.strip()
+
+    def test_bootstrap_must_advance_all_known_legacy_publications(self):
+        sha = self.git("rev-parse", "HEAD")
+        self.add_fragment(2)
+        self.commit("TAL-2: higher publication")
+        newer = self.git("rev-parse", "HEAD")
+        self.git("tag", "v1.2.0")
+        runs = [
+            {"id": 1, "event": "push", "head_branch": "v1.0.0", "head_sha": sha, "conclusion": "success"},
+            {"id": 2, "event": "push", "head_branch": "v1.2.0", "head_sha": newer, "conclusion": "success"},
+        ]
+        jobs = {number: {"name": "Publish iOS app", "conclusion": "success", "completed_at": date}
+                for number, date in ((1, "2026-02-01T00:00:00Z"), (2, "2026-01-01T00:00:00Z"))}
+        responses = self.published_responses(runs, jobs)
+        self.mock_github(responses)
+        self.assertEqual(self.published_baseline(), sha)  # Historical note regeneration remains valid.
+        for version in ("1.1.0", "1.2.0"):
+            self.cli("previous-published", "--target", "HEAD", "--version", version,
+                     "--repo", "fixture/app", "--require-latest", error="must advance")
+        selected = self.cli("previous-published", "--target", "HEAD", "--version", "1.3.0",
+                            "--repo", "fixture/app", "--require-latest").stdout.strip()
+        self.assertEqual(selected, newer)
+        runs[1].update(event="workflow_dispatch", head_branch="main")
+        responses = self.published_responses(runs, jobs)
+        responses["repos/fixture/app/actions/runs/2/artifacts?per_page=100"] = [
+            {"artifacts": [{"id": 20, "name": "release-notes-1.2.0", "expired": False}]}]
+        self.mock_github(responses)
+        self.cli("previous-published", "--target", "HEAD", "--version", "1.1.0",
+                 "--repo", "fixture/app", "--require-latest", error="must advance")
 
     def test_new_version_on_same_commit_generates_empty_notes_without_a_dummy_commit(self):
         baseline = self.git("rev-parse", "HEAD")

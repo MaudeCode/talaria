@@ -137,8 +137,8 @@ def test_detect_webui_version_recovers_via_windows_registry_fallback(tmp_path):
 
     def fake_run(cmd, **kwargs):
         assert cmd[0] == FAKE_GIT_EXE
-        if cmd[1:] == ['describe', '--tags', '--always', '--abbrev=8']:
-            return MagicMock(returncode=0, stdout='v0.51.999\n', stderr='')
+        if cmd[1:] == ['describe', '--tags', '--always', '--abbrev=8', '--match', 'web-v[0-9]*', '--match', 'web-exp-v[0-9]*']:
+            return MagicMock(returncode=0, stdout='web-v0.51.999\n', stderr='')
         if cmd[1:] == ['diff-index', '--quiet', 'HEAD', '--']:
             return MagicMock(returncode=0, stdout='', stderr='')
         raise AssertionError(f'unexpected git args: {cmd[1:]!r}')
@@ -152,4 +152,4 @@ def test_detect_webui_version_recovers_via_windows_registry_fallback(tmp_path):
          patch.object(updates.subprocess, 'run', side_effect=fake_run):
         version = updates._detect_webui_version()
 
-    assert version == 'v0.51.999'
+    assert version == 'web-v0.51.999'

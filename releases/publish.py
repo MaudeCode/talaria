@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Production operations authorized only by the main-branch cutover workflow."""
+
+import argparse
+import hashlib
+import json
+import os
+import plistlib
+import subprocess
+import tempfile
+import time
+import urllib.request
+import zipfile
+from pathlib import Path
+
+from cli import REPOSITORY, ROOT, load, receipt, run_url, unused_release, write
+from plan import git
+from release_set import validate
+
+
+def authorize(plan):
+    if (plan.get("dryRun") is not False or os.environ.get("GITHUB_REF") != "refs/heads/main"
+            or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+            or os.environ.get("GITHUB_WORKFLOW_REF") != f"{REPOSITORY}/.github/workflows/production-cutover.yml@refs/heads/main"):
+        raise ValueError("production requires the trusted main cutover workflow")
+    run_url()
+    if git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
+        raise ValueError("production checkout differs from the approved source")
+
+
+def verify_ipa(path, component):
+    with zipfile.ZipFile(path) as archive:
+        bundles = (("", "dev.kil.talaria", True),
+                   ("PlugIns/TalariaShareExtension.appex/", "dev.kil.talaria.shareextension", False),
+                   ("PlugIns/TalariaLiveActivityWidget.appex/", "dev.kil.talaria.liveactivitywidget", True))
+        for directory, identifier, sends_requests in bundles:
+            info = plistlib.loads(archive.read("Payload/Talaria.app/" + directory + "Info.plist"))
+            if (info.get("CFBundleIdentifier") != identifier
+                    or info.get("CFBundleShortVersionString") != component["version"]
+                    or info.get("CFBundleVersion") != str(component["buildNumber"])
+                    or (sends_requests and any(info.get("TalariaRelease", {}).get(key) != component[key]
+                        for key in ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts")))):
+                raise ValueError("IPA identity differs from the release plan")
+    return file_digest(path)
+
+
+def file_digest(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def relay(plan, output):
+    component = plan["components"]["relay"]
+    deployment = component["deploymentId"]
+    key = os.environ.get("CONVEX_DEPLOY_KEY", "")
+    if not key.startswith(f"prod:{deployment}|") or not key.split("|", 1)[-1]:
+        raise ValueError("Relay requires a production deployment-scoped key matching the planned deployment")
+    subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "relay", check=True)
+    subprocess.run(["python3", "scripts/stamp-release.py", "relay", "--version", component["version"],
+                    "--source-revision", component["sourceRevision"], "--deployment-id", deployment], cwd=ROOT, check=True)
+    subprocess.run(["pnpm", "exec", "convex", "deploy", "--typecheck", "enable", "--env-file", os.devnull,
+                    "--message", "Talaria release-set " + plan["releaseSet"]], cwd=ROOT / "relay", check=True)
+    for attempt in range(12):
+        try:
+            with urllib.request.urlopen(f"https://{deployment}.convex.site/v1/health", timeout=10) as response:
+                health = json.load(response)
+            expected = {key: component[key] for key in ("version", "sourceRevision", "releaseSet", "deploymentId")}
+            actual = health.get("release", {})
+            if health.get("ok") is True and all(actual.get(key) == value for key, value in expected.items()):
+                write(output, receipt("deployRelay", plan["releaseSet"], deploymentId=deployment,
+                                      deployedRevision=actual["sourceRevision"]))
+                return
+        except (OSError, ValueError):
+            pass
+        if attempt < 11:
+            time.sleep(5)
+    raise ValueError("Relay readiness/provenance readback did not match the deployed release")
+
+
+def web(plan, build, directory, output):
+    component = plan["components"]["web"]
+    if build.get("result") != "success" or build.get("gate") != "buildWeb" or build.get("sourceRevision") != plan["releaseSet"] or build.get("tag") != component["tag"]:
+        raise ValueError("Web build receipt does not match the plan")
+    image = build["image"]
+    tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
+    with tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
+        auth = str(Path(temporary) / "auth.json")
+        subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
+                        "--password-stdin", "ghcr.io"], input=os.environ["GH_TOKEN"], text=True, check=True)
+        subprocess.run(["skopeo", "copy", "--all", "--preserve-digests", "--authfile", auth,
+                        "oci-archive:" + str(directory / "web.oci.tar"), "docker://" + tag], check=True)
+        raw = subprocess.check_output(["skopeo", "inspect", "--raw", "--authfile", auth, "docker://" + image])
+        if "sha256:" + hashlib.sha256(raw).hexdigest() != image.split("@", 1)[1]:
+            raise ValueError("published Web manifest digest differs from the build")
+    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image))
+
+
+def _release_info(tag):
+    result = subprocess.run(["gh", "api", f"repos/{REPOSITORY}/releases/tags/{tag}"], capture_output=True, text=True)
+    if result.returncode == 0:
+        return json.loads(result.stdout)
+    unused_release(tag)  # Only an explicit 404 permits creation.
+    return None
+
+
+def _publish_release(tag, source, notes, files, identity, *, latest=False):
+    hashes = {path.name: file_digest(path) for path in files}
+    marker = hashlib.sha256(json.dumps({"source": source, "manifest": identity, "files": hashes}, sort_keys=True).encode()).hexdigest()
+    body = notes.rstrip() + "\n\n<!-- talaria-publication:" + marker + " -->\n"
+    prerelease = tag.startswith("web-exp-")
+
+    def matching(info):
+        if (not info or info.get("tag_name") != tag or info.get("name") != tag
+                or (info.get("body") or "").strip() != body.strip()
+                or info.get("prerelease") is not prerelease or type(info.get("draft")) is not bool
+                or {asset["name"] for asset in info.get("assets", [])} - hashes.keys()):
+            raise ValueError("existing release does not match this run's verified publication")
+
+    info = _release_info(tag)
+    if info is None:
+        with tempfile.TemporaryDirectory(prefix="talaria-release-notes-") as temporary:
+            note_file = Path(temporary) / "notes.md"
+            note_file.write_text(body)
+            subprocess.run(["gh", "release", "create", tag, "--repo", REPOSITORY, "--target", source,
+                            "--draft", "--title", tag, "--notes-file", str(note_file),
+                            *([] if latest else ["--verify-tag"]), *( ["--prerelease"] if prerelease else [])], check=True)
+        info = _release_info(tag)
+    matching(info)
+    for path in files:
+        assets = [asset for asset in info["assets"] if asset["name"] == path.name]
+        if not assets and info["draft"]:
+            subprocess.run(["gh", "release", "upload", tag, str(path), "--repo", REPOSITORY], check=True)
+            info = _release_info(tag)
+            matching(info)
+            assets = [asset for asset in info["assets"] if asset["name"] == path.name]
+        if len(assets) != 1:
+            raise ValueError("release asset is missing or duplicated")
+        data = subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/assets/{assets[0]['id']}",
+                                        "-H", "Accept: application/octet-stream"])
+        if hashlib.sha256(data).hexdigest() != hashes[path.name]:
+            raise ValueError("release asset differs from the verified build")
+    if info["draft"]:
+        subprocess.run(["gh", "release", "edit", tag, "--repo", REPOSITORY, "--draft=false",
+                        "--latest" if latest else "--latest=false"], check=True)
+        info = _release_info(tag)
+        matching(info)
+        if info["draft"]:
+            raise ValueError("release publication readback is still a draft")
+
+
+def finalize(plan, manifest, previous, artifacts):
+    validate(manifest, previous)
+    if manifest["status"] != "complete" or manifest["releaseSet"] != plan["releaseSet"]:
+        raise ValueError("only this completed set may be published")
+    if manifest["contracts"] != plan["contracts"] or manifest["agent"] != plan["agent"]:
+        raise ValueError("completed compatibility metadata differs from the plan")
+    for name, component in plan["components"].items():
+        for key in ("tag", "version", "sourceRevision", "releaseSet", "deploymentId", "upstreamBase"):
+            if key in component and manifest["components"][name].get(key) != component[key]:
+                raise ValueError("completed component identity differs from the plan")
+    root_tag = "release-set-" + plan["releaseSet"]
+    wheels = sorted((artifacts / "web-build/wheel").glob("*.whl"))
+    if plan["changed"]["web"] and (len(wheels) != 1 or wheels[0].stat().st_size == 0):
+        raise ValueError("Web publication requires the built wheel")
+    identity = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+    # Component releases are prepared first. The updater consumes only the root
+    # completed manifest, which is published as the final operation.
+    for name, changed in plan["changed"].items():
+        if not changed:
+            continue
+        tag = plan["components"][name]["tag"]
+        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], wheels if name == "web" else [], identity)
+    with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
+        directory = Path(temporary)
+        write(directory / "release-set.json", manifest)
+        _publish_release(root_tag, plan["releaseSet"], manifest["notes"]["combined"],
+                         [directory / "release-set.json"], identity, latest=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("operation", choices=("relay", "web", "build-app-receipt", "verify-app", "app", "finalize"))
+    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--build", type=Path)
+    parser.add_argument("--directory", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--previous", type=Path)
+    parser.add_argument("--build-number", type=int)
+    args = parser.parse_args()
+    plan = load(args.plan)
+    authorize(plan)
+    component_name = args.operation if args.operation in ("relay", "web") else "app"
+    if args.operation != "finalize" and not plan["changed"][component_name]:
+        raise ValueError("unchanged components must not be republished")
+    if args.operation == "relay":
+        relay(plan, args.output)
+    elif args.operation == "web":
+        web(plan, load(args.build), args.directory, args.output)
+    elif args.operation == "build-app-receipt":
+        component = {**plan["components"]["app"], "buildNumber": args.build_number,
+                     "contracts": {name: peers["app"] for name, peers in plan["contracts"].items() if "app" in peers}}
+        files = list(args.directory.glob("*.ipa"))
+        if len(files) != 1 or args.build_number is None or args.build_number < 1:
+            raise ValueError("App build must contain one IPA and a selected build number")
+        digest = verify_ipa(files[0], component)
+        write(args.output, receipt("buildApp", plan["releaseSet"], tag=component["tag"], buildNumber=args.build_number, ipaSha256=digest))
+    elif args.operation in ("verify-app", "app"):
+        build = load(args.build)
+        component = {**plan["components"]["app"], "buildNumber": build["buildNumber"],
+                     "contracts": {name: peers["app"] for name, peers in plan["contracts"].items() if "app" in peers}}
+        if build.get("gate") != "buildApp" or build.get("result") != "success" or build.get("sourceRevision") != plan["releaseSet"] or build.get("tag") != component["tag"]:
+            raise ValueError("App build receipt differs from the plan")
+        files = list(args.directory.glob("*.ipa"))
+        if len(files) != 1 or verify_ipa(files[0], component) != build["ipaSha256"]:
+            raise ValueError("App upload artifact differs from the verified build")
+        if args.operation == "app":
+            result = json.loads(subprocess.check_output([
+                "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
+                str(component["buildNumber"]), build["ipaSha256"],
+            ], text=True))
+            if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
+                    or result.get("ipaSha256") != build["ipaSha256"] or result.get("processingState") != "VALID"
+                    or not result.get("buildId") or not result.get("uploadId")):
+                raise ValueError("App Store Connect readback differs from the verified build")
+            print(json.dumps(result, sort_keys=True))
+            write(args.output.with_name("apple-build.json"), result)
+            write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
+    else:
+        finalize(plan, load(args.manifest), load(args.previous) if args.previous else None, args.directory)
+
+
+if __name__ == "__main__":
+    main()

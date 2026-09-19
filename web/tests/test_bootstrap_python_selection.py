@@ -101,6 +101,7 @@ def test_local_venv_is_created_with_symlinks(monkeypatch, tmp_path):
     """
     local_python = tmp_path / "webui" / ".venv" / "bin" / "python"
     monkeypatch.setattr(bootstrap, "REPO_ROOT", tmp_path)
+    (tmp_path / "requirements.txt").write_text("pyyaml\n")
     monkeypatch.setattr(bootstrap, "_python_can_run_webui_and_agent", lambda *a, **k: False)
     monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: None)
 
@@ -121,3 +122,16 @@ def test_local_venv_is_created_with_symlinks(monkeypatch, tmp_path):
             pass  # expected — fake _python_can_run_webui_and_agent always returns False
 
         mock_builder.assert_called_once_with(with_pip=True, symlinks=True)
+
+
+def test_wheel_launch_does_not_create_a_venv_inside_site_packages(monkeypatch, tmp_path):
+    monkeypatch.setattr(bootstrap, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(bootstrap, "_python_can_run_webui_and_agent", lambda *args: False)
+    with patch.object(bootstrap.venv, "EnvBuilder") as builder:
+        try:
+            bootstrap.ensure_python_has_webui_deps("synthetic-python")
+        except RuntimeError as error:
+            assert "install the Talaria Web wheel into the Agent environment" in str(error)
+        else:
+            raise AssertionError("an incompatible package interpreter must not start")
+        builder.assert_not_called()

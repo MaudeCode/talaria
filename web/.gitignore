@@ -96,3 +96,6 @@ attachments/
 # Python package build outputs
 build/
 dist/
+
+# Immutable release provenance is stamped into artifacts, never source commits.
+api/_release.json

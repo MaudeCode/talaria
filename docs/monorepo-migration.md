@@ -17,7 +17,8 @@ and final standalone heads must be reconciled again by TAL-204.
 ## App ownership
 
 App source, Xcode configuration, test targets, scripts, CI helpers, release
-fragments, app documentation, and upstream pins move together into `app/`.
+fragments, app documentation, and upstream pins moved together into `app/` in
+TAL-202. TAL-203 shares release fragments from root `changelog.d/`.
 Their relative paths and runtime identity stay unchanged. Root community/legal
 files, GitHub workflows, shared contract documentation, and agent configuration
 remain at the root. `app/.gitignore` retains app-specific rules. Root instructions
@@ -25,8 +26,8 @@ and README become component routers; their original app content lives in `app/`.
 `CLAUDE.md` remains a symlink to the root instructions.
 
 App workflows run commands in `app/`; artifact paths stay relative to the
-checkout. Release-note tooling reads historical root-level fragments and new
-`app/changelog.d` fragments, rejecting edits to historical fragments.
+checkout. Release-note tooling reads root `changelog.d/` and historical
+`app/changelog.d/` fragments, rejecting edits to historical fragments.
 
 ## Reachable-history scanning
 
@@ -55,7 +56,8 @@ dependency, or Python cache artifacts.
 
 The source inventories contain seven app tags, no Web tags, and thirteen Relay
 tags, with no collisions. Preserve existing tag objects without resigning or
-retargeting them; future release namespaces belong to TAL-203.
+retargeting them. TAL-203 adds `app-v*`, `web-v*`, `web-exp-v*` and `relay-v*`
+namespaces; see the [root release procedure](../releases/README.md).
 
 Historical tag publication is a separate approved cutover operation. In
 particular, Relay's old tag trees contain standalone `push: v*` deployment
@@ -73,7 +75,7 @@ upstream ancestry remain reachable through the import merge parents.
 
 | Colliding item | Recorded ownership |
 |---|---|
-| `.github/` | Shared root orchestration. App workflows remain; Web and Relay checks have prefixed reusable workflows. Standalone release/deploy workflows are inert templates under `.github/release-templates/` until TAL-203. |
+| `.github/` | Shared root orchestration. Component checks use reusable workflows; `release-set.yml` coordinates releases through the authorized `production-cutover.yml` caller. Standalone release/deploy templates under `.github/release-templates/` remain inert. |
 | `FUNDING.yml` | Root funding remains canonical; original Web attribution is preserved as `.github/WEB_FUNDING.yml`. |
 | `.gitignore` | Root rules protect shared local state; component rules retain toolchain-specific exclusions. |
 | `.gitattributes` | Root owns LF text rules; Web retains generated-dist attributes in `web/.gitattributes`. |
@@ -131,6 +133,10 @@ The command fetches the selected public commit into a dedicated
 `refs/remotes/hermes-upstream/selected` ref and uses Git's `ort` merge with
 `-Xsubtree=web`. The original Web history supplies the real merge base. Review
 the uncommitted result, resolve any conflicts, and commit only after validation.
+Successful imports stage `web/UPSTREAM_BASE_SHA` for release provenance and
+reject revisions that do not extend the recorded public base. If the merge
+stops for conflicts, resolve them and set that file to the selected immutable
+upstream SHA before committing; aborting the import must retain the old base.
 The synthetic proof covers nonconflicting updates, retained downstream edits,
 untouched app files, ancestry, dirty-state rejection, and conflicting edits.
 

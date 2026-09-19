@@ -59,11 +59,16 @@ def main():
         subprocess.run([str(SCRIPT), selected, str(upstream)], cwd=mono, env=env, check=True)
         assert (mono / "web/server.py").read_text() == "talaria = 2\n"
         assert (mono / "web/settings.py").read_text() == "setting = 3\n"
+        assert (mono / "web/UPSTREAM_BASE_SHA").read_text().strip() == selected
         assert (mono / "app/App.swift").read_text() == "// app identity unchanged\n"
         assert not (mono / "settings.py").exists()
         git(mono, "commit", "-m", "import selected upstream change")
         git(mono, "merge-base", "--is-ancestor", selected, "HEAD")
         integration_tip = git(mono, "rev-parse", "HEAD")
+        rejected = subprocess.run([str(SCRIPT), original, str(upstream)], cwd=mono, env=env,
+                                  capture_output=True, text=True)
+        assert rejected.returncode != 0 and "recorded Web base" in rejected.stderr
+        assert (mono / "web/UPSTREAM_BASE_SHA").read_text().strip() == selected
         git(mono, "checkout", "-b", "released", app_base)
         git(mono, "merge", "--no-ff", "-m", "merge migration PR", integration_tip)
         merged_tip = git(mono, "rev-parse", "HEAD")

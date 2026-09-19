@@ -1,8 +1,8 @@
 # Talaria Relay
 
 Run component commands from `relay/` in the Talaria monorepo. Repository
-workflows live in `../.github/`; standalone release templates remain inactive
-until TAL-203 integrates the independent release namespaces.
+workflows live in `../.github/`; standalone release templates remain inactive.
+See the [root release procedure](../releases/README.md) for publication.
 
 Profile-isolated Convex relay for Talaria notifications and aggregate Live Activities.
 
@@ -41,7 +41,10 @@ APPLE_CLIENT_IDS=dev.kil.talaria,dev.kil.talaria.branch
 
 `APPLE_SUBJECT_HASH_KEY` is a random server secret used to pseudonymize Apple's stable subject before storage. APNs credentials and this hash key never enter the database or API responses.
 
-Production deploys are tag-only. Tags matching `v*` run the full check suite and deploy with the repository's `CONVEX_DEPLOY_KEY` GitHub Actions secret.
+Signed `relay-vX.Y.Z` tags validate release identity. The authorized root
+`production-cutover.yml` workflow deploys changed Relay releases into the existing
+production deployment, using `CONVEX_DEPLOY_KEY` from the `relay-production`
+environment. It verifies readiness and provenance before Web or App publication.
 
 The production HTTP origin is `https://relay.talaria.kil.dev`.
 

@@ -210,6 +210,7 @@ final class TalariaRelayClient {
         }
         let body = try JSONEncoder().encode(["identityToken": identityToken, "nonce": nonce])
         var request = URLRequest(url: endpoint(baseURL, "v1/auth/apple"))
+        AppConfig.applyClientIdentity(to: &request)
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -434,6 +435,7 @@ final class TalariaRelayClient {
 
     private func authenticatedRequest(url: URL, method: String) -> URLRequest {
         var request = URLRequest(url: url)
+        AppConfig.applyClientIdentity(to: &request)
         request.httpMethod = method
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(credentials.sessionToken)", forHTTPHeaderField: "Authorization")

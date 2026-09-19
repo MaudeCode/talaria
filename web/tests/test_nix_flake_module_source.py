@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +61,8 @@ def test_flake_checks_package_with_only_hermes_venv_metadata():
 
 
 def test_readme_wires_published_agent_flake_package():
-    assert 'hermes-agent.url = "github:NousResearch/hermes-agent";' in README
+    pin = json.loads((ROOT / 'api/agent_dependency.json').read_text())
+    assert f'hermes-agent.url = "github:NousResearch/hermes-agent/{pin["x-talaria"]["sourceRevision"]}";' in README
     assert "agent.package = hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.default;" in README
     assert 'hermesHome = "/var/lib/hermes/.hermes";' in README
 

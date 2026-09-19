@@ -23,13 +23,22 @@ tag_signature_verified() {
 validate_release_tag() {
   local tag="${RELEASE_TAG:?RELEASE_TAG is required}"
   local expected_sha="${EXPECTED_SHA:-}"
-  local version commit
+  local component="${RELEASE_COMPONENT:-app}"
+  local version commit prefix
 
-  if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    echo "Release tag must use vX.Y.Z numeric semantic versioning. Received: ${tag}" >&2
+  case "$component" in
+    app|relay) prefix="${component}-v" ;;
+    web)
+      prefix="web-v"
+      [[ "$tag" != web-exp-v* ]] || prefix="web-exp-v"
+      ;;
+    *) echo "Unknown release component: ${component}" >&2; return 1 ;;
+  esac
+  if [[ ! "$tag" =~ ^${prefix}(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    echo "Release tag must use ${prefix}X.Y.Z numeric semantic versioning. Received: ${tag}" >&2
     return 1
   fi
-  version="${tag#v}"
+  version="${tag#"$prefix"}"
 
   if [[ "$(git cat-file -t "refs/tags/${tag}" 2>/dev/null)" != "tag" ]]; then
     echo "Release tag ${tag} must be an annotated signed tag." >&2

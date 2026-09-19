@@ -1,0 +1,70 @@
+"""Release metadata available before optional Agent/runtime dependencies load."""
+
+import json
+from pathlib import Path
+import re
+import subprocess
+
+
+_agent = json.loads(Path(__file__).with_name("agent_dependency.json").read_text())
+COMPATIBLE_AGENT = {
+    **_agent["x-talaria"],
+    "image": _agent["services"]["hermes-agent"]["image"],
+}
+_contracts = json.loads(Path(__file__).with_name("contract_versions.json").read_text())
+SUPPORTED_CONTRACTS = {
+    "appWeb": [_contracts["appWeb"]["fixtureVersion"]],
+    "webRelay": [_contracts["webRelay"]["protocolVersion"]],
+}
+
+
+def validate_release_info(metadata: dict) -> dict:
+    fields = {"tag", "version", "sourceRevision", "releaseSet", "upstreamBase", "contracts", "compatibleAgent"}
+    if not isinstance(metadata, dict) or set(metadata) != fields:
+        raise ValueError("Invalid Web release metadata fields")
+    for key in ("sourceRevision", "releaseSet", "upstreamBase"):
+        if not isinstance(metadata[key], str) or not re.fullmatch(r"[a-f0-9]{40}", metadata[key]):
+            raise ValueError(f"Web {key} must be an immutable commit")
+    if metadata["sourceRevision"] != metadata["releaseSet"]:
+        raise ValueError("Web release-set identity must match its source")
+    if not isinstance(metadata["version"], str) or not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", metadata["version"]):
+        raise ValueError("Web release version must be X.Y.Z")
+    if metadata["tag"] not in (f"web-v{metadata['version']}", f"web-exp-v{metadata['version']}"):
+        raise ValueError("Web release tag must match its namespaced version")
+    if metadata["contracts"] != SUPPORTED_CONTRACTS or metadata["compatibleAgent"] != COMPATIBLE_AGENT:
+        raise ValueError("Web release metadata disagrees with its packaged contracts or Agent pin")
+    return metadata
+
+
+def _development_info() -> dict:
+    return {
+        "tag": None, "version": "development", "sourceRevision": None, "releaseSet": None,
+        "upstreamBase": None, "contracts": SUPPORTED_CONTRACTS,
+        "compatibleAgent": COMPATIBLE_AGENT,
+    }
+
+
+def load_release_info(path: Path, *, verify_checkout=True) -> dict:
+    try:
+        metadata = validate_release_info(json.loads(path.read_text()))
+    except FileNotFoundError:
+        return _development_info()
+    web_root = path.absolute().parent.parent
+    markers = [web_root / ".git"]
+    if web_root.name == "web":
+        markers.append(web_root.parent / ".git")
+    if verify_checkout and any(marker.exists() or marker.is_symlink() for marker in markers):
+        try:
+            head = subprocess.check_output(["git", "-C", str(web_root), "rev-parse", "HEAD"],
+                                           text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
+        except (OSError, subprocess.SubprocessError):
+            return _development_info()
+        if head != metadata["sourceRevision"]:
+            return _development_info()
+    return metadata
+
+
+# Retain the validated startup stamp for safe update retries, while health and
+# version reporting only claim it when source checkout identity also matches.
+STAMPED_RELEASE_INFO = load_release_info(Path(__file__).with_name("_release.json"), verify_checkout=False)
+RELEASE_INFO = load_release_info(Path(__file__).with_name("_release.json"))

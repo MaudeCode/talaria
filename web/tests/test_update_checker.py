@@ -8,9 +8,7 @@ Tests cover the four new branches in _apply_update_inner():
   3. pull fails + no upstream tracking  → recovery command with set-upstream-to
   4. pull fails + generic fallback  → raw git output truncated at 300 chars
 """
-from pathlib import Path
-from unittest.mock import patch, call
-import subprocess
+from unittest.mock import patch
 
 import pytest
 
@@ -59,13 +57,13 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             # Call sequence: fetch
             mock_run_git.side_effect = [
                 ('', False),               # fetch fails
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         msg = result['message'].lower()
@@ -76,12 +74,12 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', False),               # fetch fails
             ]
-            updates._apply_update_inner('webui')
+            updates._apply_update_inner('agent')
             # Only fetch is called. No target selection or pull call.
             assert mock_run_git.call_count == 1
 
@@ -94,7 +92,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),                                       # fetch succeeds
@@ -103,7 +101,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),                                       # status --porcelain (clean)
                 ('Not possible to fast-forward, aborting.', False),  # pull fails
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert result.get('diverged') is True
@@ -115,7 +113,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),                         # fetch
@@ -124,7 +122,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),                         # status (clean)
                 ('Your branch and origin have diverged.', False),  # pull
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert 'origin/feat/my-feature' in result['message']
@@ -134,7 +132,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),
@@ -143,7 +141,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),
                 ('DIVERGED from upstream', False),
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert result.get('diverged') is True
@@ -157,7 +155,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),                                            # fetch
@@ -166,7 +164,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),                                            # status (clean)
                 ('There is no tracking information for the current branch.', False),  # pull
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert 'set-upstream-to' in result['message']
@@ -177,7 +175,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),
@@ -186,7 +184,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),
                 ('fatal: The current branch local does not track a remote branch.', False),
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert 'set-upstream-to' in result['message']
@@ -196,7 +194,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),
@@ -205,7 +203,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),
                 ('no tracking information', False),
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert 'origin/main' in result['message']
@@ -220,7 +218,7 @@ class TestApplyUpdateDiagnostics:
         long_error = 'X' * 500  # 500-char error from git
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),
@@ -229,7 +227,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),
                 (long_error, False),
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         msg = result['message']
@@ -242,7 +240,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),
@@ -251,7 +249,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),
                 ('', False),   # pull fails with empty output
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert 'no output' in result['message'].lower() or result['message']
@@ -261,7 +259,7 @@ class TestApplyUpdateDiagnostics:
         (tmp_path / '.git').mkdir()
 
         from api import updates
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git:
             mock_run_git.side_effect = [
                 ('', True),
@@ -270,7 +268,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),
                 ('Some unrecognized git error', False),
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is False
         assert not result.get('diverged')
@@ -287,7 +285,7 @@ class TestApplyUpdateDiagnostics:
         # Patch the cache's 'checked_at' key directly to avoid the lock
         # invalidation block raising. We use a fresh dict swap.
         fake_cache = {'webui': None, 'agent': None, 'checked_at': 1}
-        with patch(f'{_MODULE}.REPO_ROOT', tmp_path), \
+        with patch(f'{_MODULE}._AGENT_DIR', tmp_path), \
              patch(f'{_MODULE}._run_git') as mock_run_git, \
              patch(f'{_MODULE}._update_cache', fake_cache), \
              patch(f'{_MODULE}._cache_lock'):
@@ -298,7 +296,7 @@ class TestApplyUpdateDiagnostics:
                 ('', True),                       # status (clean working tree)
                 ('Already up to date.', True),    # pull succeeds
             ]
-            result = updates._apply_update_inner('webui')
+            result = updates._apply_update_inner('agent')
 
         assert result['ok'] is True
 
@@ -348,8 +346,17 @@ class TestCheckRepoDirtyFlag:
 
         from api import updates
         with patch(f'{_MODULE}._run_git', side_effect=fake_git):
-            info = updates._check_repo(tmp_path, 'webui')
+            info = updates._check_repo(tmp_path, 'agent')
 
         assert info is not None
         assert info['dirty'] is True
         assert info['stale_check'] is True
+
+
+@pytest.fixture(autouse=True)
+def isolate_legacy_agent_gateway_restart(monkeypatch):
+    # These stash/pull diagnostics belong to the external Agent updater now.
+    # Talaria Web's clean-only release path has real-repository coverage in
+    # test_tal203_source_update.py.
+    import api.updates as updates
+    monkeypatch.setattr(updates, "_ensure_gateway_restart_for_agent_update", lambda: (True, {"status": "restarted"}))

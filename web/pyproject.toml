@@ -3,8 +3,8 @@ requires = ["setuptools>=80", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hermes-webui"
-description = "Hermes WebUI server and static runtime"
+name = "talaria-web"
+description = "Talaria Web server and static runtime"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Hermes WebUI contributors"}]
@@ -18,8 +18,8 @@ requires-python = ">=3.11"
 dynamic = ["version", "dependencies"]
 
 [project.urls]
-Repository = "https://github.com/nesquena/hermes-webui"
-Issues = "https://github.com/nesquena/hermes-webui/issues"
+Repository = "https://github.com/MaudeCode/talaria"
+Issues = "https://github.com/MaudeCode/talaria/issues"
 
 [project.scripts]
 # Packaged CLI entry point (#6739): `hermes-webui` starts the WebUI server, the
@@ -28,6 +28,7 @@ Issues = "https://github.com/nesquena/hermes-webui/issues"
 # discovery and dep-ensure before launching the server — matching the effective
 # behavior of the `python server.py` / `python -m server` launch surface.
 hermes-webui = "bootstrap:main"
+talaria-web = "bootstrap:main"
 
 [tool.setuptools]
 license-files = ["NOTICE"]
@@ -36,6 +37,7 @@ packages = ["api", "static"]
 py-modules = ["bootstrap", "server", "mcp_server"]
 
 [tool.setuptools.package-data]
+api = ["agent_dependency.json", "contract_versions.json", "_release.json"]
 static = ["**/*"]
 
 [tool.setuptools.dynamic]
@@ -43,8 +45,8 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools_scm]
 root = ".."
-tag_regex = "^web-v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+)$"
-git_describe_command = "git describe --dirty --tags --long --match web-v[0-9]*"
+tag_regex = "^web-(?:exp-)?v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+)$"
+git_describe_command = "git describe --dirty --tags --long --match web-v[0-9]* --match web-exp-v[0-9]*"
 version_file = "api/_scm_version.py"
 
 # Hermes WebUI — build metadata plus Python tooling config.

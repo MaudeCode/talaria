@@ -29,15 +29,16 @@ live in `TalariaTests/VisualReferences`. See
 [`docs/visual-references.md`](docs/visual-references.md) for how to read a diff
 and how to re-record a reference on purpose.
 
-## Upstream Contract Pin
+## Server contract validation
 
-The app is currently tested against the untagged `hermes-webui` `master` merge commit `141056992d6d9b72636f02cac9ae91b6649cea9c`, which includes the native OIDC handoff from Hermes WebUI PR #15. The root [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA) file is the machine-readable pin for future drift checks and contract tests.
+The App uses the monorepo's `web/` component for current contract validation.
+`UPSTREAM_REPOSITORY`, `UPSTREAM_BRANCH` and `UPSTREAM_TESTED_SHA` retain historical
+standalone provenance.
 
-The pin was reviewed and merged on 2026-08-31. WebUI focused auth tests and five-shard CI passed; the disposable candidate runner stopped at a held CSRF-probe expectation before its Swift phase, and the operator directed that no additional validation run be performed. Authenticated settings/version checks require server credentials.
-
-Run `scripts/validate-upstream-contract` for the complete disposable fork-server,
-HTTP/SSE, and focused Swift contract check. [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md)
-maps adopted behavior to each executable check.
+From `app/`, run `scripts/validate-upstream-contract` for a disposable Web server,
+live HTTP/SSE fixtures and focused Swift checks. Use `--ref <commit>` to test a
+specific monorepo Web revision. [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md) maps
+adopted behavior to each executable check.
 
 ## SSE and Cloudflare Stream Verification
 
@@ -59,23 +60,16 @@ Manual verification before closing Phase 4:
 
 ## Local-Only Fallback
 
-For contributors without access to the tunnel:
-
-1. Clone the upstream server:
+For contributors without access to the tunnel, use this checkout's Web component:
 
 ```zsh
-git clone https://github.com/MaudeCode/hermes-webui.git
-cd hermes-webui
+cd ../web
 ```
 
-The canonical fork and branch are stored in `UPSTREAM_REPOSITORY` and
-`UPSTREAM_BRANCH`. If this checkout still has the retired Hermex source remote,
-verify it first with `git remote get-url upstream`. When it points to
-`uzairansaruzi/hermex`, remove only that local alias with
-`git remote remove upstream`. Repository-scoped GitHub commands must pass
-`--repo MaudeCode/talaria`.
-
-2. Run it with Docker or directly with Python, following the upstream README.
+Follow the [Talaria Web setup guide](../web/README.md) for Docker or native Python
+setup. The [release procedure](../releases/README.md) identifies compatible
+component releases and the pinned Agent dependency. Repository-scoped GitHub
+commands use `--repo MaudeCode/talaria`.
 
 For simulator-only testing, `http://localhost:8787` can work when the server is running on the same Mac. For physical-device testing, use HTTPS or a Tailscale `100.64.0.0/10` IP; TestFlight builds include a scoped ATS exception for that Tailscale range.
 
@@ -84,7 +78,7 @@ For simulator-only testing, `http://localhost:8787` can work when the server is 
 One proven way to run the server natively on macOS is through launchd:
 
 - LaunchAgent: `~/Library/LaunchAgents/com.hermes.webui.plist`
-- Server script: `server.py` in your `hermes-webui` checkout
+- Server script: `server.py` in the monorepo's `web/` directory
 - Local bind: `127.0.0.1:8787`
 - Public hostname: `https://<your-server>`
 - Tunnel target: `http://127.0.0.1:8787`
@@ -289,7 +283,7 @@ Current status:
 - Launch screen uses the plist-based `UILaunchScreen` placeholder from `Info.plist`, which is acceptable for internal TestFlight validation.
 - `PrivacyInfo.xcprivacy` is bundled with the app target. It declares no tracking, no developer-collected data, and app-only `UserDefaults` access for local preferences.
 - Camera capture is deferred and is not declared. Add `NSCameraUsageDescription` and update the privacy review only if camera capture is implemented later.
-- Signed `vX.Y.Z` tags trigger one external-capable TestFlight build. External tester assignment and Beta App Review sequencing are tracked in [`TESTFLIGHT.md`](TESTFLIGHT.md).
+- Signed `app-vX.Y.Z` tags validate App release identity; the authorized root release workflow publishes one external-capable TestFlight build. External tester assignment and Beta App Review sequencing are tracked in [`TESTFLIGHT.md`](TESTFLIGHT.md).
 
 ### Owner checklist: App Store Connect setup for Talaria
 
@@ -346,37 +340,28 @@ Steps:
 
 ### Production TestFlight releases
 
-Production releases use one external-capable build for both internal and external
-testing. There is no separate internal-only archive.
+Production releases use the root [release-set workflow](../releases/README.md).
+Signed `app-vX.Y.Z` tags validate release identity. Publication is a separate,
+authorized `production-cutover.yml` dispatch from `main`, after a successful
+root dry run. The request includes App, Web and Relay tags and the existing
+Relay deployment ID; unchanged components reuse the previous completed set.
 
-1. Configure the `testflight` GitHub environment with
-   `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and
-   `APP_STORE_CONNECT_PRIVATE_KEY`, plus Cowtail's
-   `IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
-   `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` secrets. The certificate must be an
-   Apple Distribution identity for team `Q28NF3NH3D`.
-2. From clean current `main` with successful exact-SHA CI, create a signed
-   semantic tag such as `git tag -s v1.6.0 -m "Talaria v1.6.0"`.
-3. Push that tag with `git push origin v1.6.0`. No App Store Connect credential
-   is needed locally.
-4. `.github/workflows/release.yml` verifies the signed tag, main ancestry,
-   exact-SHA CI, repository tooling, and the current App Store Connect train.
-   The tag supplies `MARKETING_VERSION`; App Store Connect supplies the next
-   collision-free `CURRENT_PROJECT_VERSION`. The build job imports the encrypted
-   distribution identity, downloads each target's active App Store profile, and
-   manually signs the app, share extension, and Live Activity widget before upload.
-   The validation job automatically generates Markdown and JSON release notes
-   from the preceding successful TestFlight publication through the validated SHA.
-   The notes appear in its summary and the `release-notes-X.Y.Z` workflow artifact. See
-   [release-note authoring](docs/release-notes.md) for the metadata contract.
-5. Wait for App Store Connect processing, add the build to the internal group,
-   and test it on the owner's iPhone. External group assignment and Beta App
-   Review remain manual choices in App Store Connect.
+The `testflight` environment holds `APP_STORE_CONNECT_KEY_ID`,
+`APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_PRIVATE_KEY`,
+`IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
+`IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`. Its branch policy must allow the trusted
+`main` dispatch. The Apple Distribution identity belongs to team `Q28NF3NH3D`.
 
-Use the workflow's manual `workflow_dispatch` path with `upload = false` to
-build and inspect an existing signed release tag without uploading it. Missing
-secrets, a stale or unsigned tag, a closed train, or
-missing exact-SHA CI all fail before upload.
+The App tag supplies the marketing version. App Store Connect selects the next
+collision-free build number. The signed build includes the app, share extension
+and Live Activity widget. Publication verifies the IPA identity and checksum,
+uploads it, and waits for processing before recording success. One
+external-capable build serves both internal and external testing.
+
+After processing, add the build to the internal group and validate it on the
+owner's iPhone. External group assignment and Beta App Review remain manual
+App Store Connect choices. A root dry run builds an unsigned archive; it does
+not upload or produce an installable phone build.
 
 ## Full-App Manual Regression Checklist
 

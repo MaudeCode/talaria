@@ -164,4 +164,5 @@ def test_fixture_subprocess_is_not_guarded():
 
 def test_restart_callers_remain_complete():
     source = (REPO / "api" / "updates.py").read_text(encoding="utf-8")
-    assert source.count("_schedule_restart()") == 3
+    # Web release-set updates plus the three legacy Agent completion paths.
+    assert source.count("_schedule_restart()") == 4

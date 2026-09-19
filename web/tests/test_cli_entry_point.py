@@ -22,7 +22,7 @@ import tomllib
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXPECTED_SCRIPT = "hermes-webui"
+EXPECTED_SCRIPT = "talaria-web"
 EXPECTED_TARGET = "bootstrap:main"
 
 
@@ -37,6 +37,7 @@ def test_console_script_declared_in_pyproject():
     """The packaged CLI entry point is declared and maps to bootstrap.main."""
     scripts = _pyproject_scripts()
     assert scripts.get(EXPECTED_SCRIPT) == EXPECTED_TARGET
+    assert scripts.get("hermes-webui") == EXPECTED_TARGET
 
 
 def test_console_script_target_resolves_to_callable():
