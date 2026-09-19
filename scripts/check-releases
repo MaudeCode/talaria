@@ -10,4 +10,4 @@ env -i PATH="$PATH" HOME="$state/home" TMPDIR="$state/tmp" PIP_CONFIG_FILE=/dev/
   "$state/venv/bin/python" -m pip --disable-pip-version-check install --quiet \
   --only-binary=:all: -r "$root/releases/requirements.txt"
 env -i PATH="$PATH" HOME="$state/home" TMPDIR="$state/tmp" PYTHONDONTWRITEBYTECODE=1 \
-  "$state/venv/bin/python" "$root/releases/test_release_set.py"
+  "$state/venv/bin/python" -m unittest discover -s "$root/releases" -p 'test_*.py'

@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Compile an immutable App revision against a selected Web's live fixtures."""
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import plistlib
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TESTS = ["ContractReadinessTests", "APIClientAuthAndErrorTests", "APIClientSessionListTests",
+         "APIClientSessionMutationTests", "SSEClientTests", "StreamReconnectContractTests"]
+
+
+def commit(ref):
+    return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], text=True).strip()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--app-ref", required=True)
+    parser.add_argument("--web-ref", required=True)
+    parser.add_argument("--output", type=Path, required=True, help="New directory for retained verification evidence.")
+    args = parser.parse_args()
+    app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=False)
+    responses = output / "responses.json"
+    with (output / "web-probe.log").open("w") as log:
+        subprocess.run([
+            str(ROOT / "app/scripts/validate-upstream-contract"), "--server-only", "--ref", web_sha,
+            "--responses-output", str(responses),
+        ], cwd=ROOT / "app", stdout=log, stderr=subprocess.STDOUT, check=True)
+    with tempfile.TemporaryDirectory(prefix="talaria-previous-app-") as temporary:
+        checkout = Path(temporary) / "source"
+        subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
+        subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", app_sha], check=True)
+        app = checkout / "app" if (checkout / "app/Talaria.xcodeproj").is_dir() else checkout
+        if not (app / "Talaria.xcodeproj").is_dir():
+            raise ValueError("selected revision does not contain the App project")
+        env = {**os.environ, "_TALARIA_ENV_LOADED": "1",
+               "TALARIA_UPSTREAM_CONTRACT_RESPONSES": "base64:" + base64.b64encode(responses.read_bytes()).decode()}
+        with (output / "app-tests.log").open("w") as log:
+            subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in TESTS)],
+                           cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        result_path = re.search(r"^Result bundle: (.+)$", (output / "app-tests.log").read_text(), re.MULTILINE)
+        if result_path is None:
+            raise ValueError("native runner did not identify its result bundle")
+        evidence = {}
+        for kind in ("summary", "tests"):
+            payload = json.loads(subprocess.check_output([
+                "xcrun", "xcresulttool", "get", "test-results", kind, "--path", result_path[1], "--compact",
+            ]))
+            (output / f"app-{kind}.json").write_text(json.dumps(payload, indent=2) + "\n")
+            evidence[kind] = payload
+        if evidence["summary"].get("result") != "Passed" or evidence["summary"].get("failedTests"):
+            raise ValueError("native contract tests did not pass")
+        cases = {}
+
+        def collect(node):
+            if isinstance(node, dict):
+                if node.get("nodeType") == "Test Case":
+                    cases[node["nodeIdentifier"]] = node["result"]
+                for value in node.values():
+                    collect(value)
+            elif isinstance(node, list):
+                for value in node:
+                    collect(value)
+
+        collect(evidence["tests"])
+        for name in TESTS:
+            if not any(key.startswith(name + "/") and result == "Passed" for key, result in cases.items()):
+                raise ValueError(f"native gate did not execute {name}")
+        live = "APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied()"
+        if cases.get(live) != "Passed":
+            raise ValueError("previous App did not decode the live Web fixtures")
+        products = app / ".codex-tmp/xctest/derived-data/Build/Products"
+        plists = list(products.glob("**/TalariaTests.xctest/Info.plist"))
+        if not any(plistlib.loads(path.read_bytes()).get("CFBundleDisplayName") == env["TALARIA_UPSTREAM_CONTRACT_RESPONSES"] for path in plists):
+            raise ValueError("live fixtures were not embedded in the executed App test bundle")
+    record = {"appSourceRevision": app_sha, "webSourceRevision": web_sha, "result": "success",
+              "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": TESTS}
+    (output / "verification.json").write_text(json.dumps(record, indent=2) + "\n")
+    print(json.dumps(record))
+
+
+if __name__ == "__main__":
+    main()
