@@ -34,8 +34,11 @@ jobs:
             git diff --stat "$base..refs/remotes/hermes-upstream/master"
           } > .codex-tmp/upstream-watch-report.txt
           cat .codex-tmp/upstream-watch-report.txt
-      - uses: actions/upload-artifact@v7
-        with:
-          name: public-upstream-watch
-          path: .codex-tmp/upstream-watch-report.txt
-          if-no-files-found: error
+      - name: Retain the upstream report in the job summary
+        run: |
+          {
+            echo '### Public upstream changes'
+            echo '```text'
+            cat .codex-tmp/upstream-watch-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

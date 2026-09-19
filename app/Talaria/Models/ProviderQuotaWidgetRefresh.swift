@@ -246,6 +246,7 @@ enum ProviderQuotaWidgetRefreshClient {
             request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        AppConfig.applyClientIdentity(to: &request)
 
         let session: URLSession?
         if performRequest == nil {

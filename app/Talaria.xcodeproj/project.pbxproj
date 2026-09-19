@@ -499,6 +499,7 @@
 		C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000012 /* ChatActiveRunStatus.swift */; };
 		C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000013 /* ResponseCompletionNotifications.swift */; };
 		C107D000000000000000004 /* ComposerBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000014 /* ComposerBehavior.swift */; };
+		A20300000000000000000001 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
 		1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000004 /* UITestFixture+Kanban.swift */; };
@@ -3213,6 +3214,7 @@
 				C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */,
 				C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
 				C107F000000000000000004 /* ProviderQuotaWidgetRefresh.swift in Sources */,
+				A20300000000000000000001 /* AppConfig.swift in Sources */,
 				A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */,
 				A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */,

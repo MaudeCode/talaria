@@ -1,0 +1,68 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web packages and container setup use the Talaria distribution, with migration support for existing installations.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "Web updates follow Talaria releases and preserve local changes.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Update checks distinguish unavailable release information and manual installations.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Support diagnostics identify the app release and compatibility details.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "New Web installations use a tested Hermes Agent version.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Web health checks include release and compatibility details.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Relay health checks identify the deployed release and supported contracts.",
+      "highlight": false,
+      "components": [
+        "relay"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Settings keeps unfinished Web updates available to complete.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

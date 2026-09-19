@@ -11,7 +11,7 @@ let
   runtimeDir = "hermes-webui";
 in
 pkgs.stdenv.mkDerivation {
-  pname = "hermes-webui";
+  pname = "talaria-web";
   inherit version;
 
   dontUnpack = true;
@@ -35,12 +35,13 @@ pkgs.stdenv.mkDerivation {
     makeWrapper ${pythonEnv}/bin/python3 "$out/bin/hermes-webui" \
       --set HERMES_WEBUI_DISABLE_LOCAL_VENV 1 \
       --add-flags "$out/${runtimeDir}/bootstrap.py --foreground --no-browser --skip-agent-install"
+    ln -s hermes-webui "$out/bin/talaria-web"
 
     runHook postInstall
   '';
 
   meta = {
-    description = "Hermes WebUI package";
-    mainProgram = "hermes-webui";
+    description = "Talaria Web package";
+    mainProgram = "talaria-web";
   };
 }

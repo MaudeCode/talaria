@@ -18,8 +18,10 @@ import venv
 import webbrowser
 from pathlib import Path
 
+from api.release_info import COMPATIBLE_AGENT
 
-INSTALLER_URL = "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh"
+
+INSTALLER_URL = f"https://raw.githubusercontent.com/NousResearch/hermes-agent/{COMPATIBLE_AGENT['sourceRevision']}/scripts/install.sh"
 REPO_ROOT = Path(__file__).resolve().parent
 
 
@@ -305,6 +307,13 @@ def ensure_python_has_webui_deps(python_exe: str, agent_dir: Path | None = None)
             "HERMES_WEBUI_PYTHON to an interpreter with Hermes Agent dependencies."
         )
 
+    if not (REPO_ROOT / "requirements.txt").is_file():
+        raise RuntimeError(
+            "Python environment cannot import both WebUI dependencies and Hermes Agent. "
+            "For a packaged installation, install the Talaria Web wheel into the Agent "
+            "environment or set HERMES_WEBUI_PYTHON to a compatible interpreter."
+        )
+
     venv_dir = REPO_ROOT / ".venv"
     venv_python = venv_dir / (
         "Scripts/python.exe" if platform.system() == "Windows" else "bin/python"
@@ -360,7 +369,9 @@ def install_hermes_agent() -> None:
         )
     info(f"Hermes Agent not found. Attempting install via {INSTALLER_URL}")
     subprocess.run(
-        ["/bin/bash", "-lc", f"curl -fsSL {INSTALLER_URL} | bash"], check=True
+        ["/bin/bash", "-o", "pipefail", "-c",
+         f"curl -fsSL {INSTALLER_URL} | bash -s -- --commit {COMPATIBLE_AGENT['sourceRevision']}"],
+        check=True,
     )
 
 

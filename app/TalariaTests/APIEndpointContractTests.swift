@@ -341,6 +341,20 @@ private struct EndpointContract {
 }
 
 final class SharedContractTests: XCTestCase {
+    func testAppAdvertisesCanonicalContractVersions() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let versions = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("contracts/versions.json"))) as? [String: Any])
+        let appWeb = try XCTUnwrap(versions["appWeb"] as? [String: Any])
+        let appRelay = try XCTUnwrap(versions["appRelay"] as? [String: Any])
+        let scene = try XCTUnwrap(versions["activityScene"] as? [String: Any])
+        let identity = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(AppConfig.clientIdentity.utf8)) as? [String: Any])
+        let supported = try XCTUnwrap(identity["contracts"] as? [String: Any])
+        XCTAssertEqual(supported["appWeb"] as? [Int], [try XCTUnwrap(appWeb["fixtureVersion"] as? Int)])
+        XCTAssertEqual(supported["appRelay"] as? [Int], [try XCTUnwrap(appRelay["aggregateSchemaVersion"] as? Int)])
+        XCTAssertEqual(supported["activityScene"] as? [String], [try XCTUnwrap(scene["version"] as? String)])
+    }
+
     private func fixture(_ name: String) throws -> Data {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -375,6 +389,7 @@ final class SharedContractTests: XCTestCase {
         let registration = try JSONSerialization.jsonObject(with: fixture("app-registration")) as! NSDictionary
         let session = session { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer contract-session-token")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Client"), AppConfig.clientIdentity)
             if request.httpMethod == "PUT" {
                 let body = try XCTUnwrap(apiTestBodyData(from: request))
                 XCTAssertEqual(try JSONSerialization.jsonObject(with: body) as? NSDictionary, registration)

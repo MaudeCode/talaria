@@ -9,6 +9,12 @@ on:
       version:
         required: true
         type: string
+      artifacts:
+        required: true
+        type: string
+    outputs:
+      artifacts:
+        value: ${{ jobs.build.outputs.artifacts }}
 
 permissions:
   contents: read
@@ -20,6 +26,7 @@ defaults:
 jobs:
   build:
     name: Build signed iOS release
+    if: github.ref == 'refs/heads/main' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main'
     runs-on: maude-mac
     environment: testflight
     timeout-minutes: 60
@@ -27,6 +34,9 @@ jobs:
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
       TEAM_ID: Q28NF3NH3D
+      RELEASE_ARTIFACTS: ${{ inputs.artifacts }}
+    outputs:
+      artifacts: ${{ steps.store.outputs.artifacts }}
 
     steps:
       - name: Check out release tag
@@ -34,6 +44,17 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - name: Restore verified release plan
+        working-directory: .
+        run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+
+      - name: Verify production build authority
+        working-directory: .
+        run: |
+          "$RELEASE_PYTHON" -c 'import sys; sys.path.insert(0,"releases"); from cli import load; from publish import authorize; import os; authorize(load(os.environ["RUNNER_TEMP"]+"/release-plan/plan.json"))'
 
       - name: Check required secrets
         env:
@@ -109,6 +130,13 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      - name: Stamp the selected release identity
+        working-directory: .
+        env:
+          RELEASE_SOURCE: ${{ inputs.ref }}
+        run: |
+          "$RELEASE_PYTHON" scripts/stamp-release.py app --version "$MARKETING_VERSION" --build-number "$BUILD_NUMBER" --source-revision "$RELEASE_SOURCE"
 
       - name: Resolve Swift packages
         run: |
@@ -248,21 +276,18 @@ jobs:
             -exportPath "${EXPORT_PATH}" \
             -exportOptionsPlist "${EXPORT_OPTIONS_PATH}"
 
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-ipa
-          path: ${{ env.EXPORT_PATH }}/*.ipa
-          if-no-files-found: error
-          retention-days: 7
 
-      - name: Upload dSYM artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-dsyms
-          path: ${{ env.ARCHIVE_PATH }}/dSYMs
-          if-no-files-found: error
-          retention-days: 7
+      - name: Record the verified signed build
+        working-directory: .
+        run: |
+          "$RELEASE_PYTHON" releases/publish.py build-app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
+            --directory "$EXPORT_PATH" --build-number "$BUILD_NUMBER" --output "$RUNNER_TEMP/app-build/receipt.json"
+
+      - name: Store verified signed artifacts locally
+        id: store
+        working-directory: .
+        run: |
+          "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build" ios-ipa "$EXPORT_PATH" ios-dsyms "$ARCHIVE_PATH/dSYMs"
 
       - name: Remove App Store Connect key
         if: always()

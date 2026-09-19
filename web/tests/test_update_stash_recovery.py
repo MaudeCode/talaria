@@ -9,7 +9,7 @@ import pytest
 def isolated_update_repository(tmp_path, monkeypatch):
     repository = tmp_path / "checkout"
     (repository / ".git").mkdir(parents=True)
-    monkeypatch.setattr(updates, "REPO_ROOT", repository)
+    monkeypatch.setattr(updates, "_AGENT_DIR", repository)
 
 
 def test_pull_failure_untracked_overwrite_flags_conflict(tmp_path):
@@ -36,12 +36,12 @@ def test_pull_failure_untracked_overwrite_flags_conflict(tmp_path):
     restart_calls = []
 
     with (
-        patch.object(updates, 'REPO_ROOT', tmp_path),
+        patch.object(updates, '_AGENT_DIR', tmp_path),
         patch.object(updates, '_run_git', side_effect=fake_git),
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['conflict'] is True
@@ -75,12 +75,12 @@ def test_apply_force_update_removes_untracked_files_before_reset(tmp_path):
     restart_calls = []
 
     with (
-        patch.object(updates, 'REPO_ROOT', tmp_path),
+        patch.object(updates, '_AGENT_DIR', tmp_path),
         patch.object(updates, '_run_git', side_effect=fake_git),
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates.apply_force_update('webui')
+        result = updates.apply_force_update('agent')
 
     assert result['ok'] is True
     assert ['checkout', '.'] in call_log
@@ -118,12 +118,12 @@ def test_apply_force_update_proceeds_when_clean_fails(tmp_path):
     restart_calls = []
 
     with (
-        patch.object(updates, 'REPO_ROOT', tmp_path),
+        patch.object(updates, '_AGENT_DIR', tmp_path),
         patch.object(updates, '_run_git', side_effect=fake_git),
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates.apply_force_update('webui')
+        result = updates.apply_force_update('agent')
 
     # Clean failed, but reset --hard succeeded → force update must SUCCEED.
     assert result['ok'] is True, result
@@ -161,7 +161,7 @@ def test_stash_apply_conflict_preserves_stash(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is True
     assert result['stash_conflict'] is True
@@ -199,7 +199,7 @@ def test_stash_apply_reset_failure_returns_error(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['stash_conflict'] is True
@@ -238,7 +238,7 @@ def test_stash_apply_success_drops_and_restarts(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is True
     assert 'stash_conflict' not in result
@@ -274,7 +274,7 @@ def test_stash_apply_success_discloses_drop_failure(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is True
     assert 'temporary stash entry may still be present' in result['message']
@@ -309,11 +309,11 @@ def test_pull_failure_stash_apply_recovery(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['message'].startswith('Pull failed:')
-    assert 'Local webui modifications were restored to the working tree' in result['message']
+    assert 'Local agent modifications were restored to the working tree' in result['message']
     assert ['stash', 'apply'] in call_log
     assert ['stash', 'drop'] in call_log
     assert ['stash', 'pop'] not in call_log
@@ -345,10 +345,10 @@ def test_pull_failure_stash_apply_recovery_discloses_drop_failure(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart'),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
-    assert 'Local webui modifications were restored to the working tree' in result['message']
+    assert 'Local agent modifications were restored to the working tree' in result['message']
     assert 'temporary stash entry may still be present' in result['message']
     assert ['stash', 'drop'] in call_log
 
@@ -378,11 +378,11 @@ def test_pull_failure_stash_apply_recovery_warns_before_diverged_reset(tmp_path)
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart'),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['diverged'] is True
-    assert 'Local webui modifications were restored to the working tree' in result['message']
+    assert 'Local agent modifications were restored to the working tree' in result['message']
     assert 'save or stash them before running destructive recovery commands' in result['message']
     assert result['message'].index('save or stash') < result['message'].index('reset --hard')
     assert ['stash', 'drop'] in call_log
@@ -415,11 +415,11 @@ def test_pull_failure_stash_apply_conflict_cleans_worktree(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['stash_conflict'] is True
-    assert result['message'].startswith('Pull failed, and your local webui modifications conflicted')
+    assert result['message'].startswith('Pull failed, and your local agent modifications conflicted')
     assert 'index and tracked files were restored to HEAD' in result['message']
     assert 'Pull error: Some unrecognized git error' in result['message']
     assert ['stash', 'apply'] in call_log
@@ -453,7 +453,7 @@ def test_pull_failure_stash_apply_conflict_preserves_diverged_flag(tmp_path):
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart'),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['stash_conflict'] is True
@@ -488,7 +488,7 @@ def test_pull_failure_stash_apply_conflict_reset_failure_returns_error(tmp_path)
         patch.object(updates, '_select_apply_compare_ref', return_value='origin/master'),
         patch.object(updates, '_schedule_restart', side_effect=lambda: restart_calls.append(1)),
     ):
-        result = updates._apply_update_inner('webui')
+        result = updates._apply_update_inner('agent')
 
     assert result['ok'] is False
     assert result['stash_conflict'] is True
@@ -499,3 +499,12 @@ def test_pull_failure_stash_apply_conflict_reset_failure_returns_error(tmp_path)
     assert ['reset', '--hard', 'HEAD'] in call_log
     assert ['stash', 'drop'] not in call_log
     assert len(restart_calls) == 0
+
+
+@pytest.fixture(autouse=True)
+def isolate_legacy_agent_gateway_restart(monkeypatch):
+    # These stash/pull diagnostics belong to the external Agent updater now.
+    # Talaria Web's clean-only release path has real-repository coverage in
+    # test_tal203_source_update.py.
+    import api.updates as updates
+    monkeypatch.setattr(updates, "_ensure_gateway_restart_for_agent_update", lambda: (True, {"status": "restarted"}))

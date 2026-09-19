@@ -1,8 +1,16 @@
 """Tests for issue #4356: update check returns "can't check" for non-git installs."""
-from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import api.updates as updates
+from api import talaria_releases
+
+
+@pytest.fixture(autouse=True)
+def unavailable_release_metadata(monkeypatch):
+    def unavailable(channel):
+        raise talaria_releases.ReleaseUnavailable("Synthetic unavailable release metadata")
+    monkeypatch.setattr(talaria_releases, "published_web_release", unavailable)
 
 
 def test_check_repo_returns_no_git_sentinel_when_dot_git_absent(tmp_path):
@@ -28,7 +36,7 @@ def test_check_repo_returns_no_git_sentinel_when_path_is_none():
 
 
 def test_check_repo_still_returns_dict_when_dot_git_exists(tmp_path):
-    """_check_repo calls git operations when .git exists; no_git should not be True."""
+    """The separate Agent checker retains its ordinary Git-checkout behavior."""
     (tmp_path / '.git').mkdir()
 
     def fake_git(args, cwd, timeout=10):
@@ -41,7 +49,7 @@ def test_check_repo_still_returns_dict_when_dot_git_exists(tmp_path):
         raise AssertionError(f'unexpected git args: {args!r}')
 
     with patch.object(updates, '_run_git', side_effect=fake_git):
-        result = updates._check_repo(tmp_path, 'webui')
+        result = updates._check_repo(tmp_path, 'agent')
 
     assert result is not None
     assert isinstance(result, dict)

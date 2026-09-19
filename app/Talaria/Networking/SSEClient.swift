@@ -62,9 +62,10 @@ final class SSEClient: SSEStreamingClient {
             return .shutdown
         }
         // Custom headers merged underneath the built-ins so the built-ins win on
-        // collision; an empty list leaves the built-in three unchanged (#255).
+        // collision, including immutable client identity.
         let cookieStorage = ServerCookieStore.shared.storage(for: url)
         var builtInHeaders = [
+            AppConfig.clientIdentityHeaderName: AppConfig.clientIdentity,
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
             "Accept-Encoding": "identity"

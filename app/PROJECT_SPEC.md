@@ -762,7 +762,7 @@ Document it as the recommended path.
 | 5 | **SSE not WebSocket.** | Use LDSwiftEventSource. Handle heartbeat comment lines. |
 | 6 | **Cloudflare ~100s idle timeout on free plan.** | 30s server heartbeats keep streams alive; gaps >100s with no events will cut the connection. Reconnect logic must handle this. |
 | 7 | **App Store review for "remote shell" apps** can be sensitive. | Position as "mobile client for your own developer agent server." Prior art: Blink Shell, Working Copy, Termius. |
-| 8 | **TestFlight release automation can publish unreviewed work too easily.** | Require an explicitly authorized signed `vX.Y.Z` tag on validated `main`. Upload one external-capable build, then assign testers and request Beta App Review manually. |
+| 8 | **TestFlight release automation can publish unreviewed work too easily.** | Require an explicitly authorized signed `app-vX.Y.Z` tag on validated `main`. Upload one external-capable build, then assign testers and request Beta App Review manually. |
 | 9 | Server may return new SSE event types we don't handle. | Default case in event-decoding switch logs and ignores — never crash. |
 | 10 | Long agent runs may exceed iOS background time when app is backgrounded. | Don't try to keep streams alive in background for v1. On foreground, reconnect via `/api/chat/stream/status`. |
 | 11 | **The server is typically a personal machine.** If it is asleep, off, or offline, the app shows network errors. | Document in onboarding: "If you can't connect, check that your server machine is awake and your tunnel is running." Add a clear error message that distinguishes "tunnel down" (DNS resolves, connection refused) from "machine asleep" (timeout) where possible. |
@@ -871,7 +871,7 @@ UPSTREAM_TESTED_SHA / UPSTREAM_TESTED_TAG / TESTED_AGAINST_VERSION:
   duplicate the values here — they rot.
 APP_VERSION / APP_BUILD:
   project values in `Talaria.xcodeproj/project.pbxproj` are development defaults.
-  Production releases use the signed `vX.Y.Z` tag as MARKETING_VERSION and the
+  Production releases use the signed `app-vX.Y.Z` tag as MARKETING_VERSION and the
   next App Store Connect build number as CURRENT_PROJECT_VERSION.
 ```
 

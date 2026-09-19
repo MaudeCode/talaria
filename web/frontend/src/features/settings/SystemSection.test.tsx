@@ -22,6 +22,7 @@ vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { showToast } from '../toast/toast'
 import { SystemSection } from './SystemSection'
+import { UpdatesCheckSchema } from '../../contracts'
 
 function renderSystem() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -30,7 +31,62 @@ function renderSystem() {
 }
 
 describe('SystemSection "Check now"', () => {
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(showToast).mockReset() })
+  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
+
+  it('does not call unavailable private release metadata up to date', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: null, current_sha: null, manual_update: true, error: 'Private release access unavailable' } }))
+    renderSystem()
+    expect(await screen.findByText(/update check failed/i)).toBeInTheDocument()
+    expect(screen.queryByText(/up to date/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /install updates manually/i })).toHaveAttribute('href', 'https://github.com/MaudeCode/talaria/releases')
+  })
+
+  it.each([{ behind: 0 }, { behind: 1, manual_update: true }, { error: 'Web unavailable' }])('keeps Agent updates independent of Web status %j', async (webui) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui, agent: { behind: 1 } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent'))
+    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps the Agent action after applying only the Web update', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1 }, agent: { behind: 1 } })
+    vi.mocked(api.applyUpdates).mockImplementation(() => {
+      vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 1 } })
+      return Promise.resolve({ ok: true })
+    })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+    await screen.findByText(/up to date/i)
+    await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent'))
+  })
+
+  it('keeps the repair action available when source is current but provenance is pending', async () => {
+    const source = 'a'.repeat(40)
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({
+      webui: { behind: 0, metadata_repair: true, current_sha: source, latest_sha: source }, agent: { behind: 0 },
+    }))
+    vi.mocked(api.applyUpdates).mockImplementation(() => {
+      vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0, metadata_repair: false }, agent: { behind: 0 } }))
+      return Promise.resolve({ message: 'Release metadata repaired' })
+    })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /finish update/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+    await screen.findByText(/up to date/i)
+    expect(screen.queryByRole('button', { name: /finish update/i })).not.toBeInTheDocument()
+  })
+
+  it('explains why a dirty checkout cannot update automatically', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1, dirty: true, manual_update: true }, agent: { behind: 0 } })
+    renderSystem()
+    expect(await screen.findByText(/local changes prevent automatic updates/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+  })
 
   it('runs one forced POST check, shows Checking… while pending, and renders the fresh result', async () => {
     let resolve!: (v: unknown) => void

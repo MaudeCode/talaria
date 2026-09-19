@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import releaseInfo from "./releaseInfo.json";
 import { makeAggregate } from "./lib/aggregate";
 import {
   appleIdentityKeyId,
@@ -103,6 +104,7 @@ http.route({
       && apns.ok;
     return json(ok ? 200 : 503, {
       ok,
+      release: releaseInfo,
       appleKeys: Boolean(keys?.length),
       appleAuth: authConfigured && audiences.length > 0,
       apns: apns.ok,

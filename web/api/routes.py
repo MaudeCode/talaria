@@ -13821,10 +13821,13 @@ def _deep_health_checks(stream_check: dict | None = None) -> tuple[dict, bool]:
 
 
 def _handle_health(handler, parsed):
+    from api.release_info import RELEASE_INFO
+
     deep = parse_qs(parsed.query or "").get("deep", [""])[0].lower() in {"1", "true", "yes", "on"}
     stream_check = _streams_lock_health()
     run_check = _run_lifecycle_health()
     payload = {
+        "release": RELEASE_INFO,
         "status": "ok" if (
             stream_check.get("status") == "ok" and run_check.get("status") == "ok"
         ) else "degraded",

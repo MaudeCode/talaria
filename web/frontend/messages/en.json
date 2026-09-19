@@ -2065,7 +2065,12 @@
 	"system_check_updates": "Check now",
 	"system_update_available": "{name}: {n} commits behind",
 	"system_up_to_date": "Up to date",
+	"system_update_status_unknown": "Update status is unavailable",
+	"system_manual_updates": "Install updates manually",
+	"system_update_local_changes": "Local changes prevent automatic updates",
 	"system_apply_update": "Update now",
+	"system_update_incomplete": "Finish applying this release",
+	"system_finish_update": "Finish update",
 	"system_logout": "Sign out",
 	"help_docs": "Documentation",
 	"help_shortcuts": "Keyboard shortcuts",
@@ -2167,5 +2172,6 @@
 	"project_new": "New project",
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
-	"composer_config_title": "Composer settings"
+	"composer_config_title": "Composer settings",
+	"system_apply_agent_update": "Update Agent"
 }

@@ -4,9 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 candidate_ref=""
 run_swift_tests=1
+responses_output=""
 
 usage() {
-  echo "usage: scripts/validate-upstream-contract [--ref MONOREPO_COMMIT_OR_TAG] [--server-only]"
+  echo "usage: scripts/validate-upstream-contract [--ref MONOREPO_COMMIT_OR_TAG] [--server-only] [--responses-output FILE]"
 }
 
 while (( $# )); do
@@ -19,6 +20,11 @@ while (( $# )); do
     --server-only)
       run_swift_tests=0
       shift
+      ;;
+    --responses-output)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      responses_output="$2"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -68,7 +74,7 @@ candidate_sha="$(git -C "$monorepo_root" rev-parse --verify --end-of-options "${
 if [[ -n "$candidate_ref" ]]; then
   upstream_dir="$run_dir/web"
   mkdir -p "$upstream_dir"
-  git -C "$monorepo_root" archive "$candidate_sha:web" | tar -x -C "$upstream_dir"
+  git -C "$monorepo_root" archive "${candidate_sha}:web" | tar -x -C "$upstream_dir"
 fi
 [[ -f "$upstream_dir/server.py" ]] || { echo "Missing checked-out web/server.py" >&2; exit 1; }
 printf '%s\n' "$candidate_sha" > "$run_dir/candidate-sha.txt"
@@ -155,6 +161,10 @@ tested_sha_after="$(read_config UPSTREAM_TESTED_SHA)"
   echo "UPSTREAM_TESTED_SHA changed during validation; refusing silent pin advancement" >&2
   exit 1
 }
+if [[ -n "$responses_output" ]]; then
+  mkdir -p "$(dirname "$responses_output")"
+  cp "$responses_file" "$responses_output"
+fi
 
 echo "PASS local web/ at monorepo $candidate_sha"
 echo "Historical standalone UPSTREAM_TESTED_SHA remains $tested_sha_before; local web/ is the tested source."

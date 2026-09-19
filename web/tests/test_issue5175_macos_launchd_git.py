@@ -72,8 +72,8 @@ def test_run_git_returns_not_found_when_usr_bin_git_absent_on_darwin(tmp_path):
 def test_detect_webui_version_recovers_via_launchd_fallback(tmp_path):
     def fake_run(cmd, **kwargs):
         assert cmd[0] == '/usr/bin/git'
-        if cmd[1:] == ['describe', '--tags', '--always', '--abbrev=8']:
-            return MagicMock(returncode=0, stdout='v0.51.999\n', stderr='')
+        if cmd[1:] == ['describe', '--tags', '--always', '--abbrev=8', '--match', 'web-v[0-9]*', '--match', 'web-exp-v[0-9]*']:
+            return MagicMock(returncode=0, stdout='web-v0.51.999\n', stderr='')
         if cmd[1:] == ['diff-index', '--quiet', 'HEAD', '--']:
             return MagicMock(returncode=0, stdout='', stderr='')
         raise AssertionError(f'unexpected git args: {cmd[1:]!r}')
@@ -85,7 +85,7 @@ def test_detect_webui_version_recovers_via_launchd_fallback(tmp_path):
          patch.object(updates.subprocess, 'run', side_effect=fake_run):
         version = updates._detect_webui_version()
 
-    assert version == 'v0.51.999'
+    assert version == 'web-v0.51.999'
 
 
 def test_check_repo_does_not_report_git_not_found_via_launchd_fallback(tmp_path):
@@ -122,7 +122,7 @@ def test_check_repo_does_not_report_git_not_found_via_launchd_fallback(tmp_path)
          patch.object(sys, 'platform', 'darwin'), \
          patch.object(updates.os.path, 'exists', return_value=True), \
          patch.object(updates.subprocess, 'run', side_effect=fake_run):
-        info = updates._check_repo(tmp_path, 'webui')
+        info = updates._check_repo(tmp_path, 'agent')
 
     assert info['behind'] == 0
     assert info['dirty'] is False

@@ -1,30 +1,29 @@
 ---
 name: talaria-release
-description: Publish Talaria to TestFlight from a signed semantic tag when the user requests a versioned release or authorizes a release tag.
+description: Publish a Talaria release set including TestFlight when the user requests a production release; validate signed component tags without treating a tag push as publication.
 ---
-
-Run app commands from `app/`; unqualified source and tooling paths are relative
-to `app/`. GitHub workflows and shared contract documentation remain at the root.
 
 # Talaria release
 
-Pushing a signed `vX.Y.Z` tag starts the TestFlight release workflow. The tag
-push is the publish boundary and requires explicit user authorization.
+Run release orchestration from the repository root. Read
+[`releases/README.md`](../../../releases/README.md) for the request format,
+workflow dispatches, environment boundaries and partial-failure handling.
 
-1. Confirm `main` is clean, equals current `origin/main`, has successful exact-SHA
-   CI, and the requested `X.Y.Z` tag does not exist.
-2. After the user authorizes the tag push, create and push it:
+1. Select a clean, current `main` source with successful exact-SHA CI. Resolve
+   the previous completed release set and identify changed components. Reuse
+   unchanged component tags exactly.
+2. Create signed namespaced tags for changed components at the selected source
+   and push them within the user's authorization. Confirm the validation-only
+   tag workflow succeeds.
+3. Dispatch `release-set.yml` with `dry_run=true` and the reviewed request.
+   Require successful compatibility/build jobs and a candidate manifest matching
+   the selected source, tags and previous set.
+4. With production publication authorized, dispatch `production-cutover.yml`
+   from `main` with the same request and `confirm_publication=true`. Report
+   Relay readback, Web digest publication, App archive/upload/processing and
+   completed root manifest separately. A failed or partial run is incomplete;
+   inspect its side effects before retrying.
 
-   ```zsh
-   git tag -s vX.Y.Z -m "Talaria vX.Y.Z"
-   git push origin vX.Y.Z
-   ```
-
-3. Watch `.github/workflows/release.yml` through completion. Report archive,
-   upload, and App Store Connect processing separately.
-
-GitHub Actions derives the marketing version from the tag and selects the next
-App Store Connect-safe build number using environment secrets. Repository version
-fields remain development defaults. The workflow uploads one external-capable
-build that can also serve internal testers; tester assignment, Beta App Review,
-agreements, and compliance prompts remain owner actions in App Store Connect.
+App Store Connect supplies the next build number. Repository version fields
+remain development defaults. External tester assignment, Beta App Review,
+agreements and compliance prompts remain owner actions in App Store Connect.

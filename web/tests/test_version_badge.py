@@ -90,7 +90,7 @@ class TestDetectWebUIVersion:
             scm_version='0.52.2695',
             tmp_path=tmp_path,
         )
-        assert result == 'v0.52.2695'
+        assert result == 'web-v0.52.2695'
 
     def test_docker_version_file_precedes_scm_fallback(self, tmp_path):
         result = self._fresh_detect(

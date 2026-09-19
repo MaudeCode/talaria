@@ -302,6 +302,7 @@ actor APIClient {
         if let timeout { request.timeoutInterval = timeout }
         // Custom headers first, then built-ins so Accept/Content-Type always win.
         customHeaderProvider().apply(to: &request)
+        AppConfig.applyClientIdentity(to: &request)
         request.setValue(accept, forHTTPHeaderField: "Accept")
 
         if let encodedBody {
@@ -351,6 +352,7 @@ actor APIClient {
         // so it wins (#255).
         if Self.isSameOrigin(url, as: baseURL) {
             customHeaderProvider().apply(to: &request)
+            AppConfig.applyClientIdentity(to: &request)
         }
         request.setValue("*/*", forHTTPHeaderField: "Accept")
 
@@ -516,7 +518,7 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         // slip through unstripped (a sub-second live-edit race; see #277 review).
         // Accepted as a known narrow gap; closing it would require carrying the
         // applied-name set through the redirect.
-        var namesToStrip: Set<String> = ["cookie"]
+        var namesToStrip: Set<String> = ["cookie", AppConfig.clientIdentityHeaderName.lowercased()]
         namesToStrip.formUnion(
             customHeaderProvider()
                 .filter { $0.isApplicable }

@@ -1,7 +1,8 @@
 FROM python:3.12-slim
 
-LABEL maintainer="nesquena"
-LABEL description="Hermes Web UI — browser interface for Hermes Agent"
+LABEL maintainer="MaudeCode"
+LABEL description="Talaria Web — browser interface for Hermes Agent"
+LABEL org.opencontainers.image.source="https://github.com/MaudeCode/talaria"
 
 # Install system packages
 ENV DEBIAN_FRONTEND=noninteractive
@@ -139,6 +140,12 @@ COPY --chown=root:root . /apptoo
 ARG HERMES_VERSION=unknown
 RUN echo "__version__ = '${HERMES_VERSION}'" > /apptoo/api/_version.py
 
+# The release workflow supplies the exact JSON emitted by stamp-release.py.
+# An unstamped local image has an empty label and reports development at /health.
+ARG TALARIA_PROVENANCE={}
+LABEL dev.talaria.provenance="${TALARIA_PROVENANCE}"
+RUN python3 -c 'import json, os; from pathlib import Path; from api.release_info import RELEASE_INFO; expected = RELEASE_INFO if Path("api/_release.json").exists() else {}; actual = json.loads(os.environ["TALARIA_PROVENANCE"]); assert actual == expected, "Container label must match stamped Web provenance"'
+
 # Default to binding all interfaces (required for container networking)
 ENV HERMES_WEBUI_HOST=0.0.0.0
 ENV HERMES_WEBUI_PORT=8787
@@ -152,4 +159,3 @@ HEALTHCHECK --interval=30s --timeout=8s --start-period=10s --retries=3 \
 # before starting the WebUI server. The production image does not ship sudo.
 USER root
 CMD ["/hermeswebui_init.bash"]
-

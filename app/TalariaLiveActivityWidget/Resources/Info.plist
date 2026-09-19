@@ -28,6 +28,18 @@
 	<string>$(AppIdentifierPrefix)$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
 	<key>TalariaSharedKeychainService</key>
 	<string>$(APP_BUNDLE_IDENTIFIER).provider-quota-refresh</string>
+	<key>TalariaRelease</key>
+	<dict>
+		<key>contracts</key>
+		<dict>
+			<key>appWeb</key>
+			<array><integer>1</integer></array>
+			<key>appRelay</key>
+			<array><integer>1</integer></array>
+			<key>activityScene</key>
+			<array><string>activity_scene_v1</string></array>
+		</dict>
+	</dict>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

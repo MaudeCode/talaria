@@ -40,7 +40,9 @@
 
 services:
   hermes-agent:
-    image: nousresearch/hermes-agent:latest
+    extends:
+      file: api/agent_dependency.json
+      service: hermes-agent
     container_name: hermes-agent
     command: gateway run
     ports:
@@ -87,7 +89,9 @@ services:
       - hermes-net
 
   hermes-dashboard:
-    image: nousresearch/hermes-agent:latest
+    extends:
+      file: api/agent_dependency.json
+      service: hermes-agent
     container_name: hermes-dashboard
     command: dashboard --host 0.0.0.0 --insecure
     ports:
@@ -118,7 +122,8 @@ services:
       - hermes-net
 
   hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:latest
+    image: ${TALARIA_WEB_IMAGE:-ghcr.io/maudecode/talaria-web:local}
+    build: .
     container_name: hermes-webui
     depends_on:
       - hermes-agent
@@ -142,6 +147,7 @@ services:
     environment:
       - HERMES_WEBUI_HOST=0.0.0.0
       - HERMES_WEBUI_PORT=8787
+      - TALARIA_RELEASE_TOKEN=${TALARIA_RELEASE_TOKEN:-}
       - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
       # Let the WebUI health/status checks reach the gateway container over
       # the compose network. Cron listing is local, but scheduled ticking and
