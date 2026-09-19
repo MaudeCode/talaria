@@ -55,7 +55,10 @@ def main():
                    PLAYWRIGHT_BROWSERS_PATH=str(ROOT / "web/.codex-tmp/playwright"))
         subprocess.run([str(agent_python), str(ROOT / "releases/agent_probe.py"), version], cwd=agent, env=env, check=True)
         # Use the native harness for dependency setup and its network/state guards.
-        subprocess.run(["./scripts/test.sh", "--collect-only", "-q", "tests/test_ci_hygiene.py"], cwd=ROOT / "web", env=env, check=True)
+        setup_env = {key: value for key, value in env.items() if key != "PYTHONPATH"}
+        # Install Web's own dependencies. Otherwise pip considers packages on
+        # Agent's PYTHONPATH installed and leaves Web's venv incomplete.
+        subprocess.run(["./scripts/test.sh", "--collect-only", "-q", "tests/test_ci_hygiene.py"], cwd=ROOT / "web", env=setup_env, check=True)
         subprocess.run([str(ROOT / "web/.venv/bin/python"), "-m", "playwright", "install", "chromium"], env=env, check=True)
         subprocess.run(["./scripts/test.sh", *(args.tests or ["tests/"]), "-q", "--timeout=60"], cwd=ROOT / "web", env=env, check=True)
 

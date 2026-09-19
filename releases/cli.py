@@ -66,12 +66,26 @@ def previous(args):
     write(args.output, document)
 
 
+def require_latest_predecessor(previous):
+    pages = json.loads(subprocess.check_output([
+        "gh", "api", "--paginate", "--slurp", f"repos/{REPOSITORY}/releases?per_page=100",
+    ]))
+    published = [release for page in pages for release in page
+                 if release.get("draft") is False and release.get("published_at")
+                 and re.fullmatch(r"release-set-[a-f0-9]{40}", release.get("tag_name", ""))]
+    latest = max(published, key=lambda release: release["published_at"]) if published else None
+    expected = latest["tag_name"].removeprefix("release-set-") if latest else None
+    if (previous["releaseSet"] if previous else None) != expected:
+        raise ValueError("previous_release_set must identify the latest published release set; empty is valid only before bootstrap")
+
+
 def prepare(args):
     request = load(args.request)
     validate_request(request)
     previous = load(args.previous) if args.previous else None
     source = request["sourceRevision"]
     run_url()  # Fail before doing work if provenance cannot be recorded.
+    require_latest_predecessor(previous)
     env = {**os.environ, "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_SHA": source}
     subprocess.run([str(ROOT / "app/ci/require_successful_main_ci")], cwd=ROOT, env=env, check=True)
     with tempfile.TemporaryDirectory(prefix="talaria-release-refs-") as temporary:

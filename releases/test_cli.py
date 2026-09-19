@@ -15,6 +15,25 @@ import cli
 
 
 class WorkflowCommandTests(unittest.TestCase):
+    def test_bootstrap_requires_no_published_predecessor(self):
+        old, current = "a" * 40, "b" * 40
+        releases = [[{"tag_name": "release-set-" + old, "draft": False, "published_at": "2026-01-01T00:00:00Z"}],
+                    [{"tag_name": "release-set-" + current, "draft": False, "published_at": "2026-02-01T00:00:00Z"},
+                     {"tag_name": "release-set-" + "c" * 40, "draft": True, "published_at": None},
+                     {"tag_name": "app-v9.0.0", "draft": False, "published_at": "2026-03-01T00:00:00Z"}]]
+        with patch.object(cli.subprocess, "check_output", return_value=json.dumps(releases)):
+            cli.require_latest_predecessor({"releaseSet": current})
+            for previous in (None, {"releaseSet": old}):
+                with self.assertRaisesRegex(ValueError, "latest published release set"):
+                    cli.require_latest_predecessor(previous)
+        with patch.object(cli.subprocess, "check_output", return_value="[[]]"):
+            cli.require_latest_predecessor(None)
+            with self.assertRaises(ValueError):
+                cli.require_latest_predecessor({"releaseSet": old})
+        with patch.object(cli.subprocess, "check_output", side_effect=subprocess.CalledProcessError(1, "gh")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                cli.require_latest_predecessor(None)
+
     def test_only_an_explicit_404_proves_release_name_unused(self):
         with patch.object(cli.subprocess, "run", return_value=SimpleNamespace(returncode=1, stdout="HTTP/2.0 404 Not Found\n")):
             cli.unused_release("web-v2.0.0")

@@ -89,8 +89,10 @@ dry runs. Both take a JSON `request` with this shape:
 
 These are illustrative versions, not a release selection. Supply
 `previous_release_set` as the last completed set's SHA; leave it empty only for
-bootstrap. Changed tags must point to `sourceRevision`; unchanged tags must
-match the previous manifest. Production requires pushed, verified signed tags.
+bootstrap. Preparation checks all published root releases and rejects a missing
+or stale predecessor once a release set exists. Changed tags must point to
+`sourceRevision`; unchanged tags must match the previous manifest. Production
+requires pushed, verified signed tags.
 
 First dispatch `release-set.yml` with `dry_run=true`. Require the candidate
 artifact and successful selected-source contracts, previous-App contracts,

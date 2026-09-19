@@ -82,19 +82,27 @@ def _activate_spawn_fake_agent(fake_agent_root: Path):
         for k in ("HERMES_WEBUI_AGENT_DIR", "PYTHONPATH")
     }
     _saved_sys_path = list(sys.path)
+    original_agent = _saved_env["HERMES_WEBUI_AGENT_DIR"]
+
+    def keep_path(path):
+        if not path or path == fake_path:
+            return True
+        return "hermes-agent" not in path and not (
+            original_agent and Path(path).resolve().is_relative_to(Path(original_agent).resolve())
+        )
 
     os.environ["HERMES_WEBUI_AGENT_DIR"] = fake_path
     existing = os.environ.get("PYTHONPATH", "")
     parts = [
         p
         for p in existing.split(os.pathsep)
-        if p and ("hermes-agent" not in p or p == fake_path)
+        if p and keep_path(p)
     ]
     os.environ["PYTHONPATH"] = os.pathsep.join([fake_path, *[p for p in parts if p != fake_path]])
     sys.path[:] = [
         p
         for p in sys.path
-        if not p or "hermes-agent" not in p or p == fake_path
+        if keep_path(p)
     ]
     if fake_path not in sys.path:
         sys.path.insert(0, fake_path)
