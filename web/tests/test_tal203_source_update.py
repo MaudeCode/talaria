@@ -65,7 +65,7 @@ def source_install(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("worktree", [False, True])
-def test_fast_forwards_published_source_and_stamps_runtime(source_install, tmp_path, worktree):
+def test_fast_forwards_published_source_and_stamps_runtime(source_install, tmp_path, worktree, monkeypatch):
     client, _, _, new, release, git, run_git, _ = source_install
     if worktree:
         directory = tmp_path / "worktree"
@@ -77,6 +77,7 @@ def test_fast_forwards_published_source_and_stamps_runtime(source_install, tmp_p
     assert git(client, "rev-parse", "HEAD") == new
     assert (client / "web/server.py").read_text() == "version = 'new'\n"
     assert json.loads((client / "web/api/_release.json").read_text()) == release["runtime"]
+    monkeypatch.setattr(releases, "RELEASE_INFO", release["runtime"])
     assert releases.apply_web_update(client / "web", "stable", run_git)["up_to_date"] is True
 
 
@@ -193,3 +194,43 @@ def test_web_lock_retry_preserves_git_lock_and_then_updates(source_install, monk
     lock.unlink()  # The fixture owns the lock, exactly as a completed Git process does.
     assert updates.apply_clear_lock("webui")["ok"] is True
     assert git(client, "rev-parse", "HEAD") == new
+
+
+@pytest.mark.parametrize("existing_stamp", [False, True])
+def test_retry_repairs_stamp_after_source_advanced_and_schedules_restart(source_install, monkeypatch, existing_stamp):
+    from api import updates
+
+    client, _, old, new, release, git, run_git, _ = source_install
+    stamp = client / "web/api/_release.json"
+    old_runtime = {"sourceRevision": old, "version": "1.0.0"}
+    if existing_stamp:
+        stamp.write_text(json.dumps(old_runtime))
+    monkeypatch.setattr(releases, "RELEASE_INFO", old_runtime)
+    restarts = []
+    monkeypatch.setattr(updates, "REPO_ROOT", client / "web")
+    monkeypatch.setattr(updates, "_run_git", run_git)
+    monkeypatch.setattr(updates, "_schedule_restart", lambda: restarts.append(True))
+    monkeypatch.setattr(updates, "_restart_blocker_snapshot", lambda: {"restart_blocked": False})
+    with monkeypatch.context() as failure:
+        def unwritable(**kwargs):
+            raise PermissionError("synthetic unwritable stamp directory")
+        failure.setattr(releases.tempfile, "NamedTemporaryFile", unwritable)
+        assert releases.apply_web_update(client / "web", "stable", run_git)["ok"] is False
+    assert git(client, "rev-parse", "HEAD") == new
+    assert (json.loads(stamp.read_text()) if stamp.exists() else None) == (old_runtime if existing_stamp else None)
+    repaired = updates.apply_update("webui", "stable")
+    assert repaired["ok"] is True and repaired.get("restart_scheduled") is True
+    assert json.loads(stamp.read_text()) == release["runtime"]
+    assert restarts == [True]
+    # A restarted process can now truthfully report current runtime provenance.
+    monkeypatch.setattr(releases, "RELEASE_INFO", release["runtime"])
+    assert releases.apply_web_update(client / "web", "stable", run_git)["up_to_date"] is True
+
+
+def test_current_source_does_not_hide_a_modified_stamp(source_install):
+    client, _, _, new, _, git, run_git, _ = source_install
+    git(client, "reset", "--hard", new)
+    stamp = client / "web/api/_release.json"
+    stamp.write_text('{"version":"unreviewed local metadata"}')
+    assert releases.apply_web_update(client / "web", "stable", run_git)["ok"] is False
+    assert stamp.read_text() == '{"version":"unreviewed local metadata"}'

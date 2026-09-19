@@ -222,55 +222,61 @@ def apply_web_update(web_path, channel, run_git):
     except (OSError, ValueError, TimeoutError):
         return {"ok": False, "message": "Cannot resolve a completed Talaria release. Check private-repository read access."}
     source, tag = release["sourceRevision"], release["tag"]
-    if head == source:
-        return {"ok": True, "up_to_date": True, "target": "webui", "channel": channel,
-                "message": "Talaria Web already contains the selected release."}
-    # Fetch only this immutable tag. Never force-replace a local tag or pull an
-    # unrecorded main/upstream tip. Git's configured credentials authenticate it.
-    output, ok = run_git(["fetch", "--no-tags", "origin", f"refs/tags/{tag}:refs/tags/{tag}"], root, timeout=30)
-    if not ok:
-        return _git_failure(output, "Could not fetch the published Web tag. Check Git credentials or a conflicting local tag.")
-    fetched, ok = run_git(["rev-parse", f"refs/tags/{tag}^{{commit}}"], root)
-    if not ok or fetched != source:
-        return {"ok": False, "message": "Published Web tag does not match the immutable release manifest"}
-    _, forward = run_git(["merge-base", "--is-ancestor", head, source], root)
-    if not forward:
-        _, contains = run_git(["merge-base", "--is-ancestor", source, head], root)
-        if contains:
-            return {"ok": True, "up_to_date": True, "target": "webui", "channel": channel,
-                    "message": "Talaria Web already contains the selected release."}
-        return {"ok": False, "message": "Web update refused: source histories diverge; reconcile the checkout manually."}
+    if head != source:
+        # Fetch only this immutable tag. Never force-replace a local tag or pull an
+        # unrecorded main/upstream tip. Git's configured credentials authenticate it.
+        output, ok = run_git(["fetch", "--no-tags", "origin", f"refs/tags/{tag}:refs/tags/{tag}"], root, timeout=30)
+        if not ok:
+            return _git_failure(output, "Could not fetch the published Web tag. Check Git credentials or a conflicting local tag.")
+        fetched, ok = run_git(["rev-parse", f"refs/tags/{tag}^{{commit}}"], root)
+        if not ok or fetched != source:
+            return {"ok": False, "message": "Published Web tag does not match the immutable release manifest"}
+        _, forward = run_git(["merge-base", "--is-ancestor", head, source], root)
+        if not forward:
+            _, contains = run_git(["merge-base", "--is-ancestor", source, head], root)
+            if contains:
+                return {"ok": True, "up_to_date": True, "target": "webui", "channel": channel,
+                        "message": "Talaria Web already contains the selected release."}
+            return {"ok": False, "message": "Web update refused: source histories diverge; reconcile the checkout manually."}
     # Compare provenance with the immutable incoming files before modifying the
     # checkout. Do not import downloaded code into the running old process.
     try:
         expected = verify_release_source(root, release, run_git)
         stamp = root / "web/api/_release.json"
-        if stamp.is_symlink() or (stamp.exists() and json.loads(stamp.read_text()) != RELEASE_INFO):
+        if stamp.is_symlink():
+            raise ValueError("local release stamp is a symbolic link")
+        installed = json.loads(stamp.read_text()) if stamp.exists() else None
+        if installed is not None and installed not in (RELEASE_INFO, expected):
             raise ValueError("local release stamp was modified")
     except (OSError, KeyError, TypeError, ValueError):
         return {"ok": False, "message": "Web update refused: source or local provenance does not match the release manifest."}
+    if head == source and installed == expected and RELEASE_INFO == expected:
+        return {"ok": True, "up_to_date": True, "target": "webui", "channel": channel,
+                "message": "Talaria Web already contains the selected release."}
     current, same_head = run_git(["rev-parse", "HEAD"], root)
     status, clean = run_git(["status", "--porcelain", "--untracked-files=all"], root)
     if not same_head or current != head or not clean or status:
         return {"ok": False, "message": "The checkout changed during the update; retry after it is clean."}
-    output, ok = run_git(["merge", "--ff-only", "--no-overwrite-ignore", source], root, timeout=30)
-    actual, verified = run_git(["rev-parse", "HEAD"], root)
-    if not ok or not verified or actual != source:
-        return _git_failure(output, "Web fast-forward failed; no local changes were discarded.")
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", dir=stamp.parent, prefix=".release-", delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(json.dumps(expected, indent=2) + "\n")
-        temporary.replace(stamp)
-    except OSError:
-        return {"ok": False, "message": "Source advanced, but release metadata could not be written. Repair file permissions before restarting Web."}
-    finally:
-        if temporary is not None:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
+    if head != source:
+        output, ok = run_git(["merge", "--ff-only", "--no-overwrite-ignore", source], root, timeout=30)
+        actual, verified = run_git(["rev-parse", "HEAD"], root)
+        if not ok or not verified or actual != source:
+            return _git_failure(output, "Web fast-forward failed; no local changes were discarded.")
+    if installed != expected:
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", dir=stamp.parent, prefix=".release-", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(json.dumps(expected, indent=2) + "\n")
+            temporary.replace(stamp)
+        except OSError:
+            return {"ok": False, "message": "Source advanced, but release metadata could not be written. Repair file permissions before restarting Web."}
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
     return {"ok": True, "target": "webui", "channel": channel,
             "sourceRevision": source, "message": f"Updated Talaria Web to {tag}."}
 
