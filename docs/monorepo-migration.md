@@ -97,6 +97,9 @@ existing self-hosted runners without introducing hosted-runner charges.
 
 ## Repeat the migration
 
+Authenticate `gh` with read access to the three private source repositories.
+The rehearsal disables unrelated Git configuration and uses the existing `gh`
+credential helper for source fetches, without copying credentials into Git.
 From a committed migration checkout, run twice with distinct nonexistent paths:
 
 ```sh

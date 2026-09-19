@@ -26,7 +26,8 @@ def main():
                GIT_AUTHOR_EMAIL="migration@example.invalid")
 
     def git(repo, *arguments):
-        return subprocess.check_output(["git", "-C", str(repo), *arguments],
+        return subprocess.check_output(["git", "-c", "credential.helper=!gh auth git-credential",
+                                        "-C", str(repo), *arguments],
                                        env=env, text=True).strip()
 
     recipe = git(ROOT, "rev-parse", "--verify", f"{args.recipe_ref}^{{commit}}")
