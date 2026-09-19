@@ -11,6 +11,12 @@
       "summary": "Web health checks include release and compatibility details.",
       "highlight": false,
       "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Relay health checks identify the deployed release and supported contracts.",
+      "highlight": false,
+      "components": ["relay"]
     }
   ]
 }

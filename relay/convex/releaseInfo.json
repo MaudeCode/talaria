@@ -1,0 +1,11 @@
+{
+  "version": "development",
+  "sourceRevision": null,
+  "releaseSet": null,
+  "deploymentId": null,
+  "contracts": {
+    "webRelay": [2],
+    "appRelay": [1],
+    "activityScene": ["activity_scene_v1"]
+  }
+}

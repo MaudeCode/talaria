@@ -41,9 +41,10 @@ def test_stamped_release_metadata_is_validated(tmp_path):
             release_info.load_release_info(path)
 
 
-def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path):
+@pytest.mark.parametrize("component", ["web", "relay"])
+def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path, component):
     root = Path(__file__).resolve().parents[2]
-    for relative in ("scripts/stamp-web-release.py", "web/api/__init__.py", "web/api/release_info.py", "web/api/agent_dependency.json", "web/api/contract_versions.json"):
+    for relative in ("scripts/stamp-release.py", "web/api/__init__.py", "web/api/release_info.py", "web/api/agent_dependency.json", "web/api/contract_versions.json", "contracts/versions.json", "relay/convex/releaseInfo.json"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / relative, target)
@@ -56,7 +57,10 @@ def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path):
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "record upstream"], cwd=tmp_path, check=True)
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
-    command = [sys.executable, str(tmp_path / "scripts/stamp-web-release.py"), "--version", "2.1.0", "--source-revision", sha]
+    command = [sys.executable, str(tmp_path / "scripts/stamp-release.py"), component, "--version", "2.1.0", "--source-revision", sha]
+    if component == "relay":
+        assert subprocess.run(command, capture_output=True).returncode != 0
+        command += ["--deployment-id", "synthetic-relay"]
     dirty = tmp_path / "untracked.txt"
     dirty.write_text("must not enter release")
     assert subprocess.run(command, capture_output=True).returncode != 0
@@ -66,5 +70,6 @@ def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path):
     metadata = json.loads(subprocess.check_output(command, text=True))
     assert metadata["sourceRevision"] == sha
     assert metadata["releaseSet"] == sha
-    assert json.loads((tmp_path / "web/api/_release.json").read_text()) == metadata
+    destination = "web/api/_release.json" if component == "web" else "relay/convex/releaseInfo.json"
+    assert json.loads((tmp_path / destination).read_text()) == metadata
     assert subprocess.run(command, capture_output=True).returncode != 0

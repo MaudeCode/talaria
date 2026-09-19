@@ -40,7 +40,7 @@ release-set identifier, upstream base, supported contracts and `compatibleAgent`
 The Agent field identifies the tested dependency, not whichever Agent an operator
 may currently run. Unstamped development builds explicitly report `development`
 and null source/release identifiers. Release builds stamp `api/_release.json`
-from a clean exact checkout using root `scripts/stamp-web-release.py`; malformed
+from a clean exact checkout using root `scripts/stamp-release.py`; malformed
 or inconsistent stamped metadata fails startup instead of claiming provenance.
 The packaged `api/contract_versions.json` is checked against root
 `contracts/versions.json`. Extra health fields do not change readiness or require

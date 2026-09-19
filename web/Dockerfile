@@ -140,7 +140,7 @@ COPY --chown=root:root . /apptoo
 ARG HERMES_VERSION=unknown
 RUN echo "__version__ = '${HERMES_VERSION}'" > /apptoo/api/_version.py
 
-# The release workflow supplies the exact JSON emitted by stamp-web-release.py.
+# The release workflow supplies the exact JSON emitted by stamp-release.py.
 # An unstamped local image has an empty label and reports development at /health.
 ARG TALARIA_PROVENANCE={}
 LABEL dev.talaria.provenance="${TALARIA_PROVENANCE}"

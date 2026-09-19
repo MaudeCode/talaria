@@ -2,6 +2,19 @@
 
 All bodies are JSON. User-authenticated routes use `Authorization: Bearer <relay session token>`.
 
+## Health and release identity
+
+`GET /v1/health` retains its readiness status and adds a `release` object:
+version, source revision, deployment identifier, release-set identifier and
+supported `webRelay`, `appRelay` and `activityScene` capabilities. Development
+checkouts report null release/deployment identities. The root release build
+stamps `convex/releaseInfo.json` from its clean exact checkout with
+`python3 scripts/stamp-release.py relay --version X.Y.Z --source-revision SHA --deployment-id NAME`.
+That file is bundled with the deployed functions; mutable environment variables
+cannot substitute a different source revision. A release is complete only after
+the deployment target's health response matches the expected stamped identity.
+These fields are diagnostics, not an exact peer-version requirement.
+
 ## Apple sign-in
 
 `POST /v1/auth/apple`
