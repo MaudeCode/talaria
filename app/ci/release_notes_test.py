@@ -165,6 +165,35 @@ class ReleaseNotesTests(unittest.TestCase):
         return self.cli("previous-published", "--target", "HEAD", "--version", "1.1.0",
                         "--repo", "fixture/app", error=error).stdout.strip()
 
+    def test_bootstrap_must_advance_all_known_legacy_publications(self):
+        sha = self.git("rev-parse", "HEAD")
+        self.add_fragment(2)
+        self.commit("TAL-2: higher publication")
+        newer = self.git("rev-parse", "HEAD")
+        self.git("tag", "v1.2.0")
+        runs = [
+            {"id": 1, "event": "push", "head_branch": "v1.0.0", "head_sha": sha, "conclusion": "success"},
+            {"id": 2, "event": "push", "head_branch": "v1.2.0", "head_sha": newer, "conclusion": "success"},
+        ]
+        jobs = {number: {"name": "Publish iOS app", "conclusion": "success", "completed_at": date}
+                for number, date in ((1, "2026-02-01T00:00:00Z"), (2, "2026-01-01T00:00:00Z"))}
+        responses = self.published_responses(runs, jobs)
+        self.mock_github(responses)
+        self.assertEqual(self.published_baseline(), sha)  # Historical note regeneration remains valid.
+        for version in ("1.1.0", "1.2.0"):
+            self.cli("previous-published", "--target", "HEAD", "--version", version,
+                     "--repo", "fixture/app", "--require-latest", error="must advance")
+        selected = self.cli("previous-published", "--target", "HEAD", "--version", "1.3.0",
+                            "--repo", "fixture/app", "--require-latest").stdout.strip()
+        self.assertEqual(selected, newer)
+        runs[1].update(event="workflow_dispatch", head_branch="main")
+        responses = self.published_responses(runs, jobs)
+        responses["repos/fixture/app/actions/runs/2/artifacts?per_page=100"] = [
+            {"artifacts": [{"id": 20, "name": "release-notes-1.2.0", "expired": False}]}]
+        self.mock_github(responses)
+        self.cli("previous-published", "--target", "HEAD", "--version", "1.1.0",
+                 "--repo", "fixture/app", "--require-latest", error="must advance")
+
     def test_new_version_on_same_commit_generates_empty_notes_without_a_dummy_commit(self):
         baseline = self.git("rev-parse", "HEAD")
         self.git("tag", "v1.1.0")

@@ -202,7 +202,7 @@ def github_api(path, paginate=True):
     return json.loads(result.stdout) if paginate else result.stdout
 
 
-def previous_published(target, version, repository):
+def previous_published(target, version, repository, require_latest=False):
     """Use successful uploads, never the mere existence of a semantic tag."""
     if not re.fullmatch(VERSION, version):
         raise ValueError("version must use X.Y.Z numeric semantic versioning")
@@ -219,6 +219,34 @@ def previous_published(target, version, repository):
             for job in page["jobs"]:
                 if job["name"] == "Publish iOS app" and job["conclusion"] == "success":
                     published.append((job["completed_at"], run))
+    artifact_cache = {}
+
+    def publication_artifact(run):
+        if run["id"] not in artifact_cache:
+            pages = github_api(f"{root}/runs/{run['id']}/artifacts?per_page=100")
+            artifacts = [artifact for page in pages for artifact in page["artifacts"]
+                         if artifact["name"].startswith("release-notes-")]
+            if len(artifacts) != 1:
+                raise ValueError(f"published manual run {run['id']} lacks retained release-note provenance")
+            artifact_cache[run["id"]] = artifacts[0]
+        return artifact_cache[run["id"]]
+
+    if require_latest:
+        latest = None
+        for date, run in published:
+            released = (version_from_tag(run["head_branch"] or "") if run["event"] == "push"
+                        else publication_artifact(run)["name"].removeprefix("release-notes-"))
+            if released is None:
+                continue
+            if not re.fullmatch(VERSION, released):
+                raise ValueError(f"invalid published version in run {run['id']}")
+            parts = tuple(map(int, released.split(".")))
+            if parts >= target_version:
+                raise ValueError(f"bootstrap App version {version} must advance published TestFlight version {released}")
+            if latest is None or (parts, date) > latest[:2]:
+                latest = (parts, date, run)
+        published = [(latest[1], latest[2])] if latest else []
+
     for _, run in sorted(published, key=lambda item: item[0], reverse=True):
         if run["event"] == "push":
             tag = run["head_branch"] or ""
@@ -232,11 +260,7 @@ def previous_published(target, version, repository):
                 raise ValueError(f"published tag {tag} no longer matches run {run['id']}; refusing an ambiguous baseline")
         else:
             # Dispatch run.head_sha is the workflow ref, not the checked-out tag.
-            pages = github_api(f"{root}/runs/{run['id']}/artifacts?per_page=100")
-            artifacts = [artifact for page in pages for artifact in page["artifacts"]
-                         if artifact["name"].startswith("release-notes-")]
-            if len(artifacts) != 1:
-                raise ValueError(f"published manual run {run['id']} lacks retained release-note provenance")
+            artifacts = [publication_artifact(run)]
             artifact_version = artifacts[0]["name"].removeprefix("release-notes-")
             if not re.fullmatch(VERSION, artifact_version):
                 raise ValueError(f"invalid release artifact name in run {run['id']}")
@@ -330,6 +354,7 @@ def main():
     published.add_argument("--target", required=True)
     published.add_argument("--version", required=True)
     published.add_argument("--repo", required=True)
+    published.add_argument("--require-latest", action="store_true", help="bootstrap must advance the latest successful TestFlight publication")
     args = parser.parse_args()
     if args.command == "generate":
         args.output = args.output.resolve()
@@ -338,7 +363,7 @@ def main():
         if args.command == "validate":
             validate(args.base, args.target)
         elif args.command == "previous-published":
-            print(previous_published(args.target, args.version, args.repo))
+            print(previous_published(args.target, args.version, args.repo, args.require_latest))
         else:
             generate(args.previous, args.target, args.version, args.output, args.component)
     except (ValueError, OSError, KeyError, IndexError, TypeError, zipfile.BadZipFile) as error:

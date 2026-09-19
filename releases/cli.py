@@ -138,7 +138,7 @@ def prepare(args):
     else:
         plan["previousAppSource"] = subprocess.check_output([
             "python3", str(ROOT / "app/ci/release_notes.py"), "previous-published", "--repo", REPOSITORY,
-            "--target", source, "--version", plan["components"]["app"]["version"],
+            "--target", source, "--version", plan["components"]["app"]["version"], "--require-latest",
         ], cwd=ROOT, text=True).strip()
     if not re.fullmatch(r"[a-f0-9]{40}", plan["previousAppSource"]):
         raise ValueError("previous App publication lacks immutable source provenance")

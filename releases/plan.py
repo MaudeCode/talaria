@@ -77,6 +77,10 @@ def resolve(root, request, previous=None):
         else:
             if prior:
                 require_version_advance(tag, prior["tag"])
+                try:
+                    git(root, "merge-base", "--is-ancestor", prior["sourceRevision"], source)
+                except subprocess.CalledProcessError as error:
+                    raise ValueError(f"changed {name} source must descend from its released source") from error
             if revision != source:
                 raise ValueError(f"changed {name} must use the release-set source")
             component = {"tag": tag, "version": tag.split("-v")[-1],

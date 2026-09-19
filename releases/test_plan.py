@@ -124,6 +124,23 @@ class PlanTests(unittest.TestCase):
             with self.subTest(component=name), self.assertRaisesRegex(ValueError, "must advance"):
                 resolve(self.root, request, previous)
 
+    def test_changed_components_must_contain_previously_released_sources(self):
+        older = self.source
+        (self.root / "seed").write_text("newer published source")
+        self.git("commit", "-am", "newer release")
+        newer = self.git("rev-parse", "HEAD")
+        published_tags = {name: f"{name}-v{index}.1.0" for index, name in enumerate(COMPONENTS, 1)}
+        for tag in published_tags.values():
+            self.git("tag", "-a", tag, "-m", "published tag")
+        first = resolve(self.root, {**self.request, "sourceRevision": newer, "tags": published_tags})
+        previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
+        for name, index in zip(COMPONENTS, (1, 2, 3), strict=True):
+            tag = f"{name}-v{index}.2.0"
+            self.git("tag", "-a", tag, older, "-m", "higher version on older source")
+            request = {**self.request, "sourceRevision": older, "tags": {**published_tags, name: tag}}
+            with self.subTest(component=name), self.assertRaisesRegex(ValueError, "descend"):
+                resolve(self.root, request, previous)
+
 
 if __name__ == "__main__":
     unittest.main()
