@@ -90,9 +90,11 @@ def path_suites(path):
             return WEB_BUILD
         if local == "api/agent_dependency.json":
             return {"web_python", "docker", "contracts"}
-        if local in ("server.py", "api/routes.py"):
-            return {"web_python", "contracts"}
-        if local.startswith(("api/", "scripts/", "skills/")) or local in (
+        # Response producers are spread across api/, not only routes.py. Validate
+        # both browser consumers and the focused native App/Web contract suite.
+        if local == "server.py" or local.startswith("api/"):
+            return {"web_python", "web_frontend", "contracts"}
+        if local.startswith(("scripts/", "skills/")) or local in (
                 "bootstrap.py", "mcp_server.py", "pytest.ini", "start.sh", "start.ps1", "ctl.sh", "UPSTREAM_BASE_SHA"):
             return {"web_python"}
         return WEB_BUILD
