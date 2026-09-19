@@ -3,6 +3,7 @@
 
 from copy import deepcopy
 import json
+import fnmatch
 from pathlib import Path
 import subprocess
 import sys
@@ -49,6 +50,28 @@ def complete(document):
 
 
 class ReleaseSetTests(unittest.TestCase):
+    def test_component_tag_workflow_cannot_publish(self):
+        workflow = Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
+        document = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e",
+            "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(workflow),
+        ], text=True))
+        triggers = document.get("on", document.get("true"))
+        patterns = triggers["push"]["tags"]
+        for historical in ("v1.8.0", "v0.1.12", "exp-v0.52.1"):
+            self.assertFalse(any(fnmatch.fnmatchcase(historical, pattern) for pattern in patterns))
+        for tag in ("app-v1.9.0", "web-v1.0.0", "web-exp-v1.0.0", "relay-v0.2.0"):
+            self.assertTrue(any(fnmatch.fnmatchcase(tag, pattern) for pattern in patterns))
+        self.assertEqual(document["permissions"], {"actions": "read", "contents": "read"})
+        for job in document["jobs"].values():
+            self.assertNotIn("environment", job)
+            self.assertNotIn("secrets", job)
+            self.assertNotIn("uses", job)  # No indirect publishing workflow.
+            self.assertNotIn("permissions", job)
+        commands = "\n".join(step.get("run", "") for job in document["jobs"].values() for step in job["steps"])
+        self.assertIn("app/ci/validate_release_tag", commands)
+        self.assertIn("app/ci/require_successful_main_ci", commands)
+
     def test_independent_versions_and_expanded_contracts(self):
         self.assertEqual(validate(candidate()), list(COMPONENTS))
         self.assertEqual(validate(complete(candidate())), list(COMPONENTS))

@@ -1,181 +1,70 @@
-name: Release
+name: Validate component release tag
 
 on:
   push:
     tags:
       - "app-v*"
+      - "web-v*"
+      - "web-exp-v*"
+      - "relay-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing signed app-vX.Y.Z tag to validate and build.
+        description: Existing signed component tag to validate (no publication).
         required: true
         type: string
-      upload:
-        description: Upload the built IPA to TestFlight after validation.
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   actions: read
   contents: read
 
 concurrency:
-  group: testflight-release
+  group: component-tag-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   validate-release:
-    name: Validate release tag
-    defaults:
-      run:
-        working-directory: app
+    name: Validate signed tag and exact-main CI
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 95
-    outputs:
-      ref: ${{ steps.release.outputs.ref }}
-      sha: ${{ steps.tag.outputs.sha }}
-      version: ${{ steps.tag.outputs.version }}
     steps:
-      - name: Resolve release tag
-        working-directory: .
-        id: release
-        env:
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-        run: |
-          set -euo pipefail
-          echo "ref=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
-
-      - name: Check out release tag
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ steps.release.outputs.ref }}
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
           fetch-depth: 0
-
-      - name: Fetch main
-        run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Prepare Ruby runtime
         run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
 
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
 
-      - name: Validate signed tag and exact commit
+      - name: Verify source and signature
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.ref }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: |
           set -euo pipefail
-          ci/validate_release_tag
-          sha="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
-          echo "version=${RELEASE_TAG#app-v}" >> "${GITHUB_OUTPUT}"
-        id: tag
+          case "$RELEASE_TAG" in
+            app-v*) export RELEASE_COMPONENT=app ;;
+            web-v*|web-exp-v*) export RELEASE_COMPONENT=web ;;
+            relay-v*) export RELEASE_COMPONENT=relay ;;
+            *) echo "Unknown component tag" >&2; exit 1 ;;
+          esac
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          app/ci/validate_release_tag
+          sha=$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      - name: Verify exact commit passed main CI
+      - name: Verify successful exact-main CI
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_SHA: ${{ steps.tag.outputs.sha }}
           WAIT_FOR_MAIN_CI_SECONDS: "5400"
           MAIN_CI_POLL_SECONDS: "30"
-        run: ci/require_successful_main_ci
+        run: app/ci/require_successful_main_ci
 
-      - name: Generate release notes from the validated commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: ${{ steps.tag.outputs.sha }}
-          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
-        run: |
-          set -euo pipefail
-          previous="$(python3 ci/release_notes.py previous-published \
-            --repo "${GITHUB_REPOSITORY}" --target "${RELEASE_SHA}" \
-            --version "${RELEASE_VERSION}")"
-          python3 ci/release_notes.py generate \
-            --previous "${previous}" \
-            --target "${RELEASE_SHA}" --version "${RELEASE_VERSION}" \
-            --output release-notes
-          cat release-notes/release-notes.md >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Retain release notes
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-notes-${{ steps.tag.outputs.version }}
-          path: |
-            app/release-notes/release-notes.md
-            app/release-notes/release-notes.json
-          if-no-files-found: error
-          retention-days: 90
-
-  tooling:
-    needs: validate-release
-    uses: ./.github/workflows/repository-tooling.yml
-    with:
-      ref: ${{ needs.validate-release.outputs.sha }}
-
-  ios-build:
-    needs: [validate-release, tooling]
-    uses: ./.github/workflows/ios-release-build.yml
-    with:
-      ref: ${{ needs.validate-release.outputs.sha }}
-      version: ${{ needs.validate-release.outputs.version }}
-    secrets: inherit
-
-  validate-artifacts:
-    name: Validate release artifacts
-    needs: ios-build
-    runs-on: ["ghar-set-maudecode"]
-    timeout-minutes: 5
-    steps:
-      - name: Download IPA
-        uses: actions/download-artifact@v8
-        with:
-          name: ios-ipa
-          path: ios-ipa
-
-      - name: Download dSYMs
-        uses: actions/download-artifact@v8
-        with:
-          name: ios-dsyms
-          path: ios-dsyms
-
-      - name: Verify artifacts exist
-        run: |
-          set -euo pipefail
-          test -s ios-ipa/*.ipa
-          test -d ios-dsyms
-
-  publish-ios:
-    name: Publish iOS app
-    needs: [validate-release, validate-artifacts]
-    if: github.event_name == 'push' || inputs.upload == true
-    runs-on: ["ghar-set-maudecode"]
-    environment: testflight
-    timeout-minutes: 30
-    steps:
-      - name: Download IPA
-        uses: actions/download-artifact@v8
-        with:
-          name: ios-ipa
-          path: ios-ipa
-
-      - name: Resolve IPA path
-        id: ipa
-        run: |
-          set -euo pipefail
-          ipa_path="$(find ios-ipa -maxdepth 1 -name '*.ipa' -type f | head -n 1)"
-          test -n "${ipa_path}"
-          echo "path=${ipa_path}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload to TestFlight
-        uses: apple-actions/upload-testflight-build@v5
-        with:
-          app-path: ${{ steps.ipa.outputs.path }}
-          app-type: ios
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          wait-for-processing: "true"
-          backend: AppStoreAPI
+      - name: Record validation boundary
+        run: echo "Component tag validated. Publication requires the release-set cutover workflow." >> "$GITHUB_STEP_SUMMARY"

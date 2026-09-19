@@ -1,0 +1,508 @@
+name: Release set
+'on':
+  workflow_call:
+    inputs:
+      request:
+        description: JSON sourceRevision, tags and relayDeploymentId.
+        required: true
+        type: string
+      previous_release_set:
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        required: false
+        default: true
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      request:
+        description: JSON sourceRevision, tags and relayDeploymentId.
+        required: true
+        type: string
+      previous_release_set:
+        description: Previous completed release-set SHA; empty only for bootstrap.
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: Direct dispatch supports dry runs only.
+        required: true
+        default: true
+        type: boolean
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: talaria-release-set
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on:
+    - ghar-set-maudecode
+    timeout-minutes: 15
+    outputs:
+      source: ${{ steps.plan.outputs.source }}
+      app_changed: ${{ steps.plan.outputs.app_changed }}
+      web_changed: ${{ steps.plan.outputs.web_changed }}
+      relay_changed: ${{ steps.plan.outputs.relay_changed }}
+      app_version: ${{ steps.plan.outputs.app_version }}
+    steps:
+    - name: Check publication authority
+      env:
+        DRY_RUN: ${{ inputs.dry_run }}
+        CALLER: ${{ github.workflow_ref }}
+      run: |
+        set -euo pipefail
+        if [[ "$DRY_RUN" != true ]]; then
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+          [[ "$CALLER" == MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main ]]
+        fi
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - name: Prepare Ruby runtime
+      run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.3'
+    - name: Resolve and validate immutable release plan
+      id: plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REQUEST: ${{ inputs.request }}
+        PREVIOUS: ${{ inputs.previous_release_set }}
+        DRY_RUN: ${{ inputs.dry_run }}
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin main:refs/remotes/origin/main
+        printf '%s' "$REQUEST" > "$RUNNER_TEMP/request.json"
+        options=()
+        if [[ -n "$PREVIOUS" ]]; then
+          "$RELEASE_PYTHON" releases/cli.py previous "$PREVIOUS" --output "$RUNNER_TEMP/previous.json"
+          options+=(--previous "$RUNNER_TEMP/previous.json")
+        fi
+        if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
+        "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan/
+        if-no-files-found: error
+        retention-days: 7
+  contracts:
+    needs: prepare
+    runs-on: maude-mac
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/release-node
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - name: Prepare simulator pool
+      env:
+        IOS_SIMULATOR_POOL_SIZE: '1'
+      run: app/scripts/setup-ios-test-pool
+    - name: Verify selected component contracts
+      run: |
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-contracts.py --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/current-contracts"
+    - name: Verify previously released App against selected Web
+      run: |
+        set -euo pipefail
+        previous=$(/usr/bin/plutil -extract previousAppSource raw "$RUNNER_TEMP/release-plan/plan.json")
+        web=$(/usr/bin/plutil -extract components.web.sourceRevision raw "$RUNNER_TEMP/release-plan/plan.json")
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name previousAppContracts --output "$RUNNER_TEMP/contract-receipts/previousAppContracts.json" -- \
+          "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: contract-receipts
+        path: ${{ runner.temp }}/contract-receipts/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Retain sanitized contract diagnostics
+      if: always()
+      uses: actions/upload-artifact@v7
+      continue-on-error: true
+      with:
+        name: release-contract-diagnostics
+        path: |
+          ${{ runner.temp }}/current-contracts/
+          ${{ runner.temp }}/previous-app/
+        retention-days: 7
+  agent:
+    needs: prepare
+    runs-on: maude-mac
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - name: Verify recorded Web and Agent identity
+      run: |
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: agent-receipts
+        path: ${{ runner.temp }}/agent-receipts/
+        if-no-files-found: error
+        retention-days: 7
+  relay-build:
+    needs:
+    - prepare
+    - contracts
+    - agent
+    if: needs.prepare.outputs.relay_changed == 'true'
+    runs-on:
+    - ghar-set-maudecode
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/release-node
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - run: '"$RELEASE_PYTHON" releases/build.py relay --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-build"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: relay-build
+        path: ${{ runner.temp }}/relay-build/
+        if-no-files-found: error
+        retention-days: 7
+  web-build:
+    needs:
+    - prepare
+    - contracts
+    - agent
+    - relay-build
+    if: ${{ !cancelled() && needs.prepare.outputs.web_changed == 'true' && needs.contracts.result == 'success' && needs.agent.result == 'success' && (needs.relay-build.result
+      == 'success' || needs.relay-build.result == 'skipped') }}
+    runs-on: maude-mac
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - run: '"$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: web-build
+        path: ${{ runner.temp }}/web-build/
+        if-no-files-found: error
+        retention-days: 7
+        compression-level: 0
+  app-dry-build:
+    needs:
+    - prepare
+    - contracts
+    - agent
+    - relay-build
+    - web-build
+    if: ${{ !cancelled() && inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.agent.result == 'success'
+      && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped')
+      }}
+    runs-on: maude-mac
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - run: '"$RELEASE_PYTHON" releases/build.py app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/app-build"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: app-build
+        path: |
+          ${{ runner.temp }}/app-build/receipt.json
+          ${{ runner.temp }}/app-build/build-result.json
+          ${{ runner.temp }}/app-build/Talaria.xcarchive/
+        if-no-files-found: error
+        retention-days: 7
+  candidate:
+    needs:
+    - prepare
+    - build-gate
+    if: ${{ !cancelled() && inputs.dry_run && needs.build-gate.result == 'success' }}
+    runs-on:
+    - ghar-set-maudecode
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+    - uses: ./.github/actions/release-python
+    - uses: actions/download-artifact@v8
+      with:
+        path: ${{ runner.temp }}/release-results
+    - name: Assemble candidate from successful job outputs
+      run: |
+        set -euo pipefail
+        "$RELEASE_PYTHON" releases/collect.py "$RUNNER_TEMP/release-results" "$RUNNER_TEMP/receipts"
+        options=()
+        previous="$RUNNER_TEMP/release-results/release-plan/previous.json"
+        if [[ -f "$previous" ]]; then options+=(--previous "$previous"); fi
+        "$RELEASE_PYTHON" releases/cli.py assemble --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
+          --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/release-results/release-plan/notes" \
+          --output "$RUNNER_TEMP/candidate/release-set.json" "${options[@]}"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: release-set-candidate
+        path: ${{ runner.temp }}/candidate/release-set.json
+        if-no-files-found: error
+        retention-days: 7
+  app-signed-build:
+    needs:
+    - prepare
+    - contracts
+    - agent
+    - relay-build
+    - web-build
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.agent.result == 'success'
+      && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped')
+      }}
+    uses: ./.github/workflows/ios-release-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.source }}
+      version: ${{ needs.prepare.outputs.app_version }}
+  relay-publish:
+    needs:
+    - prepare
+    - build-gate
+    if: ${{ !inputs.dry_run && needs.prepare.outputs.relay_changed == 'true' && needs.build-gate.result == 'success' }}
+    runs-on:
+    - ghar-set-maudecode
+    environment: relay-production
+    concurrency:
+      group: talaria-relay-production
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/release-node
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - name: Deploy the existing Relay and verify readiness/provenance
+      env:
+        CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        CONVEX_DISABLE_TELEMETRY: '1'
+      run: '"$RELEASE_PYTHON" releases/publish.py relay --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-publish/receipt.json"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: relay-publish
+        path: ${{ runner.temp }}/relay-publish/receipt.json
+        if-no-files-found: error
+        retention-days: 7
+  web-publish:
+    needs:
+    - prepare
+    - build-gate
+    - relay-publish
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
+      == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) }}
+    runs-on:
+    - ghar-set-maudecode
+    environment: web-release
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    concurrency:
+      group: talaria-web-publication
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+    - uses: ./.github/actions/release-python
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - uses: actions/download-artifact@v8
+      with:
+        name: web-build
+        path: ${{ runner.temp }}/web-build
+    - name: Install OCI transfer tool
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends skopeo
+    - name: Publish the built OCI bytes and verify the registry digest
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \
+          --output "$RUNNER_TEMP/web-publish/receipt.json"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: web-publish
+        path: ${{ runner.temp }}/web-publish/receipt.json
+        if-no-files-found: error
+        retention-days: 7
+  app-publish:
+    name: Publish iOS app
+    needs:
+    - prepare
+    - build-gate
+    - relay-publish
+    - web-publish
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
+      == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) && (needs.web-publish.result == 'success' || (needs.prepare.outputs.web_changed
+      == 'false' && needs.web-publish.result == 'skipped')) }}
+    runs-on:
+    - ghar-set-maudecode
+    environment: testflight
+    concurrency:
+      group: talaria-testflight-publication
+      cancel-in-progress: false
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+    - uses: ./.github/actions/release-python
+    - uses: actions/download-artifact@v8
+      with:
+        name: release-plan
+        path: ${{ runner.temp }}/release-plan
+    - uses: actions/download-artifact@v8
+      with:
+        name: app-build
+        path: ${{ runner.temp }}/app-build
+    - uses: actions/download-artifact@v8
+      with:
+        name: ios-ipa
+        path: ${{ runner.temp }}/ios-ipa
+    - name: Verify the exact IPA before upload
+      id: ipa
+      run: |
+        set -euo pipefail
+        "$RELEASE_PYTHON" releases/publish.py verify-app --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa"
+        "$RELEASE_PYTHON" -c 'import os; from pathlib import Path; print("path="+str(next(Path(os.environ["RUNNER_TEMP"]).joinpath("ios-ipa").glob("*.ipa"))))' >> "$GITHUB_OUTPUT"
+    - name: Upload and await App Store Connect processing
+      uses: apple-actions/upload-testflight-build@v5
+      with:
+        app-path: ${{ steps.ipa.outputs.path }}
+        app-type: ios
+        issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        wait-for-processing: 'true'
+        backend: AppStoreAPI
+    - name: Record successful upload of the verified build
+      run: |
+        "$RELEASE_PYTHON" releases/publish.py app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa" \
+          --output "$RUNNER_TEMP/app-publish/receipt.json"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: app-publish
+        path: ${{ runner.temp }}/app-publish/receipt.json
+        if-no-files-found: error
+        retention-days: 7
+  publish-set:
+    needs:
+    - prepare
+    - build-gate
+    - relay-publish
+    - web-publish
+    - app-publish
+    if: ${{ !cancelled() && !inputs.dry_run && needs.build-gate.result == 'success' }}
+    runs-on:
+    - ghar-set-maudecode
+    environment: release-set-publication
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+    - uses: ./.github/actions/release-python
+    - name: Require all selected publication readbacks
+      env:
+        RELEASE_NEEDS: ${{ toJSON(needs) }}
+      run: python3 releases/check_results.py publication
+    - uses: actions/download-artifact@v8
+      with:
+        path: ${{ runner.temp }}/release-results
+    - name: Assemble and publish only the completed set
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        "$RELEASE_PYTHON" releases/collect.py "$RUNNER_TEMP/release-results" "$RUNNER_TEMP/receipts"
+        options=()
+        previous="$RUNNER_TEMP/release-results/release-plan/previous.json"
+        if [[ -f "$previous" ]]; then options+=(--previous "$previous"); fi
+        "$RELEASE_PYTHON" releases/cli.py assemble --complete --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
+          --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/release-results/release-plan/notes" \
+          --output "$RUNNER_TEMP/completed/release-set.json" "${options[@]}"
+        "$RELEASE_PYTHON" releases/publish.py finalize --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
+          --manifest "$RUNNER_TEMP/completed/release-set.json" --notes "$RUNNER_TEMP/release-results/release-plan/notes" \
+          --directory "$RUNNER_TEMP/release-results" "${options[@]}"
+  build-gate:
+    needs:
+    - prepare
+    - contracts
+    - agent
+    - relay-build
+    - web-build
+    - app-dry-build
+    - app-signed-build
+    if: always()
+    runs-on:
+    - ghar-set-maudecode
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source || github.sha }}
+    - name: Require every selected build and compatibility gate
+      env:
+        RELEASE_NEEDS: ${{ toJSON(needs) }}
+        DRY_RUN: ${{ inputs.dry_run }}
+      run: |
+        set -euo pipefail
+        options=()
+        if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
+        python3 releases/check_results.py build "${options[@]}"

@@ -72,3 +72,47 @@ For previous-App verification, root `scripts/check-previous-app.py --app-ref REF
 --web-ref REF --output NEW_DIRECTORY` starts the selected Web in isolated state,
 exports live responses, and compiles the actual older App from Git. It verifies
 the fixtures reached the test bundle and retains structured XCTest results.
+
+## Root workflow
+
+Component-tag pushes run read-only validation. Production starts only through
+`production-cutover.yml` on `main`; direct `release-set.yml` dispatches support
+dry runs. Both take a JSON `request` with this shape:
+
+```json
+{
+  "sourceRevision": "<40-character main commit SHA>",
+  "tags": {"app": "app-v1.9.0", "web": "web-v1.0.0", "relay": "relay-v0.2.0"},
+  "relayDeploymentId": "<existing production deployment ID>"
+}
+```
+
+These are illustrative versions, not a release selection. Supply
+`previous_release_set` as the last completed set's SHA; leave it empty only for
+bootstrap. Changed tags must point to `sourceRevision`; unchanged tags must
+match the previous manifest. Production requires pushed, verified signed tags.
+
+First dispatch `release-set.yml` with `dry_run=true`. Require the candidate
+artifact and successful selected-source contracts, previous-App contracts,
+pinned Agent compatibility and component builds. The dry run uses no component
+publication credentials. It creates neither registry images nor GitHub releases.
+
+With publication authorized, dispatch `production-cutover.yml` on `main` using
+the same request and `confirm_publication=true`. It repeats the gates, builds
+all changed artifacts, then deploys Relay, publishes Web and uploads App in
+that order. Unchanged components skip their build/publication jobs. Required
+jobs that fail, cancel or unexpectedly skip block completion.
+
+Credentials are scoped to jobs: `relay-production` supplies the matching
+production deployment key, `web-release` uses the job's package-write token,
+`testflight` supplies Apple signing/upload credentials, and
+`release-set-publication` grants the job's release-write token. Configure these
+environments to allow the trusted `main` workflow before the first cutover.
+There is no live Web host in this migration; Web publication is followed by
+isolated legacy-upgrade validation, not host provisioning.
+
+The root manifest is published last. If a run fails after a deployment, upload
+or component release, inspect those side effects before retrying. Existing
+release names are rejected, including drafts. Never overwrite a completed
+manifest or describe a partial run as a completed release. Retain the previous
+manifest's component identities for rollback.

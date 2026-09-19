@@ -25,8 +25,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-ref", required=True)
     parser.add_argument("--web-ref", required=True)
+    parser.add_argument("--shared-contracts", action="store_true", help="Also exercise monorepo App/Relay fixtures.")
     parser.add_argument("--output", type=Path, required=True, help="New directory for retained verification evidence.")
     args = parser.parse_args()
+    tests = [*TESTS, *(["SharedContractTests"] if args.shared_contracts else [])]
     app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -43,10 +45,13 @@ def main():
         app = checkout / "app" if (checkout / "app/Talaria.xcodeproj").is_dir() else checkout
         if not (app / "Talaria.xcodeproj").is_dir():
             raise ValueError("selected revision does not contain the App project")
+        if args.shared_contracts:
+            web_fixture = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
+            (checkout / "contracts/fixtures/web-session.json").write_bytes(web_fixture)
         env = {**os.environ, "_TALARIA_ENV_LOADED": "1",
                "TALARIA_UPSTREAM_CONTRACT_RESPONSES": "base64:" + base64.b64encode(responses.read_bytes()).decode()}
         with (output / "app-tests.log").open("w") as log:
-            subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in TESTS)],
+            subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in tests)],
                            cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         result_path = re.search(r"^Result bundle: (.+)$", (output / "app-tests.log").read_text(), re.MULTILINE)
         if result_path is None:
@@ -73,7 +78,7 @@ def main():
                     collect(value)
 
         collect(evidence["tests"])
-        for name in TESTS:
+        for name in tests:
             if not any(key.startswith(name + "/") and result == "Passed" for key, result in cases.items()):
                 raise ValueError(f"native gate did not execute {name}")
         live = "APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied()"
@@ -84,7 +89,7 @@ def main():
         if not any(plistlib.loads(path.read_bytes()).get("CFBundleDisplayName") == env["TALARIA_UPSTREAM_CONTRACT_RESPONSES"] for path in plists):
             raise ValueError("live fixtures were not embedded in the executed App test bundle")
     record = {"appSourceRevision": app_sha, "webSourceRevision": web_sha, "result": "success",
-              "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": TESTS}
+              "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": tests}
     (output / "verification.json").write_text(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record))
 

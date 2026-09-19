@@ -55,6 +55,7 @@ class PlanTests(unittest.TestCase):
                 values = {"tag": plan["components"][name]["tag"]}
                 if name == "app":
                     values["buildNumber"] = 321
+                    values["ipaSha256"] = "c" * 64
                 elif name == "web":
                     values["image"] = "ghcr.io/maudecode/talaria-web@sha256:" + "f" * 64
                 else:
@@ -104,6 +105,7 @@ class PlanTests(unittest.TestCase):
     def test_publication_readback_cannot_substitute_other_artifacts(self):
         plan = resolve(self.root, self.request)
         for gate, field, value in (("publishWeb", "image", "wrong"), ("uploadApp", "buildNumber", 999),
+                                   ("uploadApp", "ipaSha256", "d" * 64), ("buildApp", "ipaSha256", None),
                                    ("deployRelay", "deployedRevision", "a" * 40)):
             receipts = self.receipts(plan, published=True)
             next(item for item in receipts if item["gate"] == gate)[field] = value

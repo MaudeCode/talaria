@@ -289,7 +289,7 @@ Current status:
 - Launch screen uses the plist-based `UILaunchScreen` placeholder from `Info.plist`, which is acceptable for internal TestFlight validation.
 - `PrivacyInfo.xcprivacy` is bundled with the app target. It declares no tracking, no developer-collected data, and app-only `UserDefaults` access for local preferences.
 - Camera capture is deferred and is not declared. Add `NSCameraUsageDescription` and update the privacy review only if camera capture is implemented later.
-- Signed `app-vX.Y.Z` tags trigger one external-capable TestFlight build. External tester assignment and Beta App Review sequencing are tracked in [`TESTFLIGHT.md`](TESTFLIGHT.md).
+- Signed `app-vX.Y.Z` tags validate App release identity; the authorized root release workflow publishes one external-capable TestFlight build. External tester assignment and Beta App Review sequencing are tracked in [`TESTFLIGHT.md`](TESTFLIGHT.md).
 
 ### Owner checklist: App Store Connect setup for Talaria
 
@@ -346,37 +346,28 @@ Steps:
 
 ### Production TestFlight releases
 
-Production releases use one external-capable build for both internal and external
-testing. There is no separate internal-only archive.
+Production releases use the root [release-set workflow](../releases/README.md).
+Signed `app-vX.Y.Z` tags validate release identity. Publication is a separate,
+authorized `production-cutover.yml` dispatch from `main`, after a successful
+root dry run. The request includes App, Web and Relay tags and the existing
+Relay deployment ID; unchanged components reuse the previous completed set.
 
-1. Configure the `testflight` GitHub environment with
-   `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and
-   `APP_STORE_CONNECT_PRIVATE_KEY`, plus Cowtail's
-   `IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
-   `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` secrets. The certificate must be an
-   Apple Distribution identity for team `Q28NF3NH3D`.
-2. From clean current `main` with successful exact-SHA CI, create a signed
-   semantic tag such as `git tag -s v1.6.0 -m "Talaria v1.6.0"`.
-3. Push that tag with `git push origin v1.6.0`. No App Store Connect credential
-   is needed locally.
-4. `.github/workflows/release.yml` verifies the signed tag, main ancestry,
-   exact-SHA CI, repository tooling, and the current App Store Connect train.
-   The tag supplies `MARKETING_VERSION`; App Store Connect supplies the next
-   collision-free `CURRENT_PROJECT_VERSION`. The build job imports the encrypted
-   distribution identity, downloads each target's active App Store profile, and
-   manually signs the app, share extension, and Live Activity widget before upload.
-   The validation job automatically generates Markdown and JSON release notes
-   from the preceding successful TestFlight publication through the validated SHA.
-   The notes appear in its summary and the `release-notes-X.Y.Z` workflow artifact. See
-   [release-note authoring](docs/release-notes.md) for the metadata contract.
-5. Wait for App Store Connect processing, add the build to the internal group,
-   and test it on the owner's iPhone. External group assignment and Beta App
-   Review remain manual choices in App Store Connect.
+The `testflight` environment holds `APP_STORE_CONNECT_KEY_ID`,
+`APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_PRIVATE_KEY`,
+`IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
+`IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`. Its branch policy must allow the trusted
+`main` dispatch. The Apple Distribution identity belongs to team `Q28NF3NH3D`.
 
-Use the workflow's manual `workflow_dispatch` path with `upload = false` to
-build and inspect an existing signed release tag without uploading it. Missing
-secrets, a stale or unsigned tag, a closed train, or
-missing exact-SHA CI all fail before upload.
+The App tag supplies the marketing version. App Store Connect selects the next
+collision-free build number. The signed build includes the app, share extension
+and Live Activity widget. Publication verifies the IPA identity and checksum,
+uploads it, and waits for processing before recording success. One
+external-capable build serves both internal and external testing.
+
+After processing, add the build to the internal group and validate it on the
+owner's iPhone. External group assignment and Beta App Review remain manual
+App Store Connect choices. A root dry run builds an unsigned archive; it does
+not upload or produce an installable phone build.
 
 ## Full-App Manual Regression Checklist
 

@@ -5,12 +5,11 @@ Run these commands from `app/`. All components share the repository-root
 `app/changelog.d/` in source-migration commits. Byte-identical moves preserve
 fragment identities; edits or deletions of historical fragments still fail.
 
-Agents add release metadata with each implementation. Once the PR merges, the
-signed-tag workflow does everything else: finds the preceding successful
-TestFlight publication, validates the target Git tree, renders Markdown and JSON,
-adds the Markdown to the workflow summary, and retains both files as the
-`release-notes-X.Y.Z` artifact for 90 days. No release-time writing, sorting,
-copying, LLM call, or extra credential is needed.
+Agents add release metadata with each implementation. The root release-set
+workflow validates the selected source and generates component Markdown and
+JSON notes before building. It retains them in the `release-plan` artifact and
+publishes component notes and combined notes with the completed release set.
+No release-time writing or LLM call is needed.
 
 ## Commits and PR descriptions
 
@@ -109,8 +108,10 @@ an earlier release succeeded. Non-semantic tags and tags on unmerged branches ar
 ignored. An explicit baseline must be an ancestor or the target itself; a repository with no prior release
 tag requires `--previous <baseline-ref>`.
 
-Production resolves the baseline automatically with `previous-published` and
-passes its SHA to `generate --previous`. The resolver pages through the Release
+For established release sets, production uses each component source from the
+previous completed manifest as the `generate --previous` baseline. Bootstrap
+uses `previous-published` to recover the preceding successful legacy App
+publication. The following rules describe that legacy resolver. The resolver pages through the Release
 workflow's successful runs and verifies that **Publish iOS app** succeeded.
 It selects the most recent publication with a lower marketing version whose
 source commit is an ancestor of the target. Failed tag validations, failed
@@ -176,7 +177,8 @@ separate What's New app task.
 `sourceCommit` records the exact validated Git SHA and lets a later release find
 the correct baseline even when this release was built through manual dispatch.
 
-Release-note generation runs after signed-tag, ancestry, and exact-main-CI
-validation and before any archive or upload. It also runs for a manual build with
-`upload = false`. This workflow does not publish a GitHub Release or change the
-existing TestFlight authorization gates.
+Release-note generation runs after signed-tag, ancestry and exact-main-CI
+validation, before any archive or upload, including root dry runs. Component-tag
+pushes only validate. The authorized root cutover publishes component GitHub
+releases first and the completed release-set manifest last. See the
+[root release procedure](../../releases/README.md).

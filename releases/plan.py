@@ -124,6 +124,7 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
     # Artifact download order is not job execution order. Build identities must
     # be applied before comparing publication readbacks with those identities.
     ordered = sorted(receipts, key=lambda item: item.get("gate", "").startswith(("deploy", "publish", "upload")))
+    app_digest = None
     for receipt in ordered:
         if receipt.get("sourceRevision") != plan["releaseSet"] or receipt.get("result") != "success":
             raise ValueError("failed or wrong-source receipt")
@@ -136,6 +137,7 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
                 document["components"][name]["image"] = receipt["image"]
             elif name == "app":
                 document["components"][name]["buildNumber"] = receipt["buildNumber"]
+                app_digest = receipt.get("ipaSha256")
             elif receipt.get("deploymentId") != plan["components"][name]["deploymentId"]:
                 raise ValueError("Relay build target differs from plan")
         if gate == "deployRelay":
@@ -151,6 +153,8 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
             app = document["components"]["app"]
             if receipt.get("buildNumber") != app["buildNumber"] or receipt.get("tag") != app["tag"]:
                 raise ValueError("uploaded App differs from its build")
+            if not isinstance(app_digest, str) or not re.fullmatch(r"[a-f0-9]{64}", app_digest) or receipt.get("ipaSha256") != app_digest:
+                raise ValueError("uploaded IPA differs from its build")
         document["evidence"].append({key: receipt[key] for key in ("gate", "sourceRevision", "runUrl", "result")})
     validate(document, previous)
     return document

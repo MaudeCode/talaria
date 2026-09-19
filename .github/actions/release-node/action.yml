@@ -1,0 +1,14 @@
+name: Release Node
+description: Use the repository's locked Node package managers.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: relay/.node-version
+    - shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        set -euo pipefail
+        npm install --global --prefix "$RUNNER_TEMP/release-pnpm" "$(node -p 'require("./relay/package.json").packageManager')"
+        echo "$RUNNER_TEMP/release-pnpm/bin" >> "$GITHUB_PATH"
