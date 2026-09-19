@@ -110,7 +110,9 @@ python3 scripts/rehearse-monorepo.py /tmp/talaria-rehearsal-b
 
 Each rehearsal starts with a fresh app clone at the recorded source commit,
 replays the reviewed app move, imports both original component histories, and
-replays the reviewed integration commits. It fetches and verifies each original
+applies the reviewed integration tree delta, including binary files, regardless
+of the recipe's merge topology. The original integration commits remain reachable
+through `refs/remotes/migration/recipe`. It fetches and verifies each original
 tag object, checks imported ancestry, runs `git fsck`, and requires its complete
 tracked tree to equal the recipe commit's tree. Nothing is pushed or deployed.
 

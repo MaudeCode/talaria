@@ -11,6 +11,16 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def apply_integration_tree(source, destination, base, target, env):
+    """Replay the complete tree delta, including changes behind merge parents."""
+    patch = subprocess.check_output([
+        "git", "-C", str(source), "diff", "--binary", "--full-index", base, target, "--",
+    ], env=env)
+    if patch:
+        subprocess.run(["git", "-C", str(destination), "apply", "--index"],
+                       input=patch, env=env, check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path, nargs="?")
@@ -57,10 +67,10 @@ def main():
         git(destination, "subtree", "add", f"--prefix={component}", source["repository"],
             source["commit"], "-m", f"TAL-202: import {component} history")
         git(destination, "merge-base", "--is-ancestor", source["commit"], "HEAD")
-    # Reapply the reviewed path/contract/CI integration after the two pure imports.
-    for revision in git(destination, "rev-list", "--reverse", "--first-parent",
-                        f"{metadata['relayImportCommit']}..{recipe}").splitlines():
-        git(destination, "cherry-pick", revision)
+    # A PR merge's first parent bypasses the import branch. Replay its complete
+    # integration delta instead; the original history remains in the recipe ref.
+    apply_integration_tree(ROOT, destination, metadata["relayImportCommit"], recipe, env)
+    git(destination, "commit", "--allow-empty", "-m", "TAL-202: replay monorepo integration tree")
     for source in sources.values():
         for tag, expected in source["tags"].items():
             git(destination, "fetch", "--no-tags", source["repository"],
