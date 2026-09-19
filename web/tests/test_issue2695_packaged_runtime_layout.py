@@ -33,7 +33,7 @@ def _copy_repo_without_heavy_dirs(dst: Path) -> Path:
 def _build_wheel(repo_copy: Path) -> Path:
     dist_dir = repo_copy / "dist"
     env = os.environ.copy()
-    env["SETUPTOOLS_SCM_PRETEND_VERSION_FOR_HERMES_WEBUI"] = "0.52.2695"
+    env["SETUPTOOLS_SCM_PRETEND_VERSION_FOR_TALARIA_WEB"] = "0.52.2695"
     subprocess.run(
         [
             sys.executable,
@@ -52,8 +52,8 @@ def _build_wheel(repo_copy: Path) -> Path:
         stderr=subprocess.PIPE,
         text=True,
     )
-    wheels = sorted(dist_dir.glob("hermes_webui-*.whl"))
-    assert wheels, "wheel build must produce a hermes_webui wheel"
+    wheels = sorted(dist_dir.glob("talaria_web-*.whl"))
+    assert wheels, "wheel build must produce a talaria_web wheel"
     return wheels[0]
 
 
@@ -72,6 +72,12 @@ def test_wheel_build_contains_runtime_tree(extracted_wheel):
     wheel, _ = extracted_wheel
     with zipfile.ZipFile(wheel) as zf:
         names = set(zf.namelist())
+        metadata = zf.read(next(name for name in names if name.endswith('.dist-info/METADATA'))).decode()
+        assert "Name: talaria-web" in metadata
+        assert "https://github.com/MaudeCode/talaria" in metadata
+        entrypoints = zf.read(next(name for name in names if name.endswith('.dist-info/entry_points.txt'))).decode()
+        assert "talaria-web = bootstrap:main" in entrypoints
+        assert "hermes-webui = bootstrap:main" in entrypoints
         assert "bootstrap.py" in names
         assert "server.py" in names
         assert "mcp_server.py" in names
@@ -128,3 +134,16 @@ def test_checkout_static_root_stays_repo_relative():
 
     assert api_config.get_static_root() == ROOT / "static"
     assert (ROOT / "static" / "dist" / "index.html").is_file()
+
+
+def test_installed_wheel_keeps_both_cli_names(extracted_wheel, tmp_path):
+    wheel, _ = extracted_wheel
+    environment = tmp_path / "installed"
+    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True)
+    binaries = environment / ("Scripts" if os.name == "nt" else "bin")
+    python = binaries / ("python.exe" if os.name == "nt" else "python")
+    subprocess.run([str(python), "-m", "pip", "install", "--no-index", "--no-deps", str(wheel)], check=True, capture_output=True)
+    for name in ("talaria-web", "hermes-webui"):
+        executable = binaries / (name + ".exe" if os.name == "nt" else name)
+        result = subprocess.run([str(executable), "--help"], cwd=tmp_path, check=True, capture_output=True, text=True)
+        assert "--foreground" in result.stdout

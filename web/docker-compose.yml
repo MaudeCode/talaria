@@ -13,6 +13,7 @@
 
 services:
   hermes-webui:
+    image: ${TALARIA_WEB_IMAGE:-ghcr.io/maudecode/talaria-web:local}
     build: .
     ports:
     # select only one; use 127.0.0.1 version to expose to localhost only
@@ -38,6 +39,7 @@ services:
       # Required: bind address and port
       - HERMES_WEBUI_HOST=0.0.0.0
       - HERMES_WEBUI_PORT=8787
+      - TALARIA_RELEASE_TOKEN=${TALARIA_RELEASE_TOKEN:-}
       # Where to store sessions, workspaces, and other state (default: ~/.hermes/webui)
       - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
       # Default workspace directory shown on first launch

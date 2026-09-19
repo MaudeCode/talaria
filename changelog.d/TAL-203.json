@@ -2,6 +2,12 @@
   "entries": [
     {
       "category": "Changed",
+      "summary": "Web packages and container setup use the Talaria distribution, with migration support for existing installations.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
       "summary": "Web updates follow Talaria releases and preserve local changes.",
       "highlight": false,
       "components": ["web"]

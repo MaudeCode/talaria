@@ -307,6 +307,13 @@ def ensure_python_has_webui_deps(python_exe: str, agent_dir: Path | None = None)
             "HERMES_WEBUI_PYTHON to an interpreter with Hermes Agent dependencies."
         )
 
+    if not (REPO_ROOT / "requirements.txt").is_file():
+        raise RuntimeError(
+            "Python environment cannot import both WebUI dependencies and Hermes Agent. "
+            "For a packaged installation, install the Talaria Web wheel into the Agent "
+            "environment or set HERMES_WEBUI_PYTHON to a compatible interpreter."
+        )
+
     venv_dir = REPO_ROOT / ".venv"
     venv_python = venv_dir / (
         "Scripts/python.exe" if platform.system() == "Windows" else "bin/python"

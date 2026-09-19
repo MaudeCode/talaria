@@ -23,26 +23,18 @@ paths.
 | **Three-container** | Two-container PLUS the dashboard for monitoring. | `docker-compose.three-container.yml` |
 | **All-in-one image** (community fork — third-party, not maintained by us) | Podman 3.4 / multi-arch / supervisord-style preference. | [sunnysktsang/hermes-suite](https://github.com/sunnysktsang/hermes-suite) — see [#1399](https://github.com/nesquena/hermes-webui/issues/1399) for the original discussion |
 
-### Available Docker tags
+### Published images and local builds
 
-The WebUI Docker image is published to `ghcr.io/nesquena/hermes-webui` with these tags:
+The canonical package is `ghcr.io/maudecode/talaria-web`. The completed
+`release-set.json` supplies its immutable `@sha256:` reference. Set that reference
+as `TALARIA_WEB_IMAGE` in the Compose environment, authenticate to GHCR if private,
+then run `docker compose pull` followed by `docker compose up -d --no-build`.
+The same procedure works with the two- and three-container `-f` variants.
 
-| Tag | Channel | Description |
-|---|---|---|
-| `:latest` | stable | The most recent stable release (from `v*` tags). Suitable for production. |
-| `:experimental` | experimental | The most recent experimental release (from `exp-v*` tags). For early testing; may include breaking changes or unfinished features. Do not run in production. |
-| `:X.Y` / `:X.Y.Z` | stable | Pinned stable releases (e.g., `:1.5`, `:1.5.0`). |
-| `:X.Y` / `:X.Y.Z` | experimental | Pinned experimental releases — same version numbers but pushed from `exp-v*` tags. The `:experimental` floating tag always points at the latest of these. |
-
-To track experimental builds in Docker Compose, use the `:experimental` tag:
-
-```yaml
-services:
-  hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:experimental
-```
-
-> **Note:** updating between `:experimental` builds requires `docker compose pull` followed by `docker compose up -d` — the floating tag is updated only when a new `exp-v*` release is pushed. Experimental builds are not pushed on every commit to the default branch.
+Without `TALARIA_WEB_IMAGE`, each variant builds the checked-out Web source and
+names the local image `ghcr.io/maudecode/talaria-web:local`. That local name is not
+a published release. Stable source tags use `web-vX.Y.Z`; experimental source tags
+use `web-exp-vX.Y.Z`. Both channels resolve through completed release sets.
 
 > **Note (v0.14+):** If you use `docker-compose.three-container.yml`, both
 > `hermes-agent` and `hermes-dashboard` initialise from the same image and write
@@ -281,7 +273,7 @@ The three-service pattern uses two containers:
 | Service | Image | Ports |
 |---|---|---|
 | `hermes-agent` | `nousresearch/hermes-agent:latest` | 8642 (gateway), 9119 (dashboard) |
-| `hermes-webui` | `ghcr.io/nesquena/hermes-webui:latest` | 8787 (chat UI) |
+| `hermes-webui` | `TALARIA_WEB_IMAGE` (published digest, or local source build) | 8787 (chat UI) |
 
 Example compose snippet (save as `docker-compose.three-service.yml` or inline into your own file):
 
@@ -308,7 +300,7 @@ services:
       - hermes-net
 
   hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:latest
+    image: ${TALARIA_WEB_IMAGE:?Set the published Talaria Web image digest}
     container_name: hermes-webui
     depends_on:
       - hermes-agent

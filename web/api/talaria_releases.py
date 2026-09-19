@@ -243,20 +243,7 @@ def apply_web_update(web_path, channel, run_git):
     # Compare provenance with the immutable incoming files before modifying the
     # checkout. Do not import downloaded code into the running old process.
     try:
-        files = {}
-        for name in ("api/agent_dependency.json", "api/contract_versions.json", "UPSTREAM_BASE_SHA"):
-            contents, exists = run_git(["show", f"{source}:web/{name}"], root)
-            if not exists:
-                raise ValueError("missing release metadata")
-            files[name] = contents.strip() if name.endswith("SHA") else json.loads(contents)
-        pin, versions = files["api/agent_dependency.json"], files["api/contract_versions.json"]
-        expected = {"tag": tag, "version": release["version"], "sourceRevision": source, "releaseSet": source,
-                    "upstreamBase": files["UPSTREAM_BASE_SHA"],
-                    "compatibleAgent": {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
-                    "contracts": {"appWeb": [versions["appWeb"]["fixtureVersion"]],
-                                  "webRelay": [versions["webRelay"]["protocolVersion"]]}}
-        if expected != release["runtime"]:
-            raise ValueError("release metadata differs from source")
+        expected = verify_release_source(root, release, run_git)
         stamp = root / "web/api/_release.json"
         if stamp.is_symlink() or (stamp.exists() and json.loads(stamp.read_text()) != RELEASE_INFO):
             raise ValueError("local release stamp was modified")
@@ -295,3 +282,23 @@ def _git_failure(output, message):
         return {"ok": False, "lock_conflict": True,
                 "message": "Web update is blocked by a repository lock. Wait for the other Git operation or inspect the checkout manually."}
     return {"ok": False, "message": message}
+
+
+def verify_release_source(root, release, run_git):
+    """Check published metadata against immutable source blobs without importing code."""
+    source, tag = release["sourceRevision"], release["tag"]
+    files = {}
+    for name in ("api/agent_dependency.json", "api/contract_versions.json", "UPSTREAM_BASE_SHA"):
+        contents, exists = run_git(["show", f"{source}:web/{name}"], root)
+        if not exists:
+            raise ValueError("missing release metadata")
+        files[name] = contents.strip() if name.endswith("SHA") else json.loads(contents)
+    pin, versions = files["api/agent_dependency.json"], files["api/contract_versions.json"]
+    expected = {"tag": tag, "version": release["version"], "sourceRevision": source, "releaseSet": source,
+                "upstreamBase": files["UPSTREAM_BASE_SHA"],
+                "compatibleAgent": {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
+                "contracts": {"appWeb": [versions["appWeb"]["fixtureVersion"]],
+                              "webRelay": [versions["webRelay"]["protocolVersion"]]}}
+    if expected != release["runtime"]:
+        raise ValueError("release metadata differs from source")
+    return expected

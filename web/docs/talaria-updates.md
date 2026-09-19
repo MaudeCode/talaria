@@ -46,6 +46,36 @@ The updater refuses to reshape an arbitrary parent repository or discard the old
 checkout. Preserve the old checkout and state for rollback. No live Web host is
 required to validate this distribution path.
 
+### Prepare a legacy source migration
+
+From an authenticated Talaria checkout, run:
+
+```sh
+python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria
+```
+
+The command resolves a completed release, clones it into a new directory,
+verifies the tag/source and that the legacy revision is included in its history,
+then stamps Web provenance. It copies a simple legacy `.env` with mode `0600` and
+preserves its bytes. Relative paths and shell-expanded configuration require
+manual review before preparation; use absolute state, workspace, Agent and TLS
+paths. No state directory is copied or rewritten, and no service is started or
+stopped. Keep the same service user and persistent state paths at cutover.
+
+After preparation succeeds, stop the old service, change its working directory
+and launch command to the paths in the preparation receipt, then start and check
+`/health` and normal authenticated access. Preserve the legacy checkout for
+rollback. An unsuccessful preparation leaves any partial new directory available
+for inspection. There is no supported in-place rewrite of the standalone root.
+
+For a legacy pip installation, stop its service, uninstall the `hermes-webui`
+distribution from that environment **before** installing the released
+`talaria-web` wheel. Both distributions contain the same top-level runtime module
+names, so concurrent installation is unsupported. The new wheel supplies both
+`talaria-web` and the legacy `hermes-webui` command; preserve the environment and
+state settings when restarting. Container migrations replace only the Web image
+reference with the completed manifest's digest and preserve persistent mounts.
+
 Validation lives in `tests/test_tal203_source_update.py`,
 `tests/test_tal203_published_releases.py`, and the frontend System settings/browser
 tests. Source tests own their repositories, tags, worktrees, locks, and state;

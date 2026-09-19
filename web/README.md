@@ -129,6 +129,22 @@ cd talaria/web
 python3 bootstrap.py
 ```
 
+For a published installation, check out its `web-vX.Y.Z` or `web-exp-vX.Y.Z`
+tag from a completed [Talaria release](https://github.com/MaudeCode/talaria/releases).
+Repository and registry access require authentication while they are private.
+Raw source and Nix builds are development builds unless release metadata is
+stamped. Published wheels/images and prepared migrations carry release-set
+provenance; see [migration and update instructions](docs/talaria-updates.md).
+
+The Python distribution is **talaria-web**. Install a released wheel into the
+Python environment that provides Hermes Agent, then run `talaria-web`.
+The `hermes-webui` command remains an alias for existing service definitions.
+For an authenticated source installation with pip, use an explicit Web tag:
+
+```bash
+python -m pip install 'talaria-web @ git+https://github.com/MaudeCode/talaria.git@web-vX.Y.Z#subdirectory=web'
+```
+
 Or keep using the shell launcher:
 
 ```bash
@@ -451,16 +467,16 @@ Extension deployments can inspect sanitized, authenticated diagnostics at `GET /
 
 Hermes WebUI has a Nix flake package and a NixOS service module so you can run it declaratively.
 
-Install the latest package with:
+Select a published Web tag and install its source package with:
 
 ```bash
-nix shell github:nesquena/hermes-webui#default
+nix shell 'github:MaudeCode/talaria/web-vX.Y.Z?dir=web#default'
 ```
 
 Use this flake input in your system configuration:
 
 ```nix
-inputs.hermes-webui.url = "github:nesquena/hermes-webui";
+inputs.hermes-webui.url = "github:MaudeCode/talaria/web-vX.Y.Z?dir=web";
 ```
 
 Then add the module and configure it in `nixosModules`:
@@ -469,8 +485,8 @@ Then add the module and configure it in `nixosModules`:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    hermes-agent.url = "github:NousResearch/hermes-agent";
-    hermes-webui.url = "github:nesquena/hermes-webui";
+    hermes-agent.url = "github:NousResearch/hermes-agent/fef0bc56b2f622ffe124835fbf57adfd10aa17e6";
+    hermes-webui.url = "github:MaudeCode/talaria/web-vX.Y.Z?dir=web";
   };
 
   outputs = { self, nixpkgs, hermes-agent, hermes-webui, ... }: {
@@ -534,7 +550,7 @@ curl http://127.0.0.1:8787/health
 
 ## Docker
 
-**Pre-built images** (amd64 + arm64) are published to GHCR on every release.
+**Published Web images** use `ghcr.io/maudecode/talaria-web`. Select the immutable digest from a completed Talaria release set; see [release and update behavior](docs/talaria-updates.md). Compose builds this checkout locally unless `TALARIA_WEB_IMAGE` selects a published image.
 
 For a comprehensive setup guide covering all 3 compose files, common failure modes, and bind-mount migration, see [`docs/docker.md`](docs/docker.md). The README covers the 5-minute happy path.
 
@@ -565,14 +581,17 @@ docker compose up -d --force-recreate
 ### Manual `docker run` (no compose)
 
 ```bash
-docker pull ghcr.io/nesquena/hermes-webui:latest
+# Set this to the immutable image reference in the completed release-set.json.
+# Authenticate to GHCR when the package is private.
+: "${TALARIA_WEB_IMAGE:?Set the published Talaria Web image digest}"
+docker pull "${TALARIA_WEB_IMAGE}"
 docker run -d \
   -e WANTED_UID=$(id -u) -e WANTED_GID=$(id -g) \
   -v ~/.hermes:/home/hermeswebui/.hermes \
   -e HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui \
   -v ~/workspace:/workspace \
   -p 127.0.0.1:8787:8787 \
-  ghcr.io/nesquena/hermes-webui:latest
+  "${TALARIA_WEB_IMAGE}"
 ```
 
 ### Build locally
@@ -739,10 +758,10 @@ The version shown in the WebUI runtime status is the **WebUI version only** (bui
 The WebUI is still coupled to Hermes Agent internals for runtime execution, provider/model access, and state/schema usage until the stable agent boundary work in [#1925](https://github.com/nesquena/hermes-webui/issues/1925) and [#2491](https://github.com/nesquena/hermes-webui/issues/2491) land. In practice, the WebUI imports Agent modules directly (`api/config.py`, `api/providers.py`, `api/streaming.py`) and reads Agent state layout directly, so version skew can cause import or behavior drift.
 
 **Compatibility policy**
-- WebUI release branches are tested against the matching Hermes Agent release available at that WebUI release time.
-- **Upgrade both together**: upgrade or pin WebUI and hermes-agent together (same release train/version/date), especially before enabling production traffic.
-- Running pinned older/newer combinations is **untested and unsupported** until the stable API boundary work in [#1925](https://github.com/nesquena/hermes-webui/issues/1925) / [#2491](https://github.com/nesquena/hermes-webui/issues/2491) is in place.
-- Record the full `hermes-agent` + `hermes-webui` versions in issue reports when upgrade mismatches are suspected.
+- App, Web, Relay and Hermes Agent keep independent versions.
+- A completed Talaria release set records the tested contract capabilities and the exact compatible Agent source/image identity.
+- Local bootstrap and Compose defaults use `api/agent_dependency.json`; existing Agent installations remain a separate operator-managed dependency.
+- Peer versions need not be identical. Report `/health` release metadata when diagnosing compatibility problems.
 
 **Docker users**: pin both image tags (or corresponding pinned source revisions) rather than using `latest` on one side and a fixed tag on the other. When upgrading the multi-container setup, follow the agent-image upgrade procedure in [`docs/docker.md`](docs/docker.md) (which requires dropping the `hermes-agent-src` volume before recreating). The current source-boundary status is tracked in [`docs/rfcs/agent-source-boundary.md`](docs/rfcs/agent-source-boundary.md).
 
@@ -918,5 +937,5 @@ Configurable assistant display name, thinking/reasoning block display, and a log
 ## Repo
 
 ```
-git@github.com:nesquena/hermes-webui.git
+git@github.com:MaudeCode/talaria.git
 ```
