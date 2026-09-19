@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -15,6 +16,53 @@ import cli
 
 
 class WorkflowCommandTests(unittest.TestCase):
+    def test_retained_web_channels_are_checked_and_deduplicated(self):
+        from test_release_set import candidate, complete
+
+        stable = complete(candidate("a" * 40))
+        stable["contracts"]["appWeb"]["web"] = [1]
+        experimental = complete(candidate("b" * 40))
+        experimental["components"]["web"]["tag"] = "web-exp-v2.0.0"
+        experimental["contracts"]["appWeb"]["web"] = [2]
+        plan = candidate("c" * 40)
+        plan["contracts"]["appWeb"] = {"app": [2], "web": [1, 2]}
+        published = [{"tag_name": "release-set-" + doc["releaseSet"], "published_at": date}
+                     for doc, date in ((stable, "2026-01-01"), (experimental, "2026-02-01"))]
+        with patch.object(cli, "published_manifest", return_value=stable):
+            with self.assertRaisesRegex(ValueError, "retained web is incompatible"):
+                cli.supported_web_sources(plan, experimental, published)
+            plan["contracts"]["appWeb"]["app"] = [1, 2]
+            self.assertEqual(cli.supported_web_sources(plan, experimental, published), ["a" * 40, "b" * 40])
+            plan["contracts"]["webRelay"]["relay"] = [3]
+            with self.assertRaisesRegex(ValueError, "webRelay"):
+                cli.supported_web_sources(plan, experimental, published)
+
+    def test_reused_components_do_not_need_retained_ci_runs(self):
+        from test_release_set import candidate, complete
+
+        previous = complete(candidate("a" * 40))
+        source = "b" * 40
+        plan = candidate(source)
+        plan["components"]["app"].update(tag="app-v1.1.0", version="1.1.0")
+        for name in ("web", "relay"):
+            plan["components"][name] = deepcopy(previous["components"][name])
+        plan["changed"] = {"app": True, "web": False, "relay": False}
+        request = {"sourceRevision": source, "tags": {n: c["tag"] for n, c in plan["components"].items()},
+                   "relayDeploymentId": "synthetic-relay"}
+        published = [{"tag_name": "release-set-" + previous["releaseSet"], "published_at": "2026-01-01"}]
+        def run(command, **kwargs):
+            if command[0].endswith("require_successful_main_ci") and kwargs["env"]["GITHUB_SHA"] != source:
+                raise subprocess.CalledProcessError(1, command)
+            return SimpleNamespace(returncode=0)
+        with tempfile.TemporaryDirectory() as temporary, patch.object(cli, "load", side_effect=[request, previous]), \
+                patch.dict(os.environ, {}, clear=True), patch("builtins.print"), \
+                patch.object(cli, "run_url", return_value="https://github.com/MaudeCode/talaria/actions/runs/1"), patch.object(cli, "require_latest_predecessor", return_value=published), \
+                patch.object(cli, "unused_release"), patch.object(cli, "resolve", return_value=plan), \
+                patch.object(cli, "git"), patch.object(cli.subprocess, "run", side_effect=run) as calls:
+            cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, output=Path(temporary) / "out"))
+            checked = [call for call in calls.call_args_list if call.args[0][0].endswith("require_successful_main_ci")]
+            self.assertEqual(len(checked), 1)
+
     def test_version_history_survives_channel_switches(self):
         from release_set import require_version_advance
 

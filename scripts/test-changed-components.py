@@ -4,6 +4,7 @@
 import importlib.util
 from copy import deepcopy
 import os
+import plistlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,6 +19,25 @@ CONSUMERS = {"app", "web_python", "web_frontend", "relay", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
+    def test_app_ui_scope(self):
+        assert not routing.app_ui_required(["app/Talaria/Networking/APIClient.swift"])
+        assert not routing.app_ui_required(["app/Talaria/Resources/Info.plist"], metadata_only_plists=["app/Talaria/Resources/Info.plist"])
+        assert routing.app_ui_required(["app/Talaria/Resources/Info.plist"])
+        assert routing.same_plist_ui(plistlib.dumps({}), plistlib.dumps({"TalariaRelease": {"version": "1.0.0"}}))
+        assert not routing.same_plist_ui(plistlib.dumps({}), plistlib.dumps({"UISupportedInterfaceOrientations": ["portrait"]}))
+        assert routing.app_ui_required(["app/Talaria/Features/Chat/ChatView.swift"])
+        assert routing.app_ui_required(["app/Talaria/ContentView.swift"])
+        assert routing.app_ui_required(["app/TalariaUITests/TalariaUITests.swift"])
+        assert routing.app_ui_required(["app/TalariaLiveActivityWidget/ProviderQuotaWidgetView.swift"])
+        assert routing.app_ui_required(["app/TalariaShareExtension/ShareViewController.swift"])
+        assert routing.app_ui_required(["app/NewComponent/Unknown.swift"])
+        assert routing.app_ui_required(["new-component/runtime.swift"])
+        assert not routing.app_ui_required(["app/Talaria/TalariaApp.swift"], scene_unchanged=True)
+        assert routing.app_ui_required(["app/Talaria/TalariaApp.swift"])
+        assert routing.same_app_scene("init() {}\nvar body: some Scene { Main() }", "init() { log() }\nvar body: some Scene { Main() }")
+        assert not routing.same_app_scene("var body: some Scene { Main() }", "var body: some Scene { Other() }")
+        assert not routing.same_app_scene("unknown", "unknown")
+
     def test_path_classes(self):
         cases = [
             (["changelog.d/TAL-123.json"], set()),
@@ -62,8 +82,9 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/release-set.yml"], {"tooling"}),
             ([".github/workflows/web-verify.yml"], {"web_python", "web_frontend", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
-            ([".github/workflows/pr-ci.yml"], ALL),
-            (["scripts/changed-components.py"], ALL),
+            ([".github/workflows/pr-ci.yml"], {"tooling"}),
+            (["scripts/changed-components.py"], {"tooling"}),
+            (["scripts/new-unknown-tool.py"], ALL),
             (["new-component/runtime.rs"], ALL),
             (["changelog.d/README.md", "changelog.d/malformed.json"], set()),
             ([], ALL),
@@ -89,10 +110,14 @@ class RoutingTests(unittest.TestCase):
                 git("commit", "-m", name)
                 return git("rev-parse", "HEAD")
 
-            def classify(base, head, *options):
+            def classify(base, head, *options, expected_ui=None):
                 result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={base}", f"--head={head}", *options],
                                         cwd=root, env=env, text=True, capture_output=True, check=True)
                 flags = dict(line.split("=", 1) for line in result.stdout.splitlines())
+                ui = flags.pop("app_ui")
+                self.assertIn(ui, {"true", "false"})
+                if expected_ui is not None:
+                    self.assertEqual(ui, str(expected_ui).lower())
                 self.assertEqual(set(flags), ALL)
                 self.assertLessEqual(set(flags.values()), {"true", "false"})
                 return {key for key, value in flags.items() if value == "true"}
@@ -108,17 +133,22 @@ class RoutingTests(unittest.TestCase):
             odd = root / "web/frontend/name\napp=false\n.tsx"
             odd.write_text("synthetic")
             head = commit("frontend change")
-            self.assertEqual(classify(moved, head), {"web_frontend"})
+            self.assertEqual(classify(moved, head, expected_ui=False), {"web_frontend"})
             self.assertEqual(classify(base, head), {"web_python", "web_frontend"})
             git("checkout", "-b", "diverged", base)
             (root / "app").mkdir()
             (root / "app/README.md").write_text("docs")
             other = commit("base branch advanced")
             self.assertEqual(classify(other, head, "--merge-base"), {"web_python", "web_frontend"})
-            self.assertEqual(classify(head, head), ALL)
-            self.assertEqual(classify("0" * 40, head), ALL)
+            self.assertEqual(classify(head, head, expected_ui=True), ALL)
+            self.assertEqual(classify("0" * 40, head, expected_ui=True), ALL)
             self.assertEqual(classify("--output=should-not-exist", head), ALL)
             self.assertFalse((root / "should-not-exist").exists())
+
+            (root / "scripts").mkdir()
+            (root / "scripts/new-unknown-tool.py").write_text("unknown shared tooling\n")
+            unknown = commit("unknown shared tool")
+            self.assertEqual(classify(other, unknown, expected_ui=True), ALL)
 
             def check_diff(*options):
                 return subprocess.run([os.sys.executable, str(SCRIPT), "--check-diff", *options],

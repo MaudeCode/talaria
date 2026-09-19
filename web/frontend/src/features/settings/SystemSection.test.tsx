@@ -31,7 +31,7 @@ function renderSystem() {
 }
 
 describe('SystemSection "Check now"', () => {
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
+  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
 
   it('does not call unavailable private release metadata up to date', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: null, current_sha: null, manual_update: true, error: 'Private release access unavailable' } }))
@@ -42,11 +42,27 @@ describe('SystemSection "Check now"', () => {
     expect(screen.getByRole('link', { name: /install updates manually/i })).toHaveAttribute('href', 'https://github.com/MaudeCode/talaria/releases')
   })
 
-  it('does not offer a Web update for an Agent-only update', async () => {
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 1 } })
+  it.each([{ behind: 0 }, { behind: 1, manual_update: true }, { error: 'Web unavailable' }])('keeps Agent updates independent of Web status %j', async (webui) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui, agent: { behind: 1 } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })
     renderSystem()
-    await screen.findByText(/up to date/i)
+    await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent'))
     expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps the Agent action after applying only the Web update', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1 }, agent: { behind: 1 } })
+    vi.mocked(api.applyUpdates).mockImplementation(() => {
+      vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 1 } })
+      return Promise.resolve({ ok: true })
+    })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+    await screen.findByText(/up to date/i)
+    await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent'))
   })
 
   it('keeps the repair action available when source is current but provenance is pending', async () => {
@@ -60,7 +76,7 @@ describe('SystemSection "Check now"', () => {
     })
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /finish update/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
     await screen.findByText(/up to date/i)
     expect(screen.queryByRole('button', { name: /finish update/i })).not.toBeInTheDocument()
   })

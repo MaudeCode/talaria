@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import subprocess
@@ -16,6 +17,7 @@ WEB_BUILD = {"web_python", "web_frontend", "docker", "contracts"}
 JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_python", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
+    "pr-ci.yml": {"tooling"},
     "web-verify.yml": {"web_python", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
@@ -30,6 +32,8 @@ WORKFLOWS = {
     "ios-release-build.yml": {"tooling"},
 }
 SCRIPTS = {
+    "changed-components.py": {"tooling"},
+    "test-changed-components.py": {"tooling"},
     "check-web-python": {"web_python", "tooling"},
     "check-web-browser": {"web_frontend", "tooling"},
     "check-docker.py": {"docker", "tooling"},
@@ -44,6 +48,41 @@ SCRIPTS = {
     "test-monorepo-import.py": {"tooling"},
     "import-web-upstream": {"tooling"},
 }
+
+
+def same_app_scene(before, after):
+    # Startup diagnostics precede the Scene; changes to the rendered Scene or
+    # its helpers still require the complete UI suite.
+    marker = "var body: some Scene"
+    return marker in before and marker in after and before.split(marker, 1)[1] == after.split(marker, 1)[1]
+
+
+def app_ui_required(paths, scene_unchanged=False, metadata_only_plists=()):
+    for path in paths:
+        if not path.startswith("app/"):
+            if path.startswith(("web/", "relay/", "contracts/", "releases/", "scripts/", "docs/", "changelog.d/", ".github/", ".agents/")) or "/" not in path and path.endswith(".md"):
+                continue
+            return True
+        if path == "app/Talaria/TalariaApp.swift":
+            if not scene_unchanged:
+                return True
+        elif path.startswith(("app/Talaria/Networking/", "app/Talaria/Models/", "app/Talaria/Config/",
+                              "app/Talaria/Persistence/", "app/Talaria/Sync/", "app/Talaria/LiveActivities/",
+                              "app/TalariaTests/", "app/ci/", "app/scripts/", "app/docs/", "app/changelog.d/",
+                              "app/Talaria.xcodeproj/")):
+            continue
+        elif path in metadata_only_plists or (path.count("/") == 1 and path.endswith(".md")):
+            continue
+        else:
+            return True
+    return False
+
+
+def same_plist_ui(before, after):
+    documents = [plistlib.loads(value) for value in (before, after)]
+    for document in documents:
+        document.pop("TalariaRelease", None)
+    return documents[0] == documents[1]
 
 
 def path_suites(path):
@@ -152,6 +191,27 @@ def check_diff(base, head, merge_base=False):
     subprocess.run(command, check=True)
 
 
+def classify_app_ui(paths, base, head):
+    scene_unchanged = False
+    entry = "app/Talaria/TalariaApp.swift"
+    if entry in paths:
+        try:
+            before, after = [git("show", f"{ref}:{entry}").decode() for ref in (base, head)]
+            scene_unchanged = same_app_scene(before, after)
+        except subprocess.CalledProcessError:
+            pass  # Missing/unreadable entry points require the full UI suite.
+    metadata_only_plists = []
+    for path in paths:
+        if path.startswith("app/") and path.endswith("/Resources/Info.plist"):
+            try:
+                before, after = [git("show", f"{ref}:{path}") for ref in (base, head)]
+                if same_plist_ui(before, after):
+                    metadata_only_plists.append(path)
+            except (subprocess.CalledProcessError, ValueError, plistlib.InvalidFileException, AttributeError, TypeError):
+                pass
+    return not paths or app_ui_required(paths, scene_unchanged, metadata_only_plists)
+
+
 def check_results(needs):
     if needs["changes"]["result"] != "success" or needs["tooling"]["result"] != "success":
         raise ValueError("Path detection and release metadata validation must succeed")
@@ -182,11 +242,18 @@ def main():
         check_results(json.loads(os.environ["CI_NEEDS"]))
         print("CI Gate passed.")
         return
+    requires_ui = True
     try:
-        selected = affected(git_diff(args.base, args.head, args.merge_base)) if args.base else set(SUITES)
+        selected = set(SUITES)
+        if args.base:
+            base, head = diff_refs(args.base, args.head, args.merge_base)
+            paths = git_diff(base, head)
+            selected = affected(paths)
+            requires_ui = any(path_suites(path) == SUITES for path in paths) or classify_app_ui(paths, base, head)
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("Could not classify the complete diff; running all suites.", file=sys.stderr)
         selected = SUITES
+    print(f"app_ui={str(requires_ui).lower()}")
     for suite in sorted(SUITES):
         print(f"{suite}={str(suite in selected).lower()}")
 

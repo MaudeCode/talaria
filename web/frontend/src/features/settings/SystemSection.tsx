@@ -47,7 +47,7 @@ export function SystemSection() {
     onSuccess: (d) => qc.setQueryData(keys.updates.check, d),
     onError: fail,
   })
-  const apply = useMutation({ mutationFn: (action: 'apply' | 'force' | 'clear_lock') => api.applyUpdates(action, channel), onSuccess: (r) => { showToast(r.message ?? r.status ?? m.saved()); void qc.invalidateQueries({ queryKey: keys.updates.check }) }, onError: fail })
+  const apply = useMutation({ mutationFn: (target: 'webui' | 'agent') => api.applyUpdates('apply', target === 'webui' ? channel : undefined, target), onSuccess: (r) => { showToast(r.message ?? r.status ?? m.saved()); void qc.invalidateQueries({ queryKey: keys.updates.check }) }, onError: fail })
   const registerPasskey = useMutation({
     mutationFn: async () => {
       const opt = await api.passkeyRegisterOptions()
@@ -66,6 +66,8 @@ export function SystemSection() {
   const passwordLocked = bool('password_env_var')
   const webUpdate = updates.data?.webui
   const canApplyWeb = ((webUpdate?.behind ?? 0) > 0 || webUpdate?.metadata_repair === true) && !webUpdate?.error && !webUpdate?.manual_update && !webUpdate?.no_git
+  const agentUpdate = updates.data?.agent
+  const canApplyAgent = (agentUpdate?.behind ?? 0) > 0 && !agentUpdate?.error && !agentUpdate?.manual_update && !agentUpdate?.no_git && !bool('ignore_agent_updates') && !updates.data?.disabled
   return (
     <div className="flex flex-col gap-5" data-section="system">
       <section>
@@ -91,7 +93,8 @@ export function SystemSection() {
           {webUpdate?.manual_update && (webUpdate.error || webUpdate.dirty || webUpdate.behind !== 0) ? <a className="inline-flex min-h-11 items-center text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
           {updates.data?.agent?.behind ? <span className="text-accent-text">{m.system_update_available({ name: 'agent', n: updates.data.agent.behind })}</span> : null}
           <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : m.system_check_updates()}</Button>
-          {canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate('apply')} disabled={apply.isPending}>{webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_update()}</Button> : null}
+          {canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate('webui')} disabled={apply.isPending}>{webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_update()}</Button> : null}
+          {canManage && canApplyAgent ? <Button onClick={() => apply.mutate('agent')} disabled={apply.isPending}>{m.system_apply_agent_update()}</Button> : null}
         </div>
       </section>
       <section>

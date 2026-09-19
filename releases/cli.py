@@ -49,21 +49,49 @@ def unused_release(tag):
         raise ValueError("could not verify release-name availability")
 
 
-def previous(args):
-    if not re.fullmatch(r"[a-f0-9]{40}", args.source):
-        raise ValueError("previous release set must be an immutable commit")
-    tag = "release-set-" + args.source
-    release = json.loads(subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/tags/{tag}"]))
-    if release.get("draft") is not False or not release.get("published_at") or release.get("tag_name") != tag:
+def published_manifest(release):
+    tag = release.get("tag_name", "")
+    if (not re.fullmatch(r"release-set-[a-f0-9]{40}", tag)
+            or release.get("draft") is not False or not release.get("published_at")):
         raise ValueError("previous release set has not been published")
     assets = [item for item in release.get("assets", []) if item.get("name") == "release-set.json"]
     if len(assets) != 1 or type(assets[0].get("id")) is not int:
         raise ValueError("previous release set lacks its manifest")
     document = json.loads(subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/assets/{assets[0]['id']}", "-H", "Accept: application/octet-stream"]))
     VALIDATOR.validate(document)
-    if document["status"] != "complete" or document["releaseSet"] != args.source:
+    if document["status"] != "complete" or document["releaseSet"] != tag.removeprefix("release-set-"):
         raise ValueError("previous release identity is inconsistent")
-    write(args.output, document)
+    return document
+
+
+def previous(args):
+    if not re.fullmatch(r"[a-f0-9]{40}", args.source):
+        raise ValueError("previous release set must be an immutable commit")
+    tag = "release-set-" + args.source
+    release = json.loads(subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/tags/{tag}"]))
+    if release.get("tag_name") != tag:
+        raise ValueError("previous release identity is inconsistent")
+    write(args.output, published_manifest(release))
+
+
+def supported_web_sources(plan, previous, published):
+    """Keep the latest completed Web release in each published channel usable."""
+    retained = {}
+    for release in sorted(published, key=lambda item: item["published_at"], reverse=True):
+        if len(retained) == 2:
+            break
+        if not re.fullmatch(r"release-set-[a-f0-9]{40}", release.get("tag_name", "")):
+            continue
+        document = (previous if previous and release["tag_name"] == "release-set-" + previous["releaseSet"]
+                    else published_manifest(release))
+        channel = document["components"]["web"]["tag"].rsplit("-v", 1)[0]
+        if channel in retained:
+            continue
+        for contract, consumer in (("appWeb", "app"), ("webRelay", "relay")):
+            if not set(document["contracts"][contract]["web"]) & set(plan["contracts"][contract][consumer]):
+                raise ValueError(f"retained {channel} is incompatible with {contract}")
+        retained[channel] = document["components"]["web"]["sourceRevision"]
+    return sorted(set(retained.values()))
 
 
 def require_latest_predecessor(previous):
@@ -130,8 +158,9 @@ def prepare(args):
             if component["tag"] not in local_tags:
                 subprocess.run([str(ROOT / "app/ci/validate_release_tag")], cwd=checkout, check=True,
                                env={**env, "RELEASE_COMPONENT": name, "RELEASE_TAG": component["tag"], "EXPECTED_SHA": component["sourceRevision"]})
-                subprocess.run([str(ROOT / "app/ci/require_successful_main_ci")], cwd=checkout, check=True,
-                               env={**env, "GITHUB_SHA": component["sourceRevision"]})
+                # New sources passed main CI above; reused artifacts retain the
+                # authenticated predecessor's evidence after Actions log expiry.
+    plan["supportedWebSources"] = supported_web_sources(plan, previous, published)
     plan["dryRun"] = args.dry_run
     if previous:
         plan["previousAppSource"] = previous["components"]["app"]["sourceRevision"]

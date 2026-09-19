@@ -184,6 +184,18 @@ class ReleaseSetTests(unittest.TestCase):
         document["contracts"]["webRelay"]["relay"] = [2, 3]
         validate(document, previous)
 
+    def test_new_app_must_support_previous_web(self):
+        from release_set import require_compatible_contracts
+
+        previous = complete(candidate())
+        previous["contracts"]["appWeb"]["web"] = [1]
+        contracts = deepcopy(previous["contracts"])
+        contracts["appWeb"] = {"app": [2], "web": [1, 2]}
+        with self.assertRaisesRegex(ValueError, "previous Web"):
+            require_compatible_contracts(contracts, previous)
+        contracts["appWeb"]["app"] = [1, 2]
+        require_compatible_contracts(contracts, previous)
+
 
 if __name__ == "__main__":
     unittest.main()

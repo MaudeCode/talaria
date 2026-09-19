@@ -26,7 +26,13 @@ Run local XCTest only through `scripts/test-ios [test-identifier ...]`.
 
 1. Run the smallest focused test identifier that covers the change.
 2. Wait for it to finish.
-3. Run `scripts/test-ios` for the full suite before review or commit.
+3. For non-UI App changes, run `scripts/test-ios TalariaTests TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList` before review or commit. HTTP/SSE changes also require the contract checks. Run `scripts/test-ios` for UI changes or uncertain scope.
+
+PR CI follows this same split. Root `scripts/changed-components.py` identifies
+UI paths and checks whether App Scene or Info.plist UI settings changed.
+Every selected App job still builds all targets. Focused runs require the launch
+smoke test to execute and pass; absence or skipping fails CI. Main keeps the full
+UI suite, including its existing performance checks.
 
 The script serializes runs within one worktree and leases pooled simulators across
 worktrees. Let the current run finish instead of starting an overlapping run.
