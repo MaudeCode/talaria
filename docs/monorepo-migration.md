@@ -148,6 +148,7 @@ not execute during source consolidation.
 
 The Web forward-lint gate compares against the verified pure Web import when
 the PR base predates `web/`. It checks the import tree against the recorded
-standalone source and requires that import to be an ancestor. Later PRs use
+standalone source and requires that source to be an ancestor. Rehearsals may
+recreate the import commit while retaining the original source history. Later PRs use
 their normal merge base. Existing upstream lint debt remains visible in the
 informational report; integration edits still pass the forward gate.

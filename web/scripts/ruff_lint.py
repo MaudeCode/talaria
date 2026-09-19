@@ -83,7 +83,7 @@ def _changed_py_files(base: str) -> tuple[str, list[str]]:
         source_tree = _run(["git", "rev-parse", f"{source}^{{tree}}"])
         if (imported_tree.returncode or source_tree.returncode
                 or imported_tree.stdout != source_tree.stdout
-                or _run(["git", "merge-base", "--is-ancestor", imported, "HEAD"]).returncode):
+                or _run(["git", "merge-base", "--is-ancestor", source, "HEAD"]).returncode):
             raise RuntimeError("Invalid monorepo Web import lint baseline")
         merge_base = imported
     diff = _run(
