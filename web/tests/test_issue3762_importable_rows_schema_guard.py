@@ -48,6 +48,10 @@ def _make_db(path, *, with_messages_table, with_timestamp, with_session_id=True,
         if with_timestamp:
             cols.append("timestamp REAL")
         conn.execute(f"CREATE TABLE messages ({', '.join(cols)})")
+        if with_session_id and with_timestamp:
+            # Schema-shape fixtures must not race optional background index priming.
+            conn.execute("CREATE INDEX idx_messages_session ON messages(session_id, timestamp)")
+            conn.execute("CREATE INDEX idx_messages_session_user ON messages(session_id) WHERE role = 'user'")
         for m in (messages or []):
             if with_session_id and with_timestamp:
                 conn.execute("INSERT INTO messages (session_id, role, timestamp) VALUES (?,?,?)", m)

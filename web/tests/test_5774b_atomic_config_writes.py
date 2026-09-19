@@ -34,6 +34,16 @@ import pytest
 from api.paths import _atomic_write_text
 
 
+@pytest.fixture
+def plain_file_metadata(monkeypatch):
+    """Select the plain-inode path independently of runner filesystem xattrs.
+
+    The xattr and ACL tests below keep the real metadata detector.
+    """
+    from api import paths
+    monkeypatch.setattr(paths, "_has_extended_attributes", lambda _path: False)
+
+
 def test_atomic_write_replaces_contents(tmp_path: Path) -> None:
     target = tmp_path / "config.yaml"
     target.write_text("model:\n  default: old\n", encoding="utf-8")
@@ -214,6 +224,7 @@ def test_atomic_write_preserves_existing_group(tmp_path: Path) -> None:
     ],
 )
 def test_fchown_denial_falls_back_without_temp_debris(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch, failure: OSError
 ) -> None:
     """A writer unable to transfer ownership must keep the old inode contract."""
@@ -232,6 +243,7 @@ def test_fchown_denial_falls_back_without_temp_debris(
 
 
 def test_atomic_write_without_posix_fd_metadata_helpers(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """Windows-like platforms still use same-directory atomic replacement."""
@@ -259,6 +271,7 @@ def test_atomic_write_without_posix_fd_metadata_helpers(
 
 
 def test_atomic_write_fsyncs_file_and_parent_directory(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """Durability requires syncing both payload bytes and the committed rename."""
@@ -279,7 +292,7 @@ def test_atomic_write_fsyncs_file_and_parent_directory(
     assert synced_types == ["file", "directory"]
 
 
-def test_fdopen_failure_closes_temp_descriptor(tmp_path: Path, monkeypatch) -> None:
+def test_fdopen_failure_closes_temp_descriptor(plain_file_metadata, tmp_path: Path, monkeypatch) -> None:
     """A wrapper-construction failure must not leak the mkstemp descriptor."""
     target = tmp_path / "config.yaml"
     target.write_text("old: true\n", encoding="utf-8")
@@ -309,7 +322,7 @@ def test_fdopen_failure_closes_temp_descriptor(tmp_path: Path, monkeypatch) -> N
     assert target.read_text(encoding="utf-8") == "old: true\n"
 
 
-def test_concurrent_writers_expose_only_complete_versions(tmp_path: Path) -> None:
+def test_concurrent_writers_expose_only_complete_versions(plain_file_metadata, tmp_path: Path) -> None:
     """Concurrent saves may be last-writer-wins, but never partial or mixed."""
     target = tmp_path / "config.yaml"
     original = b"model:\n  default: original\n"
@@ -346,6 +359,7 @@ def test_concurrent_writers_expose_only_complete_versions(tmp_path: Path) -> Non
 
 
 def test_forced_fallback_serializes_writers_and_syncs_only_complete_versions(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """The non-atomic compatibility path must not interleave WebUI writers."""
@@ -505,6 +519,7 @@ def test_atomic_write_preserves_hard_link_aliases(tmp_path: Path) -> None:
 
 
 def test_temp_creation_denial_fallback_restores_mode_after_writing(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """Every in-place fallback must restore special bits cleared by a write."""
@@ -526,6 +541,7 @@ def test_temp_creation_denial_fallback_restores_mode_after_writing(
 
 
 def test_symlink_retarget_during_write_aborts_without_touching_either_target(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """A concurrent symlink retarget must not commit to the stale referent."""
@@ -562,6 +578,7 @@ def test_symlink_retarget_during_write_aborts_without_touching_either_target(
 
 
 def test_partial_temp_write_failure_leaves_old_file_intact(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """A failure after writing some temp bytes must preserve valid old YAML."""
@@ -622,7 +639,7 @@ def test_symlink_chain_updates_final_referent(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "new: true\n"
 
 
-def test_failed_write_leaves_old_file_intact(tmp_path: Path, monkeypatch) -> None:
+def test_failed_write_leaves_old_file_intact(plain_file_metadata, tmp_path: Path, monkeypatch) -> None:
     """A crash at the os.replace step must not touch the original file."""
     target = tmp_path / "config.yaml"
     original = "model:\n  default: keep-me\n"
@@ -646,6 +663,7 @@ def test_failed_write_leaves_old_file_intact(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_failed_write_through_symlink_leaves_link_and_target_intact(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch
 ) -> None:
     """A failed symlink write must not replace the symlink or truncate target."""
@@ -680,6 +698,7 @@ def test_failed_write_through_symlink_leaves_link_and_target_intact(
     "writer", ["main", "onboarding", "profile_endpoint", "profile_defaults"]
 )
 def test_each_config_writer_preserves_old_bytes_when_replace_fails(
+    plain_file_metadata,
     tmp_path: Path, monkeypatch, writer: str
 ) -> None:
     """Pin every config.yaml writer to the shared atomic failure contract."""
@@ -766,7 +785,7 @@ def test_writable_unreadable_parent_still_commits_atomically(tmp_path: Path) -> 
         os.chmod(cfg_dir, 0o755)
 
 
-def test_fallback_rejects_target_swap_before_open(tmp_path: Path, monkeypatch) -> None:
+def test_fallback_rejects_target_swap_before_open(plain_file_metadata, tmp_path: Path, monkeypatch) -> None:
     """The non-atomic fallback must not overwrite a swapped-in unrelated inode."""
     target = tmp_path / "config.yaml"
     victim = tmp_path / "victim.yaml"

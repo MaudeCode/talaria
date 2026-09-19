@@ -346,6 +346,10 @@ jobs:
           "$uv_bin" --no-config python install 3.13
           contract_python=$("$uv_bin" --no-config python find --managed-python --no-project 3.13)
           echo "HERMES_WEBUI_TEST_PYTHON=$contract_python" >> "$GITHUB_ENV"
+      - name: Prepare the contract simulator pool
+        env:
+          IOS_SIMULATOR_POOL_SIZE: "1"
+        run: scripts/setup-ios-test-pool
       - name: Check local App to Web HTTP and SSE contracts
         run: scripts/validate-upstream-contract
 
