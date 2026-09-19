@@ -29,15 +29,16 @@ live in `TalariaTests/VisualReferences`. See
 [`docs/visual-references.md`](docs/visual-references.md) for how to read a diff
 and how to re-record a reference on purpose.
 
-## Upstream Contract Pin
+## Server contract validation
 
-The app is currently tested against the untagged `hermes-webui` `master` merge commit `141056992d6d9b72636f02cac9ae91b6649cea9c`, which includes the native OIDC handoff from Hermes WebUI PR #15. The root [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA) file is the machine-readable pin for future drift checks and contract tests.
+The App uses the monorepo's `web/` component for current contract validation.
+`UPSTREAM_REPOSITORY`, `UPSTREAM_BRANCH` and `UPSTREAM_TESTED_SHA` retain historical
+standalone provenance.
 
-The pin was reviewed and merged on 2026-08-31. WebUI focused auth tests and five-shard CI passed; the disposable candidate runner stopped at a held CSRF-probe expectation before its Swift phase, and the operator directed that no additional validation run be performed. Authenticated settings/version checks require server credentials.
-
-Run `scripts/validate-upstream-contract` for the complete disposable fork-server,
-HTTP/SSE, and focused Swift contract check. [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md)
-maps adopted behavior to each executable check.
+From `app/`, run `scripts/validate-upstream-contract` for a disposable Web server,
+live HTTP/SSE fixtures and focused Swift checks. Use `--ref <commit>` to test a
+specific monorepo Web revision. [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md) maps
+adopted behavior to each executable check.
 
 ## SSE and Cloudflare Stream Verification
 
@@ -59,23 +60,16 @@ Manual verification before closing Phase 4:
 
 ## Local-Only Fallback
 
-For contributors without access to the tunnel:
-
-1. Clone the upstream server:
+For contributors without access to the tunnel, use this checkout's Web component:
 
 ```zsh
-git clone https://github.com/MaudeCode/hermes-webui.git
-cd hermes-webui
+cd ../web
 ```
 
-The canonical fork and branch are stored in `UPSTREAM_REPOSITORY` and
-`UPSTREAM_BRANCH`. If this checkout still has the retired Hermex source remote,
-verify it first with `git remote get-url upstream`. When it points to
-`uzairansaruzi/hermex`, remove only that local alias with
-`git remote remove upstream`. Repository-scoped GitHub commands must pass
-`--repo MaudeCode/talaria`.
-
-2. Run it with Docker or directly with Python, following the upstream README.
+Follow the [Talaria Web setup guide](../web/README.md) for Docker or native Python
+setup. The [release procedure](../releases/README.md) identifies compatible
+component releases and the pinned Agent dependency. Repository-scoped GitHub
+commands use `--repo MaudeCode/talaria`.
 
 For simulator-only testing, `http://localhost:8787` can work when the server is running on the same Mac. For physical-device testing, use HTTPS or a Tailscale `100.64.0.0/10` IP; TestFlight builds include a scoped ATS exception for that Tailscale range.
 
@@ -84,7 +78,7 @@ For simulator-only testing, `http://localhost:8787` can work when the server is 
 One proven way to run the server natively on macOS is through launchd:
 
 - LaunchAgent: `~/Library/LaunchAgents/com.hermes.webui.plist`
-- Server script: `server.py` in your `hermes-webui` checkout
+- Server script: `server.py` in the monorepo's `web/` directory
 - Local bind: `127.0.0.1:8787`
 - Public hostname: `https://<your-server>`
 - Tunnel target: `http://127.0.0.1:8787`
