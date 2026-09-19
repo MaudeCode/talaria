@@ -46,6 +46,49 @@ def test_stamped_release_metadata_is_validated(tmp_path):
             release_info.load_release_info(path)
 
 
+@pytest.mark.parametrize("worktree", [False, True])
+def test_source_stamp_requires_its_actual_checkout_revision(tmp_path, monkeypatch, worktree):
+    def git(root, *args):
+        return subprocess.check_output(["git", "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+            "-c", "commit.gpgsign=false", "-C", str(root), *args], text=True, stderr=subprocess.PIPE).strip()
+
+    root = tmp_path / "source"
+    root.mkdir()
+    git(root, "init", "-b", "main")
+    (root / "web/api").mkdir(parents=True)
+    (root / "web/server.py").write_text("synthetic source")
+    (root / ".gitignore").write_text("web/api/_release.json\n")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "synthetic release")
+    sha = git(root, "rev-parse", "HEAD")
+    if worktree:
+        checkout = tmp_path / "worktree"
+        git(root, "worktree", "add", "--detach", str(checkout), "HEAD")
+        root = checkout
+        (root / "web/api").mkdir(exist_ok=True)
+    path = root / "web/api/_release.json"
+    metadata = {"tag": "web-v2.1.0", "version": "2.1.0", "sourceRevision": sha, "releaseSet": sha,
+                "upstreamBase": sha, "contracts": release_info.SUPPORTED_CONTRACTS,
+                "compatibleAgent": release_info.COMPATIBLE_AGENT}
+    path.write_text(json.dumps(metadata))
+    assert release_info.load_release_info(path) == metadata
+    (root / "web/server.py").write_text("unpublished source")
+    git(root, "commit", "-am", "manual fast-forward")
+    current = release_info.load_release_info(path)
+    assert current["version"] == "development" and current["sourceRevision"] is None
+    monkeypatch.setattr(release_info, "RELEASE_INFO", current)
+    responses = []
+    monkeypatch.setattr(routes, "j", lambda handler, payload, **kwargs: responses.append(payload))
+    routes._handle_health(None, SimpleNamespace(query=""))
+    assert responses[0]["release"]["releaseSet"] is None
+    assert json.loads(path.read_text()) == metadata
+    git(root, "reset", "--hard", sha)
+    assert release_info.load_release_info(path) == metadata
+    head_file = root / git(root, "rev-parse", "--git-path", "HEAD")
+    head_file.write_text("unreadable synthetic Git identity\n")
+    assert release_info.load_release_info(path)["sourceRevision"] is None
+
+
 @pytest.mark.parametrize("component", ["app", "web", "relay"])
 def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path, component):
     root = Path(__file__).resolve().parents[2]

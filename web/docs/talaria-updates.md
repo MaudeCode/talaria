@@ -25,8 +25,11 @@ The complete checkout must be clean, including App/Relay edits and untracked
 files. The updater fetches only the selected published tag, checks its commit
 against the manifest, verifies its packaged compatibility metadata, and performs
 a fast-forward that protects ignored files from overwrite. Divergent histories
-require manual reconciliation. An installation already containing the selected
-release stays at its current revision.
+require manual reconciliation. A checkout ahead of the selected published release
+is reported as manual, rather than a successful automatic update, and stays at
+its current revision. At startup, an otherwise valid source stamp must match
+Git HEAD; a mismatch or unreadable Git identity reports development provenance.
+Packaged artifacts without Git retain their baked release identity.
 
 Source updates advance the monorepo checkout; deployment remains component-specific.
 The operation stamps the new Web provenance and schedules a Web restart. Existing

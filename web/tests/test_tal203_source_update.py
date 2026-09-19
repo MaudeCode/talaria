@@ -197,7 +197,8 @@ def test_web_lock_retry_preserves_git_lock_and_then_updates(source_install, monk
 
 
 @pytest.mark.parametrize("existing_stamp", [False, True])
-def test_retry_repairs_stamp_after_source_advanced_and_schedules_restart(source_install, monkeypatch, existing_stamp):
+@pytest.mark.parametrize("restarted", [False, True])
+def test_retry_repairs_stamp_after_source_advanced_and_schedules_restart(source_install, monkeypatch, existing_stamp, restarted):
     from api import updates
 
     client, _, old, new, release, git, run_git, _ = source_install
@@ -218,6 +219,9 @@ def test_retry_repairs_stamp_after_source_advanced_and_schedules_restart(source_
         assert releases.apply_web_update(client / "web", "stable", run_git)["ok"] is False
     assert git(client, "rev-parse", "HEAD") == new
     assert (json.loads(stamp.read_text()) if stamp.exists() else None) == (old_runtime if existing_stamp else None)
+    if restarted:
+        monkeypatch.setattr(releases, "STAMPED_RELEASE_INFO", old_runtime)
+        monkeypatch.setattr(releases, "RELEASE_INFO", {"sourceRevision": None, "version": "development"})
     refreshed = updates._check_repo(client / "web", "webui", "stable")
     assert refreshed["behind"] == 0 and refreshed["metadata_repair"] is True
     assert not refreshed.get("manual_update") and not refreshed.get("error")
@@ -241,3 +245,23 @@ def test_current_source_does_not_hide_a_modified_stamp(source_install):
     status = releases.check_web_update(client / "web", "web-v2.0.0", "stable", run_git)
     assert status["behind"] is None and status["manual_update"] is True and status["error"]
     assert stamp.read_text() == '{"version":"unreviewed local metadata"}'
+
+
+def test_ahead_checkout_is_manual_not_a_successful_update(source_install, monkeypatch):
+    client, _, _, new, release, git, run_git, _ = source_install
+    git(client, "reset", "--hard", new)
+    stamp = client / "web/api/_release.json"
+    original = json.dumps(release["runtime"])
+    stamp.write_text(original)
+    monkeypatch.setattr(releases, "RELEASE_INFO", release["runtime"])
+    (client / "web/server.py").write_text("version = 'unpublished local change'\n")
+    git(client, "add", ".")
+    git(client, "commit", "-m", "synthetic ahead checkout")
+    head = git(client, "rev-parse", "HEAD")
+    status = releases.check_web_update(client / "web", release["tag"], "stable", run_git)
+    assert status["manual_update"] is True and status["behind"] is None
+    result = releases.apply_web_update(client / "web", "stable", run_git)
+    assert result["ok"] is False and result["manual_update"] is True
+    assert not result.get("up_to_date")
+    assert git(client, "rev-parse", "HEAD") == head
+    assert stamp.read_text() == original

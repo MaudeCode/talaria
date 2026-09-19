@@ -9,7 +9,7 @@ from time import monotonic
 import urllib.request
 from urllib.parse import urlsplit
 
-from api.release_info import RELEASE_INFO
+from api.release_info import RELEASE_INFO, STAMPED_RELEASE_INFO
 
 
 REPOSITORY = "MaudeCode/talaria"
@@ -193,7 +193,10 @@ def check_web_update(web_path, current_version, channel, run_git):
         base, known_base = current, True
     else:
         _, contains = run_git(["merge-base", "--is-ancestor", release["sourceRevision"], current], root)
-        result["behind"] = 0 if contains else 1
+        if contains:
+            return {**result, "behind": None, "manual_update": True, "current_sha": None,
+                    "message": "This checkout is ahead of the selected release. Manage it manually or check out the published release and restart Web."}
+        result["behind"] = 1
         base, known_base = run_git(["merge-base", current, release["sourceRevision"]], root)
         if known_base and base != current and not contains:
             result.update(manual_update=True, message="Reconcile divergent source history before updating Web.")
@@ -213,7 +216,7 @@ def _verified_release_stamp(root, release, run_git):
     if stamp.is_symlink():
         raise ValueError("local release stamp is a symbolic link")
     installed = json.loads(stamp.read_text()) if stamp.exists() else None
-    if installed is not None and installed not in (RELEASE_INFO, expected):
+    if installed is not None and installed not in (RELEASE_INFO, STAMPED_RELEASE_INFO, expected):
         raise ValueError("local release stamp was modified")
     return stamp, expected, installed
 
@@ -252,8 +255,8 @@ def apply_web_update(web_path, channel, run_git):
         if not forward:
             _, contains = run_git(["merge-base", "--is-ancestor", source, head], root)
             if contains:
-                return {"ok": True, "up_to_date": True, "target": "webui", "channel": channel,
-                        "message": "Talaria Web already contains the selected release."}
+                return {"ok": False, "manual_update": True, "target": "webui", "channel": channel,
+                        "message": "This checkout is ahead of the selected release. Manage it manually or check out the published release and restart Web."}
             return {"ok": False, "message": "Web update refused: source histories diverge; reconcile the checkout manually."}
     # Compare provenance with the immutable incoming files before modifying the
     # checkout. Do not import downloaded code into the running old process.
