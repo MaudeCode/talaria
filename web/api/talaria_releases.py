@@ -183,7 +183,13 @@ def check_web_update(web_path, current_version, channel, run_git):
         return {**result, "manual_update": True, "error": "Could not verify the source checkout"}
     result.update(installed_sha=current, dirty=bool(status))
     if current == release["sourceRevision"]:
-        result["behind"] = 0
+        try:
+            _, expected, installed = _verified_release_stamp(root, release, run_git)
+            result.update(behind=0, metadata_repair=installed != expected or RELEASE_INFO != expected)
+            if result["metadata_repair"]:
+                result["message"] = "Apply the selected release again to repair its metadata or restart with its recorded identity."
+        except (OSError, KeyError, TypeError, ValueError):
+            result.update(behind=None, manual_update=True, error="Could not verify local release provenance; inspect the release stamp before updating.")
         base, known_base = current, True
     else:
         _, contains = run_git(["merge-base", "--is-ancestor", release["sourceRevision"], current], root)
@@ -199,6 +205,17 @@ def check_web_update(web_path, current_version, channel, run_git):
     if status:
         result.update(manual_update=True, message="Commit or remove local changes before updating; Web updates never discard them.")
     return result
+
+
+def _verified_release_stamp(root, release, run_git):
+    expected = verify_release_source(root, release, run_git)
+    stamp = root / "web/api/_release.json"
+    if stamp.is_symlink():
+        raise ValueError("local release stamp is a symbolic link")
+    installed = json.loads(stamp.read_text()) if stamp.exists() else None
+    if installed is not None and installed not in (RELEASE_INFO, expected):
+        raise ValueError("local release stamp was modified")
+    return stamp, expected, installed
 
 
 def apply_web_update(web_path, channel, run_git):
@@ -241,13 +258,7 @@ def apply_web_update(web_path, channel, run_git):
     # Compare provenance with the immutable incoming files before modifying the
     # checkout. Do not import downloaded code into the running old process.
     try:
-        expected = verify_release_source(root, release, run_git)
-        stamp = root / "web/api/_release.json"
-        if stamp.is_symlink():
-            raise ValueError("local release stamp is a symbolic link")
-        installed = json.loads(stamp.read_text()) if stamp.exists() else None
-        if installed is not None and installed not in (RELEASE_INFO, expected):
-            raise ValueError("local release stamp was modified")
+        stamp, expected, installed = _verified_release_stamp(root, release, run_git)
     except (OSError, KeyError, TypeError, ValueError):
         return {"ok": False, "message": "Web update refused: source or local provenance does not match the release manifest."}
     if head == source and installed == expected and RELEASE_INFO == expected:

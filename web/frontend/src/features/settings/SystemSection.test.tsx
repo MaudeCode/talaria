@@ -49,6 +49,22 @@ describe('SystemSection "Check now"', () => {
     expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
   })
 
+  it('keeps the repair action available when source is current but provenance is pending', async () => {
+    const source = 'a'.repeat(40)
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({
+      webui: { behind: 0, metadata_repair: true, current_sha: source, latest_sha: source }, agent: { behind: 0 },
+    }))
+    vi.mocked(api.applyUpdates).mockImplementation(() => {
+      vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0, metadata_repair: false }, agent: { behind: 0 } }))
+      return Promise.resolve({ message: 'Release metadata repaired' })
+    })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /finish update/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental'))
+    await screen.findByText(/up to date/i)
+    expect(screen.queryByRole('button', { name: /finish update/i })).not.toBeInTheDocument()
+  })
+
   it('explains why a dirty checkout cannot update automatically', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1, dirty: true, manual_update: true }, agent: { behind: 0 } })
     renderSystem()

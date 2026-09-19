@@ -34,6 +34,12 @@ active-run guards still apply. The compatibility `force` and `clear_lock` endpoi
 use this same clean-only path for Web. Git owns its locks; the server never deletes
 them. External Agent update and gateway-restart behavior stays separate.
 
+Matching source alone does not complete an update. If the release stamp or
+running identity is still pending, update status reports `metadata_repair: true`
+while keeping the real commit distance at zero. Settings offers **Finish update**
+until the stamp is verified and Web restarts with that identity. Modified local
+stamps require manual inspection and are not overwritten.
+
 Containers and wheels use manual artifact replacement, with the image digest or
 source/build identity from the completed manifest. Settings distinguishes a
 failed check, an unknown status, local changes, and an available automatic update.

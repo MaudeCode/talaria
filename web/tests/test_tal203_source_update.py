@@ -218,6 +218,9 @@ def test_retry_repairs_stamp_after_source_advanced_and_schedules_restart(source_
         assert releases.apply_web_update(client / "web", "stable", run_git)["ok"] is False
     assert git(client, "rev-parse", "HEAD") == new
     assert (json.loads(stamp.read_text()) if stamp.exists() else None) == (old_runtime if existing_stamp else None)
+    refreshed = updates._check_repo(client / "web", "webui", "stable")
+    assert refreshed["behind"] == 0 and refreshed["metadata_repair"] is True
+    assert not refreshed.get("manual_update") and not refreshed.get("error")
     repaired = updates.apply_update("webui", "stable")
     assert repaired["ok"] is True and repaired.get("restart_scheduled") is True
     assert json.loads(stamp.read_text()) == release["runtime"]
@@ -225,6 +228,8 @@ def test_retry_repairs_stamp_after_source_advanced_and_schedules_restart(source_
     # A restarted process can now truthfully report current runtime provenance.
     monkeypatch.setattr(releases, "RELEASE_INFO", release["runtime"])
     assert releases.apply_web_update(client / "web", "stable", run_git)["up_to_date"] is True
+    refreshed = updates._check_repo(client / "web", "webui", "stable")
+    assert refreshed["behind"] == 0 and refreshed["metadata_repair"] is False
 
 
 def test_current_source_does_not_hide_a_modified_stamp(source_install):
@@ -233,4 +238,6 @@ def test_current_source_does_not_hide_a_modified_stamp(source_install):
     stamp = client / "web/api/_release.json"
     stamp.write_text('{"version":"unreviewed local metadata"}')
     assert releases.apply_web_update(client / "web", "stable", run_git)["ok"] is False
+    status = releases.check_web_update(client / "web", "web-v2.0.0", "stable", run_git)
+    assert status["behind"] is None and status["manual_update"] is True and status["error"]
     assert stamp.read_text() == '{"version":"unreviewed local metadata"}'

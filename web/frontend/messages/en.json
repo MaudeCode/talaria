@@ -2069,6 +2069,8 @@
 	"system_manual_updates": "Install updates manually",
 	"system_update_local_changes": "Local changes prevent automatic updates",
 	"system_apply_update": "Update now",
+	"system_update_incomplete": "Finish applying this release",
+	"system_finish_update": "Finish update",
 	"system_logout": "Sign out",
 	"help_docs": "Documentation",
 	"help_shortcuts": "Keyboard shortcuts",

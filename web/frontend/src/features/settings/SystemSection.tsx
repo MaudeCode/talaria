@@ -47,7 +47,7 @@ export function SystemSection() {
     onSuccess: (d) => qc.setQueryData(keys.updates.check, d),
     onError: fail,
   })
-  const apply = useMutation({ mutationFn: (action: 'apply' | 'force' | 'clear_lock') => api.applyUpdates(action), onSuccess: (r) => { showToast(r.message ?? r.status ?? m.saved()); void qc.invalidateQueries({ queryKey: keys.updates.check }) }, onError: fail })
+  const apply = useMutation({ mutationFn: (action: 'apply' | 'force' | 'clear_lock') => api.applyUpdates(action, channel), onSuccess: (r) => { showToast(r.message ?? r.status ?? m.saved()); void qc.invalidateQueries({ queryKey: keys.updates.check }) }, onError: fail })
   const registerPasskey = useMutation({
     mutationFn: async () => {
       const opt = await api.passkeyRegisterOptions()
@@ -65,7 +65,7 @@ export function SystemSection() {
   const canManage = bootstrap.auth.can_manage_server !== false
   const passwordLocked = bool('password_env_var')
   const webUpdate = updates.data?.webui
-  const canApplyWeb = (webUpdate?.behind ?? 0) > 0 && !webUpdate?.error && !webUpdate?.manual_update && !webUpdate?.no_git
+  const canApplyWeb = ((webUpdate?.behind ?? 0) > 0 || webUpdate?.metadata_repair === true) && !webUpdate?.error && !webUpdate?.manual_update && !webUpdate?.no_git
   return (
     <div className="flex flex-col gap-5" data-section="system">
       <section>
@@ -87,11 +87,11 @@ export function SystemSection() {
         <FieldRow label={m.settings_label_ignore_agent_updates()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => set({ ignore_agent_updates: checked })} /></FieldRow>
         <FieldRow label={m.settings_label_whats_new_summary()} htmlFor="settingsWhatsNew" inline><Switch id="settingsWhatsNew" checked={bool('whats_new_summary_enabled')} onCheckedChange={(checked) => set({ whats_new_summary_enabled: checked })} /></FieldRow>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-          {updates.data?.disabled ? <span>—</span> : webUpdate?.error || updates.isError ? <span role="status">{m.settings_update_check_failed()}</span> : webUpdate?.dirty ? <span role="status">{m.system_update_local_changes()}</span> : webUpdate?.behind ? <span className="text-accent-text">{m.system_update_available({ name: 'webui', n: webUpdate.behind })}</span> : webUpdate?.behind === 0 ? <span>{m.system_up_to_date()}</span> : updates.data ? <span>{m.system_update_status_unknown()}</span> : null}
+          {updates.data?.disabled ? <span>—</span> : webUpdate?.error || updates.isError ? <span role="status">{m.settings_update_check_failed()}</span> : webUpdate?.dirty ? <span role="status">{m.system_update_local_changes()}</span> : webUpdate?.metadata_repair ? <span role="status">{m.system_update_incomplete()}</span> : webUpdate?.behind ? <span className="text-accent-text">{m.system_update_available({ name: 'webui', n: webUpdate.behind })}</span> : webUpdate?.behind === 0 ? <span>{m.system_up_to_date()}</span> : updates.data ? <span>{m.system_update_status_unknown()}</span> : null}
           {webUpdate?.manual_update && (webUpdate.error || webUpdate.dirty || webUpdate.behind !== 0) ? <a className="inline-flex min-h-11 items-center text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
           {updates.data?.agent?.behind ? <span className="text-accent-text">{m.system_update_available({ name: 'agent', n: updates.data.agent.behind })}</span> : null}
           <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : m.system_check_updates()}</Button>
-          {canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate('apply')} disabled={apply.isPending}>{m.system_apply_update()}</Button> : null}
+          {canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate('apply')} disabled={apply.isPending}>{webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_update()}</Button> : null}
         </div>
       </section>
       <section>

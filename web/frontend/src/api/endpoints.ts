@@ -207,7 +207,7 @@ export const fetchUpdatesCheck = () => get('api/updates/check', UpdatesCheckSche
 /** Manual "Check now": only POST `{force:true}` runs a real update check, and it bypasses the automatic-check toggle. An explicit `channel` wins over the persisted setting so a check right after a channel switch does not answer for the old channel. */
 export const checkUpdatesNow = (channel?: string) => post('api/updates/check', { force: true, ...(channel ? { channel } : {}) }, UpdatesCheckSchema, { retries: 0, timeoutMs: 120_000 })
 export const fetchUpdatesSummary = () => get('api/updates/summary', UpdatesSummarySchema, { timeoutMs: 60_000 })
-export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock') => post(`api/updates/${action}`, {}, UpdateApplySchema, { retries: 0, timeoutMs: 300_000 })
+export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?: string) => post(`api/updates/${action}`, { target: 'webui', channel }, UpdateApplySchema, { retries: 0, timeoutMs: 300_000 })
 export const fetchPlugins = () => get('api/plugins', PluginsSchema)
 export const savePlugins = (body: Record<string, unknown>) => post('api/plugins', body, PluginsSchema.or(OkSchema), { retries: 0 })
 export const fetchMcpServers = () => get('api/mcp/servers', McpServersSchema)
