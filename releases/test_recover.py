@@ -3,6 +3,7 @@
 from copy import deepcopy
 import json
 import os
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -13,6 +14,19 @@ from artifacts import digest
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_ansi_logs_are_captured_with_explicit_cli_opt_in(self):
+        def gh(command, **kwargs):
+            self.assertTrue(kwargs["text"])
+            if command[2].endswith("/logs"):
+                if "--allow-escape-sequences" not in command:
+                    raise subprocess.CalledProcessError(1, command, stderr="the response contains terminal escape sequences")
+                return "\x1b[36mjob\x1b[0m\nRELEASE_NEEDS: {}"
+            self.assertNotIn("--allow-escape-sequences", command)
+            return "{}"
+        with patch.object(recover.subprocess, "check_output", side_effect=gh):
+            self.assertIn("\x1b[36m", recover.api("actions/jobs/123/logs"))
+            self.assertEqual(recover.api("actions/runs/123"), "{}")
+
     def example(self):
         metadata = {"id": 123, "run_attempt": 4, "event": "workflow_dispatch", "head_branch": "main",
                     "path": ".github/workflows/production-cutover.yml", "status": "completed", "conclusion": "failure",
