@@ -1,5 +1,5 @@
-# Main pushes verify every component. Pull requests route component paths and
-# run all affected checks for shared policy or contract changes.
+# Pull requests and main pushes run suites selected by the complete changed-path diff.
+# Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
 # Uses no repository secrets, so PRs from forks get green CI too.
@@ -34,11 +34,15 @@ jobs:
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 5
     outputs:
-      run_ios: ${{ steps.filter.outputs.app }}
+      app: ${{ steps.filter.outputs.app }}
       app_ui: ${{ steps.filter.outputs.app_ui }}
-      web: ${{ steps.filter.outputs.web }}
+      app_tooling: ${{ steps.filter.outputs.app_tooling }}
+      web_python: ${{ steps.filter.outputs.web_python }}
+      web_frontend: ${{ steps.filter.outputs.web_frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
       relay: ${{ steps.filter.outputs.relay }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      tooling: ${{ steps.filter.outputs.tooling }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,21 +51,36 @@ jobs:
         working-directory: .
         id: filter
         env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            printf 'app=true\napp_ui=true\nweb=true\nrelay=true\ncontracts=true\n' >> "$GITHUB_OUTPUT"
+            python3 scripts/changed-components.py --base="$PUSH_BASE" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           else
-            base=$(git merge-base "$PR_BASE" "$PR_HEAD")
-            python3 scripts/changed-components.py --base "$base" --head "$PR_HEAD" >> "$GITHUB_OUTPUT"
+            # Event base.sha can predate a merged parent PR. Checkout fetched
+            # the current base branch, as release-fragment validation also uses.
+            python3 scripts/changed-components.py --base="refs/remotes/origin/${PR_BASE_REF}" --head="$PR_HEAD" --merge-base >> "$GITHUB_OUTPUT"
           fi
+
+  app-tooling:
+    name: App tooling
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app_tooling != 'false') }}
+    runs-on: maude-mac
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test local XCTest admission and synthetic simulator leases
+        run: |
+          scripts/test-test-ios 20
+          scripts/test-ios-simulator-pool
 
   test:
     name: Build and Test
     needs: changes
-    if: needs.changes.outputs.run_ios == 'true'
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') }}
     runs-on: maude-mac
     timeout-minutes: 90
 
@@ -74,7 +93,7 @@ jobs:
       APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app_ui != 'false' }}
       # Measurement-only UI classes (TAL-75). They assert no behaviour, and
       # together they add several minutes of scrolling and relaunching, so pull
-      # requests skip them and every push to main runs and records them. The
+      # requests skip them; affected App pushes to main run and record them. The
       # unit-level budgets (replay catch-up, dense Kanban, image preview) are
       # fast and deterministic, so they stay in the pull-request suite.
       PERFORMANCE_UI_TEST_CLASSES: >-
@@ -86,11 +105,6 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v7
-
-      - name: Test local XCTest admission
-        run: |
-          scripts/test-test-ios 20
-          scripts/test-ios-simulator-pool
 
       - name: Test CI helpers
         run: ci/require_successful_main_ci_test.sh
@@ -317,26 +331,33 @@ jobs:
           if-no-files-found: ignore
 
   tooling:
+    needs: changes
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/repository-tooling.yml
+    with:
+      full: ${{ needs.changes.result != 'success' || needs.changes.outputs.tooling != 'false' }}
 
   web:
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_python != 'false' || needs.changes.outputs.web_frontend != 'false') }}
     uses: ./.github/workflows/web-verify.yml
+    with:
+      python: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_python != 'false' }}
+      frontend: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_frontend != 'false' }}
 
   web-docker:
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.docker != 'false') }}
     uses: ./.github/workflows/web-docker-smoke.yml
 
   relay:
     needs: changes
-    if: needs.changes.outputs.relay == 'true'
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.relay != 'false') }}
     uses: ./.github/workflows/relay-verify.yml
 
   contracts:
     needs: changes
-    if: needs.changes.outputs.contracts == 'true'
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false') }}
     runs-on: maude-mac
     steps:
       - uses: actions/checkout@v7
@@ -364,30 +385,14 @@ jobs:
 
   gate:
     name: CI Gate
-    needs: [changes, test, tooling, web, web-docker, relay, contracts]
+    needs: [changes, test, app-tooling, tooling, web, web-docker, relay, contracts]
     if: always()
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 5
     steps:
-      - name: Check results
+      - uses: actions/checkout@v7
+      - name: Check selected suite results
         working-directory: .
-        run: |
-          set -euo pipefail
-          echo "changes: ${{ needs.changes.result }}"
-          echo "test: ${{ needs.test.result }}"
-          echo "tooling: ${{ needs.tooling.result }}"
-          if [[ "${{ needs.changes.result }}" != "success" ]]; then
-            echo "Path detection failed — failing the gate." >&2
-            exit 1
-          fi
-          if [[ "${{ needs.tooling.result }}" != "success" ]]; then
-            echo "Repository Tooling did not pass — failing the gate." >&2
-            exit 1
-          fi
-          for result in "${{ needs.test.result }}" "${{ needs.web.result }}" "${{ needs.web-docker.result }}" "${{ needs.relay.result }}" "${{ needs.contracts.result }}"; do
-            case "$result" in
-              success|skipped) ;;
-              *) echo "A required component check did not pass." >&2; exit 1 ;;
-            esac
-          done
-          echo "Gate passed."
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed-components.py --check-results

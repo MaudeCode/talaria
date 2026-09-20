@@ -1,6 +1,6 @@
 ---
 name: talaria-ios-testing
-description: Run Talaria XCTest and simulator validation for code changes. Use for focused or full test requests, simulator build-and-launch checks, UI runtime validation, and pre-commit verification.
+description: Run Talaria XCTest and simulator validation for compiled App changes, explicit test requests, and simulator runtime checks. Use targeted tooling checks for CI scripts, documentation, and release-note edits.
 ---
 
 Run app commands from `app/`; unqualified source and tooling paths are relative
@@ -10,6 +10,15 @@ to `app/`. GitHub workflows and shared contract documentation remain at the root
 
 Use terminal validation. Prefer XcodeBuildMCP when it is available; otherwise use
 `xcodebuild` and `xcrun simctl`.
+
+## Validation scope
+
+Use XCTest for compiled App sources, test targets, bundled resources, entitlements,
+and Xcode configuration. For CI, helper scripts, docs, skills, and changelog-only
+changes, run their focused tooling/schema checks instead. Root
+`scripts/changed-components.py` records CI routing; inspect the actual diff rather
+than selecting tests from a ticket's `app` label. Shared HTTP/SSE changes also
+use the contract skill.
 
 ## XCTest
 

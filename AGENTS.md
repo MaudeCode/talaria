@@ -6,7 +6,13 @@ Shared machine-readable interfaces belong in `contracts/`; cross-component
 changes must validate every affected consumer. Run component commands from
 their component directory. GitHub workflow orchestration stays at the root.
 
-Kaneo Talaria is the canonical tracker. Work only on the selected ticket and its
+Kaneo Talaria is the canonical tracker for all components. Add one or more scope
+labels: `app`, `web`, `relay`, `tooling`, `contracts`. Use `contracts` alongside
+the affected components for shared schema/protocol work; CI and agent tooling
+use `tooling`. Keep work-type (`ci`, `bug`, etc.), difficulty, and readiness
+labels separate. Web uses one scope label rather than frontend/backend labels.
+Completed legacy tracker history remains in its original projects; new work
+belongs in Talaria. Work only on the selected ticket and its
 required dependencies. Move it to In Progress before edits, In Review after
 verified commits, and Done only after its commit is verified on `main`.
 Use `<type>/TAL-<number>-<slug>` branches and `TAL-<number>:` commit/PR subjects.
@@ -24,3 +30,9 @@ Do not add third-party dependencies without approval.
 For source imports, history/tag reconciliation, or upstream integration, read
 `docs/monorepo-migration.md`. Migration completion is separate from the
 production cutover in TAL-204.
+
+For validation, route the actual diff with `scripts/changed-components.py`
+(`--merge-base` for a PR, before/after commits for a push). Scope labels do not
+select tests. Changelog-only changes require release-note validation; docs and
+CI/tooling-only edits do not by themselves require XCTest. Unknown paths or an
+unreadable diff select the full suite. Shared contracts select their consumers.

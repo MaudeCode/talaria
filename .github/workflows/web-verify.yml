@@ -2,6 +2,13 @@ name: Talaria Web verification
 
 on:
   workflow_call:
+    inputs:
+      python:
+        type: boolean
+        default: true
+      frontend:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -12,6 +19,7 @@ defaults:
 
 jobs:
   lint:
+    if: inputs.python
     runs-on: ["ghar-set-maudecode"]
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +47,7 @@ jobs:
         run: python3 scripts/ruff_lint.py --all
 
   frontend:
+    if: inputs.frontend
     runs-on: ["ghar-set-maudecode"]
     defaults:
       run:
@@ -71,6 +80,11 @@ jobs:
       - name: Deterministic production build
         run: npm run build:fast
 
+      - name: Verify committed frontend assets
+        run: |
+          git diff --exit-code -- ../static/dist
+          test -z "$(git status --porcelain --untracked-files=all -- ../static/dist)"
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
@@ -86,6 +100,7 @@ jobs:
         run: HERMES_E2E_PYTHON="$(command -v python)" ../../scripts/check-web-browser
 
   test:
+    if: inputs.python
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/web/.codex-tmp/playwright
     runs-on: ["ghar-set-maudecode"]
