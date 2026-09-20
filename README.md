@@ -1,3 +1,6 @@
+> **Development has moved to [MaudeCode/talaria/web](https://github.com/MaudeCode/talaria/tree/main/web).**
+> This repository is retained as read-only history. Submit changes and use releases from the Talaria monorepo.
+
 # Hermes Web UI
 
 [Hermes Agent](https://hermes-agent.nousresearch.com/) is a sophisticated autonomous agent that lives on your server, accessed via a terminal or messaging apps, that remembers what it learns and gets more capable the longer it runs.
