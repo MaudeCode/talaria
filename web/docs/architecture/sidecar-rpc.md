@@ -25,6 +25,9 @@ package) ← iOS app (`contracts/web-api.openapi.json`, `contracts/versions.json
 
 Newline-delimited JSON-RPC 2.0 over the sidecar's stdin/stdout. stderr is the
 sidecar's log and is forwarded to the server log with a `[sidecar]` prefix.
+At startup the sidecar keeps a private duplicate of fd 1 for RPC frames and
+redirects both `sys.stdout` and fd 1 to stderr, so Agent code that prints
+(profile deletion, pip output, warnings) can never corrupt the channel.
 
 - Request: `{"jsonrpc":"2.0","id":<int>,"method":"<ns>.<name>","params":{...}}`
 - Result: `{"jsonrpc":"2.0","id":<int>,"result":{...}}`
@@ -78,32 +81,45 @@ serialization the Python backend enforces with `SESSION_AGENT_LOCKS`.
 ## Method namespaces
 
 Every method has a Zod schema for params, result, and stream events in the
-contracts package, plus one JSON fixture used by the sidecar pytest suite and
-the Vitest fake sidecar.
+contracts package (`packages/contracts/src/sidecar/namespaces.ts`). The Python
+suite validates real results against the JSON Schema export of those
+definitions (`sidecar/tests/fixtures/schemas.json`); `sidecar/scripts/record-fixtures.py`
+records real responses into `packages/contracts/fixtures/sidecar/<namespace>.json`,
+which the Vitest fixture test validates and `FakeSidecar` answers from.
+
+Every method takes the explicit `profile_home` (or `base_home`) the server
+resolved; the sidecar never reads the active-profile cookie or file. Calls run
+under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 
 | Namespace | Methods | Streams | Python origin |
 |---|---|---|---|
-| `runtime` | `handshake`, `status`, `shutdown` | | `api/agent_runtime.py`, `api/startup.py` |
-| `chat` | `start` (streamed), `interrupt`, `steer`, `evict_agent`, `snapshot_transcript` | `token`, `reasoning`, `tool`, `tool_complete`, `interim_assistant`, `approval`, `clarify`, `status`, `compressing`, `compressed`, `context_status`, `goal`, `goal_continue`, `metering`, `done`, `error` | `api/streaming.py`, `api/session_lifecycle.py`, `api/runtime_adapter.py` |
-| `approval` | `pending`, `respond`, `set_yolo` | `approval` (out-of-turn mirror) | `api/route_approvals.py` |
-| `clarify` | `pending`, `respond` | | `api/clarify.py` |
-| `goals` | `get`, `save`, `command` | | `api/goals.py` |
-| `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run` (streamed), `history`, `output`, `delivery_options`, `status` | `run_output` | `api/routes.py` cron section |
-| `profiles` | `list`, `active`, `create`, `seed`, `delete`, `runtime_env` | | `api/profiles.py` |
-| `commands` | `registry`, `exec` (streamed), `reload_skills`, `reload_mcp`, `moa_presets`, `codex_runtime_switch` | `output` | `api/commands.py` |
-| `plugins` | `list`, `handlers`, `providers` | | `api/plugins.py`, `api/plugin_providers.py` |
-| `skills` | `list`, `index`, `parse`, `usage` | | `api/routes.py` skills section, `api/skill_usage.py` |
-| `providers` | `registry`, `resolve_runtime`, `auth_status`, `model_ids`, `credential_pool`, `openrouter_models`, `reasoning_probe`, `fast_mode` | | `api/config.py`, `api/providers.py` |
-| `models` | `catalog`, `context_length`, `estimate_tokens`, `metadata`, `models_dev` | | `api/config.py`, `api/message_window.py` |
-| `aux` | `call_llm` (streamed), `title`, `commit_message`, `compression_summary`, `handoff_summary`, `compression_feedback` | `token` | `api/streaming.py`, `api/reasoning_titles.py`, `api/compression_anchor.py` |
-| `text` | `redact`, `image_routing`, `portal_tags` | | `api/helpers.py` |
-| `stt` | `capability`, `transcribe` | | `api/routes.py` transcribe |
-| `mcp` | `servers`, `tools`, `status`, `discover`, `shutdown` | | `api/mcp_health.py`, `api/routes.py` |
-| `process` | `list`, `drain` (streamed), `ack`, `format_notification` | `completion` | `api/background.py`, `api/process_event_utils.py` |
-| `state_db` | `sync_message_count`, `set_title`, `set_tokens`, `set_goal_meta`, `delete_cli_session` | | `api/state_sync.py`, `api/webui_session_db.py` |
-| `kanban` | `boards`, `board`, `switch_release`, `tasks`, `task`, `create_task`, `patch_task`, `dispatch`, `bulk`, `comments`, `log`, `block`, `unblock`, `links`, `delete_link`, `stats`, `assignees`, `config`, `events` (streamed) | `events` | `api/kanban_bridge.py` |
-| `usage` | `account` | | `api/usage.py` |
-| `gateway` | `status`, `restart` (streamed), `capabilities` | `progress` | `api/gateway_restart.py`, `api/gateway_watcher.py` |
+| `rpc` | `cancel`, `methods` | | transport |
+| `runtime` | `handshake`, `status`, `ensure_current`, `shutdown` | | `api/agent_runtime.py`, `api/startup.py` |
+| `goals` | `get`, `command`, `snapshot`, `restore`, `evaluate` | | `api/goals.py` |
+| `commands` | `registry`, `exec`, `moa_preset` | | `api/commands.py` |
+| `plugins` | `providers` | | `api/plugin_providers.py` |
+| `kanban` | `board`, `boards`, `create_board`, `update_board`, `delete_board`, `switch_board`, `task`, `create_task`, `patch_task`, `task_action`, `comment`, `link`, `unlink`, `events`, `config`, `stats`, `assignees`, `task_log`, `bulk`, `dispatch` | | `api/kanban_bridge.py` |
+| `state_db` | `sync_start`, `sync_usage`, `sync_title`, `delete_cli_session` | | `api/state_sync.py`, `api/models.py` |
+| `profiles` | `list`, `create`, `delete`, `runtime_env`, `skills_stats` | | `api/profiles.py` |
+| `skills` | `list`, `view`, `find` | | `api/routes.py` skills section |
+| `mcp` | `status`, `registry_tools`, `reload` | | `api/routes.py` MCP section |
+| `stt` | `capability`, `transcribe` | | `api/upload.py` |
+| `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `status`, `history`, `run_detail`, `output`, `delivery_options` | `run`: `started` | `api/routes.py` cron section |
+| `providers` | `registry`, `auth_status`, `model_ids`, `resolve_runtime`, `credential_pool` | | `api/config.py`, `api/providers.py` |
+| `models` | `context_length`, `estimate_tokens`, `capabilities` | | `api/config.py`, `api/message_window.py` |
+| `aux` | `complete`, `resolve` | `complete`: `token` | `api/streaming.py`, `api/routes.py` |
+| `text` | `redact`, `image_mode`, `portal_tags` | | `api/helpers.py`, `api/streaming.py` |
+| `process` | `drain`, `requeue`, `mark_consumed`, `format_notification`, `list` | | `api/background_process.py`, `api/streaming.py` |
+| `usage` | `account` | | `api/providers.py` |
+| `gateway` | `restart` | `restart`: `progress` | `api/gateway_restart.py` |
+| `chat` | `start`, `interrupt`, `steer`, `evict_agent`, `snapshot_transcript` (checkpoint 6) | `token`, `reasoning`, `tool`, `tool_complete`, `interim_assistant`, `approval`, `clarify`, `status`, `compressing`, `compressed`, `context_status`, `metering`, `done`, `error` | `api/streaming.py` |
+| `approval`, `clarify` | `pending`, `respond`, `set_yolo` (checkpoint 6) | | `api/route_approvals.py`, `api/clarify.py` |
+
+What stays in the server, by design: WebUI files and `config.yaml` / `.env`
+writes, MCP config edits and HTTP/stdio health probes, skill file writes,
+kanban query parsing and the SSE poll loop, cron cross-profile merging and
+running-state display, provider catalog composition and caches, dashboard
+plugin manifests, `state.db` read-only projections.
 
 Chat turns keep the in-process callback model inside the sidecar exactly as
 the Python backend does today: `AIAgent` is constructed with signature-gated

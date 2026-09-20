@@ -66,6 +66,9 @@ class SidecarProcess:
             "PYTHONPATH": str(SIDECAR_ROOT),
             "PYTHONUNBUFFERED": "1",
             "TALARIA_SIDECAR_LOG_LEVEL": "DEBUG",
+            # The Agent's hermes_state refuses paths that look like a test tree
+            # unless told the state is disposable; every home here is.
+            "HERMES_STATE_DB_GUARD_BYPASS": "1",
         }
         environ.update(env or {})
         self.proc = subprocess.Popen(

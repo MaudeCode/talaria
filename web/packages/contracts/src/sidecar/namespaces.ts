@@ -1,0 +1,192 @@
+import { z } from 'zod'
+
+/** Shared param shapes. */
+export const ProfileHomeParams = z.object({ profile_home: z.string().min(1) })
+export const BaseHomeParams = z.object({ base_home: z.string().min(1) })
+const Ok = z.object({ ok: z.boolean() })
+const Json = z.unknown()
+const Loose = z.record(z.string(), z.unknown())
+
+// ── goals ──────────────────────────────────────────────────────────────
+export const GoalStateSchema = z.object({
+  goal: z.string(), status: z.string(), turns_used: z.number().int(), max_turns: z.number().int(),
+  last_verdict: z.string().nullable(), last_reason: z.string().nullable(), paused_reason: z.string().nullable(),
+})
+const GoalSession = ProfileHomeParams.extend({ session_id: z.string().min(1), default_max_turns: z.number().int().positive().optional() })
+export const GoalStatusSchema = z.object({ goal: GoalStateSchema.nullable(), active: z.boolean(), message: z.string(), message_key: z.string().optional(), message_args: z.array(Json).optional() })
+export const GoalCommandResultSchema = z.object({
+  ok: z.boolean(), action: z.string(), message: z.string(), goal: GoalStateSchema.nullable(), error: z.string().optional(), kickoff_prompt: z.string().optional(),
+  message_key: z.string().optional(), message_args: z.array(Json).optional(),
+})
+export const GoalDecisionSchema = z.object({
+  status: z.string().nullable(), should_continue: z.boolean(), continuation_prompt: z.string().nullable(), verdict: z.string(), reason: z.string(), message: z.string(),
+  message_key: z.string().optional(), message_args: z.array(Json).optional(),
+})
+export const GOALS_METHODS = {
+  'goals.get': { params: GoalSession, result: GoalStatusSchema },
+  'goals.command': { params: GoalSession.extend({ args: z.string(), stream_running: z.boolean().optional() }), result: GoalCommandResultSchema },
+  'goals.snapshot': { params: GoalSession, result: z.object({ goal: GoalStateSchema.nullable(), snapshot: z.string().nullable() }) },
+  'goals.restore': { params: GoalSession.extend({ snapshot: z.string().nullable() }), result: z.object({ goal: GoalStateSchema.nullable() }) },
+  'goals.evaluate': { params: GoalSession.extend({ last_response: z.string(), user_initiated: z.boolean().optional() }), result: GoalDecisionSchema },
+} as const
+
+// ── commands / plugins ─────────────────────────────────────────────────
+export const CommandSchema = z.object({
+  name: z.string(), description: z.string(), category: z.string(), aliases: z.array(z.string()), args_hint: z.string(), subcommands: z.array(z.string()),
+  cli_only: z.boolean(), gateway_only: z.boolean(),
+})
+export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), env_vars: z.array(z.string()), api_key_env: z.string().nullable() })
+export const COMMANDS_METHODS = {
+  'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
+  'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
+  'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
+  'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
+} as const
+
+// ── kanban ─────────────────────────────────────────────────────────────
+const Board = ProfileHomeParams.extend({ board: z.string().nullable().optional() })
+export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int() }).catchall(Json)
+const TaskEnvelope = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
+export const KanbanBoardSchema = z.union([
+  z.object({ changed: z.literal(false), latest_event_id: z.number().int(), read_only: z.boolean() }),
+  z.object({
+    changed: z.literal(true), columns: z.array(z.object({ name: z.string(), tasks: z.array(KanbanTaskSchema) })), tenants: z.array(z.string()), assignees: z.array(z.string()),
+    latest_event_id: z.number().int(), read_only: z.boolean(),
+    filters: z.object({ tenant: z.string().nullable(), assignee: z.string().nullable(), include_archived: z.boolean(), only_mine: z.boolean(), profile: z.string().nullable() }),
+  }),
+])
+export const KanbanAssigneeSchema = z.union([z.string(), z.object({ name: z.string(), on_disk: z.boolean().optional(), counts: z.record(z.string(), z.number().int()).optional() }).catchall(Json)])
+export const KanbanEventSchema = z.object({ id: z.number().int(), task_id: z.string().nullable(), run_id: z.union([z.number().int(), z.string()]).nullable(), kind: z.string(), payload: Json, created_at: z.number().nullable() })
+export const KanbanBoardMetaSchema = z.object({ slug: z.string(), name: z.string().nullable().optional(), archived: z.boolean().optional() }).catchall(Json)
+export const KANBAN_METHODS = {
+  'kanban.board': { params: Board.extend({ tenant: z.string().nullable().optional(), assignee: z.string().nullable().optional(), include_archived: z.boolean().optional(), only_mine: z.boolean().optional(), since: z.number().int().nullable().optional(), profile: z.string().nullable().optional() }), result: KanbanBoardSchema },
+  'kanban.boards': { params: ProfileHomeParams.extend({ include_archived: z.boolean().optional() }), result: z.object({ boards: z.array(KanbanBoardMetaSchema.extend({ is_current: z.boolean(), counts: z.record(z.string(), z.number().int()), total: z.number().int() })), current: z.string(), read_only: z.boolean() }) },
+  'kanban.create_board': { params: ProfileHomeParams.extend({ board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, current: z.string(), read_only: z.boolean() }) },
+  'kanban.update_board': { params: ProfileHomeParams.extend({ slug: z.string(), board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, read_only: z.boolean() }) },
+  'kanban.delete_board': { params: ProfileHomeParams.extend({ slug: z.string(), delete: z.boolean().optional() }), result: z.object({ result: Json, current: z.string(), read_only: z.boolean() }) },
+  'kanban.switch_board': { params: ProfileHomeParams.extend({ slug: z.string() }), result: z.object({ current: z.string(), read_only: z.boolean() }) },
+  'kanban.task': { params: Board.extend({ task_id: z.string() }), result: z.object({ task: KanbanTaskSchema, comments: z.array(Loose), events: z.array(Loose), links: z.object({ parents: z.array(z.string()), children: z.array(z.string()) }), runs: z.array(Loose), read_only: z.boolean() }) },
+  'kanban.create_task': { params: Board.extend({ task: Loose }), result: TaskEnvelope },
+  'kanban.patch_task': { params: Board.extend({ task_id: z.string(), patch: Loose }), result: TaskEnvelope },
+  'kanban.task_action': { params: Board.extend({ task_id: z.string(), action: z.enum(['block', 'unblock']), reason: z.string().nullable().optional() }), result: TaskEnvelope },
+  'kanban.comment': { params: Board.extend({ task_id: z.string(), body: z.string(), author: z.string().optional() }), result: z.object({ ok: z.literal(true), comment_id: z.union([z.number().int(), z.string()]), read_only: z.boolean() }) },
+  'kanban.link': { params: Board.extend({ parent_id: z.string(), child_id: z.string() }), result: z.object({ ok: z.literal(true), parent_id: z.string(), child_id: z.string(), read_only: z.boolean() }) },
+  'kanban.unlink': { params: Board.extend({ parent_id: z.string(), child_id: z.string() }), result: z.object({ ok: z.literal(true), changed: z.boolean(), parent_id: z.string(), child_id: z.string(), read_only: z.boolean() }) },
+  'kanban.events': { params: Board.extend({ since: z.number().int().optional(), limit: z.number().int().optional() }), result: z.object({ events: z.array(KanbanEventSchema), cursor: z.number().int(), latest_event_id: z.number().int(), read_only: z.boolean() }) },
+  'kanban.config': { params: Board, result: z.object({ columns: z.array(z.string()), assignees: z.array(KanbanAssigneeSchema), default_tenant: z.string(), lane_by_profile: z.boolean(), include_archived_by_default: z.boolean(), render_markdown: z.boolean(), read_only: z.boolean() }) },
+  'kanban.stats': { params: Board, result: Loose },
+  'kanban.assignees': { params: Board, result: z.object({ assignees: z.array(KanbanAssigneeSchema) }) },
+  'kanban.task_log': { params: Board.extend({ task_id: z.string(), tail: z.number().int().optional() }), result: z.object({ task_id: z.string(), path: z.string(), exists: z.boolean(), size_bytes: z.number().int(), content: z.string(), truncated: z.boolean() }) },
+  'kanban.bulk': { params: Board.extend({ bulk: Loose }), result: z.object({ results: z.array(z.object({ id: z.string(), ok: z.boolean(), error: z.string().optional() })), read_only: z.boolean() }) },
+  'kanban.dispatch': { params: Board.extend({ dry_run: z.boolean().optional(), max: z.number().int().optional() }), result: Loose },
+} as const
+
+// ── state_db ───────────────────────────────────────────────────────────
+const Session = ProfileHomeParams.extend({ session_id: z.string().min(1) })
+export const STATE_DB_METHODS = {
+  'state_db.sync_start': { params: Session.extend({ model: z.string().nullable().optional() }), result: Ok },
+  'state_db.sync_usage': { params: Session.extend({ input_tokens: z.number().int().optional(), output_tokens: z.number().int().optional(), estimated_cost: z.number().nullable().optional(), model: z.string().nullable().optional(), title: z.string().nullable().optional(), message_count: z.number().int().nullable().optional(), cache_read_tokens: z.number().int().optional(), cache_write_tokens: z.number().int().optional(), api_call_count: z.number().int().nullable().optional() }), result: Ok },
+  'state_db.sync_title': { params: Session.extend({ title: z.string() }), result: Ok },
+  'state_db.delete_cli_session': { params: Session, result: Ok },
+} as const
+
+// ── profiles ───────────────────────────────────────────────────────────
+export const ProfileRowSchema = z.object({
+  name: z.string(), path: z.string(), is_default: z.boolean(), gateway_running: z.boolean(), model: z.string().nullable(), provider: z.string().nullable(), has_env: z.boolean(),
+  visible: z.boolean(), skill_count: z.number().int(), enabled_skills: z.number().int(), total_skills: z.number().int(),
+})
+export const PROFILES_METHODS = {
+  'profiles.list': { params: BaseHomeParams, result: z.object({ profiles: z.array(ProfileRowSchema) }) },
+  'profiles.create': { params: BaseHomeParams.extend({ name: z.string().min(1), clone_from: z.string().nullable().optional(), clone_config: z.boolean().optional() }), result: z.object({ profile: ProfileRowSchema }) },
+  'profiles.delete': { params: BaseHomeParams.extend({ name: z.string().min(1) }), result: z.object({ ok: z.literal(true) }) },
+  'profiles.runtime_env': { params: ProfileHomeParams.extend({ protected_keys: z.array(z.string()).optional() }), result: z.object({ env: z.record(z.string(), z.string()) }) },
+  'profiles.skills_stats': { params: ProfileHomeParams, result: z.object({ enabled: z.number().int(), total: z.number().int() }) },
+} as const
+
+// ── skills ─────────────────────────────────────────────────────────────
+export const SkillRowSchema = z.object({ name: z.string(), description: z.string(), category: z.string().nullable(), disabled: z.boolean() })
+export const SkillViewSchema = z.union([
+  z.object({ success: z.literal(true), name: z.string(), description: z.string(), tags: z.array(z.string()), related_skills: z.array(z.string()), content: z.string(), path: z.string(), skill_dir: z.string().nullable(), linked_files: z.record(z.string(), z.array(z.string())) }),
+  z.object({ success: z.literal(false), error: z.string(), available_skills: z.array(z.string()).optional(), available_skills_truncated: z.boolean().optional(), total_skills: z.number().int().optional(), hint: z.string().optional() }),
+])
+export const SKILLS_METHODS = {
+  'skills.list': { params: ProfileHomeParams.extend({ category: z.string().nullable().optional() }), result: z.object({ success: z.boolean().optional(), skills: z.array(SkillRowSchema), categories: z.array(z.string()), count: z.number().int(), message: z.string().optional() }) },
+  'skills.view': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: SkillViewSchema },
+  'skills.find': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: z.object({ found: z.boolean(), skill_dir: z.string().nullable(), skill_md: z.string().nullable() }) },
+} as const
+
+// ── mcp ────────────────────────────────────────────────────────────────
+export const MCP_METHODS = {
+  'mcp.status': { params: ProfileHomeParams, result: z.object({ servers: z.array(z.object({ name: z.string() }).catchall(Json)) }) },
+  'mcp.registry_tools': { params: ProfileHomeParams, result: z.object({ tools: z.array(z.object({ name: z.string(), server: z.string(), schema: Loose })) }) },
+  'mcp.reload': { params: ProfileHomeParams, result: z.object({ output: z.string() }) },
+} as const
+
+// ── stt ────────────────────────────────────────────────────────────────
+export const STT_METHODS = {
+  'stt.capability': { params: ProfileHomeParams, result: z.object({ available: z.boolean(), provider: z.string() }) },
+  'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string() }) },
+} as const
+
+// ── cron ───────────────────────────────────────────────────────────────
+export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean() }).catchall(Json)
+const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
+const JobEnvelope = z.object({ job: CronJobSchema })
+export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })
+export const CRON_METHODS = {
+  'cron.list': { params: ProfileHomeParams, result: z.object({ jobs: z.array(CronJobSchema) }) },
+  'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },
+  'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
+  'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },
+  'cron.delete': { params: CronJob, result: z.object({ ok: z.literal(true), job_id: z.string() }) },
+  'cron.pause': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: JobEnvelope },
+  'cron.resume': { params: CronJob, result: JobEnvelope },
+  'cron.run': { params: CronJob.extend({ execution_home: z.string().nullable().optional() }), result: z.union([
+    z.object({ job_id: z.string(), status: z.literal('already_running'), elapsed: z.number() }),
+    z.object({ job_id: z.string(), status: z.enum(['completed', 'failed']), success: z.boolean(), error: z.string().nullable().optional(), delivery_error: z.string().nullable().optional() }),
+  ]), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('started'), data: z.object({ job_id: z.string() }) })]) },
+  'cron.status': { params: z.object({ job_id: z.string().optional() }), result: z.union([z.object({ job_id: z.string(), running: z.boolean(), elapsed: z.number() }), z.object({ running: z.record(z.string(), z.number()) })]) },
+  'cron.history': { params: CronJob.extend({ offset: z.number().int().optional(), limit: z.number().int().optional() }), result: z.object({ job_id: z.string(), runs: z.array(z.object({ filename: z.string(), size: z.number().int(), modified: z.number(), usage: CronUsageSchema })), total: z.number().int(), offset: z.number().int() }) },
+  'cron.run_detail': { params: CronJob.extend({ filename: z.string().min(1) }), result: z.object({ job_id: z.string(), filename: z.string(), content: z.string(), snippet: z.string(), usage: CronUsageSchema }) },
+  'cron.output': { params: CronJob.extend({ limit: z.number().int().optional() }), result: z.object({ job_id: z.string(), outputs: z.array(z.object({ filename: z.string(), content: z.string() })) }) },
+  'cron.delivery_options': { params: z.object({}), result: z.object({ platforms: z.array(z.object({ value: z.string(), label: z.string() })) }) },
+} as const
+
+// ── providers / models ─────────────────────────────────────────────────
+export const PROVIDERS_METHODS = {
+  'providers.registry': { params: ProfileHomeParams, result: z.object({ providers: z.record(z.string(), z.object({ id: z.string(), name: z.string(), auth_type: z.string() }).catchall(Json)) }) },
+  'providers.auth_status': { params: ProfileHomeParams.extend({ provider: z.string().nullable().optional() }), result: z.object({ status: z.object({ logged_in: z.boolean() }).catchall(Json) }) },
+  'providers.model_ids': { params: ProfileHomeParams.extend({ provider: z.string().min(1), force_refresh: z.boolean().optional() }), result: z.object({ provider: z.string(), model_ids: z.array(z.string()) }) },
+  'providers.resolve_runtime': { params: ProfileHomeParams.extend({ requested: z.string().nullable().optional(), api_key: z.string().nullable().optional(), base_url: z.string().nullable().optional(), target_model: z.string().nullable().optional() }), result: z.object({ runtime: Loose }) },
+  'providers.credential_pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ available: z.boolean(), strategy: z.string(), entries: z.array(Loose) }) },
+  'models.context_length': { params: ProfileHomeParams.extend({ model: z.string().min(1), base_url: z.string().optional(), api_key: z.string().optional(), provider: z.string().optional(), config_context_length: z.number().int().nullable().optional() }), result: z.object({ model: z.string(), context_length: z.number().int().nullable() }) },
+  'models.estimate_tokens': { params: z.object({ messages: z.array(Loose) }), result: z.object({ tokens: z.number().int() }) },
+  'models.capabilities': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string() }), result: z.object({ capabilities: Loose.nullable() }) },
+} as const
+
+// ── aux / text / process / usage / gateway ─────────────────────────────
+export const AuxUsageSchema = z.object({ prompt_tokens: z.number().int().optional(), completion_tokens: z.number().int().optional(), total_tokens: z.number().int().optional() })
+export const AUX_METHODS = {
+  'aux.complete': { params: ProfileHomeParams.extend({ task: z.string().min(1), messages: z.array(Loose).min(1), main_runtime: Loose.nullable().optional(), max_tokens: z.number().int().nullable().optional(), temperature: z.number().nullable().optional() }), result: z.object({ model: z.string(), text: z.string(), usage: AuxUsageSchema.nullable() }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('token'), data: z.object({ text: z.string() }) })]) },
+  'aux.resolve': { params: ProfileHomeParams.extend({ task: z.string().min(1), main_runtime: Loose.nullable().optional() }), result: z.object({ configured: z.boolean(), model: z.string().nullable(), error: z.string().optional() }) },
+} as const
+export const TEXT_METHODS = {
+  'text.redact': { params: z.object({ text: z.string(), force: z.boolean().optional() }), result: z.object({ text: z.string() }) },
+  'text.image_mode': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string(), cfg: Loose.nullable().optional(), requested_provider: z.string().optional() }), result: z.object({ mode: z.enum(['native', 'text']), reason: z.string(), supports_vision: z.boolean().nullable() }) },
+  'text.portal_tags': { params: ProfileHomeParams, result: z.object({ client_tag: z.string().nullable(), conversation_tag: z.string().nullable(), tags: z.union([z.array(z.string()), Loose]) }) },
+} as const
+export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional() }).catchall(Json)
+export const PROCESS_METHODS = {
+  'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
+  'process.requeue': { params: z.object({ events: z.array(Loose) }), result: z.object({ requeued: z.number().int() }) },
+  'process.mark_consumed': { params: z.object({ process_id: z.string().min(1) }), result: Ok },
+  'process.format_notification': { params: z.object({ event: Loose }), result: z.object({ text: z.string() }) },
+  'process.list': { params: ProfileHomeParams, result: z.object({ sessions: z.array(Loose) }) },
+} as const
+export const AccountUsageSnapshotSchema = z.object({ provider: z.string().nullable(), available: z.boolean(), unavailable_reason: z.string().nullable().optional(), windows: z.array(Loose), details: z.array(Json) }).catchall(Json)
+export const USAGE_METHODS = {
+  'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional() }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
+} as const
+export const GATEWAY_METHODS = {
+  'gateway.restart': { params: ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() }), result: z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional() }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })]) },
+} as const

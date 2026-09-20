@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import {
+  AUX_METHODS, COMMANDS_METHODS, CRON_METHODS, GATEWAY_METHODS, GOALS_METHODS, KANBAN_METHODS, MCP_METHODS, PROCESS_METHODS, PROFILES_METHODS,
+  PROVIDERS_METHODS, SKILLS_METHODS, STATE_DB_METHODS, STT_METHODS, TEXT_METHODS, USAGE_METHODS,
+} from './namespaces.js'
+import {
   OkResultSchema, RpcCancelParamsSchema, RpcCancelResultSchema, RpcMethodsResultSchema, RuntimeDescribeSchema,
   RuntimeEnsureCurrentResultSchema, RuntimeHandshakeParamsSchema, RuntimeShutdownParamsSchema,
 } from './runtime.js'
@@ -18,6 +22,21 @@ export const SIDECAR_METHODS = {
   'runtime.status': { params: Empty, result: RuntimeDescribeSchema },
   'runtime.ensure_current': { params: Empty, result: RuntimeEnsureCurrentResultSchema },
   'runtime.shutdown': { params: RuntimeShutdownParamsSchema, result: OkResultSchema },
+  ...GOALS_METHODS,
+  ...COMMANDS_METHODS,
+  ...KANBAN_METHODS,
+  ...STATE_DB_METHODS,
+  ...PROFILES_METHODS,
+  ...SKILLS_METHODS,
+  ...MCP_METHODS,
+  ...STT_METHODS,
+  ...CRON_METHODS,
+  ...PROVIDERS_METHODS,
+  ...AUX_METHODS,
+  ...TEXT_METHODS,
+  ...PROCESS_METHODS,
+  ...USAGE_METHODS,
+  ...GATEWAY_METHODS,
 } as const
 
 export type SidecarMethods = typeof SIDECAR_METHODS

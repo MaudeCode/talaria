@@ -16,21 +16,30 @@ export interface FakeSidecarOptions {
   status?: SidecarStatus
 }
 
+export interface FixtureEntry { params: unknown; result: unknown; stream?: { event: string; data: unknown }[] }
+
+/** Recorded sidecar responses: one JSON file per namespace mapping method to recorded calls (sidecar/scripts/record-fixtures.py). */
+export function loadSidecarFixtures(dir = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')): Map<string, FixtureEntry[]> {
+  const out = new Map<string, FixtureEntry[]>()
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue
+    const byMethod = JSON.parse(readFileSync(resolve(dir, file), 'utf8')) as Record<string, FixtureEntry[]>
+    for (const [method, entries] of Object.entries(byMethod)) out.set(method, entries)
+  }
+  return out
+}
+
 export class FakeSidecar implements SidecarLike {
   status: SidecarStatus
   describe: RuntimeDescribe | null = null
   readonly calls: { method: SidecarMethodName; params: unknown }[] = []
   private readonly responders = new Map<SidecarMethodName, Responder<SidecarMethodName>>()
-  private readonly fixtures = new Map<string, { params: unknown; result: unknown }>()
+  private readonly fixtures = new Map<string, FixtureEntry[]>()
 
   constructor(opts: FakeSidecarOptions = {}) {
     this.status = opts.status ?? 'ready'
-    const dir = opts.fixturesDir ?? resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')
-    for (const file of readdirSync(dir)) {
-      if (!file.endsWith('.json')) continue
-      this.fixtures.set(file.replace(/\.json$/, ''), JSON.parse(readFileSync(resolve(dir, file), 'utf8')) as { params: unknown; result: unknown })
-    }
-    const handshake = this.fixtures.get('runtime.handshake')
+    for (const [method, entries] of loadSidecarFixtures(opts.fixturesDir)) this.fixtures.set(method, entries)
+    const handshake = this.fixtures.get('runtime.handshake')?.[0]
     if (handshake) this.describe = SIDECAR_METHODS['runtime.handshake'].result.parse(handshake.result)
   }
 
@@ -53,8 +62,9 @@ export class FakeSidecar implements SidecarLike {
     if (responder) {
       raw = await responder(parsedParams, emit)
     } else {
-      const fixture = this.fixtures.get(method)
+      const fixture = this.fixtures.get(method)?.[0]
       if (!fixture) throw new SidecarError(`no fixture or responder for ${method}`, { condition: 'sidecar_error' })
+      for (const frame of fixture.stream ?? []) emit(frame)
       raw = fixture.result
     }
     return schema.result.parse(raw) as SidecarResult<M>

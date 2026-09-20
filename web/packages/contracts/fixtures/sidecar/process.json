@@ -1,0 +1,58 @@
+{
+  "process.drain": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "events": []
+      }
+    }
+  ],
+  "process.list": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "sessions": []
+      }
+    }
+  ],
+  "process.format_notification": [
+    {
+      "params": {
+        "event": {
+          "type": "completion",
+          "session_id": "proc_1",
+          "command": "ls",
+          "exit_code": 0,
+          "output": "ok"
+        }
+      },
+      "result": {
+        "text": "[IMPORTANT: Background process proc_1 completed (exit code 0).\nCommand: ls\nOutput:\nok]"
+      }
+    }
+  ],
+  "process.requeue": [
+    {
+      "params": {
+        "events": []
+      },
+      "result": {
+        "requeued": 0
+      }
+    }
+  ],
+  "process.mark_consumed": [
+    {
+      "params": {
+        "process_id": "proc_1"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ]
+}

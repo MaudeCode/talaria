@@ -1,0 +1,490 @@
+{
+  "skills.list": [
+    {
+      "params": {
+        "profile_home": "<profile>"
+      },
+      "result": {
+        "success": true,
+        "skills": [
+          {
+            "name": "apple-notes",
+            "description": "Manage Apple Notes via memo CLI: create, search, edit.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "apple-reminders",
+            "description": "Apple Reminders via remindctl: add, list, complete.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "findmy",
+            "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "imessage",
+            "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "claude-code",
+            "description": "Delegate coding to Claude Code CLI (features, PRs).",
+            "category": "autonomous-ai-agents",
+            "disabled": false
+          },
+          {
+            "name": "codex",
+            "description": "Delegate coding to OpenAI Codex CLI (features, PRs).",
+            "category": "autonomous-ai-agents",
+            "disabled": false
+          },
+          {
+            "name": "computer-use",
+            "description": "Drive the desktop background-first; escalate on signal.",
+            "category": "autonomous-ai-agents",
+            "disabled": false
+          },
+          {
+            "name": "hermes-agent",
+            "description": "Use, configure, theme, extend, and orchestrate Hermes Agent.",
+            "category": "autonomous-ai-agents",
+            "disabled": false
+          },
+          {
+            "name": "opencode",
+            "description": "Delegate coding to OpenCode CLI (features, PR review).",
+            "category": "autonomous-ai-agents",
+            "disabled": false
+          },
+          {
+            "name": "architecture-diagram",
+            "description": "Dark-themed SVG architecture/cloud/infra diagrams as HTML.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "ascii-video",
+            "description": "ASCII video: convert video/audio to colored ASCII MP4/GIF.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "baoyu-infographic",
+            "description": "Infographics: 21 layouts x 21 styles (信息图, 可视化).",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "claude-design",
+            "description": "Design one-off HTML artifacts (landing, deck, prototype).",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "design-md",
+            "description": "Author/validate/export Google's DESIGN.md token spec files.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "humanizer",
+            "description": "Humanize text: strip AI-isms and add real voice.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "manim-video",
+            "description": "Manim CE animations: 3Blue1Brown math/algo videos.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "p5js",
+            "description": "p5.js sketches: gen art, shaders, interactive, 3D.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "popular-web-designs",
+            "description": "54 real design systems (Stripe, Linear, Vercel) as HTML/CSS.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "songwriting-and-ai-music",
+            "description": "Songwriting craft and Suno AI music prompts.",
+            "category": "creative",
+            "disabled": false
+          },
+          {
+            "name": "sdlc-review",
+            "description": "Review Kanban handoffs and route verified outcomes.",
+            "category": "devops",
+            "disabled": false
+          },
+          {
+            "name": "email-inbox-triage",
+            "description": "Triage an inbox: prioritize threads, draft replies safely.",
+            "category": "email",
+            "disabled": false
+          },
+          {
+            "name": "himalaya",
+            "description": "Himalaya CLI: IMAP/SMTP email from terminal.",
+            "category": "email",
+            "disabled": false
+          },
+          {
+            "name": "gif-search",
+            "description": "Search/download GIFs from Tenor via curl + jq.",
+            "category": "media",
+            "disabled": false
+          },
+          {
+            "name": "songsee",
+            "description": "Audio spectrograms/features (mel, chroma, MFCC) via CLI.",
+            "category": "media",
+            "disabled": false
+          },
+          {
+            "name": "youtube-content",
+            "description": "YouTube transcripts to summaries, threads, blogs.",
+            "category": "media",
+            "disabled": false
+          },
+          {
+            "name": "obsidian",
+            "description": "Read, search, create, and edit notes in the Obsidian vault.",
+            "category": "note-taking",
+            "disabled": false
+          },
+          {
+            "name": "airtable",
+            "description": "Airtable REST API via curl. Records CRUD, filters, upserts.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "box",
+            "description": "Box manages cloud files, sharing, search, and metadata.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "document-to-action-items",
+            "description": "Extract cited obligations, deadlines, tasks from documents.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "docx",
+            "description": "Create, read, edit, template, and review Word .docx files.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "google-workspace",
+            "description": "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "maps",
+            "description": "Geocode, POIs, routes, timezones via OpenStreetMap/OSRM.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "meeting-action-items",
+            "description": "Turn meeting notes into cited decisions, owners, tickets.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "notion",
+            "description": "Notion API + ntn CLI: pages, databases, markdown, Workers.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "pdf",
+            "description": "PDF files: create, read, merge, fill, OCR, edit text.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "powerpoint",
+            "description": "Create, read, edit .pptx decks with python-pptx.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "product-price-monitor",
+            "description": "Watch product, flight, or listing prices; alert on target.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "teams-meeting-pipeline",
+            "description": "Teams meeting summaries, job replay, Graph subscriptions.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "weekly-review-planning",
+            "description": "Weekly reset: commitments, stalled work, next-week plan.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "xlsx",
+            "description": "Create, read, edit Excel .xlsx workbooks and CSVs.",
+            "category": "productivity",
+            "disabled": false
+          },
+          {
+            "name": "arxiv",
+            "description": "Search arXiv papers by keyword, author, category, or ID.",
+            "category": "research",
+            "disabled": false
+          },
+          {
+            "name": "competitor-news-monitor",
+            "description": "Watch named companies for material news; cited digests.",
+            "category": "research",
+            "disabled": false
+          },
+          {
+            "name": "grounded-citations",
+            "description": "Ground answers and documents in cited, verifiable sources.",
+            "category": "research",
+            "disabled": false
+          },
+          {
+            "name": "llm-wiki",
+            "description": "Karpathy's LLM Wiki: build/query interlinked markdown KB.",
+            "category": "research",
+            "disabled": false
+          },
+          {
+            "name": "xurl",
+            "description": "X/Twitter via xurl CLI: raw post search, posting, DM, media.",
+            "category": "social-media",
+            "disabled": false
+          },
+          {
+            "name": "codebase-inspection",
+            "description": "Inspect codebases w/ pygount: LOC, languages, ratios.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "dogfood",
+            "description": "Exploratory QA of web apps: find bugs, evidence, reports.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "github",
+            "description": "GitHub via gh CLI: PRs, issues, reviews, repos, auth.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "hermes-agent-skill-authoring",
+            "description": "Author in-repo SKILL.md files: frontmatter and structure.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "inspecting-hermes-desktop-dom",
+            "description": "Read the live Hermes desktop DOM/CSS over CDP.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "node-inspect-debugger",
+            "description": "Debug Node.js via --inspect + Chrome DevTools Protocol CLI.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "python-debugpy",
+            "description": "Debug Python: pdb REPL + debugpy remote (DAP).",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "requesting-code-review",
+            "description": "Pre-commit review: security scan, quality gates, auto-fix.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "simplify-code",
+            "description": "Parallel 4-agent cleanup of recent code changes.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "spike",
+            "description": "Throwaway experiments to validate an idea before build.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "systematic-debugging",
+            "description": "4-phase root cause debugging: understand bugs before fixing.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "test-driven-development",
+            "description": "TDD: enforce RED-GREEN-REFACTOR, tests before code.",
+            "category": "software-development",
+            "disabled": false
+          },
+          {
+            "name": "blocked-page-recovery",
+            "description": "Use when a fetch fails: 403/429, paywall, WAF, bot wall.",
+            "category": "web",
+            "disabled": false
+          }
+        ],
+        "categories": [
+          "apple",
+          "autonomous-ai-agents",
+          "creative",
+          "devops",
+          "email",
+          "media",
+          "note-taking",
+          "productivity",
+          "research",
+          "social-media",
+          "software-development",
+          "web"
+        ],
+        "count": 58
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "category": "apple"
+      },
+      "result": {
+        "success": true,
+        "skills": [
+          {
+            "name": "apple-notes",
+            "description": "Manage Apple Notes via memo CLI: create, search, edit.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "apple-reminders",
+            "description": "Apple Reminders via remindctl: add, list, complete.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "findmy",
+            "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
+            "category": "apple",
+            "disabled": false
+          },
+          {
+            "name": "imessage",
+            "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
+            "category": "apple",
+            "disabled": false
+          }
+        ],
+        "categories": [
+          "apple"
+        ],
+        "count": 4
+      }
+    }
+  ],
+  "skills.find": [
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "apple-notes"
+      },
+      "result": {
+        "found": true,
+        "skill_dir": "<profile>/skills/apple/apple-notes",
+        "skill_md": "<profile>/skills/apple/apple-notes/SKILL.md"
+      }
+    }
+  ],
+  "skills.view": [
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "apple-notes"
+      },
+      "result": {
+        "success": true,
+        "name": "apple-notes",
+        "description": "Manage Apple Notes via memo CLI: create, search, edit.",
+        "tags": [
+          "Notes",
+          "Apple",
+          "macOS",
+          "note-taking"
+        ],
+        "related_skills": [
+          "obsidian"
+        ],
+        "content": "---\nname: apple-notes\ndescription: \"Manage Apple Notes via memo CLI: create, search, edit.\"\nversion: 1.0.1\nauthor: Hermes Agent\nlicense: MIT\nplatforms: [macos]\nmetadata:\n  hermes:\n    tags: [Notes, Apple, macOS, note-taking]\n    related_skills: [obsidian]\nprerequisites:\n  commands: [memo]\n---\n\n# Apple Notes\n\nUse `memo` to manage Apple Notes directly from the terminal. Notes sync across all Apple devices via iCloud.\n\n## Prerequisites\n\n- **macOS** with Notes.app\n- Install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`\n- Grant Automation access to Notes.app when prompted (System Settings → Privacy → Automation)\n\n## When to Use\n\n- User asks to create, view, or search Apple Notes\n- Saving information to Notes.app for cross-device access\n- Organizing notes into folders\n- Exporting notes to Markdown/HTML\n\n## When NOT to Use\n\n- Obsidian vault management → use the `obsidian` skill\n- Bear Notes → separate app (not supported here)\n- Quick agent-only notes → use the `memory` tool instead\n\n## Quick Reference\n\n### View Notes\n\n```bash\nmemo notes                        # List all notes\nmemo notes -f \"Folder Name\"       # Filter by folder\nmemo notes -s \"query\"             # Search notes (fuzzy)\n```\n\n### Create Notes\n\n```bash\nmemo notes -a                     # Add a note (opens your $EDITOR)\nmemo notes -a -f \"Folder Name\"    # Add a note into a specific folder\n```\n\n`-a`/`--add` is a bare flag — it opens your `$EDITOR` to compose the note; it does\nnot take a title argument. Use `-f/--folder` to target a folder. Set `$EDITOR`\nfirst (e.g. `export EDITOR=vim`).\n\n### Edit Notes\n\n```bash\nmemo notes -e                     # Interactive selection to edit\n```\n\n### Delete Notes\n\n```bash\nmemo notes -d                     # Interactive selection to delete\n```\n\n### Move Notes\n\n```bash\nmemo notes -m                     # Move note to folder (interactive)\n```\n\n### Export Notes\n\n```bash\nmemo notes -ex                    # Export to HTML/Markdown\n```\n\n## Limitations\n\n- Cannot edit notes containing images or attachments\n- Interactive prompts require terminal access (use pty=true if needed)\n- macOS only — requires Apple Notes.app\n\n## Rules\n\n1. Prefer Apple Notes when user wants cross-device sync (iPhone/iPad/Mac)\n2. Use the `memory` tool for agent-internal notes that don't need to sync\n3. Use the `obsidian` skill for Markdown-native knowledge management\n",
+        "path": "apple-notes/SKILL.md",
+        "skill_dir": "<profile>/skills/apple/apple-notes",
+        "linked_files": {}
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "does-not-exist"
+      },
+      "result": {
+        "success": false,
+        "error": "Skill 'does-not-exist' not found.",
+        "available_skills": [
+          "apple-notes",
+          "apple-reminders",
+          "findmy",
+          "imessage",
+          "claude-code",
+          "codex",
+          "computer-use",
+          "hermes-agent",
+          "opencode",
+          "architecture-diagram",
+          "ascii-video",
+          "baoyu-infographic",
+          "claude-design",
+          "design-md",
+          "humanizer",
+          "manim-video",
+          "p5js",
+          "popular-web-designs",
+          "songwriting-and-ai-music",
+          "sdlc-review"
+        ],
+        "available_skills_truncated": true,
+        "total_skills": 58,
+        "hint": "Showing 20 of 58 skills. Use skills_list to see all available skills"
+      }
+    }
+  ]
+}

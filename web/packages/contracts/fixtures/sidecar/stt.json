@@ -1,0 +1,13 @@
+{
+  "stt.capability": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "available": false,
+        "provider": "none"
+      }
+    }
+  ]
+}
