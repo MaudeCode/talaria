@@ -1,6 +1,6 @@
 """Talaria Web release-set updates and the separate external Agent updater.
 
-Web accepts completed monorepo releases and clean fast-forwards only. Agent
+Web accepts explicit main tracking or completed releases with clean fast-forwards. Agent
 updates retain their existing Git/tag and gateway restart behavior. Results
 share the existing cache and active-run restart guards.
 """
@@ -706,21 +706,9 @@ def _detect_default_branch(path):
 
 
 # ── Release channels ─────────────────────────────────────────────────────────
-# The self-updater tracks ONE of several release channels, selected in Settings
-# (``update_channel``). A channel is nothing more than *which glob of tags the
-# updater reads* on the single linear master line — no branches, no divergence,
-# so every hard-won ff-only guarantee (#2653/#2846/#3140) is preserved.
-#
-#   stable       -> 'v*'        promoted, soaked releases (the default). Same glob
-#                                the updater has always used — every existing
-#                                v0.51.N tag matches, so legacy installs and the
-#                                full existing test suite keep working unchanged.
-#   experimental -> 'exp-v*'    every release batch, tagged for testers who opt in.
-#
-# ``exp-v*`` deliberately does NOT match ``v*`` (exp tags start with 'e', not
-# 'v'): the two channels never leak into each other's tag list, and a legacy
-# install running the historical 'v*' glob never matches an exp tag, so it
-# auto-lands on the stable stream with zero action.
+# Web's Main channel follows origin/main; Stable/Experimental resolve completed
+# monorepo release sets in talaria_releases. These legacy tag globs remain for
+# the independent Agent updater and its existing compatibility helpers.
 DEFAULT_UPDATE_CHANNEL = 'stable'
 _CHANNEL_TAG_GLOBS = {
     'stable': 'v*',
@@ -730,7 +718,7 @@ _CHANNEL_TAG_GLOBS = {
 
 def _normalize_channel(channel) -> str:
     """Return a known channel name, defaulting to stable for anything unknown."""
-    if isinstance(channel, str) and channel in _CHANNEL_TAG_GLOBS:
+    if isinstance(channel, str) and channel in (*_CHANNEL_TAG_GLOBS, 'main'):
         return channel
     return DEFAULT_UPDATE_CHANNEL
 
@@ -771,6 +759,8 @@ def channel_version_badge(channel=None) -> str:
     if channel is None:
         channel = _read_update_channel()
     channel = _normalize_channel(channel)
+    if channel == 'main':
+        return WEBUI_VERSION
     # NOTE: no ``--always`` here (deliberately different from _detect_webui_version).
     # The current version is channel-INDEPENDENT — it's just what's installed. The
     # channel only picks which tag family we compare AGAINST for updates. On a
@@ -1348,14 +1338,18 @@ def _commit_subjects_for_update_with_limit(info: dict, *, limit: int = 24) -> tu
     if target not in ('webui', 'agent'):
         target = 'webui' if info.get('repo_url', '').endswith('hermes-webui') else target
     path = _repo_path_for_update_target(target)
-    if path is None or not (Path(path) / '.git').exists():
+    if path is None:
         return [], False
     current = str(info.get('current_sha') or '').strip()
     latest = str(info.get('latest_sha') or '').strip()
     if not (current and latest):
         return [], False
     probe_limit = max(1, int(limit)) + 1
-    out, ok = _run_git(['log', '--format=%s', f'{current}..{latest}', f'-n{probe_limit}'], path, timeout=5)
+    args = ['log', '--format=%s', f'{current}..{latest}', f'-n{probe_limit}']
+    if target == 'webui' and info.get('channel') == 'main':
+        from api.talaria_releases import WEB_UPDATE_PATHS
+        args.extend(['--', *WEB_UPDATE_PATHS])
+    out, ok = _run_git(args, path, timeout=5)
     if not ok or not out:
         return [], False
     subjects = [line.strip() for line in out.splitlines() if line.strip()]

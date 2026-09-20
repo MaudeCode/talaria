@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web source installations can follow main with lightweight checkouts and receive update prompts only for Web or shared contract changes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

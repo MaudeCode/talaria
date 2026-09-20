@@ -44,6 +44,15 @@ def _development_info() -> dict:
     }
 
 
+def _checkout_revision(root: Path) -> str | None:
+    try:
+        head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                       text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return head if re.fullmatch(r"[a-f0-9]{40}", head) else None
+
+
 def load_release_info(path: Path, *, verify_checkout=True) -> dict:
     try:
         metadata = validate_release_info(json.loads(path.read_text()))
@@ -54,12 +63,7 @@ def load_release_info(path: Path, *, verify_checkout=True) -> dict:
     if web_root.name == "web":
         markers.append(web_root.parent / ".git")
     if verify_checkout and any(marker.exists() or marker.is_symlink() for marker in markers):
-        try:
-            head = subprocess.check_output(["git", "-C", str(web_root), "rev-parse", "HEAD"],
-                                           text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
-        except (OSError, subprocess.SubprocessError):
-            return _development_info()
-        if head != metadata["sourceRevision"]:
+        if _checkout_revision(web_root) != metadata["sourceRevision"]:
             return _development_info()
     return metadata
 
@@ -68,3 +72,6 @@ def load_release_info(path: Path, *, verify_checkout=True) -> dict:
 # version reporting only claim it when source checkout identity also matches.
 STAMPED_RELEASE_INFO = load_release_info(Path(__file__).with_name("_release.json"), verify_checkout=False)
 RELEASE_INFO = load_release_info(Path(__file__).with_name("_release.json"))
+# Separate from release provenance: an unreleased main checkout has no release
+# set, but update status must distinguish disk HEAD from the running process.
+RUNNING_SOURCE_REVISION = _checkout_revision(Path(__file__).resolve().parent.parent)

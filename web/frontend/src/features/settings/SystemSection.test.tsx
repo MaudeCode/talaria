@@ -136,6 +136,34 @@ describe('SystemSection "Check now"', () => {
     expect(trigger).toHaveTextContent(/stable/i)
   })
 
+  it('selects Main and uses it for the existing check and Web update actions', async () => {
+    vi.mocked(api.saveSettings).mockImplementation((patch) => {
+      settingsState = { ...settingsState, ...patch }
+      return Promise.resolve(settingsState)
+    })
+    vi.mocked(api.checkUpdatesNow).mockResolvedValue({ cached: false, webui: { behind: 1, branch: 'origin/main' } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true, restart_scheduled: true })
+    renderSystem()
+    await screen.findByText(/up to date/i)
+    await userEvent.click(screen.getByRole('combobox', { name: /update channel/i }))
+    await userEvent.click(await screen.findByRole('option', { name: /main/i }))
+    await userEvent.click(screen.getByRole('button', { name: /check now/i }))
+    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('main'))
+    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'main', 'webui'))
+  })
+
+  it('keeps Main up to date when newer repository commits do not affect Web', async () => {
+    settingsState.update_channel = 'main'
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: {
+      channel: 'main', branch: 'origin/main', behind: 0, metadata_repair: false,
+      current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40),
+    } }))
+    renderSystem()
+    expect(await screen.findByText(/up to date/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+  })
+
   it('restores the control and toasts the error when the forced check fails', async () => {
     vi.mocked(api.checkUpdatesNow).mockRejectedValue(new Error('git fetch failed'))
     const qc = renderSystem()

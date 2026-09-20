@@ -1,17 +1,27 @@
 # Talaria Web updates
 
-Talaria Web follows completed releases from `MaudeCode/talaria`. Stable tags are
+Talaria Web can follow **Main (latest commits)** or completed releases from
+`MaudeCode/talaria`, using the existing update-channel control and Update button.
+Main follows `origin/main` through a clean Git fast-forward and needs only Git
+read access. It does not query release manifests or require a release API token.
+It offers updates only when the net changes under `web/` or `contracts/` differ.
+Counts and change summaries include only commits touching those paths. App-only,
+Relay-only, root documentation/CI/changelog-only, and fully reverted Web changes
+leave Web up to date without changing its checkout or restarting it. When Web or
+shared contracts do change, applying the update advances to the exact latest
+main commit, including its shared history metadata.
+Stable tags are
 `web-vX.Y.Z`; experimental tags are `web-exp-vX.Y.Z`. App and Relay tags cannot
 become Web's version. Public Hermes WebUI imports remain a maintainer operation
 through root `scripts/import-web-upstream`; they are not an end-user update feed.
 
-The updater reads root releases named `release-set-<commit SHA>` and their
+For Stable and Experimental, the updater reads root releases named `release-set-<commit SHA>` and their
 `release-set.json` asset. Only `status: complete` manifests with matching immutable
 Web references advertise an update. A tag or draft release alone is insufficient.
 The publisher must make this record public to authorized readers only after all
 component gates pass. Lookup failures remain unavailable, never “up to date.”
 
-For a private repository, set `TALARIA_RELEASE_TOKEN` in the Web process environment
+For private Stable/Experimental release lookup, set `TALARIA_RELEASE_TOKEN` in the Web process environment
 to a token with **Contents: read** on this repository. This token is separate from
 Agent/provider credentials. Downloads strip authorization before following the
 GitHub asset redirect. Source updates also require Git's own HTTPS credential
@@ -22,14 +32,22 @@ and [asset download API](https://docs.github.com/en/rest/releases/assets#get-a-r
 Automatic source updates require a recognized Talaria origin and the `web/`
 component under the Git root. Normal clones and Git worktrees are supported.
 The complete checkout must be clean, including App/Relay edits and untracked
-files. The updater fetches only the selected published tag, checks its commit
-against the manifest, verifies its packaged compatibility metadata, and performs
+files. Main fetches only `origin/main`; release channels fetch the selected
+published tag, check its commit against the manifest and verify packaged
+compatibility metadata. Both paths perform
 a fast-forward that protects ignored files from overwrite. Divergent histories
 require manual reconciliation. A checkout ahead of the selected published release
 is reported as manual, rather than a successful automatic update, and stays at
 its current revision. At startup, an otherwise valid source stamp must match
 Git HEAD; a mismatch or unreadable Git identity reports development provenance.
 Packaged artifacts without Git retain their baked release identity.
+
+Main checks report the current and target Git commits. After relevant source advances,
+**Finish update** remains available until the server restarts with that revision.
+An unchanged generated release stamp is removed when advancing to unreleased
+Main code; modified stamps require manual inspection. Main never fabricates a
+completed release identity. Switching back to Stable does not rewind a checkout
+that is ahead of the published release.
 
 Source updates advance the monorepo checkout; deployment remains component-specific.
 The operation stamps the new Web provenance and schedules a Web restart. Existing
@@ -63,15 +81,36 @@ From an authenticated Talaria checkout, run:
 
 ```sh
 python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria
+
+# Track the current Git branch instead of a published release:
+python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria --channel main
 ```
 
-The command resolves a completed release, clones it into a new directory,
-verifies the tag/source and that the legacy revision is included in its history,
-then stamps Web provenance. It copies a simple legacy `.env` with mode `0600` and
+The command resolves a completed release (or `origin/main` with `--channel main`),
+clones it into a new directory,
+verifies the selected source and that the legacy revision is included in its history,
+then stamps Web provenance for a published release. It copies a simple legacy `.env` with mode `0600` and
 preserves its bytes. Relative paths and shell-expanded configuration require
 manual review before preparation; use absolute state, workspace, Agent and TLS
 paths. No state directory is copied or rewritten, and no service is started or
 stopped. Keep the same service user and persistent state paths at cutover.
+
+Preparation uses a blob-filtered partial clone and a cone-mode sparse checkout
+of `web/`, `contracts/`, and `scripts/`, plus Git's root-level files. Shared commit
+and tree metadata remains available; App/Relay file contents are not downloaded
+or checked out. Updates preserve that configuration and suppress Git diffstat,
+which would otherwise fetch excluded blobs to count changed lines. Normal sparse
+clones and sparse Git worktrees are supported. Commands that explicitly inspect
+excluded files can still make Git download them on demand.
+
+Main preparation creates a tracking `main` branch without a release stamp;
+published preparation checks out the selected tag's commit detached and stamps
+its verified provenance. The receipt reports `updateChannel`. Select that channel
+in Settings after activating the deployment; preparation does not edit existing
+user settings or state. The repository already commits its frontend build, so
+Git updates deliver those assets without a production npm build. Runtime setup
+and startup remain the repository's existing commands, independently of whether
+Git selected Main or a release; no wheel-only update requirement is introduced.
 
 After preparation succeeds, stop the old service, change its working directory
 and launch command to the paths in the preparation receipt, then start and check

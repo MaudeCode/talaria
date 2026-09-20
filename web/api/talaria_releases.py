@@ -1,4 +1,4 @@
-"""Read completed Talaria release sets, never upstream development tags."""
+"""Resolve Talaria main updates and completed component release sets."""
 
 import json
 import os
@@ -9,12 +9,14 @@ from time import monotonic
 import urllib.request
 from urllib.parse import urlsplit
 
-from api.release_info import RELEASE_INFO, STAMPED_RELEASE_INFO
+from api.release_info import RELEASE_INFO, RUNNING_SOURCE_REVISION, STAMPED_RELEASE_INFO
 
 
 REPOSITORY = "MaudeCode/talaria"
 REPOSITORY_URL = f"https://github.com/{REPOSITORY}"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
+# Anchored paths work from both the Git root and Web's nested working directory.
+WEB_UPDATE_PATHS = (":(top)web/", ":(top)contracts/")
 _SHA = re.compile(r"[a-f0-9]{40}")
 _VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 
@@ -155,6 +157,8 @@ def check_web_update(web_path, current_version, channel, run_git):
     root = _checkout_root(web_path, run_git)
     result = {"name": "webui", "channel": channel, "repo_url": REPOSITORY_URL,
               "current_version": current_version, "behind": None, "no_git": root is None}
+    if channel == "main":
+        return _check_main_update(root, result, run_git)
     try:
         release = published_web_release(channel)
     except ReleaseUnavailable as error:
@@ -211,6 +215,84 @@ def check_web_update(web_path, current_version, channel, run_git):
     return result
 
 
+def _main_revision(root, run_git):
+    output, ok = run_git(["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"], root, timeout=30)
+    if not ok:
+        return None, output
+    source, ok = run_git(["rev-parse", "refs/remotes/origin/main^{commit}"], root)
+    return (source, "") if ok and _SHA.fullmatch(source) else (None, "")
+
+
+def _main_paths_differ(root, before, after, run_git):
+    files, ok = run_git(["diff", "--no-renames", "--name-only", before, after, "--", *WEB_UPDATE_PATHS], root)
+    return bool(files) if ok else None
+
+
+def _main_change_count(root, before, after, run_git):
+    changed = _main_paths_differ(root, before, after, run_git)
+    if changed is None:
+        return None
+    if not changed:
+        return 0
+    count, ok = run_git(["rev-list", "--count", "--full-history", f"{before}..{after}", "--", *WEB_UPDATE_PATHS], root)
+    return int(count) if ok and count.isdigit() and int(count) > 0 else None
+
+
+def _main_restart_pending(root, head, run_git):
+    if RUNNING_SOURCE_REVISION == head:
+        return False
+    if not RUNNING_SOURCE_REVISION:
+        return True
+    # A disk-only App change does not make Web's loaded code stale. Unknown
+    # runtime identity still requires a restart rather than claiming success.
+    return _main_paths_differ(root, RUNNING_SOURCE_REVISION, head, run_git) is not False
+
+
+def _main_stamp(root):
+    """Only discard the unchanged generated release stamp when leaving a release."""
+    stamp = root / "web/api/_release.json"
+    if stamp.is_symlink():
+        raise ValueError("local release stamp is a symbolic link")
+    data = stamp.read_bytes() if stamp.exists() else None
+    if data is not None and (not STAMPED_RELEASE_INFO.get("tag") or json.loads(data) != STAMPED_RELEASE_INFO):
+        raise ValueError("local release stamp was modified")
+    return stamp, data
+
+
+def _check_main_update(root, result, run_git):
+    result.update(branch="origin/main", release_based=False)
+    if root is None:
+        return {**result, "manual_update": True, "message": "Main updates require an authenticated Talaria source checkout with Web under web/."}
+    source, error = _main_revision(root, run_git)
+    if source is None:
+        return {**result, "error": _git_failure(error, "Could not fetch origin/main; check Git read access.")["message"]}
+    result.update(latest_sha=source, latest_version=f"main@{source[:12]}")
+    head, ok = run_git(["rev-parse", "HEAD"], root)
+    status, clean = run_git(["status", "--porcelain", "--untracked-files=all"], root)
+    if not ok or not _SHA.fullmatch(head) or not clean:
+        return {**result, "manual_update": True, "error": "Could not verify the source checkout"}
+    result.update(installed_sha=head, dirty=bool(status))
+    base, known = run_git(["merge-base", head, source], root)
+    result["current_sha"] = base if known and _SHA.fullmatch(base) else None
+    if result["current_sha"]:
+        result["compare_url"] = f"{REPOSITORY_URL}/compare/{base}...{source}"
+    if not known or base != head:
+        return {**result, "manual_update": True, "message": "This checkout is ahead of or diverged from origin/main; reconcile it manually."}
+    count = _main_change_count(root, head, source, run_git)
+    if count is None:
+        return {**result, "error": "Could not compare the source checkout with origin/main"}
+    try:
+        _main_stamp(root)
+    except (OSError, ValueError, TypeError):
+        return {**result, "manual_update": True, "error": "Inspect the modified release stamp before updating."}
+    result.update(behind=count, metadata_repair=count == 0 and _main_restart_pending(root, head, run_git))
+    if status:
+        result.update(manual_update=True, message="Commit or remove local changes before updating; Web updates never discard them.")
+    elif result["metadata_repair"]:
+        result["message"] = "Source is current; finish the update to restart with that revision."
+    return result
+
+
 def _verified_release_stamp(root, release, run_git):
     expected = verify_release_source(root, release, run_git)
     stamp = root / "web/api/_release.json"
@@ -238,12 +320,19 @@ def apply_web_update(web_path, channel, run_git):
     head, ok = run_git(["rev-parse", "HEAD"], root)
     if not ok or not _SHA.fullmatch(head):
         return {"ok": False, "message": "Could not verify the current source revision"}
-    try:
-        release = published_web_release(channel)
-    except (OSError, ValueError, TimeoutError):
-        return {"ok": False, "message": "Cannot resolve a completed Talaria release. Check private-repository read access."}
-    source, tag = release["sourceRevision"], release["tag"]
-    if head != source:
+    main = channel == "main"
+    if main:
+        source, error = _main_revision(root, run_git)
+        if source is None:
+            return _git_failure(error, "Could not fetch origin/main; check Git read access.")
+        tag = "main"
+    else:
+        try:
+            release = published_web_release(channel)
+        except (OSError, ValueError, TimeoutError):
+            return {"ok": False, "message": "Cannot resolve a completed Talaria release. Check private-repository read access."}
+        source, tag = release["sourceRevision"], release["tag"]
+    if head != source and not main:
         # Fetch only this immutable tag. Never force-replace a local tag or pull an
         # unrecorded main/upstream tip. Git's configured credentials authenticate it.
         output, ok = run_git(["fetch", "--no-tags", "origin", f"refs/tags/{tag}:refs/tags/{tag}"], root, timeout=30)
@@ -252,32 +341,53 @@ def apply_web_update(web_path, channel, run_git):
         fetched, ok = run_git(["rev-parse", f"refs/tags/{tag}^{{commit}}"], root)
         if not ok or fetched != source:
             return {"ok": False, "message": "Published Web tag does not match the immutable release manifest"}
+    if head != source:
         _, forward = run_git(["merge-base", "--is-ancestor", head, source], root)
         if not forward:
             _, contains = run_git(["merge-base", "--is-ancestor", source, head], root)
             if contains:
                 return {"ok": False, "manual_update": True, "target": "webui", "channel": channel,
-                        "message": "This checkout is ahead of the selected release. Manage it manually or check out the published release and restart Web."}
+                        "message": "This checkout is ahead of the selected source. Manage it manually; updates never rewind local work."}
             return {"ok": False, "message": "Web update refused: source histories diverge; reconcile the checkout manually."}
+    if main:
+        count = _main_change_count(root, head, source, run_git)
+        if count is None:
+            return {"ok": False, "message": "Could not compare Web and contract changes against origin/main."}
+        if count == 0:
+            source = head  # No checkout mutation for App/Relay-only changes.
     # Compare provenance with the immutable incoming files before modifying the
     # checkout. Do not import downloaded code into the running old process.
     try:
-        stamp, expected, installed = _verified_release_stamp(root, release, run_git)
+        if main:
+            stamp, installed = _main_stamp(root)
+            expected = None
+        else:
+            stamp, expected, installed = _verified_release_stamp(root, release, run_git)
     except (OSError, KeyError, TypeError, ValueError):
         return {"ok": False, "message": "Web update refused: source or local provenance does not match the release manifest."}
-    if head == source and installed == expected and RELEASE_INFO == expected:
+    runtime_current = not _main_restart_pending(root, head, run_git) if main else installed == expected and RELEASE_INFO == expected
+    if head == source and runtime_current:
         return {"ok": True, "up_to_date": True, "target": "webui", "channel": channel,
-                "message": "Talaria Web already contains the selected release."}
+                "message": "Web and shared contracts are current on main." if main else "Talaria Web already contains the selected release."}
     current, same_head = run_git(["rev-parse", "HEAD"], root)
     status, clean = run_git(["status", "--porcelain", "--untracked-files=all"], root)
     if not same_head or current != head or not clean or status:
         return {"ok": False, "message": "The checkout changed during the update; retry after it is clean."}
     if head != source:
-        output, ok = run_git(["merge", "--ff-only", "--no-overwrite-ignore", source], root, timeout=30)
+        # Diffstat reads excluded blobs even on a sparse fast-forward. Keep
+        # updates metadata-only outside the checked-out Web directories.
+        output, ok = run_git(["merge", "--ff-only", "--no-stat", "--no-overwrite-ignore", source], root, timeout=30)
         actual, verified = run_git(["rev-parse", "HEAD"], root)
         if not ok or not verified or actual != source:
             return _git_failure(output, "Web fast-forward failed; no local changes were discarded.")
-    if installed != expected:
+    if main and installed is not None:
+        try:
+            if stamp.is_symlink() or stamp.read_bytes() != installed:
+                raise ValueError("release stamp changed during update")
+            stamp.unlink()
+        except (OSError, ValueError):
+            return {"ok": False, "message": "Source advanced but its release stamp could not be cleared; inspect it before restarting Web."}
+    elif not main and installed != expected:
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(mode="w", dir=stamp.parent, prefix=".release-", delete=False) as stream:
