@@ -1,0 +1,33 @@
+name: Inspect existing TestFlight upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing app version to inspect (read only).
+        required: true
+        type: string
+      build:
+        description: Existing build number to inspect (read only).
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: maude-mac
+    environment: testflight
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read sanitized existing upload metadata
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD: ${{ inputs.build }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: ruby app/ci/inspect_testflight.rb "$VERSION" "$BUILD"
