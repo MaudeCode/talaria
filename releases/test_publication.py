@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import hashlib
+import io
 from itertools import product
 import json
 import os
@@ -185,6 +186,10 @@ class PublicationTests(unittest.TestCase):
         # must follow the explicit build gate instead of implicit success().
         for name in ("relay-publish", "web-publish", "app-publish", "publish-set"):
             self.assertIn("!cancelled()", jobs[name]["if"])
+        relay_step = next(step for step in jobs["relay-publish"]["steps"]
+                          if step.get("name") == "Deploy the existing Relay and verify readiness/provenance")
+        self.assertIn("${GITHUB_WORKFLOW_SHA}:releases/publish.py", relay_step["run"])
+        self.assertIn('PYTHONPATH="$PWD/releases"', relay_step["run"])
         self.assertIn("build-gate", jobs["relay-publish"]["needs"])
         self.assertIn("relay-publish", jobs["web-publish"]["needs"])
         self.assertIn("web-publish", jobs["app-publish"]["needs"])
@@ -282,6 +287,36 @@ class PublicationTests(unittest.TestCase):
                 save(broken)
                 with self.assertRaises(ValueError):
                     verify_ipa(path, component)
+
+    def test_relay_uses_private_scoped_env_file_and_removes_it(self):
+        key = "prod:synthetic-relay|synthetic-key"
+        component = {"deploymentId": "synthetic-relay", "version": "1.0.0",
+                     "sourceRevision": "a" * 40, "releaseSet": "a" * 40}
+        plan = {"releaseSet": "a" * 40, "components": {"relay": component}}
+        for fail in (False, True):
+            with self.subTest(fail=fail), TemporaryDirectory() as temporary:
+                paths = []
+                def run(command, **kwargs):
+                    if command[:4] == ["pnpm", "exec", "convex", "deploy"]:
+                        path = Path(command[command.index("--env-file") + 1])
+                        paths.append(path)
+                        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                        self.assertEqual(path.read_text(), "CONVEX_DEPLOY_KEY=" + json.dumps(key) + "\n")
+                        self.assertTrue(path.is_relative_to(Path(temporary)))
+                        if fail:
+                            raise subprocess.CalledProcessError(1, command)
+                env = {"CONVEX_DEPLOY_KEY": key, "RUNNER_TEMP": temporary,
+                       "GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"}
+                health = io.BytesIO(json.dumps({"ok": True, "release": component}).encode())
+                with patch.dict(os.environ, env), patch("publish.subprocess.run", side_effect=run), \
+                        patch("publish.urllib.request.urlopen", return_value=health):
+                    if fail:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            relay(plan, Path(temporary) / "receipt.json")
+                    else:
+                        relay(plan, Path(temporary) / "receipt.json")
+                self.assertEqual(len(paths), 1)
+                self.assertFalse(paths[0].exists())
 
     def test_wrong_relay_key_cannot_execute(self):
         plan = {"components": {"relay": {"deploymentId": "synthetic-relay"}}}

@@ -314,7 +314,12 @@ jobs:
       env:
         CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         CONVEX_DISABLE_TELEMETRY: '1'
-      run: '"$RELEASE_PYTHON" releases/publish.py relay --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-publish/receipt.json"'
+      run: |
+        set -euo pipefail
+        # The reviewed workflow owns publication code; component tags stay immutable.
+        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+        PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" relay \
+          --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-publish/receipt.json"
     - name: Store relay-publish on the release runner
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-publish "$RUNNER_TEMP/relay-publish"'
