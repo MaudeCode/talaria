@@ -19,16 +19,21 @@ import { SessionService } from './sessions/service.js'
 import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
 import { resolvePathLikePython } from './workspace/paths.js'
-import { homedir } from 'node:os'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Session } from './sessions/session.js'
+import { GitRunner, GitWorkspaceError } from './workspace/git.js'
+import { RollbackStore } from './workspace/rollback.js'
+import { UploadInbox } from './workspace/upload.js'
+import type { SidecarLike } from './sidecar/client.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
   log?: (line: string) => void
   now?: () => number
   version?: string
   home?: string
+  /** The Python sidecar (auxiliary completions, worktree creation); null runs without Agent-backed features. */
+  sidecar?: SidecarLike | null
 }
 
 export function packageVersion(): string | undefined {
@@ -56,7 +61,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const release = loadReleaseInfo({ webRoot: config.webRoot })
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, packageVersion())
   const now = opts.now ?? (() => Date.now() / 1000)
-  const home = opts.home ?? homedir()
+  const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
   const activeProfile = (): string => 'default'
   const isRootProfile = (name: string): boolean => name === 'default'
@@ -104,6 +109,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const projects = new ProjectStore(resolve(config.stateDir, 'projects.json'), () => store.readIndexEntries())
   const shares = new ShareStore(resolve(config.stateDir, 'shares'), now)
   const yoloSessions = new Set<string>()
+  const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
   const sessions = new SessionService({
     store,
     drafts,
@@ -128,7 +134,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       evictAgent: () => undefined,
       closeTerminal: () => undefined,
     },
-    attachmentDir: (sid) => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120)),
+    attachmentDir,
     hermesHome: config.hermesHome,
     home,
     syncTitle: () => undefined,
@@ -136,6 +142,23 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     modelStateFromRequest: (model, requestedProvider, currentProvider) => [typeof model === 'string' && model.trim() ? model.trim() : null, typeof requestedProvider === 'string' && requestedProvider.trim() ? requestedProvider.trim() : currentProvider],
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
   })
+  const git = new GitRunner({ env })
+  const rollback = new RollbackStore({ hermesHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
+  const uploads = new UploadInbox(attachmentRoot)
+  const sidecar = opts.sidecar ?? null
+  const mediaActiveWorkspace = (): string | null => {
+    if (!workspaces.profileSupportsLocalIo(null)) return null
+    try {
+      const ws = resolvePathLikePython(workspaces.lastWorkspace(activeProfile()))
+      return statSync(ws).isDirectory() ? ws : null
+    } catch {
+      return null
+    }
+  }
+  const snapshotDir = (): string => {
+    const override = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim()
+    return override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'media_snapshots')
+  }
   const vscode = () => ({
     configuredCommand: 'code',
     command: (): string | null => {
@@ -170,7 +193,24 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     isolatedProfileMode: () => false,
     profilesMatch,
     worktreeDefault: () => false,
-    worktrees: { create: () => Promise.reject(new Error('Worktree creation is not available yet')) },
+    worktrees: {
+      create: async (workspace) => {
+        if (!sidecar) throw new Error('Hermes Agent worktree helper is unavailable')
+        const result = await sidecar.call('worktree.create', { profile_home: profileHome(activeProfile()), repo_root: workspace })
+        return { path: result.path, branch: result.branch, repo_root: result.repo_root, created_at: now() }
+      },
+    },
     vscode,
+    git,
+    rollback,
+    uploads,
+    mediaPolicy: { home, hermesHome: config.hermesHome, stateDir: config.stateDir, snapshotDir, activeWorkspace: mediaActiveWorkspace },
+    mediaActiveWorkspace,
+    worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: () => false },
+    commitMessage: async (session, systemPrompt, userPrompt) => {
+      if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
+      const result = await sidecar.call('aux.complete', { profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
+      return result.text
+    },
   }
 }

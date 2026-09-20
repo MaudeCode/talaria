@@ -19,6 +19,12 @@ import type { SessionStore } from '../sessions/store.js'
 import type { SessionEventBus } from '../sessions/events.js'
 import type { ProjectStore } from '../projects.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
+import type { GitRunner } from '../workspace/git.js'
+import type { RollbackStore } from '../workspace/rollback.js'
+import type { UploadInbox } from '../workspace/upload.js'
+import type { MediaPolicyDeps } from '../workspace/media.js'
+import type { WorktreeLocks } from '../workspace/worktrees.js'
+import type { Session } from '../sessions/session.js'
 import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
 import type { CsrfFailure } from './origin.js'
@@ -61,6 +67,16 @@ export interface AppDeps {
   worktrees: { create: (workspace: string) => Promise<{ path: string; branch: string; repo_root: string; created_at: number }> }
   /** `vscode:` block from config.yaml: command lookup and Docker path translation. */
   vscode: () => VsCodeConfig
+  // ── files, git, media (checkpoint 5b) ──
+  git: GitRunner
+  rollback: RollbackStore
+  uploads: UploadInbox
+  mediaPolicy: MediaPolicyDeps
+  /** The active workspace for `/api/media` allow-listing when local IO is supported, else null. */
+  mediaActiveWorkspace: () => string | null
+  worktreeLocks: WorktreeLocks
+  /** Commit-message generation (sidecar `aux.complete`); rejects with `GitWorkspaceError` when no model is available. */
+  commitMessage: (session: Session, systemPrompt: string, userPrompt: string) => Promise<string>
 }
 
 export interface VsCodeConfig {
@@ -277,6 +293,23 @@ export class RequestContext {
   }
 
   /** Read and JSON-parse the request body as an object (Python `read_body`, 20 MiB cap). */
+  /** The request body as bytes, bounded by `maxBytes`. */
+  async readRawBody(maxBytes: number): Promise<Buffer> {
+    const rawLength = this.header('content-length')
+    const length = rawLength === undefined ? 0 : Number(rawLength)
+    if (!Number.isInteger(length) || length < 0) throw new BodyError(`Invalid Content-Length: ${JSON.stringify(rawLength)}`)
+    if (length > maxBytes) throw new BodyError(`Request body too large (${length} bytes, max ${maxBytes})`)
+    const chunks: Buffer[] = []
+    let total = 0
+    for await (const chunk of this.req) {
+      const buf = chunk as Buffer
+      total += buf.length
+      if (total > maxBytes) throw new BodyError(`Request body too large (${total} bytes, max ${maxBytes})`)
+      chunks.push(buf)
+    }
+    return Buffer.concat(chunks)
+  }
+
   async readJsonBody(maxBytes = 20 * 1024 * 1024): Promise<Record<string, unknown>> {
     const rawLength = this.header('content-length')
     const length = rawLength === undefined ? 0 : Number(rawLength)

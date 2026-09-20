@@ -111,6 +111,8 @@ def test_error_conditions_are_typed(handshaken: SidecarProcess, hermes_home: pat
     assert message["error"]["data"]["condition"] == "command_not_found"
     message, _ = handshaken.call("stt.transcribe", {"profile_home": home, "audio_b64": "not base64!"})
     assert message["error"]["code"] == -32602
+    message, _ = handshaken.call("worktree.create", {"profile_home": home, "repo_root": home})
+    assert message["error"]["data"]["condition"] == "not_a_repo"
 
 
 @requires_agent

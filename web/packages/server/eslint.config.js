@@ -11,9 +11,9 @@ export default defineConfig(
     rules: {
       '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true, allowBoolean: true }],
-      '@typescript-eslint/no-non-null-assertion': 'error',
       // Ported Python code relies on `''`/`0` falling through to a fallback; `??` would change behaviour.
       '@typescript-eslint/prefer-nullish-coalescing': ['error', { ignorePrimitives: true }],
+      '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
   {

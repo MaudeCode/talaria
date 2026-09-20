@@ -4294,6 +4294,3951 @@
           }
         }
       }
+    },
+    "/api/git-info": {
+      "get": {
+        "operationId": "gitInfo",
+        "summary": "Lightweight branch badge for a session workspace.",
+        "tags": [
+          "git"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "git": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "branch": {
+                              "type": "string"
+                            },
+                            "dirty": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "modified": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "ahead": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "behind": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "is_git": {
+                              "const": true
+                            }
+                          },
+                          "required": [
+                            "branch",
+                            "dirty",
+                            "modified",
+                            "untracked",
+                            "ahead",
+                            "behind",
+                            "is_git"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "git"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/status": {
+      "get": {
+        "operationId": "git.status",
+        "tags": [
+          "git"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "git": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "git"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/branches": {
+      "get": {
+        "operationId": "git.branches",
+        "tags": [
+          "git"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "branches": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "const": true
+                        },
+                        "current": {
+                          "type": "string"
+                        },
+                        "detached": {
+                          "type": "boolean"
+                        },
+                        "head": {
+                          "type": "string"
+                        },
+                        "local": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sha": {
+                                "type": "string"
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updated_relative": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "upstream": {
+                                "type": "string"
+                              },
+                              "ahead": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "behind": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sha",
+                              "updated",
+                              "updated_relative",
+                              "author",
+                              "subject",
+                              "upstream",
+                              "ahead",
+                              "behind"
+                            ]
+                          }
+                        },
+                        "remote": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sha": {
+                                "type": "string"
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updated_relative": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "upstream": {
+                                "type": "string"
+                              },
+                              "ahead": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "behind": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sha",
+                              "updated",
+                              "updated_relative",
+                              "author",
+                              "subject",
+                              "upstream",
+                              "ahead",
+                              "behind"
+                            ]
+                          }
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "is_git",
+                        "current",
+                        "detached",
+                        "head",
+                        "local",
+                        "remote",
+                        "upstream",
+                        "ahead",
+                        "behind"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "branches"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/diff": {
+      "get": {
+        "operationId": "git.diff",
+        "tags": [
+          "git"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "staged",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "diff": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "binary": {
+                          "type": "boolean"
+                        },
+                        "too_large": {
+                          "type": "boolean"
+                        },
+                        "additions": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "deletions": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "diff": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "kind",
+                        "binary",
+                        "too_large",
+                        "additions",
+                        "deletions",
+                        "diff"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "diff"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/stage": {
+      "post": {
+        "operationId": "git.stage",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "paths": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "git": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "git"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/unstage": {
+      "post": {
+        "operationId": "git.unstage",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "paths": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "git": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "git"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/discard": {
+      "post": {
+        "operationId": "git.discard",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "paths": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "delete_untracked": {}
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "git": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "git"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/commit": {
+      "post": {
+        "operationId": "git.commit",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "commit",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/commit-selected": {
+      "post": {
+        "operationId": "git.commitSelected",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "paths": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "commit",
+                    "paths",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/commit-message": {
+      "post": {
+        "operationId": "git.commitMessage",
+        "summary": "Generate a commit message for the staged diff through the auxiliary model.",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/commit-message-selected": {
+      "post": {
+        "operationId": "git.commitMessageSelected",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "paths": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/fetch": {
+      "post": {
+        "operationId": "git.fetch",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/pull": {
+      "post": {
+        "operationId": "git.pull",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/push": {
+      "post": {
+        "operationId": "git.push",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/checkout": {
+      "post": {
+        "operationId": "git.checkout",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string"
+                  },
+                  "new_branch": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "track": {
+                    "type": "boolean"
+                  },
+                  "dirty_mode": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "ref",
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "git": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    },
+                    "branches": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "const": true
+                        },
+                        "current": {
+                          "type": "string"
+                        },
+                        "detached": {
+                          "type": "boolean"
+                        },
+                        "head": {
+                          "type": "string"
+                        },
+                        "local": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sha": {
+                                "type": "string"
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updated_relative": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "upstream": {
+                                "type": "string"
+                              },
+                              "ahead": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "behind": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sha",
+                              "updated",
+                              "updated_relative",
+                              "author",
+                              "subject",
+                              "upstream",
+                              "ahead",
+                              "behind"
+                            ]
+                          }
+                        },
+                        "remote": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sha": {
+                                "type": "string"
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updated_relative": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "upstream": {
+                                "type": "string"
+                              },
+                              "ahead": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "behind": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sha",
+                              "updated",
+                              "updated_relative",
+                              "author",
+                              "subject",
+                              "upstream",
+                              "ahead",
+                              "behind"
+                            ]
+                          }
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "is_git",
+                        "current",
+                        "detached",
+                        "head",
+                        "local",
+                        "remote",
+                        "upstream",
+                        "ahead",
+                        "behind"
+                      ]
+                    },
+                    "current_branch": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "git",
+                    "branches",
+                    "current_branch",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/stash-checkout": {
+      "post": {
+        "operationId": "git.stashCheckout",
+        "tags": [
+          "git"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string"
+                  },
+                  "new_branch": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "track": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "ref",
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "git": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "type": "boolean"
+                        },
+                        "branch": {
+                          "type": "string"
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "changed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "staged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unstaged": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "untracked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "changed",
+                            "staged",
+                            "unstaged",
+                            "untracked",
+                            "conflicts"
+                          ]
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "old_path": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "workspace_path": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "staged": {
+                                "type": "boolean"
+                              },
+                              "unstaged": {
+                                "type": "boolean"
+                              },
+                              "untracked": {
+                                "type": "boolean"
+                              },
+                              "ignored": {
+                                "type": "boolean"
+                              },
+                              "conflict": {
+                                "type": "boolean"
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "old_path",
+                              "workspace_path",
+                              "status",
+                              "staged",
+                              "unstaged",
+                              "untracked",
+                              "ignored",
+                              "conflict",
+                              "additions",
+                              "deletions",
+                              "binary"
+                            ]
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "noise_filtering": {
+                          "type": "object",
+                          "properties": {
+                            "filemode_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "crlf_only": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "active": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "filemode_only",
+                            "crlf_only",
+                            "active"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "is_git"
+                      ]
+                    },
+                    "branches": {
+                      "type": "object",
+                      "properties": {
+                        "is_git": {
+                          "const": true
+                        },
+                        "current": {
+                          "type": "string"
+                        },
+                        "detached": {
+                          "type": "boolean"
+                        },
+                        "head": {
+                          "type": "string"
+                        },
+                        "local": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sha": {
+                                "type": "string"
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updated_relative": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "upstream": {
+                                "type": "string"
+                              },
+                              "ahead": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "behind": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sha",
+                              "updated",
+                              "updated_relative",
+                              "author",
+                              "subject",
+                              "upstream",
+                              "ahead",
+                              "behind"
+                            ]
+                          }
+                        },
+                        "remote": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sha": {
+                                "type": "string"
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updated_relative": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "subject": {
+                                "type": "string"
+                              },
+                              "upstream": {
+                                "type": "string"
+                              },
+                              "ahead": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "behind": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sha",
+                              "updated",
+                              "updated_relative",
+                              "author",
+                              "subject",
+                              "upstream",
+                              "ahead",
+                              "behind"
+                            ]
+                          }
+                        },
+                        "upstream": {
+                          "type": "string"
+                        },
+                        "ahead": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "behind": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "is_git",
+                        "current",
+                        "detached",
+                        "head",
+                        "local",
+                        "remote",
+                        "upstream",
+                        "ahead",
+                        "behind"
+                      ]
+                    },
+                    "current_branch": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "stash_name": {
+                      "type": "string"
+                    },
+                    "stashed": {
+                      "type": "boolean"
+                    },
+                    "restored_stash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "restore_failed": {
+                      "type": "boolean"
+                    },
+                    "restore_error": {
+                      "type": "string"
+                    },
+                    "restore_stash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "git",
+                    "branches",
+                    "current_branch",
+                    "message",
+                    "stash_name",
+                    "stashed",
+                    "restored_stash",
+                    "restore_failed",
+                    "restore_error",
+                    "restore_stash"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rollback/list": {
+      "get": {
+        "operationId": "rollback.list",
+        "tags": [
+          "rollback"
+        ],
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checkpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "checkpoint_dir": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "checkpoints",
+                    "workspace",
+                    "checkpoint_dir"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rollback/diff": {
+      "get": {
+        "operationId": "rollback.diff",
+        "tags": [
+          "rollback"
+        ],
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "checkpoint",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checkpoint": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "diff": {
+                      "type": "string"
+                    },
+                    "files_changed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "status"
+                        ]
+                      }
+                    },
+                    "total_changes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "checkpoint",
+                    "workspace",
+                    "diff",
+                    "files_changed",
+                    "total_changes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rollback/restore": {
+      "post": {
+        "operationId": "rollback.restore",
+        "tags": [
+          "rollback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspace": {
+                    "type": "string"
+                  },
+                  "checkpoint": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "checkpoint": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "files_restored": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "files_restored_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "error"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "checkpoint",
+                    "workspace",
+                    "files_restored",
+                    "files_restored_count",
+                    "errors"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/worktree/status": {
+      "get": {
+        "operationId": "worktree.status",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/worktree/remove": {
+      "post": {
+        "operationId": "worktree.remove",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {},
+                  "force": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "removed_path": {
+                      "type": "string"
+                    },
+                    "warnings": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "removed_path",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload/rollback": {
+      "post": {
+        "operationId": "upload.rollback",
+        "summary": "Remove the successful prefix of one failed multi-file chat upload.",
+        "tags": [
+          "files"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {},
+                  "rollback_tokens": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "rolled_back": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "rolled_back",
+                    "failed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file/raw": {
+      "get": {
+        "summary": "Raw bytes of a workspace file or a session upload.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "description": "Session whose workspace anchors the path.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "description": "Workspace-relative path.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "description": "`1` forces an attachment disposition.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "required": false,
+            "description": "`1` serves HTML inline under a CSP sandbox.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File bytes with ETag and byte-range support.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "206": {
+            "description": "Partial content for a satisfiable Range header."
+          },
+          "304": {
+            "description": "ETag matched If-None-Match."
+          },
+          "404": {
+            "description": "Path outside the workspace or missing.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "416": {
+            "description": "Range not satisfiable."
+          }
+        }
+      }
+    },
+    "/api/media": {
+      "get": {
+        "summary": "Local media referenced by the chat (allow-listed roots, MEDIA: tokens, or an immutable snapshot).",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "description": "Absolute local path.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "description": "Session whose assistant messages may grant the path.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "required": false,
+            "description": "`1` allows inline audio, video, PDF, and sandboxed HTML.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "snap",
+            "in": "query",
+            "required": false,
+            "description": "SHA-256 digest of a message-level snapshot bound to the path.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Media bytes.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "206": {
+            "description": "Partial content."
+          },
+          "304": {
+            "description": "ETag matched."
+          },
+          "403": {
+            "description": "Path not in an allowed location.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "410": {
+            "description": "Snapshot unavailable.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/folder/download": {
+      "get": {
+        "summary": "ZIP of a workspace folder (symlinks escaping the workspace are skipped).",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "description": "Session whose workspace anchors the path.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "description": "Workspace-relative folder.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP stream.",
+            "content": {
+              "application/zip": {}
+            }
+          },
+          "404": {
+            "description": "Folder missing.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "413": {
+            "description": "Folder exceeds the configured size or file-count cap.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/session/export": {
+      "get": {
+        "summary": "Transcript download as JSON or a self-contained HTML page.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "description": "Session to export.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "`json` (default) or `html`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "theme",
+            "in": "query",
+            "required": false,
+            "description": "HTML only: `dark` (default) or `light`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "palette",
+            "in": "query",
+            "required": false,
+            "description": "HTML only: base64 JSON map of CSS variables captured from the live UI.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment named `hermes-<session_id>.<ext>`."
+          },
+          "404": {
+            "description": "Session not found.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/upload": {
+      "post": {
+        "summary": "Store one chat attachment in the session inbox and return a rollback receipt.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "description": "Target session (the multipart `session_id` field wins when present).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload metadata.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "400": {
+            "description": "No file or invalid name.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "Destination already exists.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "413": {
+            "description": "Body exceeds the upload cap.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Fields `session_id` and `file`.",
+          "content": {
+            "multipart/form-data": {}
+          }
+        }
+      }
     }
   }
 }

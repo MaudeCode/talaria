@@ -187,6 +187,9 @@ export const AccountUsageSnapshotSchema = z.object({ provider: z.string().nullab
 export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional() }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
 } as const
+export const WORKTREE_METHODS = {
+  'worktree.create': { params: ProfileHomeParams.extend({ repo_root: z.string().min(1) }), result: z.object({ path: z.string(), branch: z.string(), repo_root: z.string(), base: z.string().nullable() }) },
+} as const
 export const GATEWAY_METHODS = {
   'gateway.restart': { params: ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() }), result: z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional() }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })]) },
 } as const

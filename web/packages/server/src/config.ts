@@ -27,6 +27,8 @@ export interface ServerConfig {
   maxUploadBytes: number
   botName: string
   env: Env
+  /** The user's home directory (tests pass a temp dir). */
+  homeDir: string
 }
 
 export function truthy(value: string | undefined): boolean {
@@ -121,6 +123,7 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
     defaultWorkspace: resolveDefaultWorkspace(null, { env, stateDir, home }),
     maxUploadBytes: envMbBytes(env.HERMES_WEBUI_MAX_UPLOAD_MB, 20, warn, 'HERMES_WEBUI_MAX_UPLOAD_MB'),
     botName: env.HERMES_WEBUI_BOT_NAME ?? 'Hermes',
+    homeDir: home,
     env,
   }
 }

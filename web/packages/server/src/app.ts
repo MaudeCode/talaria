@@ -10,6 +10,8 @@ import { ORPCError, type Router } from '@orpc/server'
 import type { AnyContractRouter } from '@orpc/contract'
 import { OpenAPIHandler } from '@orpc/openapi/node'
 import { sessionsRouter } from './api/sessions-router.js'
+import { gitRouter } from './api/git-router.js'
+import { RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -142,7 +144,7 @@ function preflight(ctx: RequestContext): void {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-export const appRouter = { ...coreRouter, ...sessionsRouter }
+export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter }
 
 export interface CreateAppOptions {
   /** The implemented contract router; defaults to the core router. */
@@ -219,9 +221,20 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           serveFavicon(ctx)
           return
         }
+        const raw = RAW_GET_ROUTES[path]
+        if (raw) {
+          await runRaw(ctx, raw)
+          return
+        }
       } else if (path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {
         ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
         return
+      } else if (ctx.method === 'POST') {
+        const raw = RAW_POST_ROUTES[path]
+        if (raw) {
+          await runRaw(ctx, raw)
+          return
+        }
       }
       const { matched } = await orpc.handle(req, res, { context: { ctx } })
       if (matched) {

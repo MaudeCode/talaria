@@ -3384,5 +3384,33 @@
       "message"
     ],
     "additionalProperties": false
+  },
+  "worktree.create": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "branch": {
+        "type": "string"
+      },
+      "repo_root": {
+        "type": "string"
+      },
+      "base": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "path",
+      "branch",
+      "repo_root",
+      "base"
+    ],
+    "additionalProperties": false
   }
 }

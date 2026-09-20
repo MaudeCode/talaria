@@ -102,4 +102,5 @@ DYNAMIC: list[tuple[str, str]] = [
 # Methods deliberately not exercised here: they need credentials, the
 # network, a running gateway, or a real audio file.
 UNEXERCISED = {"runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec", "kanban.dispatch",
-               "providers.resolve_runtime", "aux.complete", "stt.transcribe", "usage.account", "gateway.restart", "mcp.reload", "cron.run"}
+               "providers.resolve_runtime", "aux.complete", "stt.transcribe", "usage.account", "gateway.restart", "mcp.reload", "cron.run",
+               "worktree.create"}
