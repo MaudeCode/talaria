@@ -42,6 +42,9 @@ class TestFlightUploadTest < Minitest::Test
         @remote[:file]["attributes"].merge!("assetDeliveryState" => {"state" => "AWAITING_UPLOAD"}, "uploadOperations" => [])
         {"data" => @remote[:file]}
       when ["PATCH", "/v1/buildUploadFiles/file-1"]
+        if data.fetch("attributes").key?("sourceFileChecksums")
+          raise AppStoreConnectClient::Error, "HTTP 409 ENTITY_ERROR.ATTRIBUTE.INVALID sourceFileChecksums"
+        end
         @remote[:file]["attributes"].merge!(data.fetch("attributes"))
         @remote[:file]["attributes"]["assetDeliveryState"] = {"state" => "COMPLETE"}
         @remote[:upload]["attributes"]["state"] = {"state" => "PROCESSING"}
@@ -108,8 +111,9 @@ class TestFlightUploadTest < Minitest::Test
     run_upload
     good = Marshal.dump(@remote)
     mutations = [
-      -> { @remote[:file]["attributes"]["sourceFileChecksums"]["file"]["hash"] = "f" * 64 },
-      -> { @remote[:file]["attributes"].delete("sourceFileChecksums") },
+      -> { @remote[:file]["attributes"]["sourceFileChecksums"] = {"file" => {"algorithm" => "SHA_256", "hash" => "f" * 64}} },
+      -> { @remote[:file]["attributes"]["sourceFileChecksums"] = {"file" => {"algorithm" => "MD5", "hash" => "f" * 32}} },
+      -> { @remote[:file]["attributes"]["sourceFileChecksums"] = {"file" => {"algorithm" => "UNKNOWN", "hash" => @sha}} },
       -> { @remote[:file]["attributes"]["fileSize"] += 1 },
       -> { @remote[:file]["attributes"]["fileName"] = "another.ipa" },
       -> { @remote[:file]["attributes"]["assetDeliveryState"]["state"] = "FAILED" },
@@ -135,6 +139,17 @@ class TestFlightUploadTest < Minitest::Test
     @file.flush
     assert_raises(AppStoreConnectClient::Error) { run_upload }
     assert_nil @remote[:creates]
+  end
+
+  def test_native_commit_and_optional_server_checksum_readback
+    assert_equal @sha, run_upload["ipaSha256"]
+    assert_nil @remote[:file]["attributes"]["sourceFileChecksums"]
+    {"MD5" => Digest::MD5.file(@file.path).hexdigest, "SHA_256" => @sha}.each do |algorithm, hash|
+      @remote[:file]["attributes"]["sourceFileChecksums"] = {"file" => {"algorithm" => algorithm, "hash" => hash}}
+      assert_equal "VALID", run_upload["processingState"]
+    end
+    assert_equal 1, @remote[:creates]
+    assert_equal 1, @remote[:transfers]
   end
 
   def test_api_credentials_cannot_follow_another_origin
