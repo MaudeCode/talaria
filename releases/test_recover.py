@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -80,6 +81,29 @@ class RecoveryTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "original producer"):
                     recover.restore(refs, root / "rejected")
                 self.assertFalse((root / "rejected").exists())
+
+    def test_superseded_recovery_fails_before_providing_upload_source(self):
+        metadata, jobs, needs, _ = self.example()
+        for index, job in enumerate(jobs):
+            job["id"] = index + 1
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            plan = root / "release-plan/plan.json"
+            plan.parent.mkdir()
+            plan.write_text(json.dumps({"dryRun": False, "releaseSet": "c" * 40}))
+            output = root / "outputs"
+            env = {"GITHUB_RUN_ID": "456", "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
+                   "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main",
+                   "RUNNER_NAME": "synthetic-runner", "GITHUB_SHA": "d" * 40, "GITHUB_OUTPUT": str(output)}
+            with patch.dict(os.environ, env), patch("sys.argv", ["recover.py", "123", "4", str(root)]), \
+                    patch.object(recover, "api", side_effect=[json.dumps(metadata), json.dumps({"total_count": len(jobs), "jobs": jobs}),
+                                                            "RELEASE_NEEDS: " + json.dumps(needs)]), \
+                    patch.object(recover, "git"), patch.object(recover, "restore"), \
+                    patch.object(recover, "require_current_predecessor", side_effect=ValueError("superseded"), create=True) as guard:
+                with self.assertRaisesRegex(ValueError, "superseded"):
+                    recover.main()
+                guard.assert_called_once_with({"dryRun": False, "releaseSet": "c" * 40}, None)
+                self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

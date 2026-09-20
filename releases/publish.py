@@ -155,6 +155,15 @@ def _publish_release(tag, source, notes, files, identity, *, latest=False):
             raise ValueError("release publication readback is still a draft")
 
 
+def require_current_predecessor(plan, previous):
+    try:
+        require_latest_predecessor(previous)
+    except ValueError:
+        # A retry may follow this exact root's successful publication but failed
+        # readback/cleanup. _publish_release still requires identical contents.
+        require_latest_predecessor({"releaseSet": plan["releaseSet"]})
+
+
 def finalize(plan, manifest, previous, artifacts):
     validate(manifest, previous)
     if manifest["status"] != "complete" or manifest["releaseSet"] != plan["releaseSet"]:
@@ -166,12 +175,7 @@ def finalize(plan, manifest, previous, artifacts):
             if key in component and manifest["components"][name].get(key) != component[key]:
                 raise ValueError("completed component identity differs from the plan")
     root_tag = "release-set-" + plan["releaseSet"]
-    try:
-        require_latest_predecessor(previous)
-    except ValueError:
-        # A retry may follow this exact root's successful publication but failed
-        # readback/cleanup. _publish_release still requires identical contents.
-        require_latest_predecessor({"releaseSet": plan["releaseSet"]})
+    require_current_predecessor(plan, previous)
     wheels = sorted((artifacts / "web-build/wheel").glob("*.whl"))
     if plan["changed"]["web"] and (len(wheels) != 1 or wheels[0].stat().st_size == 0):
         raise ValueError("Web publication requires the built wheel")

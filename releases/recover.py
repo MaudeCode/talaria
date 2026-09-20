@@ -12,6 +12,7 @@ import subprocess
 from artifacts import digest, location
 from cli import REPOSITORY, ROOT, load
 from plan import git
+from publish import require_current_predecessor
 
 
 def api(path):
@@ -105,6 +106,8 @@ def main():
     plan = load(args.destination / "release-plan/plan.json")
     if plan.get("dryRun") is not False or plan.get("releaseSet") != source:
         raise ValueError("retained plan differs from the approved source")
+    previous = args.destination / "release-plan/previous.json"
+    require_current_predecessor(plan, load(previous) if previous.exists() else None)
     with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
         stream.write(f"source={source}\n")
     print(f"Recovered verified handoffs from run {args.run}, attempt {args.attempt}, source {source}")
