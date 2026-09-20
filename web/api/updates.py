@@ -1,6 +1,6 @@
 """Talaria Web release-set updates and the separate external Agent updater.
 
-Web accepts completed monorepo releases and clean fast-forwards only. Agent
+Experimental Web source follows main; Stable follows completed releases. Agent
 updates retain their existing Git/tag and gateway restart behavior. Results
 share the existing cache and active-run restart guards.
 """
@@ -706,21 +706,9 @@ def _detect_default_branch(path):
 
 
 # ── Release channels ─────────────────────────────────────────────────────────
-# The self-updater tracks ONE of several release channels, selected in Settings
-# (``update_channel``). A channel is nothing more than *which glob of tags the
-# updater reads* on the single linear master line — no branches, no divergence,
-# so every hard-won ff-only guarantee (#2653/#2846/#3140) is preserved.
-#
-#   stable       -> 'v*'        promoted, soaked releases (the default). Same glob
-#                                the updater has always used — every existing
-#                                v0.51.N tag matches, so legacy installs and the
-#                                full existing test suite keep working unchanged.
-#   experimental -> 'exp-v*'    every release batch, tagged for testers who opt in.
-#
-# ``exp-v*`` deliberately does NOT match ``v*`` (exp tags start with 'e', not
-# 'v'): the two channels never leak into each other's tag list, and a legacy
-# install running the historical 'v*' glob never matches an exp tag, so it
-# auto-lands on the stable stream with zero action.
+# Experimental Web source checkouts follow origin/main; Stable and packaged
+# installations resolve completed monorepo release sets in talaria_releases.
+# These legacy tag globs remain for the independent Agent updater.
 DEFAULT_UPDATE_CHANNEL = 'stable'
 _CHANNEL_TAG_GLOBS = {
     'stable': 'v*',
@@ -1348,14 +1336,18 @@ def _commit_subjects_for_update_with_limit(info: dict, *, limit: int = 24) -> tu
     if target not in ('webui', 'agent'):
         target = 'webui' if info.get('repo_url', '').endswith('hermes-webui') else target
     path = _repo_path_for_update_target(target)
-    if path is None or not (Path(path) / '.git').exists():
+    if path is None:
         return [], False
     current = str(info.get('current_sha') or '').strip()
     latest = str(info.get('latest_sha') or '').strip()
     if not (current and latest):
         return [], False
     probe_limit = max(1, int(limit)) + 1
-    out, ok = _run_git(['log', '--format=%s', f'{current}..{latest}', f'-n{probe_limit}'], path, timeout=5)
+    args = ['log', '--format=%s', f'{current}..{latest}', f'-n{probe_limit}']
+    if target == 'webui' and info.get('channel') == 'experimental':
+        from api.talaria_releases import WEB_UPDATE_PATHS
+        args.extend(['--', *WEB_UPDATE_PATHS])
+    out, ok = _run_git(args, path, timeout=5)
     if not ok or not out:
         return [], False
     subjects = [line.strip() for line in out.splitlines() if line.strip()]
@@ -1373,6 +1365,7 @@ def _summary_cache_key(updates: dict, details: list[dict]) -> str:
             'current_sha': item.get('current_sha'),
             'latest_sha': item.get('latest_sha'),
             'compare_url': item.get('compare_url'),
+            'commits': item.get('commits'),
         })
     blob = json.dumps(payload, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(blob.encode('utf-8')).hexdigest()

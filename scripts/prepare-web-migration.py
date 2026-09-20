@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a published monorepo checkout while preserving a legacy Web install."""
+"""Prepare a Web-only main or published checkout, preserving the legacy install."""
 
 import argparse
 import json
@@ -56,7 +56,7 @@ def checked_env(path):
     return data
 
 
-def prepare(legacy, destination, release):
+def prepare(legacy, destination, release, *, channel="stable"):
     legacy, destination = Path(legacy).resolve(), Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("Choose a new destination outside the legacy checkout")
@@ -74,17 +74,23 @@ def prepare(legacy, destination, release):
         raise ValueError("Could not read the legacy source revision")
     environment = checked_env(legacy / ".env")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    _, ok = run_git(["clone", "--no-checkout", REPOSITORY_URL + ".git", str(destination)], destination.parent, timeout=300)
+    ref = "main" if channel == "experimental" else release["tag"]
+    _, ok = run_git(["clone", "--filter=blob:none", "--no-checkout", "--single-branch", "--branch", ref,
+                     REPOSITORY_URL + ".git", str(destination)], destination.parent, timeout=300)
     if not ok:
         raise ValueError("Clone failed; check repository read access. Inspect any partial destination before retrying.")
-    source, ok = run_git(["rev-parse", f"refs/tags/{release['tag']}^{{commit}}"], destination)
-    if not ok or source != release["sourceRevision"]:
+    selected = "refs/remotes/origin/main^{commit}" if channel == "experimental" else f"refs/tags/{release['tag']}^{{commit}}"
+    source, ok = run_git(["rev-parse", selected], destination)
+    if not ok or not re.fullmatch(r"[a-f0-9]{40}", source) or (channel != "experimental" and source != release["sourceRevision"]):
         raise ValueError("Published tag does not match the release manifest; destination was not activated")
     _, included = run_git(["merge-base", "--is-ancestor", old, source], destination)
     if not included:
-        raise ValueError("The selected release does not contain this legacy revision; reconcile the fork manually")
-    metadata = verify_release_source(destination, release, run_git)
-    _, ok = run_git(["checkout", "--detach", source], destination)
+        raise ValueError("The selected source does not contain this legacy revision; reconcile the fork manually")
+    metadata = verify_release_source(destination, release, run_git) if channel != "experimental" else None
+    _, ok = run_git(["sparse-checkout", "set", "--cone", "web", "contracts", "scripts"], destination)
+    if not ok:
+        raise ValueError("Could not prepare the Web-only sparse checkout; destination was not activated")
+    _, ok = run_git(["checkout", "main"] if channel == "experimental" else ["checkout", "--detach", source], destination)
     if not ok:
         raise ValueError("Could not check out the published source; destination was not activated")
     if environment is not None:
@@ -92,9 +98,11 @@ def prepare(legacy, destination, release):
         with config.open("xb") as stream:
             os.chmod(config, 0o600)
             stream.write(environment)
-    with (destination / "web/api/_release.json").open("x") as stream:
-        stream.write(json.dumps(metadata, indent=2) + "\n")
-    return {"prepared": True, "legacyRevision": old, "sourceRevision": source, "tag": release["tag"],
+    if metadata is not None:
+        with (destination / "web/api/_release.json").open("x") as stream:
+            stream.write(json.dumps(metadata, indent=2) + "\n")
+    return {"prepared": True, "legacyRevision": old, "sourceRevision": source,
+            "tag": release["tag"] if release else None, "updateChannel": channel,
             "workingDirectory": str(destination / "web"), "environmentCopied": environment is not None,
             "launch": ["python3", str(destination / "web/bootstrap.py"), "--foreground", "--no-browser", "--skip-agent-install"]}
 
@@ -106,7 +114,8 @@ def main():
     parser.add_argument("--channel", choices=("stable", "experimental"), default="stable")
     args = parser.parse_args()
     try:
-        receipt = prepare(args.legacy, args.destination, published_web_release(args.channel))
+        release = published_web_release(args.channel) if args.channel != "experimental" else None
+        receipt = prepare(args.legacy, args.destination, release, channel=args.channel)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         parser.exit(1, f"Migration preparation failed: {error}\n")
     print(json.dumps(receipt, indent=2))

@@ -59,6 +59,41 @@ test('Web updates: finish an incomplete release at the current source', async ({
   expect(applied).toBe(1)
 })
 
+test('Experimental uses the existing check and update buttons', async ({ page }, testInfo) => {
+  let channel = 'stable'
+  let behind = 1
+  let applied = 0
+  await page.route('**/api/settings', (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { update_channel: string }
+      channel = body.update_channel
+    }
+    return route.fulfill({ json: { update_channel: channel, check_for_updates: true, ignore_agent_updates: true } })
+  })
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+    channel, cached: false, webui: { channel, branch: 'origin/main', release_based: false, behind,
+      current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { behind: 0 },
+  } }))
+  await page.route('**/api/updates/apply', (route) => {
+    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'experimental' })
+    applied += 1
+    behind = 0
+    return route.fulfill({ json: { ok: true, restart_scheduled: true, sourceRevision: 'b'.repeat(40) } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  await page.getByRole('combobox', { name: 'Update channel', exact: true }).click()
+  await page.getByRole('option', { name: 'Experimental', exact: true }).click()
+  await expect.poll(() => channel).toBe('experimental')
+  await page.getByRole('button', { name: 'Check now', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Update now', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('main-updates.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Update now', exact: true }).click()
+  await expect(page.getByText('Up to date', { exact: true })).toBeVisible()
+  expect(applied).toBe(1)
+})
+
 for (const scenario of [
   { name: 'private-access', update: { behind: null, manual_update: true, error: 'Synthetic release access unavailable' }, status: 'Update check failed' },
   { name: 'local-changes', update: { behind: 1, manual_update: true, dirty: true }, status: 'Local changes prevent automatic updates' },

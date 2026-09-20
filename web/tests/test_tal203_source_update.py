@@ -122,6 +122,175 @@ def test_legacy_or_unrelated_checkouts_require_manual_migration(source_install):
     assert not any(command[0] == "fetch" for command in commands)
 
 
+def test_main_tracks_branch_without_release_lookup_and_waits_for_restart(source_install, monkeypatch):
+    from api import updates
+
+    client, upstream, old, _, _, git, run_git, commands = source_install
+    (upstream / "web/server.py").write_text("version = 'unreleased main'\n")
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic unreleased main")
+    latest = git(upstream, "rev-parse", "HEAD")
+    monkeypatch.setattr(releases, "published_web_release", lambda *_: pytest.fail("Main must not query releases"))
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", old, raising=False)
+    monkeypatch.setattr(updates, "REPO_ROOT", client / "web")
+    monkeypatch.setattr(updates, "_run_git", run_git)
+    monkeypatch.setattr(updates, "_read_update_channel", lambda: "experimental")
+    monkeypatch.setattr(updates, "_restart_blocker_snapshot", lambda: {"restart_blocked": False})
+    restarts = []
+    monkeypatch.setattr(updates, "_schedule_restart", lambda: restarts.append(True))
+    status = updates._check_repo(client / "web", "webui", "experimental")
+    assert status["channel"] == "experimental" and status["branch"] == "origin/main"
+    assert status["latest_sha"] == latest and status["behind"] == 2
+    assert status["release_based"] is False
+    assert "synthetic unreleased main" in updates._commit_subjects_for_update(status)
+    assert updates.apply_update("webui")["restart_scheduled"] is True
+    assert git(client, "rev-parse", "HEAD") == latest
+    assert (client / "web/server.py").read_text() == "version = 'unreleased main'\n"
+    assert not (client / "web/api/_release.json").exists()
+    assert updates._check_repo(client / "web", "webui", "experimental")["metadata_repair"] is True
+    assert updates.apply_clear_lock("webui")["restart_scheduled"] is True
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", latest)
+    assert updates.apply_update("webui")["up_to_date"] is True
+    assert len(restarts) == 2
+    assert not any(command[0] == "fetch" and "--tags" in command for command in commands)
+
+
+@pytest.mark.parametrize("state", ["dirty", "untracked", "diverged", "ahead", "operation", "fetch_failed"])
+def test_main_preserves_unsafe_checkout_states(source_install, monkeypatch, state):
+    client, _, _, _, _, git, run_git, _ = source_install
+    if state == "dirty":
+        (client / "web/server.py").write_text("keep edits")
+    elif state == "untracked":
+        (client / "personal.txt").write_text("keep untracked")
+    elif state in ("diverged", "ahead"):
+        if state == "ahead":
+            git(client, "reset", "--hard", "origin/main")
+        (client / "web/server.py").write_text("keep local commit")
+        git(client, "add", ".")
+        git(client, "commit", "-m", "synthetic local work")
+    elif state == "operation":
+        (client / ".git/MERGE_HEAD").write_text("a" * 40)
+    head = git(client, "rev-parse", "HEAD")
+    before = (client / "web/server.py").read_bytes()
+    monkeypatch.setattr(releases, "published_web_release", lambda *_: pytest.fail("Main must not query releases"))
+    runner = (lambda args, cwd, **kw: ("fetch unavailable", False) if args[0] == "fetch" else run_git(args, cwd, **kw)) if state == "fetch_failed" else run_git
+    assert releases.apply_web_update(client / "web", "experimental", runner)["ok"] is False
+    assert git(client, "rev-parse", "HEAD") == head
+    assert (client / "web/server.py").read_bytes() == before
+    if state == "untracked":
+        assert (client / "personal.txt").read_text() == "keep untracked"
+
+
+def test_main_removes_only_its_unchanged_release_stamp(source_install, monkeypatch):
+    client, upstream, _, released, release, git, run_git, _ = source_install
+    assert releases.apply_web_update(client / "web", "stable", run_git)["ok"]
+    stamp = client / "web/api/_release.json"
+    monkeypatch.setattr(releases, "STAMPED_RELEASE_INFO", release["runtime"])
+    monkeypatch.setattr(releases, "RELEASE_INFO", release["runtime"])
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", released, raising=False)
+    (upstream / "web/server.py").write_text("version = 'next main'\n")
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic main")
+    original = stamp.read_bytes()
+    stamp.write_text('{"custom":"preserve"}')
+    assert releases.apply_web_update(client / "web", "experimental", run_git)["ok"] is False
+    assert git(client, "rev-parse", "HEAD") == released
+    assert stamp.read_text() == '{"custom":"preserve"}'
+    stamp.write_bytes(original)
+    assert releases.apply_web_update(client / "web", "experimental", run_git)["ok"] is True
+    assert not stamp.exists()
+
+
+def test_main_setting_roundtrips_and_keeps_agent_channel_independent(tmp_path, monkeypatch):
+    from api import config, updates
+
+    monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "settings.json")
+    assert config.save_settings({"update_channel": "experimental"})["update_channel"] == "experimental"
+    assert updates._read_update_channel() == "experimental"
+    seen = []
+    monkeypatch.setattr(updates, "_update_cache", {"channel": "stable", "checked_at": 0, "include_agent": True})
+    def check(path, name, channel):
+        seen.append((name, channel))
+        return {"name": name, "behind": 0}
+    monkeypatch.setattr(updates, "_check_repo", check)
+    assert updates.cached_update_status()["stale_channel"] is True
+    assert updates.check_for_updates(force=True)["channel"] == "experimental"
+    assert seen == [("webui", "experimental"), ("agent", "stable")]
+    assert config.save_settings({"update_channel": "invalid"})["update_channel"] == "experimental"
+
+
+@pytest.mark.parametrize("path", ["app/client.swift", "relay/backend.ts", "README.md", "changelog.d/example.json", ".github/workflows/example.yml"])
+def test_main_ignores_unrelated_changes_without_updating_or_restarting(source_install, monkeypatch, path):
+    from api import updates
+
+    client, upstream, _, source, _, git, run_git, _ = source_install
+    git(client, "reset", "--hard", source)
+    changed = upstream / path
+    changed.parent.mkdir(parents=True, exist_ok=True)
+    changed.write_text("synthetic unrelated change\n")
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic unrelated update")
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", source)
+    monkeypatch.setattr(releases, "published_web_release", lambda *_: pytest.fail("Main must not query releases"))
+    monkeypatch.setattr(updates, "REPO_ROOT", client / "web")
+    monkeypatch.setattr(updates, "_run_git", run_git)
+    monkeypatch.setattr(updates, "_restart_blocker_snapshot", lambda: {"restart_blocked": False})
+    restarts = []
+    monkeypatch.setattr(updates, "_schedule_restart", lambda: restarts.append(True))
+    status = updates._check_repo(client / "web", "webui", "experimental")
+    assert status["behind"] == 0 and not status["metadata_repair"]
+    assert updates._commit_subjects_for_update(status) == []
+    assert updates.apply_update("webui", "experimental")["up_to_date"] is True
+    assert git(client, "rev-parse", "HEAD") == source
+    assert restarts == []
+
+
+def test_main_counts_web_and_contract_changes_and_excludes_unrelated_summary(source_install, monkeypatch):
+    from api import updates
+
+    client, upstream, _, source, _, git, run_git, _ = source_install
+    git(client, "reset", "--hard", source)
+    (upstream / "README.md").write_text("unrelated root documentation")
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic unrelated update")
+    (upstream / "contracts/versions.json").write_text('{"synthetic":"updated"}')
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic shared contract update")
+    latest = git(upstream, "rev-parse", "HEAD")
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", source)
+    monkeypatch.setattr(updates, "REPO_ROOT", client / "web")
+    monkeypatch.setattr(updates, "_run_git", run_git)
+    status = releases.check_web_update(client / "web", "development", "experimental", run_git)
+    assert status["behind"] == 1
+    assert updates._commit_subjects_for_update(status) == ["synthetic shared contract update"]
+    assert releases.apply_web_update(client / "web", "experimental", run_git)["ok"] is True
+    assert git(client, "rev-parse", "HEAD") == latest
+    # A later excluded commit cannot hide the pending restart for changed contracts.
+    (upstream / "README.md").write_text("next unrelated change")
+    git(upstream, "commit", "-am", "synthetic next unrelated update")
+    status = releases.check_web_update(client / "web", "development", "experimental", run_git)
+    assert status["behind"] == 0 and status["metadata_repair"] is True
+    result = releases.apply_web_update(client / "web", "experimental", run_git)
+    assert result["ok"] is True and not result.get("up_to_date")
+    assert git(client, "rev-parse", "HEAD") == latest
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", latest)
+    assert not releases.check_web_update(client / "web", "development", "experimental", run_git)["metadata_repair"]
+
+
+def test_main_does_not_offer_reverted_web_changes(source_install, monkeypatch):
+    client, upstream, _, source, _, git, run_git, _ = source_install
+    git(client, "reset", "--hard", source)
+    original = (upstream / "web/server.py").read_bytes()
+    (upstream / "web/server.py").write_text("temporary change")
+    git(upstream, "commit", "-am", "synthetic temporary change")
+    (upstream / "web/server.py").write_bytes(original)
+    git(upstream, "commit", "-am", "synthetic revert")
+    monkeypatch.setattr(releases, "RUNNING_SOURCE_REVISION", source)
+    assert releases.check_web_update(client / "web", "development", "experimental", run_git)["behind"] == 0
+    assert releases.apply_web_update(client / "web", "experimental", run_git)["up_to_date"] is True
+    assert git(client, "rev-parse", "HEAD") == source
+
+
 def test_public_update_entrypoints_use_safe_monorepo_path(source_install, monkeypatch):
     from api import updates
 
@@ -281,3 +450,28 @@ def test_ahead_checkout_is_manual_not_a_successful_update(source_install, monkey
     assert not result.get("up_to_date")
     assert git(client, "rev-parse", "HEAD") == head
     assert stamp.read_text() == original
+
+
+def test_summary_cache_separates_filtered_experimental_commits(source_install, monkeypatch):
+    from collections import OrderedDict
+    from api import updates
+
+    client, upstream, old, _, _, git, run_git, _ = source_install
+    (upstream / "app").mkdir()
+    (upstream / "app/client.swift").write_text("// unrelated App change\n")
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic unrelated App update")
+    git(client, "fetch", str(upstream), "main")
+    latest = git(upstream, "rev-parse", "HEAD")
+    monkeypatch.setattr(updates, "REPO_ROOT", client / "web")
+    monkeypatch.setattr(updates, "_run_git", run_git)
+    monkeypatch.setattr(updates, "_summary_cache", OrderedDict())
+    info = {"behind": 1, "current_sha": old, "latest_sha": latest}
+    stable = updates.summarize_update_payload({"webui": {**info, "channel": "stable"}})
+    experimental_payload = {"webui": {**info, "channel": "experimental"}}
+    experimental = updates.summarize_update_payload(experimental_payload)
+    assert "synthetic unrelated App update" in stable["summary"]
+    assert "synthetic unrelated App update" not in experimental["summary"]
+    assert "synthetic published release" in experimental["summary"]
+    assert experimental["cached"] is False
+    assert updates.summarize_update_payload(experimental_payload)["cached"] is True

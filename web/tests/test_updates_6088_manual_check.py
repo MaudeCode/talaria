@@ -4,6 +4,8 @@ import io
 import json
 from urllib.parse import urlparse
 
+import pytest
+
 import api.routes as routes
 
 
@@ -82,3 +84,26 @@ def test_updates_check_enabled_runs_check_without_force(monkeypatch):
     """With check_for_updates on, a normal POST runs the real check (no regression)."""
     cap = _run_updates_check(monkeypatch, check_for_updates_enabled=True, body={})
     assert cap.get("ok") == {"reached_real_check": True}, cap
+
+
+@pytest.mark.parametrize("endpoint,function", [
+    ("check", "check_for_updates"),
+    ("apply", "apply_update"),
+    ("force", "apply_force_update"),
+])
+def test_explicit_experimental_channel_wins_before_settings_save(monkeypatch, endpoint, function):
+    """Selecting Experimental must not fall back to the persisted Stable channel."""
+    monkeypatch.setattr(routes, "load_settings", lambda: {"update_channel": "stable"})
+    monkeypatch.setattr(routes, "_guard_request_session_visibility", lambda *a, **k: True)
+    received = []
+
+    def update(*args, **kwargs):
+        received.append(kwargs.get("channel") if endpoint == "check" else args[1])
+        return {"ok": True}
+
+    monkeypatch.setattr(f"api.updates.{function}", update)
+    monkeypatch.setattr(routes, "j", lambda *a, **k: True)
+    handler = _FakeUpdatesHandler(json.dumps({"target": "webui", "channel": "experimental"}).encode())
+    handler.path = f"/api/updates/{endpoint}"
+    routes.handle_post(handler, urlparse(handler.path))
+    assert received == ["experimental"]
