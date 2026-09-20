@@ -721,7 +721,11 @@ def read_importable_agent_session_rows(
             # history. If the live database cannot be migrated, the query below
             # falls back to a short-circuiting existence check so listing stays usable.
             if 'role' in message_cols and not user_messages_index_present:
-                _prime_user_message_index_async(db_path)
+                # Background DDL blocks readers in rollback-journal databases.
+                # Only WAL can build this optional index alongside listing reads;
+                # older databases keep the existing short-circuit query fallback.
+                if conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal":
+                    _prime_user_message_index_async(db_path)
 
         if use_messages_join:
             if messages_index_present:

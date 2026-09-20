@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep conversations visible while reading older Agent databases.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -196,6 +196,10 @@ final class ShareExtensionUITests: TalariaUITestCase {
         XCTAssertTrue(sheet.waitForExistence(timeout: 20), "The system share sheet did not open")
         let talaria = talariaActivity(in: sheet)
         XCTAssertTrue(talaria.waitForExistence(timeout: 20), "Talaria is not offered for \(payload.rawValue)")
+        XCTAssertTrue(
+            waitUntilHittable(talaria, timeout: 20),
+            "The Talaria share activity never became tappable"
+        )
         talaria.tap()
     }
 
