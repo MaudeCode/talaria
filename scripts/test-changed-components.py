@@ -78,6 +78,7 @@ class RoutingTests(unittest.TestCase):
             (["scripts/check-web-browser"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
             (["scripts/stamp-release.py"], {"web_python", "tooling"}),
+            (["scripts/check-release-agent.py"], {"tooling"}),
             (["releases/publish.py"], {"tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
             ([".github/workflows/web-verify.yml"], {"web_python", "web_frontend", "tooling"}),

@@ -43,6 +43,7 @@ SCRIPTS = {
     "check-agent-compatibility.py": {"web_python", "docker", "tooling"},
     "check-previous-app.py": {"contracts", "tooling"},
     "check-selected-contracts.py": CONSUMERS | {"tooling"},
+    "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
     "rehearse-monorepo.py": {"tooling"},
     "test-monorepo-import.py": {"tooling"},
