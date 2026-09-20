@@ -38,6 +38,7 @@ jobs:
       app_ui: ${{ steps.filter.outputs.app_ui }}
       app_tooling: ${{ steps.filter.outputs.app_tooling }}
       web_python: ${{ steps.filter.outputs.web_python }}
+      web_server: ${{ steps.filter.outputs.web_server }}
       web_frontend: ${{ steps.filter.outputs.web_frontend }}
       docker: ${{ steps.filter.outputs.docker }}
       relay: ${{ steps.filter.outputs.relay }}
@@ -339,10 +340,11 @@ jobs:
 
   web:
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_python != 'false' || needs.changes.outputs.web_frontend != 'false') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_python != 'false' || needs.changes.outputs.web_server != 'false' || needs.changes.outputs.web_frontend != 'false') }}
     uses: ./.github/workflows/web-verify.yml
     with:
       python: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_python != 'false' }}
+      server: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_server != 'false' }}
       frontend: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_frontend != 'false' }}
 
   web-docker:

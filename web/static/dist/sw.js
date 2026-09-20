@@ -1,4 +1,3 @@
-//#region node_modules/workbox-core/_version.js
 try {
 	self["workbox:core:7.4.0"] && _();
 } catch {}
@@ -34,19 +33,13 @@ var e = (e, ...t) => {
 	getRuntimeName: (e) => e || r(n.runtime),
 	getSuffix: () => n.suffix
 };
-//#endregion
-//#region node_modules/workbox-core/_private/waitUntil.js
 function o(e, t) {
 	let n = t();
 	return e.waitUntil(n), n;
 }
-//#endregion
-//#region node_modules/workbox-precaching/_version.js
 try {
 	self["workbox:precaching:7.4.0"] && _();
 } catch {}
-//#endregion
-//#region node_modules/workbox-precaching/utils/createCacheKey.js
 var s = "__WB_REVISION__";
 function c(e) {
 	if (!e) throw new t("add-to-cache-list-unexpected-type", { entry: e });
@@ -72,8 +65,6 @@ function c(e) {
 		url: a.href
 	};
 }
-//#endregion
-//#region node_modules/workbox-precaching/utils/PrecacheInstallReportPlugin.js
 var l = class {
 	constructor() {
 		this.updatedURLs = [], this.notUpdatedURLs = [], this.handlerWillStart = async ({ request: e, state: t }) => {
@@ -106,8 +97,6 @@ function f() {
 	}
 	return d;
 }
-//#endregion
-//#region node_modules/workbox-core/copyResponse.js
 async function ee(e, n) {
 	let r = null;
 	if (e.url && (r = new URL(e.url).origin), r !== self.location.origin) throw new t("cross-origin-copy-response", { origin: r });
@@ -118,11 +107,7 @@ async function ee(e, n) {
 	}, o = n ? n(a) : a, s = f() ? i.body : await i.blob();
 	return new Response(s, o);
 }
-//#endregion
-//#region node_modules/workbox-core/_private/getFriendlyURL.js
 var te = (e) => new URL(String(e), location.href).href.replace(RegExp(`^${location.origin}`), "");
-//#endregion
-//#region node_modules/workbox-core/_private/cacheMatchIgnoreParams.js
 function p(e, t) {
 	let n = new URL(e);
 	for (let e of t) n.searchParams.delete(e);
@@ -134,8 +119,6 @@ async function m(e, t, n, r) {
 	let a = Object.assign(Object.assign({}, r), { ignoreSearch: !0 }), o = await e.keys(t, a);
 	for (let t of o) if (i === p(t.url, n)) return e.match(t, r);
 }
-//#endregion
-//#region node_modules/workbox-core/_private/Deferred.js
 var ne = class {
 	constructor() {
 		this.promise = new Promise((e, t) => {
@@ -143,23 +126,15 @@ var ne = class {
 		});
 	}
 }, h = /* @__PURE__ */ new Set();
-//#endregion
-//#region node_modules/workbox-core/_private/executeQuotaErrorCallbacks.js
 async function re() {
 	for (let e of h) await e();
 }
-//#endregion
-//#region node_modules/workbox-core/_private/timeout.js
 function ie(e) {
 	return new Promise((t) => setTimeout(t, e));
 }
-//#endregion
-//#region node_modules/workbox-strategies/_version.js
 try {
 	self["workbox:strategies:7.4.0"] && _();
 } catch {}
-//#endregion
-//#region node_modules/workbox-strategies/StrategyHandler.js
 function g(e) {
 	return typeof e == "string" ? new Request(e) : e;
 }
@@ -396,8 +371,6 @@ y.defaultPrecacheCacheabilityPlugin = { async cacheWillUpdate({ response: e }) {
 } }, y.copyRedirectedCacheableResponsesPlugin = { async cacheWillUpdate({ response: e }) {
 	return e.redirected ? await ee(e) : e;
 } };
-//#endregion
-//#region node_modules/workbox-precaching/PrecacheController.js
 var b = class {
 	constructor({ cacheName: e, plugins: t = [], fallbackToNetwork: n = !0 } = {}) {
 		this._urlsToCacheKeys = /* @__PURE__ */ new Map(), this._urlsToCacheModes = /* @__PURE__ */ new Map(), this._cacheKeysToIntegrities = /* @__PURE__ */ new Map(), this._strategy = new y({
@@ -484,13 +457,9 @@ var b = class {
 		return (t) => (t.request = new Request(e), t.params = Object.assign({ cacheKey: n }, t.params), this.strategy.handle(t));
 	}
 }, x, S = () => (x ||= new b(), x);
-//#endregion
-//#region node_modules/workbox-routing/_version.js
 try {
 	self["workbox:routing:7.4.0"] && _();
 } catch {}
-//#endregion
-//#region node_modules/workbox-routing/utils/normalizeHandler.js
 var C = (e) => e && typeof e == "object" ? e : { handle: e }, w = class {
 	constructor(e, t, n = "GET") {
 		this.handler = C(t), this.match = e, this.method = n;
@@ -609,8 +578,6 @@ var C = (e) => e && typeof e == "object" ? e : { handle: e }, w = class {
 		else throw new t("unregister-route-route-not-registered");
 	}
 }, T, ce = () => (T || (T = new se(), T.addFetchListener(), T.addCacheListener()), T);
-//#endregion
-//#region node_modules/workbox-routing/registerRoute.js
 function E(e, n, r) {
 	let i;
 	if (typeof e == "string") {
@@ -626,14 +593,10 @@ function E(e, n, r) {
 	});
 	return ce().registerRoute(i), i;
 }
-//#endregion
-//#region node_modules/workbox-precaching/utils/removeIgnoredSearchParams.js
 function le(e, t = []) {
 	for (let n of [...e.searchParams.keys()]) t.some((e) => e.test(n)) && e.searchParams.delete(n);
 	return e;
 }
-//#endregion
-//#region node_modules/workbox-precaching/utils/generateURLVariations.js
 function* ue(e, { ignoreURLParametersMatching: t = [/^utm_/, /^fbclid$/], directoryIndex: n = "index.html", cleanURLs: r = !0, urlManipulation: i } = {}) {
 	let a = new URL(e, location.href);
 	a.hash = "", yield a.href;
@@ -651,8 +614,6 @@ function* ue(e, { ignoreURLParametersMatching: t = [/^utm_/, /^fbclid$/], direct
 		for (let t of e) yield t.href;
 	}
 }
-//#endregion
-//#region node_modules/workbox-precaching/PrecacheRoute.js
 var de = class extends w {
 	constructor(e, t) {
 		super(({ request: n }) => {
@@ -667,42 +628,28 @@ var de = class extends w {
 		}, e.strategy);
 	}
 };
-//#endregion
-//#region node_modules/workbox-precaching/addRoute.js
 function D(e) {
 	E(new de(S(), e));
 }
-//#endregion
-//#region node_modules/workbox-precaching/utils/deleteOutdatedCaches.js
 var O = "-precache-", k = async (e, t = O) => {
 	let n = (await self.caches.keys()).filter((n) => n.includes(t) && n.includes(self.registration.scope) && n !== e);
 	return await Promise.all(n.map((e) => self.caches.delete(e))), n;
 };
-//#endregion
-//#region node_modules/workbox-precaching/cleanupOutdatedCaches.js
 function A() {
 	self.addEventListener("activate", ((e) => {
 		let t = a.getPrecacheName();
 		e.waitUntil(k(t).then((e) => {}));
 	}));
 }
-//#endregion
-//#region node_modules/workbox-precaching/matchPrecache.js
 function j(e) {
 	return S().matchPrecache(e);
 }
-//#endregion
-//#region node_modules/workbox-precaching/precache.js
 function M(e) {
 	S().precache(e);
 }
-//#endregion
-//#region node_modules/workbox-precaching/precacheAndRoute.js
 function N(e, t) {
 	M(e), D(t);
 }
-//#endregion
-//#region node_modules/workbox-strategies/CacheFirst.js
 var P = class extends v {
 	async _handle(e, n) {
 		let r = await n.cacheMatch(e), i;
@@ -718,13 +665,9 @@ var P = class extends v {
 		return r;
 	}
 };
-//#endregion
-//#region node_modules/workbox-core/_private/dontWaitFor.js
 function F(e) {
 	e.then(() => {});
 }
-//#endregion
-//#region node_modules/idb/build/wrap-idb-value.js
 var I = (e, t) => t.some((t) => e instanceof t), L, R;
 function z() {
 	return L ||= [
@@ -811,8 +754,6 @@ function q(e) {
 	return t !== e && (W.set(e, t), G.set(t, e)), t;
 }
 var J = (e) => G.get(e);
-//#endregion
-//#region node_modules/idb/build/index.js
 function _e(e, t, { blocked: n, upgrade: r, blocking: i, terminated: a } = {}) {
 	let o = indexedDB.open(e, t), s = q(o);
 	return r && o.addEventListener("upgradeneeded", (e) => {
@@ -853,13 +794,9 @@ me((e) => ({
 	get: (t, n, r) => X(t, n) || e.get(t, n, r),
 	has: (t, n) => !!X(t, n) || e.has(t, n)
 }));
-//#endregion
-//#region node_modules/workbox-expiration/_version.js
 try {
 	self["workbox:expiration:7.4.0"] && _();
 } catch {}
-//#endregion
-//#region node_modules/workbox-expiration/models/CacheTimestampsModel.js
 var xe = "workbox-expiration", Z = "cache-entries", Q = (e) => {
 	let t = new URL(e, location.href);
 	return t.hash = "", t.href;
@@ -931,13 +868,9 @@ var xe = "workbox-expiration", Z = "cache-entries", Q = (e) => {
 		this._rerunRequested = !1, await this._timestampModel.expireEntries(Infinity);
 	}
 };
-//#endregion
-//#region node_modules/workbox-core/registerQuotaErrorCallback.js
 function we(e) {
 	h.add(e);
 }
-//#endregion
-//#region node_modules/workbox-expiration/ExpirationPlugin.js
 var $ = class {
 	constructor(e = {}) {
 		this.cachedResponseWillBeUsed = async ({ event: e, request: t, cacheName: n, cachedResponse: r }) => {
@@ -1009,4 +942,3 @@ self.addEventListener("fetch", (e) => {
 		}
 	})()));
 });
-//#endregion

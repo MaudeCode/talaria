@@ -14,8 +14,8 @@ SCRIPT = Path(__file__).with_name("changed-components.py")
 spec = importlib.util.spec_from_file_location("routing", SCRIPT)
 routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
-ALL = {"app", "app_tooling", "web_python", "web_frontend", "docker", "relay", "contracts", "tooling"}
-CONSUMERS = {"app", "web_python", "web_frontend", "relay", "contracts"}
+ALL = {"app", "app_tooling", "web_python", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
+CONSUMERS = {"app", "web_python", "web_server", "web_frontend", "relay", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
@@ -43,8 +43,11 @@ class RoutingTests(unittest.TestCase):
             (["changelog.d/TAL-123.json"], set()),
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
-            (["web/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
-            (["web/frontend/package-lock.json"], {"web_frontend"}),
+            (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
+            (["web/package-lock.json"], {"web_server", "web_frontend"}),
+            (["web/packages/contracts/src/router.ts"], {"web_server", "web_frontend", "contracts"}),
+            (["web/packages/server/src/index.ts", "web/sidecar/talaria_sidecar/__main__.py"], {"web_server", "contracts"}),
+            (["web/packages/frontend/package.json"], {"web_frontend"}),
             (["web/static/brand/favicon.ico", "web/static/__init__.py"], {"web_frontend", "web_python"}),
             (["web/UPSTREAM_BASE_SHA"], {"tooling"}),
             (["web/mcp_server.py", "web/tests/test_config.py"], {"web_python"}),
@@ -55,10 +58,10 @@ class RoutingTests(unittest.TestCase):
             (["web/server.py"], {"web_python", "web_frontend", "contracts"}),
             (["web/tests/fixtures/readme.md"], {"web_python"}),
             (["web/skills/runtime/SKILL.md"], {"web_python"}),
-            (["web/frontend/src/guide.md"], {"web_frontend"}),
+            (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
             (["web/Dockerfile", "web/docker-compose.yml"], {"docker", "web_python"}),
-            (["web/requirements.txt"], {"web_python", "web_frontend", "docker", "contracts"}),
-            (["web/pyproject.toml"], {"web_python", "web_frontend", "docker", "contracts"}),
+            (["web/requirements.txt"], {"web_python", "web_server", "web_frontend", "docker", "contracts"}),
+            (["web/pyproject.toml"], {"web_python", "web_server", "web_frontend", "docker", "contracts"}),
             (["app/Talaria/Features/Chat/ChatView.swift"], {"app"}),
             (["app/Talaria/Resources/Guide.md"], {"app"}),
             (["app/Talaria/Networking/APIClient.swift"], {"app", "contracts"}),
@@ -73,7 +76,7 @@ class RoutingTests(unittest.TestCase):
             (["relay/package.json", "relay/pnpm-lock.yaml"], {"relay"}),
             (["contracts/versions.json"], CONSUMERS),
             (["web/api/contract_versions.json"], CONSUMERS),
-            (["web/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
+            (["web/packages/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
             (["scripts/check-web-python"], {"web_python", "tooling"}),
             (["scripts/check-web-browser"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
@@ -81,7 +84,7 @@ class RoutingTests(unittest.TestCase):
             (["scripts/check-release-agent.py"], {"tooling"}),
             (["releases/publish.py"], {"tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
-            ([".github/workflows/web-verify.yml"], {"web_python", "web_frontend", "tooling"}),
+            ([".github/workflows/web-verify.yml"], {"web_python", "web_server", "web_frontend", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
             ([".github/workflows/pr-ci.yml"], {"tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
@@ -89,9 +92,9 @@ class RoutingTests(unittest.TestCase):
             (["new-component/runtime.rs"], ALL),
             (["changelog.d/README.md", "changelog.d/malformed.json"], set()),
             ([], ALL),
-            (["../web/frontend/main.tsx"], ALL),
+            (["../web/packages/frontend/main.tsx"], ALL),
             ([None], ALL),
-            (["web/frontend/file\napp=false\n.tsx"], {"web_frontend"}),
+            (["web/packages/frontend/file\napp=false\n.tsx"], {"web_frontend"}),
         ]
         for paths, expected in cases:
             with self.subTest(paths=paths):
@@ -127,11 +130,11 @@ class RoutingTests(unittest.TestCase):
             (root / "web/tests").mkdir(parents=True)
             (root / "web/tests/server.py").write_text("print('synthetic')\n")
             base = commit("base")
-            (root / "web/frontend").mkdir()
-            git("mv", "web/tests/server.py", "web/frontend/moved.py")
+            (root / "web/packages/frontend").mkdir(parents=True)
+            git("mv", "web/tests/server.py", "web/packages/frontend/moved.py")
             moved = commit("move backend file into frontend")
             self.assertEqual(classify(base, moved), {"web_python", "web_frontend"})
-            odd = root / "web/frontend/name\napp=false\n.tsx"
+            odd = root / "web/packages/frontend/name\napp=false\n.tsx"
             odd.write_text("synthetic")
             head = commit("frontend change")
             self.assertEqual(classify(moved, head, expected_ui=False), {"web_frontend"})

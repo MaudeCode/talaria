@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-export const REPO_ROOT = resolve(import.meta.dirname, '..', '..')
+export const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..')
 const STATE_FILE = join(tmpdir(), `hermes-e2e-${process.env.HERMES_E2E_PORT ?? '8797'}.json`)
 
 export interface ServerHandle { pid: number; state: string; log: string }

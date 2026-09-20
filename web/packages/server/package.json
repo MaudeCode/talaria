@@ -1,0 +1,33 @@
+{
+  "name": "@maudecode/talaria-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Talaria Web server: Node 24 HTTP server for the Hermes Agent browser workbench, with the talaria-web launcher, daemon control, self-update, and MCP bins.",
+  "bin": {
+    "talaria-web": "./dist/bin/talaria-web.js",
+    "talaria-web-mcp": "./dist/bin/talaria-web-mcp.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@maudecode/talaria-web-contracts": "*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "eslint": "10.10.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

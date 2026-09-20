@@ -13,7 +13,7 @@ import { resolve } from 'node:path'
 import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 
 const here = resolve(import.meta.dirname)
-const distRoot = resolve(here, '../../static/dist')
+const distRoot = resolve(here, '../../../static/dist')
 const swTmp = resolve(here, '../dist/sw')
 
 if (!existsSync(resolve(distRoot, 'index.html'))) {
@@ -48,6 +48,14 @@ await build({
 })
 writeFileSync(resolve(distRoot, 'extension-sdk.js'), readFileSync(resolve(sdkTmp, 'extension-sdk.js')))
 rmSync(sdkTmp, { recursive: true, force: true })
+
+// The minifier emits `//#region <path>` markers relative to the Vite root, so
+// the same source would hash differently depending on where node_modules is
+// hoisted. Strip them: they carry no runtime meaning and the build must be
+// byte-identical across layouts.
+const stripRegions = (file) => writeFileSync(file, readFileSync(file, 'utf8').replace(/^\/\/#(?:end)?region.*\n?/gm, ''))
+stripRegions(resolve(swTmp, 'sw.js'))
+stripRegions(resolve(distRoot, 'extension-sdk.js'))
 
 const shell = readFileSync(resolve(distRoot, 'index.html'), 'utf8')
 const shellAssets = [...shell.matchAll(/(?:href|src)="\.\/(assets\/[^"]+)"/g)].map((m) => m[1])

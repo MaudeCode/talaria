@@ -79,7 +79,7 @@ graphify-out/
 node_modules/
 package-lock.json
 !frontend/package-lock.json
-frontend/dist/
+packages/frontend/dist/
 frontend/src/paraglide/
 frontend/playwright-report/
 frontend/test-results/

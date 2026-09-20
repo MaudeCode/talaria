@@ -23,7 +23,7 @@ else:
     raise SystemExit('No available test port pair')
 PY
 )
-cd "$root/web/frontend"
+cd "$root/web/packages/frontend"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
 npx playwright install chromium
 run_env=(env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \

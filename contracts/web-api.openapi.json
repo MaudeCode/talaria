@@ -1,0 +1,8 @@
+{
+  "info": {
+    "title": "Talaria Web API",
+    "version": "1",
+    "description": "HTTP and SSE contract of the Talaria Web server. Generated from @maudecode/talaria-web-contracts; do not edit by hand."
+  },
+  "openapi": "3.1.1"
+}

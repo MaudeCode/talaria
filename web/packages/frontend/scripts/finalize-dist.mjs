@@ -16,7 +16,7 @@ import { join, resolve } from 'node:path'
 
 const here = resolve(import.meta.dirname)
 const clientDir = resolve(here, '../dist/client')
-const outDir = resolve(here, '../../static/dist')
+const outDir = resolve(here, '../../../static/dist')
 
 const shellPath = join(clientDir, '_shell.html')
 if (!existsSync(shellPath)) {

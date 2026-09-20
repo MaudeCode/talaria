@@ -229,7 +229,7 @@ disposition of each of its selectors. Re-run the generator after adding a select
 \`frontend/scripts/css-converted.txt\` (declarations moved to utilities) or after
 rendering a legacy class from a new component (it becomes live automatically).
 `
-writeFileSync(join(front, '..', 'docs', 'architecture', 'css-conversion-ledger.md'), md)
+writeFileSync(join(front, '..', '..', 'docs', 'architecture', 'css-conversion-ledger.md'), md)
 console.log(JSON.stringify(stats), 'files:', files.join(','), 'keyframes:', keyframes.size)
 const missing = [...CONVERTED, ...OVERRIDDEN.keys()].filter((k) => !ledger.some((e) => e.selectors.some((s) => `[${e.context.join(' | ')}] ${s.selector}` === k)))
 if (missing.length) { console.error('css-converted.txt keys not found in legacy CSS:\n' + missing.join('\n')); process.exit(1) }

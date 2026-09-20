@@ -1,0 +1,41 @@
+{
+  "name": "@maudecode/talaria-web-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Talaria Web contract package: oRPC route contract, Zod schemas, SSE event unions, sidecar RPC schema, and the OpenAPI generator.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "fixtures"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "openapi": "node scripts/generate-openapi.mjs",
+    "fixtures": "node scripts/export-fixtures.mjs"
+  },
+  "dependencies": {
+    "@orpc/contract": "1.15.2",
+    "@orpc/openapi": "1.15.2",
+    "@orpc/zod": "1.15.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "eslint": "10.10.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

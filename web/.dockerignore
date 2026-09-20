@@ -6,11 +6,11 @@ __pycache__
 tests/
 .env*
 /AGENTS.md
-frontend/node_modules/
-frontend/dist/
-frontend/.tanstack/
-frontend/playwright-report/
-frontend/test-results/
+packages/frontend/node_modules/
+packages/frontend/dist/
+packages/frontend/.tanstack/
+packages/frontend/playwright-report/
+packages/frontend/test-results/
 
 # Local toolchains and test-owned state never enter a runtime image.
 .venv/
@@ -20,4 +20,4 @@ dist/
 *.egg-info/
 api/_scm_version.py
 api/_version.py
-frontend/src/paraglide/
+packages/frontend/src/paraglide/

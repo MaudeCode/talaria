@@ -11,14 +11,14 @@ import subprocess
 import sys
 
 
-SUITES = {"app", "app_tooling", "web_python", "web_frontend", "docker", "relay", "contracts", "tooling"}
-CONSUMERS = {"app", "web_python", "web_frontend", "relay", "contracts"}
-WEB_BUILD = {"web_python", "web_frontend", "docker", "contracts"}
-JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_python", "web_frontend"},
+SUITES = {"app", "app_tooling", "web_python", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
+CONSUMERS = {"app", "web_python", "web_server", "web_frontend", "relay", "contracts"}
+WEB_BUILD = {"web_python", "web_server", "web_frontend", "docker", "contracts"}
+JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_python", "web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     "pr-ci.yml": {"tooling"},
-    "web-verify.yml": {"web_python", "web_frontend", "tooling"},
+    "web-verify.yml": {"web_python", "web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
     "repository-tooling.yml": {"tooling"},
@@ -124,8 +124,14 @@ def path_suites(path):
             return {"app_tooling", "tooling"}
         return {"app"}
     if component == "web":
-        if local.startswith(("frontend/", "static/dist/")):
+        if local.startswith(("packages/frontend/", "static/dist/")):
             return {"web_frontend"}
+        if local.startswith("packages/contracts/"):
+            return {"web_server", "web_frontend", "contracts"}
+        if local.startswith(("packages/server/", "sidecar/")):
+            return {"web_server", "contracts"}
+        if local in ("package.json", "package-lock.json", ".nvmrc"):
+            return {"web_server", "web_frontend"}
         if local.startswith("static/"):
             return {"web_frontend", "web_python"}
         if local == "UPSTREAM_BASE_SHA":

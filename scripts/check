@@ -10,8 +10,17 @@ case "$component" in
     cd web
     # Test-owned HOME prevents Agent and credential discovery outside this run.
     "$root/scripts/check-web-python" "$@"
-    cd frontend
     npm ci --no-audit --no-fund
+    npm run build -w packages/contracts
+    npm run lint -w packages/contracts
+    npm run lint -w packages/server
+    npm run typecheck -w packages/contracts
+    npm run typecheck -w packages/server
+    npm test -w packages/contracts
+    npm test -w packages/server
+    npm run openapi
+    git diff --exit-code -- "$root/contracts/web-api.openapi.json"
+    cd packages/frontend
     npm run i18n:gate
     npm run typecheck
     npm run lint
