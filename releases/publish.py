@@ -103,11 +103,18 @@ def web(plan, build, directory, output):
 
 
 def _release_info(tag):
-    result = subprocess.run(["gh", "api", f"repos/{REPOSITORY}/releases/tags/{tag}"], capture_output=True, text=True)
-    if result.returncode == 0:
-        return json.loads(result.stdout)
-    unused_release(tag)  # Only an explicit 404 permits creation.
-    return None
+    # Native gh resolves both published tags and pending draft tags via GraphQL.
+    result = subprocess.run(["gh", "release", "view", tag, "--repo", REPOSITORY,
+                             "--json", "databaseId"], capture_output=True, text=True)
+    if result.returncode:
+        if result.stderr.strip() != "release not found":
+            raise ValueError("release lookup failed; refusing to create a replacement")
+        unused_release(tag)  # Also require an explicit REST 404 before creation.
+        return None
+    identifier = json.loads(result.stdout).get("databaseId")
+    if type(identifier) is not int or identifier <= 0:
+        raise ValueError("invalid release identity")
+    return json.loads(subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/{identifier}"], text=True))
 
 
 def _publish_release(tag, source, notes, files, identity, *, latest=False):
