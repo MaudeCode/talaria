@@ -136,7 +136,8 @@ describe('SystemSection "Check now"', () => {
     expect(trigger).toHaveTextContent(/stable/i)
   })
 
-  it('selects Main and uses it for the existing check and Web update actions', async () => {
+  it('selects Experimental and uses it for the existing check and Web update actions', async () => {
+    settingsState.update_channel = 'stable'
     vi.mocked(api.saveSettings).mockImplementation((patch) => {
       settingsState = { ...settingsState, ...patch }
       return Promise.resolve(settingsState)
@@ -146,17 +147,20 @@ describe('SystemSection "Check now"', () => {
     renderSystem()
     await screen.findByText(/up to date/i)
     await userEvent.click(screen.getByRole('combobox', { name: /update channel/i }))
-    await userEvent.click(await screen.findByRole('option', { name: /main/i }))
+    const experimental = await screen.findByRole('option', { name: /experimental/i })
+    expect(screen.getAllByRole('option')).toHaveLength(2)
+    expect(screen.getByRole('option', { name: /^stable$/i })).toBeInTheDocument()
+    await userEvent.click(experimental)
     await userEvent.click(screen.getByRole('button', { name: /check now/i }))
-    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('main'))
+    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental'))
     await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'main', 'webui'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
   })
 
-  it('keeps Main up to date when newer repository commits do not affect Web', async () => {
-    settingsState.update_channel = 'main'
+  it('keeps Experimental up to date when newer repository commits do not affect Web', async () => {
+    settingsState.update_channel = 'experimental'
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: {
-      channel: 'main', branch: 'origin/main', behind: 0, metadata_repair: false,
+      channel: 'experimental', branch: 'origin/main', behind: 0, metadata_repair: false,
       current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40),
     } }))
     renderSystem()

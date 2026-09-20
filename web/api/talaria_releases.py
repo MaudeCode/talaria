@@ -157,7 +157,7 @@ def check_web_update(web_path, current_version, channel, run_git):
     root = _checkout_root(web_path, run_git)
     result = {"name": "webui", "channel": channel, "repo_url": REPOSITORY_URL,
               "current_version": current_version, "behind": None, "no_git": root is None}
-    if channel == "main":
+    if channel == "experimental" and root is not None:
         return _check_main_update(root, result, run_git)
     try:
         release = published_web_release(channel)
@@ -305,7 +305,7 @@ def _verified_release_stamp(root, release, run_git):
 
 
 def apply_web_update(web_path, channel, run_git):
-    """Fast-forward only a recognized clean deployment checkout to a published tag."""
+    """Fast-forward a recognized clean checkout to main or a published Stable tag."""
     root = _checkout_root(web_path, run_git)
     if root is None:
         return {"ok": False, "manual_update": True,
@@ -320,7 +320,7 @@ def apply_web_update(web_path, channel, run_git):
     head, ok = run_git(["rev-parse", "HEAD"], root)
     if not ok or not _SHA.fullmatch(head):
         return {"ok": False, "message": "Could not verify the current source revision"}
-    main = channel == "main"
+    main = channel == "experimental"
     if main:
         source, error = _main_revision(root, run_git)
         if source is None:

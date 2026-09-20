@@ -74,7 +74,7 @@ def test_prepares_prefixed_checkout_without_changing_legacy_state(migration, tmp
     assert "synthetic-password" not in json.dumps(receipt)
 
 
-@pytest.mark.parametrize("channel", ["main", "stable"])
+@pytest.mark.parametrize("channel", ["experimental", "stable"])
 @pytest.mark.parametrize("worktree", [False, True])
 def test_sparse_partial_preparation_and_repeated_updates(migration, tmp_path, monkeypatch, channel, worktree):
     from api import talaria_releases as releases
@@ -83,7 +83,7 @@ def test_sparse_partial_preparation_and_repeated_updates(migration, tmp_path, mo
     upstream = tmp_path / "upstream.git"
     destination = tmp_path / "talaria"
     before = (state / "session.json").read_bytes()
-    receipt = tool.prepare(legacy, destination, None if channel == "main" else release, channel=channel)
+    receipt = tool.prepare(legacy, destination, None if channel == "experimental" else release, channel=channel)
     assert git(destination, "config", "remote.origin.partialclonefilter") == "blob:none"
     assert git(destination, "config", "remote.origin.promisor") == "true"
     assert set(git(destination, "sparse-checkout", "list").splitlines()) == {"web", "contracts", "scripts"}
@@ -92,7 +92,7 @@ def test_sparse_partial_preparation_and_repeated_updates(migration, tmp_path, mo
     for path in ("app/ios.txt", "relay/backend.txt"):
         assert "?" + git(upstream, "rev-parse", f"HEAD:{path}") in missing
     assert receipt["updateChannel"] == channel
-    if channel == "main":
+    if channel == "experimental":
         assert git(destination, "branch", "--show-current") == "main"
         assert not (destination / "web/api/_release.json").exists()
     else:
@@ -116,7 +116,7 @@ def test_sparse_partial_preparation_and_repeated_updates(migration, tmp_path, mo
             return releases.REPOSITORY_URL + ".git", True
         return tool.run_git(args, cwd, **kwargs)
 
-    if channel == "main":
+    if channel == "experimental":
         monkeypatch.setattr(releases, "published_web_release", lambda *_: pytest.fail("Main must not query releases"))
     for revision in range(2):
         head = git(destination, "rev-parse", "HEAD")

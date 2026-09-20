@@ -74,23 +74,23 @@ def prepare(legacy, destination, release, *, channel="stable"):
         raise ValueError("Could not read the legacy source revision")
     environment = checked_env(legacy / ".env")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    ref = "main" if channel == "main" else release["tag"]
+    ref = "main" if channel == "experimental" else release["tag"]
     _, ok = run_git(["clone", "--filter=blob:none", "--no-checkout", "--single-branch", "--branch", ref,
                      REPOSITORY_URL + ".git", str(destination)], destination.parent, timeout=300)
     if not ok:
         raise ValueError("Clone failed; check repository read access. Inspect any partial destination before retrying.")
-    selected = "refs/remotes/origin/main^{commit}" if channel == "main" else f"refs/tags/{release['tag']}^{{commit}}"
+    selected = "refs/remotes/origin/main^{commit}" if channel == "experimental" else f"refs/tags/{release['tag']}^{{commit}}"
     source, ok = run_git(["rev-parse", selected], destination)
-    if not ok or not re.fullmatch(r"[a-f0-9]{40}", source) or (channel != "main" and source != release["sourceRevision"]):
+    if not ok or not re.fullmatch(r"[a-f0-9]{40}", source) or (channel != "experimental" and source != release["sourceRevision"]):
         raise ValueError("Published tag does not match the release manifest; destination was not activated")
     _, included = run_git(["merge-base", "--is-ancestor", old, source], destination)
     if not included:
         raise ValueError("The selected source does not contain this legacy revision; reconcile the fork manually")
-    metadata = verify_release_source(destination, release, run_git) if channel != "main" else None
+    metadata = verify_release_source(destination, release, run_git) if channel != "experimental" else None
     _, ok = run_git(["sparse-checkout", "set", "--cone", "web", "contracts", "scripts"], destination)
     if not ok:
         raise ValueError("Could not prepare the Web-only sparse checkout; destination was not activated")
-    _, ok = run_git(["checkout", "main"] if channel == "main" else ["checkout", "--detach", source], destination)
+    _, ok = run_git(["checkout", "main"] if channel == "experimental" else ["checkout", "--detach", source], destination)
     if not ok:
         raise ValueError("Could not check out the published source; destination was not activated")
     if environment is not None:
@@ -111,10 +111,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("legacy", type=Path)
     parser.add_argument("destination", type=Path)
-    parser.add_argument("--channel", choices=("main", "stable", "experimental"), default="stable")
+    parser.add_argument("--channel", choices=("stable", "experimental"), default="stable")
     args = parser.parse_args()
     try:
-        release = published_web_release(args.channel) if args.channel != "main" else None
+        release = published_web_release(args.channel) if args.channel != "experimental" else None
         receipt = prepare(args.legacy, args.destination, release, channel=args.channel)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         parser.exit(1, f"Migration preparation failed: {error}\n")

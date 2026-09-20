@@ -82,7 +82,6 @@ export function SystemSection() {
         <FieldRow label={m.settings_label_check_updates()} htmlFor="settingsCheckUpdates" inline><Switch id="settingsCheckUpdates" checked={bool('check_for_updates', true)} onCheckedChange={(checked) => set({ check_for_updates: checked })} /></FieldRow>
         <FieldRow label={m.settings_label_update_channel()} htmlFor="settingsUpdateChannel" inline>
           <Select id="settingsUpdateChannel" value={channel} onValueChange={setChannel}>
-            <option value="main">{m.settings_update_channel_main()}</option>
             <option value="stable">{m.settings_update_channel_stable()}</option>
             <option value="experimental">{m.settings_update_channel_experimental()}</option>
           </Select>

@@ -1,8 +1,7 @@
 # Talaria Web updates
 
-Talaria Web can follow **Main (latest commits)** or completed releases from
-`MaudeCode/talaria`, using the existing update-channel control and Update button.
-Main follows `origin/main` through a clean Git fast-forward and needs only Git
+Talaria Web keeps the **Stable** and **Experimental** update-channel choices
+and the existing Update button. For Git source installations, Experimental follows `origin/main` through a clean Git fast-forward and needs only Git
 read access. It does not query release manifests or require a release API token.
 It offers updates only when the net changes under `web/` or `contracts/` differ.
 Counts and change summaries include only commits touching those paths. App-only,
@@ -10,18 +9,18 @@ Relay-only, root documentation/CI/changelog-only, and fully reverted Web changes
 leave Web up to date without changing its checkout or restarting it. When Web or
 shared contracts do change, applying the update advances to the exact latest
 main commit, including its shared history metadata.
-Stable tags are
+Stable source updates follow completed releases. Stable tags are
 `web-vX.Y.Z`; experimental tags are `web-exp-vX.Y.Z`. App and Relay tags cannot
 become Web's version. Public Hermes WebUI imports remain a maintainer operation
 through root `scripts/import-web-upstream`; they are not an end-user update feed.
 
-For Stable and Experimental, the updater reads root releases named `release-set-<commit SHA>` and their
+For Stable source updates and both packaged channels, the updater reads root releases named `release-set-<commit SHA>` and their
 `release-set.json` asset. Only `status: complete` manifests with matching immutable
 Web references advertise an update. A tag or draft release alone is insufficient.
 The publisher must make this record public to authorized readers only after all
 component gates pass. Lookup failures remain unavailable, never “up to date.”
 
-For private Stable/Experimental release lookup, set `TALARIA_RELEASE_TOKEN` in the Web process environment
+For private release lookup, set `TALARIA_RELEASE_TOKEN` in the Web process environment
 to a token with **Contents: read** on this repository. This token is separate from
 Agent/provider credentials. Downloads strip authorization before following the
 GitHub asset redirect. Source updates also require Git's own HTTPS credential
@@ -32,8 +31,8 @@ and [asset download API](https://docs.github.com/en/rest/releases/assets#get-a-r
 Automatic source updates require a recognized Talaria origin and the `web/`
 component under the Git root. Normal clones and Git worktrees are supported.
 The complete checkout must be clean, including App/Relay edits and untracked
-files. Main fetches only `origin/main`; release channels fetch the selected
-published tag, check its commit against the manifest and verify packaged
+files. Experimental source updates fetch only `origin/main`; Stable fetches the selected
+published tag, checks its commit against the manifest and verifies packaged
 compatibility metadata. Both paths perform
 a fast-forward that protects ignored files from overwrite. Divergent histories
 require manual reconciliation. A checkout ahead of the selected published release
@@ -42,15 +41,15 @@ its current revision. At startup, an otherwise valid source stamp must match
 Git HEAD; a mismatch or unreadable Git identity reports development provenance.
 Packaged artifacts without Git retain their baked release identity.
 
-Main checks report the current and target Git commits. After relevant source advances,
-**Finish update** remains available until the server restarts with that revision.
+Experimental source checks report the current and target Git commits. After relevant source advances,
+**Finish applying this release** remains available until the server restarts with that revision.
 An unchanged generated release stamp is removed when advancing to unreleased
-Main code; modified stamps require manual inspection. Main never fabricates a
+main code; modified stamps require manual inspection. Experimental source never fabricates a
 completed release identity. Switching back to Stable does not rewind a checkout
 that is ahead of the published release.
 
 Source updates advance the monorepo checkout; deployment remains component-specific.
-The operation stamps the new Web provenance and schedules a Web restart. Existing
+The operation updates Web provenance and schedules a Web restart. Existing
 active-run guards still apply. The compatibility `force` and `clear_lock` endpoints
 use this same clean-only path for Web. Git owns its locks; the server never deletes
 them. External Agent update and gateway-restart behavior stays separate. Settings
@@ -59,7 +58,7 @@ or requires manual handling. Applying Web does not also update Agent.
 
 Matching source alone does not complete an update. If the release stamp or
 running identity is still pending, update status reports `metadata_repair: true`
-while keeping the real commit distance at zero. Settings offers **Finish update**
+while keeping the real commit distance at zero. Settings offers **Finish applying this release**
 until the stamp is verified and Web restarts with that identity. Modified local
 stamps require manual inspection and are not overwritten.
 
@@ -83,10 +82,10 @@ From an authenticated Talaria checkout, run:
 python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria
 
 # Track the current Git branch instead of a published release:
-python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria --channel main
+python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria --channel experimental
 ```
 
-The command resolves a completed release (or `origin/main` with `--channel main`),
+The command resolves a completed release (or `origin/main` with `--channel experimental`),
 clones it into a new directory,
 verifies the selected source and that the legacy revision is included in its history,
 then stamps Web provenance for a published release. It copies a simple legacy `.env` with mode `0600` and
@@ -103,14 +102,14 @@ which would otherwise fetch excluded blobs to count changed lines. Normal sparse
 clones and sparse Git worktrees are supported. Commands that explicitly inspect
 excluded files can still make Git download them on demand.
 
-Main preparation creates a tracking `main` branch without a release stamp;
-published preparation checks out the selected tag's commit detached and stamps
+Experimental preparation creates a tracking `main` branch without a release stamp;
+Stable preparation checks out the selected tag's commit detached and stamps
 its verified provenance. The receipt reports `updateChannel`. Select that channel
 in Settings after activating the deployment; preparation does not edit existing
 user settings or state. The repository already commits its frontend build, so
 Git updates deliver those assets without a production npm build. Runtime setup
 and startup remain the repository's existing commands, independently of whether
-Git selected Main or a release; no wheel-only update requirement is introduced.
+Git selected main or a release; no wheel-only update requirement is introduced.
 
 After preparation succeeds, stop the old service, change its working directory
 and launch command to the paths in the preparation receipt, then start and check

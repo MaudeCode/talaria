@@ -49,7 +49,7 @@ test('Web updates: finish an incomplete release at the current source', async ({
   })
   await page.goto('/settings/system')
   await settle(page)
-  await expect(page.getByText('Finish applying this update', { exact: true })).toBeVisible()
+  await expect(page.getByText('Finish applying this release', { exact: true })).toBeVisible()
   await expect(page.getByText('Up to date', { exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('update-repair.png'), fullPage: true })
@@ -59,7 +59,7 @@ test('Web updates: finish an incomplete release at the current source', async ({
   expect(applied).toBe(1)
 })
 
-test('Main uses the existing check and update buttons', async ({ page }, testInfo) => {
+test('Experimental uses the existing check and update buttons', async ({ page }, testInfo) => {
   let channel = 'stable'
   let behind = 1
   let applied = 0
@@ -75,7 +75,7 @@ test('Main uses the existing check and update buttons', async ({ page }, testInf
       current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { behind: 0 },
   } }))
   await page.route('**/api/updates/apply', (route) => {
-    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'main' })
+    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'experimental' })
     applied += 1
     behind = 0
     return route.fulfill({ json: { ok: true, restart_scheduled: true, sourceRevision: 'b'.repeat(40) } })
@@ -83,8 +83,8 @@ test('Main uses the existing check and update buttons', async ({ page }, testInf
   await page.goto('/settings/system')
   await settle(page)
   await page.getByRole('combobox', { name: 'Update channel', exact: true }).click()
-  await page.getByRole('option', { name: 'Main (latest commits)', exact: true }).click()
-  await expect.poll(() => channel).toBe('main')
+  await page.getByRole('option', { name: 'Experimental', exact: true }).click()
+  await expect.poll(() => channel).toBe('experimental')
   await page.getByRole('button', { name: 'Check now', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Update now', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

@@ -1,6 +1,6 @@
 """Talaria Web release-set updates and the separate external Agent updater.
 
-Web accepts explicit main tracking or completed releases with clean fast-forwards. Agent
+Experimental Web source follows main; Stable follows completed releases. Agent
 updates retain their existing Git/tag and gateway restart behavior. Results
 share the existing cache and active-run restart guards.
 """
@@ -706,9 +706,9 @@ def _detect_default_branch(path):
 
 
 # ── Release channels ─────────────────────────────────────────────────────────
-# Web's Main channel follows origin/main; Stable/Experimental resolve completed
-# monorepo release sets in talaria_releases. These legacy tag globs remain for
-# the independent Agent updater and its existing compatibility helpers.
+# Experimental Web source checkouts follow origin/main; Stable and packaged
+# installations resolve completed monorepo release sets in talaria_releases.
+# These legacy tag globs remain for the independent Agent updater.
 DEFAULT_UPDATE_CHANNEL = 'stable'
 _CHANNEL_TAG_GLOBS = {
     'stable': 'v*',
@@ -718,7 +718,7 @@ _CHANNEL_TAG_GLOBS = {
 
 def _normalize_channel(channel) -> str:
     """Return a known channel name, defaulting to stable for anything unknown."""
-    if isinstance(channel, str) and channel in (*_CHANNEL_TAG_GLOBS, 'main'):
+    if isinstance(channel, str) and channel in _CHANNEL_TAG_GLOBS:
         return channel
     return DEFAULT_UPDATE_CHANNEL
 
@@ -759,8 +759,6 @@ def channel_version_badge(channel=None) -> str:
     if channel is None:
         channel = _read_update_channel()
     channel = _normalize_channel(channel)
-    if channel == 'main':
-        return WEBUI_VERSION
     # NOTE: no ``--always`` here (deliberately different from _detect_webui_version).
     # The current version is channel-INDEPENDENT — it's just what's installed. The
     # channel only picks which tag family we compare AGAINST for updates. On a
@@ -1346,7 +1344,7 @@ def _commit_subjects_for_update_with_limit(info: dict, *, limit: int = 24) -> tu
         return [], False
     probe_limit = max(1, int(limit)) + 1
     args = ['log', '--format=%s', f'{current}..{latest}', f'-n{probe_limit}']
-    if target == 'webui' and info.get('channel') == 'main':
+    if target == 'webui' and info.get('channel') == 'experimental':
         from api.talaria_releases import WEB_UPDATE_PATHS
         args.extend(['--', *WEB_UPDATE_PATHS])
     out, ok = _run_git(args, path, timeout=5)
