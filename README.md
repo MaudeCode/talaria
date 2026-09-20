@@ -21,5 +21,6 @@ See [app development](app/DEVELOPMENT.md) and [contribution policy](CONTRIBUTING
 See [source migration and rehearsal](docs/monorepo-migration.md) for history,
 root ownership, tag preservation, and public upstream imports.
 
-Source consolidation is tracked under TAL-202. Release integration and the
-production cutover are separate required steps, TAL-203 and TAL-204.
+Source consolidation, release integration, and the production cutover are
+complete. See [cutover evidence](docs/monorepo-cutover.md) for the published
+release set, retained state, rollback proof, and archived standalone repositories.
