@@ -181,6 +181,10 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
             self.assertEqual(permissions.get("packages"), "write" if name == "web-publish" else None)
         jobs = document["jobs"]
+        # The alternate dry/signed App build is deliberately skipped. Publication
+        # must follow the explicit build gate instead of implicit success().
+        for name in ("relay-publish", "web-publish", "app-publish", "publish-set"):
+            self.assertIn("!cancelled()", jobs[name]["if"])
         self.assertIn("build-gate", jobs["relay-publish"]["needs"])
         self.assertIn("relay-publish", jobs["web-publish"]["needs"])
         self.assertIn("web-publish", jobs["app-publish"]["needs"])
