@@ -150,18 +150,27 @@ class TestFlightUploadTest < Minitest::Test
       Net::HTTPOK.new("1.1", "200", "OK")
     end
     transport = ->(*_args, **_options, &block) { block.call(connection) }
-    operations = [{"method" => "PUT", "url" => "https://upload.example/part", "offset" => 0,
-                   "length" => File.size(@file.path), "requestHeaders" => [{"name" => "X-Upload", "value" => "synthetic"}]}]
+    operation = {"method" => "PUT", "url" => "https://upload.example/part",
+                 "requestHeaders" => [{"name" => "X-Upload", "value" => "synthetic"}]}
+    # Apple's live response lists later chunks before offset zero.
+    operations = [operation.merge("offset" => 3, "length" => File.size(@file.path) - 3),
+                  operation.merge("offset" => 0, "length" => 3)]
     original = Net::HTTP.method(:start)
     Net::HTTP.define_singleton_method(:start, &transport)
     begin
       TestFlightUpload.new.send(:transfer, @file.path, operations)
-      assert_equal File.binread(@file.path), requests.first.body
+      assert_equal File.binread(@file.path), requests.map(&:body).join
       assert_equal "synthetic", requests.first["X-Upload"]
       assert_nil requests.first["Authorization"]
-      operations.first["offset"] = 1
-      assert_raises(AppStoreConnectClient::Error) { TestFlightUpload.new.send(:transfer, @file.path, operations) }
-      assert_equal 1, requests.length
+      [{"offset" => 1}, {"offset" => 4}, {"offset" => 0}, {"offset" => "3"}, {"length" => 0},
+       {"length" => File.size(@file.path)}, {"method" => "POST"}, {"url" => "http://upload.example/part"},
+       {"url" => "https://user:secret@upload.example/part"}].each do |invalid|
+        broken = [operations.first.merge(invalid), operations.last]
+        assert_raises(AppStoreConnectClient::Error) { TestFlightUpload.new.send(:transfer, @file.path, broken) }
+        assert_equal 2, requests.length
+      end
+      assert_raises(AppStoreConnectClient::Error) { TestFlightUpload.new.send(:transfer, @file.path, [operations.last]) }
+      assert_equal 2, requests.length
     ensure
       Net::HTTP.define_singleton_method(:start, original)
     end

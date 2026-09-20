@@ -21,7 +21,9 @@ from release_set import validate
 def authorize(plan):
     if (plan.get("dryRun") is not False or os.environ.get("GITHUB_REF") != "refs/heads/main"
             or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
-            or os.environ.get("GITHUB_WORKFLOW_REF") != f"{REPOSITORY}/.github/workflows/production-cutover.yml@refs/heads/main"):
+            or os.environ.get("GITHUB_WORKFLOW_REF") not in {
+                f"{REPOSITORY}/.github/workflows/{name}@refs/heads/main"
+                for name in ("production-cutover.yml", "recover-cutover.yml")}):
         raise ValueError("production requires the trusted main cutover workflow")
     run_url()
     if git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
@@ -221,7 +223,7 @@ def main():
             raise ValueError("App upload artifact differs from the verified build")
         if args.operation == "app":
             result = json.loads(subprocess.check_output([
-                "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
+                "ruby", str(Path(__file__).resolve().parents[1] / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
                 str(component["buildNumber"]), build["ipaSha256"],
             ], text=True))
             if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))

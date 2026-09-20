@@ -202,6 +202,15 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("environment", cutover["jobs"]["release"])
         self.assertEqual(cutover["jobs"]["release"]["needs"], "authorization")
         self.assertIs(cutover["jobs"]["release"]["with"]["dry_run"], False)
+        recovery = workflow("recover-cutover.yml")
+        self.assertEqual(recovery["concurrency"]["group"], document["concurrency"]["group"])
+        self.assertIn("inputs.confirm_publication", recovery["jobs"]["app"]["if"])
+        self.assertIn("refs/heads/main", recovery["jobs"]["app"]["if"])
+        self.assertEqual(recovery["jobs"]["app"]["environment"], "testflight")
+        self.assertEqual(recovery["jobs"]["publish-set"]["environment"], "release-set-publication")
+        self.assertEqual(recovery["jobs"]["publish-set"]["needs"], "app")
+        self.assertNotIn("secrets.", json.dumps(recovery["jobs"]["publish-set"]))
+        self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})
 
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):
@@ -243,6 +252,8 @@ class PublicationTests(unittest.TestCase):
         }
         with patch.dict(os.environ, env, clear=True), patch("publish.git", return_value=plan["releaseSet"]):
             authorize(plan)
+            with patch.dict(os.environ, {"GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main"}):
+                authorize(plan)
             with self.assertRaises(ValueError):
                 authorize({**plan, "dryRun": True})
             for key in env:
