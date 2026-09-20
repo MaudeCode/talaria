@@ -158,7 +158,9 @@ class PublicationTests(unittest.TestCase):
                 str(root / ".github/workflows" / name),
             ], text=True))
         document = workflow("release-set.yml")
-        for release_workflow in (document, workflow("ios-release-build.yml")):
+        ios = workflow("ios-release-build.yml")
+        self.assertEqual(ios["jobs"]["build"]["environment"], "testflight")
+        for release_workflow in (document, ios):
             for job in release_workflow["jobs"].values():
                 if "steps" in job:
                     self.assertEqual(job["runs-on"], "maude-mac")
@@ -173,7 +175,7 @@ class PublicationTests(unittest.TestCase):
         import re
         for name, job in document["jobs"].items():
             self.assertEqual(job.get("environment"), environments.get(name))
-            self.assertNotIn("secrets", job)
+            self.assertEqual(job.get("secrets"), "inherit" if name == "app-signed-build" else None)
             self.assertEqual(set(re.findall(r"secrets\.([A-Z_]+)", json.dumps(job))), secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
@@ -187,6 +189,8 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue(any("check_results.py publication" in step.get("run", "")
                             for step in jobs["publish-set"]["steps"]))
         cutover = workflow("production-cutover.yml")
+        self.assertEqual(cutover["jobs"]["release"]["secrets"], "inherit")
+        self.assertNotIn("environment", cutover["jobs"]["release"])
         self.assertEqual(cutover["jobs"]["release"]["needs"], "authorization")
         self.assertIs(cutover["jobs"]["release"]["with"]["dry_run"], False)
 

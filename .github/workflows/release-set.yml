@@ -285,6 +285,7 @@ jobs:
       == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') && (needs.web-build.result == 'success'
       || needs.web-build.result == 'skipped') }}
     uses: ./.github/workflows/ios-release-build.yml
+    secrets: inherit
     with:
       ref: ${{ needs.prepare.outputs.source }}
       version: ${{ needs.prepare.outputs.app_version }}
