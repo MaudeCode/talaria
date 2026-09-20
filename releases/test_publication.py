@@ -12,6 +12,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import zipfile
 
 from check_results import check
@@ -25,6 +26,29 @@ from cli import require_latest_predecessor
 class PublicationTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch("publish.require_latest_predecessor", return_value=[], create=True))
+
+    def test_native_release_lookup_resolves_drafts_and_rejects_errors(self):
+        draft = {"id": 123, "tag_name": "app-v1.0.0", "draft": True}
+        def lookup(command, **kwargs):
+            # The REST tag endpoint cannot see an unpublished draft.
+            if command[1] == "api":
+                return SimpleNamespace(returncode=1, stdout="", stderr="HTTP 404")
+            self.assertEqual(command, ["gh", "release", "view", "app-v1.0.0", "--repo", "MaudeCode/talaria", "--json", "databaseId"])
+            return SimpleNamespace(returncode=0, stdout='{"databaseId":123}', stderr="")
+        with patch("publish.subprocess.run", side_effect=lookup), patch("publish.unused_release"), \
+                patch("publish.subprocess.check_output", return_value=json.dumps(draft)) as read:
+            self.assertEqual(publish._release_info("app-v1.0.0"), draft)
+            self.assertEqual(read.call_args.args[0], ["gh", "api", "repos/MaudeCode/talaria/releases/123"])
+        for error in ("release not found", "HTTP 403", "connection failed"):
+            with self.subTest(error=error), patch("publish.subprocess.run", return_value=SimpleNamespace(returncode=1, stdout="", stderr=error)), \
+                    patch("publish.unused_release") as unused:
+                if error == "release not found":
+                    self.assertIsNone(publish._release_info("app-v1.0.0"))
+                    unused.assert_called_once()
+                else:
+                    with self.assertRaises(ValueError):
+                        publish._release_info("app-v1.0.0")
+                    unused.assert_not_called()
 
     def test_finalization_rejects_superseded_set_but_allows_exact_set_retry(self):
         manifest = complete(candidate())
