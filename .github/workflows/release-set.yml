@@ -294,7 +294,7 @@ jobs:
     needs:
     - prepare
     - build-gate
-    if: ${{ !inputs.dry_run && needs.prepare.outputs.relay_changed == 'true' && needs.build-gate.result == 'success' }}
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.relay_changed == 'true' && needs.build-gate.result == 'success' }}
     runs-on: maude-mac
     environment: relay-production
     concurrency:
