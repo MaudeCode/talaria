@@ -1,3 +1,6 @@
+> **Development has moved to [MaudeCode/talaria/relay](https://github.com/MaudeCode/talaria/tree/main/relay).**
+> This repository is retained as read-only history. Submit changes and use releases from the Talaria monorepo.
+
 # Talaria Relay
 
 Profile-isolated Convex relay for Talaria notifications and aggregate Live Activities.
