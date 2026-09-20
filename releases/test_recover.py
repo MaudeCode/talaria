@@ -37,6 +37,11 @@ class RecoveryTests(unittest.TestCase):
     def test_original_jobs_and_references_are_authenticated(self):
         metadata, jobs, needs, refs = self.example()
         self.assertEqual(self.verify(metadata, jobs, needs), ("c" * 40, refs))
+        # Job-level env is logged again for each executed step.
+        repeated = ("timestamp RELEASE_NEEDS: " + json.dumps(needs) + "\n") * 2
+        self.assertEqual(recover.authenticate("123", "4", metadata, jobs, repeated, "synthetic-runner"), ("c" * 40, refs))
+        with self.assertRaisesRegex(ValueError, "conflicting"):
+            recover.authenticate("123", "4", metadata, jobs, repeated + "RELEASE_NEEDS: {}", "synthetic-runner")
         for field, value in (("head_branch", "feature"), ("event", "pull_request"), ("conclusion", "success"),
                              ("path", ".github/workflows/release-set.yml"), ("run_attempt", 3), ("head_sha", "bad"),
                              ("head_repository", {"full_name": "untrusted/fork"})):

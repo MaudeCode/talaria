@@ -36,9 +36,10 @@ def authenticate(run, attempt, metadata, jobs, log, runner):
     # This is the runner's env dump from the failed publication gate, fetched
     # from GitHub's job-log endpoint, never caller-supplied artifact references.
     marker = "RELEASE_NEEDS: "
-    if log.count(marker) != 1:
-        raise ValueError("missing or ambiguous original publication inputs")
-    needs, _ = json.JSONDecoder().raw_decode(log.split(marker, 1)[1])
+    records = [json.JSONDecoder().raw_decode(value)[0] for value in log.split(marker)[1:]]
+    if not records or any(value != records[0] for value in records):
+        raise ValueError("missing or conflicting original publication inputs")
+    needs = records[0]
     if set(needs) != {"prepare", "build-gate", "relay-publish", "web-publish", "app-publish"}:
         raise ValueError("unexpected original publication dependencies")
     references = {}
