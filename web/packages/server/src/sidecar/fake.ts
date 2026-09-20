@@ -9,7 +9,7 @@ import { resolve } from 'node:path'
 import { SIDECAR_METHODS, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SidecarError, type CallOptions, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
 
-type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void) => SidecarResult<M> | Promise<SidecarResult<M>>
+type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResult<M> | Promise<SidecarResult<M>>
 
 export interface FakeSidecarOptions {
   fixturesDir?: string
@@ -60,7 +60,7 @@ export class FakeSidecar implements SidecarLike {
     const responder = this.responders.get(method)
     let raw: unknown
     if (responder) {
-      raw = await responder(parsedParams, emit)
+      raw = await responder(parsedParams, emit, opts)
     } else {
       const fixture = this.fixtures.get(method)?.[0]
       if (!fixture) throw new SidecarError(`no fixture or responder for ${method}`, { condition: 'sidecar_error' })

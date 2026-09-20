@@ -19,6 +19,36 @@ export interface RawRoute {
 
 export const RAW_ROUTES: readonly RawRoute[] = [
   {
+    method: 'GET', path: '/api/chat/stream', summary: 'Live agent-turn relay (SSE). Journal-backed frames carry `id: <stream_id>:<seq>`; resume with `after_event_id`, `after_seq`, or `Last-Event-ID`.', tags: ['chat'],
+    query: { stream_id: { description: 'Stream returned by `/api/chat/start`.', required: true }, after_event_id: { description: 'Resume cursor (`<stream_id>:<seq>`).' }, after_seq: { description: 'Numeric resume cursor.' }, replay: { description: '`1` replays the journal from the start.' } },
+    responses: { 200: { description: 'Event stream; ends after `stream_end`, `cancel`, `apperror`, or `error`.', contentType: 'text/event-stream' }, 404: { description: 'No live stream and no journal.', contentType: 'application/json' }, 503: { description: 'Client stream limit reached (`condition: client_stream_limit`).', contentType: 'application/json' } },
+  },
+  {
+    method: 'GET', path: '/api/session/stream', summary: 'Persistent per-session channel (`initial`, `server_turn_started`, `session-updated`, `bg_task_complete`).', tags: ['chat'],
+    query: { session_id: { description: 'Session to follow.', required: true }, known_count: { description: 'Last message count the tab rendered; a higher persisted count triggers `session-updated`.' } },
+    responses: { 200: { description: 'Event stream with 5 s keepalives.', contentType: 'text/event-stream' } },
+  },
+  {
+    method: 'GET', path: '/api/sessions/events', summary: 'Global session-list invalidation stream (`sessions_changed`).', tags: ['sessions'],
+    query: { gateway: { description: '`1` merges the gateway feed with a `stream` discriminator and an initial `gateway_status` frame.' } },
+    responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
+  },
+  {
+    method: 'GET', path: '/api/sessions/{session_id}/events', summary: 'Per-session run-journal relay with `Last-Event-ID` resume and `session_snapshot` fallback.', tags: ['sessions'],
+    query: { after_event_id: { description: 'Resume cursor when the header is unavailable.' } },
+    responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' }, 404: { description: 'Session not found.', contentType: 'application/json' } },
+  },
+  {
+    method: 'GET', path: '/api/approval/stream', summary: 'Approval prompt stream (`initial` then `approval`).', tags: ['approval'],
+    query: { session_id: { description: 'Session to follow.', required: true } },
+    responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
+  },
+  {
+    method: 'GET', path: '/api/clarify/stream', summary: 'Clarify prompt stream (`initial` then `clarify`).', tags: ['approval'],
+    query: { session_id: { description: 'Session to follow.', required: true } },
+    responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
+  },
+  {
     method: 'GET', path: '/api/file/raw', summary: 'Raw bytes of a workspace file or a session upload.', tags: ['files'],
     query: { session_id: { description: 'Session whose workspace anchors the path.', required: true }, path: { description: 'Workspace-relative path.', required: true }, download: { description: '`1` forces an attachment disposition.' }, inline: { description: '`1` serves HTML inline under a CSP sandbox.' } },
     responses: { 200: { description: 'File bytes with ETag and byte-range support.', contentType: 'application/octet-stream' }, 206: { description: 'Partial content for a satisfiable Range header.' }, 304: { description: 'ETag matched If-None-Match.' }, 404: { description: 'Path outside the workspace or missing.', contentType: 'application/json' }, 416: { description: 'Range not satisfiable.' } },

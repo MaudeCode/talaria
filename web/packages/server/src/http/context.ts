@@ -25,6 +25,13 @@ import type { UploadInbox } from '../workspace/upload.js'
 import type { MediaPolicyDeps } from '../workspace/media.js'
 import type { WorktreeLocks } from '../workspace/worktrees.js'
 import type { Session } from '../sessions/session.js'
+import type { SidecarLike } from '../sidecar/client.js'
+import type { TurnRunner } from '../sessions/turn.js'
+import type { SessionChannels, StreamRegistry } from '../sessions/streams.js'
+import type { PendingPrompts } from '../sessions/pending.js'
+import type { RunJournal } from '../sessions/journal.js'
+import type { BackgroundTasks } from '../api/chat-router.js'
+import type { StreamSlots } from '../api/sse-routes.js'
 import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
 import type { CsrfFailure } from './origin.js'
@@ -77,6 +84,15 @@ export interface AppDeps {
   worktreeLocks: WorktreeLocks
   /** Commit-message generation (sidecar `aux.complete`); rejects with `GitWorkspaceError` when no model is available. */
   commitMessage: (session: Session, systemPrompt: string, userPrompt: string) => Promise<string>
+  // ── chat runtime (checkpoint 6) ──
+  sidecar: () => SidecarLike | null
+  turns: TurnRunner
+  registry: StreamRegistry
+  channels: SessionChannels
+  pending: PendingPrompts
+  journal: RunJournal
+  background: BackgroundTasks
+  streamSlots: StreamSlots
 }
 
 export interface VsCodeConfig {

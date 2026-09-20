@@ -190,6 +190,48 @@ export const USAGE_METHODS = {
 export const WORKTREE_METHODS = {
   'worktree.create': { params: ProfileHomeParams.extend({ repo_root: z.string().min(1) }), result: z.object({ path: z.string(), branch: z.string(), repo_root: z.string(), base: z.string().nullable() }) },
 } as const
+// ── chat / approval / clarify ──────────────────────────────────────────
+export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })
+export const ChatStartResultSchema = z.object({
+  status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), final_response: z.string(), error: z.string().nullable(), result_status: z.string(),
+  tool_limit_reached: z.boolean(), usage: ChatUsageSchema, context: Loose, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
+  token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),
+})
+const Text = z.object({ text: z.string() }).catchall(Json)
+const ToolFrame = z.object({ event_type: z.string(), name: z.string().nullable().optional(), preview: Json.optional(), args: Loose.optional(), tid: z.string().optional(), is_error: z.boolean().optional() }).catchall(Json)
+export const ChatStreamSchema = z.discriminatedUnion('event', [
+  z.object({ event: z.literal('token'), data: Text }),
+  z.object({ event: z.literal('reasoning'), data: Text }),
+  z.object({ event: z.literal('interim_assistant'), data: Text }),
+  z.object({ event: z.literal('tool'), data: ToolFrame }),
+  z.object({ event: z.literal('tool_complete'), data: ToolFrame }),
+  z.object({ event: z.literal('approval'), data: Loose }),
+  z.object({ event: z.literal('clarify'), data: Loose }),
+  z.object({ event: z.literal('clarify_resolved'), data: Loose }),
+  z.object({ event: z.literal('compressing'), data: Loose }),
+  z.object({ event: z.literal('warning'), data: Loose }),
+  z.object({ event: z.literal('status'), data: Loose }),
+  z.object({ event: z.literal('context_status'), data: Loose }),
+])
+export const CHAT_METHODS = {
+  'chat.start': {
+    params: ProfileHomeParams.extend({
+      session_id: z.string().min(1), stream_id: z.string().min(1), workspace: z.string(), model: z.string(), model_provider: z.string().nullable().optional(),
+      user_message: z.union([z.string(), z.array(Loose)]), system_message: z.string().nullable().optional(), conversation_history: z.array(Loose),
+      enabled_toolsets: z.array(z.string()).nullable().optional(), max_iterations: z.number().int().nullable().optional(), max_tokens: z.number().int().nullable().optional(),
+      clarify_timeout_seconds: z.number().nullable().optional(),
+    }),
+    result: ChatStartResultSchema,
+    stream: ChatStreamSchema,
+  },
+  'chat.interrupt': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }), result: z.object({ ok: z.boolean(), reason: z.string().optional() }) },
+  'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional() }) },
+  'chat.evict_agent': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ evicted: z.boolean() }) },
+  'approval.respond': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), choice: z.enum(['once', 'session', 'always', 'deny']), request_id: z.string().nullable().optional() }), result: z.object({ ok: z.boolean(), resolved: z.number().int(), choice: z.string() }) },
+  'approval.pending': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ pending: z.array(Loose) }) },
+  'approval.set_yolo': { params: z.object({ session_id: z.string().min(1), enabled: z.boolean() }), result: z.object({ yolo_enabled: z.boolean(), released: z.number().int() }) },
+  'clarify.respond': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), clarify_id: z.string().optional(), response: z.string().min(1) }), result: z.object({ ok: z.boolean(), clarify_id: z.string().optional() }) },
+} as const
 export const GATEWAY_METHODS = {
   'gateway.restart': { params: ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() }), result: z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional() }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })]) },
 } as const

@@ -26,6 +26,12 @@ import { GitRunner, GitWorkspaceError } from './workspace/git.js'
 import { RollbackStore } from './workspace/rollback.js'
 import { UploadInbox } from './workspace/upload.js'
 import type { SidecarLike } from './sidecar/client.js'
+import { TurnRunner } from './sessions/turn.js'
+import { SessionChannels, StreamRegistry } from './sessions/streams.js'
+import { PendingPrompts } from './sessions/pending.js'
+import { RunJournal } from './sessions/journal.js'
+import { BackgroundTasks } from './api/chat-router.js'
+import { StreamSlots } from './api/sse-routes.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
   log?: (line: string) => void
@@ -78,7 +84,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   }
   const events = new SessionEventBus(isRootProfile)
   const drafts = new DraftStore(config.sessionDir)
-  const activeStreamIds = new Set<string>()
+  const registry = new StreamRegistry()
+  const activeStreamIds = registry.liveIds
   const workspaces = new WorkspaceRegistry({
     stateDir: config.stateDir,
     defaultWorkspace: () => config.defaultWorkspace,
@@ -128,10 +135,17 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     runtime: {
       activeStreamIds,
       runningCronJobs: new Map<string, number>(),
-      live: (): Session | undefined => undefined,
-      attention: () => null,
-      activeRunStream: () => null,
-      evictAgent: () => undefined,
+      live: (sid): Session | undefined => (registry.activeRunStreamForSession(sid) ? store.sessions.get(sid) : undefined),
+      // Python `_session_attention_summary`: approvals outrank clarify prompts.
+      attention: (sid) => {
+        const approvals = pending.approvalPending(sid).pending_count
+        if (approvals > 0) return { kind: 'approval', count: approvals, severity: 'critical' }
+        const clarifies = pending.clarifyPending(sid).pending_count
+        if (clarifies > 0) return { kind: 'clarify', count: clarifies, severity: 'question' }
+        return null
+      },
+      activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
+      evictAgent: (sid) => { if (sidecar) sidecar.call('chat.evict_agent', { session_id: sid }).catch(() => undefined) },
       closeTerminal: () => undefined,
     },
     attachmentDir,
@@ -146,6 +160,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const rollback = new RollbackStore({ hermesHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
   const uploads = new UploadInbox(attachmentRoot)
   const sidecar = opts.sidecar ?? null
+  const channels = new SessionChannels()
+  const pending = new PendingPrompts(events, now)
+  const journal = new RunJournal(config.sessionDir, env)
+  const background = new BackgroundTasks(now)
+  const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 64 })
   const mediaActiveWorkspace = (): string | null => {
     if (!workspaces.profileSupportsLocalIo(null)) return null
     try {
@@ -159,6 +178,26 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const override = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim()
     return override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'media_snapshots')
   }
+  const turns = new TurnRunner({
+    store,
+    service: () => sessions,
+    events,
+    registry,
+    channels,
+    pending,
+    journal,
+    sidecar: () => sidecar,
+    profileHome: (profile) => profileHome(profile ?? activeProfile()),
+    workspaces,
+    now,
+    log,
+    redactEnabled: () => { try { return settings.load().api_redact_enabled !== false } catch { return true } },
+    saveMode: () => ((env.HERMES_WEBUI_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
+    toolsetsFor: (session) => session.enabled_toolsets,
+    attachmentDir,
+    agentName: () => { try { const v = settings.load().bot_name; return typeof v === 'string' && v ? v : 'Hermes' } catch { return 'Hermes' } },
+    titleGenerationEnabled: () => { try { return settings.load().auto_title_generation !== false } catch { return true } },
+  })
   const vscode = () => ({
     configuredCommand: 'code',
     command: (): string | null => {
@@ -184,7 +223,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     activeProfile,
     isRootProfile,
     onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.load().onboarding_completed),
-    health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: 0, runs: [], lastRunFinishedAt: null }),
+    health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ stream_id: r.stream_id, session_id: r.session_id, phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
     sessions,
     sessionStore: store,
     events,
@@ -207,6 +246,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     mediaPolicy: { home, hermesHome: config.hermesHome, stateDir: config.stateDir, snapshotDir, activeWorkspace: mediaActiveWorkspace },
     mediaActiveWorkspace,
     worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: () => false },
+    sidecar: () => sidecar,
+    turns,
+    registry,
+    channels,
+    pending,
+    journal,
+    background,
+    streamSlots,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })

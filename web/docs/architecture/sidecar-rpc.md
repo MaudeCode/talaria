@@ -112,8 +112,9 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `process` | `drain`, `requeue`, `mark_consumed`, `format_notification`, `list` | | `api/background_process.py`, `api/streaming.py` |
 | `usage` | `account` | | `api/providers.py` |
 | `gateway` | `restart` | `restart`: `progress` | `api/gateway_restart.py` |
-| `chat` | `start`, `interrupt`, `steer`, `evict_agent`, `snapshot_transcript` (checkpoint 6) | `token`, `reasoning`, `tool`, `tool_complete`, `interim_assistant`, `approval`, `clarify`, `status`, `compressing`, `compressed`, `context_status`, `metering`, `done`, `error` | `api/streaming.py` |
-| `approval`, `clarify` | `pending`, `respond`, `set_yolo` (checkpoint 6) | | `api/route_approvals.py`, `api/clarify.py` |
+| `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `warning`, `status`, `context_status`; the settled transcript, usage, and terminal status come back as the result | `api/streaming.py` |
+| `approval`, `clarify` | `approval.pending`, `approval.respond`, `approval.set_yolo`, `clarify.respond` | | `api/route_approvals.py`, `api/clarify.py` |
+| `worktree` | `create` | | `api/worktrees.py` |
 
 What stays in the server, by design: WebUI files and `config.yaml` / `.env`
 writes, MCP config edits and HTTP/stdio health probes, skill file writes,

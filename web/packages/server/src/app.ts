@@ -12,6 +12,8 @@ import { OpenAPIHandler } from '@orpc/openapi/node'
 import { sessionsRouter } from './api/sessions-router.js'
 import { gitRouter } from './api/git-router.js'
 import { RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
+import { chatRouter } from './api/chat-router.js'
+import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -144,7 +146,15 @@ function preflight(ctx: RequestContext): void {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter }
+export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter }
+
+const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
+  '/api/chat/stream': handleChatStream,
+  '/api/session/stream': handleSessionStream,
+  '/api/sessions/events': handleSessionEvents,
+  '/api/approval/stream': handleApprovalStream,
+  '/api/clarify/stream': handleClarifyStream,
+}
 
 export interface CreateAppOptions {
   /** The implemented contract router; defaults to the core router. */
@@ -224,6 +234,16 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         const raw = RAW_GET_ROUTES[path]
         if (raw) {
           await runRaw(ctx, raw)
+          return
+        }
+        const sse = SSE_GET_ROUTES[path]
+        if (sse) {
+          await sse(ctx)
+          return
+        }
+        const journalSessionId = sessionEventsPathSessionId(path)
+        if (journalSessionId !== null) {
+          await handleSessionJournalStream(ctx, journalSessionId)
           return
         }
       } else if (path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {

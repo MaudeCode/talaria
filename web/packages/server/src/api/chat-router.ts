@@ -1,0 +1,307 @@
+/** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
+import { implement } from '@orpc/server'
+import { chatContract } from '@maudecode/talaria-web-contracts'
+import { randomUUID } from 'node:crypto'
+import { HttpError, type ApiContext } from './router.js'
+import type { RequestContext } from '../http/context.js'
+import { HttpFailure } from '../sessions/service.js'
+import { SessionNotFound } from '../sessions/store.js'
+import type { Session } from '../sessions/session.js'
+import { isSafeSessionId } from '../sessions/session.js'
+import { str } from '../util.js'
+import type { TurnRunner } from '../sessions/turn.js'
+
+const os = implement(chatContract).$context<ApiContext>()
+const STEER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+async function run<T>(fn: () => Promise<T> | T): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra)
+    if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
+    throw error
+  }
+}
+
+function getSession(ctx: RequestContext, sid: string, metadataOnly = false): Session {
+  try {
+    return ctx.deps.sessionStore.get(sid, { metadataOnly })
+  } catch {
+    throw new HttpError(404, 'Session not found')
+  }
+}
+
+/** Python `_normalize_chat_attachments`. */
+export function normalizeChatAttachments(raw: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(raw)) return []
+  const out: Record<string, unknown>[] = []
+  for (const item of raw) {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const row = item as Record<string, unknown>
+      const name = str(row.name || row.filename).trim()
+      const path = str(row.path).trim()
+      const att: Record<string, unknown> = { name: name || path, path, mime: str(row.mime).trim() }
+      if (typeof row.size === 'number' && Number.isInteger(row.size)) att.size = row.size
+      if (typeof row.is_image === 'boolean') att.is_image = row.is_image
+      out.push(att)
+    } else {
+      const value = str(item).trim()
+      if (value) out.push({ name: value, path: '', mime: '' })
+    }
+  }
+  return out
+}
+
+function startPayload(response: ReturnType<TurnRunner['start']>): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...response }
+  Reflect.deleteProperty(payload, '_status')
+  Reflect.deleteProperty(payload, 'error')
+  Reflect.deleteProperty(payload, 'active_stream_id')
+  return payload
+}
+
+function requireField(body: Record<string, unknown>, ...fields: string[]): void {
+  const missing = fields.filter((f) => body[f] === undefined || body[f] === null || body[f] === '')
+  if (missing.length) throw new HttpError(400, `Missing required field(s): ${missing.join(', ')}`)
+}
+
+function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: string): void {
+  const active = ctx.deps.activeProfile()
+  if (ctx.deps.profilesMatch(s.profile, active)) return
+  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || Boolean(s.pending_user_message)
+  if (requestedProfile && ctx.deps.profilesMatch(requestedProfile, active) && !hasTurns) {
+    s.profile = requestedProfile
+    return
+  }
+  throw new HttpError(404, 'Session not found')
+}
+
+function resolveWorkspace(ctx: RequestContext, s: Session, requested: unknown): string {
+  const ws = ctx.deps.workspaces
+  if (requested !== undefined && requested !== null && requested !== '') {
+    try { return ws.resolveTrusted(str(requested), s.profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+  }
+  try {
+    const [workspace, recovered] = ws.resolveImplicitWithRecovery(s.workspace, (p) => ws.lastWorkspace(p), s.profile)
+    if (recovered) s.workspace = workspace
+    return workspace
+  } catch (error) {
+    throw new HttpError(400, (error as Error).message)
+  }
+}
+
+function modelState(ctx: RequestContext, s: Session, body: Record<string, unknown>): [string | null, string | null, boolean] {
+  const requestedModel = str(body.model) || s.model
+  const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider
+  const [model, provider] = ctx.deps.sessions.deps.modelStateFromRequest(requestedModel, requestedProvider, s.model_provider)
+  return [model, provider, model !== requestedModel]
+}
+
+export const chatRouter = os.router({
+  chat: {
+    start: os.chat.start.handler(({ input, context: { ctx } }) => run(() => {
+      const body = input as Record<string, unknown>
+      requireField(body, 'session_id')
+      if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
+      if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
+      const sid = str(body.session_id)
+      const s = getSession(ctx, sid)
+      if (s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+      const requestedProfile = str(body.profile).trim()
+      if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
+      visibleOrRetag(ctx, s, requestedProfile)
+      const msg = str(body.message).trim()
+      if (!msg) throw new HttpError(400, 'message is required')
+      const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
+      if (Object.keys(s.compression_recovery).length && !attachments.length && /^(continue|go on|next|proceed|keep going)\.?$/i.test(msg)) {
+        throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
+      }
+      const workspace = resolveWorkspace(ctx, s, body.workspace)
+      const [model, provider, normalized] = modelState(ctx, s, body)
+      if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
+      const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui' })
+      if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
+      return startPayload(response)
+    })),
+    steer: os.chat.steer.handler(({ input, context: { ctx } }) => run(async () => {
+      const sid = str(input.session_id).trim()
+      const text = str(input.text).trim()
+      const display = str(input.display_text).trim()
+      let steerId = str(input.steer_id).trim()
+      if (!sid) throw new HttpError(400, 'session_id required')
+      if (!text) throw new HttpError(400, 'text required')
+      if (steerId && !STEER_ID_RE.test(steerId)) throw new HttpError(400, 'steer_id must be 1-128 URL-safe characters')
+      if (!steerId) steerId = `steer-${randomUUID()}`
+      if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+      return ctx.deps.turns.steer(sid, text, display, steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
+    })),
+    cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(() => {
+      const streamId = str(input.stream_id)
+      if (!streamId) throw new HttpError(400, 'stream_id required')
+      const owner = ctx.deps.registry.ownerSessionId(streamId)
+      if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) throw new HttpError(404, 'Session not found')
+      const cancelled = ctx.deps.turns.cancel(streamId)
+      return { ok: true, cancelled, stream_id: streamId }
+    })),
+    streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(() => {
+      const streamId = str(input.stream_id)
+      const owner = ctx.deps.registry.ownerSessionId(streamId)
+      if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) throw new HttpError(404, 'Session not found')
+      const active = ctx.deps.registry.liveIds.has(streamId)
+      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown> } = { active, stream_id: streamId, replay_available: false }
+      const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null
+      if (summary) {
+        payload.replay_available = true
+        const terminal = summary.terminal
+        payload.journal = { session_id: summary.session_id, run_id: summary.run_id, last_seq: summary.last_seq, last_event_id: summary.last_event_id, last_event: summary.last_event, terminal, terminal_state: !active && !terminal ? 'lost-worker-bookkeeping' : summary.terminal_state }
+      }
+      return payload
+    })),
+  },
+  approval: {
+    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.pending.approvalPending(str(input.session_id)))),
+    respond: os.approval.respond.handler(({ input, context: { ctx } }) => run(async () => {
+      const sid = str(input.session_id)
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      const choice = str(input.choice) || 'deny'
+      if (!['once', 'session', 'always', 'deny'].includes(choice)) throw new HttpError(400, `Invalid choice: ${choice}`)
+      if (str(input.run_id).trim() || str(input.mirror_token).trim()) throw new HttpError(409, 'Gateway approval could not be relayed because the active run is unavailable. Reopen the session or retry after it reconnects.', { code: 'gateway_run_unavailable' })
+      return ctx.deps.turns.respondApproval(sid, choice, str(input.approval_id), input.yolo === true) as Promise<{ ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }>
+    })),
+  },
+  clarify: {
+    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.pending.clarifyPending(str(input.session_id)))),
+    respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
+      const sid = str(input.session_id)
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      const response = str(input.response ?? input.answer ?? input.choice).trim()
+      if (!response) throw new HttpError(400, 'response is required')
+      const ok = await ctx.deps.turns.respondClarify(sid, str(input.clarify_id), response)
+      if (!ok) throw new HttpError(409, 'Clarification prompt expired or not found. The agent may have already proceeded.', { ok: false, stale: true })
+      return { ok: true, response }
+    })),
+  },
+  goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => {
+    const body = input as Record<string, unknown>
+    requireField(body, 'session_id')
+    const args = str(body.args || body.text)
+    if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
+    const sid = str(body.session_id)
+    const s = getSession(ctx, sid)
+    const requestedProfile = str(body.profile).trim()
+    if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
+    if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.pending_user_message) s.profile = requestedProfile
+    let streamRunning = false
+    if (s.active_stream_id) {
+      streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)
+      if (!streamRunning) ctx.deps.sessions.clearStaleStreamState(s)
+    }
+    const sidecar = ctx.deps.sidecar()
+    if (!sidecar) throw new HttpError(503, 'Goal controls need the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
+    const profileHome = ctx.deps.sessions.deps.workspaces.deps.profileHome(s.profile ?? ctx.deps.activeProfile())
+    const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome })
+    const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning }) as Record<string, unknown>
+    if (payload.ok === false) throw new HttpError(payload.error === 'agent_running' ? 409 : 400, str(payload.message || payload.error || 'goal command failed'), payload)
+    const kickoff = str(payload.kickoff_prompt).trim()
+    if (kickoff) {
+      const workspace = resolveWorkspace(ctx, s, body.workspace)
+      const [model, provider, normalized] = modelState(ctx, s, body)
+      const started = ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true })
+      if (started._status !== undefined && started._status >= 400) {
+        try { await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
+        throw new HttpError(started._status, started.error ?? 'goal kickoff failed', { ...payload, ok: false })
+      }
+      Object.assign(payload, startPayload(started))
+    }
+    return payload
+  })),
+  background: {
+    start: os.background.start.handler(({ input, context: { ctx } }) => run(() => {
+      const body = input as Record<string, unknown>
+      requireField(body, 'session_id', 'prompt')
+      const parent = getSession(ctx, str(body.session_id))
+      const prompt = str(body.prompt).trim()
+      if (!prompt) throw new HttpError(400, 'prompt is required')
+      const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, profile: parent.profile })
+      bg.title = `bg: ${prompt.slice(0, 60)}`
+      ctx.deps.sessionStore.save(bg)
+      const taskId = randomUUID().replace(/-/g, '').slice(0, 12)
+      ctx.deps.background.track(parent.session_id, { task_id: taskId, bg_session_id: bg.session_id, prompt })
+      const started = ctx.deps.turns.start(bg, { msg: prompt, attachments: [], workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, source: 'webui', onDone: (answer) => { ctx.deps.background.complete(parent.session_id, taskId, answer) } })
+      if (started._status !== undefined && started._status >= 400) throw new HttpError(started._status, started.error ?? 'background start failed')
+      ctx.deps.background.setStream(parent.session_id, taskId, str(started.stream_id))
+      return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
+    })),
+    status: os.background.status.handler(({ input, context: { ctx } }) => run(() => {
+      const sid = str(input.session_id)
+      if (!sid) throw new HttpError(400, 'Missing session_id')
+      return { results: ctx.deps.background.results(sid) }
+    })),
+    ack: os.background.ack.handler(({ input, context: { ctx } }) => run(() => {
+      const body = input as Record<string, unknown>
+      requireField(body, 'session_id')
+      const sid = str(body.session_id).trim()
+      const s = getSession(ctx, sid, true)
+      const pid = str(body.task_id || body.process_id).trim()
+      if (str(body.process_id).trim()) ctx.extraResponseHeaders = { deprecation: 'true' }
+      return { ok: true as const, session_id: s.session_id, task_id: pid, noop: true as const }
+    })),
+  },
+  btw: os.btw.handler(({ input, context: { ctx } }) => run(() => {
+    const body = input as Record<string, unknown>
+    requireField(body, 'session_id', 'question')
+    const sid = str(body.session_id)
+    if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
+    const s = getSession(ctx, sid)
+    const question = str(body.question).trim()
+    if (!question) throw new HttpError(400, 'question is required')
+    if (s.active_stream_id && ctx.deps.registry.liveIds.has(s.active_stream_id)) throw new HttpError(409, 'session already has an active stream')
+    const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model: s.model, modelProvider: s.model_provider, profile: s.profile })
+    ephemeral.messages = structuredClone(s.messages)
+    ephemeral.context_messages = structuredClone(s.context_messages)
+    ephemeral.title = `btw: ${question.slice(0, 60)}`
+    ctx.deps.sessionStore.save(ephemeral)
+    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider, source: 'webui', ephemeral: true })
+    if (started._status !== undefined && started._status >= 400) throw new HttpError(started._status, started.error ?? 'btw start failed')
+    return { stream_id: str(started.stream_id), session_id: ephemeral.session_id, parent_session_id: sid }
+  })),
+})
+
+/** Python `api/background.py`: parent-scoped background task tracking. */
+export class BackgroundTasks {
+  private readonly tasks = new Map<string, Record<string, unknown>[]>()
+
+  constructor(private readonly now: () => number = () => Date.now() / 1000) {}
+
+  track(parent: string, task: { task_id: string; bg_session_id: string; prompt: string }): void {
+    const list = this.tasks.get(parent) ?? []
+    list.push({ ...task, stream_id: null, status: 'running', started_at: this.now(), answer: null, completed_at: null })
+    this.tasks.set(parent, list)
+  }
+
+  setStream(parent: string, taskId: string, streamId: string): void {
+    for (const t of this.tasks.get(parent) ?? []) if (t.task_id === taskId) t.stream_id = streamId
+  }
+
+  complete(parent: string, taskId: string, answer: string): void {
+    for (const t of this.tasks.get(parent) ?? []) {
+      if (t.task_id === taskId && t.status === 'running') {
+        t.status = 'done'
+        t.answer = answer
+        t.completed_at = this.now()
+        break
+      }
+    }
+  }
+
+  results(parent: string): Record<string, unknown>[] {
+    const list = this.tasks.get(parent) ?? []
+    const done = list.filter((t) => t.status === 'done')
+    const running = list.filter((t) => t.status !== 'done')
+    if (running.length) this.tasks.set(parent, running)
+    else this.tasks.delete(parent)
+    return done.map((t) => ({ task_id: t.task_id, prompt: t.prompt, answer: t.answer, completed_at: t.completed_at }))
+  }
+}

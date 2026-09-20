@@ -86,16 +86,16 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-C1 | `POST /api/chat/start`, `POST /api/chat/steer`, `GET /api/chat/cancel` | browser, ios | auth | server + sidecar | vitest, pytest, pw | pending | |
-| R-C2 | `GET /api/chat/stream`, `GET /api/chat/stream/status` | browser, ios | auth | server | vitest, pw | pending | SSE, see 3 |
+| R-C1 | `POST /api/chat/start`, `POST /api/chat/steer`, `GET /api/chat/cancel` | browser, ios | auth | server + sidecar | vitest, pytest, pw | partial | checkpoint 6: `sessions/turn.ts` admits turns, persists pending state (deferred/eager), calls sidecar `chat.start`, settles the transcript, cancels via `chat.interrupt`, steers via `chat.steer`; regeneration, MoA overrides, process-wakeup turns, and gateway-backed runs pending |
+| R-C2 | `GET /api/chat/stream`, `GET /api/chat/stream/status` | browser, ios | auth | server | vitest, pw | pass | SSE, see 3; checkpoint 6: `api/sse-routes.ts` chat relay with journal replay, offline-gap recovery, cursor dedupe, and `/api/chat/stream/status` |
 | R-C3 | `POST /api/chat` (sync legacy) | none | | dropped | | dropped | TAL-245 dropped list |
-| R-C4 | `GET /api/approval/pending`, `POST /api/approval/respond`, `GET /api/approval/stream` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
-| R-C5 | `GET /api/clarify/pending`, `POST /api/clarify/respond`, `GET /api/clarify/stream` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
+| R-C4 | `GET /api/approval/pending`, `POST /api/approval/respond`, `GET /api/approval/stream` | browser, ios | auth | server + sidecar | vitest, pytest | partial | checkpoint 6: server-side queues (`sessions/pending.ts`) mirror sidecar `approval` frames; respond relays `approval.respond`/`approval.set_yolo`; gateway run mirrors are not ported |
+| R-C5 | `GET /api/clarify/pending`, `POST /api/clarify/respond`, `GET /api/clarify/stream` | browser, ios | auth | server + sidecar | vitest, pytest | pass | checkpoint 6: clarify frames, timeout metadata, dedupe, `clarify.respond` |
 | R-C6 | `GET /api/approval/inject_test`, `GET /api/clarify/inject_test` | app contract runner only | | dropped | | dropped | Replaced by a scripted sidecar approval fixture in `app/scripts/validate-upstream-contract` |
-| R-C7 | `POST /api/goal` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
-| R-C8 | `POST /api/background`, `GET /api/background/status`, `POST /api/bg-task-complete-ack` | browser, ios | auth | server + sidecar | vitest | pending | |
+| R-C7 | `POST /api/goal` | browser, ios | auth | server + sidecar | vitest, pytest | partial | checkpoint 6: `/api/goal` through sidecar `goals.*` with kickoff turns; goal evaluation after a turn (`goal`/`goal_continue` frames) pending |
+| R-C8 | `POST /api/background`, `GET /api/background/status`, `POST /api/bg-task-complete-ack` | browser, ios | auth | server + sidecar | vitest | pass | checkpoint 6: hidden background sessions with parent-scoped results; `bg-task-complete-ack` no-op |
 | R-C9 | `POST /api/process-complete-ack` | none | | dropped | | dropped | 410 stub today |
-| R-C10 | `POST /api/btw` | ios | auth | server + sidecar | vitest | pending | |
+| R-C10 | `POST /api/btw` | ios | auth | server + sidecar | vitest | pass | checkpoint 6: ephemeral `/btw` session removed after `done` |
 
 ### 2d. Files, workspace, media, upload, git, rollback
 
@@ -159,12 +159,12 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Stream | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|
-| E1 | `GET /api/chat/stream`: event union (contracts), `id: <stream_id>:<seq>`, replay query precedence, journal replay, close set, 5 s heartbeat | server, contracts | vitest, pw | pending | |
-| E2 | `GET /api/sessions/events`: `sessions_changed`, `gateway_status`, 250 ms drain | server, contracts | vitest | pending | |
-| E3 | `GET /api/approval/stream`, `GET /api/clarify/stream`: `initial` + event, queue 16 | server, contracts | vitest | pending | |
+| E1 | `GET /api/chat/stream`: event union (contracts), `id: <stream_id>:<seq>`, replay query precedence, journal replay, close set, 5 s heartbeat | server, contracts | vitest, pw | partial | checkpoint 6: event ids `<stream_id>:<seq>`, `after_event_id`/`after_seq`/`Last-Event-ID` precedence, journal replay, close set, 5 s heartbeat; `metering` ticks and `todo_state` frames pending |
+| E2 | `GET /api/sessions/events`: `sessions_changed`, `gateway_status`, 250 ms drain | server, contracts | vitest | partial | checkpoint 6: `sessions_changed` with the `stream` discriminator; the gateway half reports `watcher not started` until the profile domain lands |
+| E3 | `GET /api/approval/stream`, `GET /api/clarify/stream`: `initial` + event, queue 16 | server, contracts | vitest | pass | checkpoint 6 |
 | E4 | `GET /api/terminal/output`: `output`, `terminal_closed`, `terminal_error`, integer ids, backlog replay | server, contracts | vitest | pending | |
 | E5 | `GET /api/kanban/events/stream`: `hello`, `events`, cursor, 15 s heartbeat | server, contracts | vitest | pending | |
-| E6 | Shared: stream slot claim, 503 `client_stream_limit`, `X-Accel-Buffering: no`, chunked env, write deadline, `Connection: close` | server | vitest | pending | |
+| E6 | Shared: stream slot claim, 503 `client_stream_limit`, `X-Accel-Buffering: no`, chunked env, write deadline, `Connection: close` | server | vitest | partial | checkpoint 6: slot claim with 503 `client_stream_limit` (`HERMES_WEBUI_MAX_SSE_CLIENTS`), `X-Accel-Buffering: no`, `Connection: close` on the chat relay; chunked env and write deadline pending |
 | E7 | Long non-SSE: folder zip streaming, TTS proxy 30 s, extension sidecar proxy 10 s / 512 KiB | server | vitest | pending | |
 
 ## 4. Persistent state
@@ -172,7 +172,7 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 | ID | State | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|
 | P1 | `sessions/<sid>.json`: Session schema and key order, `.tmp.<pid>.<tid>` atomic write, `.bak` shrink rules, metadata-only stubs | server | fixture | partial | byte-identical rewrite of Python-produced fixtures; checkpoint 5a: `Session.toDocument()` key order, `.tmp.<pid>.<n>` + fsync + rename, `.bak` shrink guard, metadata-only prefix reads |
-| P2 | `sessions/_index.json`, tombstone files, `_drafts/`, `_run_journal/`, `_turn_journal/` | server | fixture | partial | checkpoint 5a: `_index.json` incremental patch/prune, `_deleted_webui_sessions.json`, `_drafts/`; journals land with checkpoint 6 |
+| P2 | `sessions/_index.json`, tombstone files, `_drafts/`, `_run_journal/`, `_turn_journal/` | server | fixture | partial | checkpoint 5a: `_index.json` incremental patch/prune, `_deleted_webui_sessions.json`, `_drafts/`; journals land with checkpoint 6; checkpoint 6 adds `_run_journal/<sid>/<stream>.jsonl` (contiguous seq, fsync on terminal rows, pruned summaries read); `_turn_journal/` pending |
 | P3 | `settings.json` (defaults, allowlist, migrations, `password_hash`, mode-preserving atomic write), `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` | server | fixture | partial | checkpoint 4: `settings.json` store with defaults, migrations, validation, and the mode-preserving atomic writer (`settings.ts`, `fs/atomic.ts`); the other files land with their domains; checkpoint 5a adds `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` |
 | P4 | Auth files: `.signing_key`, `.pbkdf2_key`, `.sessions.json`, `.login_attempts.json`, `passkeys.json`, `.passkey_challenges.json`, `.quota_scope_id` | server | fixture | pending | |
 | P5 | `shares/`, `models_cache*.json`, `media_snapshots/`, `attachments/`, extension files, `sidecar-auth/`, `talaria-relay.json` + PEM + revision, `bootstrap-<port>.log` | server | fixture | partial | checkpoint 5a: `shares/`; the rest land with their domains; checkpoint 5b: `attachments/` inbox and the read side of `media_snapshots/` |

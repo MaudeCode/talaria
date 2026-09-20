@@ -3412,5 +3412,262 @@
       "base"
     ],
     "additionalProperties": false
+  },
+  "chat.start": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "cancelled",
+          "error"
+        ]
+      },
+      "messages": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "final_response": {
+        "type": "string"
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "result_status": {
+        "type": "string"
+      },
+      "tool_limit_reached": {
+        "type": "boolean"
+      },
+      "usage": {
+        "type": "object",
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "estimated_cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "estimated_cost_usd"
+        ],
+        "additionalProperties": false
+      },
+      "context": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      },
+      "model": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "compressed": {
+        "type": "boolean"
+      },
+      "agent_session_id": {
+        "type": "string"
+      },
+      "token_sent": {
+        "type": "boolean"
+      },
+      "pending_steer": {
+        "type": "string"
+      },
+      "live_tool_calls": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      }
+    },
+    "required": [
+      "status",
+      "messages",
+      "final_response",
+      "error",
+      "result_status",
+      "tool_limit_reached",
+      "usage",
+      "context",
+      "model",
+      "provider",
+      "compressed",
+      "agent_session_id",
+      "token_sent",
+      "pending_steer",
+      "live_tool_calls"
+    ],
+    "additionalProperties": false
+  },
+  "chat.interrupt": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
+  "chat.steer": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "accepted": {
+        "type": "boolean"
+      },
+      "fallback": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "accepted"
+    ],
+    "additionalProperties": false
+  },
+  "chat.evict_agent": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "evicted": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "evicted"
+    ],
+    "additionalProperties": false
+  },
+  "approval.respond": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "resolved": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "choice": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "resolved",
+      "choice"
+    ],
+    "additionalProperties": false
+  },
+  "approval.pending": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "pending": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      }
+    },
+    "required": [
+      "pending"
+    ],
+    "additionalProperties": false
+  },
+  "approval.set_yolo": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "yolo_enabled": {
+        "type": "boolean"
+      },
+      "released": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "yolo_enabled",
+      "released"
+    ],
+    "additionalProperties": false
+  },
+  "clarify.respond": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "clarify_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
   }
 }

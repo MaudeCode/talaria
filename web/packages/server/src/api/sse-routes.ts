@@ -1,0 +1,402 @@
+/**
+ * Server-sent event endpoints: the chat relay with journal replay, the
+ * persistent per-session channel, the global session-list feed, the
+ * per-session journal relay, and the approval/clarify prompt feeds
+ * (Python `_handle_sse_stream`, `_handle_session_sse_stream`,
+ * `_handle_session_events_stream`, `_handle_session_run_journal_stream_for_session`).
+ */
+import type { RequestContext } from '../http/context.js'
+import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent } from '../sessions/journal.js'
+import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
+import { nextPendingItem } from '../sessions/pending.js'
+import type { Session } from '../sessions/session.js'
+import { str } from '../util.js'
+
+export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
+const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
+
+/** Python `promote_request_to_stream`: bounded concurrent SSE clients (503 `client_stream_limit`). */
+export class StreamSlots {
+  private held = 0
+
+  constructor(private readonly limit: () => number) {}
+
+  claim(): (() => void) | null {
+    if (this.held >= this.limit()) return null
+    this.held += 1
+    let released = false
+    return () => { if (!released) { released = true; this.held -= 1 } }
+  }
+
+  get active(): number { return this.held }
+}
+
+class SseWriter {
+  private open = false
+  private closed = false
+
+  constructor(private readonly ctx: RequestContext, private readonly release: () => void, private readonly connectionClose: boolean) {
+    ctx.res.on('close', () => { this.closed = true; release() })
+  }
+
+  get isClosed(): boolean { return this.closed || this.ctx.res.destroyed }
+
+  start(): void {
+    if (this.open) return
+    this.open = true
+    const headers: Record<string, string | string[]> = { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', ...this.ctx.securityHeaders() }
+    if (this.connectionClose) headers.Connection = 'close'
+    if (this.ctx.pendingCookies.length) { headers['Set-Cookie'] = [...this.ctx.pendingCookies]; this.ctx.pendingCookies = [] }
+    this.ctx.res.writeHead(200, headers)
+    this.ctx.res.flushHeaders()
+    this.ctx.markFinished(200)
+  }
+
+  event(event: string, data: unknown, eventId?: string | null): void {
+    if (this.isClosed) return
+    const body = JSON.stringify(data ?? {})
+    this.ctx.res.write(`${eventId ? `id: ${eventId}\n` : ''}event: ${event}\ndata: ${body}\n\n`)
+  }
+
+  comment(text: string): void {
+    if (this.isClosed) return
+    this.ctx.res.write(`: ${text}\n\n`)
+  }
+
+  end(): void {
+    if (!this.isClosed) this.ctx.res.end()
+    this.closed = true
+    this.release()
+  }
+}
+
+function claimOrReject(ctx: RequestContext, connectionClose: boolean): SseWriter | null {
+  const release = ctx.deps.streamSlots.claim()
+  if (!release) {
+    ctx.json({ error: 'Too many concurrent event streams', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
+    return null
+  }
+  return new SseWriter(ctx, release, connectionClose)
+}
+
+function sameRunSeq(eventId: string | null | undefined, streamId: string): number | null {
+  const [runId, seq] = parseRunJournalEventId(eventId)
+  return runId === streamId ? seq : null
+}
+
+/** Python `_chat_stream_resume_cursor` (journal cursors only; the runner adapter is not part of this backend). */
+function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number | null; requested: boolean } {
+  const q = ctx.query
+  const afterSeqRaw = q.get('after_seq')
+  const afterEventId = (q.get('after_event_id') ?? '').trim()
+  const explicit = (afterSeqRaw !== null && afterSeqRaw !== '') || Boolean(afterEventId) || Boolean(q.get('replay'))
+  if (explicit) {
+    const [runId, seq] = parseRunJournalEventId(afterEventId)
+    if (runId) return { afterSeq: runId === streamId ? seq : null, requested: true }
+    if (afterSeqRaw === null || afterSeqRaw === '') return { afterSeq: null, requested: true }
+    const parsed = Number.parseInt(afterSeqRaw, 10)
+    return { afterSeq: Number.isFinite(parsed) ? Math.max(0, parsed) : 0, requested: true }
+  }
+  const header = (ctx.header('last-event-id') ?? '').trim()
+  if (!header) return { afterSeq: null, requested: false }
+  const [runId, seq] = parseRunJournalEventId(header)
+  if (runId && seq !== null) return { afterSeq: runId === streamId ? seq : null, requested: true }
+  return { afterSeq: null, requested: true }
+}
+
+function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {
+  const summary = ctx.deps.journal.findRunSummary(streamId)
+  if (!summary) return { found: false, terminal: false }
+  let terminal = false
+  const events = ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })
+  for (const entry of events) {
+    sse.event(entry.event || 'message', entry.payload, entry.event_id)
+    if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
+  }
+  if ((opts.includeStale ?? true) && !summary.terminal) {
+    const stale = ctx.deps.journal.staleInterruptedEvent(summary.session_id, streamId, afterSeq, ctx.deps.auth.now())
+    if (stale) sse.event(stale.event, stale.payload, stale.event_id)
+  }
+  return { found: true, terminal }
+}
+
+function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: number | null, cutoff: number | null): boolean {
+  if (cutoff === null) return false
+  const floor = afterSeq === null ? 0 : Math.max(0, afterSeq)
+  if (floor >= cutoff) return true
+  const summary = ctx.deps.journal.findRunSummary(streamId)
+  if (!summary) return false
+  const seqs = new Set<number>()
+  for (const e of ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
+  return seqs.size === cutoff - floor
+}
+
+async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null): Promise<void> {
+  for (;;) {
+    if (sse.isClosed) return
+    const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+    if (sse.isClosed) return
+    if (!item) { sse.comment('heartbeat'); continue }
+    const [event, data, eventId] = item
+    const seq = sameRunSeq(eventId, streamId)
+    if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
+      if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
+      continue
+    }
+    sse.event(event, data, eventId)
+    if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
+  }
+}
+
+export async function handleChatStream(ctx: RequestContext): Promise<void> {
+  const streamId = ctx.query.get('stream_id') ?? ''
+  const owner = ctx.deps.registry.ownerSessionId(streamId)
+  if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  const cursor = resumeCursor(ctx, streamId)
+  const channel = ctx.deps.registry.peek(streamId)
+  if (!channel) {
+    const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null
+    if (!summary) { ctx.json({ error: 'stream not found' }, { status: 404 }); return }
+    let afterSeq = cursor.afterSeq
+    if (afterSeq !== null && afterSeq > (summary.last_seq || 0)) afterSeq = 0
+    const sse = claimOrReject(ctx, true)
+    if (!sse) return
+    sse.start()
+    try { replayRunJournal(ctx, sse, streamId, afterSeq) } finally { sse.end() }
+    return
+  }
+  const [sub, snapshot] = channel.subscribeWithSnapshot()
+  const sse = claimOrReject(ctx, true)
+  if (!sse) { channel.unsubscribe(sub); return }
+  sse.start()
+  try {
+    let replayCutoffSeq: number | null = null
+    if (cursor.requested) {
+      let afterSeq = cursor.afterSeq ?? 0
+      const snapshotCutoff = sameRunSeq(snapshot.last_event_id, streamId)
+      const effectiveCutoff = snapshotCutoff ?? 0
+      if (afterSeq > effectiveCutoff) afterSeq = 0
+      let replayMaxSeq = snapshotCutoff
+      const firstBuffered = sameRunSeq(snapshot.offline_first_event_id, streamId)
+      if (firstBuffered !== null) replayMaxSeq = snapshotCutoff === null ? firstBuffered - 1 : Math.min(firstBuffered - 1, snapshotCutoff)
+      const cursorCoversSnapshot = snapshotCutoff !== null && afterSeq >= snapshotCutoff
+      const droppedGapRequired = snapshot.offline_dropped_events > 0 && !cursorCoversSnapshot && (firstBuffered === null || afterSeq < firstBuffered - 1)
+      const gapRequired = droppedGapRequired || (replayMaxSeq !== null && replayMaxSeq > afterSeq)
+      const covered = !gapRequired || journalCoversGap(ctx, streamId, afterSeq, replayMaxSeq)
+      let replayed = false
+      let terminalReplayed = false
+      if (covered) {
+        const result = replayRunJournal(ctx, sse, streamId, afterSeq, { maxSeq: replayMaxSeq, includeStale: false })
+        replayed = result.found
+        terminalReplayed = result.terminal
+        if (replayed) replayCutoffSeq = replayMaxSeq
+      }
+      if (gapRequired && (!covered || !replayed)) {
+        sse.event('apperror', { type: 'interrupted', recovery_control: true, message: "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames.", hint: 'The transcript was restored to the last saved state.', session_id: owner ?? '', stream_id: streamId, offline_dropped_events: snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq) })
+        return
+      }
+      if (terminalReplayed) return
+      if (afterSeq > 0 && (snapshotCutoff === null || afterSeq <= snapshotCutoff)) replayCutoffSeq = replayCutoffSeq === null ? afterSeq : Math.max(replayCutoffSeq, afterSeq)
+    }
+    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq)
+  } finally {
+    channel.unsubscribe(sub)
+    sse.end()
+  }
+}
+
+/** `/api/session/stream`: the persistent per-session channel. */
+export async function handleSessionStream(ctx: RequestContext): Promise<void> {
+  const sid = ctx.query.get('session_id') ?? ''
+  if (!sid) { ctx.json({ error: 'session_id is required' }, { status: 400 }); return }
+  if (!ctx.deps.sessions.sessionIdVisible(sid)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  const knownRaw = ctx.query.get('known_count') ?? ''
+  const knownCount = knownRaw !== '' && /^-?\d+$/.test(knownRaw) ? Number.parseInt(knownRaw, 10) : null
+  const sub = ctx.deps.channels.subscribe(sid)
+  const sse = claimOrReject(ctx, false)
+  if (!sse) { ctx.deps.channels.unsubscribe(sid, sub); return }
+  try {
+    sse.start()
+    sse.event('initial', { session_id: sid })
+    const recover = ctx.deps.registry.attachableRunForSession(sid)
+    if (recover) {
+      let pendingStartedAt: number | null = null
+      try { pendingStartedAt = ctx.deps.sessionStore.get(sid, { metadataOnly: true }).pending_started_at } catch { pendingStartedAt = null }
+      sse.event('server_turn_started', { session_id: sid, stream_id: recover, pending_started_at: pendingStartedAt, source: 'subscribe_recovery', recovered: true })
+    } else if (knownCount !== null) {
+      let persisted: number | null = null
+      try {
+        const s = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
+        persisted = s.metadataMessageCount ?? (s.messages.length || null)
+      } catch { persisted = null }
+      if (persisted !== null && persisted > knownCount) sse.event('session-updated', { session_id: sid, message_count: persisted, known_count: knownCount, source: 'subscribe_recovery' })
+    }
+    for (;;) {
+      if (sse.isClosed) return
+      const item = await nextSessionItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+      if (sse.isClosed) return
+      if (!item) { sse.comment('keepalive'); continue }
+      sse.event(item[0], item[1])
+    }
+  } finally {
+    ctx.deps.channels.unsubscribe(sid, sub)
+    sse.end()
+  }
+}
+
+/** `/api/sessions/events`: global session-list invalidation. */
+export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
+  const wantGateway = ['1', 'true', 'yes'].includes((ctx.query.get('gateway') ?? '').toLowerCase())
+  const sub = ctx.deps.events.subscribe()
+  const sse = claimOrReject(ctx, false)
+  if (!sse) { sub.close(); return }
+  const abort = new AbortController()
+  ctx.res.on('close', () => { abort.abort() })
+  try {
+    sse.start()
+    if (wantGateway) {
+      // The gateway watcher (state.db polling) lands with the profile domain; until then the feed reports itself unusable so clients poll.
+      sse.event('gateway_status', { enabled: Boolean(ctx.deps.settings.load().show_cli_sessions), fallback_poll_ms: 30000, ok: false, watcher_running: false, scope: 'gateway_sessions', session_stream_available: true, session_stream_path: '/api/session/stream', error: 'watcher not started' })
+    }
+    let lastWrite = Date.now()
+    for (;;) {
+      if (sse.isClosed) return
+      const timer = new AbortController()
+      const timeout = setTimeout(() => { timer.abort() }, SSE_HEARTBEAT_INTERVAL_MS)
+      const onAbort = (): void => { timer.abort() }
+      abort.signal.addEventListener('abort', onAbort, { once: true })
+      const event = await sub.next(timer.signal)
+      clearTimeout(timeout)
+      abort.signal.removeEventListener('abort', onAbort)
+      if (sse.isClosed) return
+      if (!event) {
+        if (Date.now() - lastWrite < SSE_HEARTBEAT_INTERVAL_MS) continue
+        sse.comment('keepalive')
+        lastWrite = Date.now()
+        continue
+      }
+      sse.event(event.type, { ...event, stream: 'sessions' })
+      lastWrite = Date.now()
+    }
+  } finally {
+    sub.close()
+    sse.end()
+  }
+}
+
+/** `/api/sessions/{sid}/events`: per-session journal relay with snapshot fallback. */
+export async function handleSessionJournalStream(ctx: RequestContext, sessionId: string): Promise<void> {
+  if (!ctx.deps.sessions.sessionIdVisible(sessionId)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  let session: Session
+  try { session = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  const resumeEventId = (ctx.header('last-event-id') ?? '').trim() || (ctx.query.get('after_event_id') ?? '').trim() || null
+  let idleFingerprint = ctx.deps.journal.sessionJournalFingerprint(sessionId)
+  const sse = claimOrReject(ctx, false)
+  if (!sse) return
+  sse.start()
+  const sent = new Set<string>()
+  const sentOrder: string[] = []
+  const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
+  const emitReplay = (events: JournalEvent[], streamId: string | null, cutoff: number | null): void => {
+    for (const entry of events) {
+      const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
+      if (cutoff !== null && seq !== null && seq > cutoff) continue
+      if (entry.event_id && sent.has(entry.event_id)) continue
+      sse.event(entry.event || 'message', entry.payload, entry.event_id)
+      if (entry.event_id) note(entry.event_id)
+    }
+  }
+  const snapshot = (activeStreamId: string | null): void => {
+    let fresh = session
+    try { fresh = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }) } catch { fresh = session }
+    sse.event('session_snapshot', { session: fresh.compact(activeStreamId ? { includeRuntime: true, activeStreamIds: new Set([activeStreamId]) } : {}) })
+  }
+  const attach = (): { sub: StreamSubscriber | null; streamId: string | null; snapshot: { last_event_id: string | null } } => {
+    const streamId = ctx.deps.registry.activeRunStreamForSession(sessionId)
+    const channel = streamId ? ctx.deps.registry.peek(streamId) : undefined
+    if (!streamId || !channel) return { sub: null, streamId, snapshot: { last_event_id: null } }
+    const [sub, snap] = channel.subscribeWithSnapshot()
+    return { sub, streamId, snapshot: snap }
+  }
+  let attached = attach()
+  try {
+    let replayOk = false
+    let replayEvents: JournalEvent[] = []
+    if (resumeEventId) {
+      const replay = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
+      if (replay.status !== 'ok') snapshot(attached.streamId)
+      else { replayOk = true; replayEvents = replay.events }
+    }
+    if (!attached.sub) {
+      if (replayOk) emitReplay(replayEvents, attached.streamId, null)
+      for (;;) {
+        if (sse.isClosed) return
+        attached = attach()
+        if (attached.sub) break
+        const fp = ctx.deps.journal.sessionJournalFingerprint(sessionId)
+        if (fp !== idleFingerprint) { idleFingerprint = fp; snapshot(attached.streamId) }
+        sse.comment('keepalive')
+        await new Promise((r) => setTimeout(r, SSE_HEARTBEAT_INTERVAL_MS))
+      }
+    }
+    const sub = attached.sub
+    const streamId = attached.streamId!
+    let cutoff: number | null = null
+    if (replayOk) {
+      cutoff = sameRunSeq(attached.snapshot.last_event_id, streamId)
+      const reconciled = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
+      if (reconciled.status === 'ok') emitReplay(reconciled.events, streamId, cutoff)
+      else snapshot(streamId)
+    }
+    for (;;) {
+      if (sse.isClosed) return
+      const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+      if (sse.isClosed) return
+      if (!item) { sse.comment('keepalive'); continue }
+      const [event, data, eventId] = item
+      const seq = sameRunSeq(eventId, streamId)
+      const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
+      const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
+      if (alreadySent) { if (terminal) return; continue }
+      sse.event(event, data, eventId)
+      if (eventId) note(eventId)
+      if (terminal) return
+    }
+  } finally {
+    if (attached.sub && attached.streamId) ctx.deps.registry.peek(attached.streamId)?.unsubscribe(attached.sub)
+    sse.end()
+  }
+}
+
+async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): Promise<void> {
+  const sid = ctx.query.get('session_id') ?? ''
+  if (!sid) { ctx.json({ error: 'session_id is required' }, { status: 400 }); return }
+  const [sub, initial] = kind === 'approval' ? ctx.deps.pending.subscribeApprovals(sid) : ctx.deps.pending.subscribeClarifies(sid)
+  const release = (): void => { if (kind === 'approval') ctx.deps.pending.unsubscribeApprovals(sid, sub); else ctx.deps.pending.unsubscribeClarifies(sid, sub) }
+  const sse = claimOrReject(ctx, false)
+  if (!sse) { release(); return }
+  try {
+    sse.start()
+    sse.event('initial', initial)
+    for (;;) {
+      if (sse.isClosed) return
+      const item = await nextPendingItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
+      if (sse.isClosed) return
+      if (!item) { sse.comment('keepalive'); continue }
+      sse.event(kind, item)
+    }
+  } finally {
+    release()
+    sse.end()
+  }
+}
+
+export const handleApprovalStream = (ctx: RequestContext): Promise<void> => promptStream(ctx, 'approval')
+export const handleClarifyStream = (ctx: RequestContext): Promise<void> => promptStream(ctx, 'clarify')
+
+export function sessionEventsPathSessionId(path: string): string | null {
+  const parts = path.replace(/^\/+|\/+$/g, '').split('/')
+  if (parts.length !== 4 || parts[0] !== 'api' || parts[1] !== 'sessions' || parts[3] !== 'events') return null
+  const sid = str(parts[2]).trim()
+  return sid || null
+}
