@@ -467,6 +467,17 @@ export class SessionService {
     return { ok: true, enabled_toolsets: s.enabled_toolsets }
   }
 
+  /** Python `/api/personality/set` persistence: the name only; the prompt is resolved by the caller. */
+  async setPersonality(sid: string, name: string | null): Promise<string | null> {
+    this.rejectSubagent(sid, 'modified')
+    const s = this.mutationTarget(sid, 'modified')
+    await this.store.withLock(sid, () => {
+      s.personality = name
+      this.store.save(s)
+    })
+    return typeof s.personality === 'string' ? s.personality : null
+  }
+
   // ── transcript mutations ─────────────────────────────────────────────────
 
   async truncate(sid: string, keepRaw: unknown): Promise<Record<string, unknown>> {

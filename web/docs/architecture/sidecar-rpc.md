@@ -106,7 +106,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `stt` | `capability`, `transcribe` | | `api/upload.py` |
 | `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `status`, `history`, `run_detail`, `output`, `delivery_options` | `run`: `started` | `api/routes.py` cron section |
 | `providers` | `registry`, `auth_status`, `model_ids`, `resolve_runtime`, `credential_pool` | | `api/config.py`, `api/providers.py` |
-| `models` | `context_length`, `estimate_tokens`, `capabilities` | | `api/config.py`, `api/message_window.py` |
+| `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts` | | `api/config.py`, `api/message_window.py` |
 | `aux` | `complete`, `resolve` | `complete`: `token` | `api/streaming.py`, `api/routes.py` |
 | `text` | `redact`, `image_mode`, `portal_tags` | | `api/helpers.py`, `api/streaming.py` |
 | `process` | `drain`, `requeue`, `mark_consumed`, `format_notification`, `list` | | `api/background_process.py`, `api/streaming.py` |
@@ -115,6 +115,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `warning`, `status`, `context_status`; the settled transcript, usage, and terminal status come back as the result | `api/streaming.py` |
 | `approval`, `clarify` | `approval.pending`, `approval.respond`, `approval.set_yolo`, `clarify.respond` | | `api/route_approvals.py`, `api/clarify.py` |
 | `worktree` | `create` | | `api/worktrees.py` |
+| `config` | `get`, `set` | | `api/config.py` YAML load/save (policy stays in the server) |
 
 What stays in the server, by design: WebUI files and `config.yaml` / `.env`
 writes, MCP config edits and HTTP/stdio health probes, skill file writes,

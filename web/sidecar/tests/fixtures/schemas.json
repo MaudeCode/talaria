@@ -3413,6 +3413,72 @@
     ],
     "additionalProperties": false
   },
+  "config.get": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "exists": {
+        "type": "boolean"
+      },
+      "config": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "required": [
+      "path",
+      "exists",
+      "config"
+    ],
+    "additionalProperties": false
+  },
+  "config.set": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "const": true
+      },
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "path"
+    ],
+    "additionalProperties": false
+  },
+  "models.reasoning_efforts": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "efforts": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "supports_reasoning": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "efforts",
+      "supports_reasoning"
+    ],
+    "additionalProperties": false
+  },
   "chat.start": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

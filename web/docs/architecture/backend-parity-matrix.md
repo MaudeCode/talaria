@@ -127,12 +127,12 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-P1 | `GET|POST /api/settings` | browser, ios | auth | server | vitest, fixture | pending | |
-| R-P2 | `GET /api/profiles`, `GET /api/profile/active`, `POST /api/profile/switch|create|delete` | browser, ios | auth / operator | server + sidecar | vitest, pytest | pending | Contract fix: one `name` field |
-| R-P3 | `GET /api/models`, `GET /api/models/live`, `POST /api/models/refresh`, `POST /api/model/set`, `GET /api/model/auxiliary`, `POST /api/default-model` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
-| R-P4 | `GET|POST /api/providers`, `POST /api/providers/delete|self-hosted`, `GET /api/provider/quota|quotas|cost-history` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
-| R-P5 | `GET /api/personalities`, `POST /api/personality/set`, `GET|POST /api/reasoning` | browser, ios | auth | server | vitest | pending | |
-| R-P6 | `GET /api/onboarding/status`, `POST /api/onboarding/setup|probe|complete`, `POST /api/onboarding/oauth/start|cancel`, `GET /api/onboarding/oauth/poll` | browser | auth (local origin) | server + sidecar | vitest | pending | |
+| R-P1 | `GET|POST /api/settings` | browser, ios | auth | server | vitest, fixture | ported (7a) | Auth-state fields, password flows, `max_tokens` via config.yaml, version badges; `update_channel_version` mirrors `webui_version` (no channel tags in npm builds) |
+| R-P2 | `GET /api/profiles`, `GET /api/profile/active`, `POST /api/profile/switch|create|delete` | browser, ios | auth / operator | server + sidecar | vitest, pytest | ported (7a) | Accepts `name` or `profile`; per-client switch sets the profile cookie; isolated mode still pinned off |
+| R-P3 | `GET /api/models`, `GET /api/models/live`, `POST /api/models/refresh`, `POST /api/model/set`, `GET /api/model/auxiliary`, `POST /api/default-model` | browser, ios | auth | server + sidecar | vitest, pytest | ported (7a) | Live ids via `providers.model_ids` with a 24h cache; `refresh` without a provider evicts everything and answers the catalog; no fast-tier metadata beyond OpenAI GPT-5/o-series |
+| R-P4 | `GET|POST /api/providers`, `POST /api/providers/delete|self-hosted`, `GET /api/provider/quota|quotas|cost-history` | browser, ios | auth | server + sidecar | vitest, pytest | partial (7a) | Plugin providers, credential-pool multi-account quota sources, DeepSeek/OpenCode balances, and the OpenAI-shadowed-Codex card rule are not ported |
+| R-P5 | `GET /api/personalities`, `POST /api/personality/set`, `GET|POST /api/reasoning` | browser, ios | auth | server | vitest | ported (7a) | Supported efforts come from the Agent (`models.reasoning_efforts`); ZAI thinking-toggle special cases are not ported |
+| R-P6 | `GET /api/onboarding/status`, `POST /api/onboarding/setup|probe|complete`, `POST /api/onboarding/oauth/start|cancel`, `GET /api/onboarding/oauth/poll` | browser | auth (local origin) | server + sidecar | vitest | partial (7a) | OAuth start/cancel/poll answer 501 (terminal `hermes auth` remains the path) |
 
 ### 2g. Skills, memory, prompts, commands, notes, share, misc
 

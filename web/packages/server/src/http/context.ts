@@ -35,6 +35,10 @@ import type { StreamSlots } from '../api/sse-routes.js'
 import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
 import type { CsrfFailure } from './origin.js'
+import type { AgentConfig } from '../config/agent-config.js'
+import type { ProviderCatalog } from '../providers/catalog.js'
+import type { ProfileService } from '../profiles/profiles.js'
+import type { Onboarding } from '../onboarding.js'
 
 export interface AppDeps {
   config: ServerConfig
@@ -93,6 +97,17 @@ export interface AppDeps {
   journal: RunJournal
   background: BackgroundTasks
   streamSlots: StreamSlots
+  // ── settings, profiles, providers, onboarding (checkpoint 7a) ──
+  /** Home directory for a logical profile name (root aliases and invalid names clamp to the base home). */
+  profileHome: (name: string) => string
+  agentConfig: AgentConfig
+  catalog: ProviderCatalog
+  profiles: ProfileService
+  onboarding: Onboarding
+  /** Running Agent version from the sidecar handshake, else the pinned version. */
+  agentVersion: () => string
+  /** Passkey credentials are dropped when password auth is cleared (passkeys land with R-A6). */
+  clearPasskeys: () => void
 }
 
 export interface VsCodeConfig {

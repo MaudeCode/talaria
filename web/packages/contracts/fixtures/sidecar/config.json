@@ -1,0 +1,14 @@
+{
+  "config.get": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "path": "<home>/config.yaml",
+        "exists": false,
+        "config": {}
+      }
+    }
+  ]
+}

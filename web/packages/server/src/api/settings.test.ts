@@ -1,0 +1,388 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createServer } from 'node:net'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
+import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel } from '../providers/catalog.js'
+import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug } from '../config/agent-config.js'
+import { splitProviderModel } from '../profiles/profiles.js'
+
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+
+/** An in-memory config.yaml the fake sidecar serves and stores, keyed by profile home. */
+function fakeConfigStore(sidecar: FakeSidecar, initial: Record<string, Json> = {}): Map<string, Json> {
+  const store = new Map<string, Json>(Object.entries(initial))
+  sidecar.respond('config.get', (params) => {
+    const path = join(params.profile_home, 'config.yaml')
+    if (existsSync(path)) {
+      // The server only calls config.get when a file exists; the fake serves the in-memory copy written by config.set.
+      return { path, exists: true, config: store.get(params.profile_home) ?? {} }
+    }
+    return { path, exists: false, config: {} }
+  })
+  sidecar.respond('config.set', (params) => {
+    store.set(params.profile_home, params.config)
+    const path = join(params.profile_home, 'config.yaml')
+    mkdirSync(params.profile_home, { recursive: true })
+    writeFileSync(path, `# fake yaml ${String(Date.now())} ${String(Math.random())}\n`)
+    return { ok: true as const, path }
+  })
+  return store
+}
+
+describe('settings, profiles, models, providers, reasoning, onboarding', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let configs: Map<string, Json>
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    configs = fakeConfigStore(sidecar)
+    // Seed config.yaml so config.get answers with the seeded model section.
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, agent: { reasoning_effort: 'high', personalities: { pirate: 'Talk like a pirate', calm: { description: 'Calm helper', system_prompt: 'Be calm', tone: 'gentle' } } }, display: { show_reasoning: false } })
+    sidecar.respond('models.reasoning_efforts', (params) => ({ efforts: params.model.startsWith('claude') ? ['low', 'medium', 'high'] : [], supports_reasoning: params.model.startsWith('claude') }))
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : [] }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
+  })
+  afterAll(() => s.close())
+
+  it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash', async () => {
+    const res = await s.get('/api/settings')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body).not.toHaveProperty('password_hash')
+    expect(body.auth_enabled).toBe(false)
+    expect(body.password_auth_enabled).toBe(false)
+    expect(body.password_env_var).toBe(false)
+    expect(body.passkeys_enabled).toBe(false)
+    expect(body.webui_version).toBe('web-v0.0.0-test')
+    expect(typeof body.agent_version).toBe('string')
+    expect(body.max_tokens).toBeNull()
+    expect(body.max_tokens_effective).toBeNull()
+    expect(body.persisted_speech_keys).toEqual([])
+    expect(body.default_model).toBe('claude-sonnet-4-6')
+    expect(body.default_model_provider).toBe('anthropic')
+  })
+
+  it('POST /api/settings persists allowed keys, writes max_tokens to config.yaml, and clears it on blank', async () => {
+    let res = await post(s, '/api/settings', { bot_name: '  ', send_key: 'ctrl+enter', max_tokens: '4096', not_a_setting: true })
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body.bot_name).toBe('Hermes')
+    expect(body.send_key).toBe('ctrl+enter')
+    expect(body.max_tokens).toBe(4096)
+    expect(body.max_tokens_effective).toBe(4096)
+    expect(body.logged_in).toBe(false)
+    expect(body.auth_just_enabled).toBe(false)
+    expect(configs.get(s.state)?.max_tokens).toBe(4096)
+    expect(body).not.toHaveProperty('not_a_setting')
+    res = await post(s, '/api/settings', { max_tokens: '' })
+    body = await json(res)
+    expect(body.max_tokens).toBeNull()
+    expect(configs.get(s.state)).not.toHaveProperty('max_tokens')
+  })
+
+  it('first password setup from loopback enables auth and logs the caller in with a session cookie', async () => {
+    const res = await post(s, '/api/settings', { _set_password: 'correct horse battery' })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.auth_enabled).toBe(true)
+    expect(body.password_auth_enabled).toBe(true)
+    expect(body.auth_just_enabled).toBe(true)
+    expect(body.logged_in).toBe(true)
+    const cookie = res.headers.get('set-cookie') ?? ''
+    expect(cookie).toContain('hermes_session=')
+    const sessionCookie = cookie.split(';')[0] ?? ''
+    // Changing it again needs the current password; wrong → 403, right → 200.
+    let again = await post(s, '/api/settings', { _set_password: 'new one here', _current_password: 'nope' }, { cookie: sessionCookie, 'x-hermes-csrf-token': await csrfFor(s, sessionCookie) })
+    expect(again.status).toBe(403)
+    expect((await json(again)).error).toBe('Current password is incorrect.')
+    again = await post(s, '/api/settings', { _clear_password: true, _current_password: 'correct horse battery' }, { cookie: sessionCookie, 'x-hermes-csrf-token': await csrfFor(s, sessionCookie) })
+    expect(again.status).toBe(200)
+    expect((await json(again)).password_auth_enabled).toBe(false)
+  })
+
+  it('GET/POST /api/reasoning reads and writes config.yaml keys and coerces the stored effort', async () => {
+    let res = await s.get('/api/reasoning')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body).toEqual({ show_reasoning: false, reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true })
+    res = await post(s, '/api/reasoning', { effort: 'xhigh' })
+    body = await json(res)
+    expect(body.reasoning_effort).toBe('high')
+    expect(configs.get(s.state)?.agent).toMatchObject({ reasoning_effort: 'xhigh' })
+    res = await post(s, '/api/reasoning', { display: 'show' })
+    expect((await json(res)).show_reasoning).toBe(true)
+    res = await post(s, '/api/reasoning', { effort: 'bogus' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/reasoning', {})
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/reasoning', { effort: '' })
+    expect((await json(res)).reasoning_effort).toBe('')
+    expect(configs.get(s.state)?.agent).not.toHaveProperty('reasoning_effort')
+    res = await s.get('/api/reasoning?model=gpt-4o&provider=openai')
+    body = await json(res)
+    expect(body.supported_efforts).toEqual([])
+    expect(body.supports_thinking_toggle).toBe(false)
+  })
+
+  it('personalities list from config.yaml and personality/set resolves the prompt onto the session', async () => {
+    let res = await s.get('/api/personalities')
+    expect(await json(res)).toEqual({ personalities: [{ name: 'pirate', description: 'Talk like a pirate' }, { name: 'calm', description: 'Calm helper' }] })
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    res = await post(s, '/api/personality/set', { session_id: sid, name: 'calm' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, personality: 'calm', prompt: 'Be calm\nTone: gentle' })
+    res = await post(s, '/api/personality/set', { session_id: sid, name: 'missing' })
+    expect(res.status).toBe(404)
+    res = await post(s, '/api/personality/set', { session_id: sid, name: '' })
+    expect(await json(res)).toEqual({ ok: true, personality: null, prompt: '' })
+    res = await post(s, '/api/personality/set', { session_id: 'nope', name: 'calm' })
+    expect(res.status).toBe(404)
+  })
+
+  it('GET /api/models composes the catalog: active provider first, live ids for keyed providers, prefixes for others', async () => {
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-test-1234', OPENROUTER_API_KEY: 'sk-or-test-1234' })
+    const res = await s.get('/api/models')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.active_provider).toBe('anthropic')
+    expect(body.default_model).toBe('claude-sonnet-4-6')
+    const groups = body.groups as { provider: string; provider_id: string; models: { id: string; label: string }[] }[]
+    expect(groups[0]?.provider_id).toBe('anthropic')
+    expect(groups[0]?.models.map((m) => m.id)).toEqual(['claude-opus-4-7', 'claude-sonnet-4-6'])
+    const openrouter = groups.find((g) => g.provider_id === 'openrouter')
+    expect(openrouter).toBeDefined()
+    expect(openrouter?.models.every((m) => m.id.startsWith('@openrouter:') || m.id.includes('/'))).toBe(true)
+    expect(body.configured_model_badges).toMatchObject({ 'claude-sonnet-4-6': { role: 'main', label: 'Main', provider: 'anthropic' } })
+    const bad = await s.get('/api/models?freshness=nope')
+    expect(bad.status).toBe(400)
+  })
+
+  it('POST /api/models/refresh evicts the live cache and re-asks the sidecar', async () => {
+    const before = sidecar.calls.filter((c) => c.method === 'providers.model_ids').length
+    const res = await post(s, '/api/models/refresh', { provider: 'anthropic' })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.ok).toBe(true)
+    expect(body.provider).toBe('anthropic')
+    expect(sidecar.calls.filter((c) => c.method === 'providers.model_ids').length).toBeGreaterThan(before)
+  })
+
+  it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env', async () => {
+    let res = await s.get('/api/providers')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    const providers = body.providers as { id: string; has_key: boolean; key_source: string; configurable: boolean; is_oauth: boolean; models_total: number }[]
+    const anthropic = providers.find((p) => p.id === 'anthropic')
+    expect(anthropic).toMatchObject({ has_key: true, key_source: 'env_file', configurable: true, is_oauth: false })
+    expect(providers.find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
+    expect(providers.find((p) => p.id === 'openai-codex')).toMatchObject({ is_oauth: true, configurable: false, has_key: false, auth_error: 'not logged in' })
+    expect(body.active_provider).toBe('anthropic')
+    res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-12345' })
+    expect(await json(res)).toEqual({ ok: true, provider: 'deepseek', display_name: 'DeepSeek', action: 'updated' })
+    expect(loadEnvFile(join(s.state, '.env')).DEEPSEEK_API_KEY).toBe('sk-deepseek-12345')
+    expect(statSync(join(s.state, '.env')).mode & 0o777).toBe(0o600)
+    res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'short' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/providers', { provider: 'openai-codex', api_key: 'sk-whatever-1234' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/providers/delete', { provider: 'deepseek' })
+    expect((await json(res)).action).toBe('removed')
+    expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
+    res = await s.get('/api/providers')
+    body = await json(res)
+    expect((body.providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'deepseek')?.has_key).toBe(false)
+  })
+
+  it('quota endpoints answer per-provider status without network for unsupported providers', async () => {
+    let res = await s.get('/api/provider/quota?provider=zai')
+    expect(await json(res)).toMatchObject({ ok: false, provider: 'zai', supported: false, status: 'unsupported' })
+    res = await s.get('/api/provider/cost-history?provider=zai&days=3')
+    expect(await json(res)).toMatchObject({ ok: false, supported: false, status: 'unsupported' })
+    res = await s.get('/api/provider/cost-history')
+    expect(await json(res)).toMatchObject({ ok: false, status: 'missing_provider' })
+    sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', windows: [{ label: '5h', used_percent: 12 }], details: [] } }))
+    res = await s.get('/api/provider/quotas')
+    const body = await json(res)
+    expect(body.active_provider).toBe('anthropic')
+    const sources = body.sources as { provider_id: string; status: string; is_active_provider: boolean; windows: unknown[] }[]
+    const anthropic = sources.find((q) => q.provider_id === 'anthropic')
+    expect(anthropic).toMatchObject({ status: 'available', is_active_provider: true })
+    expect(anthropic?.windows).toHaveLength(1)
+  })
+
+  it('default-model and model/set write config.yaml; auxiliary slots round-trip through /api/model/auxiliary', async () => {
+    let res = await post(s, '/api/default-model', { model: '@openrouter:anthropic/claude-opus-4.7', provider: 'auto' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, model: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
+    expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
+    res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'openai', model: '@openai:gpt-4o' })
+    expect(await json(res)).toEqual({ ok: true, task: 'vision', provider: 'openai', model: 'gpt-4o' })
+    res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'nope', provider: 'auto', model: '' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/model/set', { scope: 'weird' })
+    expect(res.status).toBe(400)
+    res = await s.get('/api/model/auxiliary')
+    const body = await json(res)
+    const tasks = body.tasks as { task: string; provider: string; model: string }[]
+    expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openai', model: 'gpt-4o' })
+    expect(tasks).toHaveLength(11)
+    expect(body.main).toMatchObject({ provider: 'openrouter', model: 'anthropic/claude-opus-4.7', api_key_set: false })
+    res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    expect(await json(res)).toEqual({ ok: true, model: 'claude-sonnet-4-6', provider: 'anthropic' })
+    res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
+    expect(res.status).toBe(200)
+    expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
+  })
+
+  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
+    let res = await s.get('/api/profiles')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body.active).toBe('default')
+    expect(body.single_profile_mode).toBe(false)
+    expect((body.profiles as Json[])[0]).toMatchObject({ name: 'default', is_active: true, is_default: true })
+    res = await s.get('/api/profile/active')
+    body = await json(res)
+    expect(body).toMatchObject({ name: 'default', is_default: true, path: s.state })
+    expect(typeof body.default_workspace).toBe('string')
+    res = await post(s, '/api/profile/switch', {})
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/profile/switch', { name: 'ghost' })
+    expect(res.status).toBe(404)
+    mkdirSync(join(s.state, 'profiles', 'alpha'), { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'alpha', path: join(s.state, 'profiles', 'alpha'), is_default: false, gateway_running: false, model: 'm', provider: 'p', has_env: false, visible: true, skill_count: 1, enabled_skills: 1, total_skills: 2 }] }))
+    res = await post(s, '/api/profile/switch', { profile: 'alpha' })
+    expect(res.status).toBe(200)
+    body = await json(res)
+    expect(body.active).toBe('alpha')
+    expect(body.is_default).toBe(false)
+    expect((body.profiles as Json[]).find((p) => p.name === 'alpha')).toMatchObject({ is_active: true })
+    expect(res.headers.get('set-cookie')).toContain('hermes_profile=')
+    res = await post(s, '/api/profile/create', { name: 'Bad Name' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/profile/create', { name: 'beta', base_url: 'ftp://x' })
+    expect(res.status).toBe(400)
+    sidecar.respond('profiles.create', (params) => ({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }))
+    res = await post(s, '/api/profile/create', { name: 'beta', api_key: 'sk-beta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
+    expect(res.status).toBe(200)
+    body = await json(res)
+    expect(body.ok).toBe(true)
+    expect(loadEnvFile(join(s.state, 'profiles', 'beta', '.env')).ANTHROPIC_API_KEY).toBe('sk-beta-12345')
+    expect(configs.get(join(s.state, 'profiles', 'beta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+    res = await post(s, '/api/profile/create', { name: 'gamma', default_model: 'not-a-model', model_provider: 'anthropic' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toContain('not available for provider')
+    res = await post(s, '/api/profile/delete', { name: 'default' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/profile/delete', { name: 'beta' })
+    expect(await json(res)).toEqual({ ok: true, name: 'beta' })
+    expect(sidecar.calls.some((c) => c.method === 'profiles.delete' && (c.params as Json).name === 'beta')).toBe(true)
+  })
+
+  it('onboarding status reflects config.yaml and the local-origin gate protects setup/complete/probe', async () => {
+    let res = await s.get('/api/onboarding/status')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.completed).toBe(true)
+    expect(body.settings).toMatchObject({ bot_name: 'Hermes', password_enabled: false })
+    expect((body.setup as Json).current).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    expect((body.system as Json).provider_configured).toBe(true)
+    expect((body.system as Json).provider_ready).toBe(true)
+    expect(((body.setup as Json).providers as Json[]).map((p) => p.id)).toContain('openrouter')
+    expect((body.models as Json).active_provider).toBe('anthropic')
+    res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', api_key: 'sk-or-12345' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ error: 'config_exists', requires_confirm: true })
+    res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', api_key: 'sk-or-12345', confirm_overwrite: true })
+    expect(res.status).toBe(200)
+    expect((await json(res)).completed).toBe(true)
+    expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' })
+    res = await post(s, '/api/onboarding/setup', { provider: 'custom', model: 'x' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', confirm_overwrite: true }, { 'x-forwarded-for': '203.0.113.9' })
+    // Loopback peer with an (ignored) forwarded header stays local.
+    expect(res.status).toBe(200)
+    res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'notaurl' })
+    expect(await json(res)).toMatchObject({ ok: false, error: 'invalid_url' })
+    res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: `http://127.0.0.1:${String(await closedPort())}/v1` })
+    expect(await json(res)).toMatchObject({ ok: false, error: 'connect_refused' })
+    res = await post(s, '/api/onboarding/complete', {})
+    expect((await json(res)).completed).toBe(true)
+    res = await post(s, '/api/onboarding/oauth/start', { provider: 'anthropic' })
+    expect(res.status).toBe(501)
+  })
+
+  it('providers/self-hosted writes the provider block and activates the model', async () => {
+    const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: 'http://localhost:1234/v1/', api_key: 'lm-key-12345' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: 'http://localhost:1234/v1', model: 'qwen3' })
+    expect((configs.get(s.state)?.providers as Json).lmstudio).toEqual({ base_url: 'http://localhost:1234/v1' })
+    expect(configs.get(s.state)?.model).toMatchObject({ provider: 'lmstudio', default: 'qwen3', base_url: 'http://localhost:1234/v1' })
+    expect(loadEnvFile(join(s.state, '.env')).LM_API_KEY).toBe('lm-key-12345')
+    const bad = await post(s, '/api/providers/self-hosted', { provider: 'openai', model: 'x' })
+    expect(bad.status).toBe(400)
+  })
+})
+
+async function closedPort(): Promise<number> {
+  const server = createServer()
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const port = (server.address() as { port: number }).port
+  await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  return port
+}
+
+async function csrfFor(s: TestServer, cookie: string): Promise<string> {
+  const res = await s.get('/api/bootstrap', { headers: { cookie } })
+  const token = ((await res.json()) as Json).csrf_token
+  return typeof token === 'string' ? token : ''
+}
+
+describe('env file writer', () => {
+  it('preserves comments and order, removes keys, appends new ones, and refuses newlines', () => {
+    const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, '.env')
+    writeFileSync(path, '# keep me\nA=1\n\nB=2\n')
+    chmodSync(path, 0o644)
+    writeEnvFile(path, { B: null, C: 'three', A: '"one"' })
+    expect(readFileSync(path, 'utf8')).toBe('# keep me\nA="one"\n\nC=three\n')
+    expect(loadEnvFile(path)).toEqual({ A: 'one', C: 'three' })
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    expect(() => { writeEnvFile(path, { D: 'x\ny' }) }).toThrow(/newline/)
+  })
+})
+
+describe('catalog helpers', () => {
+  it('labels, prefixes, and dedupe follow the Python rules', () => {
+    expect(formatOllamaLabel('qwen3-vl:235b-instruct')).toBe('Qwen3 VL (235B Instruct)')
+    expect(labelForModel('@nous:openai/gpt-5.4-mini', [])).toBe('GPT 5.4 Mini')
+    expect(labelForModel('claude-opus-4.7', [{ provider: 'Anthropic', provider_id: 'anthropic', models: [{ id: 'anthropic/claude-opus-4.7', label: 'Claude Opus 4.7' }] }])).toBe('Claude Opus 4.7')
+    expect(applyProviderPrefix([{ id: 'x', label: 'x' }, { id: 'a/b', label: 'ab' }], 'zai', 'anthropic').map((m) => m.id)).toEqual(['@zai:x', 'a/b'])
+    expect(applyProviderPrefix([{ id: 'a/b', label: 'ab' }], 'nous', null).map((m) => m.id)).toEqual(['@nous:a/b'])
+    expect(applyProviderPrefix([{ id: 'x', label: 'x' }], 'zai', null).map((m) => m.id)).toEqual(['x'])
+    const groups = [{ provider: 'B', provider_id: 'b', models: [{ id: 'gpt', label: 'g' }] }, { provider: 'A', provider_id: 'a', models: [{ id: 'gpt', label: 'g' }] }]
+    deduplicateModelIds(groups)
+    expect(groups.map((g) => g.models[0]?.id)).toEqual(['@b:gpt', 'gpt'])
+  })
+
+  it('parses provider-qualified ids and coerces efforts down the ladder', () => {
+    expect(parseProviderQualifiedModel('@custom:backup:model-a:free')).toEqual(['model-a:free', 'custom:backup'])
+    expect(parseProviderQualifiedModel('@custom:127.0.0.1:1234:llama')).toEqual(['llama', 'custom:127.0.0.1:1234'])
+    expect(parseProviderQualifiedModel('@ollama:qwen3.8:27b')).toEqual(['qwen3.8:27b', 'ollama'])
+    expect(parseProviderQualifiedModel('plain')).toBeNull()
+    expect(customProviderSlug('Local (127.0.0.1:15721)')).toBe('custom:local-127.0.0.1-15721')
+    expect(coerceReasoningEffort('max', ['low', 'medium', 'high'])).toBe('high')
+    expect(coerceReasoningEffort('none', ['low'])).toBe('none')
+    expect(coerceReasoningEffort('silly', ['low'])).toBe('')
+    expect(coerceReasoningEffort('max', [])).toBe('max')
+    expect(splitProviderModel('@anthropic:claude-x', null)).toEqual(['claude-x', 'anthropic'])
+  })
+})

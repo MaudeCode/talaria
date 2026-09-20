@@ -1,0 +1,514 @@
+/**
+ * The Agent's per-profile `config.yaml`, read and written through the sidecar
+ * (`config.get` / `config.set`) so the server needs no YAML parser. Reads are
+ * memoised on the file's mtime+size; every write evicts the entry.
+ *
+ * Policy helpers (model section, reasoning, max_tokens, auxiliary slots,
+ * personalities) port Python `api/config.py`.
+ */
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
+import type { SidecarLike } from '../sidecar/client.js'
+import { PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, AUX_TASK_SLOTS, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
+import { str } from '../util.js'
+
+export type Config = Record<string, unknown>
+export type Dict = Record<string, unknown>
+
+export const isDict = (v: unknown): v is Dict => typeof v === 'object' && v !== null && !Array.isArray(v)
+export const dict = (v: unknown): Dict => (isDict(v) ? v : {})
+
+export class ConfigUnavailable extends Error {}
+
+export class AgentConfig {
+  private readonly cache = new Map<string, { key: string; config: Config }>()
+  private readonly locks = new Map<string, Promise<unknown>>()
+
+  constructor(private readonly deps: { sidecar: () => SidecarLike | null; env: Record<string, string | undefined> }) {}
+
+  path(profileHome: string): string {
+    const override = (this.deps.env.HERMES_CONFIG_PATH ?? '').trim()
+    return override || join(profileHome, 'config.yaml')
+  }
+
+  private statKey(profileHome: string): string {
+    try {
+      const st = statSync(this.path(profileHome), { bigint: true })
+      return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}`
+    } catch {
+      return 'missing'
+    }
+  }
+
+  /** Parsed config.yaml (empty object when the file is missing). */
+  async read(profileHome: string): Promise<Config> {
+    const key = this.statKey(profileHome)
+    const hit = this.cache.get(profileHome)
+    if (hit?.key === key) return structuredClone(hit.config)
+    if (key === 'missing') return {}
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml is unavailable')
+    const result = await sidecar.call('config.get', { profile_home: profileHome })
+    const config = isDict(result.config) ? result.config : {}
+    this.cache.set(profileHome, { key: this.statKey(profileHome), config })
+    return structuredClone(config)
+  }
+
+  /** Synchronous last-known config for callers that cannot await (workspace resolution); refreshes in the background. */
+  peek(profileHome: string): Config | null {
+    const key = this.statKey(profileHome)
+    const hit = this.cache.get(profileHome)
+    if (hit?.key === key) return hit.config
+    if (key === 'missing') return {}
+    void this.read(profileHome).catch(() => undefined)
+    return hit?.config ?? null
+  }
+
+  /** Read-modify-write under a per-home lock; `mutate` returns false to skip the write. */
+  async update(profileHome: string, mutate: (config: Config) => unknown): Promise<Config> {
+    const prev = this.locks.get(profileHome) ?? Promise.resolve()
+    const run = prev.catch(() => undefined).then(async () => {
+      const config = await this.read(profileHome)
+      if (mutate(config) === false) return config
+      const sidecar = this.deps.sidecar()
+      if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
+      await sidecar.call('config.set', { profile_home: profileHome, config })
+      this.cache.delete(profileHome)
+      return config
+    })
+    this.locks.set(profileHome, run)
+    return run
+  }
+
+  invalidate(profileHome?: string): void {
+    if (profileHome) this.cache.delete(profileHome)
+    else this.cache.clear()
+  }
+}
+
+/** Settings `provider_cost_budget` → positive number or null. */
+export function coerceProviderCostBudgetValue(raw: unknown): number | null {
+  const n = typeof raw === 'number' ? raw : Number(str(raw).trim())
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+// ── model section helpers ──────────────────────────────────────────────
+
+export function resolveProviderAlias(name: unknown): string {
+  const raw = str(name).trim().toLowerCase()
+  if (!raw) return ''
+  return PROVIDER_ALIASES[raw] ?? raw
+}
+
+/** Python `_canonicalise_provider_id`: fold case/underscores, then aliases that land on a known id. */
+export function canonicaliseProviderId(name: unknown): string {
+  const raw = str(name).trim().toLowerCase().replaceAll('_', '-')
+  if (!raw) return ''
+  if (raw in PROVIDER_DISPLAY || raw in PROVIDER_MODELS) return raw
+  const resolved = resolveProviderAlias(raw)
+  if (resolved && (resolved in PROVIDER_DISPLAY || resolved in PROVIDER_MODELS)) return resolved
+  return raw
+}
+
+export function customProviderSlug(name: unknown): string {
+  const raw = str(name).trim().toLowerCase()
+  if (!raw) return ''
+  if (raw.startsWith('custom:')) return raw
+  const slug = raw.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-')
+  return slug ? `custom:${slug}` : ''
+}
+
+function slugRestLooksLikeHostPort(rest: string): boolean {
+  const idx = rest.lastIndexOf(':')
+  if (idx <= 0) return false
+  return /^\d{1,5}$/.test(rest.slice(idx + 1))
+}
+
+/** Python `_parse_provider_qualified_model_id`: `@provider:model` → `[model, provider]`. */
+export function parseProviderQualifiedModel(modelId: unknown): [string, string] | null {
+  const candidate = str(modelId).trim()
+  if (!candidate.startsWith('@') || !candidate.includes(':')) return null
+  const inner = candidate.slice(1)
+  const cut = inner.lastIndexOf(':')
+  let providerHint = inner.slice(0, cut)
+  let bareModel = inner.slice(cut + 1)
+  if (providerHint.startsWith('custom:') && (providerHint.split(':').length - 1) >= 2) {
+    const rest = providerHint.slice('custom:'.length)
+    if (!slugRestLooksLikeHostPort(rest)) {
+      const at = providerHint.lastIndexOf(':')
+      bareModel = `${providerHint.slice(at + 1)}:${bareModel}`
+      providerHint = providerHint.slice(0, at)
+    }
+  } else if (!(providerHint in PROVIDER_MODELS) && !(providerHint in PROVIDER_DISPLAY) && !providerHint.startsWith('custom:')) {
+    const first = inner.indexOf(':')
+    providerHint = inner.slice(0, first)
+    bareModel = inner.slice(first + 1)
+  }
+  return [bareModel, providerHint]
+}
+
+export function customProviderEntries(config: Config): Dict[] {
+  const entries = config.custom_providers
+  return Array.isArray(entries) ? entries.filter(isDict) : []
+}
+
+export function configuredModelIds(raw: unknown): string[] {
+  const candidates: unknown[] = isDict(raw) ? Object.keys(raw) : Array.isArray(raw) ? raw : []
+  const ids: string[] = []
+  for (const item of candidates) {
+    const candidate = isDict(item) ? (item.id ?? item.model ?? item.name) : item
+    const id = str(candidate).trim()
+    if (id && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+export function configuredModelOptions(raw: unknown): { id: string; label: string }[] {
+  const labels = new Map<string, string>()
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!isDict(item)) continue
+      const id = str(item.id ?? item.model ?? item.name).trim()
+      if (!id || labels.has(id)) continue
+      labels.set(id, str(item.label).trim() || id)
+    }
+  }
+  return configuredModelIds(raw).map((id) => ({ id, label: labels.get(id) ?? id }))
+}
+
+export function effectiveDefaultModel(config: Config, env: Record<string, string | undefined>): string {
+  let model = (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim()
+  const modelCfg = config.model
+  if (typeof modelCfg === 'string') model = modelCfg.trim()
+  else if (isDict(modelCfg)) {
+    const d = str(modelCfg.default).trim()
+    if (d) model = d
+  }
+  for (const name of ['HERMES_MODEL', 'OPENAI_MODEL', 'LLM_MODEL']) {
+    const v = (env[name] ?? '').trim()
+    if (v) return v
+  }
+  return model
+}
+
+export function modelSection(config: Config): Dict {
+  return dict(config.model)
+}
+
+/** Python `_resolve_configured_provider_id` (simplified): heal `local`, keep custom slugs, alias the rest. */
+export function activeProviderFromConfig(config: Config): string | null {
+  const model = modelSection(config)
+  let provider = str(model.provider).trim().toLowerCase()
+  if (!provider) return null
+  if (provider === 'local') provider = 'custom'
+  if (provider.startsWith('custom:')) return provider
+  const named = customProviderEntries(config).find((e) => customProviderSlug(e.name) === customProviderSlug(provider) || str(e.name).trim().toLowerCase() === provider)
+  if (named) return customProviderSlug(named.name) || 'custom'
+  return canonicaliseProviderId(provider) || provider
+}
+
+// ── max_tokens ────────────────────────────────────────────────────────
+
+function positiveInt(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null
+  const n = typeof raw === 'number' ? Math.trunc(raw) : Number.parseInt(str(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export interface MaxTokensStatus { max_tokens: number | null; max_tokens_effective: number | null; max_tokens_fallback: number | null }
+
+export function maxTokensStatus(config: Config): MaxTokensStatus {
+  const root = positiveInt(config.max_tokens)
+  const fallback = config.max_tokens === undefined || config.max_tokens === null ? positiveInt(dict(config.agent).max_tokens) : null
+  return { max_tokens: root, max_tokens_effective: root ?? fallback, max_tokens_fallback: fallback }
+}
+
+export async function setMaxTokens(store: AgentConfig, home: string, value: unknown): Promise<MaxTokensStatus> {
+  const raw = typeof value === 'string' ? value.trim() : value
+  const clear = raw === null || raw === undefined || raw === ''
+  const parsed = positiveInt(raw)
+  if (!clear && parsed === null) return maxTokensStatus(await store.read(home))
+  const config = await store.update(home, (c) => {
+    if (clear) {
+      if (!('max_tokens' in c)) return false
+      Reflect.deleteProperty(c, 'max_tokens')
+    } else c.max_tokens = parsed
+  })
+  return maxTokensStatus(config)
+}
+
+// ── reasoning ─────────────────────────────────────────────────────────
+
+export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: string; supported_efforts: string[]; supports_reasoning_effort: boolean; supports_thinking_toggle: boolean }
+
+export type EffortsResolver = (model: string, provider: string, baseUrl: string) => Promise<string[]>
+
+/** Python `coerce_reasoning_effort_for_model` (ceiling ladder, `none` passthrough). */
+export function coerceReasoningEffort(effort: string, supported: string[]): string {
+  const raw = effort.trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'none') return 'none'
+  if (!(VALID_REASONING_EFFORTS as readonly string[]).includes(raw)) return ''
+  const levels = supported.filter((e) => e !== 'none')
+  if (!levels.length || levels.includes(raw)) return raw
+  const ladder = VALID_REASONING_EFFORTS as readonly string[]
+  for (let i = ladder.indexOf(raw) - 1; i >= 0; i -= 1) {
+    const level = ladder[i]
+    if (level && levels.includes(level)) return level
+  }
+  return raw
+}
+
+export async function reasoningStatus(config: Config, resolve: EffortsResolver, opts: { model?: string | null; provider?: string | null; baseUrl?: string | null } = {}): Promise<ReasoningStatus> {
+  const display = dict(config.display)
+  const agent = dict(config.agent)
+  let model = str(opts.model).trim()
+  let provider = str(opts.provider).trim()
+  let baseUrl = str(opts.baseUrl).trim()
+  if (!model) {
+    const m = modelSection(config)
+    model = str(m.default).trim()
+    if (!provider && m.provider) provider = str(m.provider).trim()
+    if (!baseUrl && m.base_url) baseUrl = str(m.base_url).trim()
+  }
+  const supported = model ? await resolve(model, provider, baseUrl) : []
+  const showRaw = display.show_reasoning
+  return {
+    show_reasoning: typeof showRaw === 'boolean' ? showRaw : true,
+    reasoning_effort: coerceReasoningEffort(str(agent.reasoning_effort), supported),
+    supported_efforts: supported,
+    supports_reasoning_effort: supported.length > 0,
+    supports_thinking_toggle: supported.length > 0,
+  }
+}
+
+export function validReasoningEffort(effort: string): boolean {
+  const raw = effort.trim().toLowerCase()
+  return !raw || raw === 'none' || (VALID_REASONING_EFFORTS as readonly string[]).includes(raw)
+}
+
+// ── personalities ─────────────────────────────────────────────────────
+
+export function personalityRows(config: Config): { name: string; description: string }[] {
+  const raw = dict(config.agent).personalities
+  if (!isDict(raw)) return []
+  return Object.entries(raw).map(([name, value]) => {
+    let desc = ''
+    if (isDict(value)) desc = str(value.description)
+    else if (typeof value === 'string') desc = value.slice(0, 80) + (value.length > 80 ? '...' : '')
+    return { name, description: desc }
+  })
+}
+
+/** Python `/api/personality/set` prompt resolution; null when the personality is unknown. */
+export function personalityPrompt(config: Config, name: string): string | null {
+  const raw = dict(config.agent).personalities
+  if (!isDict(raw) || !(name in raw)) return null
+  const value = raw[name]
+  if (isDict(value)) {
+    const parts = [str(value.system_prompt) || str(value.prompt)]
+    if (value.tone) parts.push(`Tone: ${str(value.tone)}`)
+    if (value.style) parts.push(`Style: ${str(value.style)}`)
+    return parts.filter(Boolean).join('\n')
+  }
+  return str(value)
+}
+
+// ── advanced model options / auxiliary slots ──────────────────────────
+
+function coerceOptionalPositiveInt(value: unknown, field: string): number | '' | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && !value.trim()) return ''
+  const n = typeof value === 'number' ? value : Number(str(value).trim())
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`${field} must be a positive integer`)
+  return n
+}
+
+/** Python `_apply_advanced_model_options` (in place). */
+export function applyAdvancedModelOptions(target: Dict, advanced: unknown): void {
+  if (advanced === null || advanced === undefined) return
+  if (!isDict(advanced)) throw new Error('advanced model options must be an object')
+  if ('base_url' in advanced) {
+    const base = str(advanced.base_url).trim().replace(/\/+$/, '')
+    if (base) target.base_url = base
+    else Reflect.deleteProperty(target, 'base_url')
+  }
+  for (const field of ['timeout', 'download_timeout', 'max_concurrency']) {
+    if (!(field in advanced)) continue
+    const coerced = coerceOptionalPositiveInt(advanced[field], field)
+    if (coerced === '') Reflect.deleteProperty(target, field)
+    else if (coerced !== null) target[field] = coerced
+  }
+  if ('extra_body' in advanced) {
+    let extra: unknown = advanced.extra_body
+    if (typeof extra === 'string') {
+      const text = extra.trim()
+      try { extra = text ? JSON.parse(text) : {} } catch { throw new Error('extra_body must be valid JSON') }
+    }
+    if (extra === null || extra === undefined || extra === '') Reflect.deleteProperty(target, 'extra_body')
+    else if (isDict(extra)) {
+      if (Object.keys(extra).length) target.extra_body = extra
+      else Reflect.deleteProperty(target, 'extra_body')
+    } else throw new Error('extra_body must be a JSON object')
+  }
+  if ('service_tier' in advanced) {
+    const tier = str(advanced.service_tier).trim().toLowerCase()
+    if (!tier || tier === 'default') Reflect.deleteProperty(target, 'service_tier')
+    else if (tier === 'priority') target.service_tier = 'priority'
+    else throw new Error('service_tier must be one of: default, priority')
+  }
+  if (advanced.api_key_clear) Reflect.deleteProperty(target, 'api_key')
+  const apiKey = str(advanced.api_key).trim()
+  if (apiKey) target.api_key = apiKey
+}
+
+export function publicAdvancedModelOptions(modelCfg: Dict): Dict {
+  return {
+    base_url: str(modelCfg.base_url).trim(),
+    timeout: modelCfg.timeout ?? '',
+    download_timeout: modelCfg.download_timeout ?? '',
+    max_concurrency: modelCfg.max_concurrency ?? '',
+    extra_body: isDict(modelCfg.extra_body) ? modelCfg.extra_body : {},
+    api_key_set: Boolean(str(modelCfg.api_key).trim()),
+  }
+}
+
+export function isOpenAiFamilyProvider(provider: unknown): boolean {
+  const resolved = resolveProviderAlias(provider)
+  return resolved === 'openai' || resolved === 'openai-api' || resolved === 'openai-codex'
+}
+
+/** Python `_main_model_supports_service_tier`: OpenAI-family GPT-5-class models take `priority`. */
+export function mainModelSupportsServiceTier(model: unknown, provider: unknown): boolean {
+  if (!isOpenAiFamilyProvider(provider)) return false
+  const id = str(model).trim().toLowerCase().replace(/^openai\//, '')
+  return id.startsWith('gpt-5') || /^o[0-9]/.test(id)
+}
+
+function auxTaskPayload(key: string, entry: unknown, label: string, description: string): Dict {
+  const e = dict(entry)
+  return {
+    task: key,
+    provider: str(e.provider).trim() || 'auto',
+    model: str(e.model).trim(),
+    base_url: str(e.base_url).trim(),
+    timeout: e.timeout ?? '',
+    download_timeout: e.download_timeout ?? '',
+    max_concurrency: e.max_concurrency ?? '',
+    extra_body: isDict(e.extra_body) ? e.extra_body : {},
+    api_key_set: Boolean(str(e.api_key).trim()),
+    label,
+    description,
+  }
+}
+
+export function auxiliaryModels(config: Config): { tasks: Dict[]; main: Dict } {
+  const modelCfg = modelSection(config)
+  const aux = dict(config.auxiliary)
+  const mainProvider = str(modelCfg.provider).trim()
+  const mainModel = str(modelCfg.default ?? modelCfg.name).trim()
+  const supportsFast = mainModelSupportsServiceTier(mainModel, mainProvider)
+  return {
+    tasks: AUXILIARY_TASK_CATALOG.map((slot) => auxTaskPayload(slot.key, aux[slot.key], slot.label, slot.description)),
+    main: {
+      provider: mainProvider,
+      model: mainModel,
+      supports_fast_tier: supportsFast,
+      service_tier: supportsFast && str(modelCfg.service_tier).trim().toLowerCase() === 'priority' ? 'priority' : '',
+      ...publicAdvancedModelOptions(modelCfg),
+    },
+  }
+}
+
+function providerNativeAuxiliaryModel(provider: string, model: string): string {
+  const pid = provider.trim() || 'auto'
+  const id = model.trim()
+  if (!id.startsWith('@') || !id.includes(':')) return id
+  const prefix = `@${pid}:`
+  if (pid !== 'auto' && id.startsWith(prefix) && id.length > prefix.length) return id.slice(prefix.length)
+  throw new Error('provider-qualified auxiliary model must match the selected provider and include a model name')
+}
+
+export async function setAuxiliaryModel(store: AgentConfig, home: string, task: string, providerRaw: string, modelRaw: string, advanced: unknown): Promise<{ ok: true; task: string; provider: string; model: string }> {
+  const provider = providerRaw.trim() || 'auto'
+  let model = modelRaw.trim()
+  if (task !== '__reset__' && !AUX_TASK_SLOTS.includes(task)) throw new Error(`Unknown auxiliary task slot: '${task}'. Valid: [${AUX_TASK_SLOTS.map((s) => `'${s}'`).join(', ')}]`)
+  await store.update(home, (config) => {
+    const aux = dict(config.auxiliary)
+    if (task === '__reset__') {
+      for (const retired of RETIRED_AUX_TASK_SLOTS) Reflect.deleteProperty(aux, retired)
+      for (const slot of AUX_TASK_SLOTS) aux[slot] = { ...dict(aux[slot]), provider: 'auto', model: '' }
+      config.auxiliary = aux
+      return
+    }
+    model = providerNativeAuxiliaryModel(provider, model)
+    const slot = dict(aux[task])
+    slot.provider = provider
+    slot.model = model
+    if (provider === 'custom' || provider.startsWith('custom:')) {
+      let base: string | null = null
+      if (provider.startsWith('custom:')) {
+        const match = customProviderEntries(config).find((e) => customProviderSlug(e.name) === provider)
+        base = match ? str(match.base_url).trim() || null : null
+        if (!base) Reflect.deleteProperty(slot, 'base_url')
+      }
+      if (base) slot.base_url = base.replace(/\/+$/, '')
+    }
+    if (advanced !== null && advanced !== undefined) {
+      try {
+        applyAdvancedModelOptions(slot, advanced)
+      } catch (error) {
+        throw new Error((error as Error).message.replace('advanced model options', 'advanced auxiliary options'))
+      }
+    }
+    aux[task] = slot
+    config.auxiliary = aux
+  })
+  return { ok: true, task, provider, model }
+}
+
+/** Python `set_hermes_default_model`: persist the bare model + provider (never `@provider:` or `local`). */
+export async function setDefaultModel(store: AgentConfig, home: string, modelId: unknown, providerRaw: unknown, advanced: unknown): Promise<{ ok: true; model: string; provider: string | null }> {
+  const selected = str(modelId).trim()
+  if (!selected) throw new Error('model is required')
+  let persistedModel = selected
+  let persistedProvider = ''
+  await store.update(home, (config) => {
+    const modelCfg = modelSection(config)
+    const previousProvider = str(modelCfg.provider).trim()
+    const requested = str(providerRaw).trim()
+    const parsed = parseProviderQualifiedModel(selected)
+    let resolvedModel = selected
+    let resolvedProvider = ''
+    let resolvedBase: string | null = null
+    if (parsed) {
+      resolvedModel = parsed[0]
+      resolvedProvider = parsed[1]
+      if (resolvedProvider.startsWith('custom:')) {
+        const entry = customProviderEntries(config).find((e) => customProviderSlug(e.name) === resolvedProvider)
+        resolvedBase = entry ? str(entry.base_url).trim() || null : null
+      }
+    } else {
+      const entry = customProviderEntries(config).find((e) => str(e.model).trim() === selected || configuredModelIds(e.models).includes(selected))
+      if (entry) {
+        resolvedProvider = customProviderSlug(entry.name) || 'custom'
+        resolvedBase = str(entry.base_url).trim() || null
+      }
+    }
+    persistedModel = resolvedModel.trim() || selected
+    persistedProvider = (requested || resolvedProvider || previousProvider).trim()
+    const overrideWon = Boolean(requested && requested !== resolvedProvider)
+    if (persistedProvider.toLowerCase() === 'local') persistedProvider = 'custom'
+    modelCfg.default = persistedModel
+    if (persistedProvider) modelCfg.provider = persistedProvider
+    if (resolvedBase && !overrideWon) modelCfg.base_url = resolvedBase.replace(/\/+$/, '')
+    else if (persistedProvider !== previousProvider) {
+      if (persistedProvider === 'openai') modelCfg.base_url = 'https://api.openai.com/v1'
+      else Reflect.deleteProperty(modelCfg, 'base_url')
+    }
+    applyAdvancedModelOptions(modelCfg, advanced)
+    if (!mainModelSupportsServiceTier(persistedModel, persistedProvider)) Reflect.deleteProperty(modelCfg, 'service_tier')
+    config.model = modelCfg
+  })
+  return { ok: true, model: persistedModel, provider: persistedProvider || null }
+}

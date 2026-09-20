@@ -32,6 +32,10 @@ import { PendingPrompts } from './sessions/pending.js'
 import { RunJournal } from './sessions/journal.js'
 import { BackgroundTasks } from './api/chat-router.js'
 import { StreamSlots } from './api/sse-routes.js'
+import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict } from './config/agent-config.js'
+import { ProviderCatalog } from './providers/catalog.js'
+import { ProfileService } from './profiles/profiles.js'
+import { Onboarding } from './onboarding.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
   log?: (line: string) => void
@@ -82,6 +86,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
   }
+  const sidecar = opts.sidecar ?? null
+  const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
   const events = new SessionEventBus(isRootProfile)
   const drafts = new DraftStore(config.sessionDir)
   const registry = new StreamRegistry()
@@ -92,8 +98,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     profileHome,
     activeProfile,
     isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome),
-    // config.yaml reads land with the profile domain (checkpoint 7); until then the registry sees no per-profile overrides.
-    profileConfig: () => null,
+    profileConfig: (profile) => {
+      const cfg = agentConfig.peek(profileHome(profile ?? activeProfile()))
+      if (!cfg) return null
+      const terminal = asDict(cfg.terminal)
+      return { terminal: { ...(typeof terminal.backend === 'string' ? { backend: terminal.backend } : {}), ...(typeof terminal.cwd === 'string' ? { cwd: terminal.cwd } : {}) }, ...(typeof cfg.workspace === 'string' ? { workspace: cfg.workspace } : {}), ...(typeof cfg.default_workspace === 'string' ? { default_workspace: cfg.default_workspace } : {}) }
+    },
     home,
   })
   const cacheMax = (): number => {
@@ -159,7 +169,6 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const git = new GitRunner({ env })
   const rollback = new RollbackStore({ hermesHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
   const uploads = new UploadInbox(attachmentRoot)
-  const sidecar = opts.sidecar ?? null
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
   const journal = new RunJournal(config.sessionDir, env)
@@ -198,6 +207,40 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     agentName: () => { try { const v = settings.load().bot_name; return typeof v === 'string' && v ? v : 'Hermes' } catch { return 'Hermes' } },
     titleGenerationEnabled: () => { try { return settings.load().auto_title_generation !== false } catch { return true } },
   })
+  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget) })
+  const agentStatus = () => {
+    const describe = sidecar?.describe ?? null
+    const found = Boolean(describe?.agent_dir)
+    const importsOk = Boolean(describe && describe.compatible && !describe.import_error)
+    return { found, importsOk, missing: [] as string[], errors: describe?.import_error ? { agent: describe.import_error } : {} }
+  }
+  const profiles = new ProfileService({
+    sidecar: () => sidecar,
+    baseHome: config.hermesHome,
+    profileHome,
+    isolatedProfileMode: () => false,
+    isolatedProfileName: () => 'default',
+    config: agentConfig,
+    defaultWorkspace: (profile) => workspaces.profileDefaultWorkspace(profile),
+    models: (h) => catalog.models(h),
+    streamsActive: () => activeStreamIds.size > 0,
+    log,
+  }, now)
+  const onboarding = new Onboarding({
+    settings,
+    config: agentConfig,
+    env,
+    profileHome: () => profileHome(activeProfile()),
+    agentStatus,
+    isAuthEnabled: () => auth.isAuthEnabled(),
+    workspaces: () => ({ items: workspaces.load(activeProfile()), last: workspaces.lastWorkspace(activeProfile()) }),
+    models: (h) => catalog.models(h),
+    defaultWorkspace: () => config.defaultWorkspace,
+    defaultModel: () => (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim(),
+    log,
+  })
+  settings.hooks.defaultModel = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); if (!cfg) return ''; if (typeof cfg.model === 'string') return cfg.model.trim(); const d = asDict(cfg.model).default; return typeof d === 'string' ? d.trim() : '' }
+  settings.hooks.defaultModelProvider = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); const p = asDict(cfg?.model).provider; return typeof p === 'string' && p ? p : undefined }
   const vscode = () => ({
     configuredCommand: 'code',
     command: (): string | null => {
@@ -254,6 +297,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     journal,
     background,
     streamSlots,
+    profileHome,
+    agentConfig,
+    catalog,
+    profiles,
+    onboarding,
+    agentVersion: () => sidecar?.describe?.agent_version ?? sidecar?.describe?.pinned_version ?? release.compatibleAgent.version,
+    clearPasskeys: () => undefined,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })

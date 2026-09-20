@@ -113,6 +113,28 @@ def test_error_conditions_are_typed(handshaken: SidecarProcess, hermes_home: pat
     assert message["error"]["code"] == -32602
     message, _ = handshaken.call("worktree.create", {"profile_home": home, "repo_root": home})
     assert message["error"]["data"]["condition"] == "not_a_repo"
+    message, _ = handshaken.call("config.set", {"profile_home": home, "config": "not an object"})
+    assert message["error"]["code"] == -32602
+
+
+@requires_agent
+def test_config_round_trip_keeps_mode_and_key_order(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    """``config.set`` writes YAML the Agent reads back; the file mode survives and unrelated keys are preserved verbatim."""
+    home = str(hermes_home)
+    path = hermes_home / "config.yaml"
+    path.write_text("model:\n  default: claude-sonnet-4-6\n  provider: anthropic\nagent:\n  reasoning_effort: high\n", encoding="utf-8")
+    path.chmod(0o600)
+    message, _ = handshaken.call("config.get", {"profile_home": home})
+    config = message["result"]["config"]
+    assert config["model"]["provider"] == "anthropic" and message["result"]["exists"] is True
+    config["max_tokens"] = 4096
+    message, _ = handshaken.call("config.set", {"profile_home": home, "config": config})
+    assert message["result"]["ok"] is True
+    assert path.stat().st_mode & 0o777 == 0o600
+    text = path.read_text(encoding="utf-8")
+    assert text.index("model:") < text.index("agent:") < text.index("max_tokens: 4096")
+    message, _ = handshaken.call("config.get", {"profile_home": home})
+    assert message["result"]["config"]["max_tokens"] == 4096
 
 
 @requires_agent

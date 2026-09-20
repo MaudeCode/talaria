@@ -4,11 +4,21 @@
       "params": {},
       "result": {
         "methods": [
+          "approval.pending",
+          "approval.respond",
+          "approval.set_yolo",
           "aux.complete",
           "aux.resolve",
+          "chat.evict_agent",
+          "chat.interrupt",
+          "chat.start",
+          "chat.steer",
+          "clarify.respond",
           "commands.exec",
           "commands.moa_preset",
           "commands.registry",
+          "config.get",
+          "config.set",
           "cron.create",
           "cron.delete",
           "cron.delivery_options",
@@ -54,6 +64,7 @@
           "models.capabilities",
           "models.context_length",
           "models.estimate_tokens",
+          "models.reasoning_efforts",
           "plugins.providers",
           "process.drain",
           "process.format_notification",
@@ -88,7 +99,8 @@
           "text.image_mode",
           "text.portal_tags",
           "text.redact",
-          "usage.account"
+          "usage.account",
+          "worktree.create"
         ]
       }
     }

@@ -73,6 +73,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("cron.delivery_options", {}),
     ("cron.status", {}),
     # providers / models / aux / text / process
+    ("config.get", {"profile_home": "{home}"}),
+    ("models.reasoning_efforts", {"profile_home": "{home}", "model": "claude-sonnet-4-6", "provider": "anthropic"}),
     ("providers.registry", {"profile_home": "{home}"}),
     ("providers.auth_status", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.model_ids", {"profile_home": "{home}", "provider": "anthropic"}),
@@ -103,4 +105,4 @@ DYNAMIC: list[tuple[str, str]] = [
 # network, a running gateway, or a real audio file.
 UNEXERCISED = {"runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec", "kanban.dispatch",
                "providers.resolve_runtime", "aux.complete", "stt.transcribe", "usage.account", "gateway.restart", "mcp.reload", "cron.run",
-               "worktree.create", "chat.start", "chat.interrupt", "chat.steer", "chat.evict_agent", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond"}
+               "worktree.create", "chat.start", "chat.interrupt", "chat.steer", "chat.evict_agent", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}

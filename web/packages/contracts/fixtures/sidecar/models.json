@@ -1,4 +1,25 @@
 {
+  "models.reasoning_efforts": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "model": "claude-sonnet-4-6",
+        "provider": "anthropic"
+      },
+      "result": {
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "supports_reasoning": null
+      }
+    }
+  ],
   "models.context_length": [
     {
       "params": {
