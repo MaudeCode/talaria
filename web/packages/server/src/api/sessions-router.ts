@@ -1,0 +1,577 @@
+/** Session, project, share, workspace, and file procedures. */
+import { implement } from '@orpc/server'
+import { sessionsContract, workspacesContract } from '@maudecode/talaria-web-contracts'
+import { mkdirSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, statSync, writeSync } from 'node:fs'
+import { basename, dirname, join, relative } from 'node:path'
+import { platform } from 'node:os'
+import { spawn } from 'node:child_process'
+import type { RequestContext } from '../http/context.js'
+import { HttpError, type ApiContext } from './router.js'
+import { HttpFailure } from '../sessions/service.js'
+import { SessionNotFound } from '../sessions/store.js'
+import type { Session } from '../sessions/session.js'
+import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
+import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
+import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, readFileContent, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { randomUUID } from 'node:crypto'
+import { str } from '../util.js'
+
+const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>()
+
+/** Map service failures to the Python-shaped error body. */
+export function failure(error: unknown): never {
+  if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra)
+  if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
+  throw error
+}
+
+async function run<T>(fn: () => Promise<T> | T): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+function queryBool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === null) return fallback
+  const raw = value.trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false
+  return fallback
+}
+const queryFlag = (value: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase())
+function queryPositiveInt(value: string | undefined, fallback: number | null, maximum?: number): number | null {
+  const n = Number.parseInt((value ?? '').trim(), 10)
+  if (!Number.isFinite(n) || n < 0) return fallback
+  return maximum !== undefined ? Math.min(n, maximum) : n
+}
+
+function sanitizeError(e: unknown): string {
+  return str((e as Error).message ?? e).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
+}
+
+/** Python `_guard_request_session_visibility` for a body/query session id. */
+function guardVisibility(ctx: RequestContext, sid: unknown): void {
+  if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+}
+
+function allProfilesEnabled(ctx: RequestContext, value: string | undefined): boolean {
+  return queryFlag(value) && !ctx.deps.isolatedProfileMode()
+}
+
+export const sessionsRouter = os.router({
+  sessions: {
+    list: os.sessions.list.handler(({ input, context: { ctx } }) => run(() => {
+      const settings = ctx.deps.settings.load()
+      const overrideKeys = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
+      const overrides = overrideKeys.some((k) => input[k] !== undefined)
+      const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
+      const { body, etag } = ctx.deps.sessions.list({
+        allProfiles: allProfilesEnabled(ctx, input.all_profiles),
+        includeArchived: queryFlag(input.include_archived),
+        excludeHidden: queryFlag(input.exclude_hidden),
+        visibleOnly: true,
+        showCliSessions: queryBool(input.show_cli_sessions, Boolean(settings.show_cli_sessions)),
+        showClaudeCodeSessions: queryBool(input.show_claude_code_sessions, Boolean(settings.show_claude_code_sessions)),
+        showPreviousMessagingSessions: Boolean(settings.show_previous_messaging_sessions),
+        showCronSessions: queryBool(input.show_cron_sessions, Boolean(settings.show_cron_sessions)),
+        showWebhookSessions: queryBool(input.show_webhook_sessions, Boolean(settings.show_webhook_sessions)),
+        showKanbanSessions: queryBool(input.show_kanban_sessions, Boolean(settings.show_kanban_sessions)),
+        requestVisibilityOverrides: overrides,
+        sidebarSource: sidebarSourceRaw === 'webui' || sidebarSourceRaw === 'cli' ? sidebarSourceRaw : null,
+        archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
+        archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
+      })
+      const inm = (ctx.header('if-none-match') ?? '').trim()
+      ctx.extraResponseHeaders = { etag }
+      if (inm && inm === etag) ctx.notModified = true
+      return body
+    })),
+    search: os.sessions.search.handler(({ input, context: { ctx } }) => run(() => {
+      const depth = Math.max(0, Number.parseInt(input.depth ?? '5', 10) || 0)
+      return ctx.deps.sessions.search(input.q ?? '', { content: (input.content ?? '1') === '1', depth: Number.isFinite(depth) ? depth : 5, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+    })),
+    cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
+  },
+  session: {
+    get: os.session.get.handler(({ input, context: { ctx } }) => run(() => {
+      guardVisibility(ctx, input.session_id)
+      return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
+    })),
+    status: os.session.status.handler(({ input, context: { ctx } }) => run(() => {
+      if (!input.session_id) throw new HttpError(400, 'Missing session_id')
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.status(input.session_id) as { session_id: string }
+    })),
+    usage: os.session.usage.handler(({ input, context: { ctx } }) => run(() => {
+      if (!input.session_id) throw new HttpError(400, 'Missing session_id')
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.usage(input.session_id) as { input_tokens: number; output_tokens: number; total_tokens: number; estimated_cost: unknown; model: string | null }
+    })),
+    new: os.session.new.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.prev_session_id)
+      const profile = input.profile || null
+      let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
+      let worktreeSkipped: string | null = null
+      const explicit = 'worktree' in input
+      let requested = explicit ? input.worktree === true || ['1', 'true', 'yes', 'on'].includes(String(input.worktree).trim().toLowerCase()) : ctx.deps.worktreeDefault(profile)
+      if (requested && !ctx.deps.workspaces.profileSupportsLocalIo(profile)) {
+        if (explicit) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
+        worktreeSkipped = REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE
+        requested = false
+      }
+      if (requested) {
+        try {
+          let base = input.workspace ? ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile) : null
+          base ??= ctx.deps.workspaces.resolveTrusted(ctx.deps.workspaces.lastWorkspace(profile), profile)
+          worktree = await ctx.deps.worktrees.create(base)
+        } catch (error) {
+          if (explicit) throw new HttpError(400, (error as Error).message)
+          worktree = null
+          worktreeSkipped = (error as Error).message
+        }
+      }
+      const s = ctx.deps.sessions.create(input, { worktree })
+      const payload: Record<string, unknown> = { session: ctx.deps.sessions.publicSession(s) }
+      if (worktreeSkipped) payload.worktree_skipped = worktreeSkipped
+      return payload as { session: { session_id: string; title: string }; worktree_skipped?: string }
+    })),
+    rename: os.session.rename.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      if (!input.title) throw new HttpError(400, 'Missing required field(s): title')
+      return ctx.deps.sessions.rename(input.session_id, input.title) as Promise<{ session: { session_id: string; title: string } }>
+    })),
+    delete: os.session.delete.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.delete(input.session_id) as Promise<{ ok: true; state_db_cleanup_failed: boolean }>
+    })),
+    pin: os.session.pin.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.pin(input.session_id, input.pinned ?? true) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+    })),
+    archive: os.session.archive.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.archive(input.session_id, input.archived ?? true) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+    })),
+    move: os.session.move.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.move(input.session_id, input.project_id || null) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+    })),
+    duplicate: os.session.duplicate.handler(({ input, context: { ctx } }) => run(() => {
+      if (!input.session_id) throw new HttpError(400, 'session_id is required')
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.duplicate(input.session_id) as { session: { session_id: string; title: string } }
+    })),
+    branch: os.session.branch.handler(({ input, context: { ctx } }) => run(() => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.branch(input.session_id, input) as { session_id: string; title: string; parent_session_id: string }
+    })),
+    truncate: os.session.truncate.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.truncate(input.session_id, input.keep_count) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+    })),
+    clear: os.session.clear.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.clear(input.session_id) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+    })),
+    retry: os.session.retry.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.retry(input.session_id) as Promise<{ ok: true; last_user_text: string; removed_count: number } | { error: string }>
+    })),
+    undo: os.session.undo.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.undo(input.session_id) as Promise<{ ok: true; removed_count: number; removed_preview: string } | { error: string }>
+    })),
+    update: os.session.update.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.update(input.session_id, input) as Promise<{ session: { session_id: string; title: string } }>
+    })),
+    toolsets: os.session.toolsets.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.setToolsets(input.session_id, input.toolsets) as Promise<{ ok: true; enabled_toolsets: string[] | null }>
+    })),
+    yoloGet: os.session.yoloGet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.yolo(input.session_id) as { yolo_enabled: boolean })),
+    yoloSet: os.session.yoloSet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.setYolo(input.session_id.trim(), input.enabled ?? true) as { ok: true; yolo_enabled: boolean })),
+    import: os.session.import.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.import(input) as { ok: true; session: { session_id: string; title: string } })),
+    draftGet: os.session.draftGet.handler(({ input, context: { ctx } }) => run(() => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.readDraft(input.session_id) as { draft: { text: string; files: unknown[] }; draft_version: string | null }
+    })),
+    draftSave: os.session.draftSave.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.writeDraft(input) as Promise<{ ok: true; draft: { text: string; files: unknown[] }; draft_version: string | null; unchanged?: boolean }>
+    })),
+    anchorSceneGet: os.session.anchorSceneGet.handler(({ input, context: { ctx } }) => run(() => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.readAnchorScene(input) as { scene_ref: string; rows: unknown[]; start: number; end: number; total: number; complete: boolean }
+    })),
+    anchorSceneSave: os.session.anchorSceneSave.handler(({ input, context: { ctx } }) => run(async () => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.saveAnchorScene(input) as Promise<{ ok: true; message_index: number; message_ref: string }>
+    })),
+  },
+  projects: {
+    list: os.projects.list.handler(({ input, context: { ctx } }) => run(() => {
+      const activeProfile = ctx.deps.activeProfile()
+      const all = ctx.deps.projects.load()
+      const allProfiles = allProfilesEnabled(ctx, input.all_profiles)
+      const scoped = allProfiles ? all : all.filter((p) => ctx.deps.profilesMatch(p.profile ?? null, activeProfile))
+      return { projects: scoped, all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || ctx.deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
+    })),
+    create: os.projects.create.handler(({ input, context: { ctx } }) => run(() => {
+      const name = input.name.trim().slice(0, 128)
+      if (!name) throw new HttpError(400, 'name required')
+      const color = input.color ?? null
+      if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
+      const requested = (input.profile ?? '').trim()
+      if (requested && requested !== 'default' && !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(requested)) throw new HttpError(400, 'invalid profile')
+      const projects = ctx.deps.projects.load()
+      const proj = { project_id: randomUUID().replace(/-/g, '').slice(0, 12), name, color, profile: requested || ctx.deps.activeProfile() || 'default', created_at: ctx.deps.auth.now() }
+      projects.push(proj)
+      ctx.deps.projects.save(projects)
+      ctx.deps.events.publish('project_create', { profile: proj.profile })
+      return { ok: true as const, project: proj }
+    })),
+    rename: os.projects.rename.handler(({ input, context: { ctx } }) => run(() => {
+      const projects = ctx.deps.projects.load()
+      const proj = projects.find((p) => p.project_id === input.project_id)
+      const activeProfile = ctx.deps.activeProfile()
+      if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
+      proj.name = input.name.trim().slice(0, 128)
+      if ('color' in input) {
+        const color = input.color ?? null
+        if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
+        proj.color = color
+      }
+      ctx.deps.projects.save(projects)
+      ctx.deps.events.publish('project_rename', { profile: activeProfile })
+      return { ok: true as const, project: proj }
+    })),
+    delete: os.projects.delete.handler(({ input, context: { ctx } }) => run(() => {
+      let projects = ctx.deps.projects.load()
+      const proj = projects.find((p) => p.project_id === input.project_id)
+      const activeProfile = ctx.deps.activeProfile()
+      if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
+      projects = projects.filter((p) => p.project_id !== input.project_id)
+      ctx.deps.projects.save(projects)
+      const store = ctx.deps.sessionStore
+      const activeIds = ctx.deps.sessions.deps.runtime.activeStreamIds
+      try {
+        for (const entry of store.readIndexEntries()) {
+          if (entry.project_id !== input.project_id) continue
+          const sid = str(entry.session_id)
+          try {
+            if (entry.active_stream_id && activeIds.has(str(entry.active_stream_id))) {
+              const cached = store.sessions.get(sid)
+              if (cached) { cached.project_id = null; continue }
+            }
+            const s = store.get(sid)
+            s.project_id = null
+            store.save(s)
+          } catch { /* one slow or failing session never aborts the request */ }
+        }
+      } catch { /* no index */ }
+      ctx.deps.events.publish('project_delete', { profile: activeProfile })
+      return { ok: true as const }
+    })),
+  },
+  share: {
+    create: os.share.create.handler(({ input, context: { ctx } }) => run(() => {
+      const sid = input.session_id.trim()
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      return ctx.deps.sessions.createShare(sid) as { ok: true; share: { token: string; url: string; title: string; message_count: number; created_at: number; updated_at: number }; session: { session_id: string; title: string } }
+    })),
+    revoke: os.share.revoke.handler(({ input, context: { ctx } }) => run(() => {
+      const sid = input.session_id.trim()
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      return ctx.deps.sessions.revokeShare(sid) as { ok: true; session: { session_id: string; title: string } }
+    })),
+    read: os.share.read.handler(({ input, context: { ctx } }) => run(() => {
+      ctx.extraResponseHeaders = { 'x-robots-tag': 'noindex, nofollow' }
+      return ctx.deps.sessions.loadShare(input.token.trim()) as { share: { title: string; messages: Record<string, unknown>[]; message_count: number } }
+    })),
+  },
+  workspaces: {
+    list: os.workspaces.list.handler(({ context: { ctx } }) => run(() => {
+      const profile = ctx.deps.activeProfile()
+      return { workspaces: ctx.deps.workspaces.load(profile), last: ctx.deps.workspaces.lastWorkspace(profile), terminal_remote_backend: ctx.deps.features().terminal_remote_backend }
+    })),
+    suggest: os.workspaces.suggest.handler(({ input, context: { ctx } }) => run(() => ({ suggestions: ctx.deps.workspaces.suggest(input.prefix ?? '', 12, ctx.deps.activeProfile()), prefix: input.prefix ?? '' }))),
+    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(() => {
+      const ws = ctx.deps.workspaces
+      const pathStr = stripSurroundingQuotes(input.path.trim())
+      const name = (input.name ?? '').trim()
+      if (!pathStr) throw new HttpError(400, 'path is required')
+      const profile = ctx.deps.activeProfile()
+      let candidate: string
+      let remote: string | null
+      try {
+        remote = ws.remoteTerminalWorkspaceCandidate(pathStr, profile)
+        candidate = ws.resolvePath(pathStr, profile)
+      } catch (error) {
+        throw new HttpError(400, `Invalid path: ${sanitizeError(error)}`)
+      }
+      if (remote === null) {
+        if (isBlockedSystemPath(candidate)) {
+          const home = ws.homePath()
+          if (!(home !== '/' && (candidate === home || isWithin(candidate, home)))) throw new HttpError(400, `Path points to a system directory: ${candidate}`)
+        }
+        if (input.create) {
+          try { mkdirSync(candidate, { recursive: true }) } catch (error) { throw new HttpError(400, `Could not create directory: ${sanitizeError(error)}`) }
+        }
+      }
+      let p: string
+      try { p = ws.validateToAdd(pathStr, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+      const list = ws.load(profile)
+      if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
+      list.push({ path: p, name: name || basename(p) })
+      ws.save(list, profile)
+      return { ok: true as const, workspaces: list }
+    })),
+    remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(() => {
+      const pathStr = input.path.trim()
+      if (!pathStr) throw new HttpError(400, 'path is required')
+      const profile = ctx.deps.activeProfile()
+      const list = ctx.deps.workspaces.load(profile).filter((w) => w.path !== pathStr)
+      ctx.deps.workspaces.save(list, profile)
+      return { ok: true as const, workspaces: list }
+    })),
+    rename: os.workspaces.rename.handler(({ input, context: { ctx } }) => run(() => {
+      const pathStr = input.path.trim()
+      const name = input.name.trim()
+      if (!pathStr || !name) throw new HttpError(400, 'path and name are required')
+      const profile = ctx.deps.activeProfile()
+      const list = ctx.deps.workspaces.load(profile)
+      const entry = list.find((w) => w.path === pathStr)
+      if (!entry) throw new HttpError(404, 'Workspace not found')
+      entry.name = name
+      ctx.deps.workspaces.save(list, profile)
+      return { ok: true as const, workspaces: list }
+    })),
+    reorder: os.workspaces.reorder.handler(({ input, context: { ctx } }) => run(() => {
+      const paths = input.paths
+      if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths is required and must be a list')
+      const profile = ctx.deps.activeProfile()
+      const list = ctx.deps.workspaces.load(profile)
+      const byPath = new Map(list.map((w) => [w.path, w]))
+      const reordered: typeof list = []
+      const seen = new Set<string>()
+      for (const raw of paths) {
+        const p = String(raw).trim()
+        const entry = byPath.get(p)
+        if (entry && !seen.has(p)) { reordered.push(entry); seen.add(p) }
+      }
+      for (const w of list) if (!seen.has(w.path)) reordered.push(w)
+      ctx.deps.workspaces.save(reordered, profile)
+      return { ok: true as const, workspaces: reordered }
+    })),
+  },
+  files: {
+    list: os.files.list.handler(({ input, context: { ctx } }) => run(() => {
+      if (!input.session_id) throw new HttpError(400, 'session_id is required')
+      guardVisibility(ctx, input.session_id)
+      const s = fileOpsSession(ctx, input.session_id)
+      const rel = input.path ?? '.'
+      try {
+        const entries = listDir(s.workspace, rel)
+        return { entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered }
+      } catch (error) {
+        throw fileError(error, 404)
+      }
+    })),
+    read: os.files.read.handler(({ input, context: { ctx } }) => run(() => {
+      if (!input.session_id) throw new HttpError(400, 'session_id is required')
+      guardVisibility(ctx, input.session_id)
+      const s = fileOpsSession(ctx, input.session_id)
+      if (!input.path) throw new HttpError(400, 'path is required')
+      try {
+        return readFileContent(s.workspace, input.path)
+      } catch (error) {
+        throw fileError(error, 404)
+      }
+    })),
+    save: os.files.save.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const root = s.workspace
+        const target = safeResolve(root, input.path)
+        if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
+        if (!existsSync(target)) throw new HttpError(404, 'File not found')
+        if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
+        const data = Buffer.from(input.content ?? '', 'utf8')
+        const fd = openAnchoredWriteFd(root, target)
+        try { writeSync(fd, data) } finally { closeSync(fd) }
+        return { ok: true as const, path: input.path, size: data.length }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
+    create: os.files.create.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const root = s.workspace
+        const target = safeResolve(root, input.path)
+        if (existsSync(target)) throw new HttpError(400, 'File already exists')
+        const data = Buffer.from(input.content ?? '', 'utf8')
+        const fd = openAnchoredCreateFd(root, target)
+        try { writeSync(fd, data) } finally { closeSync(fd) }
+        return { ok: true as const, path: relative(resolvePathLikePython(root), target).split('\\').join('/') }
+      } catch (error) {
+        if (error instanceof FileExistsError) throw new HttpError(400, 'File already exists')
+        throw fileError(error)
+      }
+    })),
+    createDir: os.files.createDir.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const root = s.workspace
+        const target = safeResolve(root, input.path)
+        if (existsSync(target)) throw new HttpError(400, 'Path already exists')
+        makeAnchoredDir(root, target)
+        return { ok: true as const, path: relative(resolvePathLikePython(root), target).split('\\').join('/') }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
+    delete: os.files.delete.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const root = s.workspace
+        const target = safeResolve(root, input.path)
+        if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot delete a symlinked entry')
+        if (!existsSync(target)) throw new HttpError(404, 'File not found')
+        if (statSync(target).isDirectory()) {
+          if (!input.recursive) throw new HttpError(400, 'Set recursive=true to delete directories')
+          rmtreeAnchored(root, target)
+        } else unlinkAnchored(root, target)
+        return { ok: true as const, path: input.path }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
+    rename: os.files.rename.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const root = s.workspace
+        const rootResolved = resolvePathLikePython(root)
+        const source = safeResolve(root, input.path)
+        if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot rename a symlinked entry')
+        if (!existsSync(source)) throw new HttpError(404, 'File not found')
+        const newName = input.new_name.trim()
+        if (!newName || newName.includes('/') || newName.includes('\\') || newName.includes('..')) throw new HttpError(400, 'Invalid file name')
+        const dest = join(dirname(source), newName)
+        if (existsSync(dest)) throw new HttpError(400, `A file named "${newName}" already exists`)
+        renameAnchored(root, source, dest)
+        return { ok: true as const, old_path: input.path, new_path: relative(rootResolved, dest).split('\\').join('/') }
+      } catch (error) {
+        if (error instanceof FileExistsError) throw new HttpError(400, `A file named "${input.new_name}" already exists`)
+        throw fileError(error)
+      }
+    })),
+    move: os.files.move.handler(({ input, context: { ctx } }) => run(() => {
+      const destDirRaw = (input.dest_dir ?? input.destination ?? '.').trim() || '.'
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const root = s.workspace
+        const rootResolved = resolvePathLikePython(root)
+        const source = safeResolve(root, input.path)
+        if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot move a symlinked entry')
+        if (!existsSync(source)) throw new HttpError(404, 'File not found')
+        if (destDirRaw.split('/').includes('..')) throw new HttpError(400, 'Invalid destination')
+        const destParent = safeResolve(root, destDirRaw)
+        if (!existsSync(destParent) || !statSync(destParent).isDirectory()) throw new HttpError(404, 'Destination folder not found')
+        if (statSync(source).isDirectory() && isWithin(resolvePathLikePython(destParent), resolvePathLikePython(source))) throw new HttpError(400, 'Cannot move a folder into itself or its subfolder')
+        const dest = join(destParent, basename(source))
+        if (resolvePathLikePython(dest) === resolvePathLikePython(source)) return { ok: true as const, old_path: input.path, new_path: relative(rootResolved, source).split('\\').join('/') }
+        if (existsSync(dest)) throw new HttpError(400, `A file named "${basename(source)}" already exists in that folder`)
+        renameAnchored(root, source, dest)
+        return { ok: true as const, old_path: input.path, new_path: relative(rootResolved, dest).split('\\').join('/') }
+      } catch (error) {
+        if (error instanceof FileExistsError) throw new HttpError(400, `A file named "${basename(input.path)}" already exists in that folder`)
+        throw fileError(error)
+      }
+    })),
+    reveal: os.files.reveal.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const target = safeResolve(s.workspace, input.path)
+        if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
+        const targetStr = ctx.deps.vscode().translate(target)
+        const system = platform()
+        if (system === 'darwin') spawnDetached(['open', '-R', targetStr])
+        else if (system === 'win32') spawnDetached(['explorer.exe', `/select,${targetStr}`])
+        else spawnDetached(['xdg-open', dirname(targetStr)])
+        return { ok: true as const, path: input.path }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
+    openVsCode: os.files.openVsCode.handler(({ input, context: { ctx } }) => run(() => {
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        const target = safeResolve(s.workspace, input.path)
+        if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
+        const vscode = ctx.deps.vscode()
+        const cmd = vscode.command()
+        if (!cmd) throw new HttpError(400, `VS Code command not found: ${JSON.stringify(vscode.configuredCommand)}. Install VS Code and ensure the 'code' CLI is on PATH, or set vscode.command in config.yaml to the full path.`)
+        spawnDetached([cmd, vscode.translate(target)])
+        return { ok: true as const, path: input.path }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
+  },
+})
+
+function isSymlinkAt(path: string): boolean {
+  try { return lstatSync(path).isSymbolicLink() } catch { return false }
+}
+
+function fileError(error: unknown, notFoundStatus = 400): Error {
+  if (error instanceof HttpError) return error
+  if (error instanceof HttpFailure) return new HttpError(error.status, error.message, error.extra)
+  if (error instanceof NotFoundError || error instanceof PathTraversalError || error instanceof FileTooLargeError) return new HttpError(notFoundStatus, sanitizeError(error))
+  if (error instanceof Error && 'code' in error) return new HttpError(notFoundStatus, sanitizeError(error))
+  return error as Error
+}
+
+export interface FileOpsSession { workspace: string; profile: string | null; recovered: boolean; session: Session | null }
+
+/** Python `get_session_for_file_ops` + `_file_ops_session_or_error`. */
+export function fileOpsSession(ctx: RequestContext, sid: string): FileOpsSession {
+  let session: Session
+  try {
+    session = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
+  } catch {
+    throw new HttpError(404, 'Session not found')
+  }
+  if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
+  if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
+  let workspace = session.workspace
+  let recovered = false
+  try {
+    ;[workspace, recovered] = ctx.deps.workspaces.resolveImplicitWithRecovery(session.workspace, (p) => ctx.deps.workspaces.lastWorkspace(p), session.profile)
+  } catch {
+    workspace = session.workspace
+  }
+  if (recovered) {
+    session.workspace = workspace
+    const cached = ctx.deps.sessionStore.sessions.get(sid)
+    if (cached) cached.workspace = workspace
+    try {
+      const full = ctx.deps.sessionStore.load(sid)
+      if (full) { full.workspace = workspace; ctx.deps.sessionStore.save(full, { touchUpdatedAt: false }) }
+    } catch { /* recovery persistence is best effort */ }
+  }
+  return { workspace, profile: session.profile, recovered, session }
+}
+
+function spawnDetached(cmd: string[]): void {
+  const [file, ...args] = cmd
+  if (!file) return
+  const child = spawn(file, args, { detached: true, stdio: 'ignore' })
+  child.on('error', () => undefined)
+  child.unref()
+}

@@ -14,6 +14,11 @@ import type { AuthStore, SessionInfo } from '../auth/store.js'
 import type { SettingsStore } from '../settings.js'
 import type { AssetCache, SpaShell } from '../spa.js'
 import type { StartupGate } from '../startup.js'
+import type { SessionService } from '../sessions/service.js'
+import type { SessionStore } from '../sessions/store.js'
+import type { SessionEventBus } from '../sessions/events.js'
+import type { ProjectStore } from '../projects.js'
+import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
 import type { CsrfFailure } from './origin.js'
@@ -41,6 +46,27 @@ export interface AppDeps {
   onboardingCompleted: () => boolean
   /** Counts for `/health`: sessions and live runs (checkpoints 5/6). */
   health: () => { sessions: number; activeStreams: number; activeRuns: number; runs: Record<string, unknown>[]; lastRunFinishedAt: number | null }
+  // ── session domain (checkpoint 5) ──
+  sessions: SessionService
+  sessionStore: SessionStore
+  events: SessionEventBus
+  projects: ProjectStore
+  workspaces: WorkspaceRegistry
+  /** Python `_is_isolated_profile_mode` / `_profiles_match` (profile domain, checkpoint 7). */
+  isolatedProfileMode: () => boolean
+  profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
+  /** Agent config `worktree:` default for a profile. */
+  worktreeDefault: (profile: string | null) => boolean
+  /** Worktree creation goes through the Agent (sidecar method, checkpoint 5b). */
+  worktrees: { create: (workspace: string) => Promise<{ path: string; branch: string; repo_root: string; created_at: number }> }
+  /** `vscode:` block from config.yaml: command lookup and Docker path translation. */
+  vscode: () => VsCodeConfig
+}
+
+export interface VsCodeConfig {
+  configuredCommand: string
+  command: () => string | null
+  translate: (path: string) => string
 }
 
 export const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
@@ -77,6 +103,8 @@ export class RequestContext {
   csrfFailure: CsrfFailure = null
   /** Headers a `RawResponse` asks the oRPC layer to add. */
   extraResponseHeaders: Record<string, string> = {}
+  /** Set by a procedure whose ETag matched `If-None-Match`; the root interceptor turns the response into a bodiless 304. */
+  notModified = false
   trusted: { reconciled?: SessionInfo | null; info?: SessionInfo | null; cookieValue?: string | null; rejected?: boolean } = {}
   readonly cspExtras: CspExtras
   private cookieMap: Map<string, string> | null = null

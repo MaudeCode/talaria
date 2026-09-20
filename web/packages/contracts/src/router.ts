@@ -1,5 +1,7 @@
 import { oc } from '@orpc/contract'
 import { coreContract } from './routes/core.js'
+import { sessionsContract } from './routes/sessions.js'
+import { workspacesContract } from './routes/workspaces.js'
 
 /**
  * The composed route contract. Domain segments are added per checkpoint
@@ -8,6 +10,8 @@ import { coreContract } from './routes/core.js'
  */
 export const routeContract = oc.router({
   ...coreContract,
+  ...sessionsContract,
+  ...workspacesContract,
 })
 
 export type RouteContract = typeof routeContract

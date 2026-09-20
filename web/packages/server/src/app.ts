@@ -9,6 +9,7 @@ import { resolve } from 'node:path'
 import { ORPCError, type Router } from '@orpc/server'
 import type { AnyContractRouter } from '@orpc/contract'
 import { OpenAPIHandler } from '@orpc/openapi/node'
+import { sessionsRouter } from './api/sessions-router.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -140,13 +141,16 @@ function preflight(ctx: RequestContext): void {
   ctx.send({ status: 200, headers, security: false })
 }
 
+/** Every implemented procedure, keyed like the contract. */
+export const appRouter = { ...coreRouter, ...sessionsRouter }
+
 export interface CreateAppOptions {
   /** The implemented contract router; defaults to the core router. */
   router?: Router<AnyContractRouter, ApiContext>
 }
 
 export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
-  const orpc = new OpenAPIHandler(opts.router ?? coreRouter, {
+  const orpc = new OpenAPIHandler(opts.router ?? appRouter, {
     customErrorResponseBodyEncoder: (error: ORPCError<string, unknown>) => errorResponseBody(error),
     // Root level: oRPC converts thrown errors into responses below `interceptors`, so only here do error responses get the shared headers.
     rootInterceptors: [
@@ -166,6 +170,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           headers['set-cookie'] = [...ctx.pendingCookies]
           ctx.pendingCookies = []
         }
+        if (ctx.notModified) return { ...result, response: { ...result.response, status: 304, body: undefined } }
         return result
       },
     ],

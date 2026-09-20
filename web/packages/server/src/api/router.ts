@@ -4,7 +4,7 @@
  * `{"error": ...}` body, or `RawResponse` to emit an arbitrary payload/status.
  */
 import { implement, ORPCError } from '@orpc/server'
-import { routeContract, type AuthStatus, type Bootstrap, type Health } from '@maudecode/talaria-web-contracts'
+import { coreContract, type AuthStatus, type Bootstrap, type Health } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
 import { authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession } from '../auth/gate.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
@@ -37,6 +37,12 @@ export function errorResponseBody(error: ORPCError<string, unknown>): Record<str
   const extra = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {}
   if (error.code === 'INTERNAL_SERVER_ERROR' && !error.defined && error.message === 'Internal server error') return { error: 'Internal server error' }
   if (error.code === 'BAD_REQUEST' && Object.keys(extra).length === 0 && error.message.startsWith('Malformed request')) return { error: 'Invalid JSON body' }
+  if (error.code === 'BAD_REQUEST' && error.message === 'Input validation failed') {
+    const issues = Array.isArray(extra.issues) ? (extra.issues as { path?: (string | number)[]; message?: string }[]) : []
+    const first = issues[0]
+    const field = first?.path?.map(String).join('.') ?? ''
+    return { error: field ? `Invalid ${field}` : 'Invalid request', issues: issues.map((i) => ({ path: i.path ?? [], message: i.message ?? '' })) }
+  }
   return { error: error.message, ...extra }
 }
 
@@ -46,7 +52,7 @@ export function errorResponseHeaders(error: ORPCError<string, unknown>): Record<
   return {}
 }
 
-const os = implement(routeContract).$context<ApiContext>()
+const os = implement(coreContract).$context<ApiContext>()
 
 export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> {
   const { deps } = ctx

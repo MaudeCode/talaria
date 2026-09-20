@@ -1,0 +1,361 @@
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+
+async function newSession(s: TestServer, body: Json = {}): Promise<Json> {
+  const res = await post(s, '/api/session/new', body)
+  expect(res.status).toBe(200)
+  return (await json(res)).session as Json
+}
+
+/** New sessions stay in memory until their first message (Python `new_session`), so persist through the store. */
+function writeMessages(s: TestServer, sid: string, messages: Json[]): void {
+  const session = s.deps.sessionStore.get(sid)
+  session.messages = messages
+  s.deps.sessionStore.save(session)
+}
+
+describe('session lifecycle over HTTP', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('creates a session with the default workspace and lists it with the ETag contract', async () => {
+    const session = await newSession(s)
+    expect(String(session.session_id)).toMatch(/^[0-9a-f]{12}$/)
+    expect(session.workspace).toBe(realpathSync(join(s.state, 'workspace')))
+    // Python keeps a brand-new session in memory until its first message.
+    expect(existsSync(join(s.state, 'sessions', `${String(session.session_id)}.json`))).toBe(false)
+    writeMessages(s, String(session.session_id), [{ role: 'user', content: 'hi' }])
+
+    const res = await s.get('/api/sessions')
+    expect(res.status).toBe(200)
+    const etag = res.headers.get('etag')
+    expect(etag).toBeTruthy()
+    const body = await json(res)
+    expect((body.sessions as Json[]).map((r) => r.session_id)).toContain(session.session_id)
+    expect(body.active_profile).toBe('default')
+    expect(typeof body.server_time).toBe('number')
+
+    const notModified = await s.get('/api/sessions', { headers: { 'if-none-match': etag ?? '' } })
+    expect(notModified.status).toBe(304)
+    expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).toContain(String(session.session_id))
+  })
+
+  it('validates session ids and reports unknown sessions as 404', async () => {
+    expect((await s.get('/api/session?session_id=../etc')).status).toBe(404)
+    expect((await s.get('/api/session?session_id=deadbeef0000')).status).toBe(404)
+    const res = await post(s, '/api/session/rename', { session_id: 'deadbeef0000', title: 'x' })
+    expect(res.status).toBe(404)
+    expect(await json(res)).toEqual({ error: 'Session not found' })
+  })
+
+  it('renames, archives, pins with the configured cap, and moves between projects', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'hi' }])
+    let res = await post(s, '/api/session/rename', { session_id: sid, title: '  New title  ' })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).session as Json).title).toBe('New title')
+
+    res = await post(s, '/api/session/archive', { session_id: sid, archived: true })
+    expect(res.status).toBe(200)
+    let list = await json(await s.get('/api/sessions'))
+    expect((list.sessions as Json[]).some((r) => r.session_id === sid)).toBe(false)
+    expect(list.archived_count).toBeGreaterThanOrEqual(1)
+    list = await json(await s.get('/api/sessions?include_archived=1'))
+    expect((list.sessions as Json[]).some((r) => r.session_id === sid && r.archived === true)).toBe(true)
+    await post(s, '/api/session/archive', { session_id: sid, archived: false })
+
+    s.deps.settings.save({ pinned_sessions_limit: 1 })
+    expect((await post(s, '/api/session/pin', { session_id: sid, pinned: true })).status).toBe(200)
+    const b = await newSession(s)
+    res = await post(s, '/api/session/pin', { session_id: b.session_id, pinned: true })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Up to 1 sessions can be pinned. Unpin one before pinning another.')
+    expect((await post(s, '/api/session/pin', { session_id: sid, pinned: false })).status).toBe(200)
+
+    res = await post(s, '/api/projects/create', { name: 'Proj', color: '#abc' })
+    expect(res.status).toBe(200)
+    const project = (await json(res)).project as Json
+    res = await post(s, '/api/session/move', { session_id: sid, project_id: project.project_id })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).session as Json).project_id).toBe(project.project_id)
+    res = await post(s, '/api/session/move', { session_id: sid, project_id: 'missing' })
+    expect(res.status).toBe(404)
+    expect((await post(s, '/api/projects/delete', { project_id: project.project_id })).status).toBe(200)
+    const detail = await json(await s.get(`/api/session?session_id=${sid}`))
+    expect((detail.session as Json).project_id).toBeNull()
+  })
+
+  it('returns a bounded message window with the truncation markers', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    const messages: Json[] = []
+    for (let i = 0; i < 12; i += 1) messages.push({ role: i % 2 ? 'assistant' : 'user', content: `m${i}`, timestamp: 1000 + i })
+    writeMessages(s, sid, messages)
+    const res = await s.get(`/api/session?session_id=${sid}&msg_limit=4`)
+    expect(res.status).toBe(200)
+    const session = (await json(res)).session as Json
+    const got = session.messages as Json[]
+    expect(got.map((m) => m.content)).toEqual(['m8', 'm9', 'm10', 'm11'])
+    expect(session._messages_truncated).toBe(true)
+    expect(session._messages_offset).toBe(8)
+    expect(session._msg_limit_max).toBe(500)
+    const before = (await json(await s.get(`/api/session?session_id=${sid}&msg_limit=4&msg_before=8`))).session as Json
+    expect((before.messages as Json[]).map((m) => m.content)).toEqual(['m4', 'm5', 'm6', 'm7'])
+  })
+
+  it('truncates, undoes, retries, clears, and keeps a .bak when the file shrinks', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'one' },
+      { role: 'user', content: 'second' }, { role: 'assistant', content: 'two' },
+    ])
+    let res = await post(s, '/api/session/undo', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ ok: true, removed_count: 2, removed_preview: 'second' })
+    expect(existsSync(join(s.state, 'sessions', `${sid}.json.bak`))).toBe(true)
+
+    res = await post(s, '/api/session/retry', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ ok: true, last_user_text: 'first', removed_count: 2 })
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toEqual([])
+
+    writeMessages(s, sid, [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' }])
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 1 })
+    expect(res.status).toBe(200)
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(1)
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: -1 })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/session/clear', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toEqual([])
+  })
+
+  it('duplicates and branches sessions with parent lineage', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }, { role: 'user', content: 'z' }])
+    let res = await post(s, '/api/session/duplicate', { session_id: sid })
+    expect(res.status).toBe(200)
+    const dup = (await json(res)).session as Json
+    expect(dup.session_id).not.toBe(sid)
+    expect(((await json(await s.get(`/api/session?session_id=${String(dup.session_id)}`))).session as Json).messages).toHaveLength(3)
+
+    res = await post(s, '/api/session/branch', { session_id: sid, keep_count: 2, title: 'Branch' })
+    expect(res.status).toBe(200)
+    const branch = await json(res)
+    expect(branch.parent_session_id).toBe(sid)
+    expect(branch.title).toBe('Branch')
+    const child = (await json(await s.get(`/api/session?session_id=${String(branch.session_id)}`))).session as Json
+    expect(child.messages).toHaveLength(2)
+    expect(child.parent_session_id).toBe(sid)
+  })
+
+  it('deletes a session, tombstones it, and prunes it from the index', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'bye' }])
+    const res = await post(s, '/api/session/delete', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: false })
+    expect(existsSync(join(s.state, 'sessions', `${sid}.json`))).toBe(false)
+    expect((await s.get(`/api/session?session_id=${sid}`)).status).toBe(404)
+    expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).not.toContain(sid)
+    const tomb = JSON.parse(readFileSync(join(s.state, 'sessions', '_deleted_webui_sessions.json'), 'utf8')) as Json
+    expect(tomb.version).toBe(1)
+    expect(tomb.ids).toContain(sid)
+    // Python answers a repeat delete idempotently.
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+  })
+
+  it('imports, searches, and reports status and usage', async () => {
+    let res = await post(s, '/api/session/import', { title: 'Imported', messages: [{ role: 'user', content: 'needle in the hay' }, { role: 'assistant', content: 'found' }] })
+    expect(res.status).toBe(200)
+    const imported = (await json(res)).session as Json
+    expect(imported.title).toBe('Imported')
+    res = await s.get('/api/sessions/search?q=needle')
+    expect(res.status).toBe(200)
+    const found = await json(res)
+    expect((found.sessions as Json[]).map((r) => r.session_id)).toContain(imported.session_id)
+    res = await s.get(`/api/session/status?session_id=${String(imported.session_id)}`)
+    expect(res.status).toBe(200)
+    expect((await json(res)).session_id).toBe(imported.session_id)
+    res = await s.get(`/api/session/usage?session_id=${String(imported.session_id)}`)
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ input_tokens: 0, output_tokens: 0, total_tokens: 0 })
+    expect((await s.get('/api/session/status')).status).toBe(400)
+  })
+
+  it('stores composer drafts with monotonic versions and 409 on stale writes', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    let res = await post(s, '/api/session/draft', { session_id: sid, text: 'hello', draft_version: '10' })
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body.draft).toEqual({ text: 'hello', files: [] })
+    expect(body.draft_version).toBe('10')
+    expect(existsSync(join(s.state, 'sessions', '_drafts', `${sid}.json`))).toBe(true)
+
+    res = await post(s, '/api/session/draft', { session_id: sid, text: 'older', draft_version: '5' })
+    expect(res.status).toBe(409)
+    body = await json(res)
+    expect(body.error).toBe('Composer draft changed in another request')
+    expect(body.draft_version).toBe('10')
+
+    res = await post(s, '/api/session/draft', { session_id: sid, text: 'hello', draft_version: '10' })
+    expect(res.status).toBe(200)
+    expect((await json(res)).unchanged).toBe(true)
+
+    res = await s.get(`/api/session/draft?session_id=${sid}`)
+    expect(res.status).toBe(200)
+    expect((await json(res)).draft).toEqual({ text: 'hello', files: [] })
+    expect((await post(s, '/api/session/draft', { session_id: sid, draft_version: true })).status).toBe(400)
+    expect((await post(s, '/api/session/draft', { session_id: 'deadbeef0000', text: 'x' })).status).toBe(404)
+  })
+
+  it('creates, reads, and revokes shares with the noindex header', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    let res = await post(s, '/api/share/create', { session_id: sid })
+    expect(res.status).toBe(200)
+    const share = (await json(res)).share as Json
+    expect(String(share.token)).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(share.message_count).toBe(2)
+    res = await s.get(`/api/share/${String(share.token)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+    const read = (await json(res)).share as Json
+    expect((read.messages as Json[]).map((m) => m.content)).toEqual(['share me', 'ok'])
+    res = await post(s, '/api/share/revoke', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect((await s.get(`/api/share/${String(share.token)}`)).status).toBe(404)
+    expect((await s.get('/api/share/../etc')).status).toBe(404)
+  })
+
+  it('cleans up zero-message sessions and toggles yolo', async () => {
+    const a = await newSession(s)
+    writeMessages(s, String(a.session_id), [])
+    const res = await post(s, '/api/sessions/cleanup_zero_message', {})
+    expect(res.status).toBe(200)
+    expect(((await json(res)).cleaned as number)).toBeGreaterThanOrEqual(1)
+    expect((await s.get(`/api/session?session_id=${String(a.session_id)}`)).status).toBe(404)
+    const b = await newSession(s)
+    expect(await json(await s.get(`/api/session/yolo?session_id=${String(b.session_id)}`))).toEqual({ yolo_enabled: false })
+    expect((await post(s, '/api/session/yolo', { session_id: b.session_id, enabled: true })).status).toBe(200)
+    expect(await json(await s.get(`/api/session/yolo?session_id=${String(b.session_id)}`))).toEqual({ yolo_enabled: true })
+  })
+})
+
+describe('projects, workspaces, and files over HTTP', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('projects require a name, validate colours, and list per profile', async () => {
+    expect((await post(s, '/api/projects/create', { name: '   ' })).status).toBe(400)
+    let res = await post(s, '/api/projects/create', { name: 'Alpha', color: 'red' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Invalid color format')
+    res = await post(s, '/api/projects/create', { name: 'Alpha', color: '#ff0000' })
+    expect(res.status).toBe(200)
+    const project = (await json(res)).project as Json
+    expect(project.profile).toBe('default')
+    res = await post(s, '/api/projects/rename', { project_id: project.project_id, name: 'Beta', color: null })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).project as Json).color).toBeNull()
+    const list = await json(await s.get('/api/projects'))
+    expect((list.projects as Json[]).map((p) => p.name)).toEqual(['Beta'])
+    expect((await post(s, '/api/projects/rename', { project_id: 'nope', name: 'x' })).status).toBe(404)
+    const raw = JSON.parse(readFileSync(join(s.state, 'projects.json'), 'utf8')) as Json[]
+    expect(raw[0]?.name).toBe('Beta')
+  })
+
+  it('workspaces strip pasted quotes, reject duplicates and system paths, reorder, and rename', async () => {
+    const dir = join(realpathSync(s.state), 'proj')
+    mkdirSync(dir)
+    let res = await post(s, '/api/workspaces/add', { path: `"${dir}"` })
+    expect(res.status).toBe(200)
+    let list = (await json(res)).workspaces as Json[]
+    expect(list.map((w) => w.path)).toContain(dir)
+    expect(list.find((w) => w.path === dir)?.name).toBe('proj')
+    res = await post(s, '/api/workspaces/add', { path: dir })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Workspace already in list')
+    res = await post(s, '/api/workspaces/add', { path: '/etc' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/workspaces/add', { path: join(s.state, 'missing') })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/workspaces/add', { path: join(realpathSync(s.state), 'made'), create: true })
+    expect(res.status).toBe(200)
+    expect(existsSync(join(realpathSync(s.state), 'made'))).toBe(true)
+
+    res = await post(s, '/api/workspaces/reorder', { paths: [join(realpathSync(s.state), 'made'), dir] })
+    expect(res.status).toBe(200)
+    list = (await json(res)).workspaces as Json[]
+    expect(list.slice(0, 2).map((w) => w.path)).toEqual([join(realpathSync(s.state), 'made'), dir])
+    res = await post(s, '/api/workspaces/rename', { path: dir, name: 'Renamed' })
+    expect(res.status).toBe(200)
+    res = await s.get('/api/workspaces')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect((body.workspaces as Json[]).find((w) => w.path === dir)?.name).toBe('Renamed')
+    expect(body.terminal_remote_backend).toBe(false)
+    res = await post(s, '/api/workspaces/remove', { path: dir })
+    expect(((await json(res)).workspaces as Json[]).some((w) => w.path === dir)).toBe(false)
+    const suggest = await json(await s.get(`/api/workspaces/suggest?prefix=${encodeURIComponent(join(realpathSync(s.state), 'ma'))}`))
+    expect(suggest.suggestions).toContain(join(realpathSync(s.state), 'made'))
+  })
+
+  it('file operations stay inside the workspace and reject symlink escapes', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const session = await newSession(s, { workspace: ws })
+    const sid = String(session.session_id)
+    let res = await post(s, '/api/file/create', { session_id: sid, path: 'notes/a.txt', content: 'hello' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, path: 'notes/a.txt' })
+    expect((await post(s, '/api/file/create', { session_id: sid, path: 'notes/a.txt', content: '' })).status).toBe(400)
+    res = await s.get(`/api/list?session_id=${sid}&path=notes`)
+    expect(res.status).toBe(200)
+    const listing = await json(res)
+    expect((listing.entries as Json[]).map((e) => e.name)).toEqual(['a.txt'])
+    expect(listing.workspace).toBe(ws)
+    res = await s.get(`/api/file?session_id=${sid}&path=notes/a.txt`)
+    expect(res.status).toBe(200)
+    expect((await json(res)).content).toBe('hello')
+    res = await post(s, '/api/file/save', { session_id: sid, path: 'notes/a.txt', content: 'changed' })
+    expect(res.status).toBe(200)
+    expect(readFileSync(join(ws, 'notes', 'a.txt'), 'utf8')).toBe('changed')
+    expect((await post(s, '/api/file/create-dir', { session_id: sid, path: 'sub' })).status).toBe(200)
+    res = await post(s, '/api/file/rename', { session_id: sid, path: 'notes/a.txt', new_name: 'b.txt' })
+    expect(res.status).toBe(200)
+    expect((await json(res)).new_path).toBe('notes/b.txt')
+    res = await post(s, '/api/file/move', { session_id: sid, path: 'notes/b.txt', destination: 'sub' })
+    expect(res.status).toBe(200)
+    expect((await json(res)).new_path).toBe('sub/b.txt')
+    expect((await post(s, '/api/file/move', { session_id: sid, path: 'sub', dest_dir: 'sub' })).status).toBe(400)
+
+    expect((await s.get(`/api/file?session_id=${sid}&path=../../etc/passwd`)).status).toBe(404)
+    expect((await post(s, '/api/file/save', { session_id: sid, path: '../outside.txt', content: 'x' })).status).toBe(400)
+    expect(existsSync(join(s.state, 'outside.txt'))).toBe(false)
+    symlinkSync(s.state, join(ws, 'escape'))
+    expect((await post(s, '/api/file/delete', { session_id: sid, path: 'escape' })).status).toBe(400)
+    expect((await s.get(`/api/file?session_id=${sid}&path=escape/settings.json`)).status).toBe(404)
+    expect((await s.get(`/api/list?session_id=${sid}&path=escape`)).status).toBe(404)
+
+    res = await post(s, '/api/file/delete', { session_id: sid, path: 'sub' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Set recursive=true to delete directories')
+    expect((await post(s, '/api/file/delete', { session_id: sid, path: 'sub', recursive: true })).status).toBe(200)
+    expect(readdirSync(ws)).not.toContain('sub')
+    expect((await s.get('/api/list?session_id=deadbeef0000')).status).toBe(404)
+  })
+})

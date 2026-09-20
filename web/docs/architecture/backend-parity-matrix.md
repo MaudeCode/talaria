@@ -69,18 +69,18 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-S1 | `GET /api/sessions`, `GET /api/sessions/search` | browser, ios | auth | server | vitest, fixture, pw | pending | ETag/304, cache, `expand_renderable`, `show_*_sessions`, `archived_limit` |
-| R-S2 | `GET /api/session`, `GET /api/session/status`, `GET /api/session/usage`, `GET /api/session/export` | browser, ios | auth | server | vitest, fixture | pending | |
-| R-S3 | `POST /api/session/new|rename|delete|pin|archive|move|duplicate|branch|truncate|undo|retry|clear|update` | browser, ios, mcp | auth | server | vitest | pending | `delete` state.db cleanup via sidecar |
-| R-S4 | `POST /api/session/title/regenerate`, `POST /api/session/import`, `POST /api/session/import_cli` | browser, ios | auth | server (+sidecar for titles) | vitest | pending | |
-| R-S5 | `GET|POST /api/session/yolo`, `POST /api/session/toolsets` | browser, ios | auth | server | vitest | pending | |
+| R-S1 | `GET /api/sessions`, `GET /api/sessions/search` | browser, ios | auth | server | vitest, fixture, pw | partial | ETag/304, cache, `expand_renderable`, `show_*_sessions`, `archived_limit`; checkpoint 5a: list/search with ETag/304, `show_*_sessions`, `archived_limit/offset` in `sessions/list.ts`; state.db CLI rows and `expand_renderable` pending |
+| R-S2 | `GET /api/session`, `GET /api/session/status`, `GET /api/session/usage`, `GET /api/session/export` | browser, ios | auth | server | vitest, fixture | partial | checkpoint 5a: `GET /api/session|status|usage` with the bounded message window (`sessions/window.ts`); `export` lands with 5b |
+| R-S3 | `POST /api/session/new|rename|delete|pin|archive|move|duplicate|branch|truncate|undo|retry|clear|update` | browser, ios, mcp | auth | server | vitest | partial | `delete` state.db cleanup via sidecar; checkpoint 5a: all mutations in `sessions/service.ts`; state.db cleanup and journal-backed recovery pending |
+| R-S4 | `POST /api/session/title/regenerate`, `POST /api/session/import`, `POST /api/session/import_cli` | browser, ios | auth | server (+sidecar for titles) | vitest | partial | checkpoint 5a: `import`; `title/regenerate` and `import_cli` need the sidecar/state.db |
+| R-S5 | `GET|POST /api/session/yolo`, `POST /api/session/toolsets` | browser, ios | auth | server | vitest | partial | checkpoint 5a: yolo is process-local, toolsets validated and persisted |
 | R-S6 | `POST /api/session/compress`, `POST /api/session/compress/start`, `GET /api/session/compress/status`, `POST /api/session/handoff-summary` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
-| R-S7 | `POST /api/session/draft` | browser | auth | server | vitest, fixture | pending | monotonic `_draft_version` |
+| R-S7 | `POST /api/session/draft` | browser | auth | server | vitest, fixture | pass | monotonic `_draft_version`; checkpoint 5a: `sessions/drafts.ts`, 409 with the current draft on stale versions |
 | R-S8 | `GET /api/session/worktree/status`, `POST /api/session/worktree/remove` | browser | auth | server | vitest | pending | |
-| R-S9 | `POST /api/sessions/cleanup_zero_message` | browser | auth | server | vitest | pending | |
+| R-S9 | `POST /api/sessions/cleanup_zero_message` | browser | auth | server | vitest | pass | checkpoint 5a |
 | R-S10 | `GET /api/sessions/events` | browser | auth | server | vitest | pending | SSE, see 3 |
-| R-S11 | `GET /api/session/anchor-scene`, `POST /api/session/anchor-scene`, `POST /api/session/compression-recovery/start`, `POST /api/session/conversation-rounds`, `GET /api/session/recovery/audit`, `POST /api/session/recovery/repair-safe`, `GET /api/session/lineage/report`, `POST /api/sessions/cleanup`, `GET /api/sessions/gateway/stream`, `GET /api/sessions/<sid>/events`, `GET /api/session/stream` | none | | dropped | | dropped | TAL-245 dropped list. `/api/session/stream` reference in `contracts/sse.ts` is a comment only |
-| R-S12 | `GET /api/projects`, `POST /api/projects/create|rename|delete` | browser, ios | auth | server | vitest, fixture | pending | |
+| R-S11 | `GET /api/session/anchor-scene`, `POST /api/session/anchor-scene`, `POST /api/session/compression-recovery/start`, `POST /api/session/conversation-rounds`, `GET /api/session/recovery/audit`, `POST /api/session/recovery/repair-safe`, `GET /api/session/lineage/report`, `POST /api/sessions/cleanup`, `GET /api/sessions/gateway/stream`, `GET /api/sessions/<sid>/events`, `GET /api/session/stream` | none | | dropped | dropped | TAL-245 dropped list. `/api/session/stream` reference in `contracts/sse.ts` is a comment only; checkpoint 5a keeps `anchor-scene` GET/POST (browser consumer) in `sessions/anchor.ts` |
+| R-S12 | `GET /api/projects`, `POST /api/projects/create|rename|delete` | browser, ios | auth | server | vitest, fixture | pass | checkpoint 5a: `projects.ts` with profile backfill; cascading unlink on delete |
 
 ### 2c. Chat, approvals, clarify, goals, background
 
@@ -101,13 +101,13 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-F1 | `GET /api/list`, `GET /api/file`, `GET /api/file/raw`, `GET /api/folder/download`, `GET /api/media` | browser, ios | auth | server | vitest | pending | |
-| R-F2 | `POST /api/file/create|create-dir|delete|move|rename|save|reveal|open-vscode` | browser | auth | server | vitest | pending | |
+| R-F1 | `GET /api/list`, `GET /api/file`, `GET /api/file/raw`, `GET /api/folder/download`, `GET /api/media` | browser, ios | auth | server | vitest | partial | checkpoint 5a: `list` and `file` via anchored fd walks in `workspace/fs.ts`; raw/media/download are 5b pipeline routes |
+| R-F2 | `POST /api/file/create|create-dir|delete|move|rename|save|reveal|open-vscode` | browser | auth | server | vitest | pass | checkpoint 5a: `move` accepts `dest_dir` and the frontend `destination` |
 | R-F3 | `POST /api/file/office-save`, `POST /api/file/path` | none | | dropped | | dropped | Office documents dropped (Decisions) |
 | R-F4 | `POST /api/upload`, `POST /api/upload/rollback` | browser, ios | auth | server | vitest | pending | |
 | R-F5 | `POST /api/upload/extract`, `POST /api/workspace/upload` | none | | dropped | | dropped | |
 | R-F6 | `GET /api/escape/list|file/read|file/raw`, `POST /api/escape/authorize` | none | | dropped | | dropped | |
-| R-F7 | `GET /api/workspaces`, `GET /api/workspaces/suggest`, `POST /api/workspaces/add|remove|rename|reorder` | browser, ios | auth | server | vitest, fixture | pending | |
+| R-F7 | `GET /api/workspaces`, `GET /api/workspaces/suggest`, `POST /api/workspaces/add|remove|rename|reorder` | browser, ios | auth | server | vitest, fixture | pass | checkpoint 5a: `workspace/workspaces.ts`; per-profile config.yaml reads land with checkpoint 7 |
 | R-F8 | `GET /api/git-info`, `GET /api/git/status|diff|branches`, `POST /api/git/checkout|commit|commit-message|commit-message-selected|commit-selected|discard|fetch|pull|push|stage|stash-checkout|unstage` | browser, ios | auth | server (+sidecar for commit-message aux LLM) | vitest | pending | Hardened git runner |
 | R-F9 | `GET /api/rollback/list|diff`, `POST /api/rollback/restore` | browser | auth | server | vitest | pending | Contract fix: `checkpoint` parameter |
 
@@ -144,7 +144,7 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 | R-M4 | `GET /api/commands`, `POST /api/commands/exec` | browser, ios | auth | server + sidecar | vitest, pytest | pending | `bundles`, `bundles/resolve`, `moa/resolve` dropped |
 | R-M5 | `GET /api/notes/sources|search` | browser | auth | server | vitest | pending | `GET /api/notes/item` dropped |
 | R-M6 | `GET /api/wiki/*` | none | | dropped | | dropped | One comment-only reference in the frontend |
-| R-M7 | `POST /api/share/create|revoke`, `GET /api/share/<token>`, `/share` SPA | browser, public | auth / public | server | vitest, fixture | pending | |
+| R-M7 | `POST /api/share/create|revoke`, `GET /api/share/<token>`, `/share` SPA | browser, public | auth / public | server | vitest, fixture | pass | checkpoint 5a: `sessions/shares.ts`, `X-Robots-Tag` on reads |
 | R-M8 | `GET /api/insights`, `GET /api/logs`, `GET /api/system/health`, `GET /api/health/agent`, `POST /api/health/restart`, `GET /api/dashboard/status`, `POST /api/shutdown` | browser, ios | auth / operator | server (+sidecar for agent restart) | vitest | pending | |
 | R-M9 | `GET|POST /api/dashboard/config`, `GET /api/project-os/dashboard`, `POST /api/admin/reload`, `GET /api/gateway/status`, `POST /api/gateway/start|stop|restart`, `/search`, `/v1` | none | | dropped | | dropped | |
 | R-M10 | `GET /api/mcp/servers|tools`, `POST /api/mcp/servers/<name>` actions | browser | auth | server + sidecar | vitest | pending | `PATCH|PUT|DELETE /api/mcp/servers/<name>` dropped; `POST /api/plugins`, `POST /api/mcp/servers/<name>` client-only calls removed |
@@ -171,11 +171,11 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | State | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|
-| P1 | `sessions/<sid>.json`: Session schema and key order, `.tmp.<pid>.<tid>` atomic write, `.bak` shrink rules, metadata-only stubs | server | fixture | pending | byte-identical rewrite of Python-produced fixtures |
-| P2 | `sessions/_index.json`, tombstone files, `_drafts/`, `_run_journal/`, `_turn_journal/` | server | fixture | pending | |
-| P3 | `settings.json` (defaults, allowlist, migrations, `password_hash`, mode-preserving atomic write), `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` | server | fixture | partial | checkpoint 4: `settings.json` store with defaults, migrations, validation, and the mode-preserving atomic writer (`settings.ts`, `fs/atomic.ts`); the other files land with their domains |
+| P1 | `sessions/<sid>.json`: Session schema and key order, `.tmp.<pid>.<tid>` atomic write, `.bak` shrink rules, metadata-only stubs | server | fixture | partial | byte-identical rewrite of Python-produced fixtures; checkpoint 5a: `Session.toDocument()` key order, `.tmp.<pid>.<n>` + fsync + rename, `.bak` shrink guard, metadata-only prefix reads |
+| P2 | `sessions/_index.json`, tombstone files, `_drafts/`, `_run_journal/`, `_turn_journal/` | server | fixture | partial | checkpoint 5a: `_index.json` incremental patch/prune, `_deleted_webui_sessions.json`, `_drafts/`; journals land with checkpoint 6 |
+| P3 | `settings.json` (defaults, allowlist, migrations, `password_hash`, mode-preserving atomic write), `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` | server | fixture | partial | checkpoint 4: `settings.json` store with defaults, migrations, validation, and the mode-preserving atomic writer (`settings.ts`, `fs/atomic.ts`); the other files land with their domains; checkpoint 5a adds `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` |
 | P4 | Auth files: `.signing_key`, `.pbkdf2_key`, `.sessions.json`, `.login_attempts.json`, `passkeys.json`, `.passkey_challenges.json`, `.quota_scope_id` | server | fixture | pending | |
-| P5 | `shares/`, `models_cache*.json`, `media_snapshots/`, `attachments/`, extension files, `sidecar-auth/`, `talaria-relay.json` + PEM + revision, `bootstrap-<port>.log` | server | fixture | pending | |
+| P5 | `shares/`, `models_cache*.json`, `media_snapshots/`, `attachments/`, extension files, `sidecar-auth/`, `talaria-relay.json` + PEM + revision, `bootstrap-<port>.log` | server | fixture | partial | checkpoint 5a: `shares/`; the rest land with their domains |
 | P6 | Hermes home file formats read/written by the server: `config.yaml` (mode/uid/gid-preserving write, personality strip), `.env`, `auth.json`, `active_profile`, profile dirs, `saved_prompts.json`, skills `SKILL.md`, memories, `sessions.json`, gateway state, logs, cost snapshots, checkpoints, plugin manifests, Claude/Codex imports | server | fixture | pending | |
 | P7 | `state.db` read-only projection via `better-sqlite3` (sidebar rows, json content decoding, schema probing, WAL fingerprint, index creation) | server | fixture | pending | |
 | P8 | `state.db` writes (`SessionDB`, `delete_cli_session`) and kanban SQLite | sidecar | pytest | pending | |
