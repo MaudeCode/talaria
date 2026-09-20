@@ -30,6 +30,7 @@ WORKFLOWS = {
     "release-set.yml": {"tooling"},
     "production-cutover.yml": {"tooling"},
     "ios-release-build.yml": {"tooling"},
+    "inspect-testflight.yml": {"tooling"},
 }
 SCRIPTS = {
     "changed-components.py": {"tooling"},
