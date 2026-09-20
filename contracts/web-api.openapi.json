@@ -13985,6 +13985,3223 @@
         }
       }
     },
+    "/api/crons": {
+      "get": {
+        "operationId": "crons.list",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "all_profiles",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "jobs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "toast_notifications": {
+                                "type": "boolean"
+                              },
+                              "monitor": {
+                                "type": "string"
+                              },
+                              "continuity": {
+                                "type": "boolean"
+                              },
+                              "owner_profile": {
+                                "type": "string"
+                              },
+                              "read_only": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "profile",
+                              "toast_notifications",
+                              "monitor",
+                              "continuity",
+                              "owner_profile",
+                              "read_only"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        },
+                        "all_profiles": {
+                          "type": "boolean"
+                        },
+                        "active_profile": {
+                          "type": "string"
+                        },
+                        "other_profile_count": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "jobs",
+                        "all_profiles",
+                        "active_profile",
+                        "other_profile_count"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "jobs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "toast_notifications": {
+                                "type": "boolean"
+                              },
+                              "monitor": {
+                                "type": "string"
+                              },
+                              "continuity": {
+                                "type": "boolean"
+                              },
+                              "owner_profile": {
+                                "type": "string"
+                              },
+                              "read_only": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "profile",
+                              "toast_notifications",
+                              "monitor",
+                              "continuity",
+                              "owner_profile",
+                              "read_only"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        },
+                        "cron_unavailable": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "jobs",
+                        "cron_unavailable"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/history": {
+      "get": {
+        "operationId": "crons.history",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/output": {
+      "get": {
+        "operationId": "crons.output",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/run": {
+      "get": {
+        "operationId": "crons.run",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "crons.runNow",
+        "summary": "Start a manual run in the sidecar; answers immediately with `status: running` (or `already_running`).",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "job_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "elapsed": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "job_id",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/status": {
+      "get": {
+        "operationId": "crons.status",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/delivery-options": {
+      "get": {
+        "operationId": "crons.deliveryOptions",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "platforms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "label"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "platforms"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/create": {
+      "post": {
+        "operationId": "crons.create",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toast_notifications": {
+                          "type": "boolean"
+                        },
+                        "monitor": {
+                          "type": "string"
+                        },
+                        "continuity": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "profile",
+                        "toast_notifications",
+                        "monitor",
+                        "continuity"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/update": {
+      "post": {
+        "operationId": "crons.update",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toast_notifications": {
+                          "type": "boolean"
+                        },
+                        "monitor": {
+                          "type": "string"
+                        },
+                        "continuity": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "profile",
+                        "toast_notifications",
+                        "monitor",
+                        "continuity"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/delete": {
+      "post": {
+        "operationId": "crons.delete",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "job_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "job_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/pause": {
+      "post": {
+        "operationId": "crons.pause",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toast_notifications": {
+                          "type": "boolean"
+                        },
+                        "monitor": {
+                          "type": "string"
+                        },
+                        "continuity": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "profile",
+                        "toast_notifications",
+                        "monitor",
+                        "continuity"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/crons/resume": {
+      "post": {
+        "operationId": "crons.resume",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toast_notifications": {
+                          "type": "boolean"
+                        },
+                        "monitor": {
+                          "type": "string"
+                        },
+                        "continuity": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "profile",
+                        "toast_notifications",
+                        "monitor",
+                        "continuity"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "job"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/boards": {
+      "get": {
+        "operationId": "kanban.boards",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "boards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "slug"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "current": {
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "boards",
+                    "current",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "kanban.createBoard",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "board": {
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "slug"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "current": {
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "board",
+                    "current",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/board": {
+      "get": {
+        "operationId": "kanban.board",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "tenant",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "only_mine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "changed": {
+                          "const": false
+                        },
+                        "latest_event_id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "read_only": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "changed",
+                        "latest_event_id",
+                        "read_only"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "changed": {
+                          "const": true
+                        },
+                        "columns": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "tasks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "status": {
+                                      "type": "string"
+                                    },
+                                    "priority": {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title",
+                                    "status",
+                                    "priority"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "tasks"
+                            ]
+                          }
+                        },
+                        "tenants": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "assignees": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "latest_event_id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "read_only": {
+                          "type": "boolean"
+                        },
+                        "filters": {
+                          "type": "object",
+                          "properties": {
+                            "tenant": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "assignee": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "include_archived": {
+                              "type": "boolean"
+                            },
+                            "only_mine": {
+                              "type": "boolean"
+                            },
+                            "profile": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "tenant",
+                            "assignee",
+                            "include_archived",
+                            "only_mine",
+                            "profile"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "changed",
+                        "columns",
+                        "tenants",
+                        "assignees",
+                        "latest_event_id",
+                        "read_only",
+                        "filters"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/config": {
+      "get": {
+        "operationId": "kanban.config",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "kanban.updateConfig",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lane_by_profile": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/stats": {
+      "get": {
+        "operationId": "kanban.stats",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/assignees": {
+      "get": {
+        "operationId": "kanban.assignees",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "assignees": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "on_disk": {
+                                "type": "boolean"
+                              },
+                              "counts": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "assignees"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/events": {
+      "get": {
+        "operationId": "kanban.events",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "task_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "payload": {},
+                          "created_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "task_id",
+                          "run_id",
+                          "kind",
+                          "created_at"
+                        ]
+                      }
+                    },
+                    "cursor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "latest_event_id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "cursor",
+                    "latest_event_id",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/boards/{slug}/switch": {
+      "post": {
+        "operationId": "kanban.switchBoard",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "current": {
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "current",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/boards/{slug}": {
+      "patch": {
+        "operationId": "kanban.updateBoard",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "board": {
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "slug"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "board",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "kanban.deleteBoard",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "delete": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {},
+                    "current": {
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "current",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/dispatch": {
+      "post": {
+        "operationId": "kanban.dispatch",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "board": {
+                    "type": "string"
+                  },
+                  "dry_run": {
+                    "type": "string"
+                  },
+                  "max": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/bulk": {
+      "post": {
+        "operationId": "kanban.bulk",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "results",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks": {
+      "post": {
+        "operationId": "kanban.createTask",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/links": {
+      "post": {
+        "operationId": "kanban.link",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "kanban.unlinkDelete",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/links/delete": {
+      "post": {
+        "operationId": "kanban.unlink",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/{task_id}": {
+      "get": {
+        "operationId": "kanban.task",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "kanban.patchTask",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/{task_id}/log": {
+      "get": {
+        "operationId": "kanban.taskLog",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/{task_id}/comments": {
+      "post": {
+        "operationId": "kanban.comment",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/{task_id}/block": {
+      "post": {
+        "operationId": "kanban.block",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/{task_id}/unblock": {
+      "post": {
+        "operationId": "kanban.unblock",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/tasks/{task_id}/patch": {
+      "post": {
+        "operationId": "kanban.patch",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/status": {
+      "get": {
+        "operationId": "extensions.status",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "extension_dir_configured": {
+                      "type": "boolean"
+                    },
+                    "extension_dir_valid": {
+                      "type": "boolean"
+                    },
+                    "script_urls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stylesheet_urls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sidecars": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "script_urls": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "stylesheet_urls": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "sidecars": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "manifest_extensions": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "user_disabled": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "script_urls",
+                        "stylesheet_urls",
+                        "sidecars",
+                        "manifest_extensions",
+                        "user_disabled"
+                      ]
+                    },
+                    "manifest": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "gallery_installed": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "source"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "extension_dir_configured",
+                    "extension_dir_valid",
+                    "script_urls",
+                    "stylesheet_urls",
+                    "sidecars",
+                    "counts",
+                    "manifest",
+                    "extensions",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/registry": {
+      "get": {
+        "operationId": "extensions.registry",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {},
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "entries"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/manifests": {
+      "get": {
+        "operationId": "extensions.manifests",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "protocol_version": {
+                      "const": 1
+                    },
+                    "manifests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    }
+                  },
+                  "required": [
+                    "protocol_version",
+                    "manifests"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/toggle": {
+      "post": {
+        "operationId": "extensions.toggle",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {},
+                  "enabled": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "extension_dir_configured": {
+                      "type": "boolean"
+                    },
+                    "extension_dir_valid": {
+                      "type": "boolean"
+                    },
+                    "script_urls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stylesheet_urls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sidecars": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "script_urls": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "stylesheet_urls": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "sidecars": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "manifest_extensions": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "user_disabled": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "script_urls",
+                        "stylesheet_urls",
+                        "sidecars",
+                        "manifest_extensions",
+                        "user_disabled"
+                      ]
+                    },
+                    "manifest": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "gallery_installed": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "source"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "extension_dir_configured",
+                    "extension_dir_valid",
+                    "script_urls",
+                    "stylesheet_urls",
+                    "sidecars",
+                    "counts",
+                    "manifest",
+                    "extensions",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/sidecar-proxy-consent": {
+      "post": {
+        "operationId": "extensions.consent",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {},
+                  "approved": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "extension_dir_configured": {
+                      "type": "boolean"
+                    },
+                    "extension_dir_valid": {
+                      "type": "boolean"
+                    },
+                    "script_urls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "stylesheet_urls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sidecars": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "script_urls": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "stylesheet_urls": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "sidecars": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "manifest_extensions": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "user_disabled": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "script_urls",
+                        "stylesheet_urls",
+                        "sidecars",
+                        "manifest_extensions",
+                        "user_disabled"
+                      ]
+                    },
+                    "manifest": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "gallery_installed": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "source"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "extension_dir_configured",
+                    "extension_dir_valid",
+                    "script_urls",
+                    "stylesheet_urls",
+                    "sidecars",
+                    "counts",
+                    "manifest",
+                    "extensions",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/install": {
+      "post": {
+        "operationId": "extensions.install",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {},
+                  "download_url": {},
+                  "sha256": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "installed": {
+                      "const": true
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "installed",
+                    "id",
+                    "version"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/uninstall": {
+      "post": {
+        "operationId": "extensions.uninstall",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "uninstalled": {
+                      "const": true
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "uninstalled",
+                    "id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/terminal/start": {
+      "post": {
+        "operationId": "terminal.start",
+        "summary": "Spawn (or reuse) the embedded PTY shell for a session workspace (local origin when auth is off).",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "rows": {},
+                  "cols": {},
+                  "restart": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "running": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "session_id",
+                    "workspace",
+                    "running"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/terminal/input": {
+      "post": {
+        "operationId": "terminal.input",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/terminal/resize": {
+      "post": {
+        "operationId": "terminal.resize",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "rows": {},
+                  "cols": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/terminal/close": {
+      "post": {
+        "operationId": "terminal.close",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "closed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "closed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/chat/stream": {
       "get": {
         "summary": "Live agent-turn relay (SSE). Journal-backed frames carry `id: <stream_id>:<seq>`; resume with `after_event_id`, `after_seq`, or `Last-Event-ID`.",
@@ -14446,6 +17663,145 @@
           },
           "404": {
             "description": "Session not found.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/kanban/events/stream": {
+      "get": {
+        "summary": "Kanban task-event feed (SSE): `hello` then `events` batches with `id: <cursor>`; 15 s keepalive.",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Resume after this event id (else `Last-Event-ID`, else 0).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board",
+            "in": "query",
+            "required": false,
+            "description": "Pin the stream to one board slug; omit to follow the active board.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "Invalid board slug.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "503": {
+            "description": "Client stream limit reached.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/terminal/output": {
+      "get": {
+        "summary": "Embedded terminal output (SSE): `output`, `terminal_closed`, `terminal_error` with integer ids and backlog replay from `Last-Event-ID`.",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "description": "Session whose terminal to attach.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "403": {
+            "description": "Local-origin gate refused.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Terminal not running.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/extensions/{path}": {
+      "get": {
+        "summary": "Static assets from the extension root (HTML answers with the panel sandbox CSP).",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Asset bytes.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "Not found (never explains why).",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/sidecar/{path}": {
+      "post": {
+        "summary": "Consented loopback sidecar proxy (any method); headers stripped, 10 s, 512 KiB.",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [],
+        "responses": {
+          "403": {
+            "description": "Consent required or cross-origin request.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "Sidecar unavailable.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "502": {
+            "description": "Upstream failed or too large.",
             "content": {
               "application/json": {}
             }

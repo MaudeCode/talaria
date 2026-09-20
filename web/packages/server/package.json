@@ -21,7 +21,8 @@
     "@maudecode/talaria-web-contracts": "*",
     "@orpc/contract": "1.15.2",
     "@orpc/openapi": "1.15.2",
-    "@orpc/server": "1.15.2"
+    "@orpc/server": "1.15.2",
+    "node-pty": "1.1.0"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

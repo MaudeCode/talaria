@@ -31,7 +31,7 @@ export class StreamSlots {
   get active(): number { return this.held }
 }
 
-class SseWriter {
+export class SseWriter {
   private open = false
   private closed = false
 
@@ -70,7 +70,7 @@ class SseWriter {
   }
 }
 
-function claimOrReject(ctx: RequestContext, connectionClose: boolean): SseWriter | null {
+export function claimOrReject(ctx: RequestContext, connectionClose: boolean): SseWriter | null {
   const release = ctx.deps.streamSlots.claim()
   if (!release) {
     ctx.json({ error: 'Too many concurrent event streams', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })

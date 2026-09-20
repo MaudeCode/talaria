@@ -69,6 +69,24 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Attachment named `hermes-<session_id>.<ext>`.' }, 404: { description: 'Session not found.', contentType: 'application/json' } },
   },
   {
+    method: 'GET', path: '/api/kanban/events/stream', summary: 'Kanban task-event feed (SSE): `hello` then `events` batches with `id: <cursor>`; 15 s keepalive.', tags: ['automation'],
+    query: { since: { description: 'Resume after this event id (else `Last-Event-ID`, else 0).' }, board: { description: 'Pin the stream to one board slug; omit to follow the active board.' } },
+    responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' }, 400: { description: 'Invalid board slug.', contentType: 'application/json' }, 503: { description: 'Client stream limit reached.', contentType: 'application/json' } },
+  },
+  {
+    method: 'GET', path: '/api/terminal/output', summary: 'Embedded terminal output (SSE): `output`, `terminal_closed`, `terminal_error` with integer ids and backlog replay from `Last-Event-ID`.', tags: ['automation'],
+    query: { session_id: { description: 'Session whose terminal to attach.', required: true } },
+    responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' }, 403: { description: 'Local-origin gate refused.', contentType: 'application/json' }, 404: { description: 'Terminal not running.', contentType: 'application/json' } },
+  },
+  {
+    method: 'GET', path: '/extensions/{path}', summary: 'Static assets from the extension root (HTML answers with the panel sandbox CSP).', tags: ['automation'],
+    responses: { 200: { description: 'Asset bytes.', contentType: 'application/octet-stream' }, 404: { description: 'Not found (never explains why).', contentType: 'application/json' } },
+  },
+  {
+    method: 'POST', path: '/api/extensions/{id}/sidecar/{path}', summary: 'Consented loopback sidecar proxy (any method); headers stripped, 10 s, 512 KiB.', tags: ['automation'],
+    responses: { 403: { description: 'Consent required or cross-origin request.', contentType: 'application/json' }, 409: { description: 'Sidecar unavailable.', contentType: 'application/json' }, 502: { description: 'Upstream failed or too large.', contentType: 'application/json' } },
+  },
+  {
     method: 'POST', path: '/api/transcribe', summary: 'Speech-to-text through the Agent (multipart `file`).', tags: ['tools'],
     requestBody: { contentType: 'multipart/form-data', description: 'Field `file` (audio).' },
     responses: { 200: { description: '`{ok, transcript}`.', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },

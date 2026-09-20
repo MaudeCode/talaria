@@ -115,13 +115,13 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-K1 | `GET /api/crons`, `GET /api/crons/history|output|run|status|delivery-options`, `POST /api/crons/create|update|delete|pause|resume|run` | browser, ios | auth | server + sidecar | vitest, pytest | pending | |
+| R-K1 | `GET /api/crons`, `GET /api/crons/history|output|run|status|delivery-options`, `POST /api/crons/create|update|delete|pause|resume|run` | browser, ios | auth | server + sidecar | vitest, pytest | ported (7c) | Cross-profile rows merged in `tools/crons.ts`; manual runs stream through `cron.run` and answer on `started`; selected-profile provider/model snapshots are computed by the sidecar |
 | R-K2 | `GET /api/crons/recent` | none | | dropped | | dropped | |
-| R-K3 | `GET|POST|PATCH|DELETE /api/kanban/*` (boards, board, release switch, tasks, task actions, bulk, comments, log, block/unblock, links, stats, assignees, config, dispatch, events) | browser, ios | auth | server + sidecar | vitest, pytest | pending | Contract fix: real task action set |
-| R-K4 | `GET /api/kanban/events/stream` | ios | auth | server | vitest | pending | SSE, see 3 |
-| R-K5 | `GET /api/extensions/status|manifests|registry`, `POST /api/extensions/install|uninstall|toggle|sidecar-proxy-consent` | browser, ext | auth / operator | server | vitest | pending | |
-| R-K6 | `/extensions/*`, `/api/extensions/<id>/sidecar/*` proxy | ext | auth | server | vitest | pending | |
-| R-K7 | `POST /api/terminal/start|input|resize|close`, `GET /api/terminal/output` | browser | auth (local origin) | server | vitest | pending | `node-pty` |
+| R-K3 | `GET|POST|PATCH|DELETE /api/kanban/*` (boards, board, release switch, tasks, task actions, bulk, comments, log, block/unblock, links, stats, assignees, config, dispatch, events) | browser, ios | auth | server + sidecar | vitest, pytest | ported (7c) | Contract defines the real action set (`patch`, `block`, `unblock`, `comments`, `log`, `bulk`, `dispatch`); `move|archive|unarchive|delete` are frontend-only and go in checkpoint 8 |
+| R-K4 | `GET /api/kanban/events/stream` | ios | auth | server | vitest | ported (7c) | Polls `kanban.events` every 1 s |
+| R-K5 | `GET /api/extensions/status|manifests|registry`, `POST /api/extensions/install|uninstall|toggle|sidecar-proxy-consent` | browser, ext | auth / operator | server | vitest | partial (7c) | token-v1 sidecar auth (`extension_sidecar_auth`) not ported (consent/proxy answer 409/403); manifests exclude dropped dashboard plugins and theme/tts projections |
+| R-K6 | `/extensions/*`, `/api/extensions/<id>/sidecar/*` proxy | ext | auth | server | vitest | ported (7c) | Legacy proxy auth only |
+| R-K7 | `POST /api/terminal/start|input|resize|close`, `GET /api/terminal/output` | browser | auth (local origin) | server | vitest | ported (7c) | `node-pty` (optional native module; 500 `not supported` when it cannot load) |
 
 ### 2f. Settings, profiles, providers, models, onboarding
 
@@ -162,8 +162,8 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 | E1 | `GET /api/chat/stream`: event union (contracts), `id: <stream_id>:<seq>`, replay query precedence, journal replay, close set, 5 s heartbeat | server, contracts | vitest, pw | partial | checkpoint 6: event ids `<stream_id>:<seq>`, `after_event_id`/`after_seq`/`Last-Event-ID` precedence, journal replay, close set, 5 s heartbeat; `metering` ticks and `todo_state` frames pending |
 | E2 | `GET /api/sessions/events`: `sessions_changed`, `gateway_status`, 250 ms drain | server, contracts | vitest | partial | checkpoint 6: `sessions_changed` with the `stream` discriminator; the gateway half reports `watcher not started` until the profile domain lands |
 | E3 | `GET /api/approval/stream`, `GET /api/clarify/stream`: `initial` + event, queue 16 | server, contracts | vitest | pass | checkpoint 6 |
-| E4 | `GET /api/terminal/output`: `output`, `terminal_closed`, `terminal_error`, integer ids, backlog replay | server, contracts | vitest | pending | |
-| E5 | `GET /api/kanban/events/stream`: `hello`, `events`, cursor, 15 s heartbeat | server, contracts | vitest | pending | |
+| E4 | `GET /api/terminal/output`: `output`, `terminal_closed`, `terminal_error`, integer ids, backlog replay | server, contracts | vitest | pass | checkpoint 7c: `api/automation-raw.ts` |
+| E5 | `GET /api/kanban/events/stream`: `hello`, `events`, cursor, 15 s heartbeat | server, contracts | vitest | pass | checkpoint 7c |
 | E6 | Shared: stream slot claim, 503 `client_stream_limit`, `X-Accel-Buffering: no`, chunked env, write deadline, `Connection: close` | server | vitest | partial | checkpoint 6: slot claim with 503 `client_stream_limit` (`HERMES_WEBUI_MAX_SSE_CLIENTS`), `X-Accel-Buffering: no`, `Connection: close` on the chat relay; chunked env and write deadline pending |
 | E7 | Long non-SSE: folder zip streaming, TTS proxy 30 s, extension sidecar proxy 10 s / 512 KiB | server | vitest | pending | |
 
@@ -210,7 +210,7 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 | S1 | Hardened git runner and workspace git info, worktrees, rollback checkpoints, release/update git ops | server | vitest (synthetic repos) | pending | |
 | S2 | Desktop integrations (`open -R`, `xdg-open`, VS Code discovery with container path rewrite), prefill script | server | vitest | pending | |
 | S3 | Gateway lifecycle via `hermes` CLI | sidecar | pytest | pending | |
-| S4 | PTY terminal via `node-pty` (shell selection, env allowlist, resize clamp, backlog, cap, kill escalation, idle reap, close-all) | server | vitest | pending | |
+| S4 | PTY terminal via `node-pty` (shell selection, env allowlist, resize clamp, backlog, cap, kill escalation, idle reap, close-all) | server | vitest | pass | checkpoint 7c: `tools/terminal.ts`; kill escalation SIGHUP → SIGKILL after 1.5 s |
 | S5 | Cron execution child process | sidecar | pytest | pending | |
 
 ## 8. External HTTP integrations

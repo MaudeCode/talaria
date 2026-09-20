@@ -15,6 +15,8 @@ import { RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
 import { chatRouter } from './api/chat-router.js'
 import { settingsRouter } from './api/settings-router.js'
 import { toolsRouter } from './api/tools-router.js'
+import { automationRouter } from './api/automation-router.js'
+import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
@@ -148,12 +150,14 @@ function preflight(ctx: RequestContext): void {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter }
+export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter }
 
 const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
   '/api/chat/stream': handleChatStream,
   '/api/session/stream': handleSessionStream,
   '/api/sessions/events': handleSessionEvents,
+  '/api/kanban/events/stream': handleKanbanEventsStream,
+  '/api/terminal/output': handleTerminalOutput,
   '/api/approval/stream': handleApprovalStream,
   '/api/clarify/stream': handleClarifyStream,
 }
@@ -227,8 +231,17 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         startupUnavailable(ctx)
         return
       }
+      const sidecarProxy = matchSidecarProxy(path)
+      if (sidecarProxy) {
+        await handleExtensionSidecarProxy(ctx, sidecarProxy[0], sidecarProxy[1])
+        return
+      }
       if (ctx.method === 'GET' || ctx.method === 'HEAD') {
         if (handleSpa(ctx)) return
+        if (path.startsWith('/extensions/')) {
+          handleExtensionStatic(ctx)
+          return
+        }
         if (path === '/favicon.ico') {
           serveFavicon(ctx)
           return

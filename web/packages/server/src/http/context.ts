@@ -42,6 +42,10 @@ import type { Onboarding } from '../onboarding.js'
 import type { SkillsService } from '../tools/skills.js'
 import type { McpService } from '../tools/mcp.js'
 import type { WindowLimiter } from '../api/tools-router.js'
+import type { CronService } from '../tools/crons.js'
+import type { KanbanService } from '../tools/kanban.js'
+import type { ExtensionService } from '../tools/extensions.js'
+import type { TerminalRegistry } from '../tools/terminal.js'
 
 export interface AppDeps {
   config: ServerConfig
@@ -123,6 +127,11 @@ export interface AppDeps {
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter
   fetch: typeof fetch
+  // ── crons, kanban, extensions, terminal (checkpoint 7c) ──
+  crons: CronService
+  kanban: KanbanService
+  extensions: ExtensionService
+  terminals: TerminalRegistry
 }
 
 export interface VsCodeConfig {

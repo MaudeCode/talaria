@@ -1,0 +1,173 @@
+/** Kanban event stream, terminal output stream, extension static files, and the extension sidecar proxy (raw handlers). */
+import type { RequestContext } from '../http/context.js'
+import { HttpError } from './router.js'
+import { activeProfileName } from '../auth/gate.js'
+import { claimOrReject, SSE_HEARTBEAT_INTERVAL_MS } from './sse-routes.js'
+import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, fullyUnquote } from '../tools/extensions.js'
+import { kanbanFailure } from '../tools/kanban.js'
+import { HttpFailure } from '../sessions/service.js'
+import { terminalGate } from './automation-router.js'
+import { checkSameOriginBrowserRequest } from '../http/origin.js'
+import { str } from '../util.js'
+import type { TerminalItem } from '../tools/terminal.js'
+
+const KANBAN_POLL_MS = 1_000
+const KANBAN_HEARTBEAT_MS = 15_000
+const PROXY_MAX_RESPONSE = 512 * 1024
+const PROXY_RE = /^\/api\/extensions\/([^/]+)\/sidecar(?:\/(.*))?$/
+const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
+
+const sleep = (ms: number, signal: AbortSignal): Promise<void> => new Promise((resolve) => {
+  if (signal.aborted) { resolve(); return }
+  const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, ms)
+  const onAbort = (): void => { clearTimeout(t); resolve() }
+  signal.addEventListener('abort', onAbort, { once: true })
+})
+
+/** Python `_handle_events_sse_stream`: `hello`, then `events` batches with `id: <cursor>`, 1 s poll, 15 s keepalive. */
+export async function handleKanbanEventsStream(ctx: RequestContext): Promise<void> {
+  const board = str(ctx.query.get('board')).trim() || null
+  const sinceRaw = ctx.query.get('since') ?? ctx.header('last-event-id') ?? null
+  let cursor = sinceRaw === null ? 0 : Number.parseInt(sinceRaw, 10)
+  if (!Number.isFinite(cursor) || cursor < 0) cursor = 0
+  const home = ctx.deps.profileHome(activeProfileName(ctx))
+  if (board) {
+    try { await ctx.deps.kanban.events(home, board, 0, 1) } catch (error) {
+      try { kanbanFailure(error) } catch (mapped) { if (mapped instanceof HttpFailure) { ctx.json({ error: mapped.message }, { status: mapped.status }); return } }
+      throw error
+    }
+  }
+  const sse = claimOrReject(ctx, true)
+  if (!sse) return
+  const abort = new AbortController()
+  ctx.res.on('close', () => { abort.abort() })
+  try {
+    sse.start()
+    sse.event('hello', { cursor, board })
+    let lastWrite = Date.now()
+    while (!sse.isClosed && !abort.signal.aborted) {
+      let events: unknown[] = []
+      try {
+        const page = await ctx.deps.kanban.events(home, board, cursor, 200)
+        events = Array.isArray(page.events) ? page.events : []
+        if (events.length) cursor = Number(page.cursor) || cursor
+      } catch { events = [] }
+      if (sse.isClosed) return
+      if (events.length) { sse.event('events', { events, cursor }, String(cursor)); lastWrite = Date.now() }
+      else if (Date.now() - lastWrite >= KANBAN_HEARTBEAT_MS) { sse.comment('keepalive'); lastWrite = Date.now() }
+      await sleep(KANBAN_POLL_MS, abort.signal)
+    }
+  } finally {
+    sse.end()
+  }
+}
+
+/** Python `_handle_terminal_output`: backlog replay after `Last-Event-ID`, integer ids, 5 s heartbeat, close on `terminal_closed`/`terminal_error`. */
+export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
+  try {
+    await terminalGate(ctx)
+  } catch (error) {
+    if (error instanceof HttpError) { ctx.json({ error: error.message }, { status: error.status }); return }
+    throw error
+  }
+  const sid = str(ctx.query.get('session_id')).trim()
+  if (!sid) { ctx.json({ error: 'session_id required' }, { status: 400 }); return }
+  let session
+  try { session = ctx.deps.sessionStore.get(sid, { metadataOnly: true }) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) { ctx.json({ error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' }, { status: 400 }); return }
+  const term = ctx.deps.terminals.get(sid)
+  if (!term) { ctx.json({ error: 'terminal not running' }, { status: 404 }); return }
+  const lastId = (ctx.header('last-event-id') ?? '').trim()
+  const afterSeq = lastId && /^\d+$/.test(lastId) ? Math.max(0, Number.parseInt(lastId, 10)) : null
+  const sse = claimOrReject(ctx, true)
+  if (!sse) return
+  const queue: TerminalItem[] = []
+  let wake: (() => void) | null = null
+  const unsubscribe = term.subscribe(afterSeq, (item) => { queue.push(item); wake?.() })
+  const abort = new AbortController()
+  ctx.res.on('close', () => { abort.abort(); wake?.() })
+  try {
+    sse.start()
+    let lastWrite = Date.now()
+    while (!sse.isClosed && !abort.signal.aborted) {
+      const item = queue.shift()
+      if (item) {
+        sse.event(item.event, item.data, String(item.seq))
+        lastWrite = Date.now()
+        if (item.event === 'terminal_closed' || item.event === 'terminal_error') return
+        continue
+      }
+      if (term.closed) { sse.event('terminal_closed', { exit_code: term.exitCode }); return }
+      const remaining = SSE_HEARTBEAT_INTERVAL_MS - (Date.now() - lastWrite)
+      if (remaining <= 0) { sse.comment('terminal heartbeat'); lastWrite = Date.now(); continue }
+      await new Promise<void>((resolve) => { wake = resolve; const t = setTimeout(resolve, remaining); abort.signal.addEventListener('abort', () => { clearTimeout(t); resolve() }, { once: true }) })
+      wake = null
+    }
+  } finally {
+    unsubscribe()
+    sse.end()
+  }
+}
+
+/** `/extensions/*`: always 200 or a bare 404 (Python `serve_extension_static`). */
+export function handleExtensionStatic(ctx: RequestContext): void {
+  const rel = fullyUnquote(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length))
+  const file = ctx.deps.extensions.staticFile(rel)
+  if (!file) { ctx.json({ error: 'not found' }, { status: 404 }); return }
+  const headers: Record<string, string> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
+  if (file.html) { headers['Content-Security-Policy'] = EXTENSION_PANEL_SANDBOX_CSP; headers['X-Frame-Options'] = 'SAMEORIGIN' }
+  ctx.send({ status: 200, headers, body: file.body, security: true })
+}
+
+export function matchSidecarProxy(path: string): [string, string] | null {
+  const m = PROXY_RE.exec(path)
+  return m ? [m[1] ?? '', m[2] ?? ''] : null
+}
+
+/** Python `_handle_extension_sidecar_proxy`: same-origin browser provenance on every method, header stripping, 10 s, 512 KiB. */
+export async function handleExtensionSidecarProxy(ctx: RequestContext, extensionId: string, proxyPath: string): Promise<void> {
+  const env = ctx.deps.config.env
+  const provenance = checkSameOriginBrowserRequest({ origin: ctx.header('origin'), referer: ctx.header('referer'), secFetchSite: ctx.header('sec-fetch-site'), host: ctx.header('host'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host') }, env, { requireProvenance: true })
+  if (provenance !== null) { ctx.json({ error: 'Cross-origin request rejected' }, { status: 403 }); return }
+  let body: Buffer | null = null
+  if (ctx.method !== 'GET' && ctx.method !== 'HEAD') {
+    try { body = await ctx.readRawBody(20 * 1024 * 1024) } catch (error) { ctx.json({ error: str((error as Error).message) }, { status: /too large/i.test(str((error as Error).message)) ? 413 : 400 }); return }
+  }
+  let target: { origin: string; upstream_url: string }
+  try {
+    target = await ctx.deps.extensions.proxyTarget(decodeURIComponent(extensionId), proxyPath, ctx.search.replace(/^\?/, ''))
+  } catch (error) {
+    if (error instanceof ExtensionError) { ctx.json({ error: error.message }, { status: error.status }); return }
+    throw error
+  }
+  const headers: Record<string, string> = {}
+  for (const [name, value] of Object.entries(ctx.req.headers)) {
+    const lower = name.toLowerCase()
+    if (HOP_BY_HOP.has(lower) || ['authorization', 'cookie', 'content-length', 'host', 'origin', 'referer'].includes(lower) || lower.startsWith('x-csrf') || lower.startsWith('x-hermes-')) continue
+    if (typeof value === 'string') headers[name] = value
+  }
+  try {
+    const res = await ctx.deps.fetch(target.upstream_url, { method: ctx.method, headers, ...(body ? { body } : {}), redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location') ?? ''
+      let resolved: URL | null = null
+      try { resolved = new URL(location, target.upstream_url) } catch { resolved = null }
+      if (resolved?.origin !== new URL(target.origin).origin) { ctx.json({ error: 'Extension sidecar redirect crossed declared origin' }, { status: 502 }); return }
+    }
+    const raw = Buffer.from(await res.arrayBuffer())
+    if (raw.length > PROXY_MAX_RESPONSE) { ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 }); return }
+    const out: Record<string, string> = {}
+    let contentType = false
+    res.headers.forEach((value, name) => {
+      const lower = name.toLowerCase()
+      if (HOP_BY_HOP.has(lower) || lower === 'content-length' || lower === 'set-cookie' || lower === 'content-encoding' || lower.startsWith('x-hermes-')) return
+      if (lower === 'content-type') contentType = true
+      out[name] = value
+    })
+    if (!contentType) out['Content-Type'] = 'application/octet-stream'
+    out['Cache-Control'] = 'no-store'
+    ctx.send({ status: res.status, headers: out, body: raw, security: true, gzip: false })
+  } catch (error) {
+    ctx.json({ error: `Extension sidecar request failed: ${str((error as Error).message)}` }, { status: 502 })
+  }
+}

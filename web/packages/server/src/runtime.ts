@@ -39,6 +39,10 @@ import { Onboarding } from './onboarding.js'
 import { SkillsService } from './tools/skills.js'
 import { McpService } from './tools/mcp.js'
 import { WindowLimiter } from './api/tools-router.js'
+import { CronService } from './tools/crons.js'
+import { KanbanService } from './tools/kanban.js'
+import { ExtensionService } from './tools/extensions.js'
+import { TerminalRegistry } from './tools/terminal.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
   log?: (line: string) => void
@@ -49,6 +53,8 @@ export interface CreateDepsOptions extends LoadConfigOptions {
   sidecar?: SidecarLike | null
   /** Outbound HTTP (TTS proxies, dashboard probe, OpenRouter); tests inject a stub. */
   fetch?: typeof fetch
+  /** `node-pty` module override (tests inject a fake); null disables the terminal. */
+  pty?: import('./tools/terminal.js').PtyModuleLike | null
 }
 
 export function packageVersion(): string | undefined {
@@ -212,7 +218,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     agentName: () => { try { const v = settings.load().bot_name; return typeof v === 'string' && v ? v : 'Hermes' } catch { return 'Hermes' } },
     titleGenerationEnabled: () => { try { return settings.load().auto_title_generation !== false } catch { return true } },
   })
-  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget), ...(opts.fetch ? { fetch: opts.fetch } : {}) })
+  // Services read `deps.fetch` lazily so tests can swap the outbound HTTP client after boot.
+  const lazyFetch: typeof fetch = (input, init) => deps.fetch(input, init)
+  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget), fetch: lazyFetch })
   const agentStatus = () => {
     const describe = sidecar?.describe ?? null
     const found = Boolean(describe?.agent_dir)
@@ -246,6 +254,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   settings.hooks.defaultModel = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); if (!cfg) return ''; if (typeof cfg.model === 'string') return cfg.model.trim(); const d = asDict(cfg.model).default; return typeof d === 'string' ? d.trim() : '' }
   settings.hooks.defaultModelProvider = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); const p = asDict(cfg?.model).provider; return typeof p === 'string' && p ? p : undefined }
+  const terminals = new TerminalRegistry({ env, now: () => Date.now(), log, ...(opts.pty !== undefined ? { pty: opts.pty } : {}) })
   const vscode = () => ({
     configuredCommand: 'code',
     command: (): string | null => {
@@ -255,7 +264,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     translate: (path: string) => path,
   })
-  return {
+  const deps: AppDeps = {
     config,
     settings,
     auth,
@@ -321,10 +330,22 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
     fetch: opts.fetch ?? fetch,
+    crons: new CronService({
+      sidecar: () => sidecar,
+      profileHome,
+      profileNames: async () => (await profiles.list('default')).map((r) => ({ name: String(r.name), visible: r.visible !== false })),
+      profilesMatch,
+      isolatedProfileMode: () => false,
+      log,
+    }),
+    kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
+    extensions: new ExtensionService({ env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
+    terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
       return result.text
     },
   }
+  return deps
 }
