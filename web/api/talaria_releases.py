@@ -419,12 +419,12 @@ def verify_release_source(root, release, run_git):
     """Check published metadata against immutable source blobs without importing code."""
     source, tag = release["sourceRevision"], release["tag"]
     files = {}
-    for name in ("api/agent_dependency.json", "api/contract_versions.json", "UPSTREAM_BASE_SHA"):
+    for name in ("sidecar/agent_dependency.json", "api/contract_versions.json", "UPSTREAM_BASE_SHA"):
         contents, exists = run_git(["show", f"{source}:web/{name}"], root)
         if not exists:
             raise ValueError("missing release metadata")
         files[name] = contents.strip() if name.endswith("SHA") else json.loads(contents)
-    pin, versions = files["api/agent_dependency.json"], files["api/contract_versions.json"]
+    pin, versions = files["sidecar/agent_dependency.json"], files["api/contract_versions.json"]
     expected = {"tag": tag, "version": release["version"], "sourceRevision": source, "releaseSet": source,
                 "upstreamBase": files["UPSTREAM_BASE_SHA"],
                 "compatibleAgent": {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},

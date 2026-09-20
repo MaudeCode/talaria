@@ -61,7 +61,7 @@ def test_flake_checks_package_with_only_hermes_venv_metadata():
 
 
 def test_readme_wires_published_agent_flake_package():
-    pin = json.loads((ROOT / 'api/agent_dependency.json').read_text())
+    pin = json.loads((ROOT / 'sidecar/agent_dependency.json').read_text())
     assert f'hermes-agent.url = "github:NousResearch/hermes-agent/{pin["x-talaria"]["sourceRevision"]}";' in README
     assert "agent.package = hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.default;" in README
     assert 'hermesHome = "/var/lib/hermes/.hermes";' in README

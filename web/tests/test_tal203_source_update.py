@@ -25,7 +25,7 @@ def source_install(tmp_path, monkeypatch):
     versions = {"appWeb": {"fixtureVersion": 1}, "webRelay": {"protocolVersion": 2}}
     pin = {"x-talaria": {"version": "0.0.1", "sourceRevision": "d" * 40},
            "services": {"hermes-agent": {"image": "docker.io/nousresearch/hermes-agent@sha256:" + "e" * 64}}}
-    for relative, value in (("web/api/agent_dependency.json", pin), ("web/api/contract_versions.json", versions), ("contracts/versions.json", versions)):
+    for relative, value in (("web/sidecar/agent_dependency.json", pin), ("web/api/contract_versions.json", versions), ("contracts/versions.json", versions)):
         (upstream / relative).write_text(json.dumps(value))
     git(upstream, "add", ".")
     git(upstream, "commit", "-m", "synthetic old release")

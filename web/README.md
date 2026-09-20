@@ -762,7 +762,7 @@ The WebUI is still coupled to Hermes Agent internals for runtime execution, prov
 **Compatibility policy**
 - App, Web, Relay and Hermes Agent keep independent versions.
 - A completed Talaria release set records the tested contract capabilities and the exact compatible Agent source/image identity.
-- Local bootstrap and Compose defaults use `api/agent_dependency.json`; existing Agent installations remain a separate operator-managed dependency.
+- Local bootstrap and Compose defaults use `sidecar/agent_dependency.json`; existing Agent installations remain a separate operator-managed dependency.
 - Peer versions need not be identical. Report `/health` release metadata when diagnosing compatibility problems.
 
 **Docker users**: pin both image tags (or corresponding pinned source revisions) rather than using `latest` on one side and a fixed tag on the other. When upgrading the multi-container setup, follow the agent-image upgrade procedure in [`docs/docker.md`](docs/docker.md) (which requires dropping the `hermes-agent-src` volume before recreating). The current source-boundary status is tracked in [`docs/rfcs/agent-source-boundary.md`](docs/rfcs/agent-source-boundary.md).

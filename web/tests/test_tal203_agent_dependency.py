@@ -7,7 +7,7 @@ import bootstrap
 
 
 def test_bootstrap_installer_pins_script_and_checkout(monkeypatch):
-    pin = json.loads((Path(__file__).parents[1] / "api/agent_dependency.json").read_text())
+    pin = json.loads((Path(__file__).parents[1] / "sidecar/agent_dependency.json").read_text())
     sha = pin["x-talaria"]["sourceRevision"]
     calls = []
     monkeypatch.setattr(bootstrap.platform, "system", lambda: "Linux")

@@ -1,0 +1,18 @@
+{
+  "params": { "rpc_version": 1 },
+  "result": {
+    "rpc_version": 1,
+    "python": "/home/user/.hermes/hermes-agent/venv/bin/python",
+    "python_version": "3.11.15",
+    "agent_dir": "/home/user/.hermes/hermes-agent",
+    "agent_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6",
+    "agent_version": "0.21.3",
+    "pinned_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6",
+    "pinned_version": "0.21.3",
+    "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:72029c3a45c0ae88084598c7a113acc0a7d5a7d94e3225255d6356fcb6623db3",
+    "compatible": true,
+    "stale": false,
+    "update_state": "unverified",
+    "import_error": null
+  }
+}

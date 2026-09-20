@@ -92,7 +92,7 @@ def test_source_stamp_requires_its_actual_checkout_revision(tmp_path, monkeypatc
 @pytest.mark.parametrize("component", ["app", "web", "relay"])
 def test_stamp_requires_clean_exact_checkout_and_cannot_overwrite(tmp_path, component):
     root = Path(__file__).resolve().parents[2]
-    for relative in ("scripts/stamp-release.py", "web/api/__init__.py", "web/api/release_info.py", "web/api/agent_dependency.json", "web/api/contract_versions.json", "contracts/versions.json", "relay/convex/releaseInfo.json", "app/Talaria/Resources/Info.plist", "app/TalariaLiveActivityWidget/Resources/Info.plist"):
+    for relative in ("scripts/stamp-release.py", "web/api/__init__.py", "web/api/release_info.py", "web/sidecar/agent_dependency.json", "web/api/contract_versions.json", "contracts/versions.json", "relay/convex/releaseInfo.json", "app/Talaria/Resources/Info.plist", "app/TalariaLiveActivityWidget/Resources/Info.plist"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / relative, target)

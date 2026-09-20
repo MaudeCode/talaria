@@ -16,7 +16,7 @@ def main():
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text())
     source = plan["components"]["web"]["sourceRevision"]
-    pin = json.loads(subprocess.check_output(["git", "-C", str(ROOT), "show", f"{source}:web/api/agent_dependency.json"]))
+    pin = json.loads(subprocess.check_output(["git", "-C", str(ROOT), "show", f"{source}:web/sidecar/agent_dependency.json"]))
     identity = {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]}
     if identity != plan["agent"]:
         raise ValueError("selected Web source and planned Agent identity differ")

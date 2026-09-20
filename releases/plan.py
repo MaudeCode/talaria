@@ -93,7 +93,7 @@ def resolve(root, request, previous=None):
             elif name == "web":
                 versions = read_at(root, source, "web/api/contract_versions.json")
                 capabilities = {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]}
-                pin = read_at(root, source, "web/api/agent_dependency.json")
+                pin = read_at(root, source, "web/sidecar/agent_dependency.json")
                 plan["agent"] = {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]}
                 component["upstreamBase"] = git(root, "show", f"{source}:web/UPSTREAM_BASE_SHA")
                 if not SHA.fullmatch(component["upstreamBase"]):

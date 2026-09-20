@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tests", nargs="*", help="Optional native Web test selectors; defaults to the full suite.")
     args = parser.parse_args()
-    pin = json.loads((ROOT / "web/api/agent_dependency.json").read_text())
+    pin = json.loads((ROOT / "web/sidecar/agent_dependency.json").read_text())
     sha = pin["x-talaria"]["sourceRevision"]
     version = pin["x-talaria"]["version"]
     image = pin["services"]["hermes-agent"]["image"]

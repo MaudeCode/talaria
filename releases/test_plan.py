@@ -24,7 +24,7 @@ class PlanTests(unittest.TestCase):
         self.git("commit", "-m", "synthetic base")
         base = self.git("rev-parse", "HEAD")
         repository = Path(__file__).resolve().parents[1]
-        for name in ("app/Talaria/Resources/Info.plist", "web/api/agent_dependency.json",
+        for name in ("app/Talaria/Resources/Info.plist", "web/sidecar/agent_dependency.json",
                      "web/api/contract_versions.json", "relay/convex/releaseInfo.json"):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)

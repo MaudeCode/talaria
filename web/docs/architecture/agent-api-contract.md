@@ -18,7 +18,7 @@ fixtures.
 ## Current boundary
 
 Talaria's tested external Agent identity is recorded in
-`api/agent_dependency.json`: an exact package version, source commit and image
+`sidecar/agent_dependency.json`: an exact package version, source commit and image
 digest. Bootstrap fetches the installer from that commit and passes its commit
 pin. Existing Agent installations are discovered and retained; the Web launcher
 does not force a downgrade. Both multi-container Compose variants inherit their

@@ -35,7 +35,7 @@ def migration(tmp_path, monkeypatch):
     git(tmp_path, "clone", str(legacy), str(upstream))
     (upstream / "web").mkdir()
     git(upstream, "mv", "server.py", "api", "web/")
-    for name in ("api/agent_dependency.json", "api/contract_versions.json"):
+    for name in ("sidecar/agent_dependency.json", "api/contract_versions.json"):
         shutil.copyfile(root / "web" / name, upstream / "web" / name)
     (upstream / "web/UPSTREAM_BASE_SHA").write_text(old + "\n")
     for name, text in (("app/ios.txt", "unrelated iOS bytes"), ("relay/backend.txt", "unrelated Relay bytes"),
@@ -47,7 +47,7 @@ def migration(tmp_path, monkeypatch):
     git(upstream, "commit", "-m", "synthetic monorepo import")
     new = git(upstream, "rev-parse", "HEAD")
     git(upstream, "tag", "-a", "web-v2.0.0", "-m", "synthetic published tag")
-    pin = json.loads((upstream / "web/api/agent_dependency.json").read_text())
+    pin = json.loads((upstream / "web/sidecar/agent_dependency.json").read_text())
     release = {"tag": "web-v2.0.0", "version": "2.0.0", "sourceRevision": new,
                "runtime": {"tag": "web-v2.0.0", "version": "2.0.0", "sourceRevision": new, "releaseSet": new,
                            "upstreamBase": old, "contracts": {"appWeb": [1], "webRelay": [2]},

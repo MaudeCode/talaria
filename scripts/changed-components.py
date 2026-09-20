@@ -140,8 +140,8 @@ def path_suites(path):
             return {"docker", "web_python"}
         if local in ("pyproject.toml", "setup.cfg", "setup.py", "uv.lock", "flake.nix", "flake.lock", ".env.example") or local.startswith("requirements"):
             return WEB_BUILD
-        if local == "api/agent_dependency.json":
-            return {"web_python", "docker", "contracts"}
+        if local == "sidecar/agent_dependency.json":
+            return {"web_python", "web_server", "docker", "contracts"}
         # Response producers are spread across api/, not only routes.py. Validate
         # both browser consumers and the focused native App/Web contract suite.
         if local == "server.py" or local.startswith("api/"):

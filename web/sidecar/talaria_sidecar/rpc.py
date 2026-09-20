@@ -1,0 +1,177 @@
+"""Newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation.
+
+One line per message. Requests dispatch on a worker thread each; a method may
+emit ``stream`` frames tagged with its request id before it returns its result.
+``rpc.cancel`` sets the request's cancel event; the method decides how to stop
+and still returns (a result with ``status: "cancelled"`` or a CANCELLED error).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+import threading
+import traceback
+from typing import Any, Callable
+
+from .errors import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
+    METHOD_NOT_FOUND,
+    PARSE_ERROR,
+    Cancelled,
+    RpcError,
+)
+
+log = logging.getLogger("talaria_sidecar.rpc")
+
+Handler = Callable[["CallContext", dict], Any]
+
+
+class CallContext:
+    """Per-request handle: stream emission and cooperative cancellation."""
+
+    def __init__(self, server: "RpcServer", request_id: Any, method: str):
+        self.server = server
+        self.id = request_id
+        self.method = method
+        self.cancel_event = threading.Event()
+        self._seq = 0
+        self._seq_lock = threading.Lock()
+
+    @property
+    def cancelled(self) -> bool:
+        return self.cancel_event.is_set()
+
+    def check_cancelled(self) -> None:
+        if self.cancel_event.is_set():
+            raise Cancelled()
+
+    def emit(self, event: str, data: Any = None) -> None:
+        """Send one stream frame for this request."""
+        with self._seq_lock:
+            self._seq += 1
+            seq = self._seq
+        self.server.notify("stream", {"id": self.id, "seq": seq, "event": event, "data": data if data is not None else {}})
+
+
+class RpcServer:
+    def __init__(self, methods: dict[str, Handler], *, stdin=None, stdout=None):
+        self.methods = dict(methods)
+        self.methods.setdefault("rpc.cancel", self._cancel)
+        self.methods.setdefault("rpc.methods", lambda ctx, params: {"methods": sorted(self.methods)})
+        self._in = stdin or sys.stdin.buffer
+        self._out = stdout or sys.stdout.buffer
+        self._write_lock = threading.Lock()
+        self._active: dict[Any, CallContext] = {}
+        self._active_lock = threading.Lock()
+        self._closed = threading.Event()
+        self.exit_code = 0
+
+    # ── output ────────────────────────────────────────────────────────────
+    def _write(self, message: dict) -> None:
+        line = json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n"
+        data = line.encode("utf-8")
+        with self._write_lock:
+            try:
+                self._out.write(data)
+                self._out.flush()
+            except (BrokenPipeError, OSError, ValueError):
+                self._closed.set()
+
+    def notify(self, method: str, params: dict) -> None:
+        self._write({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def _result(self, request_id: Any, result: Any) -> None:
+        self._write({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+    def _error(self, request_id: Any, code: int, message: str, data: dict | None = None) -> None:
+        error: dict[str, Any] = {"code": code, "message": message}
+        if data:
+            error["data"] = data
+        self._write({"jsonrpc": "2.0", "id": request_id, "error": error})
+
+    # ── built-ins ─────────────────────────────────────────────────────────
+    def _cancel(self, ctx: CallContext, params: dict) -> dict:
+        target = params.get("id") if isinstance(params, dict) else None
+        with self._active_lock:
+            active = self._active.get(target)
+        if active is None:
+            return {"cancelled": False, "reason": "not_active"}
+        active.cancel_event.set()
+        return {"cancelled": True}
+
+    def request_shutdown(self, exit_code: int = 0) -> None:
+        self.exit_code = exit_code
+        self._closed.set()
+
+    # ── dispatch ──────────────────────────────────────────────────────────
+    def _dispatch(self, request: dict) -> None:
+        request_id = request.get("id")
+        method = request.get("method")
+        params = request.get("params")
+        if params is None:
+            params = {}
+        if not isinstance(method, str) or not isinstance(params, dict):
+            if request_id is not None:
+                self._error(request_id, INVALID_REQUEST, "method must be a string and params an object")
+            return
+        handler = self.methods.get(method)
+        if handler is None:
+            if request_id is not None:
+                self._error(request_id, METHOD_NOT_FOUND, f"unknown method {method}")
+            return
+        ctx = CallContext(self, request_id, method)
+        if request_id is not None:
+            with self._active_lock:
+                self._active[request_id] = ctx
+        try:
+            result = handler(ctx, params)
+            if request_id is not None:
+                self._result(request_id, result if result is not None else {})
+        except RpcError as exc:
+            if request_id is not None:
+                error = exc.to_json()
+                self._error(request_id, error["code"], error["message"], error.get("data"))
+        except TypeError as exc:
+            # Wrong keyword arguments reaching a wrapped Agent function.
+            log.debug("invalid params for %s", method, exc_info=True)
+            if request_id is not None:
+                self._error(request_id, INVALID_PARAMS, str(exc))
+        except Exception as exc:  # noqa: BLE001 - every unexpected failure becomes a typed error
+            log.error("method %s failed: %s\n%s", method, exc, traceback.format_exc())
+            if request_id is not None:
+                self._error(request_id, INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
+        finally:
+            if request_id is not None:
+                with self._active_lock:
+                    self._active.pop(request_id, None)
+
+    def serve_forever(self) -> int:
+        """Read requests until stdin closes or shutdown is requested."""
+        while not self._closed.is_set():
+            try:
+                raw = self._in.readline()
+            except (OSError, ValueError):
+                break
+            if not raw:
+                break
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                request = json.loads(raw)
+            except ValueError:
+                self._error(None, PARSE_ERROR, "invalid JSON")
+                continue
+            if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
+                self._error(request.get("id") if isinstance(request, dict) else None, INVALID_REQUEST, "expected a JSON-RPC 2.0 request object")
+                continue
+            if request.get("method") == "rpc.cancel":
+                # Cancellation must not queue behind the call it targets.
+                self._dispatch(request)
+                continue
+            threading.Thread(target=self._dispatch, args=(request,), name=f"rpc-{request.get('method')}", daemon=True).start()
+        return self.exit_code

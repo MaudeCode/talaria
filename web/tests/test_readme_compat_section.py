@@ -11,7 +11,7 @@ def test_readme_has_compatibility_section():
     )
 
     assert "exact compatible Agent source/image identity" in readme
-    assert "api/agent_dependency.json" in readme
+    assert "sidecar/agent_dependency.json" in readme
 
     assert "pin both image tags" in readme, (
         "README.md Compatibility section must include Docker pin guidance "

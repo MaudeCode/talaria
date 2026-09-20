@@ -83,7 +83,7 @@ def test_wheel_build_contains_runtime_tree(extracted_wheel):
         assert "mcp_server.py" in names
         assert "api/config.py" in names
         assert "api/_scm_version.py" in names
-        assert "api/agent_dependency.json" in names
+        assert "sidecar/agent_dependency.json" in names
         assert "api/contract_versions.json" in names
         assert "static/__init__.py" in names
         # HWEB-100: the committed frontend build ships inside the wheel.
