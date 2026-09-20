@@ -19,9 +19,35 @@ from collect import collect
 from publish import authorize, finalize, relay, verify_ipa
 import publish
 from test_release_set import candidate, complete
+from cli import require_latest_predecessor
 
 
 class PublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch("publish.require_latest_predecessor", return_value=[], create=True))
+
+    def test_finalization_rejects_superseded_set_but_allows_exact_set_retry(self):
+        manifest = complete(candidate())
+        plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "web-build/wheel/synthetic.whl"
+            wheel.parent.mkdir(parents=True)
+            wheel.write_bytes(b"synthetic")
+            for latest in (None, manifest["releaseSet"], "f" * 40):
+                releases = [] if latest is None else [{"tag_name": "release-set-" + latest,
+                                                       "draft": False, "published_at": "2026-01-01"}]
+                with self.subTest(latest=latest), patch("publish._publish_release") as publish_release, \
+                        patch("publish.require_latest_predecessor", wraps=require_latest_predecessor), \
+                        patch("cli.subprocess.check_output", return_value=json.dumps([releases])):
+                    if latest == "f" * 40:
+                        with self.assertRaisesRegex(ValueError, "latest published"):
+                            finalize(plan, manifest, None, root)
+                        publish_release.assert_not_called()
+                    else:
+                        finalize(plan, manifest, None, root)
+                        self.assertEqual(publish_release.call_count, 4)
+
     def test_app_receipt_requires_verified_apple_readback(self):
         plan = {"releaseSet": "a" * 40, "changed": {"app": True}, "contracts": {"appWeb": {"app": [1]}},
                 "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0"}}}
@@ -211,6 +237,11 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(recovery["jobs"]["publish-set"]["needs"], "app")
         self.assertNotIn("secrets.", json.dumps(recovery["jobs"]["publish-set"]))
         self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})
+        app_steps = recovery["jobs"]["app"]["steps"]
+        upload_index = next(index for index, step in enumerate(app_steps) if "require Apple VALID" in step.get("name", ""))
+        self.assertTrue(any("releases/recover.py" in step.get("run", "") for step in app_steps[:upload_index]))
+        self.assertFalse(any("cli.py assemble" in step.get("run", "") for step in app_steps[:upload_index]),
+                         "Partial publication receipts must not be assembled as a dry-run candidate")
 
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):

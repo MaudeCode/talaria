@@ -59,16 +59,8 @@ jobs:
           git archive "$GITHUB_WORKFLOW_SHA" releases/publish.py app/ci/upload_testflight.rb app/ci/app_store_connect.rb |
             tar -x -C "$RUNNER_TEMP/reviewed-publisher"
           git checkout --detach "$SOURCE"
-      - name: Verify all original build and publication receipts before upload
-        run: |
-          set -euo pipefail
-          "$RELEASE_PYTHON" releases/collect.py "$RUNNER_TEMP/recovered" "$RUNNER_TEMP/receipts"
-          options=()
-          previous="$RUNNER_TEMP/recovered/release-plan/previous.json"
-          if [[ -f "$previous" ]]; then options+=(--previous "$previous"); fi
-          "$RELEASE_PYTHON" releases/cli.py assemble --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
-            --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/recovered/release-plan/notes" \
-            --output "$RUNNER_TEMP/recovery-candidate.json" "${options[@]}"
+      # recover.py authenticates the successful original build/publication jobs
+      # and their exact handoffs. A partially published set is not a dry run.
       - name: Resume the original verified IPA and require Apple VALID readback
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
