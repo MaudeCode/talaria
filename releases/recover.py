@@ -16,7 +16,9 @@ from publish import require_current_predecessor
 
 
 def api(path):
-    return subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/{path}"], text=True)
+    # Job logs contain ANSI bytes. Capture them for parsing, never terminal output.
+    flags = ["--allow-escape-sequences"] if path.endswith("/logs") else []
+    return subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/{path}", *flags], text=True)
 
 
 def authenticate(run, attempt, metadata, jobs, log, runner):
