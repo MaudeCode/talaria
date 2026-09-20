@@ -13,7 +13,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from cli import REPOSITORY, ROOT, load, receipt, run_url, unused_release, write
+from cli import REPOSITORY, ROOT, load, receipt, require_latest_predecessor, run_url, unused_release, write
 from plan import git
 from release_set import validate
 
@@ -21,7 +21,9 @@ from release_set import validate
 def authorize(plan):
     if (plan.get("dryRun") is not False or os.environ.get("GITHUB_REF") != "refs/heads/main"
             or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
-            or os.environ.get("GITHUB_WORKFLOW_REF") != f"{REPOSITORY}/.github/workflows/production-cutover.yml@refs/heads/main"):
+            or os.environ.get("GITHUB_WORKFLOW_REF") not in {
+                f"{REPOSITORY}/.github/workflows/{name}@refs/heads/main"
+                for name in ("production-cutover.yml", "recover-cutover.yml")}):
         raise ValueError("production requires the trusted main cutover workflow")
     run_url()
     if git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
@@ -153,6 +155,15 @@ def _publish_release(tag, source, notes, files, identity, *, latest=False):
             raise ValueError("release publication readback is still a draft")
 
 
+def require_current_predecessor(plan, previous):
+    try:
+        require_latest_predecessor(previous)
+    except ValueError:
+        # A retry may follow this exact root's successful publication but failed
+        # readback/cleanup. _publish_release still requires identical contents.
+        require_latest_predecessor({"releaseSet": plan["releaseSet"]})
+
+
 def finalize(plan, manifest, previous, artifacts):
     validate(manifest, previous)
     if manifest["status"] != "complete" or manifest["releaseSet"] != plan["releaseSet"]:
@@ -164,6 +175,7 @@ def finalize(plan, manifest, previous, artifacts):
             if key in component and manifest["components"][name].get(key) != component[key]:
                 raise ValueError("completed component identity differs from the plan")
     root_tag = "release-set-" + plan["releaseSet"]
+    require_current_predecessor(plan, previous)
     wheels = sorted((artifacts / "web-build/wheel").glob("*.whl"))
     if plan["changed"]["web"] and (len(wheels) != 1 or wheels[0].stat().st_size == 0):
         raise ValueError("Web publication requires the built wheel")
@@ -221,7 +233,7 @@ def main():
             raise ValueError("App upload artifact differs from the verified build")
         if args.operation == "app":
             result = json.loads(subprocess.check_output([
-                "ruby", str(ROOT / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
+                "ruby", str(Path(__file__).resolve().parents[1] / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
                 str(component["buildNumber"]), build["ipaSha256"],
             ], text=True))
             if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))

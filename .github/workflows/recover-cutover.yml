@@ -1,0 +1,122 @@
+name: Recover failed cutover App publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      original_run:
+        description: Failed production-cutover run whose Relay and Web publications succeeded.
+        required: true
+        type: string
+      original_attempt:
+        description: Failed attempt with the verified signed IPA.
+        required: true
+        type: string
+      confirm_publication:
+        description: Resume that immutable App upload and publish its completed release set.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: talaria-release-set
+  cancel-in-progress: false
+
+jobs:
+  app:
+    if: github.ref == 'refs/heads/main' && inputs.confirm_publication
+    runs-on: maude-mac
+    environment: testflight
+    concurrency:
+      group: talaria-testflight-publication
+      cancel-in-progress: false
+    timeout-minutes: 60
+    outputs:
+      source: ${{ steps.restore.outputs.source }}
+      artifacts: ${{ steps.store.outputs.artifacts }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/release-python
+      - name: Authenticate original run and restore immutable handoffs
+        id: restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIGINAL_RUN: ${{ inputs.original_run }}
+          ORIGINAL_ATTEMPT: ${{ inputs.original_attempt }}
+        run: |
+          "$RELEASE_PYTHON" releases/recover.py "$ORIGINAL_RUN" "$ORIGINAL_ATTEMPT" "$RUNNER_TEMP/recovered"
+      - name: Preserve reviewed publishing tools and check out selected component source
+        env:
+          SOURCE: ${{ steps.restore.outputs.source }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/reviewed-publisher"
+          git archive "$GITHUB_WORKFLOW_SHA" releases/publish.py app/ci/upload_testflight.rb app/ci/app_store_connect.rb |
+            tar -x -C "$RUNNER_TEMP/reviewed-publisher"
+          git checkout --detach "$SOURCE"
+      # recover.py authenticates the successful original build/publication jobs
+      # and their exact handoffs. A partially published set is not a dry run.
+      - name: Resume the original verified IPA and require Apple VALID readback
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/reviewed-publisher/releases/publish.py" app \
+            --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
+            --build "$RUNNER_TEMP/recovered/app-build/receipt.json" --directory "$RUNNER_TEMP/recovered/ios-ipa" \
+            --output "$RUNNER_TEMP/recovered/app-publish/receipt.json"
+      - name: Store verified handoffs with actual recovery-run identity
+        id: store
+        run: |
+          set -euo pipefail
+          paths=()
+          for name in release-plan contract-receipts agent-receipts relay-build web-build app-build ios-ipa ios-dsyms relay-publish web-publish app-publish; do
+            paths+=("$name" "$RUNNER_TEMP/recovered/$name")
+          done
+          "$RELEASE_PYTHON" releases/artifacts.py put "${paths[@]}"
+  publish-set:
+    needs: app
+    runs-on: maude-mac
+    environment: release-set-publication
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 20
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.app.outputs.source }}
+      - uses: ./.github/actions/release-python
+      - name: Restore verified recovery handoffs
+        run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered"'
+      - name: Assemble and publish the completed original release set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+          "$RELEASE_PYTHON" releases/collect.py "$RUNNER_TEMP/recovered" "$RUNNER_TEMP/receipts"
+          options=()
+          previous="$RUNNER_TEMP/recovered/release-plan/previous.json"
+          if [[ -f "$previous" ]]; then options+=(--previous "$previous"); fi
+          "$RELEASE_PYTHON" releases/cli.py assemble --complete --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
+            --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/recovered/release-plan/notes" \
+            --output "$RUNNER_TEMP/completed/release-set.json" "${options[@]}"
+          PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" finalize \
+            --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --manifest "$RUNNER_TEMP/completed/release-set.json" \
+            --directory "$RUNNER_TEMP/recovered" "${options[@]}"
+      - name: Retain completed manifest and remove this recovery run's build handoffs
+        run: |
+          set -euo pipefail
+          "$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"
+          cat "$RUNNER_TEMP/completed/release-set.json"
+          "$RELEASE_PYTHON" releases/artifacts.py clean release-set-complete app-publish

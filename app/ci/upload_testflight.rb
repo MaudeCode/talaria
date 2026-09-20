@@ -111,25 +111,33 @@ class TestFlightUpload < AppStoreConnectClient
   end
 
   def transfer(path, operations)
+    unless operations.all? { |operation| operation["offset"].is_a?(Integer) }
+      raise Error, "Invalid App Store Connect upload offset"
+    end
+    operations = operations.sort_by { |operation| operation.fetch("offset") }
     offset = 0
+    operations.each do |operation|
+      length = operation.fetch("length")
+      url = URI(operation.fetch("url"))
+      unless operation["method"] == "PUT" && url.scheme == "https" && url.userinfo.nil? &&
+             operation["offset"] == offset && length.is_a?(Integer) && length.positive? && offset + length <= File.size(path)
+        raise Error, "Invalid App Store Connect upload operation"
+      end
+      offset += length
+    end
+    raise Error, "Incomplete App Store Connect upload operations" unless offset == File.size(path)
+
     File.open(path, "rb") do |file|
       operations.each do |operation|
         length = operation.fetch("length")
         url = URI(operation.fetch("url"))
-        unless operation["method"] == "PUT" && url.scheme == "https" && url.userinfo.nil? &&
-               operation["offset"] == offset && length.is_a?(Integer) && length.positive? && offset + length <= file.size
-          raise Error, "Invalid App Store Connect upload operation"
-        end
         request = Net::HTTP::Put.new(url)
         operation.fetch("requestHeaders", []).each { |header| request[header.fetch("name")] = header.fetch("value") }
         request.body = file.read(length)
         response = Net::HTTP.start(url.hostname, url.port, use_ssl: true, open_timeout: 10, read_timeout: 120) { |http| http.request(request) }
         raise Error, "Build chunk upload failed with HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-
-        offset += length
       end
     end
-    raise Error, "Incomplete App Store Connect upload operations" unless offset == File.size(path)
   end
 end
 

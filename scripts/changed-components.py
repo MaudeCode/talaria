@@ -31,6 +31,7 @@ WORKFLOWS = {
     "production-cutover.yml": {"tooling"},
     "ios-release-build.yml": {"tooling"},
     "inspect-testflight.yml": {"tooling"},
+    "recover-cutover.yml": {"tooling"},
 }
 SCRIPTS = {
     "changed-components.py": {"tooling"},
