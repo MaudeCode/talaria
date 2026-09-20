@@ -5,8 +5,9 @@ require "digest"
 require "tempfile"
 require_relative "app_store_connect"
 
-# Apple retains the upload and its verified checksum, so retries need no local
-# success marker and can recover even after acceptance but before receipt writes.
+# Apple retains the upload and its hash-named file identity, so retries can
+# recover after acceptance but before receipt writes. ipaSha256 is our verified
+# artifact digest; it is not an Apple-attested digest when its checksum is absent.
 class TestFlightUpload < AppStoreConnectClient
   def upload(path, version, number, sha256, attempts: 90, delay: 20)
     unless version.match?(/\A\d+\.\d+\.\d+\z/) && number.match?(/\A[1-9]\d*\z/) &&
@@ -50,20 +51,21 @@ class TestFlightUpload < AppStoreConnectClient
 
     file = files.first
     file_id = file.fetch("id")
-    expected = {"algorithm" => "SHA_256", "hash" => sha256}
-    verify_file(file, path, filename, expected, committed: state != "AWAITING_UPLOAD")
+    verify_file(file, path, filename, sha256)
     delivery = file.dig("attributes", "assetDeliveryState", "state")
     if state == "AWAITING_UPLOAD" && delivery == "AWAITING_UPLOAD"
       transfer(path, file.fetch("attributes").fetch("uploadOperations"))
       fetch_json("/v1/buildUploadFiles/#{file_id}", method: "PATCH", body: {data: {
-        type: "buildUploadFiles", id: file_id, attributes: {uploaded: true, sourceFileChecksums: {file: expected}}
+        # Match Apple's upload-testflight-build action: this endpoint rejects
+        # optional checksum declarations despite their presence in the schema.
+        type: "buildUploadFiles", id: file_id, attributes: {uploaded: true}
       }})
     end
 
     attempts.times do |attempt|
       current = fetch_json("/v1/buildUploads/#{upload_id}?include=build").fetch("data")
       current_file = fetch_json("/v1/buildUploadFiles/#{file_id}").fetch("data")
-      verify_file(current_file, path, filename, expected, committed: true)
+      verify_file(current_file, path, filename, sha256)
       state = current.dig("attributes", "state", "state")
       raise Error, "App Store Connect processing failed" unless %w[AWAITING_UPLOAD PROCESSING COMPLETE].include?(state)
 
@@ -96,14 +98,20 @@ class TestFlightUpload < AppStoreConnectClient
       "filter[version]" => number, "fields[builds]" => "version,processingState,expired", "limit" => "200"})
   end
 
-  def verify_file(file, path, filename, checksum, committed:)
+  def verify_file(file, path, filename, sha256)
     attributes = file.fetch("attributes")
     unless attributes.values_at("fileName", "fileSize", "assetType", "uti") == [filename, File.size(path), "ASSET", "com.apple.ipa"]
       raise Error, "Existing upload file differs from the verified IPA"
     end
     actual = attributes.dig("sourceFileChecksums", "file")
-    if (committed || actual) && actual != checksum
-      raise Error, "Existing upload checksum differs from the verified IPA"
+    unless actual.nil?
+      unless actual.is_a?(Hash) && %w[MD5 SHA_256].include?(actual["algorithm"])
+        raise Error, "Unsupported App Store Connect file checksum"
+      end
+      expected = actual["algorithm"] == "SHA_256" ? sha256 : Digest::MD5.file(path).hexdigest
+      unless actual == {"algorithm" => actual["algorithm"], "hash" => expected}
+        raise Error, "Existing upload checksum differs from the verified IPA"
+      end
     end
     unless %w[AWAITING_UPLOAD UPLOAD_COMPLETE COMPLETE].include?(attributes.dig("assetDeliveryState", "state"))
       raise Error, "App Store Connect file delivery failed or has unknown state"

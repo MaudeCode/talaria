@@ -146,11 +146,18 @@ finishing missing draft uploads and publishing the root last. Conflicting
 records are rejected; published assets are never overwritten.
 
 The App publication job also supports **Re-run failed jobs** on the same run.
-It resumes the existing Apple upload, verifies the remote file's SHA-256 against
-the retained IPA, and waits for both file delivery and the matching build's
-`VALID` processing state before writing a receipt. A lost upload response,
+It verifies the retained IPA's local SHA-256 and resumes the existing Apple
+upload only when its hash-named remote file, size, type, app/version/build and
+upload identity match. Apple rejects optional checksum declarations on commit;
+the helper follows Apple's native `uploaded: true` request. If Apple returns a
+per-file MD5 or SHA-256 checksum, it must match the retained IPA. When that
+optional field is absent, recovery relies on the authenticated upload identity;
+it does not verify the remote bytes against an Apple-attested digest.
+The receipt's `ipaSha256` identifies the locally verified/transmitted artifact.
+Both file delivery and the matching build's `VALID` processing state must pass
+before writing a receipt. A lost upload response,
 processing timeout, or receipt/handoff failure does not upload a duplicate build.
-Ambiguous records, changed checksums, failed processing, and unverified existing
+Ambiguous records, mismatched supplied checksums, failed processing, and unverified existing
 builds fail closed. Apple build/upload IDs are retained in `apple-build.json`
 and the job log; successful cleanup retains this small publication evidence.
 The helper uses Apple's [build-upload API](https://developer.apple.com/documentation/appstoreconnectapi/build-uploads).
