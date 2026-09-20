@@ -58,8 +58,13 @@ def relay(plan, output):
     subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "relay", check=True)
     subprocess.run(["python3", "scripts/stamp-release.py", "relay", "--version", component["version"],
                     "--source-revision", component["sourceRevision"], "--deployment-id", deployment], cwd=ROOT, check=True)
-    subprocess.run(["pnpm", "exec", "convex", "deploy", "--typecheck", "enable", "--env-file", os.devnull,
-                    "--message", "Talaria release-set " + plan["releaseSet"]], cwd=ROOT / "relay", check=True)
+    # An explicit Convex env file is authoritative for both target and auth.
+    with tempfile.NamedTemporaryFile(mode="w", prefix="talaria-relay-", suffix=".env",
+                                     dir=os.environ.get("RUNNER_TEMP")) as environment:
+        environment.write("CONVEX_DEPLOY_KEY=" + json.dumps(key) + "\n")
+        environment.flush()
+        subprocess.run(["pnpm", "exec", "convex", "deploy", "--typecheck", "enable", "--env-file", environment.name,
+                        "--message", "Talaria release-set " + plan["releaseSet"]], cwd=ROOT / "relay", check=True)
     for attempt in range(12):
         try:
             with urllib.request.urlopen(f"https://{deployment}.convex.site/v1/health", timeout=10) as response:
