@@ -164,6 +164,17 @@ The helper uses Apple's [build-upload API](https://developer.apple.com/documenta
 API tokens renew during the processing wait; signing keys stay
 in a private temporary file and never reach the asset-upload host.
 
+If a reviewed publishing-tool fix is needed after all three component builds
+and Relay/Web publication succeeded, use the **Recover failed cutover App
+publication** workflow on main. Supply the original production-cutover run and
+attempt, and explicitly confirm publication. It authenticates the original
+GitHub job results and retained artifact hashes, checks that the release is
+still current, and resumes the same IPA/upload using reviewed publishing tools.
+Original receipts keep their original run URLs; resumed upload evidence names
+the actual recovery run. It neither rebuilds the App nor republishes Relay/Web.
+Missing, changed, or incompatible original evidence fails closed. After a
+recovery run starts publication, retry its failed jobs on that same run.
+
 Inspect Relay/Web deployment side effects before retrying their failed jobs.
 A fresh dispatch or **Re-run all jobs** can create new build identities and is
 not a recovery path for partially published releases.
