@@ -5,6 +5,7 @@ import { workspacesContract } from './routes/workspaces.js'
 import { gitContract } from './routes/git.js'
 import { chatContract } from './routes/chat.js'
 import { settingsContract } from './routes/settings.js'
+import { toolsContract } from './routes/tools.js'
 
 /**
  * The composed route contract. Domain segments are added per checkpoint
@@ -18,6 +19,7 @@ export const routeContract = oc.router({
   ...gitContract,
   ...chatContract,
   ...settingsContract,
+  ...toolsContract,
 })
 
 export type RouteContract = typeof routeContract

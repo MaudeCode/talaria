@@ -39,6 +39,9 @@ import type { AgentConfig } from '../config/agent-config.js'
 import type { ProviderCatalog } from '../providers/catalog.js'
 import type { ProfileService } from '../profiles/profiles.js'
 import type { Onboarding } from '../onboarding.js'
+import type { SkillsService } from '../tools/skills.js'
+import type { McpService } from '../tools/mcp.js'
+import type { WindowLimiter } from '../api/tools-router.js'
 
 export interface AppDeps {
   config: ServerConfig
@@ -108,6 +111,18 @@ export interface AppDeps {
   agentVersion: () => string
   /** Passkey credentials are dropped when password auth is cleared (passkeys land with R-A6). */
   clearPasskeys: () => void
+  // ── tools (checkpoint 7b) ──
+  skills: SkillsService
+  mcp: McpService
+  nowSeconds: () => number
+  /** `/api/system/health` `webui_runtime` block (process counters). */
+  runtimeDiagnostics: () => Record<string, unknown>
+  /** `/api/shutdown`: SIGINT the process shortly after the response is flushed. */
+  requestShutdown: () => void
+  cspLimiter: WindowLimiter
+  clientEventLimiter: WindowLimiter
+  ttsLimiter: WindowLimiter
+  fetch: typeof fetch
 }
 
 export interface VsCodeConfig {

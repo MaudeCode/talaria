@@ -731,6 +731,72 @@
     ],
     "additionalProperties": false
   },
+  "plugins.list": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "plugins": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "activation": {
+              "type": "string"
+            },
+            "hooks": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "is_active_provider": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "key",
+            "version",
+            "description",
+            "enabled",
+            "kind",
+            "activation",
+            "hooks"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "supported_hooks": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "plugins",
+      "supported_hooks"
+    ],
+    "additionalProperties": false
+  },
   "kanban.board": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "anyOf": [

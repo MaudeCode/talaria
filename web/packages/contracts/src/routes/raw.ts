@@ -69,6 +69,21 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Attachment named `hermes-<session_id>.<ext>`.' }, 404: { description: 'Session not found.', contentType: 'application/json' } },
   },
   {
+    method: 'POST', path: '/api/transcribe', summary: 'Speech-to-text through the Agent (multipart `file`).', tags: ['tools'],
+    requestBody: { contentType: 'multipart/form-data', description: 'Field `file` (audio).' },
+    responses: { 200: { description: '`{ok, transcript}`.', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },
+  },
+  {
+    method: 'POST', path: '/api/tts', summary: 'Text-to-speech proxy (`engine`: openai or elevenlabs); answers `audio/mpeg`.', tags: ['tools'],
+    requestBody: { contentType: 'application/json', description: '`{text, engine, voice?, rate?, pitch?}`.' },
+    responses: { 200: { description: 'MP3 audio.', contentType: 'audio/mpeg' }, 400: { description: 'Invalid text, voice, or engine.', contentType: 'application/json' }, 429: { description: 'Rate limited (one request per 2 s per client).', contentType: 'application/json' }, 503: { description: 'Engine not configured.', contentType: 'application/json' } },
+  },
+  {
+    method: 'POST', path: '/api/csp-report', summary: 'Browser CSP report sink (public, rate limited, always 204).', tags: ['tools'],
+    requestBody: { contentType: 'application/json', description: 'CSP report payload.' },
+    responses: { 204: { description: 'Accepted or dropped.', contentType: 'application/json' } },
+  },
+  {
     method: 'POST', path: '/api/upload', summary: 'Store one chat attachment in the session inbox and return a rollback receipt.', tags: ['files'],
     query: { session_id: { description: 'Target session (the multipart `session_id` field wins when present).' } },
     requestBody: { contentType: 'multipart/form-data', description: 'Fields `session_id` and `file`.' },

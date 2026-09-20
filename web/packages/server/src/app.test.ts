@@ -50,7 +50,7 @@ describe('open server (no auth)', () => {
     s.deps.startup.arm()
     try {
       // The immediate paths bypass the gate.
-      expect((await s.get('/api/csp-report', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })).status).toBe(404)
+      expect((await s.get('/api/csp-report', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })).status).toBe(204)
     } finally {
       s.deps.startup.release()
     }

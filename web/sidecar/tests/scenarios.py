@@ -28,6 +28,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("commands.registry", {"profile_home": "{home}"}),
     ("commands.exec", {"profile_home": "{home}", "command": "/reload-skills"}),
     ("commands.moa_preset", {"profile_home": "{home}", "preset": None}),
+    ("plugins.list", {"profile_home": "{home}"}),
     ("plugins.providers", {"profile_home": "{home}"}),
     # profiles
     ("profiles.list", {"base_home": "{home}"}),

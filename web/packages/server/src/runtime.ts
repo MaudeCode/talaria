@@ -36,6 +36,9 @@ import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict } from './co
 import { ProviderCatalog } from './providers/catalog.js'
 import { ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
+import { SkillsService } from './tools/skills.js'
+import { McpService } from './tools/mcp.js'
+import { WindowLimiter } from './api/tools-router.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
   log?: (line: string) => void
@@ -44,6 +47,8 @@ export interface CreateDepsOptions extends LoadConfigOptions {
   home?: string
   /** The Python sidecar (auxiliary completions, worktree creation); null runs without Agent-backed features. */
   sidecar?: SidecarLike | null
+  /** Outbound HTTP (TTS proxies, dashboard probe, OpenRouter); tests inject a stub. */
+  fetch?: typeof fetch
 }
 
 export function packageVersion(): string | undefined {
@@ -207,7 +212,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     agentName: () => { try { const v = settings.load().bot_name; return typeof v === 'string' && v ? v : 'Hermes' } catch { return 'Hermes' } },
     titleGenerationEnabled: () => { try { return settings.load().auto_title_generation !== false } catch { return true } },
   })
-  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget) })
+  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget), ...(opts.fetch ? { fetch: opts.fetch } : {}) })
   const agentStatus = () => {
     const describe = sidecar?.describe ?? null
     const found = Boolean(describe?.agent_dir)
@@ -304,6 +309,18 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     onboarding,
     agentVersion: () => sidecar?.describe?.agent_version ?? sidecar?.describe?.pinned_version ?? release.compatibleAgent.version,
     clearPasskeys: () => undefined,
+    skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
+    mcp: new McpService({ sidecar: () => sidecar, config: agentConfig }),
+    nowSeconds: now,
+    runtimeDiagnostics: () => {
+      const mem = process.memoryUsage()
+      return { pid: process.pid, uptime_seconds: Math.round(process.uptime()), rss_bytes: mem.rss, heap_used_bytes: mem.heapUsed, sessions_cached: store.sessions.size, active_streams: activeStreamIds.size, active_runs: registry.activeRuns.size, sse_clients: streamSlots.active, sidecar_status: sidecar?.status ?? 'stopped' }
+    },
+    requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
+    cspLimiter: new WindowLimiter(60, 100, now),
+    clientEventLimiter: new WindowLimiter(60, 30, now),
+    ttsLimiter: new WindowLimiter(2, 1, now),
+    fetch: opts.fetch ?? fetch,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })

@@ -138,21 +138,21 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-M1 | `GET /api/skills`, `GET /api/skills/content|usage`, `POST /api/skills/save|delete|toggle` | browser, ios | auth | server + sidecar | vitest | pending | |
-| R-M2 | `GET /api/memory`, `POST /api/memory/write` | browser, ios | auth | server | vitest | pending | Contract fix: `section` |
-| R-M3 | `GET|POST /api/prompts` | browser | auth | server | vitest | pending | `DELETE /api/prompts` dropped |
-| R-M4 | `GET /api/commands`, `POST /api/commands/exec` | browser, ios | auth | server + sidecar | vitest, pytest | pending | `bundles`, `bundles/resolve`, `moa/resolve` dropped |
-| R-M5 | `GET /api/notes/sources|search` | browser | auth | server | vitest | pending | `GET /api/notes/item` dropped |
+| R-M1 | `GET /api/skills`, `GET /api/skills/content|usage`, `POST /api/skills/save|delete|toggle` | browser, ios | auth | server + sidecar | vitest | ported (7b) | List/view/find through `skills.*`; writes and the config.yaml toggle in `tools/skills.ts` |
+| R-M2 | `GET /api/memory`, `POST /api/memory/write` | browser, ios | auth | server | vitest | ported (7b) | Accepts `section` or the frontend `target`; project context walk bounded at the git root |
+| R-M3 | `GET|POST /api/prompts` | browser | auth | server | vitest | ported (7b) | `DELETE /api/prompts` kept (frontend delete path) |
+| R-M4 | `GET /api/commands`, `POST /api/commands/exec` | browser, ios | auth | server + sidecar | vitest, pytest | ported (7b) | `bundles`, `bundles/resolve`, `moa/resolve` dropped |
+| R-M5 | `GET /api/notes/sources|search` | browser | auth | server | vitest | partial (7b) | Disabled-by-default payload ported; when enabled, sources come from `mcp_servers` names only and Joplin search answers 502 |
 | R-M6 | `GET /api/wiki/*` | none | | dropped | | dropped | One comment-only reference in the frontend |
 | R-M7 | `POST /api/share/create|revoke`, `GET /api/share/<token>`, `/share` SPA | browser, public | auth / public | server | vitest, fixture | pass | checkpoint 5a: `sessions/shares.ts`, `X-Robots-Tag` on reads |
-| R-M8 | `GET /api/insights`, `GET /api/logs`, `GET /api/system/health`, `GET /api/health/agent`, `POST /api/health/restart`, `GET /api/dashboard/status`, `POST /api/shutdown` | browser, ios | auth / operator | server (+sidecar for agent restart) | vitest | pending | |
+| R-M8 | `GET /api/insights`, `GET /api/logs`, `GET /api/system/health`, `GET /api/health/agent`, `POST /api/health/restart`, `GET /api/dashboard/status`, `POST /api/shutdown` | browser, ios | auth / operator | server (+sidecar for agent restart) | vitest | partial (7b) | Insights skip the state.db CLI merge; agent health reports `alive: null` (no gateway pid probe); system health uses loadavg/statfs |
 | R-M9 | `GET|POST /api/dashboard/config`, `GET /api/project-os/dashboard`, `POST /api/admin/reload`, `GET /api/gateway/status`, `POST /api/gateway/start|stop|restart`, `/search`, `/v1` | none | | dropped | | dropped | |
-| R-M10 | `GET /api/mcp/servers|tools`, `POST /api/mcp/servers/<name>` actions | browser | auth | server + sidecar | vitest | pending | `PATCH|PUT|DELETE /api/mcp/servers/<name>` dropped; `POST /api/plugins`, `POST /api/mcp/servers/<name>` client-only calls removed |
-| R-M11 | `GET /api/plugins` | browser | auth | server + sidecar | vitest | pending | |
-| R-M12 | `GET|POST /api/updates/check`, `POST /api/updates/apply|force|clear_lock|summary` | browser, ios | auth / operator | server | vitest | pending | |
+| R-M10 | `GET /api/mcp/servers|tools`, `POST /api/mcp/servers/<name>` actions | browser | auth | server + sidecar | vitest | partial (7b) | PATCH/PUT/DELETE kept alongside the POST action body; no background health prober (`health: unknown`) |
+| R-M11 | `GET /api/plugins` | browser | auth | server + sidecar | vitest | ported (7b) | Agent plugin visibility via `plugins.list`; WebUI dashboard plugins (`api/plugins.py`) dropped with the dashboard |
+| R-M12 | `GET|POST /api/updates/check`, `POST /api/updates/apply|force|clear_lock|summary` | browser, ios | auth / operator | server | vitest | partial (7b) | npm builds report `manual_update` targets and apply/force/clear_lock answer 501; checkpoint 9 revisits with the npm release channel |
 | R-M13 | `POST /api/talaria/relay/pair`, `POST /api/talaria/presence` | browser, ios | auth | server | vitest, fixture | pending | |
-| R-M14 | `POST /api/transcribe`, `GET /api/transcribe/capability`, `POST /api/tts` | browser, ios | auth | server + sidecar (STT) | vitest | pending | Edge TTS engine dropped |
-| R-M15 | `POST /api/csp-report`, `POST /api/client-events/log` | browser | public / auth | server | vitest | pending | |
+| R-M14 | `POST /api/transcribe`, `GET /api/transcribe/capability`, `POST /api/tts` | browser, ios | auth | server + sidecar (STT) | vitest | ported (7b) | Edge TTS engine dropped (503); openai/elevenlabs proxied with 30 s timeout and 2 s per-client limit |
+| R-M15 | `POST /api/csp-report`, `POST /api/client-events/log` | browser | public / auth | server | vitest | ported (7b) | |
 | R-M16 | Non-API: SPA shell allowlist, `/assets/*`, `/static/*`, `/static/dist/*`, `/sw.js`, manifests, `/plugins/plugin.css`, `/dashboard-plugins/*`, plugin tab pages, `/session/static/*`, `/favicon.ico`, `/health`, OPTIONS | browser, ios (`/health`) | public / auth | server | vitest, pw | partial | checkpoint 4: shell, `/assets/*`, `/static/*` (fingerprint caching), `/static/dist/*`, `/sw.js`, manifests, `/session/static/*`, `/favicon.ico`, `/health`, OPTIONS in `app.ts`; plugin and dashboard-plugin pages land with checkpoint 7 |
 
 ## 3. SSE and long-lived endpoints

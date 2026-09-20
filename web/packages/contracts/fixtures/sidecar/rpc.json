@@ -65,6 +65,7 @@
           "models.context_length",
           "models.estimate_tokens",
           "models.reasoning_efforts",
+          "plugins.list",
           "plugins.providers",
           "process.drain",
           "process.format_notification",

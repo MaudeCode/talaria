@@ -251,6 +251,60 @@ def plugin_provider_profiles() -> list[dict]:
     return out
 
 
+PLUGIN_VISIBILITY_HOOKS = ("pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call")
+
+
+def _clean_text(value, limit: int = 240) -> str:
+    if value is None:
+        return ""
+    text = " ".join(str(value).replace("\x00", "").split())
+    return text[: limit - 1].rstrip() + "…" if len(text) > limit else text
+
+
+def plugin_visibility(selected_providers: dict) -> dict:
+    """Sanitized plugin/hook rows for Settings (Python ``_plugin_visibility_payload``); no paths or callbacks."""
+    try:
+        from hermes_cli.plugins import get_plugin_manager
+
+        manager = get_plugin_manager()
+        manager.discover_and_load(force=False)
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError(f"plugin manager unavailable: {exc}", condition="plugins_unavailable") from exc
+    rows = []
+    for key, loaded in sorted((getattr(manager, "_plugins", {}) or {}).items(), key=lambda item: str(item[0])):
+        manifest = getattr(loaded, "manifest", None)
+        if manifest is None:
+            continue
+        plugin_key = _clean_text(getattr(manifest, "key", None) or key or getattr(manifest, "name", ""), 120)
+        name = _clean_text(getattr(manifest, "name", "") or plugin_key, 120)
+        kind = _clean_text(getattr(manifest, "kind", "") or "standalone", 40)
+        enabled = bool(getattr(loaded, "enabled", False))
+        raw_key = plugin_key.replace("\\", "/")
+        category = raw_key.split("/", 1)[0].strip() if "/" in raw_key else ""
+        if category in {".", ".."}:
+            category = ""
+        selected = str(selected_providers.get(category) or "").strip().lower() if category else ""
+        slug = plugin_key.rsplit("/", 1)[-1].strip().lower()
+        if kind == "exclusive":
+            activation = "exclusive"
+        elif kind == "model-provider" and enabled:
+            activation = "provider"
+        else:
+            activation = "enabled" if enabled else "disabled"
+        row = {
+            "name": name, "key": plugin_key or name, "version": _clean_text(getattr(manifest, "version", ""), 80),
+            "description": _clean_text(getattr(manifest, "description", ""), 280), "enabled": enabled, "kind": kind, "activation": activation,
+            "hooks": sorted({str(h).strip() for h in list(getattr(manifest, "provides_hooks", []) or []) + list(getattr(loaded, "hooks_registered", []) or []) if str(h).strip() in PLUGIN_VISIBILITY_HOOKS}, key=PLUGIN_VISIBILITY_HOOKS.index),
+        }
+        if kind == "exclusive":
+            if category:
+                row["is_active_provider"] = bool(selected) and slug == selected
+        else:
+            row["is_active_provider"] = kind == "model-provider" and enabled
+        rows.append(row)
+    return {"plugins": rows, "supported_hooks": list(PLUGIN_VISIBILITY_HOOKS)}
+
+
 def register(registry) -> None:
     @registry.method("commands.registry")
     def registry_(ctx: CallContext, params: dict) -> dict:
@@ -279,3 +333,8 @@ def register(registry) -> None:
     def providers(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"providers": plugin_provider_profiles()}
+
+    @registry.method("plugins.list")
+    def list_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return plugin_visibility(params.get("selected_providers") if isinstance(params.get("selected_providers"), dict) else {})

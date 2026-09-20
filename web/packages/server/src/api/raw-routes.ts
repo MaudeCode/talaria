@@ -18,6 +18,7 @@ import { ZipWriter } from '../workspace/zip.js'
 import { parseMultipart, UploadConflict, UploadRejected } from '../workspace/upload.js'
 import { pythonPrettyJson, renderSessionHtml } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
+import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -33,6 +34,9 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
 
 export const RAW_POST_ROUTES: Record<string, RawHandler> = {
   '/api/upload': handleUpload,
+  '/api/transcribe': handleTranscribe,
+  '/api/tts': handleTts,
+  '/api/csp-report': handleCspReport,
 }
 
 /** Run a raw handler, translating thrown `HttpError`s into the JSON error body. */

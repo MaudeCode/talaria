@@ -14,6 +14,7 @@ import { gitRouter } from './api/git-router.js'
 import { RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
 import { chatRouter } from './api/chat-router.js'
 import { settingsRouter } from './api/settings-router.js'
+import { toolsRouter } from './api/tools-router.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
@@ -147,7 +148,7 @@ function preflight(ctx: RequestContext): void {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter }
+export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter }
 
 const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
   '/api/chat/stream': handleChatStream,

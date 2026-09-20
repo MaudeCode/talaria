@@ -97,7 +97,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `runtime` | `handshake`, `status`, `ensure_current`, `shutdown` | | `api/agent_runtime.py`, `api/startup.py` |
 | `goals` | `get`, `command`, `snapshot`, `restore`, `evaluate` | | `api/goals.py` |
 | `commands` | `registry`, `exec`, `moa_preset` | | `api/commands.py` |
-| `plugins` | `providers` | | `api/plugin_providers.py` |
+| `plugins` | `providers`, `list` | | `api/plugin_providers.py`, `api/routes.py` plugin visibility |
 | `kanban` | `board`, `boards`, `create_board`, `update_board`, `delete_board`, `switch_board`, `task`, `create_task`, `patch_task`, `task_action`, `comment`, `link`, `unlink`, `events`, `config`, `stats`, `assignees`, `task_log`, `bulk`, `dispatch` | | `api/kanban_bridge.py` |
 | `state_db` | `sync_start`, `sync_usage`, `sync_title`, `delete_cli_session` | | `api/state_sync.py`, `api/models.py` |
 | `profiles` | `list`, `create`, `delete`, `runtime_env`, `skills_stats` | | `api/profiles.py` |

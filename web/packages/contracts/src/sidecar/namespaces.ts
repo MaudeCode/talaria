@@ -41,6 +41,7 @@ export const COMMANDS_METHODS = {
   'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
+  'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional() })), supported_hooks: z.array(z.string()) }) },
 } as const
 
 // ── kanban ─────────────────────────────────────────────────────────────
