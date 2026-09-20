@@ -4,5 +4,602 @@
     "version": "1",
     "description": "HTTP and SSE contract of the Talaria Web server. Generated from @maudecode/talaria-web-contracts; do not edit by hand."
   },
-  "openapi": "3.1.1"
+  "openapi": "3.1.1",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Liveness and release identity; `deep=1` adds startup and store probes.",
+        "tags": [
+          "core"
+        ],
+        "parameters": [
+          {
+            "name": "deep",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "release": {
+                      "type": "object",
+                      "properties": {
+                        "tag": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "sourceRevision": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "releaseSet": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "upstreamBase": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "contracts": {
+                          "type": "object",
+                          "properties": {
+                            "appWeb": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "webRelay": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            }
+                          },
+                          "required": [
+                            "appWeb",
+                            "webRelay"
+                          ]
+                        },
+                        "compatibleAgent": {
+                          "type": "object",
+                          "properties": {
+                            "sourceRevision": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{40}$"
+                            },
+                            "version": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sourceRevision",
+                            "version",
+                            "image"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "tag",
+                        "version",
+                        "sourceRevision",
+                        "releaseSet",
+                        "upstreamBase",
+                        "contracts",
+                        "compatibleAgent"
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "ok",
+                        "degraded",
+                        "starting"
+                      ],
+                      "type": "string"
+                    },
+                    "phase": {
+                      "type": "string"
+                    },
+                    "sessions": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "active_streams": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "active_runs": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "last_run_finished_at": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "server_started_at": {
+                      "type": "number"
+                    },
+                    "uptime_seconds": {
+                      "type": "number"
+                    },
+                    "accept_loop": {
+                      "type": "object",
+                      "properties": {
+                        "requests_total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "last_request_at": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "requests_total",
+                        "last_request_at"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "release",
+                    "status",
+                    "sessions",
+                    "active_streams",
+                    "active_runs",
+                    "runs",
+                    "last_run_finished_at",
+                    "server_started_at",
+                    "uptime_seconds",
+                    "accept_loop"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bootstrap": {
+      "get": {
+        "operationId": "bootstrap",
+        "summary": "Public runtime configuration and initial state for the shell.",
+        "tags": [
+          "core"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "webui_version": {
+                      "type": "string"
+                    },
+                    "max_upload_bytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0
+                    },
+                    "csrf_token": {
+                      "type": "string"
+                    },
+                    "language": {
+                      "type": "string"
+                    },
+                    "bot_name": {
+                      "type": "string"
+                    },
+                    "auth": {
+                      "type": "object",
+                      "properties": {
+                        "auth_enabled": {
+                          "type": "boolean"
+                        },
+                        "logged_in": {
+                          "type": "boolean"
+                        },
+                        "oidc_enabled": {
+                          "type": "boolean"
+                        },
+                        "oidc_native_handoff_enabled": {
+                          "type": "boolean"
+                        },
+                        "password_auth_enabled": {
+                          "type": "boolean"
+                        },
+                        "passwordless_enabled": {
+                          "type": "boolean"
+                        },
+                        "passkeys_enabled": {
+                          "type": "boolean"
+                        },
+                        "passkeys_count": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "passkey_feature_flag": {
+                          "type": "boolean"
+                        },
+                        "auth_disabled_acknowledged": {
+                          "type": "boolean"
+                        },
+                        "can_manage_server": {
+                          "type": "boolean"
+                        },
+                        "trusted_auth_enabled": {
+                          "type": "boolean"
+                        },
+                        "auth_type": {
+                          "type": "string"
+                        },
+                        "user": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "bound_profile": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "auth_enabled",
+                        "logged_in",
+                        "oidc_enabled",
+                        "oidc_native_handoff_enabled",
+                        "password_auth_enabled",
+                        "passwordless_enabled",
+                        "passkeys_enabled",
+                        "passkeys_count",
+                        "passkey_feature_flag",
+                        "auth_disabled_acknowledged",
+                        "can_manage_server"
+                      ]
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "is_default": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "is_default"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "onboarding": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "completed": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "features": {
+                      "type": "object",
+                      "properties": {
+                        "dashboard": {
+                          "type": "boolean"
+                        },
+                        "terminal_remote_backend": {
+                          "type": "boolean"
+                        },
+                        "extensions": {
+                          "type": "boolean"
+                        },
+                        "single_profile_mode": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "dashboard",
+                        "terminal_remote_backend",
+                        "extensions",
+                        "single_profile_mode"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "webui_version",
+                    "max_upload_bytes",
+                    "csrf_token",
+                    "language",
+                    "bot_name",
+                    "auth",
+                    "profile",
+                    "onboarding",
+                    "features"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "operationId": "auth.status",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "auth_enabled": {
+                      "type": "boolean"
+                    },
+                    "logged_in": {
+                      "type": "boolean"
+                    },
+                    "oidc_enabled": {
+                      "type": "boolean"
+                    },
+                    "oidc_native_handoff_enabled": {
+                      "type": "boolean"
+                    },
+                    "password_auth_enabled": {
+                      "type": "boolean"
+                    },
+                    "passwordless_enabled": {
+                      "type": "boolean"
+                    },
+                    "passkeys_enabled": {
+                      "type": "boolean"
+                    },
+                    "passkeys_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "passkey_feature_flag": {
+                      "type": "boolean"
+                    },
+                    "auth_disabled_acknowledged": {
+                      "type": "boolean"
+                    },
+                    "can_manage_server": {
+                      "type": "boolean"
+                    },
+                    "trusted_auth_enabled": {
+                      "type": "boolean"
+                    },
+                    "auth_type": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bound_profile": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "auth_enabled",
+                    "logged_in",
+                    "oidc_enabled",
+                    "oidc_native_handoff_enabled",
+                    "password_auth_enabled",
+                    "passwordless_enabled",
+                    "passkeys_enabled",
+                    "passkeys_count",
+                    "passkey_feature_flag",
+                    "auth_disabled_acknowledged",
+                    "can_manage_server"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "auth.login",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "auth.logout",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "trusted_logout_url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }

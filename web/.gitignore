@@ -75,10 +75,8 @@ graphify-out/
 
 .venv/
 
-# Node tooling. The frontend lockfile is authoritative and committed (HWEB-100).
+# Node tooling. The workspace lockfile web/package-lock.json is authoritative and committed (TAL-245).
 node_modules/
-package-lock.json
-!frontend/package-lock.json
 packages/frontend/dist/
 frontend/src/paraglide/
 frontend/playwright-report/

@@ -35,18 +35,18 @@ The final checkpoint commit turns every `pending` row into `pass`, `partial`, or
 
 | ID | Capability | Python source | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|
-| H1 | Request pipeline order: profile cookie, `Origin: null` rejection on `/api/*`, auth (public / operator-only / profile mismatch 403), startup-readiness gate (503 `startup_recovery`, `Retry-After: 5`, exemptions), handler, 404/500 envelopes, client-disconnect swallow | `server.py`, `api/auth.py` | server | vitest | pending | |
-| H2 | CSRF: same-origin check (Origin/Referer/`Sec-Fetch-Site`, trusted forwarded host, allowed origins) plus HMAC token header for browser requests; non-browser clients bypass; exempt paths | `api/auth.py` | server | vitest, fixture | pending | Token HMAC must verify tokens minted by Python |
-| H3 | Cookies: `hermes_session` `<token>.<hmac>` with legacy truncated signature, `hermes_profile` signed when auth on, TTL clamp, sliding renewal, `Secure` rules, trusted-header auth | `api/auth.py` | server | vitest, fixture | pending | |
-| H4 | Security headers, CSP template and report-only twin, sandbox CSPs for extension panels, plugin assets, raw previews | `api/helpers.py` | server | vitest | pending | |
-| H5 | Trusted proxy resolution (CIDRs, XFF walk, `X-Real-IP`), local-origin gate for onboarding/terminal, request base URL for OIDC | `api/helpers.py`, `api/auth.py` | server | vitest | pending | |
-| H6 | TLS (cert/key, min 1.2, HTTP fallback), bind host/port/IPv6, refuse-to-start when `/health` already answers | `server.py` | server | vitest | pending | |
+| H1 | Request pipeline order: profile cookie, `Origin: null` rejection on `/api/*`, auth (public / operator-only / profile mismatch 403), startup-readiness gate (503 `startup_recovery`, `Retry-After: 5`, exemptions), handler, 404/500 envelopes, client-disconnect swallow | `server.py`, `api/auth.py` | server | vitest | partial | checkpoint 4: pipeline, `Origin: null`, auth gate, startup gate, JSON 404/500 in `packages/server/src/app.ts` (`app.test.ts`); client-disconnect swallow lands with SSE |
+| H2 | CSRF: same-origin check (Origin/Referer/`Sec-Fetch-Site`, trusted forwarded host, allowed origins) plus HMAC token header for browser requests; non-browser clients bypass; exempt paths | `api/auth.py` | server | vitest, fixture | pass | Token HMAC must verify tokens minted by Python; checkpoint 4: `http/origin.ts`, `auth/gate.ts`; Python-minted token vectors in `auth/store.test.ts` |
+| H3 | Cookies: `hermes_session` `<token>.<hmac>` with legacy truncated signature, `hermes_profile` signed when auth on, TTL clamp, sliding renewal, `Secure` rules, trusted-header auth | `api/auth.py` | server | vitest, fixture | pass | checkpoint 4: `auth/store.ts` reads Python `.sessions.json`, `.signing_key`, `.pbkdf2_key`; trusted-header flow in `app.test.ts` |
+| H4 | Security headers, CSP template and report-only twin, sandbox CSPs for extension panels, plugin assets, raw previews | `api/helpers.py` | server | vitest | partial | checkpoint 4: security headers and CSP twin (`http/csp.ts`); extension/plugin sandbox CSPs land with checkpoint 7 |
+| H5 | Trusted proxy resolution (CIDRs, XFF walk, `X-Real-IP`), local-origin gate for onboarding/terminal, request base URL for OIDC | `api/helpers.py`, `api/auth.py` | server | vitest | partial | checkpoint 4: trusted proxy CIDRs, XFF walk, `X-Real-IP` (`http/origin.ts`); local-origin gate and OIDC base URL later |
+| H6 | TLS (cert/key, min 1.2, HTTP fallback), bind host/port/IPv6, refuse-to-start when `/health` already answers | `server.py` | server | vitest | pass | checkpoint 4: `server.ts` (TLS 1.2+, HTTP fallback, `isAlreadyServing` probe) |
 | H7 | Worker budget: observable limits (8 streams per client identity, 503 `request_worker_capacity` / `client_stream_limit`), handler idle timeout, keepalive | `api/http_server.py` | server | vitest | pending | Node reproduces the observable limits, not the thread pool |
-| H8 | Rate limits: login 5/60 s persisted, CSP report, client events, native OIDC start, passkey | `api/auth.py`, `api/routes.py` | server | vitest, fixture | pending | `.login_attempts.json` format preserved |
-| H9 | JSON envelope: gzip above 1 KiB, `no-store`, weak ETag/304; error envelope `{error, code?}` and variants (`condition`, `replaced_by`, health 503 payload) | `api/helpers.py` | server, contracts | vitest | pending | |
+| H8 | Rate limits: login 5/60 s persisted, CSP report, client events, native OIDC start, passkey | `api/auth.py`, `api/routes.py` | server | vitest, fixture | partial | `.login_attempts.json` format preserved; checkpoint 4: login limiter with the persisted file; CSP report, client events, OIDC, passkey limiters later |
+| H9 | JSON envelope: gzip above 1 KiB, `no-store`, weak ETag/304; error envelope `{error, code?}` and variants (`condition`, `replaced_by`, health 503 payload) | `api/helpers.py` | server, contracts | vitest | partial | checkpoint 4: gzip/`no-store`/weak ETag in `http/context.ts`; oRPC error bodies mapped to `{error}` (`api/router.ts`); health 503 payload via `RawResponse` |
 | H10 | Body limits: 20 MiB read cap, multipart parser (`HERMES_WEBUI_MAX_UPLOAD_MB`), folder zip limits | `api/upload.py`, `api/helpers.py` | server | vitest | pending | |
-| H11 | Structured access log, slow-request watchdog, `HERMES_WEBUI_TEST_NETWORK_BLOCK` | `api/request_diagnostics.py`, `api/logging_hygiene.py` | server | vitest | pending | |
-| H12 | Deferred startup: session recovery (`STARTUP_READY`), agent deps (`AGENT_DEPS_READY` via sidecar handshake), workers, plugins (`PLUGINS_READY`), relay publisher; signal handling; shutdown drain | `api/startup.py`, `server.py` | server | vitest | pending | |
+| H11 | Structured access log, slow-request watchdog, `HERMES_WEBUI_TEST_NETWORK_BLOCK` | `api/request_diagnostics.py`, `api/logging_hygiene.py` | server | vitest | partial | checkpoint 4: structured access log; watchdog and network block later |
+| H12 | Deferred startup: session recovery (`STARTUP_READY`), agent deps (`AGENT_DEPS_READY` via sidecar handshake), workers, plugins (`PLUGINS_READY`), relay publisher; signal handling; shutdown drain | `api/startup.py`, `server.py` | server | vitest | partial | checkpoint 4: `StartupGate` with bounded waiters and `Retry-After: 5`; recovery/deps/plugins arming lands with their domains |
 
 ## 2. Routes
 
@@ -57,9 +57,9 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 
 | ID | Route | Consumers | Auth | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| R-A1 | `GET /api/bootstrap` | browser | public | server | vitest, pw | pending | |
-| R-A2 | `GET /api/auth/status` | browser, ios | public | server | vitest | pending | |
-| R-A3 | `POST /api/auth/login`, `POST /api/auth/logout` | browser, ios, mcp | public / auth | server | vitest, fixture | pending | PBKDF2 hashes from Python verify |
+| R-A1 | `GET /api/bootstrap` | browser | public | server | vitest, pw | pass | checkpoint 4 (`api/router.ts`); `pw` runs on the TS server from checkpoint 8 |
+| R-A2 | `GET /api/auth/status` | browser, ios | public | server | vitest | pass | checkpoint 4 |
+| R-A3 | `POST /api/auth/login`, `POST /api/auth/logout` | browser, ios, mcp | public / auth | server | vitest, fixture | pass | PBKDF2 hashes from Python verify; checkpoint 4; legacy `.signing_key` hashes migrate on login |
 | R-A4 | `GET /api/auth/oidc/start`, `GET /api/auth/oidc/callback` | browser, ios | public | server | vitest | pending | |
 | R-A5 | `POST /api/auth/oidc/native/start|exchange|cancel` | ios | public | server | vitest | pending | HttpOnly/Secure cookie in exchange response |
 | R-A6 | `POST /api/auth/passkey/options|login` | browser | public | server | vitest, fixture | pending | |
@@ -153,7 +153,7 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 | R-M13 | `POST /api/talaria/relay/pair`, `POST /api/talaria/presence` | browser, ios | auth | server | vitest, fixture | pending | |
 | R-M14 | `POST /api/transcribe`, `GET /api/transcribe/capability`, `POST /api/tts` | browser, ios | auth | server + sidecar (STT) | vitest | pending | Edge TTS engine dropped |
 | R-M15 | `POST /api/csp-report`, `POST /api/client-events/log` | browser | public / auth | server | vitest | pending | |
-| R-M16 | Non-API: SPA shell allowlist, `/assets/*`, `/static/*`, `/static/dist/*`, `/sw.js`, manifests, `/plugins/plugin.css`, `/dashboard-plugins/*`, plugin tab pages, `/session/static/*`, `/favicon.ico`, `/health`, OPTIONS | browser, ios (`/health`) | public / auth | server | vitest, pw | pending | |
+| R-M16 | Non-API: SPA shell allowlist, `/assets/*`, `/static/*`, `/static/dist/*`, `/sw.js`, manifests, `/plugins/plugin.css`, `/dashboard-plugins/*`, plugin tab pages, `/session/static/*`, `/favicon.ico`, `/health`, OPTIONS | browser, ios (`/health`) | public / auth | server | vitest, pw | partial | checkpoint 4: shell, `/assets/*`, `/static/*` (fingerprint caching), `/static/dist/*`, `/sw.js`, manifests, `/session/static/*`, `/favicon.ico`, `/health`, OPTIONS in `app.ts`; plugin and dashboard-plugin pages land with checkpoint 7 |
 
 ## 3. SSE and long-lived endpoints
 
@@ -173,7 +173,7 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 |---|---|---|---|---|---|
 | P1 | `sessions/<sid>.json`: Session schema and key order, `.tmp.<pid>.<tid>` atomic write, `.bak` shrink rules, metadata-only stubs | server | fixture | pending | byte-identical rewrite of Python-produced fixtures |
 | P2 | `sessions/_index.json`, tombstone files, `_drafts/`, `_run_journal/`, `_turn_journal/` | server | fixture | pending | |
-| P3 | `settings.json` (defaults, allowlist, migrations, `password_hash`, mode-preserving atomic write), `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` | server | fixture | pending | |
+| P3 | `settings.json` (defaults, allowlist, migrations, `password_hash`, mode-preserving atomic write), `projects.json`, `workspaces.json`, `last_workspace.txt`, per-profile `webui_state/` | server | fixture | partial | checkpoint 4: `settings.json` store with defaults, migrations, validation, and the mode-preserving atomic writer (`settings.ts`, `fs/atomic.ts`); the other files land with their domains |
 | P4 | Auth files: `.signing_key`, `.pbkdf2_key`, `.sessions.json`, `.login_attempts.json`, `passkeys.json`, `.passkey_challenges.json`, `.quota_scope_id` | server | fixture | pending | |
 | P5 | `shares/`, `models_cache*.json`, `media_snapshots/`, `attachments/`, extension files, `sidecar-auth/`, `talaria-relay.json` + PEM + revision, `bootstrap-<port>.log` | server | fixture | pending | |
 | P6 | Hermes home file formats read/written by the server: `config.yaml` (mode/uid/gid-preserving write, personality strip), `.env`, `auth.json`, `active_profile`, profile dirs, `saved_prompts.json`, skills `SKILL.md`, memories, `sessions.json`, gateway state, logs, cost snapshots, checkpoints, plugin manifests, Claude/Codex imports | server | fixture | pending | |

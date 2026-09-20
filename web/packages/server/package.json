@@ -18,7 +18,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@maudecode/talaria-web-contracts": "*"
+    "@maudecode/talaria-web-contracts": "*",
+    "@orpc/contract": "1.15.2",
+    "@orpc/openapi": "1.15.2",
+    "@orpc/server": "1.15.2"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

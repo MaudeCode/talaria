@@ -1,0 +1,244 @@
+/**
+ * The request pipeline (Python `server.py` `Handler.do_*`): profile cookie,
+ * sandboxed-origin rejection, the auth gate, the startup gate, SPA/static,
+ * then the oRPC router; JSON 404 for anything else and JSON 500 on faults.
+ */
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { ORPCError, type Router } from '@orpc/server'
+import type { AnyContractRouter } from '@orpc/contract'
+import { OpenAPIHandler } from '@orpc/openapi/node'
+import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
+import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
+import { checkSameOriginBrowserRequest } from './http/origin.js'
+import { coreRouter, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
+import { isSpaPath } from './spa.js'
+import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
+import { STARTUP_IMMEDIATE_PATHS } from './startup.js'
+
+const SHELL_ERROR_HTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hermes is restarting</title>
+</head>
+<body style="margin:0;padding:2rem;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#111827;color:#e5e7eb;">
+  <main style="max-width:40rem;margin:10vh auto;line-height:1.5;">
+    <h1 style="font-size:1.5rem;margin:0 0 0.75rem;">Hermes is restarting…</h1>
+    <p style="margin:0;color:#cbd5e1;">The WebUI shell could not load cleanly. Refresh in a moment if this page does not update automatically.</p>
+  </main>
+</body>
+</html>`
+
+export type RequestHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>
+
+export interface App {
+  deps: AppDeps
+  handler: RequestHandler
+}
+
+function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts: { cacheControl: string; headers?: HeaderMap; gz?: Buffer | null; etag?: string }): void {
+  if (opts.etag && ctx.header('if-none-match') === opts.etag) {
+    ctx.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': opts.cacheControl } })
+    return
+  }
+  const headers: HeaderMap = { 'Content-Type': contentType, 'Cache-Control': opts.cacheControl, Vary: 'Accept-Encoding', ...opts.headers }
+  if (opts.etag) headers.ETag = opts.etag
+  let payload = body
+  if (opts.gz && ctx.acceptsGzip()) {
+    headers['Content-Encoding'] = 'gzip'
+    payload = opts.gz
+  }
+  ctx.send({ status: 200, headers, body: payload })
+}
+
+function notFound(ctx: RequestContext): void {
+  ctx.json({ error: 'not found' }, { status: 404 })
+}
+
+/** Serve the shell, hashed assets, service worker, and manifest; false when the path is not a frontend route. */
+function handleSpa(ctx: RequestContext): boolean {
+  const { spa, version } = ctx.deps
+  const path = ctx.path
+  if (path === '/sw.js') {
+    const sw = spa.serviceWorker(version)
+    if (sw) sendBytes(ctx, sw, 'application/javascript; charset=utf-8', { cacheControl: 'no-store', headers: { 'Service-Worker-Allowed': '/' } })
+    else notFound(ctx)
+    return true
+  }
+  const distFile = (rel: string, cacheControl?: string) => {
+    const asset = spa.asset(rel)
+    if (!asset) {
+      notFound(ctx)
+      return true
+    }
+    const cc = cacheControl ?? (rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
+    sendBytes(ctx, asset.body, asset.contentType, { cacheControl: cc, gz: asset.gz, etag: asset.etag })
+    return true
+  }
+  if (['/manifest.json', '/manifest.webmanifest', '/session/manifest.json', '/session/manifest.webmanifest'].includes(path)) return distFile('manifest.webmanifest', 'no-cache')
+  if (path.startsWith('/assets/')) return distFile(path.slice(1))
+  if (path.startsWith('/static/dist/')) return distFile(path.slice('/static/dist/'.length))
+  // Legacy alias: `/session/static/<rel>` is `/static/<rel>` (deep-linked shells before the relative base href).
+  const staticRel = path.startsWith('/static/') ? path.slice('/static/'.length) : path.startsWith('/session/static/') ? path.slice('/session/static/'.length) : null
+  if (staticRel !== null) {
+    const asset = ctx.deps.staticFiles.get(staticRel)
+    if (!asset) {
+      notFound(ctx)
+      return true
+    }
+    // A `?v=<version>` fingerprint makes the URL immutable; `unknown` and a digest-less `-dirty` are not fingerprints.
+    const token = ctx.query.get('v') ?? ''
+    const fingerprinted = token !== '' && token !== 'unknown' && !token.endsWith('-dirty')
+    sendBytes(ctx, asset.body, asset.contentType, { cacheControl: fingerprinted ? 'public, max-age=31536000, immutable' : 'public, max-age=300', gz: asset.gz, etag: asset.etag })
+    return true
+  }
+  if (isSpaPath(path)) {
+    if (!spa.available()) {
+      ctx.deps.log('[webui] WARNING: Failed to serve WebUI shell route: static/dist/index.html is missing')
+      ctx.text(SHELL_ERROR_HTML, { status: 503, contentType: 'text/html; charset=utf-8' })
+      return true
+    }
+    const extra: HeaderMap = { 'X-Frame-Options': 'DENY' }
+    if (path === '/share' || path.startsWith('/share/')) extra['X-Robots-Tag'] = 'noindex, nofollow'
+    try {
+      const html = Buffer.from(spa.renderShell(path, { lang: shellLanguage(ctx) || 'en', version }), 'utf8')
+      sendBytes(ctx, html, 'text/html; charset=utf-8', { cacheControl: 'no-store', headers: extra })
+    } catch (error) {
+      ctx.deps.log(`[webui] WARNING: Failed to serve WebUI shell route: ${String(error)}`)
+      ctx.text(SHELL_ERROR_HTML, { status: 503, contentType: 'text/html; charset=utf-8' })
+    }
+    return true
+  }
+  return false
+}
+
+function serveFavicon(ctx: RequestContext): void {
+  try {
+    const data = readFileSync(resolve(ctx.deps.config.staticRoot, 'brand', 'favicon.ico'))
+    ctx.send({ status: 200, headers: { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' }, body: data })
+  } catch {
+    notFound(ctx)
+  }
+}
+
+function preflight(ctx: RequestContext): void {
+  const origin = (ctx.header('origin') ?? '').trim()
+  const headers: HeaderMap = {}
+  const allowed = origin && checkSameOriginBrowserRequest(
+    { origin, referer: ctx.header('referer'), host: ctx.header('host'), secFetchSite: ctx.header('sec-fetch-site'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host') },
+    ctx.deps.config.env,
+  ) === null
+  if (allowed) {
+    headers['Access-Control-Allow-Origin'] = origin
+    headers.Vary = 'Origin'
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+  }
+  ctx.send({ status: 200, headers, security: false })
+}
+
+export interface CreateAppOptions {
+  /** The implemented contract router; defaults to the core router. */
+  router?: Router<AnyContractRouter, ApiContext>
+}
+
+export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
+  const orpc = new OpenAPIHandler(opts.router ?? coreRouter, {
+    customErrorResponseBodyEncoder: (error: ORPCError<string, unknown>) => errorResponseBody(error),
+    // Root level: oRPC converts thrown errors into responses below `interceptors`, so only here do error responses get the shared headers.
+    rootInterceptors: [
+      async (options) => {
+        const result = await options.next()
+        if (!result.matched) return result
+        const { ctx } = options.context
+        const headers = result.response.headers
+        Object.assign(headers, lowerKeys(ctx.securityHeaders()))
+        headers['cache-control'] = 'no-store'
+        headers['content-security-policy-report-only'] = buildCspReportOnlyPolicy(ctx.cspExtras)
+        headers['report-to'] = CSP_REPORT_TO
+        const status = result.response.status
+        ctx.beforeOrpcResponse(status)
+        Object.assign(headers, lowerKeys(ctx.extraResponseHeaders))
+        if (ctx.pendingCookies.length) {
+          headers['set-cookie'] = [...ctx.pendingCookies]
+          ctx.pendingCookies = []
+        }
+        return result
+      },
+    ],
+    clientInterceptors: [
+      async (options) => {
+        try {
+          return await options.next()
+        } catch (error) {
+          if (error instanceof ORPCError) {
+            const extra = errorResponseHeaders(error as ORPCError<string, unknown>)
+            if (Object.keys(extra).length) options.context.ctx.extraResponseHeaders = extra
+            throw error
+          }
+          options.context.ctx.deps.log(`[webui] ERROR ${options.context.ctx.method} ${options.context.ctx.req.url ?? ''}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+          throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Internal server error' })
+        }
+      },
+    ],
+  })
+
+  const handler: RequestHandler = async (req, res) => {
+    const ctx = new RequestContext(req, res, deps)
+    deps.stats.requestsTotal += 1
+    deps.stats.lastRequestAt = Date.now() / 1000
+    try {
+      if (ctx.method === 'OPTIONS') {
+        preflight(ctx)
+        return
+      }
+      const profile = await getProfileCookie(ctx)
+      if (profile) ctx.requestProfile = profile
+      const path = ctx.path
+      if (path.startsWith('/api/') && (ctx.header('origin') ?? '').trim().toLowerCase() === 'null') {
+        ctx.rawJson(403, { error: 'Sandboxed documents cannot call the API directly' })
+        return
+      }
+      const isCspReport = path === '/api/csp-report' && ctx.method === 'POST'
+      if (!isCspReport && !(await checkAuth(ctx))) return
+      if (!deps.startup.ready && path.startsWith('/api/') && !STARTUP_IMMEDIATE_PATHS.has(path) && !(await deps.startup.wait())) {
+        startupUnavailable(ctx)
+        return
+      }
+      if (ctx.method === 'GET' || ctx.method === 'HEAD') {
+        if (handleSpa(ctx)) return
+        if (path === '/favicon.ico') {
+          serveFavicon(ctx)
+          return
+        }
+      } else if (path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {
+        ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
+        return
+      }
+      const { matched } = await orpc.handle(req, res, { context: { ctx } })
+      if (matched) {
+        ctx.markFinished(res.statusCode)
+        return
+      }
+      notFound(ctx)
+    } catch (error) {
+      if (ctx.isFinished) return
+      deps.log(`[webui] ERROR ${ctx.method} ${req.url ?? ''}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+      try {
+        ctx.json({ error: 'Internal server error' }, { status: 500 })
+      } catch {
+        /* client gone */
+      }
+    }
+  }
+  return { deps, handler }
+}
+
+function lowerKeys(headers: HeaderMap): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {}
+  for (const [k, v] of Object.entries(headers)) out[k.toLowerCase()] = v
+  return out
+}
