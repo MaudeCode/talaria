@@ -20,7 +20,10 @@ def main():
     identity = {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]}
     if identity != plan["agent"]:
         raise ValueError("selected Web source and planned Agent identity differ")
-    with tempfile.TemporaryDirectory(prefix="talaria-selected-web-") as temporary:
+    # Colima shares the checkout's home path, not macOS system temporary paths.
+    scratch = ROOT / ".codex-tmp"
+    scratch.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="talaria-selected-web-", dir=scratch) as temporary:
         checkout = Path(temporary) / "source"
         subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
         subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", source], check=True)
