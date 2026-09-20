@@ -1365,6 +1365,7 @@ def _summary_cache_key(updates: dict, details: list[dict]) -> str:
             'current_sha': item.get('current_sha'),
             'latest_sha': item.get('latest_sha'),
             'compare_url': item.get('compare_url'),
+            'commits': item.get('commits'),
         })
     blob = json.dumps(payload, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(blob.encode('utf-8')).hexdigest()

@@ -450,3 +450,28 @@ def test_ahead_checkout_is_manual_not_a_successful_update(source_install, monkey
     assert not result.get("up_to_date")
     assert git(client, "rev-parse", "HEAD") == head
     assert stamp.read_text() == original
+
+
+def test_summary_cache_separates_filtered_experimental_commits(source_install, monkeypatch):
+    from collections import OrderedDict
+    from api import updates
+
+    client, upstream, old, _, _, git, run_git, _ = source_install
+    (upstream / "app").mkdir()
+    (upstream / "app/client.swift").write_text("// unrelated App change\n")
+    git(upstream, "add", ".")
+    git(upstream, "commit", "-m", "synthetic unrelated App update")
+    git(client, "fetch", str(upstream), "main")
+    latest = git(upstream, "rev-parse", "HEAD")
+    monkeypatch.setattr(updates, "REPO_ROOT", client / "web")
+    monkeypatch.setattr(updates, "_run_git", run_git)
+    monkeypatch.setattr(updates, "_summary_cache", OrderedDict())
+    info = {"behind": 1, "current_sha": old, "latest_sha": latest}
+    stable = updates.summarize_update_payload({"webui": {**info, "channel": "stable"}})
+    experimental_payload = {"webui": {**info, "channel": "experimental"}}
+    experimental = updates.summarize_update_payload(experimental_payload)
+    assert "synthetic unrelated App update" in stable["summary"]
+    assert "synthetic unrelated App update" not in experimental["summary"]
+    assert "synthetic published release" in experimental["summary"]
+    assert experimental["cached"] is False
+    assert updates.summarize_update_payload(experimental_payload)["cached"] is True
