@@ -62,9 +62,6 @@ def _make_state_db(path):
             content TEXT,
             timestamp TEXT
         );
-        -- This test tracks completed call-owned connections, not an in-flight
-        -- optional background index migration.
-        CREATE INDEX idx_messages_session_user ON messages(session_id) WHERE role = 'user';
         INSERT INTO sessions (id, title, model, message_count, started_at, source)
         VALUES ('s1', 'cli session', 'gpt-x', 2, '2026-01-01T00:00:00Z', 'cli');
         INSERT INTO messages (session_id, role, content, timestamp)
@@ -166,8 +163,8 @@ def test_read_importable_agent_session_rows_closes_connection(tmp_path, tracking
         read_importable_agent_session_rows(db)
 
     _assert_all_closed(tracking_sqlite, "read_importable_agent_session_rows")
-    # The synchronous session/timestamp self-heal still verifies RW closure,
-    # in addition to the five read-only listing connections.
+    # Rollback-journal databases skip optional background DDL. The synchronous
+    # session/timestamp self-heal still verifies RW closure alongside five reads.
     assert len(tracking_sqlite.instances) == 6
 
 

@@ -602,8 +602,6 @@ def _ensure_agent_state_db(profile: str | None = None) -> sqlite3.Connection:
             content TEXT,
             timestamp REAL NOT NULL
         );
-        -- The profile fixture is ready for reads before concurrent requests.
-        CREATE INDEX IF NOT EXISTS idx_messages_session_user ON messages(session_id) WHERE role = 'user';
     """)
     conn.commit()
     return conn

@@ -17,6 +17,7 @@ silently on a read-only db without ever failing the listing).
 import os
 import sqlite3
 import stat
+import threading
 import time
 
 import pytest
@@ -255,3 +256,49 @@ def test_missing_user_index_uses_bounded_first_user_fallback(tmp_path, monkeypat
     by_id = {row["id"]: row for row in rows}
     assert by_id["sess0"]["actual_user_message_count"] == 1
     assert steps["count"] < 1_000
+
+
+@pytest.mark.parametrize("journal_mode", ["delete", "wal"])
+def test_listing_does_not_race_optional_index_writer(tmp_path, monkeypatch, journal_mode):
+    db = tmp_path / "state.db"
+    _full_schema_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(f"PRAGMA journal_mode={journal_mode}")
+        conn.execute("CREATE INDEX idx_messages_session ON messages(session_id, timestamp)")
+    conn.close()
+    connect = sqlite3.connect
+    start = threading.Thread.start
+    locked = threading.Event()
+    release = threading.Event()
+    workers = []
+
+    class HeldIndexConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql.startswith("CREATE INDEX"):
+                super().execute("BEGIN EXCLUSIVE")
+                locked.set()
+                assert release.wait(5)
+            return super().execute(sql, *args, **kwargs)
+
+    def connect_for_worker(*args, **kwargs):
+        if threading.current_thread().name == "state-db-user-index-prime":
+            kwargs["factory"] = HeldIndexConnection
+        return connect(*args, **kwargs)
+
+    def start_worker(thread):
+        start(thread)
+        if thread.name == "state-db-user-index-prime":
+            workers.append(thread)
+            assert locked.wait(2)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_for_worker)
+    monkeypatch.setattr(threading.Thread, "start", start_worker)
+    try:
+        rows = agent_sessions.read_importable_agent_session_rows(db)
+        assert {row["id"] for row in rows} == {"sess0", "sess1", "sess2"}
+        assert len(workers) == (1 if journal_mode == "wal" else 0)
+    finally:
+        release.set()
+        for thread in workers:
+            thread.join(5)
+    assert ("idx_messages_session_user" in _messages_indexes(db)) == (journal_mode == "wal")

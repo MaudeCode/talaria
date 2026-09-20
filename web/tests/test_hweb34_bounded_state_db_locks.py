@@ -58,9 +58,6 @@ def _make_state_db(path):
         "message_count, started_at, ended_at) VALUES (?,?,?,?,?,?,?,?)",
         ("sess-1", "cli", "cli", "Root", "sonnet", 2, 1000.0, 1100.0),
     )
-    # Lock tests own their writer; optional background migration would add an
-    # unrelated lock even to the explicitly unlocked case.
-    conn.execute("CREATE INDEX idx_messages_session_user ON messages(session_id) WHERE role = 'user'")
     conn.executemany(
         "INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls) "
         "VALUES (?,?,?,?,?,?)",

@@ -1,1 +1,10 @@
-{"skip": "Test fixture readiness and isolation only; no runtime behavior changes."}
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep conversations visible while reading older Agent databases.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

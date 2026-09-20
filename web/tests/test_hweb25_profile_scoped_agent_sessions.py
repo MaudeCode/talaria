@@ -121,8 +121,6 @@ def _make_state_db(home, prefix):
             content TEXT,
             timestamp REAL
         );
-        -- Profile-cache concurrency must not race optional index migration.
-        CREATE INDEX idx_messages_session_user ON messages(session_id) WHERE role = 'user';
         """
     )
     for index in range(2):
