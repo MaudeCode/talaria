@@ -181,7 +181,8 @@ function handleMedia(ctx: RequestContext): void {
       return
     }
   }
-  serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot })
+  // The pathname policy ran before the open; the hard-link rule is re-applied to the inode actually opened.
+  serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot, denyHardLinks: true })
 }
 
 /**

@@ -106,6 +106,8 @@ export interface ServeFileOptions {
   csp?: string | null
   anchorRoot?: string | null
   downloadName?: string | null
+  /** Media policy on the opened inode: a file with more than one link may be a hard link to a denied state file. */
+  denyHardLinks?: boolean
 }
 
 /** Serve a file with MIME/disposition, weak ETag revalidation, and single byte ranges. */
@@ -116,6 +118,7 @@ export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeF
     fd = opts.anchorRoot ? openAnchoredFd(opts.anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
     const st = fstatSync(fd)
     if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
+    if (opts.denyHardLinks && st.nlink > 1) { closeSync(fd); ctx.json({ error: 'Path not in allowed location' }, { status: 403 }); return }
     fileSize = st.size
   } catch (error) {
     if (fd !== null) closeSync(fd)

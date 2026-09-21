@@ -69,7 +69,7 @@ import { readZip } from '../workspace/unzip.js'
 import { FOLDER_ZIP_MAX_FILES_CEILING, FOLDER_ZIP_MAX_MB_CEILING, folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
 import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -295,6 +295,30 @@ describe('raw byte routes', () => {
     } finally {
       spy.mockRestore()
       rmSync(join(ws, 'late.png'), { force: true })
+    }
+  })
+
+  it.runIf(process.platform !== 'linux')('a media file swapped for a hard link to a state file after the policy check is refused on the opened inode', async () => {
+    writeFileSync(join(ws, 'late-link.png'), 'png-bytes')
+    writeFileSync(join(s.state, 'settings.json'), '{"secret":true}')
+    const realChdir = process.chdir.bind(process)
+    let swapped = false
+    const spy = vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
+      realChdir(dir)
+      if (!swapped && dir === ws) {
+        swapped = true
+        rmSync(join(ws, 'late-link.png'))
+        linkSync(join(s.state, 'settings.json'), join(ws, 'late-link.png'))
+      }
+    })
+    try {
+      const res = await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'late-link.png'))}`)
+      expect(swapped).toBe(true)
+      expect(res.status).toBe(403)
+      expect(await res.text()).not.toContain('secret')
+    } finally {
+      spy.mockRestore()
+      rmSync(join(ws, 'late-link.png'), { force: true })
     }
   })
 
