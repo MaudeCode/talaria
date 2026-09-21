@@ -6,8 +6,8 @@
  * and the session fingerprint = sha256(canonical policy JSON).
  */
 import { readCapped } from '../http/capped.js'
+import { BlockedAddressError, vettedAddresses, type DnsLookup, type PinnedFetch } from '../http/pinned.js'
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from 'node:crypto'
-import { lookup } from 'node:dns/promises'
 import { existsSync, statSync } from 'node:fs'
 import { BlockList, isIP } from 'node:net'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
@@ -51,6 +51,8 @@ export interface OidcDeps {
   operatorConfig: () => Promise<Dict>
   profileHome: (name: string) => string
   fetch: () => typeof fetch
+  /** Vetted outbound for untrusted hosts: DNS answers checked and the connection pinned to them (`http/pinned.ts`). */
+  pinned: () => { lookup: DnsLookup; fetch: PinnedFetch }
   now: () => number
   log: (line: string) => void
 }
@@ -500,7 +502,8 @@ export class OidcService {
 
   // ── discovery, JWKS, tokens ──────────────────────────────────────────
 
-  private async validateOutbound(cfg: OidcConfig, url: string): Promise<void> {
+  /** The vetted addresses to pin the request to, or null for an operator-trusted private host (plain fetch). */
+  private async validateOutbound(cfg: OidcConfig, url: string): Promise<string[] | null> {
     let u: URL
     try { u = new URL(url) } catch { throw new OidcAuthError('OIDC endpoint URLs must use https', 502) }
     if (u.protocol !== 'https:') throw new OidcAuthError('OIDC endpoint URLs must use https', 502)
@@ -508,19 +511,22 @@ export class OidcService {
     const hostname = u.hostname.replace(/^\[|\]$/g, '')
     if (!hostname) throw new OidcAuthError('OIDC endpoint URL was missing a hostname', 502)
     const normalized = hostname.toLowerCase().replace(/\.+$/, '')
-    if (cfg.trusted_private_hosts.includes(normalized)) return
-    let disallowed = false
-    if (isIP(hostname)) disallowed = disallowedIp(hostname)
-    else {
-      try { disallowed = (await lookup(hostname, { all: true })).some((a) => disallowedIp(a.address)) } catch { disallowed = false }
+    if (cfg.trusted_private_hosts.includes(normalized)) return null
+    try {
+      return await vettedAddresses(hostname, disallowedIp, this.deps.pinned().lookup)
+    } catch (error) {
+      if (error instanceof BlockedAddressError) throw new OidcAuthError('OIDC endpoint URLs must not target private or local addresses', 502)
+      throw new OidcAuthError(`Failed to resolve OIDC endpoint host: ${hostname}`, 502)
     }
-    if (disallowed) throw new OidcAuthError('OIDC endpoint URLs must not target private or local addresses', 502)
   }
 
-  private async fetchJson(cfg: OidcConfig, url: string, init: RequestInit, failure: string): Promise<Dict> {
-    await this.validateOutbound(cfg, url)
+  private async fetchJson(cfg: OidcConfig, url: string, init: { method?: string; headers?: Record<string, string>; body?: string }, failure: string): Promise<Dict> {
+    const addresses = await this.validateOutbound(cfg, url)
     let res: Response
-    try { res = await this.deps.fetch()(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(10_000) }) } catch { throw new OidcAuthError(failure, 502) }
+    try {
+      const signal = AbortSignal.timeout(10_000)
+      res = addresses ? await this.deps.pinned().fetch(url, { ...init, signal }, addresses) : await this.deps.fetch()(url, { ...init, redirect: 'error', signal })
+    } catch { throw new OidcAuthError(failure, 502) }
     if (!res.ok) throw new OidcAuthError(failure, 502)
     let text: string
     try { const raw = await readCapped(res, 1024 * 1024); if (!raw) throw new Error('too large'); text = raw.toString('utf8') } catch { throw new OidcAuthError(failure, 502) }

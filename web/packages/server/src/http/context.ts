@@ -5,6 +5,7 @@
  * cookies, and the structured access log.
  */
 import type { AsyncLocalStorage } from 'node:async_hooks'
+import type { DnsLookup, PinnedFetch } from './pinned.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
 import { gzipSync } from 'node:zlib'
@@ -142,6 +143,9 @@ export interface AppDeps {
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter
   fetch: typeof fetch
+  /** Vetted outbound (`http/pinned.ts`): DNS answers are checked and the connection is pinned to them. */
+  dnsLookup: DnsLookup
+  pinnedFetch: PinnedFetch
   // ── workers (checkpoint 7h) ──
   completions: CompletionDrain
   hygiene: HygieneTicker

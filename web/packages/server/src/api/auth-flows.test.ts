@@ -439,3 +439,42 @@ describe('OIDC enablement', () => {
     } finally { await s.close() }
   })
 })
+
+describe('OIDC outbound vetting', () => {
+  const now = () => Date.now() / 1000
+  const env = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins' }
+
+  it('an untrusted issuer is resolved, checked, and reached only through the pinned connection', async () => {
+    const s = await bootTestServer({ env })
+    try {
+      const idp = fakeIdp(now)
+      const pinnedTo: string[][] = []
+      s.deps.fetch = () => Promise.reject(new Error('plain fetch must not be used for an untrusted host'))
+      s.deps.dnsLookup = (h) => Promise.resolve(h === 'idp.example' ? [{ address: '93.184.216.34', family: 4 }] : [])
+      s.deps.pinnedFetch = (url, init, addresses) => { pinnedTo.push(addresses); return idp.fetch(url, init) }
+      const start = await s.get('/api/auth/oidc/start')
+      expect(start.status).toBe(302)
+      const { state, code } = providerCode(start.headers.get('location') ?? '')
+      const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      expect(cb.status).toBe(302)
+      expect(pinnedTo.length).toBeGreaterThanOrEqual(2)
+      expect(pinnedTo.every((a) => a.length === 1 && a[0] === '93.184.216.34')).toBe(true)
+    } finally { await s.close() }
+  })
+
+  it('an issuer whose DNS answers include a private address is refused before any request carries the client credentials', async () => {
+    const s = await bootTestServer({ env })
+    try {
+      const requests: string[] = []
+      s.deps.fetch = () => { requests.push('plain'); return Promise.reject(new Error('no')) }
+      s.deps.pinnedFetch = (url) => { requests.push(url); return Promise.reject(new Error('no')) }
+      s.deps.dnsLookup = () => Promise.resolve([{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.5', family: 4 }])
+      const start = await s.get('/api/auth/oidc/start')
+      expect(start.status).toBe(502)
+      expect(requests).toEqual([])
+      s.deps.dnsLookup = () => Promise.reject(new Error('ENOTFOUND'))
+      expect((await s.get('/api/auth/oidc/start')).status).toBe(502)
+      expect(requests).toEqual([])
+    } finally { await s.close() }
+  })
+})

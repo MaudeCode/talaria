@@ -16,7 +16,10 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
-interface Captured { url: string; init: RequestInit | undefined }
+interface Captured { url: string; init: RequestInit | undefined; addresses?: string[] }
+
+/** Hostnames the fake resolver answers; anything else is NXDOMAIN. */
+const DNS: Record<string, string[]> = { 'custom.example.com': ['93.184.216.34'], 'api.openai.com': ['104.18.7.192'], 'rebind.example.com': ['93.184.216.34', '10.0.0.5'], 'internal.example.com': ['192.168.1.10'] }
 
 /** Upstream engines keyed by the posted text: `big` streams without end, `json` answers JSON, `redirect` answers 302. */
 function ttsFetch(requests: Captured[]): typeof fetch {
@@ -38,7 +41,12 @@ function bootTts(env: Record<string, string> = {}): Promise<{ s: TestServer; sid
   const configs = new Map<string, Json>()
   const requests: Captured[] = []
   sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
-  return bootTestServer({ sidecar, env, deps: (deps) => { (deps as { fetch: typeof fetch }).fetch = ttsFetch(requests) } }).then((s) => { writeFileSync(join(s.state, 'config.yaml'), '# seed\n'); return { s, sidecar, requests, configs } })
+  return bootTestServer({ sidecar, env, deps: (deps) => {
+    const f = ttsFetch(requests)
+    deps.fetch = f
+    deps.dnsLookup = (hostname) => { const a = DNS[hostname]; return a ? Promise.resolve(a.map((address) => ({ address, family: 4 }))) : Promise.reject(new Error(`ENOTFOUND ${hostname}`)) }
+    deps.pinnedFetch = async (url, init, addresses) => { const res = await f(url, init); requests.at(-1)!.addresses = addresses; return res }
+  } }).then((s) => { writeFileSync(join(s.state, 'config.yaml'), '# seed\n'); return { s, sidecar, requests, configs } })
 }
 
 describe('TTS validation, limits, and engines', () => {
@@ -174,7 +182,23 @@ describe('TTS validation, limits, and engines', () => {
     setConfig({ tts: { openai: { base_url: 'https://custom.example.com/v1', model: 'tts-custom', voice: 'nova' } } })
     expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(200)
     expect(requests[0]?.url).toBe('https://custom.example.com/v1/audio/speech')
+    expect(requests[0]?.addresses).toEqual(['93.184.216.34'])
     expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'tts-custom', input: 'Hello', voice: 'nova' })
+  })
+
+  it('an https base_url whose DNS answers include a private address is refused before the bearer is sent, and an unresolvable one is an upstream failure', async () => {
+    fresh()
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
+    for (const host of ['rebind.example.com', 'internal.example.com']) {
+      setConfig({ tts: { openai: { base_url: `https://${host}/v1` } } })
+      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
+      expect(res.status).toBe(400)
+      expect(String((await json(res)).error)).toContain('base_url')
+      expect(requests).toEqual([])
+    }
+    setConfig({ tts: { openai: { base_url: 'https://nxdomain.example.com/v1' } } })
+    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(502)
+    expect(requests).toEqual([])
   })
 
   it('a public http base_url is refused while loopback http is allowed for development', async () => {
@@ -216,7 +240,8 @@ describe('TTS validation, limits, and engines', () => {
     const res = await post(s, '/api/tts', { text: 'redirect', engine: 'openai' })
     expect(res.status).toBe(502)
     expect(requests).toHaveLength(1)
-    expect(requests[0]?.init?.redirect).toBe('error')
+    // The pinned client returns 3xx as-is (pinned.test.ts); the loopback http path still passes `redirect: 'error'`.
+    expect(requests[0]?.addresses).toEqual(['104.18.7.192'])
   })
 
   it('[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_redirect_with_pinned_opener] the redirect target is never dialled', async () => {

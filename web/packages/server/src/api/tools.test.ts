@@ -191,7 +191,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       return Promise.resolve(new Response('nope', { status: 404 }))
     }
     s = await bootTestServer({ sidecar, deps: (deps) => {
-      (deps as { fetch: typeof fetch }).fetch = fakeFetch
+      deps.fetch = fakeFetch
+      deps.dnsLookup = () => Promise.resolve([{ address: '104.18.7.192', family: 4 }])
+      deps.pinnedFetch = (url, init) => fakeFetch(url, init)
       // The test server's web root is this checkout; point the updater at an npm-style install so no fetch reaches GitHub or origin.
       const original = deps.updates
       deps.updates = new UpdateService({ ...(original as unknown as { deps: UpdateServiceDeps }).deps, webRoot: join(deps.config.stateDir, 'not-a-checkout'), agentDir: () => null })

@@ -1,6 +1,7 @@
 /** Binary and public raw handlers: `/api/transcribe`, `/api/tts`, `/api/csp-report` (Python `handle_transcribe`, `_handle_tts`, `_handle_csp_report`). */
 import { join } from 'node:path'
 import { isIPv4, isIPv6 } from 'node:net'
+import { BlockedAddressError, vettedAddresses } from '../http/pinned.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
 import { parseMultipart, sanitizeUploadName } from '../workspace/upload.js'
@@ -161,8 +162,18 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
     const oai = dict(tts.openai)
     let base = 'https://api.openai.com/v1'
     try { base = normalizedOpenAiBase(str(oai.base_url) || base) } catch { ctx.json({ error: 'invalid OpenAI base_url in config' }, { status: 400 }); return }
+    // The bearer only travels to an address that passed the same check as the hostname, over that very connection.
+    let addresses: string[] = []
+    if (base.startsWith('https:')) {
+      try { addresses = await vettedAddresses(new URL(base).hostname, blockedTtsAddress, ctx.deps.dnsLookup) } catch (error) {
+        if (error instanceof BlockedAddressError) { ctx.json({ error: 'invalid OpenAI base_url in config' }, { status: 400 }); return }
+        ctx.deps.log(`[tts] openai base_url did not resolve: ${str((error as Error).message)}`)
+        ctx.json({ error: 'OpenAI TTS generation failed' }, { status: 502 }); return
+      }
+    }
     try {
-      const res = await f(`${base}/audio/speech`, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ model: str(oai.model) || 'gpt-4o-mini-tts', input: text, voice: str(oai.voice) || 'alloy' }), redirect: 'error', signal: AbortSignal.timeout(TTS_TIMEOUT_MS) })
+      const init = { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ model: str(oai.model) || 'gpt-4o-mini-tts', input: text, voice: str(oai.voice) || 'alloy' }), signal: AbortSignal.timeout(TTS_TIMEOUT_MS) }
+      const res = addresses.length ? await ctx.deps.pinnedFetch(`${base}/audio/speech`, init, addresses) : await f(`${base}/audio/speech`, { ...init, redirect: 'error' })
       if (!res.ok) { ctx.json({ error: 'OpenAI TTS generation failed' }, { status: 502 }); return }
       const audio = await bufferAudio(res)
       ctx.send({ status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }, body: audio, security: true })

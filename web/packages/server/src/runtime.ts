@@ -3,6 +3,7 @@
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AuthStore } from './auth/store.js'
@@ -356,7 +357,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     defaultModel: () => (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim(),
     log,
   })
-  oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(config.hermesHome), profileHome, fetch: () => lazyFetch, now, log })
+  oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(config.hermesHome), profileHome, fetch: () => lazyFetch, pinned: () => ({ lookup: deps.dnsLookup, fetch: deps.pinnedFetch }), now, log })
   operatorConfigPeek = () => agentConfig.peek(config.hermesHome)
   settings.hooks.defaultModel = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); if (!cfg) return ''; if (typeof cfg.model === 'string') return cfg.model.trim(); const d = asDict(cfg.model).default; return typeof d === 'string' ? d.trim() : '' }
   settings.hooks.defaultModelProvider = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); const p = asDict(cfg?.model).provider; return typeof p === 'string' && p ? p : undefined }
@@ -462,6 +463,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
     fetch: opts.fetch ?? fetch,
+    dnsLookup: systemDnsLookup,
+    pinnedFetch,
     crons: new CronService({
       sidecar: () => sidecar,
       profileHome,
