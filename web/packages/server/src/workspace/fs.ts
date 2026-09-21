@@ -275,6 +275,20 @@ function assertAbsent(path: string, leaf: string): void {
   throw new FileExistsError(leaf)
 }
 
+/**
+ * Run `fn` against the directory `target` through its held descriptor: `child(name)` names an entry (and
+ * `child('.')` the directory itself) so enumeration and per-entry metadata never resolve `target`'s pathname
+ * again (Python listed through the `openat` descriptor for the same reason).
+ */
+export function withAnchoredDir<T>(root: string, target: string, fn: (child: (name: string) => string) => T): T {
+  const dir = new DirHandle(openAnchoredFd(root, target, { wantDir: true }), target)
+  try {
+    return dir.anchored(() => fn((name) => (name === '.' ? (DESCRIPTOR_PATHS ? `/proc/self/fd/${String(dir.fd)}` : '.') : dir.child(name))))
+  } finally {
+    dir.close()
+  }
+}
+
 export interface DirEntry {
   name: string
   path: string
@@ -304,10 +318,12 @@ export function listDir(workspace: string, rel = '.'): DirEntry[] {
   }
   if (!st.isDirectory()) throw new NotFoundError(`Not a directory: ${rel}`)
   const wsResolved = resolvePathLikePython(workspace)
-  const fd = openAnchoredFd(workspace, target, { wantDir: true })
-  closeSync(fd)
+  return withAnchoredDir(workspace, target, (child) => listAnchored(target, rel, wsResolved, child))
+}
+
+function listAnchored(target: string, rel: string, wsResolved: string, child: (name: string) => string): DirEntry[] {
   const entries: DirEntry[] = []
-  const dirents = readdirSync(target, { withFileTypes: true })
+  const dirents = readdirSync(child('.'), { withFileTypes: true })
   const sortKey = (d: import('node:fs').Dirent) => [!d.isSymbolicLink(), d.isFile(), d.name.toLowerCase()] as const
   dirents.sort((a, b) => {
     const [la, fa, na] = sortKey(a)
@@ -319,7 +335,7 @@ export function listDir(workspace: string, rel = '.'): DirEntry[] {
   for (const de of dirents) {
     if (entries.length >= 200) break
     const name = de.name
-    const full = join(target, name)
+    const full = child(name)
     let lst: import('node:fs').BigIntStats | null = null
     try {
       lst = lstatSync(full, { bigint: true })

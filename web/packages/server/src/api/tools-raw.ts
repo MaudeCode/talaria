@@ -1,6 +1,7 @@
 /** Binary and public raw handlers: `/api/transcribe`, `/api/tts`, `/api/csp-report` (Python `handle_transcribe`, `_handle_tts`, `_handle_csp_report`). */
 import { join } from 'node:path'
-import { isIPv4, isIPv6 } from 'node:net'
+import { isIP } from 'node:net'
+import { isNonGlobalAddress } from '../http/addresses.js'
 import { BlockedAddressError, vettedAddresses } from '../http/pinned.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
@@ -68,23 +69,12 @@ function prosody(value: unknown, unit: string): string | null {
   return `${sign}${String(n)}${unit}`
 }
 
-/** Python `_tts_addr_is_blocked`: every non-global range (loopback, private, link-local, CGNAT, benchmarking, documentation, multicast, reserved). */
+/** Python `_tts_addr_is_blocked`: `localhost` names and every non-global address (`http/addresses.ts`). */
 function blockedTtsAddress(host: string): boolean {
   const h = host.replace(/^\[|\]$/g, '').toLowerCase()
   if (h === 'localhost' || h.endsWith('.localhost')) return true
-  const v4 = (ip: string): boolean => {
-    const p = ip.split('.').map(Number)
-    if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true
-    const [a, b] = p as [number, number, number, number]
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 0 || b === 168))
-      || (a === 198 && (b === 18 || b === 19 || b === 51)) || (a === 203 && b === 0) || a >= 224
-  }
-  if (isIPv4(h)) return v4(h)
-  if (isIPv6(h)) {
-    if (h.startsWith('::ffff:')) { const tail = h.slice(7); return isIPv4(tail) ? v4(tail) : true }
-    return h === '::1' || h === '::' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith('2001:db8')
-  }
-  return false
+  if (!isIP(h)) return false
+  return isNonGlobalAddress(h)
 }
 
 const TTS_LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])

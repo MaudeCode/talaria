@@ -468,7 +468,8 @@ class PublicationTests(unittest.TestCase):
                     mutations = len([args for args in commands if args[1] in ("publish", "dist-tag")])
                     with self.assertRaisesRegex(ValueError, "different contents"):
                         publish.publish_npm(component, build, root)
-                    self.assertEqual(len([args for args in commands if args[1] in ("publish", "dist-tag")]), mutations + 1)  # contracts re-tag only
+                    # The contracts tarball still matched, but nothing is re-tagged once any package mismatches.
+                    self.assertEqual(len([args for args in commands if args[1] in ("publish", "dist-tag")]), mutations)
                     server.write_bytes(b"server tarball " + channel.encode())
                     # A registry that serves different bytes right after publication fails the readback.
                     registry.clear()

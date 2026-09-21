@@ -130,23 +130,27 @@ def publish_npm(component, build, directory):
     if len(ordered) != 2:
         raise ValueError("Web publication requires the contracts and server tarballs")
     dist_tag = "experimental" if component["tag"].startswith("web-exp-") else "latest"
+    packages = {name: "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web" for name in ordered}
+    # Preflight every package before any mutation so a mismatch on one never leaves the other re-tagged.
+    published = {}
     for name in ordered:
-        package = "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web"
-        spec = f"{package}@{component['version']}"
+        spec = f"{packages[name]}@{component['version']}"
         existing = _npm_view(spec, "dist.integrity")
-        if existing is None:
-            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", "--tag", dist_tag], check=True)
-        elif existing != _npm_integrity(tarballs[name]):
+        if existing is not None and existing != _npm_integrity(tarballs[name]):
             # Versions are immutable: a different tarball under this version came from another channel or build.
             raise ValueError(f"{spec} is already published with different contents; the version must be unique across channels")
+        published[name] = existing is not None
+    for name in ordered:
+        spec = f"{packages[name]}@{component['version']}"
+        if not published[name]:
+            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", "--tag", dist_tag], check=True)
         # A retry (or an identical tarball already published) still has to carry this channel's dist-tag.
         subprocess.run(["npm", "dist-tag", "add", spec, dist_tag], check=True)
     for name in ordered:
-        package = "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web"
-        spec = f"{package}@{component['version']}"
+        spec = f"{packages[name]}@{component['version']}"
         if _npm_view(spec, "dist.integrity") != _npm_integrity(tarballs[name]):
             raise ValueError("npm registry readback differs from the published tarball")
-        tags = json.loads(subprocess.check_output(["npm", "view", package, "dist-tags", "--json"], text=True))
+        tags = json.loads(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json"], text=True))
         if tags.get(dist_tag) != component["version"]:
             raise ValueError(f"npm dist-tag {dist_tag} does not point at the published version")
     return expected

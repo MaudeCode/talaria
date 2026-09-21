@@ -6,10 +6,11 @@
  * and the session fingerprint = sha256(canonical policy JSON).
  */
 import { readCapped } from '../http/capped.js'
+import { isNonGlobalAddress } from '../http/addresses.js'
 import { BlockedAddressError, vettedAddresses, type DnsLookup, type PinnedFetch } from '../http/pinned.js'
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { BlockList, isIP } from 'node:net'
+import { isIP } from 'node:net'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
 import { isDict } from '../config/agent-config.js'
 import { str } from '../util.js'
@@ -69,16 +70,8 @@ function allowValues(raw: unknown): string[] {
   return values.some((v) => UNRESOLVED_RE.test(v)) ? [] : values
 }
 
-const PRIVATE = new BlockList()
-for (const [a, p] of [['10.0.0.0', 8], ['172.16.0.0', 12], ['192.168.0.0', 16], ['169.254.0.0', 16], ['127.0.0.0', 8], ['0.0.0.0', 8], ['224.0.0.0', 4], ['240.0.0.0', 4], ['100.64.0.0', 10]] as const) PRIVATE.addSubnet(a, p, 'ipv4')
-for (const [a, p] of [['::1', 128], ['::', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) PRIVATE.addSubnet(a, p, 'ipv6')
-
-function disallowedIp(address: string): boolean {
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1] ?? address
-  const family = isIP(mapped)
-  if (!family) return false
-  return PRIVATE.check(mapped, family === 4 ? 'ipv4' : 'ipv6')
-}
+/** Non-global destinations never receive the client credentials (`http/addresses.ts`). */
+const disallowedIp = isNonGlobalAddress
 
 export function safeNextPath(raw: unknown): string {
   const path = str(raw).trim()

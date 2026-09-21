@@ -3,7 +3,7 @@ import { closeSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { FileExistsError, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, unlinkAnchored } from './fs.js'
+import { FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, unlinkAnchored } from './fs.js'
 
 describe('anchored walk', () => {
   let root = ''
@@ -128,5 +128,33 @@ describe('anchored walk', () => {
     renameAnchored(root, join(root, 'mv', 'src', 'folder'), join(root, 'mv', 'dst-real', 'folder'))
     expect(readFileSync(join(root, 'mv', 'dst-real', 'folder', 'k.txt'), 'utf8')).toBe('keep')
     expect(readdirSync(root).filter((n) => n.startsWith('.talaria-move-'))).toEqual([])
+  })
+
+  it('lists a directory through the walk and refuses a symlinked one', () => {
+    mkdirSync(join(root, 'ls'), { recursive: true })
+    writeFileSync(join(root, 'ls', 'a.txt'), 'aaa')
+    mkdirSync(join(root, 'ls', 'sub'))
+    const names = listDir(root, 'ls').map((e) => [e.name, e.type, e.size ?? null])
+    expect(names).toEqual([['sub', 'dir', null], ['a.txt', 'file', 3]])
+    expect(() => listDir(root, 'link-dir')).toThrow(PathTraversalError)
+  })
+
+  it.runIf(process.platform !== 'linux')('a directory swapped for a symlink after its descriptor was opened is still listed from the descriptor', () => {
+    mkdirSync(join(root, 'late-ls'), { recursive: true })
+    writeFileSync(join(root, 'late-ls', 'inside.txt'), 'in')
+    writeFileSync(join(outside, 'outside.txt'), 'out')
+    const realChdir = process.chdir.bind(process)
+    let swapped = false
+    vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
+      realChdir(dir)
+      if (!swapped && dir === join(root, 'late-ls')) {
+        swapped = true
+        renameSync(join(root, 'late-ls'), join(root, 'late-ls-real'))
+        symlinkSync(outside, join(root, 'late-ls'))
+      }
+    })
+    const names = listDir(root, 'late-ls').map((e) => e.name)
+    expect(swapped).toBe(true)
+    expect(names).toEqual(['inside.txt'])
   })
 })
