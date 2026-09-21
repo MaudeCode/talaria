@@ -1,4 +1,5 @@
 /** First-run wizard: status, setup, self-hosted providers, endpoint probe (Python `api/onboarding.py`). */
+import { readCapped } from './http/capped.js'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
@@ -293,12 +294,13 @@ export class Onboarding {
     }
     if (res.status >= 300 && res.status < 400) return { ok: false, error: 'unreachable', detail: `HTTP ${String(res.status)} — endpoint returned a redirect (probe does not follow redirects).  Point base_url at the final URL directly.`, status: res.status }
     if (res.status >= 400) {
-      const body = (await res.text().catch(() => '')).slice(0, 2048).trim()
+      const body = ((await readCapped(res, 2048).catch(() => null)) ?? Buffer.alloc(0)).toString('utf8').trim()
       const first = body.split('\n')[0]?.slice(0, 200) ?? ''
       return { ok: false, error: res.status < 500 ? 'http_4xx' : 'http_5xx', detail: first ? `HTTP ${String(res.status)}: ${first}` : `HTTP ${String(res.status)}`, status: res.status }
     }
-    const raw = Buffer.from(await res.arrayBuffer())
-    if (raw.length > PROBE_MAX_BYTES) return { ok: false, error: 'parse', detail: `response exceeded ${String(PROBE_MAX_BYTES / 1024)} KB cap` }
+    // Read incrementally and cancel past the cap so the advertised limit bounds memory (shared capped reader).
+    const raw = await readCapped(res, PROBE_MAX_BYTES)
+    if (!raw) return { ok: false, error: 'parse', detail: `response exceeded ${String(PROBE_MAX_BYTES / 1024)} KB cap` }
     let payload: unknown
     try { payload = JSON.parse(raw.toString('utf8')) } catch (error) { return { ok: false, error: 'parse', detail: `response is not JSON (${(error as Error).name})` } }
     let entries: unknown[]

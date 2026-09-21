@@ -283,3 +283,17 @@ describe('config snapshot fingerprint (review round 15)', () => {
     rmSync(home, { recursive: true, force: true })
   })
 })
+
+describe('onboarding probe cap (review round 16)', () => {
+  it('an unbounded model-list response is cut off at the cap instead of buffered', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, deps: (deps) => {
+      (deps as { fetch: typeof fetch }).fetch = () => Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      ;(deps.onboarding as unknown as { deps: { fetch?: typeof fetch } }).deps.fetch = deps.fetch
+    } })
+    try {
+      const res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'http://127.0.0.1:9/v1' })
+      expect(await json(res)).toMatchObject({ ok: false, error: 'parse', detail: expect.stringContaining('exceeded') as unknown })
+    } finally { await s.close() }
+  })
+})
