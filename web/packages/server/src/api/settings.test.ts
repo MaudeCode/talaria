@@ -330,6 +330,15 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       // A process-environment key is not touched by a delete.
       await post(s, '/api/providers/delete', { provider: 'deepseek' })
       expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
+      // A key the default profile did not have at startup becomes dotenv-owned and reaches the runtime and sidecar.
+      const added = sidecar.calls.length
+      expect((await json(await post(s, '/api/providers', { provider: 'openai', api_key: 'sk-added-later-1234' }))).action).toBe('updated')
+      expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('OPENAI_API_KEY')
+      expect(sidecar.calls.slice(added).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENAI_API_KEY: 'sk-added-later-1234' } })
+      // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
+      expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
+      expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
     } finally {
       delete env.OPENAI_API_KEY
       delete env.DEEPSEEK_API_KEY

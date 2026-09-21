@@ -1,5 +1,6 @@
 /** Binary and public raw handlers: `/api/transcribe`, `/api/tts`, `/api/csp-report` (Python `handle_transcribe`, `_handle_tts`, `_handle_csp_report`). */
 import { join } from 'node:path'
+import { homeDotenvKeys } from '../cli/dotenv.js'
 import { isIP } from 'node:net'
 import { isNonGlobalAddress } from '../http/addresses.js'
 import { BlockedAddressError, vettedAddresses } from '../http/pinned.js'
@@ -123,8 +124,12 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   if (text.length > 5000) { ctx.json({ error: 'text too long (max 5000 characters)' }, { status: 400 }); return }
   // Python `_client_ip_for_rate_limit`: the peer address, or the forwarded client only behind an opted-in trusted proxy.
   if (ctx.deps.ttsLimiter.limited(rateLimitClientIp(ctx) || 'unknown')) { ctx.json({ error: 'rate limit exceeded — please wait' }, { status: 429 }); return }
-  const home = ctx.deps.profileHome(activeProfileName(ctx))
-  const env = { ...loadEnvFile(join(home, '.env')), ...ctx.deps.config.env }
+  const profile = activeProfileName(ctx)
+  const home = ctx.deps.profileHome(profile)
+  // Process-wide deployment values still apply, but variables the default profile's `.env` put into the process
+  // environment at startup are that profile's own and never reach a named profile's request.
+  const owned = ctx.deps.isRootProfile(profile) ? new Set<string>() : homeDotenvKeys(ctx.deps.config.env)
+  const env = { ...loadEnvFile(join(home, '.env')), ...Object.fromEntries(Object.entries(ctx.deps.config.env).filter(([k]) => !owned.has(k))) }
   // An unreadable config must not degrade to the public defaults: the operator's endpoint, model, and voice are unknown.
   let config: Record<string, unknown>
   try { config = await ctx.deps.agentConfig.read(home) } catch (error) {

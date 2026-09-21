@@ -76,3 +76,31 @@ def test_a_released_slot_admits_the_next_call() -> None:
     reader.join(5)
     replies = [json.loads(raw) for raw in stdout.getvalue().splitlines()]
     assert [r["result"] for r in replies] == [{"ok": True}] * 3
+
+
+def test_a_cancel_read_immediately_after_the_call_still_finds_it() -> None:
+    """Registration happens on the reader thread, so a cancel that follows the request in the same buffer is never `not_active`."""
+    seen: list[bool] = []
+
+    def waits_for_cancel(ctx, params):
+        for _ in range(200):
+            if ctx.cancelled:
+                break
+            threading.Event().wait(0.01)
+        seen.append(ctx.cancelled)
+        return {"cancelled": ctx.cancelled}
+
+    for _ in range(20):
+        requests = [{"jsonrpc": "2.0", "id": 1, "method": "slow"}, {"jsonrpc": "2.0", "id": "c", "method": "rpc.cancel", "params": {"id": 1}}]
+        stdin = io.BytesIO(b"".join(json.dumps(line).encode() + b"\n" for line in requests))
+        stdout = io.BytesIO()
+        server = RpcServer({"slow": waits_for_cancel}, stdin=stdin, stdout=stdout)
+        server.serve_forever()
+        for _ in range(300):
+            replies = {json.loads(raw)["id"]: json.loads(raw) for raw in stdout.getvalue().splitlines()}
+            if len(replies) == 2:
+                break
+            threading.Event().wait(0.01)
+        assert replies["c"]["result"] == {"cancelled": True}
+        assert replies[1]["result"] == {"cancelled": True}
+    assert all(seen)

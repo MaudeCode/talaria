@@ -44,6 +44,7 @@ export class ZipWriter {
     header.writeUInt16LE(8, 8) // deflate
     header.writeUInt16LE(time, 10)
     header.writeUInt16LE(date, 12)
+    header.writeUInt16LE(nameBuf.length, 26)
     await this.write(header)
     await this.write(nameBuf)
     let crc = 0

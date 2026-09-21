@@ -115,7 +115,18 @@ class RpcServer:
         self._closed.set()
 
     # ── dispatch ──────────────────────────────────────────────────────────
-    def _dispatch(self, request: dict) -> None:
+    def _register(self, request: dict) -> CallContext | None:
+        """Make the call cancellable before the reader accepts the next message (an immediate ``rpc.cancel`` must find it)."""
+        request_id = request.get("id")
+        method = request.get("method")
+        if request_id is None or not isinstance(method, str):
+            return None
+        ctx = CallContext(self, request_id, method)
+        with self._active_lock:
+            self._active[request_id] = ctx
+        return ctx
+
+    def _dispatch(self, request: dict, ctx: CallContext | None = None) -> None:
         request_id = request.get("id")
         method = request.get("method")
         params = request.get("params")
@@ -123,17 +134,22 @@ class RpcServer:
             params = {}
         if not isinstance(method, str) or not isinstance(params, dict):
             if request_id is not None:
+                with self._active_lock:
+                    self._active.pop(request_id, None)
                 self._error(request_id, INVALID_REQUEST, "method must be a string and params an object")
             return
         handler = self.methods.get(method)
         if handler is None:
             if request_id is not None:
+                with self._active_lock:
+                    self._active.pop(request_id, None)
                 self._error(request_id, METHOD_NOT_FOUND, f"unknown method {method}")
             return
-        ctx = CallContext(self, request_id, method)
-        if request_id is not None:
-            with self._active_lock:
-                self._active[request_id] = ctx
+        if ctx is None:
+            ctx = CallContext(self, request_id, method)
+            if request_id is not None:
+                with self._active_lock:
+                    self._active[request_id] = ctx
         try:
             result = handler(ctx, params)
             if request_id is not None:
@@ -183,11 +199,12 @@ class RpcServer:
             if not self._slots.acquire(blocking=False):
                 self._error(request.get("id"), APPLICATION_ERROR, "sidecar is at its concurrent call limit", {"condition": "sidecar_busy"})
                 continue
-            threading.Thread(target=self._dispatch_slot, args=(request,), name=f"rpc-{request.get('method')}", daemon=True).start()
+            ctx = self._register(request)
+            threading.Thread(target=self._dispatch_slot, args=(request, ctx), name=f"rpc-{request.get('method')}", daemon=True).start()
         return self.exit_code
 
-    def _dispatch_slot(self, request: dict) -> None:
+    def _dispatch_slot(self, request: dict, ctx: CallContext | None) -> None:
         try:
-            self._dispatch(request)
+            self._dispatch(request, ctx)
         finally:
             self._slots.release()

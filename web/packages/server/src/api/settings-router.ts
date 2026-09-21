@@ -410,9 +410,10 @@ function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, apiKey: 
   if (!ctx.deps.isRootProfile(activeProfileName(ctx))) return
   const env = ctx.deps.config.env
   const owned = homeDotenvKeys(env)
-  if (!owned.has(envVar)) return
-  if (apiKey) env[envVar] = apiKey
-  else { Reflect.deleteProperty(env, envVar); owned.delete(envVar); setHomeDotenvKeys(env, owned) }
+  // A value the process environment supplied explicitly keeps precedence over the file, as it did at startup.
+  if (!owned.has(envVar) && env[envVar] !== undefined) return
+  if (apiKey) { env[envVar] = apiKey; owned.add(envVar) } else { Reflect.deleteProperty(env, envVar); owned.delete(envVar) }
+  setHomeDotenvKeys(env, owned)
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) return
   sidecar.call('runtime.env', apiKey ? { set: { [envVar]: apiKey } } : { unset: [envVar] }).catch((error: unknown) => { ctx.deps.log(`[providers] sidecar environment not refreshed for ${envVar}: ${str((error as Error).message)}`) })

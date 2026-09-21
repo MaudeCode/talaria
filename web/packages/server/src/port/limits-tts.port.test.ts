@@ -3,7 +3,7 @@
  * regression cases (TAL-245). Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.py.
  */
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -200,6 +200,40 @@ describe('TTS validation, limits, and engines', () => {
     setConfig({ tts: { openai: { base_url: 'https://nxdomain.example.com/v1' } } })
     expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(502)
     expect(requests).toEqual([])
+  })
+
+  it('a named profile never uses a key the default profile .env put into the process environment', async () => {
+    fresh()
+    setConfig({})
+    setEnv({ OPENAI_API_KEY: null, VOICE_TOOLS_OPENAI_KEY: null })
+    const env = s.deps.config.env
+    env.OPENAI_API_KEY = 'sk-root-dotenv-1234'
+    env.HERMES_WEBUI_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
+    mkdirSync(join(s.state, 'profiles', 'voice'), { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'voice', path: join(s.state, 'profiles', 'voice'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+    try {
+      const switched = await post(s, '/api/profile/switch', { name: 'voice' })
+      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      // The default profile itself still has its key.
+      expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(200)
+      expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-root-dotenv-1234')
+      fresh()
+      let res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' }, { cookie })
+      expect(res.status).toBe(503)
+      expect(String((await json(res)).error)).toContain('not configured')
+      expect(requests).toEqual([])
+      // Its own .env key is used, never the root one.
+      writeEnvFile(join(s.state, 'profiles', 'voice', '.env'), { OPENAI_API_KEY: 'sk-voice-own-1234' })
+      res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' }, { cookie })
+      expect(res.status).toBe(200)
+      expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-voice-own-1234')
+    } finally {
+      delete env.OPENAI_API_KEY
+      delete env.HERMES_WEBUI_HOME_DOTENV_KEYS
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+    }
   })
 
   it('an unreadable profile config answers 503 instead of falling back to the public OpenAI endpoint', async () => {

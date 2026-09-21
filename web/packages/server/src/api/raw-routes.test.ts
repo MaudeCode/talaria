@@ -162,8 +162,15 @@ describe('raw byte routes', () => {
     expect(zip.readUInt16LE(zip.length - 12)).toBe(2)
     expect(zip.toString('latin1')).toContain('a.txt')
     expect(zip.toString('latin1')).toContain('b.txt')
-    const listing = spawnSync('python3', ['-c', 'import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print(",".join(sorted(z.namelist())));print(z.read("a.txt").decode())', '/dev/stdin'], { input: zip })
-    if (listing.status === 0) expect(listing.stdout.toString()).toBe('a.txt,b.txt\nalpha\n\n')
+    // An independent reader must extract it: Python's zipfile checks the local header (filename length, sizes) against the central directory.
+    const zipPath = join(s.state, 'docs.zip')
+    writeFileSync(zipPath, zip)
+    const listing = spawnSync('python3', ['-c', 'import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print(",".join(sorted(z.namelist())));print(z.read("a.txt").decode())', zipPath])
+    expect(listing.status, listing.stderr.toString()).toBe(0)
+    expect(listing.stdout.toString()).toBe('a.txt,b.txt\nalpha\n\n')
+    // Every local header carries its filename length (bytes 26–27) so the name is not parsed as data.
+    const local = zip.readUInt16LE(26)
+    expect(zip.subarray(30, 30 + local).toString()).toMatch(/^[ab]\.txt$/)
     expect((await s.get(`/api/folder/download?session_id=${sid}&path=docs/a.txt`)).status).toBe(400)
     expect((await s.get(`/api/folder/download?session_id=${sid}&path=nope`)).status).toBe(404)
     const capped = await bootTestServer({ env: { HERMES_WEBUI_FOLDER_ZIP_MAX_FILES: '1' } })
