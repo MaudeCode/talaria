@@ -104,7 +104,7 @@ def path_suites(path):
         "docs/", "app/docs/", "web/docs/", "relay/docs/", ".agents/skills/", ".github/ISSUE_TEMPLATE/")))
     if (documentation and path.endswith((".md", ".markdown", ".rst"))) or path in ("LICENSE", "web/NOTICE"):
         return set()
-    if path.startswith("contracts/") or path in ("web/api/contract_versions.json", "relay/convex/releaseInfo.json"):
+    if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)

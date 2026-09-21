@@ -77,7 +77,7 @@ writer, and the update lock are promise-based; `docs/lock-ownership.md` lists th
 survived the move from threads.
 
 Self-update (`tools/updates.ts`): a recognized clean checkout fast-forwards to the newest completed
-release set (stable) or `origin/main` (experimental), stamps `api/_release.json` from immutable git blobs,
+release set (stable) or `origin/main` (experimental), stamps `_release.json` from immutable git blobs,
 and restarts once active work drains by exiting with code 75 so the `talaria-web serve` supervisor
 respawns the worker with the same PID tree that ctl, launchd, and systemd track. npm and container installs
 report `manual_update`.

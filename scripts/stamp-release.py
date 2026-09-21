@@ -16,7 +16,7 @@ _VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 def web_identity():
     """The packaged Agent pin and supported contract versions (Web `release.ts` reads the same files)."""
     pin = json.loads((ROOT / "web/sidecar/agent_dependency.json").read_text())
-    versions = json.loads((ROOT / "web/api/contract_versions.json").read_text())
+    versions = json.loads((ROOT / "web/contract_versions.json").read_text())
     return ({**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
             {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]})
 
@@ -63,7 +63,7 @@ def main():
         compatible_agent, supported_contracts = web_identity()
         metadata.update(contracts=supported_contracts, compatibleAgent=compatible_agent)
         validate_release_info(metadata)
-        destination, mode = ROOT / "web/api/_release.json", "x"
+        destination, mode = ROOT / "web/_release.json", "x"
     elif args.component == "relay":
         if not args.deployment_id or not re.fullmatch(r"[a-z][a-z0-9-]+", args.deployment_id):
             parser.error("Relay requires a deployment ID")

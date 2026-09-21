@@ -1,0 +1,52 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web now runs on a TypeScript server (Node 24) with a small Python sidecar for the Hermes Agent; existing sessions, settings, logins, and passkeys carry over without migration.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Install and start Talaria Web with npm: npm install -g @maudecode/talaria-web, then talaria-web (with talaria-web ctl for daemon control). The Python launcher, start.sh, ctl.sh, and the pip wheel are gone.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The API is defined once as a contract shared by the server, the browser, and the app, with a generated OpenAPI document; a few unused routes were removed.",
+      "highlight": false,
+      "components": ["web", "app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Self-update restarts only the server worker once active chats finish, and the Agent update runs through the sidecar.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Office document preview and save (.docx, .xlsx, .pptx) were removed from the workspace browser.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The Edge text-to-speech engine was removed; the browser voice, OpenAI, and ElevenLabs engines remain.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Native Windows startup scripts were removed; Windows is supported through WSL2.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The Nix flake and NixOS module were removed; use the npm package or the container image.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

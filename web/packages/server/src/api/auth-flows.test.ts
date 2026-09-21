@@ -1,3 +1,15 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue1909_csrf_token.py
+ *   web/tests/test_issue2572_csrf_diagnostics.py
+ *   web/tests/test_issue2929_settings_max_tokens.py
+ *   web/tests/test_issue3510_elevenlabs_tts.py
+ *   web/tests/test_issue3582_tts_content_length.py
+ *   web/tests/test_issue3825_oidc_auth.py
+ *   web/tests/test_issue4982_openai_tts.py
+ *   web/tests/test_issue5578_login_next_nesting.py
+ * (issues #1909, #2572, #2929, #3510, #3582, #3825, #4982, #5578) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'

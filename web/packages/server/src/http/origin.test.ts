@@ -1,3 +1,14 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue1850_csp_connect_src_jsdelivr.py
+ *   web/tests/test_issue1909_csp_enforcement.py
+ *   web/tests/test_issue2901_csp_connect_extra.py
+ *   web/tests/test_issue6022_worktree_config_default.py
+ *   web/tests/test_issue6611_regeneration_authority.py
+ *   web/tests/test_issue6751_api_content_agent_replay.py
+ *   web/tests/test_issue6757_redaction_and_runner_sse_fixes.py
+ * (issues #1850, #1909, #2901, #6022, #6611, #6751, #6757) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 import { describe, expect, it } from 'vitest'
 import { allowedPublicOrigins, checkSameOriginBrowserRequest, forwardedClientIp, isLoopback, normalizeHostPort, portsMatch, rawPeerIsTrustedProxy } from './origin.js'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras } from './csp.js'

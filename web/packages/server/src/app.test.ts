@@ -1,3 +1,17 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue1458_stability_hardening.py
+ *   web/tests/test_issue1850_csp_connect_src_jsdelivr.py
+ *   web/tests/test_issue1909_csp_enforcement.py
+ *   web/tests/test_issue1909_csp_report_only.py
+ *   web/tests/test_issue2775_log_request.py
+ *   web/tests/test_issue2901_csp_connect_extra.py
+ *   web/tests/test_issue6022_worktree_config_default.py
+ *   web/tests/test_issue6611_regeneration_authority.py
+ *   web/tests/test_issue6751_api_content_agent_replay.py
+ *   web/tests/test_issue6757_redaction_and_runner_sse_fixes.py
+ * (issues #1458, #1850, #1909, #2775, #2901, #6022, #6611, #6751, #6757) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

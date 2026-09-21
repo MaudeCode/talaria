@@ -1,7 +1,7 @@
 /**
- * Release identity (Python `api/release_info.py` and `WEBUI_VERSION`):
- * the stamped `_release.json`, the sidecar Agent pin, supported contract
- * versions, and the process-lifetime version string.
+ * Release identity: the stamped `<webRoot>/_release.json` (written by
+ * `scripts/stamp-release.py`), the sidecar Agent pin, supported contract versions
+ * (`<webRoot>/contract_versions.json`), and the process-lifetime version string.
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -12,7 +12,7 @@ import { ReleaseInfoSchema, type ReleaseInfo } from '@maudecode/talaria-web-cont
 const SHA_RE = /^[a-f0-9]{40}$/
 
 export interface ReleaseSources {
-  /** `web/` root: owns `sidecar/agent_dependency.json` and `api/contract_versions.json`. */
+  /** `web/` root (or the installed package root): owns `sidecar/agent_dependency.json` and `contract_versions.json`. */
   webRoot: string
   releaseFile?: string
 }
@@ -29,7 +29,7 @@ export function compatibleAgent(webRoot: string): ReleaseInfo['compatibleAgent']
 }
 
 export function supportedContracts(webRoot: string): ReleaseInfo['contracts'] {
-  const c = readJson(resolve(webRoot, 'api', 'contract_versions.json')) as Record<string, Record<string, number>>
+  const c = readJson(resolve(webRoot, 'contract_versions.json')) as Record<string, Record<string, number>>
   return { appWeb: [c.appWeb?.fixtureVersion ?? 0], webRelay: [c.webRelay?.protocolVersion ?? 0] }
 }
 
@@ -65,7 +65,7 @@ export function checkoutRevision(root: string): string | null {
 }
 
 export function loadReleaseInfo(sources: ReleaseSources, opts: { verifyCheckout?: boolean } = {}): ReleaseInfo {
-  const file = sources.releaseFile ?? resolve(sources.webRoot, 'api', '_release.json')
+  const file = sources.releaseFile ?? resolve(sources.webRoot, '_release.json')
   let metadata: ReleaseInfo
   try {
     metadata = validateReleaseInfo(readJson(file), sources.webRoot)
@@ -73,7 +73,7 @@ export function loadReleaseInfo(sources: ReleaseSources, opts: { verifyCheckout?
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return developmentInfo(sources.webRoot)
     throw error
   }
-  const webRoot = resolve(dirname(file), '..')
+  const webRoot = dirname(file)
   const markers = [resolve(webRoot, '.git'), resolve(webRoot, '..', '.git')]
   if ((opts.verifyCheckout ?? true) && markers.some((m) => existsSync(m)) && checkoutRevision(webRoot) !== metadata.sourceRevision) {
     return developmentInfo(sources.webRoot)

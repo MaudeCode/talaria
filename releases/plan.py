@@ -91,7 +91,7 @@ def resolve(root, request, previous=None):
                 # App Store Connect build number from the successful build job.
                 component["buildNumber"] = (prior["buildNumber"] + 1) if prior else 1
             elif name == "web":
-                versions = read_at(root, source, "web/api/contract_versions.json")
+                versions = read_at(root, source, "web/contract_versions.json")
                 capabilities = {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]}
                 pin = read_at(root, source, "web/sidecar/agent_dependency.json")
                 plan["agent"] = {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]}

@@ -2,7 +2,7 @@
  * Self-update (Python `api/updates.py` + `api/talaria_releases.py`, ticket §13).
  *
  * Web: a recognized clean Talaria checkout fast-forwards to the newest completed
- * release set (stable) or `origin/main` (experimental) and stamps `_release.json`
+ * release set (stable) or `origin/main` (experimental) and stamps `web/_release.json`
  * from immutable git blobs. npm builds and unrecognized checkouts report
  * `manual_update`. Agent: the external checkout follows its own `v*` tags with a
  * stash/pull or force reset, then the gateway restarts through the sidecar.
@@ -22,8 +22,8 @@ export const API_ROOT = `https://api.github.com/repos/${REPOSITORY}`
 /** Anchored paths work from both the git root and Web's nested working directory. */
 export const WEB_UPDATE_PATHS = [':(top)web/', ':(top)contracts/']
 /** Relative to the git root: the release stamp and the blobs it is verified against. */
-export const RELEASE_STAMP = 'web/api/_release.json'
-const RELEASE_BLOBS = ['sidecar/agent_dependency.json', 'api/contract_versions.json']
+export const RELEASE_STAMP = 'web/_release.json'
+const RELEASE_BLOBS = ['sidecar/agent_dependency.json', 'contract_versions.json']
 export const CACHE_TTL_S = 1800
 export const RESTART_MAX_WAIT_S = 300
 export const DEFAULT_CHANNEL = 'stable'
@@ -226,7 +226,7 @@ export async function verifyReleaseSource(root: string, release: PublishedReleas
     files[name] = JSON.parse(shown.out) as unknown
   }
   const pin = dict(files['sidecar/agent_dependency.json'])
-  const versions = dict(files['api/contract_versions.json'])
+  const versions = dict(files['contract_versions.json'])
   const expected = {
     tag: release.tag,
     version: release.version,

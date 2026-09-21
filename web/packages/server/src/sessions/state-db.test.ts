@@ -1,3 +1,14 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue1494_state_db_fd_leak.py
+ *   web/tests/test_issue2628_cli_sessions_perf.py
+ *   web/tests/test_issue3238_orphaned_cli_sidecar_prune.py
+ *   web/tests/test_issue3762_importable_rows_schema_guard.py
+ *   web/tests/test_issue4385_cron_archive_reappears.py
+ *   web/tests/test_issue5455_lineage_readonly_reads.py
+ *   web/tests/test_issue5455_listing_readonly_connection.py
+ * (issues #1494, #2628, #3238, #3762, #4385, #5455) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'

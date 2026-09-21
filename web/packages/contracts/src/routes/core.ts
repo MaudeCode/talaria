@@ -55,7 +55,7 @@ export type Bootstrap = z.infer<typeof BootstrapSchema>
 
 const Sha1 = z.string().regex(/^[a-f0-9]{40}$/)
 
-/** `api/_release.json` as validated by the Python `release_info` module; a development checkout reports nulls. */
+/** `<webRoot>/_release.json` as written by `scripts/stamp-release.py`; a development checkout reports nulls. */
 export const ReleaseInfoSchema = z.object({
   tag: z.string().nullable(),
   version: z.string(),

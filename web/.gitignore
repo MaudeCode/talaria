@@ -36,8 +36,6 @@ full-UI.png
 final-check.png
 
 # Version file written by Docker/CI build — generated, never committed
-api/_version.py
-api/_scm_version.py
 
 # OS files
 .DS_Store
@@ -85,7 +83,6 @@ packages/frontend/.tanstack/
 docs/ui-ux/review-shots/
 
 # Python build metadata (never commit generated egg-info)
-*.egg-info/
 
 # Local WebUI runtime data and credentials
 .webui_password
@@ -96,4 +93,8 @@ build/
 dist/
 
 # Immutable release provenance is stamped into artifacts, never source commits.
-api/_release.json
+_release.json
+packages/server/static/
+packages/server/sidecar/
+packages/server/contract_versions.json
+packages/server/_release.json

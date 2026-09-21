@@ -1,3 +1,44 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue1217_transcript_compaction.py
+ *   web/tests/test_issue1913_workspace_prefix_sentinel.py
+ *   web/tests/test_issue2028_compression_anchor_helpers.py
+ *   web/tests/test_issue2592_partial_dedupe.py
+ *   web/tests/test_issue2914_truncation_watermark.py
+ *   web/tests/test_issue3293_title_language_drift.py
+ *   web/tests/test_issue3405_profile_provider_resolution.py
+ *   web/tests/test_issue3455_think_block_extraction.py
+ *   web/tests/test_issue3468_duplicate_after_compression.py
+ *   web/tests/test_issue3548_sessiondb_self_heal.py
+ *   web/tests/test_issue3583_orphaned_tool_calls.py
+ *   web/tests/test_issue3599_inline_thinking_extraction.py
+ *   web/tests/test_issue3800_compaction_summary_length.py
+ *   web/tests/test_issue3802_delete_session_journals.py
+ *   web/tests/test_issue3831_watermark_clear.py
+ *   web/tests/test_issue3875_recovery_anchor_dedup.py
+ *   web/tests/test_issue3929_error_preserves_partial.py
+ *   web/tests/test_issue3929_partial_work_recovery.py
+ *   web/tests/test_issue4283_recovered_context_replay.py
+ *   web/tests/test_issue4685_post_compression_context_metering.py
+ *   web/tests/test_issue4928_tool_arg_content_cap.py
+ *   web/tests/test_issue5121_provider_auth_terminal_error.py
+ *   web/tests/test_issue5139_gateway_approval_offline_notice.py
+ *   web/tests/test_issue5141_terminal_failure_transcript_evaluator.py
+ *   web/tests/test_issue5270_cli_webui_continuity.py
+ *   web/tests/test_issue5339_restart_stale_user_dedup.py
+ *   web/tests/test_issue5871_redaction_awareness_prompt.py
+ *   web/tests/test_issue607.py
+ *   web/tests/test_issue6611_regeneration_authority.py
+ *   web/tests/test_issue6722_provider_qualified_model_leak.py
+ *   web/tests/test_issue6751_api_content_agent_replay.py
+ *   web/tests/test_issue6935_persist_user_timestamp_kwarg.py
+ *   web/tests/test_issue7396_key_cmd_cache.py
+ *   web/tests/test_issue7543_title_first_exchange.py
+ *   web/tests/test_issue_progress_echo_dedupe.py
+ *   web/tests/test_issue_raw_pending_approval_id.py
+ *   web/tests/test_issues_853_857.py
+ * (issues #607, #1217, #1913, #2028, #2592, #2914, #3293, #3405, #3455, #3468, #3548, #3583, #3599, #3800, #3802, #3831, #3875, #3929, #4283, #4685, #4928, #5121, #5139, #5141, #5270, #5339, #5871, #6611, #6722, #6751, #6935, #7396, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

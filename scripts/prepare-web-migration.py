@@ -89,12 +89,12 @@ def published_web_release(channel="stable"):
 def verify_release_source(root, release, run_git):
     """Check published metadata against immutable source blobs without importing code."""
     files = {}
-    for name in ("sidecar/agent_dependency.json", "api/contract_versions.json"):
+    for name in ("sidecar/agent_dependency.json", "contract_versions.json"):
         contents, exists = run_git(["show", f"{release['sourceRevision']}:web/{name}"], root)
         if not exists:
             raise ValueError("missing release metadata")
         files[name] = json.loads(contents)
-    pin, versions = files["sidecar/agent_dependency.json"], files["api/contract_versions.json"]
+    pin, versions = files["sidecar/agent_dependency.json"], files["contract_versions.json"]
     expected = {"tag": release["tag"], "version": release["version"], "sourceRevision": release["sourceRevision"], "releaseSet": release["sourceRevision"],
                 "compatibleAgent": {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
                 "contracts": {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]}}
@@ -183,7 +183,7 @@ def prepare(legacy, destination, release, *, channel="stable"):
             os.chmod(config, 0o600)
             stream.write(environment)
     if metadata is not None:
-        with (destination / "web/api/_release.json").open("x") as stream:
+        with (destination / "web/_release.json").open("x") as stream:
             stream.write(json.dumps(metadata, indent=2) + "\n")
     return {"prepared": True, "legacyRevision": old, "sourceRevision": source,
             "tag": release["tag"] if release else None, "updateChannel": channel,

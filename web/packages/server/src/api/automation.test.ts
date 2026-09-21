@@ -1,3 +1,8 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue6619_dotfile_archive_validator.py
+ * (issues #6619) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'

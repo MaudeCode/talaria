@@ -98,7 +98,7 @@ async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
 async function settingsPayload(ctx: RequestContext): Promise<Dict> {
   const deps = ctx.deps
   const settings: Dict = deps.settings.load()
-  settings.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw())
+  settings.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw()).sort()
   Reflect.deleteProperty(settings, 'password_hash')
   Object.assign(settings, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })
   try { Object.assign(settings, maxTokensStatus(await deps.agentConfig.read(home(ctx)))) } catch { /* unavailable: nulls stand */ }
@@ -151,7 +151,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   else if ((await auth.isAuthEnabled()) || requestedPassword) body.auth_disabled_acknowledged = false
 
   const saved: Dict = await deps.settings.save(body)
-  saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw())
+  saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw()).sort()
   Reflect.deleteProperty(saved, 'password_hash')
   const cfgHome = home(ctx)
   try {

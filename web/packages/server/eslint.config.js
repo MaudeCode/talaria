@@ -7,7 +7,7 @@ export default defineConfig(
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
   {
-    languageOptions: { parserOptions: { projectService: { allowDefaultProject: ['eslint.config.js', 'vitest.config.ts'] }, tsconfigRootDir: import.meta.dirname } },
+    languageOptions: { parserOptions: { projectService: { allowDefaultProject: ['eslint.config.js', 'vitest.config.ts', 'scripts/*.mjs'] }, tsconfigRootDir: import.meta.dirname } },
     rules: {
       '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true, allowBoolean: true }],

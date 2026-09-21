@@ -112,7 +112,7 @@ ENV TALARIA_WEB_VERSION=${HERMES_VERSION}
 # An unstamped local image has an empty label and reports development at /health.
 ARG TALARIA_PROVENANCE={}
 LABEL dev.talaria.provenance="${TALARIA_PROVENANCE}"
-RUN node --input-type=module -e 'import { existsSync } from "node:fs"; import { loadReleaseInfo } from "/apptoo/packages/server/dist/release.js"; const canon = (v) => JSON.stringify(v, Object.keys(v).sort()); const expected = existsSync("/apptoo/api/_release.json") ? loadReleaseInfo({ webRoot: "/apptoo" }) : {}; const actual = JSON.parse(process.env.TALARIA_PROVENANCE); if (canon(actual) !== canon(expected)) { console.error("Container label must match stamped Web provenance"); process.exit(1) }'
+RUN node --input-type=module -e 'import { existsSync } from "node:fs"; import { loadReleaseInfo } from "/apptoo/packages/server/dist/release.js"; const canon = (v) => JSON.stringify(v, Object.keys(v).sort()); const expected = existsSync("/apptoo/_release.json") ? loadReleaseInfo({ webRoot: "/apptoo" }) : {}; const actual = JSON.parse(process.env.TALARIA_PROVENANCE); if (canon(actual) !== canon(expected)) { console.error("Container label must match stamped Web provenance"); process.exit(1) }'
 
 # Default to binding all interfaces (required for container networking)
 ENV HERMES_WEBUI_HOST=0.0.0.0

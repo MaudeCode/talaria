@@ -1,3 +1,9 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue4356_no_git_update_check.py
+ *   web/tests/test_issue5175_macos_launchd_git.py
+ * (issues #4356, #5175) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
 /**
  * Port of `tests/test_tal203_source_update.py`, `tests/test_tal203_published_releases.py`,
  * and the Agent branches of `tests/test_updates*.py` onto synthetic repositories and manifests.
@@ -26,7 +32,7 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
 const tmp = (): string => { const d = mkdtempSync(join(tmpdir(), 'talaria-updates-')); dirs.push(d); return d }
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', '-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ENV }, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const write = (path: string, text: string): void => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, text) }
-const readStamp = (client: string): Dict | null => (existsSync(join(client, 'web/api/_release.json')) ? (JSON.parse(readFileSync(join(client, 'web/api/_release.json'), 'utf8')) as Dict) : null)
+const readStamp = (client: string): Dict | null => (existsSync(join(client, 'web/_release.json')) ? (JSON.parse(readFileSync(join(client, 'web/_release.json'), 'utf8')) as Dict) : null)
 
 const PIN = { 'x-talaria': { version: '0.0.1', sourceRevision: 'd'.repeat(40) }, services: { 'hermes-agent': { image: `docker.io/nousresearch/hermes-agent@sha256:${'e'.repeat(64)}` } } }
 const VERSIONS = { appWeb: { fixtureVersion: 1 }, webRelay: { protocolVersion: 2 } }
@@ -40,9 +46,9 @@ function sourceInstall(): Install {
   const upstream = join(root, 'upstream')
   git(root, 'init', '-b', 'main', upstream)
   write(join(upstream, 'web/package.json'), '{"version":"1.0.0"}\n')
-  write(join(upstream, '.gitignore'), 'web/api/_release.json\nweb/cache.txt\n')
+  write(join(upstream, '.gitignore'), 'web/_release.json\nweb/cache.txt\n')
   write(join(upstream, 'web/sidecar/agent_dependency.json'), JSON.stringify(PIN))
-  write(join(upstream, 'web/api/contract_versions.json'), JSON.stringify(VERSIONS))
+  write(join(upstream, 'web/contract_versions.json'), JSON.stringify(VERSIONS))
   write(join(upstream, 'contracts/versions.json'), JSON.stringify(VERSIONS))
   git(upstream, 'add', '.')
   git(upstream, 'commit', '-m', 'synthetic old release')
@@ -196,7 +202,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('main removes only its unchanged release stamp', async () => {
     const s = sourceInstall()
     expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity)).ok).toBe(true)
-    const stamp = join(s.client, 'web/api/_release.json')
+    const stamp = join(s.client, 'web/_release.json')
     s.id.stamped = s.release.runtime
     s.id.release = s.release.runtime
     s.id.running = s.latest
@@ -372,16 +378,17 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
 
   it.each([[false, false], [false, true], [true, false], [true, true]])('a retry repairs the stamp after the source advanced and schedules a restart (existing stamp=%s, restarted=%s)', async (existingStamp, restarted) => {
     const s = sourceInstall()
-    const stamp = join(s.client, 'web/api/_release.json')
+    const stamp = join(s.client, 'web/_release.json')
     const oldRuntime = { sourceRevision: s.old, version: '1.0.0' }
     if (existingStamp) writeFileSync(stamp, JSON.stringify(oldRuntime))
     s.id.release = oldRuntime
     const { svc, restarts } = service(s)
-    chmodSync(join(s.client, 'web/api'), 0o555)
+    // Python monkeypatched NamedTemporaryFile; here the stamp directory turns read-only right after the fast-forward lands.
+    const unwritableAfterMerge: GitRun = async (args, cwd, t) => { const r = await s.run(args, cwd, t); if (args[0] === 'merge') chmodSync(join(s.client, 'web'), 0o555); return r }
     try {
-      expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity)).ok).toBe(false)
+      expect((await applyWebUpdate(web(s.client), 'stable', unwritableAfterMerge, s.getJson, s.identity)).ok).toBe(false)
     } finally {
-      chmodSync(join(s.client, 'web/api'), 0o755)
+      chmodSync(join(s.client, 'web'), 0o755)
     }
     expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
     expect(readStamp(s.client)).toEqual(existingStamp ? oldRuntime : null)
@@ -406,7 +413,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('a current source does not hide a modified stamp', async () => {
     const s = sourceInstall()
     git(s.client, 'reset', '--hard', s.latest)
-    const stamp = join(s.client, 'web/api/_release.json')
+    const stamp = join(s.client, 'web/_release.json')
     writeFileSync(stamp, '{"version":"unreviewed local metadata"}')
     expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity)).ok).toBe(false)
     const status = await checkWebUpdate(web(s.client), 'web-v2.0.0', 'stable', s.run, s.getJson, s.identity)
@@ -419,7 +426,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('an ahead checkout is manual, not a successful update', async () => {
     const s = sourceInstall()
     git(s.client, 'reset', '--hard', s.latest)
-    const stamp = join(s.client, 'web/api/_release.json')
+    const stamp = join(s.client, 'web/_release.json')
     const original = JSON.stringify(s.release.runtime)
     writeFileSync(stamp, original)
     s.id.release = s.release.runtime

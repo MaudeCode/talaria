@@ -15,9 +15,10 @@ import { launchSidecar } from '../sidecar/discover.js'
 import { loadLauncherDotenv } from '../cli/dotenv.js'
 import { parseBootstrapArgs, runBootstrap } from '../cli/launcher.js'
 import { runCtl } from '../cli/ctl.js'
+import { resolveWebRoot } from '../cli/web-root.js'
 import { supervise, WORKER_ENV } from '../cli/supervise.js'
 
-const webRoot = process.env.TALARIA_WEB_ROOT ?? resolve(import.meta.dirname, '..', '..', '..', '..')
+const webRoot = process.env.TALARIA_WEB_ROOT ?? resolveWebRoot(import.meta.dirname)
 const log = (line: string): void => { console.log(line) }
 const warn = (line: string): void => { console.error(line) }
 const bin = process.argv[1] ?? ''

@@ -39,7 +39,7 @@ def main():
         values["deploymentId"] = component["deploymentId"]
     elif name == "web":
         subprocess.run([*stamp, "--tag", component["tag"]], cwd=ROOT, check=True)
-        provenance = load(ROOT / "web/api/_release.json")
+        provenance = load(ROOT / "web/_release.json")
         # npm distribution: build the workspace and pack @maudecode/talaria-web at the
         # release version (the stamped _release.json ships inside the tarball).
         subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=ROOT / "web", check=True)

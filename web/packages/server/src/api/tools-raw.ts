@@ -84,7 +84,7 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   const text = str(body.text).trim()
   const rate = prosody(body.rate, '%')
   const pitch = prosody(body.pitch, 'Hz')
-  const engine = (str(body.engine) || 'edge').trim().toLowerCase()
+  const engine = (str(body.engine) || 'openai').trim().toLowerCase()
   if (rate === null) { ctx.json({ error: 'invalid rate' }, { status: 400 }); return }
   if (pitch === null) { ctx.json({ error: 'invalid pitch' }, { status: 400 }); return }
   if (!text) { ctx.json({ error: 'text is required' }, { status: 400 }); return }
@@ -131,7 +131,7 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
     }
     return
   }
-  ctx.json({ error: 'Edge TTS is not available in this release. Use the browser, openai, or elevenlabs engine.' }, { status: 503 })
+  ctx.json({ error: `unknown TTS engine ${engine}; Edge TTS was removed, use the browser, openai, or elevenlabs engine` }, { status: 400 })
 }
 
 /** Public sink: always 204, rate limited per client, payload logged. */

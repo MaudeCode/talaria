@@ -1,7 +1,6 @@
 {
   "name": "@maudecode/talaria-web-contracts",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
   "description": "Talaria Web contract package: oRPC route contract, Zod schemas, SSE event unions, sidecar RPC schema, and the OpenAPI generator.",
   "exports": {
@@ -37,5 +36,11 @@
   },
   "engines": {
     "node": ">=24"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaudeCode/talaria.git",
+    "directory": "web/packages/contracts"
+  },
+  "license": "MIT"
 }

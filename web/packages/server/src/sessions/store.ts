@@ -295,7 +295,8 @@ export class SessionStore {
         this.sessions.delete(sid)
       } else {
         if (opts.promote ?? true) { this.sessions.delete(sid); this.sessions.set(sid, cached) }
-        if (!opts.metadataOnly && !cached.loadedMetadataOnly && this.cachedLagsDisk(cached)) {
+        // A sidebar-only stub (metadata load) must be upgraded to the full transcript when messages are requested.
+        if (!opts.metadataOnly && (cached.loadedMetadataOnly || this.cachedLagsDisk(cached))) {
           const fresh = this.load(sid)
           if (fresh) {
             this.sessions.set(sid, fresh)
