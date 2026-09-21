@@ -202,6 +202,16 @@ export class WorkspaceRegistry {
 
   /** Profile config.yaml `workspace` / `default_workspace` / `terminal.cwd`, else the live default. */
   profileDefaultWorkspace(profile: string | null = null): string {
+    // Python `get_profile_default_workspace`: a named profile's own last workspace first, never the global one (#5169).
+    if (profile?.trim() && !this.deps.isRootProfileHome(this.profileHomeParam(profile))) {
+      const file = this.lastWorkspaceFile(profile)
+      if (file !== null && existsSync(file)) {
+        try {
+          const p = this.validLastWorkspace(readFileSync(file, 'utf8').trim(), profile, this.remoteTerminalCwd(profile))
+          if (p) return p
+        } catch { /* fall through */ }
+      }
+    }
     try {
       const cfg = this.deps.profileConfig(profile)
       if (cfg) {

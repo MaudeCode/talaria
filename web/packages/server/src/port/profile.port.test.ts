@@ -1,0 +1,541 @@
+/**
+ * One-to-one ports of the Python profile regression cases (TAL-245):
+ * isolation semantics, profile-home routing, per-profile system projects,
+ * profile visibility, cross-profile crons, per-profile workspaces and skills,
+ * and profile-scoped session routes. Markers `[py:<file>::<case>]` are
+ * verified by scripts/check-regression-port.py.
+ */
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+import { loadStartupEnv } from '../cli/dotenv.js'
+import { ProjectStore } from '../projects.js'
+import { splitProviderModel } from '../profiles/profiles.js'
+import { jobForApi } from '../tools/crons.js'
+import { str } from '../util.js'
+import { writeEnvFile } from '../providers/env-file.js'
+
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
+
+function profileShapedHome(profile: string): { base: string; home: string } {
+  const base = mkdtempSync(join(tmpdir(), 'talaria-iso-'))
+  const home = join(base, 'profiles', profile)
+  mkdirSync(home, { recursive: true })
+  return { base, home }
+}
+
+describe('isolation flag semantics', () => {
+  const opened: TestServer[] = []
+  const bases: string[] = []
+  afterAll(async () => { for (const s of opened) await s.close(); for (const b of bases) rmSync(b, { recursive: true, force: true }) })
+  const boot = async (env: Record<string, string>, profile = 'webui', rows: Json[] = [row('default', { is_default: true }), row('webui'), row('other')], extraEnv: (base: string) => Record<string, string> = () => ({})): Promise<{ s: TestServer; home: string; base: string }> => {
+    const { base, home } = profileShapedHome(profile)
+    bases.push(base)
+    Object.assign(env, extraEnv(base))
+    for (const r of rows) { mkdirSync(join(base, 'profiles', String(r.name)), { recursive: true }); writeFileSync(join(base, 'profiles', String(r.name), 'config.yaml'), '# seed\n') }
+    writeFileSync(join(home, 'config.yaml'), '# seed\n')
+    writeFileSync(join(base, 'config.yaml'), '# seed\n')
+    const sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: rows.map((r) => ({ ...r, path: r.is_default ? base : join(base, 'profiles', String(r.name)) })) as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { workspace: params.profile_home } }))
+    const s = await bootTestServer({ sidecar, env: { HERMES_HOME: home, ...env } })
+    opened.push(s)
+    return { s, home, base }
+  }
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_shape_alone_does_not_enable_isolated_mode] a profiles/<name> home without the flag is not isolated', async () => {
+    const { s } = await boot({})
+    expect(s.deps.isolatedProfileMode()).toBe(false)
+  })
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_profiles_tab_is_not_clamped_to_single_profile] a normal named-profile launch lists every profile', async () => {
+    const { s } = await boot({})
+    const body = await json(await s.get('/api/profiles'))
+    expect((body.profiles as Json[]).map((p) => p.name)).toEqual(['default', 'webui', 'other'])
+    expect(body.single_profile_mode).toBe(false)
+  })
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_switching_to_another_profile_is_allowed] switching profiles stays allowed under a named-profile home', async () => {
+    const { s } = await boot({})
+    expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(200)
+  })
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_flag_plus_shape_enables_isolated_mode] every truthy flag spelling plus the profile shape isolates', async () => {
+    for (const value of ['1', 'true', 'TRUE', 'yes', 'on']) {
+      const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: value })
+      expect(s.deps.isolatedProfileMode(), value).toBe(true)
+      expect(s.deps.activeProfile()).toBe('webui')
+    }
+  })
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_flag_without_profile_shape_stays_off] the flag with a base home stays off', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_ISOLATED_PROFILE: '1' } })
+    opened.push(s)
+    expect(s.deps.isolatedProfileMode()).toBe(false)
+  })
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_falsey_flag_values_are_off] falsey flag values keep isolation off even with the profile shape', async () => {
+    for (const value of ['', '0', 'false', 'no', 'off', '  ']) {
+      const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: value })
+      expect(s.deps.isolatedProfileMode(), JSON.stringify(value)).toBe(false)
+    }
+  })
+
+  it('[py:test_issue4586_named_profile_not_isolated.py::test_profile_env_cannot_clear_isolated_flag] the pinned profile .env cannot turn the startup flag off', () => {
+    const { base, home } = profileShapedHome('tenant')
+    bases.push(base)
+    mkdirSync(join(base, 'web'))
+    writeFileSync(join(home, '.env'), 'HERMES_WEBUI_ISOLATED_PROFILE=0\nORDINARY_KEY=loaded\n')
+    const env: Record<string, string | undefined> = { HERMES_HOME: home, HERMES_WEBUI_ISOLATED_PROFILE: '1' }
+    loadStartupEnv({ env, webRoot: join(base, 'web'), home: base })
+    expect(env.HERMES_WEBUI_ISOLATED_PROFILE).toBe('1')
+    expect(env.ORDINARY_KEY).toBe('loaded')
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_hermes_base_home_does_not_disable_isolation] HERMES_BASE_HOME alongside the pinned home keeps isolation on', async () => {
+    const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'webui', undefined, (base) => ({ HERMES_BASE_HOME: base }))
+    expect(s.deps.isolatedProfileMode()).toBe(true)
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_list_returns_all_profiles_in_normal_mode] normal mode lists every profile the Agent reports', async () => {
+    const { s } = await boot({}, 'user1', [row('user1'), row('user2'), row('user3')])
+    expect(((await json(await s.get('/api/profiles'))).profiles as Json[]).map((p) => p.name)).toEqual(['user1', 'user2', 'user3'])
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_get_active_hermes_home_keeps_profiles_default_pinned] a pinned profiles/default home stays pinned for the default name', async () => {
+    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    expect(s.deps.activeProfile()).toBe('default')
+    expect(s.deps.profileHome('default')).toBe(home)
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_explicit_profile_resolution_for_isolated_default_uses_pinned_home] explicit default resolution answers the pinned home', async () => {
+    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    expect(s.deps.profileHome('default')).toBe(home)
+    expect(s.deps.profileHome('')).toBe(home)
+  })
+
+  it('[py:test_issue7168_round6_default_isolated_clamp.py::test_resolver_pins_default_in_isolated_mode] the resolver never falls back to the base home in isolated mode', async () => {
+    const { s, home, base } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    expect(s.deps.profileHome('default')).toBe(home)
+    expect(s.deps.profileHome('default')).not.toBe(base)
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_explicit_foreign_profile_resolution_stays_on_isolated_home] a foreign profile name resolves to the pinned home', async () => {
+    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' })
+    expect(s.deps.profileHome('other')).toBe(home)
+    expect(s.deps.profileHome('default')).toBe(home)
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_list_profiles_prefers_matching_isolated_default_home] the isolated list carries one row whose path is the pinned home', async () => {
+    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default', [row('default', { is_default: true }), row('default')])
+    const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0]).toMatchObject({ name: 'default', path: home })
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_switch_to_same_profile_idempotent] switching to the pinned profile passes the guard', async () => {
+    const { s } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' })
+    expect((await post(s, '/api/profile/switch', { name: 'webui' })).status).toBe(200)
+    expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(403)
+  })
+
+  it('[py:test_issue2698_isolated_hermes_home.py::test_switch_to_same_default_profile_keeps_pinned_home] switching to default in a pinned profiles/default home reads the pinned config', async () => {
+    const { s, home } = await boot({ HERMES_WEBUI_ISOLATED_PROFILE: '1' }, 'default')
+    const res = await post(s, '/api/profile/switch', { name: 'default' })
+    expect(res.status).toBe(200)
+    expect(realpathSync(String((await json(res)).default_workspace))).toBe(realpathSync(home))
+  })
+})
+
+describe('profile home routing and root aliases', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true }), row('ayan'), row('haku')] as never[] }))
+    s = await bootTestServer({ sidecar })
+    mkdirSync(join(s.state, 'profiles', 'ayan'), { recursive: true })
+  })
+  afterAll(() => s.close())
+
+  it('[py:test_issue1195_session_profile_routing.py::test_existing_profile_returns_profile_dir] an existing profile resolves to its directory', () => {
+    expect(s.deps.profileHome('ayan')).toBe(join(s.state, 'profiles', 'ayan'))
+  })
+
+  it('[py:test_issue1195_session_profile_routing.py::test_nonexistent_profile_still_returns_profile_path] a profile that does not exist yet still resolves under profiles/', () => {
+    expect(s.deps.profileHome('newprofile')).toBe(join(s.state, 'profiles', 'newprofile'))
+  })
+
+  it('[py:test_issue1195_session_profile_routing.py::test_none_returns_default] an absent profile resolves to the base home', () => {
+    expect(s.deps.profileHome(null as unknown as string)).toBe(s.state)
+  })
+
+  it('[py:test_issue1195_session_profile_routing.py::test_empty_string_returns_default] an empty profile name resolves to the base home', () => {
+    expect(s.deps.profileHome('')).toBe(s.state)
+  })
+
+  it('[py:test_issue1612_renamed_root_profile.py::test_get_active_hermes_home_returns_named_for_real_named_profile] a real named profile resolves to profiles/<name>', () => {
+    expect(s.deps.profileHome('haku')).toBe(join(s.state, 'profiles', 'haku'))
+  })
+
+  it('[py:test_issue1612_renamed_root_profile.py::test_delete_profile_blocks_renamed_root] deleting a renamed root profile is refused', async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [row('kinni', { is_default: true }), row('haku')] as never[] }))
+    s.deps.profiles.invalidate()
+    await s.deps.profiles.warmRootAliases()
+    const res = await post(s, '/api/profile/delete', { name: 'kinni' })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error)).toContain('Cannot delete the default profile')
+  })
+})
+
+describe('per-profile system projects', () => {
+  let dir = ''
+  let indexRows: Json[] = []
+  const store = (isRoot: (n: string) => boolean = (n) => n === 'default'): ProjectStore => new ProjectStore(join(dir, 'projects.json'), () => indexRows, isRoot)
+  beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-projects-')) })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); })
+  const reset = (projects: Json[] = []): void => { writeFileSync(join(dir, 'projects.json'), JSON.stringify(projects)); indexRows = [] }
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_ensure_cron_project_creates_per_profile] each profile gets its own Cron Jobs project', () => {
+    reset()
+    const p = store()
+    const haku = p.ensureSystemProject('cron', 'haku')
+    const kinni = p.ensureSystemProject('cron', 'kinni')
+    expect(haku).not.toBe(kinni)
+    const rows = p.load().filter((r) => r.name === 'Cron Jobs')
+    expect(rows.map((r) => r.profile).sort()).toEqual(['haku', 'kinni'])
+  })
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_ensure_cron_project_idempotent_per_profile] repeat calls within one profile answer the same id', () => {
+    reset()
+    const p = store()
+    expect(p.ensureSystemProject('cron', 'haku')).toBe(p.ensureSystemProject('cron', 'haku'))
+    expect(p.load()).toHaveLength(1)
+  })
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_ensure_cron_project_back_tags_legacy_untagged] a legacy untagged Cron Jobs row is reused and tagged with the caller', () => {
+    reset([{ project_id: 'legacy123456', name: 'Cron Jobs', color: '#6366f1' }])
+    const p = store()
+    expect(p.ensureSystemProject('cron', 'haku')).toBe('legacy123456')
+    expect(p.load({ migrate: false })[0]).toMatchObject({ project_id: 'legacy123456', profile: 'haku' })
+  })
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_ensure_cron_project_renamed_root_matches_default] under a renamed root the default-tagged cron project is reused', () => {
+    reset([{ project_id: 'rootcron1234', name: 'Cron Jobs', color: '#6366f1', profile: 'default' }])
+    const p = store((n) => n === 'default' || n === 'kinni')
+    expect(p.ensureSystemProject('cron', 'kinni')).toBe('rootcron1234')
+    expect(p.load()).toHaveLength(1)
+  })
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_load_projects_backfills_from_session_index] untagged projects inherit the profile of an assigned session and the backfill persists', () => {
+    reset([{ project_id: 'proj00000001', name: 'Work', color: '#fff' }])
+    indexRows = [{ session_id: 's1', project_id: 'proj00000001', profile: 'haku' }]
+    const p = store()
+    expect(p.load()[0]).toMatchObject({ profile: 'haku' })
+    expect((JSON.parse(readFileSync(join(dir, 'projects.json'), 'utf8')) as Json[])[0]).toMatchObject({ profile: 'haku' })
+  })
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_load_projects_backfills_to_default_when_no_sessions] an orphan untagged project falls back to default', () => {
+    reset([{ project_id: 'proj00000002', name: 'Orphan', color: '#fff' }])
+    expect(store().load()[0]).toMatchObject({ profile: 'default' })
+  })
+
+  it('[py:test_issue1614_project_profile_filtering.py::test_load_projects_idempotent_after_first_migrate] a fully tagged projects.json is not rewritten', async () => {
+    reset([{ project_id: 'proj00000003', name: 'Tagged', color: '#fff', profile: 'haku' }])
+    const before = statSync(join(dir, 'projects.json')).mtimeMs
+    await new Promise((r) => setTimeout(r, 20))
+    const p = store()
+    p.load()
+    p.load()
+    expect(statSync(join(dir, 'projects.json')).mtimeMs).toBe(before)
+  })
+})
+
+describe('profiles, crons, workspaces, skills, and sessions across profiles', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let configs: Map<string, Json>
+  let cronJobs: Map<string, Json[]>
+  let workHome = ''
+  let workCookie = ''
+  const skillRows = new Map<string, Json[]>()
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    configs = new Map()
+    cronJobs = new Map()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: s.state }), row('work', { path: join(s.state, 'profiles', 'work') }), row('research', { path: join(s.state, 'profiles', 'research') }), row('hidden', { visible: false, path: join(s.state, 'profiles', 'hidden') })] as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+    sidecar.respond('config.set', (params) => { configs.set(params.profile_home, params.config); mkdirSync(params.profile_home, { recursive: true }); writeFileSync(join(params.profile_home, 'config.yaml'), `# ${String(Math.random())}\n`); return { ok: true as const, path: join(params.profile_home, 'config.yaml') } })
+    sidecar.respond('cron.list', (params) => ({ jobs: (cronJobs.get(params.profile_home) ?? []) as never[] }))
+    sidecar.respond('cron.create', (params) => { const job = { id: `job-${String(cronJobs.size + 1)}`, name: null, profile: null, toast_notifications: true, monitor: '', continuity: false, ...(params.job as Json) }; cronJobs.set(params.profile_home, [...(cronJobs.get(params.profile_home) ?? []), job]); return { job: job } })
+    sidecar.respond('cron.update', (params) => { for (const jobs of cronJobs.values()) { const job = jobs.find((j) => j.id === params.job_id); if (job) { Object.assign(job, params.updates); return { job: job as never } } } throw new Error('missing') })
+    sidecar.respond('skills.list', (params) => ({ success: true, skills: (skillRows.get(params.profile_home) ?? []) as never[], categories: [], count: (skillRows.get(params.profile_home) ?? []).length }))
+    sidecar.respond('skills.find', (params) => { const dir = join(params.profile_home, 'skills', params.name); return { found: existsSync(dir), skill_dir: existsSync(dir) ? dir : null, skill_md: existsSync(dir) ? join(dir, 'SKILL.md') : null } })
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    workHome = join(s.state, 'profiles', 'work')
+    for (const p of ['work', 'research', 'hidden']) { mkdirSync(join(s.state, 'profiles', p), { recursive: true }); writeFileSync(join(s.state, 'profiles', p, 'config.yaml'), '# seed\n') }
+    const res = await post(s, '/api/profile/switch', { name: 'work' })
+    expect(res.status, await res.clone().text()).toBe(200)
+    workCookie = (res.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(workCookie).toMatch(/^hermes_profile=work/)
+  })
+  afterAll(() => s.close())
+  const asWork = (): Record<string, string> => ({ cookie: workCookie })
+
+  it('[py:test_issue3623_profile_visibility.py::test_profile_yaml_visible_false_is_exposed_as_hidden] a profile the Agent marks visible:false is listed hidden', async () => {
+    const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
+    expect(profiles.find((p) => p.name === 'hidden')?.visible).toBe(false)
+    expect(profiles.find((p) => p.name === 'work')?.visible).toBe(true)
+  })
+
+  it('[py:test_issue3623_profile_visibility.py::test_default_profile_fallback_stays_visible] the default profile row stays visible', async () => {
+    const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
+    expect(profiles.find((p) => p.name === 'default')).toMatchObject({ visible: true, is_default: true })
+  })
+
+  it('[py:test_issue3947_tasks_cross_profile_visibility.py::test_crons_route_hides_other_profiles_by_default_but_reports_count] foreign cron jobs are hidden by default and counted; all_profiles shows them read-only', async () => {
+    cronJobs.clear()
+    cronJobs.set(s.state, [{ id: 'd1', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
+    cronJobs.set(join(s.state, 'profiles', 'research'), [{ id: 'r1', name: 'theirs', profile: 'research', toast_notifications: true, monitor: '', continuity: false }])
+    let body = await json(await s.get('/api/crons'))
+    expect(body).toMatchObject({ all_profiles: false, active_profile: 'default', other_profile_count: 1 })
+    expect((body.jobs as Json[]).map((j) => j.id)).toEqual(['d1'])
+    expect((body.jobs as Json[])[0]).toMatchObject({ owner_profile: 'default', read_only: false })
+    body = await json(await s.get('/api/crons?all_profiles=1'))
+    expect(body).toMatchObject({ all_profiles: true, other_profile_count: 0 })
+    expect((body.jobs as Json[]).find((j) => j.id === 'r1')).toMatchObject({ owner_profile: 'research', read_only: true })
+  })
+
+  it('[py:test_issue3947_tasks_cross_profile_visibility.py::test_crons_route_dedupes_root_aliases_by_resolved_home] root aliases resolving to one home are read once', async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [row('rootalias', { is_default: true, path: s.state }), row('default', { is_default: true, path: s.state }), row('research', { path: join(s.state, 'profiles', 'research') })] as never[] }))
+    s.deps.profiles.invalidate()
+    await s.deps.profiles.warmRootAliases()
+    const start = sidecar.calls.length
+    const body = await json(await s.get('/api/crons?all_profiles=1'))
+    const listed = sidecar.calls.slice(start).filter((c) => c.method === 'cron.list').map((c) => (c.params as Json).profile_home)
+    expect(listed.filter((h) => h === s.state)).toHaveLength(1)
+    expect((body.jobs as Json[]).filter((j) => j.id === 'd1')).toHaveLength(1)
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: s.state }), row('work', { path: workHome }), row('research', { path: join(s.state, 'profiles', 'research') }), row('hidden', { visible: false, path: join(s.state, 'profiles', 'hidden') })] as never[] }))
+    s.deps.profiles.invalidate()
+  })
+
+  it('[py:test_issue3947_tasks_cross_profile_visibility.py::test_crons_route_skips_hidden_default_profile_when_inactive] a hidden inactive profile is skipped even under all_profiles', async () => {
+    cronJobs.clear()
+    cronJobs.set(s.state, [{ id: 'd2', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
+    cronJobs.set(join(s.state, 'profiles', 'hidden'), [{ id: 'h1', name: 'hidden job', profile: 'hidden', toast_notifications: true, monitor: '', continuity: false }])
+    const body = await json(await s.get('/api/crons?all_profiles=1'))
+    expect((body.jobs as Json[]).map((j) => j.id)).toEqual(['d2'])
+    expect(body.other_profile_count).toBe(0)
+  })
+
+  it('[py:test_issue617_cron_profile_selector.py::test_cron_api_serializes_legacy_profile_as_explicit_server_default] a legacy job without a profile serialises profile: null', () => {
+    const legacy = { id: 'legacy1', name: 'old', toast_notifications: true, monitor: '', continuity: false }
+    expect(jobForApi(legacy)).toMatchObject({ id: 'legacy1', profile: null })
+    expect('profile' in legacy).toBe(false)
+  })
+
+  it('[py:test_issue617_cron_profile_selector.py::test_cron_create_api_persists_profile_and_returns_it] creating a job with a known profile persists and returns it', async () => {
+    cronJobs.clear()
+    const res = await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).job as Json).profile).toBe('research')
+  })
+
+  it('[py:test_issue617_cron_profile_selector.py::test_cron_create_api_rejects_unknown_profile_before_persisting] an unknown profile is refused before anything is created', async () => {
+    cronJobs.clear()
+    const before = sidecar.calls.filter((c) => c.method === 'cron.create').length
+    const res = await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'missing' })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error)).toBe('Unknown profile: missing')
+    expect(sidecar.calls.filter((c) => c.method === 'cron.create').length).toBe(before)
+  })
+
+  it('[py:test_issue617_cron_profile_selector.py::test_cron_update_api_accepts_profile_clear_and_rejects_unknown] update clears a profile with an empty value and refuses an unknown one', async () => {
+    cronJobs.clear()
+    const created = (await json(await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' }))).job as Json
+    let res = await post(s, '/api/crons/update', { job_id: created.id, profile: '' })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).job as Json).profile ?? null).toBeNull()
+    const before = sidecar.calls.filter((c) => c.method === 'cron.update').length
+    res = await post(s, '/api/crons/update', { job_id: created.id, profile: 'ghost' })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error)).toBe('Unknown profile: ghost')
+    expect(sidecar.calls.filter((c) => c.method === 'cron.update').length).toBe(before)
+  })
+
+  it('[py:test_issue5169_profile_active_default_workspace.py::test_profile_active_includes_default_workspace_from_resolver] profile/active carries the resolved default workspace', async () => {
+    const body = await json(await s.get('/api/profile/active'))
+    expect(body).toMatchObject({ name: 'default', is_default: true })
+    expect(typeof body.default_workspace).toBe('string')
+    expect(String(body.default_workspace).length).toBeGreaterThan(0)
+  })
+
+  it('[py:test_issue5169_profile_active_default_workspace.py::test_profile_active_default_workspace_resolves_from_named_profile] a named profile answers its own last workspace', async () => {
+    const ws = join(workHome, 'ws-last')
+    mkdirSync(join(workHome, 'webui_state'), { recursive: true })
+    mkdirSync(ws, { recursive: true })
+    writeFileSync(join(workHome, 'webui_state', 'last_workspace.txt'), ws)
+    const body = await json(await s.get('/api/profile/active', { headers: asWork() }))
+    expect(body).toMatchObject({ name: 'work', is_default: false })
+    expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(ws))
+  })
+
+  it('[py:test_issue5169_profile_active_default_workspace.py::test_profile_active_default_workspace_falls_back_to_config_workspace] without a last workspace the profile config workspace answers', async () => {
+    rmSync(join(workHome, 'webui_state', 'last_workspace.txt'), { force: true })
+    const ws = join(workHome, 'ws-config')
+    mkdirSync(ws, { recursive: true })
+    configs.set(workHome, { workspace: ws })
+    s.deps.agentConfig.invalidate()
+    await s.deps.agentConfig.read(workHome)
+    const body = await json(await s.get('/api/profile/active', { headers: asWork() }))
+    expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(ws))
+  })
+
+  it('[py:test_issue5169_profile_active_default_workspace.py::test_profile_active_default_workspace_ignores_global_last_workspace] the global last workspace never leaks into a named profile', async () => {
+    const global = join(s.state, 'workspace', 'global-ws')
+    mkdirSync(global, { recursive: true })
+    writeFileSync(join(s.state, 'last_workspace.txt'), global)
+    const body = await json(await s.get('/api/profile/active', { headers: asWork() }))
+    expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(join(workHome, 'ws-config')))
+  })
+
+  it('[py:test_issue1880_profile_scoped_skills.py::test_api_skills_list_and_content_respect_profile_cookie] skills list and content read the cookie profile home', async () => {
+    skillRows.set(s.state, [{ name: 'root-skill', description: '', category: null, disabled: false }])
+    skillRows.set(workHome, [{ name: 'work-skill', description: '', category: null, disabled: false }])
+    mkdirSync(join(workHome, 'skills', 'work-skill', 'references'), { recursive: true })
+    writeFileSync(join(workHome, 'skills', 'work-skill', 'SKILL.md'), '# work skill\n')
+    writeFileSync(join(workHome, 'skills', 'work-skill', 'references', 'note.md'), 'work note\n')
+    expect(((await json(await s.get('/api/skills'))).skills as Json[]).map((r) => r.name)).toEqual(['root-skill'])
+    expect(((await json(await s.get('/api/skills', { headers: asWork() }))).skills as Json[]).map((r) => r.name)).toEqual(['work-skill'])
+    const content = await json(await s.get('/api/skills/content?name=work-skill&file=references/note.md', { headers: asWork() }))
+    expect(content.content).toBe('work note\n')
+  })
+
+  it('[py:test_issue1880_profile_scoped_skills.py::test_skill_save_and_delete_respect_profile_cookie] save and delete write under the cookie profile home, never the root', async () => {
+    let res = await post(s, '/api/skills/save', { name: 'cookie-skill', content: '# c\n' }, asWork())
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect(existsSync(join(workHome, 'skills', 'cookie-skill', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(s.state, 'skills', 'cookie-skill'))).toBe(false)
+    res = await post(s, '/api/skills/delete', { name: 'cookie-skill' }, asWork())
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect(existsSync(join(workHome, 'skills', 'cookie-skill'))).toBe(false)
+  })
+
+  it('[py:test_issue3066_profile_skill_disabled_state.py::test_skills_list_reads_disabled_state_from_active_profile] the skills list reflects the active profile disabled state', async () => {
+    skillRows.set(s.state, [{ name: 'alpha', description: '', category: null, disabled: true }, { name: 'beta', description: '', category: null, disabled: false }])
+    skillRows.set(workHome, [{ name: 'alpha', description: '', category: null, disabled: false }, { name: 'beta', description: '', category: null, disabled: true }])
+    const rows = (await json(await s.get('/api/skills', { headers: asWork() }))).skills as Json[]
+    expect(rows.find((r) => r.name === 'beta')?.disabled).toBe(true)
+    expect(rows.find((r) => r.name === 'alpha')?.disabled).toBe(false)
+    const listed = sidecar.calls.filter((c) => c.method === 'skills.list').at(-1)?.params as Json
+    expect(listed.profile_home).toBe(workHome)
+  })
+
+  it('[py:test_issue3066_profile_skill_disabled_state.py::test_skill_toggle_writes_active_profile_config_not_default] toggling a skill writes the active profile config, not the default one', async () => {
+    configs.set(workHome, {})
+    configs.set(s.state, {})
+    s.deps.agentConfig.invalidate()
+    mkdirSync(join(workHome, 'skills', 'gamma'), { recursive: true })
+    writeFileSync(join(workHome, 'skills', 'gamma', 'SKILL.md'), '# gamma\n')
+    const res = await post(s, '/api/skills/toggle', { name: 'gamma', enabled: false }, asWork())
+    expect(await json(res)).toEqual({ ok: true, name: 'gamma', enabled: false })
+    expect(((configs.get(workHome)?.skills as Json | undefined)?.disabled as string[]) ?? []).toContain('gamma')
+    expect(configs.get(s.state)?.skills ?? null).toBeNull()
+  })
+
+  it('[py:test_issue1700_parallel_profile_switch.py::test_per_client_switch_allowed_when_stream_is_active] a per-client switch is allowed while an agent stream runs', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'working' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ status: 'cancelled', messages: [{ role: 'user', content: str(params.user_message) }], final_response: '', error: null, result_status: 'cancelled', tool_limit_reached: false, usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }) })
+    }))
+    const startRes = await post(s, '/api/chat/start', { session_id: sid, message: 'busy' })
+    expect(startRes.status, await startRes.clone().text()).toBe(200)
+    const streamId = String((await json(startRes)).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    const res = await post(s, '/api/profile/switch', { name: 'work' })
+    expect(res.status).toBe(200)
+    expect((await json(res)).active).toBe('work')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
+  })
+
+  it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
+    const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect(((await json(res)).session as Json).profile).toBe('work')
+  })
+
+  it('[py:test_issue7182_profile_model_tag_truncation.py::test_explicit_provider_argument_still_wins] an explicit provider argument beats the parsed hint', () => {
+    expect(splitProviderModel('@ollama:qwen3.8:27b-mtp-q8_0', 'anthropic')).toEqual(['qwen3.8:27b-mtp-q8_0', 'anthropic'])
+  })
+
+  it('[py:test_issue7182_profile_model_tag_truncation.py::test_strip_passthrough] unqualified values pass through unchanged', () => {
+    for (const v of ['qwen3.8:27b-mtp-q8_0', 'llama4', '@nocolon']) expect(splitProviderModel(v, null)[0]).toBe(v)
+    expect(splitProviderModel('', null)[0] ?? null).toBeNull()
+    expect(splitProviderModel('  ', null)[0] ?? null).toBeNull()
+  })
+
+  it('[py:test_issue7182_profile_model_tag_truncation.py::test_split_passthrough_keeps_plain_model] a plain model with an explicit provider passes through', () => {
+    expect(splitProviderModel('gpt-5.5', 'openai')).toEqual(['gpt-5.5', 'openai'])
+  })
+
+  it('[py:test_issue749_profile_create_model_picker.py::test_profile_model_config_writer_preserves_existing_model_settings] creating a profile with a base URL and a model keeps both in config.yaml', async () => {
+    sidecar.respond('profiles.create', (params) => ({ profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never }))
+    mkdirSync(join(s.state, 'profiles', 'newbie'), { recursive: true })
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-base-1234' })
+    s.deps.catalog.invalidate()
+    const res = await post(s, '/api/profile/create', { name: 'newbie', base_url: 'https://llm.example/v1', api_key: 'sk-newbie-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
+    expect(res.status, await res.clone().text()).toBe(200)
+    const model = configs.get(join(s.state, 'profiles', 'newbie'))?.model as Json
+    expect(model).toMatchObject({ base_url: 'https://llm.example/v1', default: 'claude-sonnet-4-6', provider: 'anthropic' })
+  })
+
+  it('[py:test_issue1611_session_profile_filtering.py::test_all_profiles_query_flag_true_values] all_profiles accepts every truthy spelling outside isolated mode', async () => {
+    for (const v of ['1', 'true', 'TRUE', 'yes', 'YES', 'on']) expect((await json(await s.get(`/api/sessions?all_profiles=${v}`))).all_profiles, v).toBe(true)
+  })
+
+  it('[py:test_issue1611_session_profile_filtering.py::test_all_profiles_query_flag_false_values] missing, zero, empty, or garbage values stay scoped', async () => {
+    for (const v of ['', '0', 'garbage']) expect((await json(await s.get(`/api/sessions?all_profiles=${v}`))).all_profiles, v).toBe(false)
+    expect((await json(await s.get('/api/sessions'))).all_profiles).toBe(false)
+  })
+
+  it('[py:test_issue1611_session_profile_filtering.py::test_all_profiles_enabled_in_normal_mode] all_profiles=1 aggregates in normal mode', async () => {
+    expect((await json(await s.get('/api/sessions?all_profiles=1'))).all_profiles).toBe(true)
+  })
+
+  it('[py:test_issue1611_session_profile_filtering.py::test_get_session_rejects_cookieless_session_from_inactive_profile] a cookieless load of a foreign-profile session answers the 409 envelope, never content', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', { profile: 'work' }, asWork()))).session as Json).session_id)
+    const res = await s.get(`/api/session?session_id=${sid}&messages=1`)
+    expect(res.status).toBe(409)
+    const body = await json(res)
+    expect(body).toMatchObject({ code: 'session_profile_mismatch', profile: 'work', session_id: sid })
+    expect(body).not.toHaveProperty('messages')
+  })
+
+  it('[py:test_issue1611_session_profile_filtering.py::test_session_import_stamps_active_profile] an import under a named profile stamps that profile', async () => {
+    const res = await post(s, '/api/session/import', { messages: [{ role: 'user', content: 'imported' }], title: 'Imported' }, asWork())
+    expect(res.status, await res.clone().text()).toBe(200)
+    const session = (await json(res)).session as Json
+    const sid = String(session.session_id)
+    expect(session.profile).toBe('work')
+    const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
+    expect(raw.profile).toBe('work')
+  })
+
+  it('[py:test_issue1611_session_profile_filtering.py::test_session_import_default_profile_remains_default_owned] an import under default stays default-owned', async () => {
+    const res = await post(s, '/api/session/import', { messages: [{ role: 'user', content: 'imported' }] })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).session as Json).profile).toBe('default')
+  })
+})

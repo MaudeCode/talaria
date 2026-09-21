@@ -115,7 +115,7 @@ export const sessionsRouter = os.router({
       return ctx.deps.sessions.usage(input.session_id) as { input_tokens: number; output_tokens: number; total_tokens: number; estimated_cost: unknown; model: string | null }
     })),
     new: os.session.new.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.prev_session_id)
+      // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
       let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
       let worktreeSkipped: string | null = null

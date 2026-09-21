@@ -121,7 +121,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const isolatedProfile = truthy(env.HERMES_WEBUI_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null
   const isolatedProfileMode = (): boolean => isolatedProfile !== null
   const isolatedProfileName = (): string => isolatedProfile ?? 'default'
-  const processProfile = isolatedProfile ?? readActiveProfileFile(config.hermesHome, PROFILE_RE)
+  // Python `_resolve_base_hermes_home`: profiles live under the base home (HERMES_BASE_HOME, else HERMES_HOME unless it is
+  // itself a profile directory, whose grandparent is the base); the pinned home stays authoritative in isolated mode.
+  const explicitBase = (env.HERMES_BASE_HOME ?? '').trim()
+  const baseHome = isolatedProfile !== null ? config.hermesHome : explicitBase ? resolve(explicitBase.replace(/^~(?=$|\/)/, home)) : basename(dirname(config.hermesHome)) === 'profiles' ? dirname(dirname(config.hermesHome)) : config.hermesHome
+  const processProfile = isolatedProfile ?? readActiveProfileFile(baseHome, PROFILE_RE)
   const activeProfile = (): string => requestScope.getStore()?.requestProfile ?? processProfile
   // Python `_is_root_profile`: `default` plus any renamed root alias the Agent reports; bound to the profile service below.
   let rootAlias: (name: string) => boolean = () => false
@@ -132,7 +136,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     return r === a || (isRootProfile(r) && isRootProfile(a))
   }
   // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home.
-  const profileHome = (name: string): string => (name && name !== isolatedProfile && !isRootProfile(name) && PROFILE_RE.test(name) ? join(config.hermesHome, 'profiles', name) : config.hermesHome)
+  // Isolated mode never resolves outside the pinned home, whatever name is asked for (Python `_resolve_profile_home_for_name`).
+  const profileHome = (name: string): string => (isolatedProfile === null && name && !isRootProfile(name) && PROFILE_RE.test(name) ? join(baseHome, 'profiles', name) : isolatedProfile === null ? baseHome : config.hermesHome)
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
@@ -282,7 +287,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   }
   const profiles = new ProfileService({
     sidecar: () => sidecar,
-    baseHome: config.hermesHome,
+    baseHome,
     profileHome,
     isolatedProfileMode,
     isolatedProfileName,

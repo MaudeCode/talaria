@@ -72,10 +72,10 @@ test_issue1164_env_file_corruption.py	test_providers_write_env_uses_atomic_renam
 test_issue1189_openai_codex_detection.py	test_openai_api_key_env_var_path_detects_openai_codex	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue1189_openai_codex_detection.py	test_openai_codex_static_model_list_present	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue1189_openai_codex_detection.py	test_openai_codex_display_name_present	subject	src/api/settings.test.ts, src/settings.test.ts
-test_issue1195_session_profile_routing.py	test_existing_profile_returns_profile_dir	subject	src/api/settings.test.ts
-test_issue1195_session_profile_routing.py	test_nonexistent_profile_still_returns_profile_path	subject	src/api/settings.test.ts
-test_issue1195_session_profile_routing.py	test_none_returns_default	subject	src/api/settings.test.ts
-test_issue1195_session_profile_routing.py	test_empty_string_returns_default	subject	src/api/settings.test.ts
+test_issue1195_session_profile_routing.py	test_existing_profile_returns_profile_dir	asserted	server/src/port/profile.port.test.ts
+test_issue1195_session_profile_routing.py	test_nonexistent_profile_still_returns_profile_path	asserted	server/src/port/profile.port.test.ts
+test_issue1195_session_profile_routing.py	test_none_returns_default	asserted	server/src/port/profile.port.test.ts
+test_issue1195_session_profile_routing.py	test_empty_string_returns_default	asserted	server/src/port/profile.port.test.ts
 test_issue1195_session_profile_routing.py	test_default_string_returns_default	asserted	server/src/api/settings.test.ts
 test_issue1202_oauth_provider_status.py	test_config_yaml_token_shows_configured_when_auth_logged_in	asserted	server/src/port/auth.port.test.ts
 test_issue1202_oauth_provider_status.py	test_config_yaml_token_shows_configured_when_auth_not_logged_in	asserted	server/src/port/auth.port.test.ts
@@ -365,22 +365,22 @@ test_issue1611_session_profile_filtering.py	test_profiles_match_distinct_named_p
 test_issue1611_session_profile_filtering.py	test_profiles_match_default_alias_treated_as_root	asserted	server/src/api/settings.test.ts
 test_issue1611_session_profile_filtering.py	test_profiles_match_empty_row_treated_as_root	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Row profile None/'' counts as root: matches 'default', not 'haku'.
 test_issue1611_session_profile_filtering.py	test_profiles_match_active_none_treated_as_default	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Active profile None/'' is coerced to 'default'.
-test_issue1611_session_profile_filtering.py	test_all_profiles_query_flag_true_values	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — ?all_profiles= 1/true/TRUE/yes/YES/on all enable aggregate mode.
-test_issue1611_session_profile_filtering.py	test_all_profiles_query_flag_false_values	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Missing, 0, empty, or garbage all_profiles values stay scoped (False).
-test_issue1611_session_profile_filtering.py	test_all_profiles_enabled_in_normal_mode	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
+test_issue1611_session_profile_filtering.py	test_all_profiles_query_flag_true_values	asserted	server/src/port/profile.port.test.ts
+test_issue1611_session_profile_filtering.py	test_all_profiles_query_flag_false_values	asserted	server/src/port/profile.port.test.ts
+test_issue1611_session_profile_filtering.py	test_all_profiles_enabled_in_normal_mode	asserted	server/src/port/profile.port.test.ts
 test_issue1611_session_profile_filtering.py	test_all_profiles_disabled_in_isolated_mode	asserted	server/src/api/settings.test.ts
 test_issue1611_session_profile_filtering.py	test_keep_latest_messaging_runs_after_profile_filter	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Source check: /api/sessions applies the profile filter before _keep_latest_messaging_session_per_source.
 test_issue1611_session_profile_filtering.py	test_get_session_rejects_session_from_inactive_profile	asserted	server/src/api/session-visibility.test.ts
 test_issue1611_session_profile_filtering.py	test_get_session_rejects_metadata_only_session_from_inactive_profile	asserted	server/src/api/session-visibility.test.ts
-test_issue1611_session_profile_filtering.py	test_get_session_rejects_cookieless_session_from_inactive_profile	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
-test_issue1611_session_profile_filtering.py	test_get_session_rejects_cli_session_from_inactive_profile	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
+test_issue1611_session_profile_filtering.py	test_get_session_rejects_cookieless_session_from_inactive_profile	asserted	server/src/port/profile.port.test.ts
+test_issue1611_session_profile_filtering.py	test_get_session_rejects_cli_session_from_inactive_profile	dropped	not ported: CLI-fallback detail loads (state.db-only sessions) are read through the sidebar import path, not /api/session
 test_issue1611_session_profile_filtering.py	test_missing_session_under_nondefault_profile_still_404_primary_branch	asserted	server/src/api/session-visibility.test.ts
-test_issue1611_session_profile_filtering.py	test_missing_session_under_nondefault_profile_still_404_cli_branch	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
-test_issue1611_session_profile_filtering.py	test_session_export_rejects_session_from_inactive_profile	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
-test_issue1611_session_profile_filtering.py	test_session_export_allows_session_from_active_profile	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
-test_issue1611_session_profile_filtering.py	test_session_import_stamps_active_profile	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
-test_issue1611_session_profile_filtering.py	test_session_import_default_profile_remains_default_owned	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
-test_issue1611_session_profile_filtering.py	test_all_profiles_query_includes_named_profile_cli_sessions	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
+test_issue1611_session_profile_filtering.py	test_missing_session_under_nondefault_profile_still_404_cli_branch	dropped	not ported: CLI-fallback detail loads (state.db-only sessions) are read through the sidebar import path, not /api/session
+test_issue1611_session_profile_filtering.py	test_session_export_rejects_session_from_inactive_profile	dropped	not ported: GET /api/session/export is not exposed in the TypeScript contract
+test_issue1611_session_profile_filtering.py	test_session_export_allows_session_from_active_profile	dropped	not ported: GET /api/session/export is not exposed in the TypeScript contract
+test_issue1611_session_profile_filtering.py	test_session_import_stamps_active_profile	asserted	server/src/port/profile.port.test.ts
+test_issue1611_session_profile_filtering.py	test_session_import_default_profile_remains_default_owned	asserted	server/src/port/profile.port.test.ts
+test_issue1611_session_profile_filtering.py	test_all_profiles_query_includes_named_profile_cli_sessions	dropped	not ported: named-profile state.db aggregation under all_profiles is not implemented in the TypeScript sidebar
 test_issue1612_renamed_root_profile.py	test_is_root_profile_default_alias	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _is_root_profile('default') is always True regardless of cache state.
 test_issue1612_renamed_root_profile.py	test_is_root_profile_empty_or_none_is_false	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _is_root_profile('') and (None) are False.
 test_issue1612_renamed_root_profile.py	test_is_root_profile_renamed_root_via_list_profiles_api	asserted	server/src/api/settings.test.ts
@@ -388,18 +388,18 @@ test_issue1612_renamed_root_profile.py	test_is_root_profile_caches_results	dropp
 test_issue1612_renamed_root_profile.py	test_is_root_profile_invalidation_drops_stale	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _invalidate_root_profile_cache() forces a re-query so a renamed root flips.
 test_issue1612_renamed_root_profile.py	test_is_root_profile_handles_list_profiles_failure	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — If list_profiles_api raises, 'default' stays root and other names return False (never raise).
 test_issue1612_renamed_root_profile.py	test_get_active_hermes_home_returns_default_for_renamed_root	asserted	server/src/api/settings.test.ts
-test_issue1612_renamed_root_profile.py	test_get_active_hermes_home_returns_named_for_real_named_profile	subject	src/api/settings.test.ts
+test_issue1612_renamed_root_profile.py	test_get_active_hermes_home_returns_named_for_real_named_profile	asserted	server/src/port/profile.port.test.ts
 test_issue1612_renamed_root_profile.py	test_switch_profile_resolution_renamed_root_picks_default_home	asserted	server/src/api/settings.test.ts
 test_issue1612_renamed_root_profile.py	test_switch_profile_sticky_marker_renamed_root	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — The ~/.hermes/active_profile sticky marker is written as '' for a root switch (even renamed), and as the name for a named profile.
-test_issue1612_renamed_root_profile.py	test_delete_profile_blocks_renamed_root	subject	src/api/settings.test.ts
-test_issue1614_project_profile_filtering.py	test_ensure_cron_project_creates_per_profile	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_ensure_cron_project_idempotent_per_profile	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_ensure_cron_project_back_tags_legacy_untagged	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_ensure_cron_project_renamed_root_matches_default	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_cron_and_webhook_project_creation_share_one_transaction_lock	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_load_projects_backfills_from_session_index	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_load_projects_backfills_to_default_when_no_sessions	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue1614_project_profile_filtering.py	test_load_projects_idempotent_after_first_migrate	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue1612_renamed_root_profile.py	test_delete_profile_blocks_renamed_root	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_ensure_cron_project_creates_per_profile	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_ensure_cron_project_idempotent_per_profile	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_ensure_cron_project_back_tags_legacy_untagged	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_ensure_cron_project_renamed_root_matches_default	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_cron_and_webhook_project_creation_share_one_transaction_lock	dropped	python-internal: thread-lock contention between two project creators; the Node store is single-threaded
+test_issue1614_project_profile_filtering.py	test_load_projects_backfills_from_session_index	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_load_projects_backfills_to_default_when_no_sessions	asserted	server/src/port/profile.port.test.ts
+test_issue1614_project_profile_filtering.py	test_load_projects_idempotent_after_first_migrate	asserted	server/src/port/profile.port.test.ts
 test_issue1614_project_profile_filtering.py	test_profile_field_on_project_dict_default_create	asserted	server/src/sessions/sessions.test.ts
 test_issue1614_project_profile_filtering.py	test_project_rename_rejects_cross_profile	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Source check: /api/projects/rename gates on _profiles_match(proj.profile, active_profile).
 test_issue1614_project_profile_filtering.py	test_project_delete_rejects_cross_profile	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Source check: /api/projects/delete gates on _profiles_match(proj.profile, active_profile).
@@ -454,7 +454,7 @@ test_issue1699_model_cache_source_fingerprint.py	test_disk_models_cache_still_lo
 test_issue1699_model_cache_source_fingerprint.py	test_memory_models_cache_invalidates_when_static_catalog_changes	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue1699_model_cache_source_fingerprint.py	test_disk_models_cache_invalidates_when_static_catalog_changes	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue1700_parallel_profile_switch.py	test_process_wide_switch_still_blocks_when_stream_is_active	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — switch_profile(name, process_wide=True) with a live entry in STREAMS raises RuntimeError "Cannot switch profiles while an agent is running".
-test_issue1700_parallel_profile_switch.py	test_per_client_switch_allowed_when_stream_is_active	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue1700_parallel_profile_switch.py	test_per_client_switch_allowed_when_stream_is_active	asserted	server/src/port/profile.port.test.ts
 test_issue1765_codex_quota.py	test_codex_oauth_usage_exhaustion_is_classified_as_quota	subject	src/api/tools.test.ts
 test_issue1765_codex_quota.py	test_silent_provider_failure_gets_specific_catch_all_error	subject	src/api/tools.test.ts
 test_issue1765_codex_quota.py	test_provider_error_payload_includes_bounded_redacted_details	subject	src/api/tools.test.ts
@@ -591,9 +591,9 @@ test_issue1879_cross_container_gateway_liveness.py	test_far_future_updated_at_is
 test_issue1879_cross_container_gateway_liveness.py	test_pid_based_alive_path_unchanged_when_namespace_is_shared	subject	src/api/tools.test.ts
 test_issue1879_cross_container_gateway_liveness.py	test_no_runtime_status_still_reports_unknown	subject	src/api/tools.test.ts
 test_issue1879_cross_container_gateway_liveness.py	test_runtime_status_is_fresh_unit_helper	subject	src/api/tools.test.ts
-test_issue1880_profile_scoped_skills.py	test_api_skills_list_and_content_respect_profile_cookie	subject	src/api/tools.test.ts
+test_issue1880_profile_scoped_skills.py	test_api_skills_list_and_content_respect_profile_cookie	asserted	server/src/port/profile.port.test.ts
 test_issue1880_profile_scoped_skills.py	test_skill_detail_reads_resolved_file_without_skill_view_absolute_path	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — routes._skill_view_from_active_dir reads SKILL.md from the active skills dir directly and must never call skills_tool.skill_view().
-test_issue1880_profile_scoped_skills.py	test_skill_save_and_delete_respect_profile_cookie	subject	src/api/tools.test.ts
+test_issue1880_profile_scoped_skills.py	test_skill_save_and_delete_respect_profile_cookie	asserted	server/src/port/profile.port.test.ts
 test_issue1881_phantom_custom_groups.py	test_no_phantom_custom_group_when_active_provider_is_ai_gateway	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue1881_phantom_custom_groups.py	test_unnamed_custom_provider_id_does_not_inherit_auto_detected	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue1881_phantom_custom_groups.py	test_named_custom_group_still_populates_when_active_is_custom_alias	subject	src/api/settings.test.ts, src/settings.test.ts
@@ -742,10 +742,10 @@ test_issue2271_keyless_custom_provider.py	test_non_custom_provider_is_unchanged	
 test_issue2271_keyless_custom_provider.py	test_custom_provider_env_name_is_posix_safe	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue2271_keyless_custom_provider.py	test_resolve_custom_provider_connection_prefers_sanitized_env	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue2271_keyless_custom_provider.py	test_resolve_custom_provider_connection_falls_back_to_legacy_env	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue2305_profile_create_seeds_skills.py	test_seed_called_once_with_resolved_path	subject	src/api/settings.test.ts
-test_issue2305_profile_create_seeds_skills.py	test_seed_not_called_when_clone_from_is_set	subject	src/api/settings.test.ts
-test_issue2305_profile_create_seeds_skills.py	test_seed_raising_logs_warning_and_still_returns_profile	subject	src/api/settings.test.ts
-test_issue2305_profile_create_seeds_skills.py	test_fallback_create_still_produces_profile_dict	subject	src/api/settings.test.ts
+test_issue2305_profile_create_seeds_skills.py	test_seed_called_once_with_resolved_path	dropped	not ported: profile creation and bundled-skill seeding run inside the Agent sidecar (profiles.create)
+test_issue2305_profile_create_seeds_skills.py	test_seed_not_called_when_clone_from_is_set	dropped	not ported: profile creation and bundled-skill seeding run inside the Agent sidecar (profiles.create)
+test_issue2305_profile_create_seeds_skills.py	test_seed_raising_logs_warning_and_still_returns_profile	dropped	not ported: profile creation and bundled-skill seeding run inside the Agent sidecar (profiles.create)
+test_issue2305_profile_create_seeds_skills.py	test_fallback_create_still_produces_profile_dict	dropped	not ported: profile creation and bundled-skill seeding run inside the Agent sidecar (profiles.create)
 test_issue2305_profile_create_seeds_skills.py	test_seed_unavailable_logs_debug_without_crashing	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Missing seed_profile_skills symbol → DEBUG log mentioning it, profile still created.
 test_issue2351_cli_session_source_filter.py	test_webui_state_db_mirror_does_not_become_cli_sidebar_row	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
 test_issue2351_cli_session_source_filter.py	test_real_cli_state_db_mirror_stays_cli_sidebar_row	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
@@ -808,24 +808,24 @@ test_issue2695_packaged_runtime_layout.py	test_checkout_static_root_stays_repo_r
 test_issue2695_packaged_runtime_layout.py	test_installed_wheel_keeps_both_cli_names	dropped	Python launchers and packaging (bootstrap.py, start.sh, ctl.sh, wheel) were replaced by the talaria-web CLI; the CLI behaviour is covered by src/cli/cli.test.ts
 test_issue2698_isolated_hermes_home.py	test_normal_mode_when_hermes_home_is_base	asserted	server/src/api/settings.test.ts
 test_issue2698_isolated_hermes_home.py	test_isolated_mode_when_hermes_home_is_profile_subdir	asserted	server/src/api/settings.test.ts
-test_issue2698_isolated_hermes_home.py	test_hermes_base_home_does_not_disable_isolation	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue2698_isolated_hermes_home.py	test_list_returns_all_profiles_in_normal_mode	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue2698_isolated_hermes_home.py	test_hermes_base_home_does_not_disable_isolation	asserted	server/src/port/profile.port.test.ts
+test_issue2698_isolated_hermes_home.py	test_list_returns_all_profiles_in_normal_mode	asserted	server/src/port/profile.port.test.ts
 test_issue2698_isolated_hermes_home.py	test_list_returns_only_isolated_profile_in_isolated_mode	asserted	server/src/api/settings.test.ts
 test_issue2698_isolated_hermes_home.py	test_list_includes_single_profile_mode_flag	asserted	server/src/api/settings.test.ts
 test_issue2698_isolated_hermes_home.py	test_get_active_profile_name_ignores_tls_and_global_in_isolated_mode	asserted	server/src/api/settings.test.ts
 test_issue2698_isolated_hermes_home.py	test_init_profile_state_pins_runtime_home_to_isolated_profile	asserted	server/src/api/settings.test.ts
-test_issue2698_isolated_hermes_home.py	test_get_active_hermes_home_keeps_profiles_default_pinned	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue2698_isolated_hermes_home.py	test_explicit_profile_resolution_for_isolated_default_uses_pinned_home	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue2698_isolated_hermes_home.py	test_explicit_foreign_profile_resolution_stays_on_isolated_home	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue2698_isolated_hermes_home.py	test_list_profiles_prefers_matching_isolated_default_home	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue2698_isolated_hermes_home.py	test_get_active_hermes_home_keeps_profiles_default_pinned	asserted	server/src/port/profile.port.test.ts
+test_issue2698_isolated_hermes_home.py	test_explicit_profile_resolution_for_isolated_default_uses_pinned_home	asserted	server/src/port/profile.port.test.ts
+test_issue2698_isolated_hermes_home.py	test_explicit_foreign_profile_resolution_stays_on_isolated_home	asserted	server/src/port/profile.port.test.ts
+test_issue2698_isolated_hermes_home.py	test_list_profiles_prefers_matching_isolated_default_home	asserted	server/src/port/profile.port.test.ts
 test_issue2698_isolated_hermes_home.py	test_list_profiles_isolated_fallback_does_not_reenter_root_profile_lookup	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — With hermes_cli unavailable, the isolated fallback returns one row (name user1, is_default False) without calling _is_root_profile.
 test_issue2698_isolated_hermes_home.py	test_create_profile_rejected_in_isolated_mode	asserted	server/src/api/settings.test.ts
 test_issue2698_isolated_hermes_home.py	test_delete_profile_rejected_in_isolated_mode	asserted	server/src/api/settings.test.ts
 test_issue2698_isolated_hermes_home.py	test_switch_to_different_profile_rejected	asserted	server/src/api/settings.test.ts
-test_issue2698_isolated_hermes_home.py	test_switch_to_same_profile_idempotent	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue2698_isolated_hermes_home.py	test_switch_to_same_default_profile_keeps_pinned_home	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue2698_isolated_hermes_home.py	test_switch_to_same_profile_idempotent	asserted	server/src/port/profile.port.test.ts
+test_issue2698_isolated_hermes_home.py	test_switch_to_same_default_profile_keeps_pinned_home	asserted	server/src/port/profile.port.test.ts
 test_issue2698_isolated_hermes_home.py	test_scheduled_cron_jobs_stay_pinned_to_isolated_home	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _home_for_scheduled_cron_job({'profile':'other'}) returns the pinned home.
-test_issue2698_isolated_hermes_home.py	test_cli_import_all_profiles_is_rejected_in_isolated_mode	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue2698_isolated_hermes_home.py	test_cli_import_all_profiles_is_rejected_in_isolated_mode	dropped	not ported: POST /api/session/import-cli is not exposed in the TypeScript contract
 test_issue2698_isolated_hermes_home.py	test_scheduler_publishes_isolated_profile_after_foreign_job_profile	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — install_cron_scheduler_profile_isolation wraps cron.scheduler.run_job so completion publishes session_list_changed('cron_complete', profile=
 test_issue2698_isolated_hermes_home.py	test_normal_mode_profile_operations_work	asserted	server/src/api/settings.test.ts
 test_issue2720_bedrock_model_picker.py	test_bedrock_in_provider_display	subject	src/api/settings.test.ts, src/settings.test.ts
@@ -833,14 +833,14 @@ test_issue2720_bedrock_model_picker.py	test_bedrock_in_provider_models	subject	s
 test_issue2720_bedrock_model_picker.py	test_bedrock_static_models_have_required_fields	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue2720_bedrock_model_picker.py	test_bedrock_aws_credentials_detected_in_env_fallback	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue2720_bedrock_model_picker.py	test_bedrock_missing_secret_key_not_detected	subject	src/api/settings.test.ts, src/settings.test.ts
-test_issue2762_state_sync_profile_kwarg.py	test_get_state_db_honors_explicit_profile_kwarg	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue2762_state_sync_profile_kwarg.py	test_sync_session_usage_writes_only_to_named_profile	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue2762_state_sync_profile_kwarg.py	test_sync_session_usage_without_profile_kwarg_uses_active	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue2762_state_sync_profile_kwarg.py	test_metadata_only_summary_reads_explicit_profile_state_db	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue2762_state_sync_profile_kwarg.py	test_get_state_db_honors_explicit_profile_kwarg	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
+test_issue2762_state_sync_profile_kwarg.py	test_sync_session_usage_writes_only_to_named_profile	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
+test_issue2762_state_sync_profile_kwarg.py	test_sync_session_usage_without_profile_kwarg_uses_active	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
+test_issue2762_state_sync_profile_kwarg.py	test_metadata_only_summary_reads_explicit_profile_state_db	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
 test_issue2762_state_sync_profile_kwarg.py	test_metadata_only_summary_honors_profile_from_background_thread	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Same explicit-profile read works from a worker thread with no request TLS.
-test_issue2762_state_sync_profile_kwarg.py	test_api_session_metadata_only_passes_session_profile_to_summary	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue2762_state_sync_profile_kwarg.py	test_unknown_explicit_profile_returns_none_not_falls_back	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue2762_state_sync_profile_kwarg.py	test_invalid_profile_name_refused_not_falls_back	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue2762_state_sync_profile_kwarg.py	test_api_session_metadata_only_passes_session_profile_to_summary	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
+test_issue2762_state_sync_profile_kwarg.py	test_unknown_explicit_profile_returns_none_not_falls_back	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
+test_issue2762_state_sync_profile_kwarg.py	test_invalid_profile_name_refused_not_falls_back	dropped	not ported: state.db usage sync is owned by the Agent sidecar (sessions are written through the sidecar), no server-side profile kwarg
 test_issue2768_workspace_links.py	test_file_raw_inline_html_preview_injects_base_target_blank	subject	src/api/tools.test.ts
 test_issue2775_log_request.py	test_log_request_handles_malformed_request_without_path	subject	src/app.test.ts
 test_issue2775_log_request.py	test_log_request_includes_remote_address	subject	src/app.test.ts
@@ -971,19 +971,19 @@ test_issue3023_safe_session_id_validators.py	test_session_delete_validator_accep
 test_issue3023_safe_session_id_validators.py	test_session_worktree_remove_validator_accepts_hyphenated_ids	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/sessions.test.ts
 test_issue3023_safe_session_id_validators.py	test_repair_stale_pending_validator_accepts_hyphenated_ids	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/sessions.test.ts
 test_issue3023_safe_session_id_validators.py	test_no_lowercase_only_magic_string_remains_in_session_validators	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/sessions.test.ts
-test_issue3066_disabled_read_profile.py	test_disabled_read_uses_active_profile_config	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_disabled_read_prefers_platform_disabled_webui	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_disabled_read_falls_back_to_global_disabled	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_disabled_read_empty_when_no_config	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_disabled_read_empty_when_no_skills_section	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_skills_list_disabled_reflects_active_profile	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_profile_switch_changes_disabled_state	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
+test_issue3066_disabled_read_profile.py	test_disabled_read_uses_active_profile_config	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_disabled_read_prefers_platform_disabled_webui	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_disabled_read_falls_back_to_global_disabled	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_disabled_read_empty_when_no_config	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_disabled_read_empty_when_no_skills_section	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_skills_list_disabled_reflects_active_profile	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_profile_switch_changes_disabled_state	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
 test_issue3066_disabled_read_profile.py	test_normalize_disabled_set_handles_edge_cases	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _normalize_disabled_set: None→set(), str→{str}, list→set, whitespace trimmed/dropped.
-test_issue3066_disabled_read_profile.py	test_disabled_read_decodes_json_array_string	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_disabled_read_platform_webui_decodes_json_array_string	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_disabled_read_profile.py	test_skills_list_disabled_decodes_json_array_string	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3066_profile_skill_disabled_state.py	test_skills_list_reads_disabled_state_from_active_profile	subject	src/api/tools.test.ts
-test_issue3066_profile_skill_disabled_state.py	test_skill_toggle_writes_active_profile_config_not_default	subject	src/api/tools.test.ts
+test_issue3066_disabled_read_profile.py	test_disabled_read_decodes_json_array_string	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_disabled_read_platform_webui_decodes_json_array_string	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_disabled_read_profile.py	test_skills_list_disabled_decodes_json_array_string	dropped	not ported: the disabled-skill set is derived by the Agent sidecar (skills.list) from the profile config; the server forwards the active profile home
+test_issue3066_profile_skill_disabled_state.py	test_skills_list_reads_disabled_state_from_active_profile	asserted	server/src/port/profile.port.test.ts
+test_issue3066_profile_skill_disabled_state.py	test_skill_toggle_writes_active_profile_config_not_default	asserted	server/src/port/profile.port.test.ts
 test_issue3103_sse_no_connection_close.py	test_session_events_stream_does_not_emit_connection_close	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Static source guard: `_handle_session_events_stream` (GET /api/sessions/events) must not send `Connection: close` (browser EventSource recon
 test_issue3103_sse_no_connection_close.py	test_gateway_sse_stream_does_not_emit_connection_close	subject	src/api/tools.test.ts
 test_issue3103_sse_no_connection_close.py	test_connection_close_still_present_for_finite_zip_download	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Static source guard: finite responses (ZIP download) still emit `Connection: close` at least once.
@@ -1089,18 +1089,18 @@ test_issue3402_workspace_tree_move.py	test_file_move_rejects_existing_target	sub
 test_issue3402_workspace_tree_move.py	test_file_move_rejects_symlinked_dest_dir_escape	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue3402_workspace_tree_move.py	test_file_move_succeeds_under_symlinked_workspace_root	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue3402_workspace_tree_move.py	test_file_move_rejects_symlinked_source_entry	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue3405_profile_provider_resolution.py	test_stale_slash_model_with_profile_provider_repairs_to_profile_default	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_stale_openai_slash_model_with_openai_codex_profile_repairs	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_stale_bare_model_with_profile_provider_repairs	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_compatible_model_with_profile_provider_passes_through	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_profile_provider_does_not_skip_catalog	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_explicit_provider_still_uses_fast_path	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_at_qualified_model_wins_over_profile	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_no_profile_falls_back_to_global	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_empty_model_with_profile_returns_profile_default	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_empty_model_with_profile_no_default_returns_catalog_default	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_gemini_model_under_openai_profile_repairs	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_unknown_model_family_passes_through_with_profile	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
+test_issue3405_profile_provider_resolution.py	test_stale_slash_model_with_profile_provider_repairs_to_profile_default	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_stale_openai_slash_model_with_openai_codex_profile_repairs	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_stale_bare_model_with_profile_provider_repairs	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_compatible_model_with_profile_provider_passes_through	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_profile_provider_does_not_skip_catalog	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_explicit_provider_still_uses_fast_path	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_at_qualified_model_wins_over_profile	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_no_profile_falls_back_to_global	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_empty_model_with_profile_returns_profile_default	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_empty_model_with_profile_no_default_returns_catalog_default	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_gemini_model_under_openai_profile_repairs	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_unknown_model_family_passes_through_with_profile	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
 test_issue3405_profile_provider_resolution.py	test_returns_none_when_no_profile	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _read_profile_model_config with no session profile returns (None, None, None).
 test_issue3405_profile_provider_resolution.py	test_returns_none_when_explicit_provider	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — An explicit requested provider skips the profile config read.
 test_issue3405_profile_provider_resolution.py	test_reads_profile_config	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Reads model.provider / model.default plus the raw dict from the profile's config.yaml.
@@ -1110,10 +1110,10 @@ test_issue3405_profile_provider_resolution.py	test_streaming_enrichment_skips_no
 test_issue3405_profile_provider_resolution.py	test_stale_model_substituted_in_streaming	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Streaming worker substitutes a stale model with the profile default (claude-sonnet-4.6/anthropic).
 test_issue3405_profile_provider_resolution.py	test_compatible_model_not_substituted_in_streaming	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Streaming worker leaves a compatible model untouched.
 test_issue3405_profile_provider_resolution.py	test_explicit_provider_context_skips_profile_enrichment	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — With provider_context already set, the profile enrichment block does not fire.
-test_issue3405_profile_provider_resolution.py	test_openrouter_profile_preserves_slash_qualified_model	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_openrouter_profile_repairs_bare_prefix_mismatch	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_anthropic_profile_repairs_slash_qualified_openai	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
-test_issue3405_profile_provider_resolution.py	test_custom_profile_preserves_slash_qualified_model	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts
+test_issue3405_profile_provider_resolution.py	test_openrouter_profile_preserves_slash_qualified_model	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_openrouter_profile_repairs_bare_prefix_mismatch	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_anthropic_profile_repairs_slash_qualified_openai	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
+test_issue3405_profile_provider_resolution.py	test_custom_profile_preserves_slash_qualified_model	dropped	not ported: per-profile model/provider repair happens in the Agent sidecar; the server forwards the session model unchanged
 test_issue3405_profile_provider_resolution.py	test_streaming_repairs_slash_model_under_anthropic	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Streaming repairs openai/gpt-5.4-mini under anthropic.
 test_issue3405_profile_provider_resolution.py	test_streaming_preserves_slash_model_under_openrouter	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Streaming preserves openai/gpt-5.4-mini under openrouter.
 test_issue3405_profile_provider_resolution.py	test_streaming_repairs_openai_slash_model_under_openai_codex	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Streaming repairs openai/... under openai-codex to gpt-5.5, changed=True.
@@ -1265,8 +1265,8 @@ test_issue3599_inline_thinking_extraction.py	test_inline_and_separate_reasoning_
 test_issue3599_inline_thinking_extraction.py	test_extraction_is_linear_on_long_no_newline_content	subject	src/sessions/chat.test.ts
 test_issue3599_inline_thinking_extraction.py	test_per_token_streaming_scan_is_not_quadratic	subject	src/sessions/chat.test.ts
 test_issue3599_inline_thinking_extraction.py	test_streaming_partial_opener_tail_respects_code_context	subject	src/sessions/chat.test.ts
-test_issue3623_profile_visibility.py	test_profile_yaml_visible_false_is_exposed_as_hidden	subject	src/api/settings.test.ts
-test_issue3623_profile_visibility.py	test_default_profile_fallback_stays_visible	subject	src/api/settings.test.ts
+test_issue3623_profile_visibility.py	test_profile_yaml_visible_false_is_exposed_as_hidden	asserted	server/src/port/profile.port.test.ts
+test_issue3623_profile_visibility.py	test_default_profile_fallback_stays_visible	asserted	server/src/port/profile.port.test.ts
 test_issue3691_model_picker_show_all.py	test_openrouter_overflow_preserves_hidden_tail	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue3691_model_picker_show_all.py	test_deduplicate_model_ids_includes_extra_models	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue3691_model_picker_show_all.py	test_openrouter_free_tier_selection_stays_visible_when_selected_id_is_bare	subject	src/api/settings.test.ts, src/settings.test.ts
@@ -1483,9 +1483,9 @@ test_issue3930_source_filter_pushdown.py	test_load_cli_sessions_uncached_pushes_
 test_issue3930_source_filter_pushdown.py	test_cron_source_filter_uses_cron_rescue_limit	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue3930_source_filter_pushdown.py	test_api_sessions_passes_source_filter_only_on_sidebar_path	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue3930_source_filter_pushdown.py	test_non_sidebar_cli_session_callers_keep_default_get_cli_sessions_signature	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_hides_other_profiles_by_default_but_reports_count	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_dedupes_root_aliases_by_resolved_home	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_skips_hidden_default_profile_when_inactive	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_hides_other_profiles_by_default_but_reports_count	asserted	server/src/port/profile.port.test.ts
+test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_dedupes_root_aliases_by_resolved_home	asserted	server/src/port/profile.port.test.ts
+test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_skips_hidden_default_profile_when_inactive	asserted	server/src/port/profile.port.test.ts
 test_issue3947_tasks_cross_profile_visibility.py	test_crons_route_ignores_all_profiles_toggle_in_isolated_mode	asserted	server/src/api/settings.test.ts
 test_issue3947_tasks_cross_profile_visibility.py	test_cron_jobs_cross_profile_skips_foreign_failures_but_reraises_active_failure	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _cron_jobs_cross_profile('alpha') skips a foreign home that raises (gamma still listed, read_only true) but re-raises when the ACTIVE home's
 test_issue3957_profile_providers_models.py	test_models_cache_path_default_profile_unchanged	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Default/root profile keeps models_cache.json.
@@ -1560,9 +1560,9 @@ test_issue4029_stale_completion_age_gate.py	test_env_zero_disables_age_gate	drop
 test_issue4029_stale_completion_age_gate.py	test_helper_reads_env_override	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue4053_external_skill_categories.py	test_external_skill_categories_keep_local_flat_and_label_external_roots	subject	src/api/tools.test.ts
 test_issue4053_external_skill_categories.py	test_external_skill_category_when_local_dir_absent_from_search_dirs	subject	src/api/tools.test.ts
-test_issue4067_import_cli_cross_profile_guard.py	test_import_cli_existing_foreign_profile_unqualified_request_404	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue4067_import_cli_cross_profile_guard.py	test_import_cli_existing_same_profile_still_refreshes	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue4067_import_cli_cross_profile_guard.py	test_import_cli_all_profiles_requires_matching_profile	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
+test_issue4067_import_cli_cross_profile_guard.py	test_import_cli_existing_foreign_profile_unqualified_request_404	dropped	not ported: POST /api/session/import-cli is not exposed in the TypeScript contract
+test_issue4067_import_cli_cross_profile_guard.py	test_import_cli_existing_same_profile_still_refreshes	dropped	not ported: POST /api/session/import-cli is not exposed in the TypeScript contract
+test_issue4067_import_cli_cross_profile_guard.py	test_import_cli_all_profiles_requires_matching_profile	dropped	not ported: POST /api/session/import-cli is not exposed in the TypeScript contract
 test_issue4087_skill_bundles.py	test_bundle_routes_are_wired_through_dedicated_endpoints	dropped	the route has no consumer and was dropped
 test_issue4087_skill_bundles.py	test_list_command_bundles_returns_bundle_metadata	dropped	the route has no consumer and was dropped
 test_issue4087_skill_bundles.py	test_resolve_bundle_command_uses_bundle_runtime	dropped	the route has no consumer and was dropped
@@ -1682,15 +1682,15 @@ test_issue4536_service_tier.py	test_auxiliary_payload_marks_false_fast_tier_for_
 test_issue4582_workspace_escape_navigation.py	test_authorized_file_symlink_reads_and_raws_through_parent_anchor	dropped	dropped route (no consumer; see PR body) — /api/escape/* routes.
 test_issue4582_workspace_escape_navigation.py	test_authorized_dir_list_read_and_raw_stay_virtualized	dropped	dropped route (no consumer; see PR body) — /api/escape/* routes.
 test_issue4582_workspace_escape_navigation.py	test_nested_escape_row_stays_display_only_and_non_browsable	dropped	dropped route (no consumer; see PR body) — /api/escape/* routes.
-test_issue4586_named_profile_not_isolated.py	test_shape_alone_does_not_enable_isolated_mode	subject	src/api/settings.test.ts
-test_issue4586_named_profile_not_isolated.py	test_profiles_tab_is_not_clamped_to_single_profile	subject	src/api/settings.test.ts
+test_issue4586_named_profile_not_isolated.py	test_shape_alone_does_not_enable_isolated_mode	asserted	server/src/port/profile.port.test.ts
+test_issue4586_named_profile_not_isolated.py	test_profiles_tab_is_not_clamped_to_single_profile	asserted	server/src/port/profile.port.test.ts
 test_issue4586_named_profile_not_isolated.py	test_profile_shape_without_opt_in_warns_once	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — A profile-shaped startup home without the opt-in logs exactly one "HERMES_WEBUI_ISOLATED_PROFILE was not enabled at startup" warning across 
-test_issue4586_named_profile_not_isolated.py	test_switching_to_another_profile_is_allowed	subject	src/api/settings.test.ts
-test_issue4586_named_profile_not_isolated.py	test_flag_plus_shape_enables_isolated_mode	subject	src/api/settings.test.ts
-test_issue4586_named_profile_not_isolated.py	test_flag_without_profile_shape_stays_off	subject	src/api/settings.test.ts
-test_issue4586_named_profile_not_isolated.py	test_falsey_flag_values_are_off	subject	src/api/settings.test.ts
-test_issue4586_named_profile_not_isolated.py	test_profile_env_cannot_clear_isolated_flag	subject	src/api/settings.test.ts
-test_issue4586_named_profile_not_isolated.py	test_runtime_env_path_also_strips_protected_flag	subject	src/api/settings.test.ts
+test_issue4586_named_profile_not_isolated.py	test_switching_to_another_profile_is_allowed	asserted	server/src/port/profile.port.test.ts
+test_issue4586_named_profile_not_isolated.py	test_flag_plus_shape_enables_isolated_mode	asserted	server/src/port/profile.port.test.ts
+test_issue4586_named_profile_not_isolated.py	test_flag_without_profile_shape_stays_off	asserted	server/src/port/profile.port.test.ts
+test_issue4586_named_profile_not_isolated.py	test_falsey_flag_values_are_off	asserted	server/src/port/profile.port.test.ts
+test_issue4586_named_profile_not_isolated.py	test_profile_env_cannot_clear_isolated_flag	asserted	server/src/port/profile.port.test.ts
+test_issue4586_named_profile_not_isolated.py	test_runtime_env_path_also_strips_protected_flag	dropped	not ported: get_profile_runtime_env belongs to the Agent runtime environment, which the sidecar owns
 test_issue4598_composer_control_visibility.py	test_all_hide_flags_registered_as_boolean_settings_keys	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
 test_issue4598_composer_control_visibility.py	test_composer_control_order_is_validated_and_deduped	dropped	exercised the legacy static JavaScript UI removed before this ticket (HWEB-100); the React frontend suite owns the behaviour
 test_issue4626_windows_restart_no_console.py	test_updates_restart_adds_create_no_window	dropped	dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers) — api/updates.py source contains `CREATE_NO_WINDOW` for the Windows self-update restart Popen.
@@ -2115,11 +2115,11 @@ test_issue5127_process_wakeup_bare_model.py	test_malformed_custom_provider_name_
 test_issue5127_process_wakeup_bare_model.py	test_profile_config_scoped_not_global_cfg	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue5127_process_wakeup_bare_model.py	test_returns_profile_default_when_session_has_model_provider	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue5127_process_wakeup_bare_model.py	test_returns_none_default_when_session_provider_differs_from_profile	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue5130_cron_profile_snapshot.py	test_cron_create_recomputes_unpinned_provider_snapshot_under_selected_profile	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue5130_cron_profile_snapshot.py	test_cron_create_with_blank_profile_keeps_ambient_snapshot_semantics	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue5130_cron_profile_snapshot.py	test_cron_create_rejects_before_persisting_when_profile_scope_fails	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue5130_cron_profile_snapshot.py	test_cron_create_with_explicit_provider_and_model_skips_snapshot_override	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue5130_cron_profile_snapshot.py	test_cron_create_with_explicit_provider_recomputes_only_model_snapshot	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue5130_cron_profile_snapshot.py	test_cron_create_recomputes_unpinned_provider_snapshot_under_selected_profile	dropped	not ported: cron provider/model snapshots are computed by the Agent sidecar under the selected profile home
+test_issue5130_cron_profile_snapshot.py	test_cron_create_with_blank_profile_keeps_ambient_snapshot_semantics	dropped	not ported: cron provider/model snapshots are computed by the Agent sidecar under the selected profile home
+test_issue5130_cron_profile_snapshot.py	test_cron_create_rejects_before_persisting_when_profile_scope_fails	dropped	not ported: cron provider/model snapshots are computed by the Agent sidecar under the selected profile home
+test_issue5130_cron_profile_snapshot.py	test_cron_create_with_explicit_provider_and_model_skips_snapshot_override	dropped	not ported: cron provider/model snapshots are computed by the Agent sidecar under the selected profile home
+test_issue5130_cron_profile_snapshot.py	test_cron_create_with_explicit_provider_recomputes_only_model_snapshot	dropped	not ported: cron provider/model snapshots are computed by the Agent sidecar under the selected profile home
 test_issue5130_cron_profile_snapshot.py	test_selected_profile_snapshot_helper_never_repoints_cron_store_globals	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — The snapshot helper leaves cron.jobs JOBS_FILE/CRON_DIR/OUTPUT_DIR untouched while entering the profile env.
 test_issue5130_cron_profile_snapshot.py	test_selected_profile_snapshot_helper_holds_lock_across_profile_env_and_compute	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — The helper holds its lock across both the profile-env entry and the snapshot computation.
 test_issue5132_state_db_override_top_n_cap.py	test_source_classification_is_never_capped	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — internal cap helper.
@@ -2146,10 +2146,10 @@ test_issue5141_terminal_failure_transcript_evaluator.py	test_turn_evaluator_matc
 test_issue5141_terminal_failure_transcript_evaluator.py	test_turn_evaluator_matches_merged_wrapper_with_final_answer	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Same two helpers return the same value (False) when the merged transcript ends with an assistant answer.
 test_issue5141_terminal_failure_transcript_evaluator.py	test_turn_evaluator_materializes_pending_user_after_display_boundary	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — `_turn_transcript_lacks_final_assistant_answer` returns True when the merged transcript is just the previous display and the pending user pr
 test_issue5141_terminal_failure_transcript_evaluator.py	test_merged_wrapper_delegates_to_turn_evaluator	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — `_merged_transcript_lacks_final_assistant_answer` calls the turn evaluator exactly once, forwarding previous_display, msg_text, source="cli"
-test_issue5169_profile_active_default_workspace.py	test_profile_active_includes_default_workspace_from_resolver	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue5169_profile_active_default_workspace.py	test_profile_active_default_workspace_resolves_from_named_profile	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue5169_profile_active_default_workspace.py	test_profile_active_default_workspace_falls_back_to_config_workspace	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue5169_profile_active_default_workspace.py	test_profile_active_default_workspace_ignores_global_last_workspace	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue5169_profile_active_default_workspace.py	test_profile_active_includes_default_workspace_from_resolver	asserted	server/src/port/profile.port.test.ts
+test_issue5169_profile_active_default_workspace.py	test_profile_active_default_workspace_resolves_from_named_profile	asserted	server/src/port/profile.port.test.ts
+test_issue5169_profile_active_default_workspace.py	test_profile_active_default_workspace_falls_back_to_config_workspace	asserted	server/src/port/profile.port.test.ts
+test_issue5169_profile_active_default_workspace.py	test_profile_active_default_workspace_ignores_global_last_workspace	asserted	server/src/port/profile.port.test.ts
 test_issue5175_macos_launchd_git.py	test_run_git_uses_which_result_when_available	subject	src/tools/updates.test.ts
 test_issue5175_macos_launchd_git.py	test_run_git_falls_back_to_usr_bin_git_on_darwin	subject	src/tools/updates.test.ts
 test_issue5175_macos_launchd_git.py	test_run_git_returns_not_found_when_no_executable	subject	src/tools/updates.test.ts
@@ -2308,8 +2308,8 @@ test_issue540_workspace_office_preview.py	test_file_read_returns_503_when_office
 test_issue540_workspace_office_preview.py	test_office_save_route_accepts_safe_docx_and_rejects_preview_only_formats	dropped	office document preview/save was dropped (decided removal)
 test_issue540_workspace_office_preview.py	test_office_save_route_returns_503_when_office_parsers_are_missing	dropped	office document preview/save was dropped (decided removal)
 test_issue5420_profile_switch_session_new.py	test_handle_post_does_not_shadow_get_active_profile_name	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — AST check: handle_post has no local `from api.profiles import get_active_profile_name`.
-test_issue5420_profile_switch_session_new.py	test_session_new_succeeds_with_cross_profile_prev_session_id	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue5420_profile_switch_session_new.py	test_session_new_still_commits_same_profile_prev_session_id	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
+test_issue5420_profile_switch_session_new.py	test_session_new_succeeds_with_cross_profile_prev_session_id	asserted	server/src/port/profile.port.test.ts
+test_issue5420_profile_switch_session_new.py	test_session_new_still_commits_same_profile_prev_session_id	dropped	not ported: session memory commits on prev_session_id run inside the Agent sidecar; the server only threads the workspace
 test_issue5435_tts_voice_preferences.py	test_settings_api_exposes_tts_voice_and_raw_audio_defaults	asserted	server/src/port/limits-tts.port.test.ts
 test_issue5435_tts_voice_preferences.py	test_settings_api_round_trips_speech_preferences	asserted	server/src/port/limits-tts.port.test.ts
 test_issue5435_tts_voice_preferences.py	test_settings_api_reports_only_raw_persisted_speech_keys	asserted	server/src/port/limits-tts.port.test.ts
@@ -2571,11 +2571,11 @@ test_issue6174_public_share_media_embed.py	test_empty_allowed_roots_fails_closed
 test_issue6174_public_share_media_embed.py	test_public_https_url_passes_through_unchanged	subject	src/api/tools.test.ts
 test_issue6174_public_share_media_embed.py	test_sanitize_message_embeds_inside_allowed_root	subject	src/api/tools.test.ts
 test_issue6174_public_share_media_embed.py	test_sanitize_message_blocks_traversal_and_never_leaks	subject	src/api/tools.test.ts
-test_issue617_cron_profile_selector.py	test_cron_api_serializes_legacy_profile_as_explicit_server_default	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue617_cron_profile_selector.py	test_cron_api_serializes_legacy_profile_as_explicit_server_default	asserted	server/src/port/profile.port.test.ts
 test_issue617_cron_profile_selector.py	test_cron_profile_value_validates_against_existing_profiles	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _normalize_cron_profile_value trims to a known name, maps ''/None to None, and raises "Unknown profile: missing".
-test_issue617_cron_profile_selector.py	test_cron_create_api_persists_profile_and_returns_it	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue617_cron_profile_selector.py	test_cron_create_api_rejects_unknown_profile_before_persisting	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
-test_issue617_cron_profile_selector.py	test_cron_update_api_accepts_profile_clear_and_rejects_unknown	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts
+test_issue617_cron_profile_selector.py	test_cron_create_api_persists_profile_and_returns_it	asserted	server/src/port/profile.port.test.ts
+test_issue617_cron_profile_selector.py	test_cron_create_api_rejects_unknown_profile_before_persisting	asserted	server/src/port/profile.port.test.ts
+test_issue617_cron_profile_selector.py	test_cron_update_api_accepts_profile_clear_and_rejects_unknown	asserted	server/src/port/profile.port.test.ts
 test_issue617_cron_profile_selector.py	test_manual_cron_run_uses_execution_profile_but_persists_to_owning_store	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — _run_cron_tracked runs the job subprocess under the execution profile home, then enters the OWNING profile's cron store to save output and m
 test_issue6240_windows_skill_symlink_fallback.py	test_seed_test_skills_uses_symlink_path_when_available	dropped	native Windows support was dropped (decided removal)
 test_issue6240_windows_skill_symlink_fallback.py	test_seed_test_skills_windows_symlink_error_falls_back_to_copy	dropped	native Windows support was dropped (decided removal)
@@ -2868,14 +2868,14 @@ test_issue6964_title_dedup.py	test_sync_session_title_dedup_retry_never_clobbers
 test_issue697_mcp_tool_inventory.py	test_endpoint_returns_sanitized_registered_mcp_tools	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue697_mcp_tool_inventory.py	test_schema_summary_uses_parameter_names_types_required_and_descriptions_only	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue697_mcp_tool_inventory.py	test_tool_summary_rejects_non_dict_schema_and_redacts_description	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_resolver_pins_default_in_isolated_mode	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_get_last_workspace_uses_global_state_not_base	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_get_last_workspace_global_fallback_only_when_canonically_default	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_new_session_binds_global_state_workspace	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_session_config_reads_pinned_config	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_explicit_default_state_dir_is_global	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_explicit_and_ambient_share_workspaces_authority	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue7168_round6_default_isolated_clamp.py	test_last_workspace_round_trip_shared_explicit_ambient	subject	src/api/settings.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
+test_issue7168_round6_default_isolated_clamp.py	test_resolver_pins_default_in_isolated_mode	asserted	server/src/port/profile.port.test.ts
+test_issue7168_round6_default_isolated_clamp.py	test_get_last_workspace_uses_global_state_not_base	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
+test_issue7168_round6_default_isolated_clamp.py	test_get_last_workspace_global_fallback_only_when_canonically_default	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
+test_issue7168_round6_default_isolated_clamp.py	test_new_session_binds_global_state_workspace	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
+test_issue7168_round6_default_isolated_clamp.py	test_session_config_reads_pinned_config	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
+test_issue7168_round6_default_isolated_clamp.py	test_explicit_default_state_dir_is_global	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
+test_issue7168_round6_default_isolated_clamp.py	test_explicit_and_ambient_share_workspaces_authority	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
+test_issue7168_round6_default_isolated_clamp.py	test_last_workspace_round_trip_shared_explicit_ambient	dropped	not ported: the TypeScript state directory is HERMES_WEBUI_STATE_DIR or <pinned home>/webui; the Python global-state authority split for a pinned profiles/default home has no equivalent
 test_issue716_agent_heartbeat.py	test_agent_health_uses_root_gateway_state_when_hermes_home_is_profile	subject	src/api/tools.test.ts
 test_issue716_agent_heartbeat.py	test_agent_health_payload_alive_uses_safe_runtime_details	subject	src/api/tools.test.ts
 test_issue716_agent_heartbeat.py	test_active_profile_gateway_running_pid_uses_active_profile_path	subject	src/api/tools.test.ts
@@ -2889,10 +2889,10 @@ test_issue7182_profile_model_tag_truncation.py	test_strip_preserves_ollama_tag	a
 test_issue7182_profile_model_tag_truncation.py	test_split_preserves_multi_segment_custom_provider	asserted	server/src/api/settings.test.ts
 test_issue7182_profile_model_tag_truncation.py	test_split_matches_shared_parser	asserted	server/src/api/settings.test.ts
 test_issue7182_profile_model_tag_truncation.py	test_strip_matches_shared_parser	asserted	server/src/api/settings.test.ts
-test_issue7182_profile_model_tag_truncation.py	test_explicit_provider_argument_still_wins	subject	src/api/settings.test.ts, src/settings.test.ts
+test_issue7182_profile_model_tag_truncation.py	test_explicit_provider_argument_still_wins	asserted	server/src/port/profile.port.test.ts
 test_issue7182_profile_model_tag_truncation.py	test_no_last_colon_split_remains	asserted	server/src/api/settings.test.ts
-test_issue7182_profile_model_tag_truncation.py	test_strip_passthrough	subject	src/api/settings.test.ts, src/settings.test.ts
-test_issue7182_profile_model_tag_truncation.py	test_split_passthrough_keeps_plain_model	subject	src/api/settings.test.ts, src/settings.test.ts
+test_issue7182_profile_model_tag_truncation.py	test_strip_passthrough	asserted	server/src/port/profile.port.test.ts
+test_issue7182_profile_model_tag_truncation.py	test_split_passthrough_keeps_plain_model	asserted	server/src/port/profile.port.test.ts
 test_issue7195_windows_restart.py	test_reported_pytest_argv_restarts_canonical_server	dropped	dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers) — win32, argv from the pytest fixture → `_schedule_restart(delay=0)` spawns `[C:\Python\python.exe, <REPO>/server.py]` with no pytest token, t
 test_issue7195_windows_restart.py	test_source_restart_always_targets_server	dropped	dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers) — win32, argv variants (`server.py`, `python -m server`, `hermes-webui --profile default`, `wrapper --run server.py`) → always spawns `[python
 test_issue7195_windows_restart.py	test_frozen_restart_preserves_argv	dropped	dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers) — win32 with `sys.frozen=True` and argv `[hermes.exe, --profile, default]` → spawn argv is that argv verbatim.
@@ -2929,10 +2929,10 @@ test_issue7426_skill_not_found_listing_truncation.py	test_empty_skills_tree_repo
 test_issue7426_skill_not_found_listing_truncation.py	test_exactly_at_the_cap_is_not_flagged_as_truncated	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
 test_issue749_profile_create_model_picker.py	test_profile_create_route_passes_model_fields_to_profile_api	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Source check: POST /api/profile/create forwards default_model and model_provider from the body.
 test_issue749_profile_create_model_picker.py	test_profile_model_config_writer_persists_default_and_provider	asserted	server/src/api/settings.test.ts
-test_issue749_profile_create_model_picker.py	test_profile_model_config_writer_preserves_existing_model_settings	subject	src/api/settings.test.ts
+test_issue749_profile_create_model_picker.py	test_profile_model_config_writer_preserves_existing_model_settings	asserted	server/src/port/profile.port.test.ts
 test_issue749_profile_create_model_picker.py	test_profile_model_selection_accepts_catalog_model_with_provider	asserted	server/src/api/settings.test.ts
 test_issue749_profile_create_model_picker.py	test_profile_model_selection_accepts_provider_qualified_picker_value	asserted	server/src/api/settings.test.ts
-test_issue749_profile_create_model_picker.py	test_profile_model_selection_accepts_model_in_overflow_extra_models	subject	src/api/settings.test.ts
+test_issue749_profile_create_model_picker.py	test_profile_model_selection_accepts_model_in_overflow_extra_models	dropped	not ported: the TypeScript picker has no featured/extra_models overflow split; every catalog model validates directly
 test_issue749_profile_create_model_picker.py	test_profile_model_selection_rejects_unknown_model_provider_pair	asserted	server/src/api/settings.test.ts
 test_issue749_profile_create_model_picker.py	test_profile_create_rejects_unknown_model_before_creating_profile	asserted	server/src/api/settings.test.ts
 test_issue7514_openrouter_zai_namespace.py	test_openrouter_setup_never_serves_direct_zai_namespace	subject	src/api/settings.test.ts, src/settings.test.ts

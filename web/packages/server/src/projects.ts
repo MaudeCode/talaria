@@ -30,7 +30,8 @@ export class ProjectStore {
   ensureSystemProject(kind: keyof typeof SYSTEM_PROJECTS, profile: string, opts: { create?: boolean } = {}): string | null {
     const spec = SYSTEM_PROJECTS[kind]
     const active = profile || 'default'
-    const projects = this.load()
+    // Raw rows: a legacy untagged system project is back-tagged to the caller here, not by the generic backfill.
+    const projects = this.load({ migrate: false })
     for (const p of projects) if (p.name === spec.name && this.sameProfile(p.profile, active) && (p.profile === active || this.isRootProfile(active))) return p.project_id
     for (const p of projects) if (p.name === spec.name && !p.profile) { p.profile = active; this.save(projects); return p.project_id }
     if (opts.create === false) return null
