@@ -77,13 +77,13 @@ test_issue1195_session_profile_routing.py	test_nonexistent_profile_still_returns
 test_issue1195_session_profile_routing.py	test_none_returns_default	subject	src/api/settings.test.ts
 test_issue1195_session_profile_routing.py	test_empty_string_returns_default	subject	src/api/settings.test.ts
 test_issue1195_session_profile_routing.py	test_default_string_returns_default	asserted	server/src/api/settings.test.ts
-test_issue1202_oauth_provider_status.py	test_config_yaml_token_shows_configured_when_auth_logged_in	subject	src/api/settings.test.ts
-test_issue1202_oauth_provider_status.py	test_config_yaml_token_shows_configured_when_auth_not_logged_in	subject	src/api/settings.test.ts
+test_issue1202_oauth_provider_status.py	test_config_yaml_token_shows_configured_when_auth_logged_in	asserted	server/src/port/auth.port.test.ts
+test_issue1202_oauth_provider_status.py	test_config_yaml_token_shows_configured_when_auth_not_logged_in	asserted	server/src/port/auth.port.test.ts
 test_issue1202_oauth_provider_status.py	test_not_configured_when_no_key_and_not_logged_in	asserted	server/src/api/settings.test.ts
 test_issue1202_oauth_provider_status.py	test_auth_error_preserved_when_not_logged_in_and_no_config_key	asserted	server/src/api/settings.test.ts
-test_issue1202_oauth_provider_status.py	test_auth_error_preserved_when_not_logged_in_but_config_key_present	subject	src/api/settings.test.ts
+test_issue1202_oauth_provider_status.py	test_auth_error_preserved_when_not_logged_in_but_config_key_present	asserted	server/src/port/auth.port.test.ts
 test_issue1202_oauth_provider_status.py	test_hermes_cli_import_error_does_not_discard_config_yaml_key	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — `hermes_cli.auth` import failure (patched `sys.modules`) must not force `has_key=false` in `get_providers()`.
-test_issue1202_oauth_provider_status.py	test_auth_error_field_present_on_all_oauth_providers	subject	src/api/settings.test.ts
+test_issue1202_oauth_provider_status.py	test_auth_error_field_present_on_all_oauth_providers	asserted	server/src/port/auth.port.test.ts
 test_issue1217_transcript_compaction.py	test_session_persists_model_context_separately_from_display_transcript	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
 test_issue1217_transcript_compaction.py	test_workspace_prefixed_current_user_after_compaction_is_not_duplicated	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
 test_issue1217_transcript_compaction.py	test_embedded_workspace_prefixed_current_user_delta_is_deduped	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/sessions/chat.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
@@ -643,10 +643,10 @@ test_issue1909_csrf_token.py	test_authenticated_allowed_public_origin_accepts_va
 test_issue1909_csrf_token.py	test_authenticated_reverse_proxy_same_origin_accepts_valid_csrf_token	asserted	server/src/http/origin.test.ts
 test_issue1909_csrf_token.py	test_authenticated_forwarded_host_is_ignored_without_proxy_opt_in	asserted	server/src/http/origin.test.ts
 test_issue1909_csrf_token.py	test_non_browser_mcp_style_authenticated_post_remains_compatible	asserted	server/src/http/origin.test.ts
-test_issue1909_csrf_token.py	test_login_route_remains_csrf_exempt	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/auth/store.test.ts, src/settings.test.ts
+test_issue1909_csrf_token.py	test_login_route_remains_csrf_exempt	asserted	server/src/port/auth.port.test.ts
 test_issue1910_login_attempt_persistence.py	test_login_attempts_persist_failed_attempts	asserted	server/src/auth/store.test.ts
 test_issue1910_login_attempt_persistence.py	test_login_attempts_load_prunes_expired_entries	asserted	server/src/auth/store.test.ts
-test_issue1910_login_attempt_persistence.py	test_login_rate_limit_survives_reload	subject	src/api/tools.test.ts
+test_issue1910_login_attempt_persistence.py	test_login_rate_limit_survives_reload	asserted	server/src/port/auth.port.test.ts
 test_issue1913_workspace_prefix_sentinel.py	test_workspace_prefix_strips_only_versioned_sentinel	subject	src/sessions/chat.test.ts
 test_issue1913_workspace_prefix_sentinel.py	test_workspace_prefix_escapes_paths_with_closing_brackets	subject	src/sessions/chat.test.ts
 test_issue1913_workspace_prefix_sentinel.py	test_legacy_workspace_prefix_only_strips_for_compatibility_callers	subject	src/sessions/chat.test.ts
@@ -789,8 +789,8 @@ test_issue2540_models_endpoint_error.py	test_named_custom_provider_models_endpoi
 test_issue2542_anonymous_custom_endpoint.py	test_custom_anonymous_endpoint_empty_models_fallback_in_get_available_models	subject	src/api/tools.test.ts
 test_issue2542_anonymous_custom_endpoint.py	test_revert_custom_endpoint_fallback_comment	subject	src/api/tools.test.ts
 test_issue2545_xai_oauth_provider.py	test_xai_oauth_is_known_oauth_provider	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — `xai-oauth` is in `_OAUTH_PROVIDERS` and `_PROVIDER_DISPLAY["xai-oauth"] == "xAI Grok OAuth"`.
-test_issue2545_xai_oauth_provider.py	test_xai_oauth_provider_card_uses_oauth_status_and_models	subject	src/api/settings.test.ts, src/settings.test.ts
-test_issue2545_xai_oauth_provider.py	test_xai_oauth_model_picker_group_uses_live_catalog	subject	src/api/settings.test.ts, src/settings.test.ts
+test_issue2545_xai_oauth_provider.py	test_xai_oauth_provider_card_uses_oauth_status_and_models	asserted	server/src/port/auth.port.test.ts
+test_issue2545_xai_oauth_provider.py	test_xai_oauth_model_picker_group_uses_live_catalog	asserted	server/src/port/auth.port.test.ts
 test_issue2572_csrf_diagnostics.py	test_origin_mismatch_csrf_rejection_has_diagnostic_error	asserted	server/src/app.test.ts
 test_issue2572_csrf_diagnostics.py	test_token_mismatch_csrf_rejection_has_reload_error	asserted	server/src/app.test.ts
 test_issue2592_partial_dedupe.py	test_tool_only_partial_dedupe_uses_reasoning_and_tool_signature	subject	src/sessions/chat.test.ts, src/sessions/sessions.test.ts
@@ -1289,15 +1289,15 @@ test_issue3746_session_move_delete_timeout.py	test_move_returns_503_on_lock_cont
 test_issue3746_session_move_delete_timeout.py	test_move_releases_lock_in_finally	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue3746_session_move_delete_timeout.py	test_delete_clears_project_id_on_streaming_sessions_in_cache	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue3746_session_move_delete_timeout.py	test_delete_guards_each_session_save	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_uses_config_key_before_env_aliases	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_uses_config_key_before_env_aliases	dropped	not ported: the reasoning capability probe against LM Studio is not implemented; /api/reasoning derives support from config.yaml (parity matrix)
 test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_uses_context_local_profile_key	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — The probe key resolver prefers the thread-local profile env (`_set_thread_env`) over the process env when `block_process_env_fallback` is se
-test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_honors_active_model_api_key	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_honors_active_model_api_key	dropped	not ported: the reasoning capability probe against LM Studio is not implemented; /api/reasoning derives support from config.yaml (parity matrix)
 test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_falls_back_without_hermes_cli	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — With hermes_cli blocked via a sys.meta_path import blocker, the built-in probe still runs with the config key and reports the efforts.
-test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_stays_keyless_when_no_key_is_configured	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
-test_issue3750_lmstudio_probe_auth.py	test_onboarding_probe_remains_authorized_control	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_stays_keyless_when_no_key_is_configured	dropped	not ported: the reasoning capability probe against LM Studio is not implemented; /api/reasoning derives support from config.yaml (parity matrix)
+test_issue3750_lmstudio_probe_auth.py	test_onboarding_probe_remains_authorized_control	dropped	not ported: the reasoning capability probe against LM Studio is not implemented; /api/reasoning derives support from config.yaml (parity matrix)
 test_issue3750_lmstudio_probe_auth.py	test_credentialed_probe_never_calls_hermes_cli	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — With a credential configured, the bundled `hermes_cli.models.lmstudio_model_reasoning_options` (redirect-following) is never called; the bui
 test_issue3750_lmstudio_probe_auth.py	test_keyless_probe_logs_signature_mismatch_before_fallback	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — A keyless probe prefers hermes_cli; an incompatible signature raises TypeError, logs a warning containing "unexpected signature" with exc_in
-test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_drops_key_for_caller_supplied_base_url	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_drops_key_for_caller_supplied_base_url	dropped	not ported: the reasoning capability probe against LM Studio is not implemented; /api/reasoning derives support from config.yaml (parity matrix)
 test_issue3750_lmstudio_probe_auth.py	test_reasoning_probe_does_not_follow_redirects_with_credential	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — `_lmstudio_reasoning_probe_options_fallback` stops at a 302 and never forwards the Authorization header to the redirect target; returns [].
 test_issue3750_lmstudio_probe_auth.py	test_credentialed_probe_does_not_follow_redirects_end_to_end	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — End-to-end `resolve_model_reasoning_efforts` on a configured endpoint that 302s: no request reaches the redirect target, efforts [].
 test_issue3762_importable_rows_schema_guard.py	test_full_schema_returns_rows_baseline	subject	src/sessions/state-db.test.ts
@@ -1331,20 +1331,20 @@ test_issue3820_chat_activity_display_mode.py	test_chat_activity_display_mode_per
 test_issue3820_chat_activity_display_mode.py	test_transparent_stream_event_timestamps_default_true_and_persist_boolean	subject	src/api/settings.test.ts, src/settings.test.ts
 test_issue3825_oidc_auth.py	test_oidc_start_redirects_with_pkce_state_and_nonce	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_oidc_callback_exchanges_code_and_sets_existing_session_cookie	asserted	server/src/api/auth-flows.test.ts
-test_issue3825_oidc_auth.py	test_oidc_callback_binds_identity_to_profile	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
-test_issue3825_oidc_auth.py	test_oidc_profile_mapping_fails_closed_for_unmapped_identity	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
-test_issue3825_oidc_auth.py	test_oidc_profile_mapping_rejects_missing_profile	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
+test_issue3825_oidc_auth.py	test_oidc_callback_binds_identity_to_profile	asserted	server/src/api/auth-flows.test.ts
+test_issue3825_oidc_auth.py	test_oidc_profile_mapping_fails_closed_for_unmapped_identity	asserted	server/src/api/auth-flows.test.ts
+test_issue3825_oidc_auth.py	test_oidc_profile_mapping_rejects_missing_profile	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_oidc_profile_mapping_reads_yaml_and_environment_override	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — HERMES_WEBUI_OIDC_PROFILE_CLAIM / HERMES_WEBUI_OIDC_PROFILE_MAP override the config.yaml `webui_oidc` block; profile_map_configured true, pr
 test_issue3825_oidc_auth.py	test_oidc_configuration_stays_pinned_to_operator_profile	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — A per-profile config.yaml cannot override the operator's `webui_oidc.issuer`; `_resolve_oidc_config()` stays on the operator value and OIDC 
 test_issue3825_oidc_auth.py	test_oidc_session_is_revoked_when_profile_mapping_changes	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_profile_dotenv_cannot_override_operator_oidc	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — A profile `.env` setting HERMES_WEBUI_OIDC_ISSUER / _PROFILE_MAP / _TRUSTED_AUTH_HEADER is ignored: os.environ keeps the operator issuer and
 test_issue3825_oidc_auth.py	test_invalid_oidc_profile_mapping_keeps_auth_gate_and_warns	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — A non-object `profile_map` keeps `is_oidc_enabled()` true (auth stays gated), `_require_oidc_config()` raises OIDCConfigError "profile_map m
-test_issue3825_oidc_auth.py	test_bound_oidc_session_rehydrates_missing_profile_cookie	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
+test_issue3825_oidc_auth.py	test_bound_oidc_session_rehydrates_missing_profile_cookie	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_oidc_callback_rejects_invalid_state_without_setting_session_cookie	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_oidc_callback_rejects_allowlist_failure_without_setting_session_cookie	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_auth_status_reports_oidc_capability_without_regressing_passkey_fields	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_auth_status_reports_bound_oidc_identity	asserted	server/src/api/auth-flows.test.ts
-test_issue3825_oidc_auth.py	test_oidc_enablement_requires_explicit_allowlist	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
+test_issue3825_oidc_auth.py	test_oidc_enablement_requires_explicit_allowlist	asserted	server/src/api/auth-flows.test.ts
 test_issue3825_oidc_auth.py	test_oidc_startup_warning_flags_partial_config	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Partial `webui_oidc` produces a startup warning naming allow_claim and allow_values.
 test_issue3825_oidc_auth.py	test_oidc_startup_warning_ignores_complete_config	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — A complete `webui_oidc` block produces no startup warning.
 test_issue3825_oidc_auth.py	test_validate_id_token_rejects_mismatched_jwk_key_family	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — An RS256 header matched against an EC JWK with the same kid raises OIDCAuthError "did not contain the signing key".
@@ -1568,10 +1568,10 @@ test_issue4087_skill_bundles.py	test_list_command_bundles_returns_bundle_metadat
 test_issue4087_skill_bundles.py	test_resolve_bundle_command_uses_bundle_runtime	dropped	the route has no consumer and was dropped
 test_issue4087_skill_bundles.py	test_resolve_bundle_command_raises_for_unknown_bundle	dropped	the route has no consumer and was dropped
 test_issue4087_skill_bundles.py	test_resolve_bundle_command_wraps_unexpected_runtime_errors	dropped	the route has no consumer and was dropped
-test_issue4164_bound_non_git_project_context_walk.py	test_non_git_workspace_does_not_walk_above_workspace	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
+test_issue4164_bound_non_git_project_context_walk.py	test_non_git_workspace_does_not_walk_above_workspace	asserted	server/src/port/auth.port.test.ts
 test_issue4164_bound_non_git_project_context_walk.py	test_non_git_workspace_still_reads_in_workspace_context	asserted	server/src/api/tools.test.ts
-test_issue4164_bound_non_git_project_context_walk.py	test_git_workspace_walk_to_git_root_is_unchanged	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
-test_issue4164_bound_non_git_project_context_walk.py	test_non_git_workspace_bound_is_workspace_not_first_parent	subject	src/api/raw-routes.test.ts, src/api/tools.test.ts
+test_issue4164_bound_non_git_project_context_walk.py	test_git_workspace_walk_to_git_root_is_unchanged	asserted	server/src/port/auth.port.test.ts
+test_issue4164_bound_non_git_project_context_walk.py	test_non_git_workspace_bound_is_workspace_not_first_parent	asserted	server/src/port/auth.port.test.ts
 test_issue4183_regenerate_materialize.py	test_regenerate_endpoint_uses_materialize_fallback	subject	src/api/tools.test.ts
 test_issue4183_regenerate_materialize.py	test_regenerate_endpoint_catches_permission_error	subject	src/api/tools.test.ts
 test_issue4251_wakeup_model_picker_race.py	test_dispatch_stamp_does_not_clobber_newer_picker_model	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
@@ -1866,9 +1866,9 @@ test_issue4766_sidebar_source_pushdown.py	test_payload_row_count_regression	subj
 test_issue4768_cron_module_missing.py	test_api_crons_guards_missing_cron_module	subject	src/api/tools.test.ts
 test_issue4768_cron_module_missing.py	test_api_crons_still_lists_jobs_on_happy_path	subject	src/api/tools.test.ts
 test_issue477.py	test_font_src_keeps_self_and_data_without_cdn_font_exception	subject	src/api/tools.test.ts
-test_issue4770_anthropic_oauth_detection.py	test_anthropic_token_env_var_surfaces_anthropic_models	subject	src/api/settings.test.ts, src/settings.test.ts
-test_issue4770_anthropic_oauth_detection.py	test_whitespace_only_anthropic_oauth_env_vars_do_not_surface_anthropic	subject	src/api/settings.test.ts, src/settings.test.ts
-test_issue4770_anthropic_oauth_detection.py	test_claude_code_oauth_token_env_var_surfaces_anthropic_models	subject	src/api/settings.test.ts, src/settings.test.ts
+test_issue4770_anthropic_oauth_detection.py	test_anthropic_token_env_var_surfaces_anthropic_models	asserted	server/src/port/auth.port.test.ts
+test_issue4770_anthropic_oauth_detection.py	test_whitespace_only_anthropic_oauth_env_vars_do_not_surface_anthropic	asserted	server/src/port/auth.port.test.ts
+test_issue4770_anthropic_oauth_detection.py	test_claude_code_oauth_token_env_var_surfaces_anthropic_models	asserted	server/src/port/auth.port.test.ts
 test_issue4771_local_approval_regression.py	test_local_mirrored_approval_resolves_not_409	asserted	server/src/sessions/chat.test.ts
 test_issue4771_local_approval_regression.py	test_local_mirrored_approval_deny_resolves	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue4771_local_approval_regression.py	test_local_mirrored_approval_with_gwrun_prefix_still_resolves	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
@@ -2171,9 +2171,9 @@ test_issue5210_http_worker_bound.py	test_worker_slot_releases_after_request_fini
 test_issue5210_http_worker_bound.py	test_worker_slot_releases_after_handler_error_or_disconnect	dropped	not ported: request concurrency is the Node event loop; the Python request-worker cap has no equivalent (parity matrix H7)
 test_issue5210_http_worker_bound.py	test_long_running_request_does_not_reject_healthy_in_cap_request	dropped	not ported: request concurrency is the Node event loop; the Python request-worker cap has no equivalent (parity matrix H7)
 test_issue5210_http_worker_bound.py	test_sse_budget_rejects_excess_streams_without_consuming_request_workers	dropped	not ported: no separate stream-worker pool in Node; the per-client stream cap (client_stream_limit) is the observable limit (parity matrix H7)
-test_issue5210_http_worker_bound.py	test_sse_per_client_cap_does_not_affect_another_authenticated_identity	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue5210_http_worker_bound.py	test_sse_per_client_cap_does_not_affect_another_authenticated_identity	asserted	server/src/port/auth.port.test.ts
 test_issue5210_http_worker_bound.py	test_sse_budget_and_client_count_release_when_handler_finishes	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — The per-identity stream counter records {("identity","alice"):1} and is released when the handler finishes so a replacement stream opens.
-test_issue5210_http_worker_bound.py	test_sse_per_client_cap_falls_back_to_client_address	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
+test_issue5210_http_worker_bound.py	test_sse_per_client_cap_falls_back_to_client_address	asserted	server/src/port/auth.port.test.ts
 test_issue5210_http_worker_bound.py	test_tls_overflow_does_not_force_accept_loop_handshake	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Over capacity with TLS, the accept loop closes the raw socket without performing the handshake and no extra worker starts.
 test_issue5220_config_reload_stampede.py	test_stale_readers_collapse_to_single_reload_when_config_is_hot_reload	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
 test_issue5220_config_reload_stampede.py	test_explicit_reload_config_forces_disk_refresh	dropped	tests Python-only implementation details (threads, locks, sys.modules, monkeypatched module globals) with no TypeScript counterpart; the observable behaviour is covered by the suites listed in the parity matrix
@@ -2377,13 +2377,13 @@ test_issue5570_clear_backup_recovery.py	test_manual_compression_recovery_behavio
 test_issue5570_clear_backup_recovery.py	test_post_clear_message_with_stale_pre_clear_backup_is_not_restored	subject	src/sessions/sessions.test.ts
 test_issue5570_clear_backup_recovery.py	test_post_clear_message_after_real_compaction_still_recovers	subject	src/sessions/sessions.test.ts
 test_issue5572_messaging_clear_semantics.py	test_session_clear_preserves_imported_messaging_transcript_and_blocks_state_db_replay	subject	src/api/raw-routes.test.ts, src/api/settings.test.ts, src/api/tools.test.ts, src/sessions/sessions.test.ts, src/settings.test.ts
-test_issue5578_login_next_nesting.py	test_rejects_login_self_reference	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
+test_issue5578_login_next_nesting.py	test_rejects_login_self_reference	asserted	server/src/port/auth.port.test.ts
 test_issue5578_login_next_nesting.py	test_rejects_nested_next_chain	asserted	server/src/app.test.ts
 test_issue5578_login_next_nesting.py	test_rejects_encoded_login_chain_at_any_depth	asserted	server/src/app.test.ts
-test_issue5578_login_next_nesting.py	test_rejects_deeply_encoded_login_chain	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
-test_issue5578_login_next_nesting.py	test_preserves_non_login_path_carrying_its_own_next_key	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
-test_issue5578_login_next_nesting.py	test_rejects_overlong_next	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
-test_issue5578_login_next_nesting.py	test_the_exact_12k_explosion_collapses	subject	src/api/auth-flows.test.ts, src/api/raw-routes.test.ts, src/api/tools.test.ts, src/auth/store.test.ts
+test_issue5578_login_next_nesting.py	test_rejects_deeply_encoded_login_chain	asserted	server/src/port/auth.port.test.ts
+test_issue5578_login_next_nesting.py	test_preserves_non_login_path_carrying_its_own_next_key	asserted	server/src/port/auth.port.test.ts
+test_issue5578_login_next_nesting.py	test_rejects_overlong_next	asserted	server/src/port/auth.port.test.ts
+test_issue5578_login_next_nesting.py	test_the_exact_12k_explosion_collapses	asserted	server/src/port/auth.port.test.ts
 test_issue5578_login_next_nesting.py	test_preserves_real_session_path	asserted	server/src/api/auth-flows.test.ts
 test_issue5578_login_next_nesting.py	test_preserves_root_and_plain_paths	asserted	server/src/api/auth-flows.test.ts
 test_issue5578_login_next_nesting.py	test_still_rejects_open_redirect_classics	asserted	server/src/api/auth-flows.test.ts

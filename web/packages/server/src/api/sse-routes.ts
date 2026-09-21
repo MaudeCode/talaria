@@ -19,18 +19,33 @@ const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
 
 /** Python `promote_request_to_stream`: bounded concurrent SSE clients (503 `client_stream_limit`). */
 export class StreamSlots {
-  private held = 0
+  private readonly held = new Map<string, number>()
 
   constructor(private readonly limit: () => number) {}
 
-  claim(): (() => void) | null {
-    if (this.held >= this.limit()) return null
-    this.held += 1
+  /** One budget per client identity (authenticated session, else the client address), as Python keyed `_client_stream_key`. */
+  claim(key = ''): (() => void) | null {
+    const current = this.held.get(key) ?? 0
+    if (current >= this.limit()) return null
+    this.held.set(key, current + 1)
     let released = false
-    return () => { if (!released) { released = true; this.held -= 1 } }
+    return () => {
+      if (released) return
+      released = true
+      const now = (this.held.get(key) ?? 1) - 1
+      if (now <= 0) this.held.delete(key)
+      else this.held.set(key, now)
+    }
   }
 
-  get active(): number { return this.held }
+  get active(): number { let total = 0; for (const n of this.held.values()) total += n; return total }
+}
+
+/** Python `_client_stream_key`: the authenticated session identity when present, else the peer address. */
+export function clientStreamKey(ctx: RequestContext): string {
+  const cookie = ctx.authCookie() ?? ctx.trusted.cookieValue ?? null
+  if (cookie) return `session:${cookie.split('.', 1)[0] ?? cookie}`
+  return `peer:${ctx.peer || 'unknown'}`
 }
 
 /** Python served SSE on blocking sockets, so a slow reader stalled its own producer; Node buffers instead, and this bounds that buffer. */
@@ -87,7 +102,7 @@ export class SseWriter {
 }
 
 export function claimOrReject(ctx: RequestContext, connectionClose: boolean): SseWriter | null {
-  const release = ctx.deps.streamSlots.claim()
+  const release = ctx.deps.streamSlots.claim(clientStreamKey(ctx))
   if (!release) {
     ctx.json({ error: 'Too many concurrent event streams', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
     return null

@@ -328,6 +328,10 @@ export class ProviderCatalog {
       const canonical = canonicaliseProviderId(pid)
       if (canonical && this.providerHasKey(canonical, config, envValues)) detected.add(canonical)
     }
+    // Python: OAuth providers the Agent reports as logged in join the picker with their live catalog (#1567, #2545).
+    const oauthLoggedIn = new Set<string>()
+    for (const row of (await this.providers(profileHome)).providers) if (row.is_oauth === true && row.has_key === true) oauthLoggedIn.add(str(row.id))
+    for (const pid of oauthLoggedIn) detected.add(pid)
     const fallbackCfg = Array.isArray(config.fallback_providers) ? config.fallback_providers.filter(isDict) : []
     for (const entry of fallbackCfg) {
       const p = resolveProviderAlias(entry.provider)
@@ -369,7 +373,7 @@ export class ProviderCatalog {
       const providerCfg = dict(providersCfg[rawKeyFor.get(pid) ?? pid])
       let raw: ModelEntry[] = []
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
-      if (!raw.length && this.providerHasKey(pid, config, envValues)) {
+      if (!raw.length && (this.providerHasKey(pid, config, envValues) || oauthLoggedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
       }

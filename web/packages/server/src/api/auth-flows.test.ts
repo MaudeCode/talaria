@@ -11,7 +11,7 @@
  * (issues #1909, #2572, #2929, #3510, #3582, #3825, #4982, #5578) is covered here; see docs/architecture/regression-port-ledger.md.
  */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -375,5 +375,67 @@ describe('auth helpers', () => {
     const pem = a.key.publicKey.export({ type: 'spki', format: 'pem' })
     expect(createPublicKey(pem).asymmetricKeyType).toBe('ec')
     expect(createPrivateKey(a.key.privateKey.export({ type: 'pkcs8', format: 'pem' })).asymmetricKeyType).toBe('ec')
+  })
+})
+
+describe('OIDC profile binding (TAL-245 ports)', () => {
+  let s: TestServer
+  let idp: Idp
+  const now = () => Date.now() / 1000
+  beforeAll(async () => {
+    s = await bootTestServer({
+      env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', HERMES_WEBUI_OIDC_PROFILE_CLAIM: 'email', HERMES_WEBUI_OIDC_PROFILE_MAP: '{"kim@example.com":"work","ghost@example.com":"ghost"}' },
+    })
+    idp = fakeIdp(now)
+    s.deps.fetch = idp.fetch
+    mkdirSync(join(s.state, 'profiles', 'work'), { recursive: true })
+  })
+  afterAll(() => s.close())
+  const callback = async (): Promise<Response> => {
+    const start = await s.get('/api/auth/oidc/start')
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    return s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+  }
+
+  it('[py:test_issue3825_oidc_auth.py::test_oidc_callback_binds_identity_to_profile] a mapped identity gets a session bound to its profile and a signed profile cookie', async () => {
+    const cb = await callback()
+    expect(cb.status).toBe(302)
+    const cookies = cb.headers.getSetCookie()
+    expect(cookies.some((c) => c.startsWith('hermes_session='))).toBe(true)
+    expect(cookies.some((c) => /^hermes_profile=work\.[0-9a-f]{64}/.test(c))).toBe(true)
+    const session = cookies.find((c) => c.startsWith('hermes_session='))?.split(';')[0] ?? ''
+    expect(await json(await s.get('/api/auth/status', { headers: { cookie: session } }))).toMatchObject({ logged_in: true, auth_type: 'oidc', bound_profile: 'work' })
+  })
+
+  it('[py:test_issue3825_oidc_auth.py::test_bound_oidc_session_rehydrates_missing_profile_cookie] a request carrying only the bound session cookie re-issues the profile cookie', async () => {
+    const cb = await callback()
+    const session = cb.headers.getSetCookie().find((c) => c.startsWith('hermes_session='))?.split(';')[0] ?? ''
+    const res = await s.get('/api/bootstrap', { headers: { cookie: session } })
+    expect(res.status).toBe(200)
+    expect(res.headers.getSetCookie().some((c) => c.startsWith("hermes_profile=work."))).toBe(true)
+    expect(((await json(res)).profile as Json).name).toBe('work')
+  })
+
+  it('[py:test_issue3825_oidc_auth.py::test_oidc_profile_mapping_fails_closed_for_unmapped_identity] an identity outside the map is refused', async () => {
+    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-9', email: 'nobody@example.com', groups: ['admins'], exp: now() + 300, iat: now(), nonce })
+    const cb = await callback()
+    expect(cb.status).toBe(403)
+    expect(await cb.text()).toContain('not assigned to a profile')
+  })
+
+  it('[py:test_issue3825_oidc_auth.py::test_oidc_profile_mapping_rejects_missing_profile] a map target whose home does not exist is a configuration error', async () => {
+    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-8', email: 'ghost@example.com', groups: ['admins'], exp: now() + 300, iat: now(), nonce })
+    const cb = await callback()
+    expect(cb.status).toBeGreaterThanOrEqual(400)
+    expect(await cb.text()).toContain('does not exist')
+  })
+})
+
+describe('OIDC enablement', () => {
+  it('[py:test_issue3825_oidc_auth.py::test_oidc_enablement_requires_explicit_allowlist] issuer and client id alone do not enable OIDC', async () => {
+    const s = await bootTestServer({ env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client' } })
+    try {
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ oidc_enabled: false })
+    } finally { await s.close() }
   })
 })
