@@ -3,7 +3,7 @@
  * window regression cases (TAL-245). Markers `[py:<file>::<case>]` are
  * verified by scripts/check-regression-port.py.
  */
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { deflateRawSync } from 'node:zlib'
@@ -144,6 +144,24 @@ describe('extension gallery installs', () => {
     expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
     expect((await post(s, '/api/extensions/uninstall', { id: 'assets-ext' })).status).toBe(200)
     expect(existsSync(dir)).toBe(false)
+  })
+
+  it('uninstall never follows an extension directory that was replaced by a symlink: outside empty directories survive', async () => {
+    expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
+    const dir = join(root(), 'assets-ext')
+    const outside = join(s.state, 'victim-tree')
+    mkdirSync(join(outside, 'assets'), { recursive: true })
+    mkdirSync(join(outside, 'empty'), { recursive: true })
+    // The installed files are moved aside and the extension directory itself becomes a link into the victim tree.
+    renameSync(dir, join(root(), 'assets-ext-real'))
+    symlinkSync(outside, dir)
+    expect((await post(s, '/api/extensions/uninstall', { id: 'assets-ext' })).status).toBe(200)
+    expect(existsSync(join(outside, 'assets'))).toBe(true)
+    expect(existsSync(join(outside, 'empty'))).toBe(true)
+    expect(existsSync(outside)).toBe(true)
+    expect(readFileSync(join(root(), 'assets-ext-real', 'assets', 'config'), 'utf8')).toBe('pwned')
+    unlinkSync(dir)
+    rmSync(join(root(), 'assets-ext-real'), { recursive: true })
   })
 
   it('[py:test_issue4746_extension_gallery.py::test_install_rejects_symlinked_ext_dir_inside_root] a symlink that stays inside the root is refused too', async () => {

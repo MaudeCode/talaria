@@ -11,7 +11,7 @@
  * a pathname swapped underneath us can never be followed. The sections are
  * synchronous, so nothing else in the process observes the temporary cwd.
  */
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -200,6 +200,17 @@ export function unlinkAnchored(root: string, target: string): void {
     dir.anchored(() => { unlinkSync(dir.child(leaf)) })
   } catch {
     throw new NotFoundError(`Not found: ${target}`)
+  } finally {
+    dir.close()
+  }
+}
+
+/** Remove an empty directory through the anchored walk; a non-empty or symlinked target is left alone (throws). */
+export function rmdirAnchored(root: string, target: string): void {
+  const targetResolved = resolvePathLikePython(target)
+  const { dir, leaf } = openAnchoredParent(root, targetResolved)
+  try {
+    dir.anchored(() => { rmdirSync(dir.child(leaf)) })
   } finally {
     dir.close()
   }

@@ -231,6 +231,29 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(typeof message).toBe('string')
   })
 
+  it('a cancel during a hung image-mode lookup releases the session promptly instead of waiting for the sidecar', async () => {
+    mode = 'native'
+    writeFileSync(join(ws(), 'slow.png'), png)
+    let release: (() => void) | null = null
+    sidecar.respond('text.image_mode', () => new Promise((resolve) => { release = () => { resolve({ mode: 'native', reason: 'late', supports_vision: true }) } }))
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look', attachments: [{ path: join(ws(), 'slow.png'), mime: 'image/png', name: 'slow.png' }] }))
+      const streamId = String(started.stream_id)
+      expect((await post(s, '/api/chat/start', { session_id: sid, message: 'again' })).status).toBe(409)
+      expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
+      // The turn reaches teardown without the lookup ever answering, so a new turn is admitted.
+      const deadline = Date.now() + 5000
+      let res = await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })
+      while (res.status === 409 && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 25)); res = await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' }) }
+      expect(res.status).toBe(200)
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    } finally {
+      (release as (() => void) | null)?.()
+      sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
+    }
+  })
+
   it('never embeds a symlink out of the workspace or a non-image labelled as an image', async () => {
     mode = 'native'
     writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')

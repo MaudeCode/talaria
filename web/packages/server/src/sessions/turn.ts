@@ -26,6 +26,7 @@ import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
+const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
 const WEBUI_PROGRESS_PROMPT = `WebUI progress guidance:
 - Match the normal Hermes messaging style, but do not let long tool-running WebUI turns appear silent.
@@ -258,7 +259,7 @@ export class TurnRunner {
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
-    const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts)
+    const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts, controller.signal)
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
     try {
@@ -487,17 +488,19 @@ export class TurnRunner {
    * resolved image mode for this model is `native` (text mode routes them through the Agent's vision tool path), and
    * only after the bytes are read through an anchored descriptor and sniffed as a real image format.
    */
-  private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions): Promise<string | Record<string, unknown>[]> {
+  private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
     const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
     if (!candidates.length) return text
     const sidecar = this.deps.sidecar()
     if (!sidecar) return text
     try {
-      const mode = await sidecar.call('text.image_mode', { profile_home: this.deps.profileHome(s.profile), provider: str(opts.modelProvider ?? s.model_provider), model: str(opts.model ?? s.model) })
+      // A cancelled turn must not sit behind this lookup: the abort wins the race and `run()` then takes the cancelled path.
+      const lookup = sidecar.call('text.image_mode', { profile_home: this.deps.profileHome(s.profile), provider: str(opts.modelProvider ?? s.model_provider), model: str(opts.model ?? s.model) }, { signal, timeoutMs: IMAGE_MODE_TIMEOUT_MS })
+      const mode = await Promise.race([lookup, new Promise<never>((_, reject) => { signal.addEventListener('abort', () => { reject(new Error('turn cancelled')) }, { once: true }) })])
       if (mode.mode !== 'native') return text
     } catch (error) {
-      this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)
+      if (!signal.aborted) this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)
       return text
     }
     const parts: Record<string, unknown>[] = [{ type: 'text', text }]

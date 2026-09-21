@@ -1,9 +1,9 @@
 /** Browser extension registry: manifest scan, user overrides, sidecar consent, gallery install (Python `api/extensions.py`, `api/extension_manifests.py`). */
 import { readCapped } from '../http/capped.js'
-import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, unlinkAnchored } from '../workspace/fs.js'
+import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, rmdirAnchored, unlinkAnchored, withAnchoredDir } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { createHash } from 'node:crypto'
-import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import { readZip } from '../workspace/unzip.js'
@@ -610,7 +610,7 @@ export class ExtensionService {
     const written: string[] = []
     const rollback = (): void => {
       for (const p of written) { try { unlinkAnchored(anchor, p) } catch { /* gone */ } }
-      try { if (existsSync(extDir) && !readdirSync(extDir).length) rmdirSync(extDir) } catch { /* ignore */ }
+      try { rmdirAnchored(anchor, extDir) } catch { /* not empty, or gone */ }
     }
     try {
       // Every destination is created or truncated through the anchored walk from the extension root, so a symlink
@@ -652,13 +652,15 @@ export class ExtensionService {
       if (!target.startsWith(extDir + sep)) continue
       try { unlinkAnchored(anchor, target) } catch { /* gone */ }
     }
-    if (existsSync(extDir)) {
-      const dirs: string[] = []
-      const walk = (dir: string): void => { for (const e of readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) { walk(join(dir, e.name)); dirs.push(join(dir, e.name)) } }
-      try { walk(extDir) } catch { /* ignore */ }
-      for (const dir of dirs.sort((a, b) => b.length - a.length)) { try { if (!readdirSync(dir).length) rmdirSync(dir) } catch { /* ignore */ } }
-      try { if (!readdirSync(extDir).length) rmdirSync(extDir) } catch { /* ignore */ }
+    // Prune now-empty directories, enumerating and removing each through the anchored walk so a directory replaced by
+    // a symlink is skipped rather than followed into its target.
+    const prune = (dir: string): void => {
+      let subdirs: string[]
+      try { subdirs = withAnchoredDir(anchor, dir, (child) => readdirSync(child('.'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)) } catch { return }
+      for (const name of subdirs) prune(join(dir, name))
+      try { rmdirAnchored(anchor, dir) } catch { /* not empty, or gone */ }
     }
+    prune(extDir)
     Reflect.deleteProperty(manifest.installed, id)
     this.writeInstallManifest(manifest)
     return { uninstalled: true, id }
