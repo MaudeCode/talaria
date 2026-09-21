@@ -303,7 +303,7 @@ describe('raw byte routes', () => {
     expect((await s.get('/api/rollback/list')).status).toBe(400)
   })
 
-  it('reports worktree status for a worktree-backed session', async () => {
+  it('reports worktree status for a worktree-backed session [py:test_issue2057_worktree_status.py::test_worktree_status_handles_missing_path_without_git_mutation] [py:test_issue2057_worktree_status.py::test_worktree_status_endpoint_returns_session_owned_status] [py:test_issue2057_worktree_status.py::test_worktree_status_endpoint_rejects_non_worktree_session]', async () => {
     const res = await s.get(`/api/session/worktree/status?session_id=${sid}`)
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Session is not worktree-backed')

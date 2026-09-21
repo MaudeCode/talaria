@@ -151,7 +151,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
   afterAll(() => s.close())
 
-  it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash', async () => {
+  it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash [py:test_issue1560_password_env_var_lock.py::test_get_settings_returns_password_env_var_false_when_unset]', async () => {
     const res = await s.get('/api/settings')
     expect(res.status).toBe(200)
     const body = await json(res)
@@ -274,7 +274,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(sidecar.calls.filter((c) => c.method === 'providers.model_ids').length).toBeGreaterThan(before)
   })
 
-  it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env', async () => {
+  it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env [py:test_issue1202_oauth_provider_status.py::test_not_configured_when_no_key_and_not_logged_in] [py:test_issue1202_oauth_provider_status.py::test_auth_error_preserved_when_not_logged_in_and_no_config_key]', async () => {
     let res = await s.get('/api/providers')
     expect(res.status).toBe(200)
     let body = await json(res)
@@ -341,7 +341,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
   })
 
-  it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility', async () => {
+  it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility [py:test_issue1195_session_profile_routing.py::test_default_string_returns_default] [py:test_issue1611_session_profile_filtering.py::test_profiles_match_default_alias_treated_as_root] [py:test_issue1612_renamed_root_profile.py::test_is_root_profile_renamed_root_via_list_profiles_api] [py:test_issue1612_renamed_root_profile.py::test_get_active_hermes_home_returns_default_for_renamed_root] [py:test_issue1612_renamed_root_profile.py::test_switch_profile_resolution_renamed_root_picks_default_home]', async () => {
     sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'kinni', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
     s.deps.profiles.invalidate()
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
@@ -362,7 +362,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     s.deps.profiles.invalidate()
   })
 
-  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
+  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie [py:test_issue2698_isolated_hermes_home.py::test_normal_mode_when_hermes_home_is_base] [py:test_issue2698_isolated_hermes_home.py::test_normal_mode_profile_operations_work] [py:test_issue749_profile_create_model_picker.py::test_profile_model_config_writer_persists_default_and_provider] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_accepts_catalog_model_with_provider] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_accepts_provider_qualified_picker_value] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_rejects_unknown_model_provider_pair] [py:test_issue749_profile_create_model_picker.py::test_profile_create_rejects_unknown_model_before_creating_profile]', async () => {
     let res = await s.get('/api/profiles')
     expect(res.status).toBe(200)
     let body = await json(res)
@@ -440,7 +440,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(res.status).toBe(501)
   })
 
-  it('providers/self-hosted writes the provider block and activates the model', async () => {
+  it('providers/self-hosted writes the provider block and activates the model [py:test_issue1500_lmstudio_env_var_alignment.py::test_onboarding_writes_canonical_name_only]', async () => {
     const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: 'http://localhost:1234/v1/', api_key: 'lm-key-12345' })
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: 'http://localhost:1234/v1', model: 'qwen3' })
@@ -467,7 +467,7 @@ async function csrfFor(s: TestServer, cookie: string): Promise<string> {
 }
 
 describe('env file writer', () => {
-  it('preserves comments and order, removes keys, appends new ones, and refuses newlines', () => {
+  it('preserves comments and order, removes keys, appends new ones, and refuses newlines [py:test_issue1164_env_file_corruption.py::test_comments_preserved_on_update] [py:test_issue1164_env_file_corruption.py::test_blank_lines_preserved] [py:test_issue1164_env_file_corruption.py::test_key_order_preserved] [py:test_issue1164_env_file_corruption.py::test_new_key_appended_with_separator] [py:test_issue1164_env_file_corruption.py::test_key_removal_preserves_others]', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
     mkdirSync(dir, { recursive: true })
     const path = join(dir, '.env')
@@ -494,7 +494,7 @@ describe('catalog helpers', () => {
     expect(groups.map((g) => g.models[0]?.id)).toEqual(['@b:gpt', 'gpt'])
   })
 
-  it('parses provider-qualified ids and coerces efforts down the ladder', () => {
+  it('parses provider-qualified ids and coerces efforts down the ladder [py:test_issue7182_profile_model_tag_truncation.py::test_split_preserves_ollama_tag] [py:test_issue7182_profile_model_tag_truncation.py::test_strip_preserves_ollama_tag] [py:test_issue7182_profile_model_tag_truncation.py::test_split_preserves_multi_segment_custom_provider] [py:test_issue7182_profile_model_tag_truncation.py::test_split_matches_shared_parser] [py:test_issue7182_profile_model_tag_truncation.py::test_strip_matches_shared_parser] [py:test_issue7182_profile_model_tag_truncation.py::test_no_last_colon_split_remains]', () => {
     expect(parseProviderQualifiedModel('@custom:backup:model-a:free')).toEqual(['model-a:free', 'custom:backup'])
     expect(parseProviderQualifiedModel('@custom:127.0.0.1:1234:llama')).toEqual(['llama', 'custom:127.0.0.1:1234'])
     expect(parseProviderQualifiedModel('@ollama:qwen3.8:27b')).toEqual(['qwen3.8:27b', 'ollama'])
@@ -521,7 +521,7 @@ describe('isolated profile mode', () => {
   })
   afterAll(async () => { await s.close(); rmSync(join(home, '..', '..'), { recursive: true, force: true }) })
 
-  it('pins the process to the HERMES_HOME profile and refuses every cross-profile surface', async () => {
+  it('pins the process to the HERMES_HOME profile and refuses every cross-profile surface [py:test_issue1611_session_profile_filtering.py::test_all_profiles_disabled_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_isolated_mode_when_hermes_home_is_profile_subdir] [py:test_issue2698_isolated_hermes_home.py::test_list_returns_only_isolated_profile_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_list_includes_single_profile_mode_flag] [py:test_issue2698_isolated_hermes_home.py::test_get_active_profile_name_ignores_tls_and_global_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_init_profile_state_pins_runtime_home_to_isolated_profile] [py:test_issue2698_isolated_hermes_home.py::test_create_profile_rejected_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_delete_profile_rejected_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_switch_to_different_profile_rejected] [py:test_issue3947_tasks_cross_profile_visibility.py::test_crons_route_ignores_all_profiles_toggle_in_isolated_mode]', async () => {
     expect(s.deps.isolatedProfileMode()).toBe(true)
     expect(s.deps.activeProfile()).toBe('tenant')
     expect(s.deps.profileHome('tenant')).toBe(home)

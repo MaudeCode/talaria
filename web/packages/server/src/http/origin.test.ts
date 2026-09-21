@@ -32,7 +32,7 @@ describe('host and port normalisation', () => {
 
 describe('same-origin browser check', () => {
   const host = '127.0.0.1:8787'
-  it('accepts same-origin, allowlisted, and non-browser requests; rejects the rest', () => {
+  it('accepts same-origin, allowlisted, and non-browser requests; rejects the rest [py:test_issue1909_csrf_token.py::test_authenticated_allowed_public_origin_accepts_valid_csrf_token] [py:test_issue1909_csrf_token.py::test_non_browser_mcp_style_authenticated_post_remains_compatible]', () => {
     expect(checkSameOriginBrowserRequest({ origin: 'http://127.0.0.1:8787', host }, {})).toBeNull()
     expect(checkSameOriginBrowserRequest({ referer: 'http://127.0.0.1:8787/settings', host }, {})).toBeNull()
     expect(checkSameOriginBrowserRequest({ host }, {})).toBeNull()
@@ -45,7 +45,7 @@ describe('same-origin browser check', () => {
     expect(checkSameOriginBrowserRequest({ origin: 'ftp://x', host }, {})).toBe('origin_mismatch')
   })
 
-  it('trusts forwarded hosts only with the opt-in', () => {
+  it('trusts forwarded hosts only with the opt-in [py:test_issue1909_csrf_token.py::test_authenticated_reverse_proxy_same_origin_accepts_valid_csrf_token] [py:test_issue1909_csrf_token.py::test_authenticated_forwarded_host_is_ignored_without_proxy_opt_in]', () => {
     const h = { origin: 'https://ui.example', host, forwardedHost: 'ui.example' }
     expect(checkSameOriginBrowserRequest(h, {})).toBe('origin_mismatch')
     expect(checkSameOriginBrowserRequest(h, { HERMES_WEBUI_TRUST_FORWARDED_HOST: '1' })).toBeNull()

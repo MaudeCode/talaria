@@ -108,7 +108,7 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toEqual({ error: 'Session not found' })
   })
 
-  it('renames, archives, pins with the configured cap, and moves between projects', async () => {
+  it('renames, archives, pins with the configured cap, and moves between projects [py:test_issue2508_session_pin_cap.py::test_session_pin_endpoint_caps_pinned_sessions_at_three]', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
     writeMessages(s, sid, [{ role: 'user', content: 'hi' }])
@@ -313,7 +313,7 @@ describe('projects, workspaces, and files over HTTP', () => {
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
 
-  it('projects require a name, validate colours, and list per profile', async () => {
+  it('projects require a name, validate colours, and list per profile [py:test_issue1614_project_profile_filtering.py::test_profile_field_on_project_dict_default_create]', async () => {
     expect((await post(s, '/api/projects/create', { name: '   ' })).status).toBe(400)
     let res = await post(s, '/api/projects/create', { name: 'Alpha', color: 'red' })
     expect(res.status).toBe(400)

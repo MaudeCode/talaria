@@ -40,7 +40,7 @@ describe('request-profile session visibility', () => {
   })
   afterAll(() => s.close())
 
-  it('activeProfile() follows the request binding, so the list and the detail load are profile-scoped', async () => {
+  it('activeProfile() follows the request binding, so the list and the detail load are profile-scoped [py:test_issue1611_session_profile_filtering.py::test_get_session_rejects_session_from_inactive_profile] [py:test_issue1611_session_profile_filtering.py::test_get_session_rejects_metadata_only_session_from_inactive_profile] [py:test_issue1611_session_profile_filtering.py::test_missing_session_under_nondefault_profile_still_404_primary_branch]', async () => {
     const workList = (await (await s.get('/api/sessions', { headers: work.headers })).json()) as { active_profile: string; sessions: { session_id: string }[] }
     expect(workList.active_profile).toBe('work')
     expect(workList.sessions.map((r) => r.session_id)).not.toContain(sid)

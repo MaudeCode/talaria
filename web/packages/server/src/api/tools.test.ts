@@ -244,7 +244,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
-  it('reads and writes memory files, honours config flags, and reports project context', async () => {
+  it('reads and writes memory files, honours config flags, and reports project context [py:test_issue4164_bound_non_git_project_context_walk.py::test_non_git_workspace_still_reads_in_workspace_context]', async () => {
     const ws = join(s.state, 'workspace')
     mkdirSync(ws, { recursive: true })
     writeFileSync(join(ws, 'AGENTS.md'), '---\ntitle: x\n---\n\n# Rules\nsk-live-1234567890abcdefghij')
@@ -437,7 +437,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     s.deps.requestShutdown = original
   })
 
-  it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits', async () => {
+  it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits [py:test_issue2931_edge_tts_endpoint.py::test_tts_requires_text] [py:test_issue2931_edge_tts_endpoint.py::test_tts_rate_limits_second_immediate_request] [py:test_issue4982_openai_tts.py::test_openai_tts_no_key_returns_503]', async () => {
     sidecar.respond('stt.transcribe', (params) => ({ transcript: `heard ${String(Buffer.from(params.audio_b64, 'base64').length)} bytes${params.suffix ?? ''}` }))
     const boundary = 'abc'
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', 'audio-bytes', `--${boundary}--`, ''].join('\r\n')

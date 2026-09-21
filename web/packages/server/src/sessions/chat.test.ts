@@ -144,7 +144,7 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
-  it('relays approval and clarify prompts and resolves them through the sidecar', async () => {
+  it('relays approval and clarify prompts and resolves them through the sidecar [py:test_issue4771_local_approval_regression.py::test_local_mirrored_approval_resolves_not_409] [py:test_issue4948_local_stale_approval.py::test_stale_card_click_clears_not_dead_ends] [py:test_issue4948_local_stale_approval.py::test_fresh_local_approval_still_resolves] [py:test_issue5345_clarify_toast_and_interrupt_provenance.py::test_clarify_pending_never_404s]', async () => {
     const sid = await newSession(s)
     let releaseApproval: (choice: string) => void = () => undefined
     let releaseClarify: (answer: string) => void = () => undefined
@@ -200,7 +200,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'old' }))).toEqual({ ok: true, choice: 'deny', stale_cleared: true })
   })
 
-  it('cancels a running turn, persists the partial, and refuses a second concurrent start', async () => {
+  it('cancels a running turn, persists the partial, and refuses a second concurrent start [py:test_issue1298_cancel_and_activity.py::test_cancel_synthesizes_user_message_when_messages_empty] [py:test_issue893_cancel_preserves_partial.py::test_cancel_stream_saves_partial_text_to_session]', async () => {
     const sid = await newSession(s)
     let interrupted = false
     sidecar.respond('chat.interrupt', () => { interrupted = true; return { ok: true } })
@@ -231,7 +231,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope' })
   })
 
-  it('turns sidecar failures into apperror frames and a persisted error bubble', async () => {
+  it('turns sidecar failures into apperror frames and a persisted error bubble [py:test_issue5121_provider_auth_terminal_error.py::test_auth_401_without_delivery_persists_error_turn] [py:test_issue5121_provider_auth_terminal_error.py::test_non_auth_silent_failure_still_uses_no_response]', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', () => { throw new SidecarError('No credentials found for provider openai', { condition: 'credential_missing' }) })
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'broken' }))

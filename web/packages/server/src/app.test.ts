@@ -205,7 +205,7 @@ describe('password auth', () => {
 
   const host = () => s.base.replace('http://', '')
 
-  it('protected API routes answer 401 and pages redirect to login with an encoded next', async () => {
+  it('protected API routes answer 401 and pages redirect to login with an encoded next [py:test_issue5578_login_next_nesting.py::test_rejects_nested_next_chain] [py:test_issue5578_login_next_nesting.py::test_rejects_encoded_login_chain_at_any_depth] [py:test_issue5578_login_next_nesting.py::test_inner_next_helper_drops_login_keeps_safe_nonlogin]', async () => {
     const api = await s.get('/api/sessions?limit=50&offset=0')
     expect(api.status).toBe(401)
     expect(await api.json()).toEqual({ error: 'Authentication required' })
@@ -226,7 +226,7 @@ describe('password auth', () => {
     expect(boot.bot_name).toBe('Hermes')
   })
 
-  it('logs in, receives a signed HttpOnly cookie, and the CSRF token is bound to the session', async () => {
+  it('logs in, receives a signed HttpOnly cookie, and the CSRF token is bound to the session [py:test_issue1909_csrf_token.py::test_authenticated_same_origin_browser_post_requires_session_csrf_token] [py:test_issue2572_csrf_diagnostics.py::test_origin_mismatch_csrf_rejection_has_diagnostic_error] [py:test_issue2572_csrf_diagnostics.py::test_token_mismatch_csrf_rejection_has_reload_error]', async () => {
     const bad = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'nope' }) })
     expect(bad.status).toBe(401)
     expect(await bad.json()).toEqual({ error: 'Invalid password' })

@@ -59,7 +59,7 @@ describe('state.db projection', () => {
     expect(normalizeAgentSessionSource('my_bridge')).toMatchObject({ session_source: 'other', source_label: 'My Bridge' })
   })
 
-  it('projects messageful gateway rows, hides empty ones, and keeps cron out of the default window', () => {
+  it('projects messageful gateway rows, hides empty ones, and keeps cron out of the default window [py:test_issue3238_orphaned_cli_sidecar_prune.py::test_agent_session_rows_existing_returns_present_subset]', () => {
     insertSession(db, { id: 'tg-1', source: 'telegram', started_at: 100, title: 'Telegram chat', messages: [['user', 101], ['assistant', 102]], chat_id: 'c1' })
     insertSession(db, { id: 'tg-empty', source: 'telegram', started_at: 90 })
     insertSession(db, { id: 'cron_job1_1', source: 'cron', started_at: 95, messages: [['user', 96]] })

@@ -33,6 +33,9 @@ export class StreamSlots {
   get active(): number { return this.held }
 }
 
+/** Python served SSE on blocking sockets, so a slow reader stalled its own producer; Node buffers instead, and this bounds that buffer. */
+export const SSE_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
+
 export class SseWriter {
   private open = false
   private closed = false
@@ -55,14 +58,25 @@ export class SseWriter {
   }
 
   event(event: string, data: unknown, eventId?: string | null): void {
-    if (this.isClosed) return
     const body = JSON.stringify(data ?? {})
-    this.ctx.res.write(`${eventId ? `id: ${eventId}\n` : ''}event: ${event}\ndata: ${body}\n\n`)
+    this.write(`${eventId ? `id: ${eventId}\n` : ''}event: ${event}\ndata: ${body}\n\n`)
   }
 
   comment(text: string): void {
+    this.write(`: ${text}\n\n`)
+  }
+
+  /** Slow consumers are bounded: past `SSE_MAX_BUFFERED_BYTES` of unsent data the connection is closed instead of growing the response buffer. */
+  private write(chunk: string): void {
     if (this.isClosed) return
-    this.ctx.res.write(`: ${text}\n\n`)
+    if (this.ctx.res.writableLength > SSE_MAX_BUFFERED_BYTES) {
+      this.ctx.deps.log(`[webui] WARNING: closing slow event-stream client (${String(this.ctx.res.writableLength)} bytes unsent)`)
+      this.ctx.res.destroy()
+      this.closed = true
+      this.release()
+      return
+    }
+    this.ctx.res.write(chunk)
   }
 
   end(): void {

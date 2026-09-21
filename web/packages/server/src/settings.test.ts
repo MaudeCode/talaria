@@ -185,7 +185,7 @@ describe('load', () => {
 })
 
 describe('save', () => {
-  it('ignores unknown keys, validates enums, ranges, lists, and coerces bools', async () => {
+  it('ignores unknown keys, validates enums, ranges, lists, and coerces bools [py:test_issue5435_tts_voice_preferences.py::test_unrelated_settings_save_does_not_materialize_absent_speech_defaults]', async () => {
     const s = store()
     const saved = await s.save({
       unknown_key: 1,

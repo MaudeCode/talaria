@@ -80,13 +80,13 @@ describe('OIDC browser login', () => {
   })
   afterAll(() => s.close())
 
-  it('reports OIDC as the enabled auth method and gates the API', async () => {
+  it('reports OIDC as the enabled auth method and gates the API [py:test_issue3825_oidc_auth.py::test_auth_status_reports_oidc_capability_without_regressing_passkey_fields]', async () => {
     const status = await json(await s.get('/api/auth/status'))
     expect(status).toMatchObject({ auth_enabled: true, oidc_enabled: true, oidc_native_handoff_enabled: true, logged_in: false, password_auth_enabled: false })
     expect((await s.get('/api/sessions')).status).toBe(401)
   })
 
-  it('start → provider → callback establishes a typed oidc session', async () => {
+  it('start → provider → callback establishes a typed oidc session [py:test_issue3825_oidc_auth.py::test_oidc_start_redirects_with_pkce_state_and_nonce] [py:test_issue3825_oidc_auth.py::test_oidc_callback_exchanges_code_and_sets_existing_session_cookie] [py:test_issue3825_oidc_auth.py::test_auth_status_reports_bound_oidc_identity]', async () => {
     const start = await s.get('/api/auth/oidc/start?next=%2Fsettings')
     expect(start.status).toBe(302)
     expect(start.headers.get('cache-control')).toBe('no-store')
@@ -102,7 +102,7 @@ describe('OIDC browser login', () => {
     expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
   })
 
-  it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes', async () => {
+  it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes [py:test_issue3825_oidc_auth.py::test_oidc_session_is_revoked_when_profile_mapping_changes]', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
@@ -116,7 +116,7 @@ describe('OIDC browser login', () => {
     s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'owners'
   }, 15_000)
 
-  it('rejects identities outside the allowlist, bad state, and provider errors', async () => {
+  it('rejects identities outside the allowlist, bad state, and provider errors [py:test_issue3825_oidc_auth.py::test_oidc_callback_rejects_invalid_state_without_setting_session_cookie] [py:test_issue3825_oidc_auth.py::test_oidc_callback_rejects_allowlist_failure_without_setting_session_cookie]', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-3', groups: ['guests'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
@@ -358,7 +358,7 @@ describe('auth helpers', () => {
     expect(decoded.get(-2)).toEqual(Buffer.from('ab'))
     expect(decoded.get('s')).toBe('x')
   })
-  it('safeNextPath and validatedRequestHost mirror the Python guards', () => {
+  it('safeNextPath and validatedRequestHost mirror the Python guards [py:test_issue5578_login_next_nesting.py::test_preserves_real_session_path] [py:test_issue5578_login_next_nesting.py::test_preserves_root_and_plain_paths] [py:test_issue5578_login_next_nesting.py::test_still_rejects_open_redirect_classics]', () => {
     expect(safeNextPath('/x')).toBe('/x')
     expect(safeNextPath('//evil')).toBe('/')
     expect(safeNextPath('/a b')).toBe('/')

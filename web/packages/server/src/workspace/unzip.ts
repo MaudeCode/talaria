@@ -32,9 +32,14 @@ export function readZip(buf: Buffer): ZipEntry[] {
         const lextraLen = buf.readUInt16LE(localOffset + 28)
         const start = localOffset + 30 + lnameLen + lextraLen
         const raw = buf.subarray(start, start + compressed)
-        if (method === 0) return Buffer.from(raw)
-        if (method === 8) return inflateRawSync(raw)
-        throw new BadZipError(`unsupported compression method ${String(method)}`)
+        let out: Buffer
+        if (method === 0) out = Buffer.from(raw)
+        else if (method === 8) {
+          // The declared size is the output cap: a crafted member cannot inflate past what the caller already budgeted.
+          try { out = inflateRawSync(raw, { maxOutputLength: Math.max(1, size) }) } catch (error) { throw new BadZipError(`member ${name} inflates past its declared size: ${(error as Error).message}`) }
+        } else throw new BadZipError(`unsupported compression method ${String(method)}`)
+        if (out.length !== size) throw new BadZipError(`member ${name} is ${String(out.length)} bytes but declares ${String(size)}`)
+        return out
       },
     })
   }

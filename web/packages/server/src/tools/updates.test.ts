@@ -346,6 +346,14 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect((await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)).behind).toBe(0)
   })
 
+  it('[py:test_issue4356_no_git_update_check.py::test_check_repo_returns_no_git_sentinel_when_dot_git_absent] a web root without .git reports the no_git sentinel', async () => {
+    const s = sourceInstall()
+    const bare = tmp()
+    write(join(bare, 'web/package.json'), '{"version":"1.0.0"}\n')
+    const status = await checkWebUpdate(bare, 'web-v1.0.0', 'stable', s.run, s.getJson, s.identity)
+    expect(status).toMatchObject({ name: 'webui', no_git: true })
+  })
+
   it.each([
     ['web-v2.0.0', 'web-exp-v1.5.0', 'experimental', false], ['web-v2.0.0', 'web-exp-v1.5.0', 'experimental', true],
     ['web-exp-v3.0.0', 'web-v2.0.0', 'stable', false], ['web-exp-v3.0.0', 'web-v2.0.0', 'stable', true],
@@ -604,7 +612,7 @@ describe('Agent checkout updates', () => {
     return { agent, origin, v1, v2 }
   }
 
-  it('reports the tag gap, fast-forwards with a stash, and restarts the gateway through the sidecar', async () => {
+  it('reports the tag gap, fast-forwards with a stash, and restarts the gateway through the sidecar [py:test_issue4356_no_git_update_check.py::test_check_repo_returns_no_git_sentinel_when_path_is_none] [py:test_issue4356_no_git_update_check.py::test_check_repo_still_returns_dict_when_dot_git_exists]', async () => {
     const a = agentInstall()
     expect(await checkAgentUpdate(null, runGit)).toEqual({ name: 'agent', behind: null, no_git: true })
     const status = await checkAgentUpdate(a.agent, runGit)
