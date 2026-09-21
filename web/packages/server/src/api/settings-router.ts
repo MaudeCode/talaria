@@ -401,4 +401,3 @@ async function setProviderKey(ctx: RequestContext, pid: string, apiKey: string |
   ctx.deps.catalog.invalidate()
   return { ok: true, provider: pid, display_name: displayName(pid), action: apiKey ? 'updated' : 'removed' }
 }
-
