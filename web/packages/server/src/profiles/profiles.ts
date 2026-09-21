@@ -46,8 +46,10 @@ export class ProfileService {
 
   constructor(private readonly deps: ProfileDeps, private readonly now: () => number = () => Date.now() / 1000) {}
 
+  /** Also forgets the root-alias snapshot (Python `_invalidate_root_profile_cache`); the next lookup reloads it. */
   invalidate(): void {
     this.cache = null
+    this.rootAliasesLoaded = false
   }
 
   private sidecar(): SidecarLike {
@@ -56,8 +58,22 @@ export class ProfileService {
     return s
   }
 
+  /** Names the Agent reports with `is_default: true` (a renamed root profile), learned from every `profiles.list`. */
+  private rootAliases = new Set<string>()
+  private rootAliasesLoaded = false
+
+  /** Python `_is_root_profile`: the literal alias plus any row the Agent marks `is_default`; a cache miss refreshes in the background. */
   isRootProfile(name: string): boolean {
-    return name === 'default'
+    if (!name) return false
+    if (name === 'default') return true
+    if (!this.rootAliasesLoaded && !this.deps.isolatedProfileMode() && this.deps.sidecar()) void this.list('default').catch(() => undefined)
+    return this.rootAliases.has(name)
+  }
+
+  /** Learn the root aliases before the first request (Python populated its cache lazily on a synchronous subprocess). */
+  async warmRootAliases(): Promise<void> {
+    if (this.deps.isolatedProfileMode()) return
+    await this.list('default').catch(() => undefined)
   }
 
   async list(active: string): Promise<Dict[]> {
@@ -73,6 +89,8 @@ export class ProfileService {
     else {
       rows = (await this.sidecar().call('profiles.list', { base_home: this.deps.baseHome })).profiles.map((r) => ({ ...r }))
       this.cache = { at: this.now(), rows }
+      this.rootAliases = new Set(rows.filter((r) => r.is_default === true && typeof r.name === 'string' && r.name).map((r) => r.name as string))
+      this.rootAliasesLoaded = true
     }
     return rows.map((r) => ({ ...r, is_active: str(r.name) === active }))
   }
@@ -86,6 +104,7 @@ export class ProfileService {
   /** Python `switch_profile(process_wide=False)`: validate, then answer the target's defaults. */
   async switch(name: string): Promise<Dict> {
     if (this.deps.isolatedProfileMode() && name !== this.deps.isolatedProfileName()) throw new ProfileError(`Profile switching is not allowed in isolated profile mode. Currently pinned to profile '${this.deps.isolatedProfileName()}'.`, 403)
+    if (!this.rootAliasesLoaded && name !== 'default') await this.list('default').catch(() => undefined)
     const home = this.deps.profileHome(name)
     if (!this.isRootProfile(name) && !isDir(home)) throw new ProfileError(`Profile '${name}' does not exist.`, 404)
     this.invalidate()

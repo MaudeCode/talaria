@@ -118,14 +118,16 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const requestScope = new AsyncLocalStorage<{ requestProfile: string | null }>()
   const processProfile = readActiveProfileFile(config.hermesHome, PROFILE_RE)
   const activeProfile = (): string => requestScope.getStore()?.requestProfile ?? processProfile
-  const isRootProfile = (name: string): boolean => name === 'default'
+  // Python `_is_root_profile`: `default` plus any renamed root alias the Agent reports; bound to the profile service below.
+  let rootAlias: (name: string) => boolean = () => false
+  const isRootProfile = (name: string): boolean => name === 'default' || rootAlias(name)
   const profilesMatch = (row: string | null | undefined, active: string | null | undefined): boolean => {
     const r = row ?? 'default'
     const a = active ?? 'default'
     return r === a || (isRootProfile(r) && isRootProfile(a))
   }
   // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home.
-  const profileHome = (name: string): string => (name && name !== 'default' && PROFILE_RE.test(name) ? join(config.hermesHome, 'profiles', name) : config.hermesHome)
+  const profileHome = (name: string): string => (name && !isRootProfile(name) && PROFILE_RE.test(name) ? join(config.hermesHome, 'profiles', name) : config.hermesHome)
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
@@ -204,7 +206,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
       activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
       evictAgent: (sid) => { if (sidecar) sidecar.call('chat.evict_agent', { session_id: sid }).catch(() => undefined) },
-      closeTerminal: () => undefined,
+      closeTerminal: (sid) => { deps.terminals.close(sid) },
     },
     attachmentDir,
     hermesHome: config.hermesHome,
@@ -284,6 +286,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     streamsActive: () => activeStreamIds.size > 0,
     log,
   }, now)
+  rootAlias = (name) => profiles.isRootProfile(name)
   const onboarding = new Onboarding({
     settings,
     config: agentConfig,
@@ -338,7 +341,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     workspaces,
     isolatedProfileMode: () => false,
     profilesMatch,
-    worktreeDefault: () => false,
+    // Python `_worktree_default_from_config`: only a real YAML `true` opts a profile's new sessions into worktrees.
+    worktreeDefault: (profile) => agentConfig.peek(profileHome(profile ?? activeProfile()))?.worktree === true,
     worktrees: {
       create: async (workspace) => {
         if (!sidecar) throw new Error('Hermes Agent worktree helper is unavailable')
@@ -352,7 +356,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     uploads,
     mediaPolicy: { home, hermesHome: config.hermesHome, stateDir: config.stateDir, snapshotDir, activeWorkspace: mediaActiveWorkspace },
     mediaActiveWorkspace,
-    worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: () => false },
+    worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: (sid, worktreePath) => { const term = deps.terminals.get(sid); return Boolean(term?.isAlive) && resolvePathLikePython(term?.workspace ?? '') === resolvePathLikePython(worktreePath) } },
     sidecar: () => sidecar,
     turns,
     registry,
@@ -436,6 +440,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     log,
   })
 
+  void profiles.warmRootAliases()
   return deps
 }
 

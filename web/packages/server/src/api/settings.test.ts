@@ -340,6 +340,27 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
   })
 
+  it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility', async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'kinni', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    let res = await post(s, '/api/profile/switch', { name: 'kinni' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ active: 'kinni', is_default: true })
+    expect(s.deps.isRootProfile('kinni')).toBe(true)
+    expect(s.deps.profileHome('kinni')).toBe(s.state)
+    const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=kinni/)
+    res = await s.get('/api/profile/active', { headers: { cookie } })
+    expect(await json(res)).toMatchObject({ name: 'kinni', is_default: true, path: s.state })
+    // Rows tagged `default` stay visible under the alias.
+    res = await s.get(`/api/session?session_id=${sid}`, { headers: { cookie } })
+    expect(res.status).toBe(200)
+    expect(((await json(await s.get('/api/sessions', { headers: { cookie } }))).active_profile)).toBe('kinni')
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+  })
+
   it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
     let res = await s.get('/api/profiles')
     expect(res.status).toBe(200)

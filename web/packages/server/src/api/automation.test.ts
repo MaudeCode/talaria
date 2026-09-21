@@ -282,6 +282,48 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(body.running).toBe(true)
     expect(pty.spawned).toHaveLength(2)
   })
+  it('a live terminal locks its worktree, and deleting the session closes the terminal', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const worktree = join(s.state, 'workspace', 'wt-locked')
+    mkdirSync(worktree, { recursive: true })
+    const session = s.deps.sessionStore.get(sid)
+    session.worktree_path = worktree
+    s.deps.sessionStore.save(session)
+    let res = await post(s, '/api/terminal/start', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect((await json(res)).workspace).toBe(session.workspace)
+    // The terminal runs in the session workspace, not the worktree: unlocked.
+    let status = (await json(await s.get(`/api/session/worktree/status?session_id=${sid}`))).status as Json
+    expect(status.locked_by_terminal).toBe(false)
+    res = await post(s, '/api/session/update', { session_id: sid, workspace: worktree })
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect(s.deps.terminals.get(sid)).toBeNull()
+    res = await post(s, '/api/terminal/start', { session_id: sid })
+    expect(res.status).toBe(200)
+    status = (await json(await s.get(`/api/session/worktree/status?session_id=${sid}`))).status as Json
+    expect(status.locked_by_terminal).toBe(true)
+    res = await post(s, '/api/session/worktree/remove', { session_id: sid })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Worktree is locked by an active terminal session')
+    expect(existsSync(worktree)).toBe(true)
+    res = await post(s, '/api/session/delete', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect(s.deps.terminals.get(sid)).toBeNull()
+  })
+
+  it('a new session honours the profile config worktree default when the body omits worktree', async () => {
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { worktree: true } }))
+    s.deps.agentConfig.invalidate()
+    await s.deps.agentConfig.read(s.state)
+    expect(s.deps.worktreeDefault(null)).toBe(true)
+    sidecar.respond('worktree.create', (params) => ({ path: join(params.repo_root, '.worktrees', 'wt-default'), branch: 'wt-default', repo_root: params.repo_root, base: null }))
+    const res = await post(s, '/api/session/new', {})
+    const body = await json(res)
+    expect(res.status, JSON.stringify(body)).toBe(200)
+    expect(String((body.session as Json).worktree_path), JSON.stringify(body)).toContain('wt-default')
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
+    s.deps.agentConfig.invalidate()
+  })
 })
 
 describe('automation helpers', () => {
