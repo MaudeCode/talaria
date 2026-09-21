@@ -695,6 +695,8 @@ export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, att
   for (const [k, v] of Object.entries(row)) if (SIDEBAR_SESSION_RESPONSE_FIELDS.has(k)) item[k] = v
   if (typeof item.title === 'string') item.title = redactText(item.title, redactEnabled)
   for (const field of ['display_title', '_state_db_title', 'parent_title']) if (typeof item[field] === 'string') item[field] = redactText(item[field], redactEnabled)
+  // Python reconciles stale stream state before serialising (#2157): a dead stream id is not exposed as active.
+  if (!item.is_streaming) item.active_stream_id = null
   item.attention = attention
   return item
 }

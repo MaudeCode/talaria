@@ -3,6 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
+import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
@@ -51,6 +52,8 @@ export interface SessionServiceDeps {
     closeTerminal: (sid: string) => void
   }
   attachmentDir: (sid: string) => string
+  /** Run journals are removed with their session (Python `delete_run_journal`). */
+  journal?: RunJournal
   hermesHome: string
   home: string
   /** Sync title-only metadata to state.db when `sync_to_insights` is on. */
@@ -240,6 +243,15 @@ export class SessionService {
         session.pending_user_source = null
         return false
       }
+    }
+    // Python `_materialize_pending_user_turn_before_error` (#1361): the prompt that was in flight becomes a durable user
+    // turn and an interruption marker follows it, so a dead stream never silently drops what the user sent.
+    const pendingText = str(target.pending_user_message)
+    if (pendingText) {
+      const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
+      const attachments = [...target.pending_attachments]
+      target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui' })
+      target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true })
     }
     target.active_stream_id = null
     target.pending_user_message = null
@@ -657,6 +669,8 @@ export class SessionService {
     }
     this.deps.runtime.evictAgent(sid)
     try { rmSync(this.deps.attachmentDir(sid), { recursive: true, force: true }) } catch { /* ignore */ }
+    // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
+    try { this.deps.journal?.deleteSession(sid) } catch { /* ignore */ }
     this.deps.runtime.closeTerminal(sid)
     this.publish('session_delete', eventProfile)
     return { ok: true, state_db_cleanup_failed: false, ...retained }

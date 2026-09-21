@@ -180,7 +180,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
   const cliSessions = new CliSessionSource({ store, profileHome, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: (kind, p) => projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || projects.hasUserProjects(p) }), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
+  const journal = new RunJournal(config.sessionDir, env)
   const sessions = new SessionService({
+    journal,
     store,
     cliSessions: (profile, o) => cliSessions.load(profile, o),
     profileHome,
@@ -226,7 +228,6 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const uploads = new UploadInbox(attachmentRoot)
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
-  const journal = new RunJournal(config.sessionDir, env)
   const background = new BackgroundTasks(now)
   const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 64 })
   const mediaActiveWorkspace = (): string | null => {

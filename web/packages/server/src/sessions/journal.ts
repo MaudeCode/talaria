@@ -3,6 +3,7 @@
  * stream under `sessions/_run_journal/<sid>/<stream_id>.jsonl`, contiguous
  * `seq` from 1, `event_id = <stream_id>:<seq>`, fsync on terminal rows.
  */
+import { rmSync } from 'node:fs'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync, constants as fsConstants } from 'node:fs'
 import { join } from 'node:path'
 import { str } from '../util.js'
@@ -93,6 +94,16 @@ export class RunJournal {
 
   pathFor(sessionId: string, runId: string): string {
     return join(this.root(), validateId(sessionId, 'session_id'), `${validateId(runId, 'run_id')}.jsonl`)
+  }
+
+  /** Python `delete_run_journal`: remove one session's journal directory; false for a missing or unsafe id. */
+  deleteSession(sessionId: string): boolean {
+    if (/^\.+$/.test(sessionId)) return false
+    let dir: string
+    try { dir = join(this.root(), validateId(sessionId, 'session_id')) } catch { return false }
+    if (dir === this.root() || !existsSync(dir)) return false
+    try { rmSync(dir, { recursive: true, force: true }) } catch { return false }
+    return !existsSync(dir)
   }
 
   private fsyncMode(): 'eager' | 'terminal-only' {

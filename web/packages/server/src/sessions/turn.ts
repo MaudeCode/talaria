@@ -311,7 +311,7 @@ export class TurnRunner {
       settledAt.value = true
       if (this.registry.cancelled.has(streamId) || result.status === 'cancelled') {
         this.finalizeCancelled(s, streamId, 'Task cancelled.', opts.ephemeral)
-        put('cancel', this.cancelPayload())
+        put('cancel', this.cancelFrame(sessionId))
         return
       }
       if (opts.ephemeral) {
@@ -338,7 +338,9 @@ export class TurnRunner {
       const resultMessages = result.messages as Message[]
       const assistantAdded = resultMessages.some((m) => m.role === 'assistant' && messageText(m.content).trim()) || Boolean(result.final_response.trim())
       const lastErr = result.error ?? capturedTerminalError ?? ''
-      if (result.status === 'error' || (!assistantAdded && !tokenSent)) {
+      // Python `_turn_transcript_lacks_final_assistant_answer`: a partial result with no final answer is a silent failure even if tokens streamed.
+      const stalePartial = result.result_status === 'partial' && !assistantAdded
+      if (result.status === 'error' || (!assistantAdded && !tokenSent) || stalePartial) {
         const classification = classifyProviderError(lastErr, { silentFailure: !lastErr })
         const errStr = lastErr || `${classification.label}.`
         const payload = providerErrorPayload(errStr, classification.type, classification.hint, deps.redactEnabled())
@@ -439,7 +441,7 @@ export class TurnRunner {
       }
       if (this.registry.cancelled.has(streamId)) {
         this.finalizeCancelled(s, streamId, 'Task cancelled.', opts.ephemeral)
-        put('cancel', this.cancelPayload())
+        put('cancel', this.cancelFrame(sessionId))
         return
       }
       const message = error instanceof Error ? error.message : String(error)
@@ -540,7 +542,8 @@ export class TurnRunner {
       }
     }
     const last = s.messages[s.messages.length - 1]
-    if (last?.role === 'user' && messageText(last.content).trim() === pendingText.trim() && Math.trunc(Number(last.timestamp)) === Math.trunc(recoveredTs)) return false
+    // Python `_synthesize_user_message_on_cancel`: a worker that already merged this prompt (same text, not older than the pending start) wins.
+    if (last?.role === 'user' && messageText(last.content).trim() === pendingText.trim() && Math.trunc(Number(last.timestamp)) >= Math.trunc(recoveredTs)) return false
     const recovered: Message = { role: 'user', content: pendingText, timestamp: recoveredTs, _recovered: true }
     if (source !== 'webui') recovered._source = source
     if (attachments.length) recovered.attachments = attachments
@@ -559,6 +562,13 @@ export class TurnRunner {
 
   private cancelPayload(message = 'Cancelled by user'): Record<string, unknown> {
     return { type: 'cancelled', message, hint: cancelledTurnHint(this.deps.agentName()) }
+  }
+
+  /** Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a reload. */
+  private cancelFrame(sessionId: string): Record<string, unknown> {
+    let snapshot: Record<string, unknown> | null = null
+    try { snapshot = redactSessionData(this.terminalSessionPayload(this.deps.store.get(sessionId)), this.deps.redactEnabled()) } catch { snapshot = null }
+    return { ...this.cancelPayload(), status: 'cancelled', session_id: sessionId, ...(snapshot ? { session: snapshot } : {}) }
   }
 
   /** Python `_finalize_cancelled_turn`/`_persist_cancelled_turn`: only while this stream still owns writeback. */
@@ -713,7 +723,7 @@ export class TurnRunner {
       }
     }
     if (channel) {
-      const payload = this.cancelPayload()
+      const payload = sessionId ? this.cancelFrame(sessionId) : this.cancelPayload()
       let eventId: string | null = null
       const writer = this.writers.get(streamId)
       if (writer) { try { eventId = writer.appendSseEvent('cancel', payload).event_id } catch { eventId = null } }
