@@ -12,7 +12,7 @@
  * synchronous, so nothing else in the process observes the temporary cwd.
  */
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { isBlockedSystemPath } from './workspaces.js'
@@ -242,12 +242,21 @@ export function renameAnchored(root: string, source: string, dest: string): void
     const to = destParent === rootResolved ? new DirHandle(openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW), rootResolved) : (() => { const p = openAnchoredParent(rootResolved, destParent); const h = openChildDir(p.dir, p.leaf); p.dir.close(); return h })()
     try {
       to.anchored(() => { assertAbsent(to.child(leaf), leaf) })
-      // ponytail: a cross-directory rename can anchor only one side without renameat; the source side is
-      // anchored and the destination parent is identity-checked around the call. A parent swapped inside that
-      // window can receive the entry (never replace a non-empty one) but nothing outside is truncated.
-      to.assertIdentity()
-      from.dir.anchored(() => { renameSync(from.dir.child(from.leaf), DESCRIPTOR_PATHS ? to.child(leaf) : join(to.path, leaf)) })
-      to.assertIdentity()
+      if (DESCRIPTOR_PATHS) {
+        from.dir.anchored(() => { renameSync(from.dir.child(from.leaf), to.child(leaf)) })
+        return
+      }
+      // Without renameat only one side of a rename can be cwd-anchored, so the entry hops through the root: the
+      // root's own pathname has no workspace-controlled component, and the hop name is fresh, so each step names
+      // one anchored side and one path nobody inside the workspace can redirect.
+      const hop = join(rootResolved, `.talaria-move-${randomBytes(8).toString('hex')}`)
+      from.dir.anchored(() => { renameSync(from.dir.child(from.leaf), hop) })
+      try {
+        to.anchored(() => { assertAbsent(to.child(leaf), leaf); renameSync(hop, to.child(leaf)) })
+      } catch (error) {
+        try { from.dir.anchored(() => { renameSync(hop, from.dir.child(from.leaf)) }) } catch { /* the entry stays at the hop path */ }
+        throw error
+      }
     } finally {
       to.close()
     }

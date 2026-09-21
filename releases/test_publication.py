@@ -412,6 +412,70 @@ class PublicationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 collect(root / "artifacts", root / "other")
 
+    def test_npm_publication_verifies_existing_versions_and_applies_the_channel_tag(self):
+        """An already-published version is accepted only with identical bytes, and the channel dist-tag is always applied."""
+        for channel, tag in (("stable", "web-v1.0.0"), ("experimental", "web-exp-v1.0.0")):
+            with self.subTest(channel=channel), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "npm").mkdir()
+                server = root / "npm/maudecode-talaria-web-1.0.0.tgz"
+                contracts = root / "npm/maudecode-talaria-web-contracts-1.0.0.tgz"
+                server.write_bytes(b"server tarball " + channel.encode())
+                contracts.write_bytes(b"contracts tarball " + channel.encode())
+                component = {"version": "1.0.0", "tag": tag}
+                build = {"npm": "@maudecode/talaria-web@1.0.0"}
+                dist_tag = "experimental" if channel == "experimental" else "latest"
+                registry, tags, commands, tampered = {}, {}, [], []
+
+                def run(args, **kwargs):
+                    commands.append(args)
+                    if args[:2] == ["npm", "view"]:
+                        entry = registry.get(args[2])
+                        if entry is None:
+                            return SimpleNamespace(returncode=1, stdout="", stderr="npm ERR! code E404")
+                        return SimpleNamespace(returncode=0, stdout=json.dumps(entry["integrity"]), stderr="")
+                    if args[:2] == ["npm", "publish"]:
+                        path = Path(args[2])
+                        package = "@maudecode/talaria-web-contracts" if "contracts" in path.name else "@maudecode/talaria-web"
+                        self.assertNotIn(f"{package}@1.0.0", registry)
+                        registry[f"{package}@1.0.0"] = {"integrity": "sha512-tampered" if tampered else publish._npm_integrity(path)}
+                        tags.setdefault(package, {})[args[args.index("--tag") + 1]] = "1.0.0"
+                        return SimpleNamespace(returncode=0, stdout="", stderr="")
+                    if args[:3] == ["npm", "dist-tag", "add"]:
+                        package, version = args[3].rsplit("@", 1)
+                        self.assertIn(args[3], registry)
+                        tags.setdefault(package, {})[args[4]] = version
+                        return SimpleNamespace(returncode=0, stdout="", stderr="")
+                    self.fail("unexpected command " + " ".join(args))
+
+                def check_output(args, **kwargs):
+                    self.assertEqual(args[:2], ["npm", "view"])
+                    return json.dumps(tags.get(args[2], {}))
+
+                with patch.dict(os.environ, {"NODE_AUTH_TOKEN": "synthetic"}), patch("publish.subprocess.run", side_effect=run), \
+                        patch("publish.subprocess.check_output", side_effect=check_output):
+                    self.assertEqual(publish.publish_npm(component, build, root), "@maudecode/talaria-web@1.0.0")
+                    self.assertEqual([args[2] for args in commands if args[1] == "publish"], [str(contracts), str(server)])
+                    self.assertEqual(tags["@maudecode/talaria-web"], {dist_tag: "1.0.0"})
+                    # A retry publishes nothing new but still asserts the dist-tag.
+                    before = len([args for args in commands if args[1] == "publish"])
+                    tags["@maudecode/talaria-web"].pop(dist_tag)
+                    publish.publish_npm(component, build, root)
+                    self.assertEqual(len([args for args in commands if args[1] == "publish"]), before)
+                    self.assertEqual(tags["@maudecode/talaria-web"][dist_tag], "1.0.0")
+                    # The other channel's bytes under the same version are refused before any publish or re-tag.
+                    server.write_bytes(b"server tarball other channel")
+                    mutations = len([args for args in commands if args[1] in ("publish", "dist-tag")])
+                    with self.assertRaisesRegex(ValueError, "different contents"):
+                        publish.publish_npm(component, build, root)
+                    self.assertEqual(len([args for args in commands if args[1] in ("publish", "dist-tag")]), mutations + 1)  # contracts re-tag only
+                    server.write_bytes(b"server tarball " + channel.encode())
+                    # A registry that serves different bytes right after publication fails the readback.
+                    registry.clear()
+                    tampered.append(True)
+                    with self.assertRaisesRegex(ValueError, "readback differs"):
+                        publish.publish_npm(component, build, root)
+
 
 if __name__ == "__main__":
     unittest.main()

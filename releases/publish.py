@@ -2,6 +2,7 @@
 """Production operations authorized only by the main-branch cutover workflow."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -103,6 +104,20 @@ def web(plan, build, directory, output):
     write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
 
 
+def _npm_integrity(path):
+    return "sha512-" + base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode()
+
+
+def _npm_view(spec, field):
+    """The registry's value for ``field`` of ``spec``, or None when that version is not published."""
+    view = subprocess.run(["npm", "view", spec, field, "--json"], capture_output=True, text=True)
+    if view.returncode == 0:
+        return json.loads(view.stdout) if view.stdout.strip() else None
+    if "E404" in view.stderr:
+        return None
+    raise ValueError(f"npm registry lookup failed for {spec}: {view.stderr.strip()}")
+
+
 def publish_npm(component, build, directory):
     """Publish the packed tarballs (contracts first) and verify the registry readback."""
     expected = f"@maudecode/talaria-web@{component['version']}"
@@ -114,18 +129,26 @@ def publish_npm(component, build, directory):
     ordered = [name for name in sorted(tarballs) if "contracts" in name] + [name for name in sorted(tarballs) if "contracts" not in name]
     if len(ordered) != 2:
         raise ValueError("Web publication requires the contracts and server tarballs")
-    tag_option = ["--tag", "experimental"] if component["tag"].startswith("web-exp-") else []
+    dist_tag = "experimental" if component["tag"].startswith("web-exp-") else "latest"
     for name in ordered:
         package = "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web"
-        view = subprocess.run(["npm", "view", f"{package}@{component['version']}", "version", "--json"], capture_output=True, text=True)
-        if view.returncode == 0 and view.stdout.strip():
-            continue  # A retry after a successful publication must not fail on the immutable version.
-        subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", *tag_option], check=True)
+        spec = f"{package}@{component['version']}"
+        existing = _npm_view(spec, "dist.integrity")
+        if existing is None:
+            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", "--tag", dist_tag], check=True)
+        elif existing != _npm_integrity(tarballs[name]):
+            # Versions are immutable: a different tarball under this version came from another channel or build.
+            raise ValueError(f"{spec} is already published with different contents; the version must be unique across channels")
+        # A retry (or an identical tarball already published) still has to carry this channel's dist-tag.
+        subprocess.run(["npm", "dist-tag", "add", spec, dist_tag], check=True)
     for name in ordered:
         package = "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web"
-        published = json.loads(subprocess.check_output(["npm", "view", f"{package}@{component['version']}", "version", "--json"], text=True))
-        if published != component["version"]:
-            raise ValueError("npm registry readback differs from the published version")
+        spec = f"{package}@{component['version']}"
+        if _npm_view(spec, "dist.integrity") != _npm_integrity(tarballs[name]):
+            raise ValueError("npm registry readback differs from the published tarball")
+        tags = json.loads(subprocess.check_output(["npm", "view", package, "dist-tags", "--json"], text=True))
+        if tags.get(dist_tag) != component["version"]:
+            raise ValueError(f"npm dist-tag {dist_tag} does not point at the published version")
     return expected
 
 

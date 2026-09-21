@@ -1,5 +1,5 @@
 /** Anchored file helpers: descriptor-relative walks refuse symlinked components at every depth (Python `openat`). */
-import { closeSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -100,5 +100,33 @@ describe('anchored walk', () => {
     expect(swapped).toBe(true)
     expect(readFileSync(join(outside, 'v.txt'), 'utf8')).toBe('victim-outside')
     expect(readFileSync(join(root, 'late-real', 'v.txt'), 'utf8')).toBe('')
+  })
+
+  it.runIf(process.platform !== 'linux')('a destination parent swapped for a symlink mid-move never receives the entry, and the source is restored', () => {
+    mkdirSync(join(root, 'mv', 'src'), { recursive: true })
+    mkdirSync(join(root, 'mv', 'dst'), { recursive: true })
+    mkdirSync(join(root, 'mv', 'src', 'folder'), { recursive: true })
+    writeFileSync(join(root, 'mv', 'src', 'folder', 'k.txt'), 'keep')
+    writeFileSync(join(root, 'mv', 'src', 'm.txt'), 'moved')
+    const realChdir = process.chdir.bind(process)
+    let swapped = false
+    vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
+      realChdir(dir)
+      if (!swapped && dir === join(root, 'mv', 'dst')) {
+        swapped = true
+        renameSync(join(root, 'mv', 'dst'), join(root, 'mv', 'dst-real'))
+        symlinkSync(outside, join(root, 'mv', 'dst'))
+      }
+    })
+    expect(() => { renameAnchored(root, join(root, 'mv', 'src', 'm.txt'), join(root, 'mv', 'dst', 'm.txt')) }).toThrow(NotFoundError)
+    expect(swapped).toBe(true)
+    expect(readFileSync(join(root, 'mv', 'src', 'm.txt'), 'utf8')).toBe('moved')
+    expect(readdirSync(outside)).not.toContain('m.txt')
+    expect(readdirSync(root).filter((n) => n.startsWith('.talaria-move-'))).toEqual([])
+    vi.restoreAllMocks()
+    // A directory moves across parents through the hop as well.
+    renameAnchored(root, join(root, 'mv', 'src', 'folder'), join(root, 'mv', 'dst-real', 'folder'))
+    expect(readFileSync(join(root, 'mv', 'dst-real', 'folder', 'k.txt'), 'utf8')).toBe('keep')
+    expect(readdirSync(root).filter((n) => n.startsWith('.talaria-move-'))).toEqual([])
   })
 })
