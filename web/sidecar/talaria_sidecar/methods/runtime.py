@@ -1,6 +1,9 @@
-"""``runtime.*``: handshake, status, shutdown."""
+"""``runtime.*``: handshake, status, environment, shutdown."""
 
 from __future__ import annotations
+
+import os
+import re
 
 from .. import SIDECAR_RPC_VERSION
 from ..errors import InvalidParams, RpcError
@@ -35,6 +38,22 @@ def register(registry) -> None:
     @registry.method("runtime.ensure_current", requires_agent=True)
     def ensure_current(ctx: CallContext, params: dict) -> dict:
         return {"current": True, "agent_revision": runtime.revision}
+
+    @registry.method("runtime.env", requires_agent=False)
+    def env(ctx: CallContext, params: dict) -> dict:
+        """Apply Web-owned ``.env`` edits to this process so Agent calls stop (or start) seeing a credential without a restart."""
+        names = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+        to_set = params.get("set") or {}
+        to_unset = params.get("unset") or []
+        if not isinstance(to_set, dict) or not all(isinstance(k, str) and names.match(k) and isinstance(v, str) for k, v in to_set.items()):
+            raise InvalidParams("set must map variable names to strings")
+        if not isinstance(to_unset, list) or not all(isinstance(k, str) and names.match(k) for k in to_unset):
+            raise InvalidParams("unset must list variable names")
+        for name in to_unset:
+            os.environ.pop(name, None)
+        for name, value in to_set.items():
+            os.environ[name] = value
+        return {"ok": True}
 
     @registry.method("runtime.shutdown", requires_agent=False)
     def shutdown(ctx: CallContext, params: dict) -> dict:

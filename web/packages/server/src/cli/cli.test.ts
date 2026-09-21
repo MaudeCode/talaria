@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
+import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, waitForHealth } from './launcher.js'
 import { ctlPaths, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
 import { bootTestServer } from '../test/harness.js'
@@ -46,7 +46,9 @@ describe('startup environment order', () => {
     writeFileSync(join(dir, 'h', '.env'), 'FROM_HERMES=h\nFROM_REPO=ignored\n')
     const env: Record<string, string | undefined> = {}
     expect(loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })).toEqual({ hermesHome: join(dir, 'h') })
-    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES: 'h' })
+    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES: 'h', HERMES_WEBUI_HOME_DOTENV_KEYS: 'FROM_HERMES' })
+    // Only the Hermes home's own keys are recorded as the default profile's; the checkout .env is deployment config.
+    expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES'])
   })
 })
 

@@ -142,8 +142,8 @@ describe('provider key detection', () => {
 
   // Python asserted the `_provider_has_key` helper: NeuralWatt has an env var but no display row, so neither backend lists it in /api/providers.
   const hasKey = async (pid: string): Promise<boolean> => {
-    const catalog = s.deps.catalog as unknown as { providerHasKey: (pid: string, config: Json, env: Record<string, string>) => boolean }
-    return catalog.providerHasKey(pid, await s.deps.agentConfig.read(s.state), loadEnvFile(join(s.state, '.env')))
+    const catalog = s.deps.catalog as unknown as { providerHasKey: (pid: string, config: Json, env: Record<string, string>, profileHome: string) => boolean }
+    return catalog.providerHasKey(pid, await s.deps.agentConfig.read(s.state), loadEnvFile(join(s.state, '.env')), s.state)
   }
 
   it('[py:test_issue_neuralwatt_env_key.py::test_neuralwatt_provider_has_key_when_env_set] NEURALWATT_API_KEY keys the provider', async () => {

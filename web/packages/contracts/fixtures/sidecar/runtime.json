@@ -49,5 +49,27 @@
         "agent_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6"
       }
     }
+  ],
+  "runtime.env": [
+    {
+      "params": {
+        "unset": [
+          "OPENAI_API_KEY"
+        ]
+      },
+      "result": {
+        "ok": true
+      }
+    },
+    {
+      "params": {
+        "set": {
+          "OPENAI_API_KEY": "sk-synthetic-rotated"
+        }
+      },
+      "result": {
+        "ok": true
+      }
+    }
   ]
 }

@@ -1,5 +1,6 @@
 /** Settings, profiles, models, providers, reasoning, personalities, onboarding (Python `api/routes.py` handlers of the same paths). */
 import { implement } from '@orpc/server'
+import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
 import { join } from 'node:path'
 import { HttpError, type ApiContext } from './router.js'
@@ -10,7 +11,7 @@ import { forwardedClientIp, ipInNetworks, isLoopback, rawPeerIsTrustedProxy } fr
 import { BlockList, isIP } from 'node:net'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
-import { ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
+import { canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { writeEnvFile } from '../providers/env-file.js'
@@ -279,15 +280,19 @@ export const settingsRouter = os.router({
     delete: os.providers.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const pid = str(input.provider).trim().toLowerCase()
       const result = setProviderKey(ctx, pid, null)
+      // Provider detection canonicalises ids, so every alias block (`providers.ramp` for `router`) must go too.
+      const canonical = canonicaliseProviderId(pid)
       await ctx.deps.agentConfig.update(home(ctx), (c) => {
         let changed = false
         const providers = c.providers
         if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
-          const p = (providers as Dict)[pid]
-          if (p && typeof p === 'object' && 'api_key' in (p as Dict)) { Reflect.deleteProperty(p, 'api_key'); changed = true }
+          for (const [key, p] of Object.entries(providers as Dict)) {
+            if (canonicaliseProviderId(key) !== canonical) continue
+            if (p && typeof p === 'object' && 'api_key' in (p as Dict)) { Reflect.deleteProperty(p, 'api_key'); changed = true }
+          }
         }
         const model = c.model
-        if (model && typeof model === 'object' && !Array.isArray(model) && str((model as Dict).provider).trim().toLowerCase() === pid && 'api_key' in (model as Dict)) { Reflect.deleteProperty(model, 'api_key'); changed = true }
+        if (model && typeof model === 'object' && !Array.isArray(model) && canonicaliseProviderId((model as Dict).provider) === canonical && 'api_key' in (model as Dict)) { Reflect.deleteProperty(model, 'api_key'); changed = true }
         return changed
       }).catch(() => undefined)
       return result
@@ -391,6 +396,24 @@ function setProviderKey(ctx: RequestContext, pid: string, apiKey: string | null)
   } catch (error) {
     throw new HttpError(400, `Failed to save API key: ${str((error as Error).message)}`)
   }
+  retireDotenvRuntimeValues(ctx, envVar, apiKey)
   ctx.deps.catalog.invalidate()
   return { ok: true, provider: pid, display_name: displayName(pid), action: apiKey ? 'updated' : 'removed' }
+}
+
+/**
+ * The default profile's `.env` was copied into the process environment at startup (and inherited by the sidecar). An
+ * edit to that file must reach both, so a removed credential stops being used before any restart; values supplied by
+ * the process environment itself are left alone.
+ */
+function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, apiKey: string | null): void {
+  if (!ctx.deps.isRootProfile(activeProfileName(ctx))) return
+  const env = ctx.deps.config.env
+  const owned = homeDotenvKeys(env)
+  if (!owned.has(envVar)) return
+  if (apiKey) env[envVar] = apiKey
+  else { Reflect.deleteProperty(env, envVar); owned.delete(envVar); setHomeDotenvKeys(env, owned) }
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) return
+  sidecar.call('runtime.env', apiKey ? { set: { [envVar]: apiKey } } : { unset: [envVar] }).catch((error: unknown) => { ctx.deps.log(`[providers] sidecar environment not refreshed for ${envVar}: ${str((error as Error).message)}`) })
 }

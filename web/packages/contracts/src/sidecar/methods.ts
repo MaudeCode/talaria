@@ -5,7 +5,7 @@ import {
 } from './namespaces.js'
 import {
   OkResultSchema, RpcCancelParamsSchema, RpcCancelResultSchema, RpcMethodsResultSchema, RuntimeDescribeSchema,
-  RuntimeEnsureCurrentResultSchema, RuntimeHandshakeParamsSchema, RuntimeShutdownParamsSchema,
+  RuntimeEnsureCurrentResultSchema, RuntimeEnvParamsSchema, RuntimeHandshakeParamsSchema, RuntimeShutdownParamsSchema,
 } from './runtime.js'
 
 const Empty = z.object({})
@@ -22,6 +22,7 @@ export const SIDECAR_METHODS = {
   'runtime.status': { params: Empty, result: RuntimeDescribeSchema },
   'runtime.ensure_current': { params: Empty, result: RuntimeEnsureCurrentResultSchema },
   'runtime.shutdown': { params: RuntimeShutdownParamsSchema, result: OkResultSchema },
+  'runtime.env': { params: RuntimeEnvParamsSchema, result: OkResultSchema },
   ...GOALS_METHODS,
   ...COMMANDS_METHODS,
   ...KANBAN_METHODS,

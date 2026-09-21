@@ -68,3 +68,14 @@ def test_pin_file_is_immutable_shape() -> None:
     pin = read_pin()
     assert len(pin["source_revision"]) == 40
     assert pin["image"].startswith("docker.io/nousresearch/hermes-agent@sha256:")
+
+
+@requires_agent
+def test_runtime_env_edits_the_sidecar_process_environment(sidecar: SidecarProcess) -> None:
+    """Web-owned `.env` edits reach the running sidecar without a restart; names are validated."""
+    assert sidecar.result("runtime.env", {"set": {"TALARIA_TEST_KEY": "sk-synthetic"}}) == {"ok": True}
+    assert sidecar.result("runtime.env", {"unset": ["TALARIA_TEST_KEY", "NEVER_SET"]}) == {"ok": True}
+    message, _ = sidecar.call("runtime.env", {"set": {"bad name": "x"}})
+    assert message["error"]["code"] == -32602
+    message, _ = sidecar.call("runtime.env", {"unset": "OPENAI_API_KEY"})
+    assert message["error"]["code"] == -32602

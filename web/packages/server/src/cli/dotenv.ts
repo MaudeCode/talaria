@@ -82,6 +82,20 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
 export function loadStartupEnv(opts: { env: Record<string, string | undefined>; webRoot: string; home: string; log?: (line: string) => void }): { hermesHome: string } {
   loadLauncherDotenv({ env: opts.env, repoEnvFile: join(opts.webRoot, '.env'), hermesEnvFile: null, ...(opts.log ? { log: opts.log } : {}) })
   const hermesHome = resolve((opts.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, opts.home) || join(opts.home, '.hermes'))
-  loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}) })
+  const fromHome = loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}) })
+  // Values that came from the default profile's own `.env` are that profile's credentials, not process-wide ones.
+  opts.env[HOME_DOTENV_KEYS_VAR] = fromHome.join(',')
   return { hermesHome }
+}
+
+/** Names of the variables `loadStartupEnv` copied from `$HERMES_HOME/.env` (the default profile's file). */
+export const HOME_DOTENV_KEYS_VAR = 'HERMES_WEBUI_HOME_DOTENV_KEYS'
+
+export function homeDotenvKeys(env: Record<string, string | undefined>): Set<string> {
+  return new Set((env[HOME_DOTENV_KEYS_VAR] ?? '').split(',').map((k) => k.trim()).filter(Boolean))
+}
+
+/** Forget that `name` came from the default profile's `.env` (it was removed or replaced there at runtime). */
+export function setHomeDotenvKeys(env: Record<string, string | undefined>, keys: Set<string>): void {
+  env[HOME_DOTENV_KEYS_VAR] = [...keys].join(',')
 }

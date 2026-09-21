@@ -24,6 +24,8 @@ export type RuntimeDescribe = z.infer<typeof RuntimeDescribeSchema>
 
 export const RuntimeEnsureCurrentResultSchema = z.object({ current: z.literal(true), agent_revision: z.string().nullable() })
 export const RuntimeShutdownParamsSchema = z.object({ exit_code: z.number().int().optional() })
+/** Mutate the sidecar's own process environment (Web-owned `.env` values it inherited at spawn); never Agent state. */
+export const RuntimeEnvParamsSchema = z.object({ set: z.record(z.string(), z.string()).optional(), unset: z.array(z.string()).optional() })
 export const OkResultSchema = z.object({ ok: z.literal(true) })
 export const RpcCancelParamsSchema = z.object({ id: z.number().int() })
 export const RpcCancelResultSchema = z.object({ cancelled: z.boolean(), reason: z.string().optional() })

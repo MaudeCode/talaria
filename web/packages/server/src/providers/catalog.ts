@@ -9,6 +9,7 @@
  * publisher/provenance machinery; `refresh()` evicts it.
  */
 import { readCapped } from '../http/capped.js'
+import { homeDotenvKeys } from '../cli/dotenv.js'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -37,6 +38,8 @@ export interface CatalogDeps {
   /** Settings `provider_cost_budget` (monthly). */
   costBudget: () => number | null
   fetch?: typeof fetch
+  /** Whether `profileHome` is the default profile's home (`$HERMES_HOME`). */
+  isRootProfileHome: (profileHome: string) => boolean
 }
 
 const LIVE_TTL_S = 86_400
@@ -144,12 +147,21 @@ export class ProviderCatalog {
     this.providersCache.clear()
   }
 
+  /**
+   * The process-environment value of `name` as a named profile may see it: values `loadStartupEnv` copied from the
+   * default profile's `.env` belong to that profile only, so they never count for another profile.
+   */
+  private processEnv(name: string, profileHome: string): string | undefined {
+    if (!this.deps.isRootProfileHome(profileHome) && homeDotenvKeys(this.deps.env).has(name)) return undefined
+    return this.deps.env[name]
+  }
+
   /** Python `_provider_has_key` minus the credential pool (the sidecar answers OAuth/pool state). */
-  providerHasKey(pid: string, config: Config, envValues: Record<string, string>): boolean {
+  providerHasKey(pid: string, config: Config, envValues: Record<string, string>, profileHome: string): boolean {
     const envVar = providerEnvVar(pid)
     if (envVar) {
-      if (valueCountsAsApiKey(pid, envValues[envVar]) || valueCountsAsApiKey(pid, this.deps.env[envVar])) return true
-      for (const alias of PROVIDER_ENV_VAR_ALIASES[pid] ?? []) if (valueCountsAsApiKey(pid, envValues[alias]) || valueCountsAsApiKey(pid, this.deps.env[alias])) return true
+      if (valueCountsAsApiKey(pid, envValues[envVar]) || valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome))) return true
+      for (const alias of PROVIDER_ENV_VAR_ALIASES[pid] ?? []) if (valueCountsAsApiKey(pid, envValues[alias]) || valueCountsAsApiKey(pid, this.processEnv(alias, profileHome))) return true
     }
     const model = modelSection(config)
     if (str(model.api_key).trim() && canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key)) return true
@@ -176,7 +188,7 @@ export class ProviderCatalog {
   }
 
   private async probeKey(profileHome: string, pid: string, config: Config, envValues: Record<string, string>): Promise<KeyProbe> {
-    let hasKey = this.providerHasKey(pid, config, envValues)
+    let hasKey = this.providerHasKey(pid, config, envValues, profileHome)
     let isOauth = OAUTH_PROVIDERS.has(pid)
     let keySource = 'none'
     let authError: string | null = null
@@ -197,12 +209,12 @@ export class ProviderCatalog {
       const envVar = providerEnvVar(pid)
       if (envVar) {
         if (valueCountsAsApiKey(pid, envValues[envVar])) keySource = 'env_file'
-        else if (valueCountsAsApiKey(pid, this.deps.env[envVar])) keySource = 'env_var'
+        else if (valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome))) keySource = 'env_var'
         else {
           keySource = 'config_yaml'
           for (const alias of PROVIDER_ENV_VAR_ALIASES[pid] ?? []) {
             if (valueCountsAsApiKey(pid, envValues[alias])) { keySource = 'env_file'; break }
-            if (valueCountsAsApiKey(pid, this.deps.env[alias])) { keySource = 'env_var'; break }
+            if (valueCountsAsApiKey(pid, this.processEnv(alias, profileHome))) { keySource = 'env_var'; break }
           }
         }
       } else keySource = 'config_yaml'
@@ -287,7 +299,7 @@ export class ProviderCatalog {
       const slug = customProviderSlug(name) || 'custom'
       const ids = [str(cp.model).trim(), ...configuredModelIds(cp.models)].filter((v, i, a) => v && a.indexOf(v) === i)
       rows.push({
-        id: slug, display_name: name, has_key: valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.deps.env[str(cp.key_env).trim()]),
+        id: slug, display_name: name, has_key: valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome)),
         configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: str(cp.api_key).trim() ? 'config_yaml' : 'none',
         base_url: str(cp.base_url).trim() || null, auth_error: null, env_var: null, models: ids.map((id) => ({ id, label: labelForModel(id, []) })), models_total: ids.length,
       })
@@ -328,7 +340,7 @@ export class ProviderCatalog {
     }
     for (const pid of new Set([...Object.keys(PROVIDER_MODELS), ...Object.keys(PROVIDER_DISPLAY)])) {
       const canonical = canonicaliseProviderId(pid)
-      if (canonical && this.providerHasKey(canonical, config, envValues)) detected.add(canonical)
+      if (canonical && this.providerHasKey(canonical, config, envValues, profileHome)) detected.add(canonical)
     }
     // Python: OAuth providers the Agent reports as logged in join the picker with their live catalog (#1567, #2545).
     const oauthLoggedIn = new Set<string>()
@@ -375,7 +387,7 @@ export class ProviderCatalog {
       const providerCfg = dict(providersCfg[rawKeyFor.get(pid) ?? pid])
       let raw: ModelEntry[] = []
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
-      if (!raw.length && (this.providerHasKey(pid, config, envValues) || oauthLoggedIn.has(pid))) {
+      if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || oauthLoggedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
         // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
@@ -499,7 +511,7 @@ export class ProviderCatalog {
     const envVar = providerEnvVar(pid)
     if (envVar) {
       for (const name of [envVar, ...(PROVIDER_ENV_VAR_ALIASES[pid] ?? [])]) {
-        const v = str(envValues[name] ?? this.deps.env[name]).trim()
+        const v = str(envValues[name] ?? this.processEnv(name, profileHome)).trim()
         if (v) return v
       }
     }

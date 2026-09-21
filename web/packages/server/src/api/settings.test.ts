@@ -300,6 +300,56 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((body.providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'deepseek')?.has_key).toBe(false)
   })
 
+  it('a credential copied from the default profile .env at startup never counts for a named profile, and removing it retires the runtime copy', async () => {
+    // Simulates `loadStartupEnv`: the default profile's .env put OPENAI_API_KEY into the process environment.
+    const env = s.deps.config.env
+    env.OPENAI_API_KEY = 'sk-from-home-dotenv-1234'
+    env.HERMES_WEBUI_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
+    writeEnvFile(join(s.state, '.env'), { OPENAI_API_KEY: 'sk-from-home-dotenv-1234' })
+    mkdirSync(join(s.state, 'profiles', 'nokey'), { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'nokey', path: join(s.state, 'profiles', 'nokey'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+    s.deps.catalog.invalidate()
+    try {
+      const rows = async (cookie?: string): Promise<{ id: string; has_key: boolean; key_source: string }[]> => ((await json(await s.get('/api/providers', cookie ? { headers: { cookie } } : {}))).providers as { id: string; has_key: boolean; key_source: string }[])
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true })
+      const switched = await post(s, '/api/profile/switch', { name: 'nokey' })
+      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      expect((await rows(cookie)).find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
+      // A key supplied by the process environment itself still applies everywhere.
+      env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+      s.deps.catalog.invalidate()
+      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var' })
+      // Removing the dotenv-owned key on the default profile clears the runtime copy and tells the sidecar.
+      const before = sidecar.calls.length
+      expect((await json(await post(s, '/api/providers/delete', { provider: 'openai' }))).action).toBe('removed')
+      expect(env.OPENAI_API_KEY).toBeUndefined()
+      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('')
+      expect(sidecar.calls.slice(before).find((c) => c.method === 'runtime.env')?.params).toEqual({ unset: ['OPENAI_API_KEY'] })
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: false })
+      // A process-environment key is not touched by a delete.
+      await post(s, '/api/providers/delete', { provider: 'deepseek' })
+      expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
+    } finally {
+      delete env.OPENAI_API_KEY
+      delete env.DEEPSEEK_API_KEY
+      delete env.HERMES_WEBUI_HOME_DOTENV_KEYS
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+      s.deps.catalog.invalidate()
+    }
+  })
+
+  it('deleting a provider credential removes YAML blocks stored under any alias of the provider', async () => {
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), providers: { ramp: { api_key: 'sk-router-legacy-1234' }, 'ramp-router': { base_url: 'https://router.example' } } })
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    expect(((await json(await s.get('/api/providers'))).providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'router')).toMatchObject({ has_key: true })
+    expect((await json(await post(s, '/api/providers/delete', { provider: 'router' }))).action).toBe('removed')
+    expect(configs.get(s.state)?.providers).toEqual({ ramp: {}, 'ramp-router': { base_url: 'https://router.example' } })
+    expect(((await json(await s.get('/api/providers'))).providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'router')).toMatchObject({ has_key: false })
+  })
+
   it('quota endpoints answer per-provider status without network for unsupported providers', async () => {
     let res = await s.get('/api/provider/quota?provider=zai')
     expect(await json(res)).toMatchObject({ ok: false, provider: 'zai', supported: false, status: 'unsupported' })
