@@ -1,9 +1,9 @@
 /** Browser extension registry: manifest scan, user overrides, sidecar consent, gallery install (Python `api/extensions.py`, `api/extension_manifests.py`). */
 import { readCapped } from '../http/capped.js'
-import { openAnchoredFd } from '../workspace/fs.js'
+import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, unlinkAnchored } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { createHash } from 'node:crypto'
-import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import { readZip } from '../workspace/unzip.js'
@@ -591,12 +591,13 @@ export class ExtensionService {
     if (files.length > 1024) throw new ExtensionError('Archive contains too many files')
     const prefix = files.every((e) => e.name.startsWith(`${id}/`)) ? `${id}/` : ''
     const stripped = (name: string): string => (prefix && name.startsWith(prefix) ? name.slice(prefix.length) : name)
-    const extDir = resolve(root, id)
+    const anchor = resolvePathLikePython(root)
+    const extDir = resolve(anchor, id)
     for (const e of files) {
       const decoded = fullyUnquote(stripped(e.name))
       if (!decoded || !isSafeArchiveMember(decoded)) throw new ExtensionError('Unsafe archive member')
       const target = resolve(extDir, decoded)
-      if (!target.startsWith(root + sep) || !target.startsWith(extDir + sep)) throw new ExtensionError('Zip-slip detected')
+      if (!target.startsWith(anchor + sep) || !target.startsWith(extDir + sep)) throw new ExtensionError('Zip-slip detected')
     }
     let version = 'unknown'
     for (const vfile of ['extension.json', 'manifest.json']) {
@@ -604,18 +605,21 @@ export class ExtensionService {
       if (!entry) continue
       try { const m = JSON.parse(entry.read().toString('utf8')) as unknown; if (isDict(m) && typeof m.version === 'string') { version = m.version; break } } catch { /* ignore */ }
     }
-    mkdirSync(extDir, { recursive: true })
-    if (lstatSync(extDir).isSymbolicLink()) throw new ExtensionError('Extension directory is a symlink', 400)
+    try { if (lstatSync(extDir).isSymbolicLink()) throw new ExtensionError('Extension directory is a symlink', 400) } catch (error) { if (error instanceof ExtensionError) throw error }
+    try { makeAnchoredDir(anchor, extDir) } catch { throw new ExtensionError('Extension directory is a symlink', 400) }
     const written: string[] = []
     const rollback = (): void => {
-      for (const p of written) { try { unlinkSync(p) } catch { /* gone */ } }
+      for (const p of written) { try { unlinkAnchored(anchor, p) } catch { /* gone */ } }
       try { if (existsSync(extDir) && !readdirSync(extDir).length) rmdirSync(extDir) } catch { /* ignore */ }
     }
     try {
+      // Every destination is created or truncated through the anchored walk from the extension root, so a symlink
+      // already inside the extension (or a parent swapped mid-extraction) can never redirect a write outside it.
       for (const e of files) {
         const dest = resolve(extDir, fullyUnquote(stripped(e.name)))
-        mkdirSync(dirname(dest), { recursive: true })
-        writeFileSync(dest, e.read())
+        let fd: number
+        try { fd = openAnchoredCreateFd(anchor, dest) } catch (error) { if (!(error instanceof FileExistsError)) throw error; fd = openAnchoredWriteFd(anchor, dest) }
+        try { writeFileSync(fd, e.read()) } finally { closeSync(fd) }
         written.push(dest)
       }
     } catch { rollback(); throw new ExtensionError('Extraction failed', 500) }
@@ -640,12 +644,13 @@ export class ExtensionService {
     const manifest = this.loadInstallManifest()
     const entry = manifest.installed[id]
     if (!entry) throw new ExtensionError('Extension not installed', 404)
-    const extDir = resolve(root, id)
+    const anchor = resolvePathLikePython(root)
+    const extDir = resolve(anchor, id)
     for (const rel of entry.files) {
       if (!isSafeArchiveMember(rel)) continue
       const target = resolve(extDir, rel)
       if (!target.startsWith(extDir + sep)) continue
-      try { unlinkSync(target) } catch { /* gone */ }
+      try { unlinkAnchored(anchor, target) } catch { /* gone */ }
     }
     if (existsSync(extDir)) {
       const dirs: string[] = []

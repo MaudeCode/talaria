@@ -2,7 +2,7 @@ import { delimiter } from 'node:path'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
@@ -13,6 +13,27 @@ const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? resolve(homedir(), '.herm
 const python = process.env.HERMES_WEBUI_PYTHON ?? resolve(agentDir, 'venv/bin/python')
 const sidecarDir = resolve(import.meta.dirname, '../../../../sidecar')
 const agentAvailable = existsSync(resolve(agentDir, 'run_agent.py')) && existsSync(python)
+
+describe('SidecarClient handshake recovery', () => {
+  let client: SidecarClient | null = null
+  afterEach(async () => { await client?.close(); client = null })
+
+  it('kills and restarts a child whose handshake hangs instead of parking it as incompatible', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-hs-'))
+    const marker = resolve(dir, 'answer')
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    // Answers the handshake only once the marker exists; before that it swallows every request.
+    const script = `const fs=require('fs');const [marker,fixture]=process.argv.slice(1);require('readline').createInterface({input:process.stdin}).on('line',(line)=>{const req=JSON.parse(line);if(req.method==='runtime.handshake'&&fs.existsSync(marker)){const result=JSON.parse(fs.readFileSync(fixture,'utf8'))['runtime.handshake'][0].result;process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n')}})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, marker, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined, backoffMs: [50], handshakeTimeoutMs: 200 })
+    await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_timeout' })
+    expect(client.status).toBe('restarting')
+    await expect(client.call('rpc.methods', {})).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
+    writeFileSync(marker, '')
+    const deadline = Date.now() + 5000
+    while (client.status !== 'ready' && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
+    expect(client.status).toBe('ready')
+  })
+})
 
 describe('FakeSidecar', () => {
   it('answers from fixtures and validates shapes', async () => {

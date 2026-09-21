@@ -3,7 +3,7 @@
  * window regression cases (TAL-245). Markers `[py:<file>::<case>]` are
  * verified by scripts/check-regression-port.py.
  */
-import { chmodSync, existsSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { deflateRawSync } from 'node:zlib'
@@ -50,6 +50,7 @@ describe('extension gallery installs', () => {
     'roll.zip': makeZip({ 'roll-ext/a.txt': 'a', 'roll-ext/sub/b.txt': 'b' }),
     'link.zip': makeZip({ 'linked-ext/manifest.json': '{"version":"1.0.0"}' }),
     'inside.zip': makeZip({ 'inside-ext/manifest.json': '{"version":"1.0.0"}' }),
+    'assets.zip': makeZip({ 'assets-ext/manifest.json': '{"version":"1.0.0"}', 'assets-ext/assets/config': 'pwned' }),
   }
   beforeAll(async () => {
     const fakeFetch: typeof fetch = (input) => {
@@ -123,6 +124,26 @@ describe('extension gallery installs', () => {
     expect(res.status).toBe(400)
     expect(String((await json(res)).error).toLowerCase()).toContain('symlink')
     expect(readdirSync(outside)).toEqual([])
+  })
+
+  it('a symlinked subdirectory already inside the extension is never followed: nothing lands outside, and a clean reinstall succeeds', async () => {
+    const outside = join(s.state, 'ssh-target')
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, 'config'), 'original')
+    const dir = join(root(), 'assets-ext')
+    mkdirSync(dir, { recursive: true })
+    symlinkSync(outside, join(dir, 'assets'))
+    const res = await install('assets-ext', 'assets.zip')
+    expect(res.status).toBe(500)
+    expect(readFileSync(join(outside, 'config'), 'utf8')).toBe('original')
+    expect(existsSync(join(dir, 'manifest.json'))).toBe(false)
+    unlinkSync(join(dir, 'assets'))
+    expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
+    expect(readFileSync(join(dir, 'assets', 'config'), 'utf8')).toBe('pwned')
+    // Reinstall overwrites in place through the anchored write path.
+    expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
+    expect((await post(s, '/api/extensions/uninstall', { id: 'assets-ext' })).status).toBe(200)
+    expect(existsSync(dir)).toBe(false)
   })
 
   it('[py:test_issue4746_extension_gallery.py::test_install_rejects_symlinked_ext_dir_inside_root] a symlink that stays inside the root is refused too', async () => {

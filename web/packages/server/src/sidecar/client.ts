@@ -56,6 +56,8 @@ export interface SidecarSpawnOptions {
   log?: (line: string) => void
   /** Restart backoff schedule in milliseconds; the last value repeats. */
   backoffMs?: number[]
+  /** How long the handshake may take before the child is treated as hung and restarted. */
+  handshakeTimeoutMs?: number
 }
 
 /** The narrow interface the rest of the server depends on; `FakeSidecar` implements it too. */
@@ -126,13 +128,19 @@ export class SidecarClient implements SidecarLike {
     child.on('error', (error) => { this.log(`[sidecar] spawn error: ${error.message}`) })
 
     try {
-      const describe = await this.rawCall('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION }, { timeoutMs: 60_000 })
+      const describe = await this.rawCall('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION }, { timeoutMs: this.opts.handshakeTimeoutMs ?? 60_000 })
       this.describe = describe
       this.status = describe.compatible && !describe.stale ? 'ready' : 'incompatible'
       this.restartAttempt = 0
       return describe
     } catch (error) {
-      this.status = 'incompatible'
+      // `incompatible` is reserved for a decoded handshake that says so (or the version-mismatch exit). A handshake
+      // that hangs, fails to parse, or dies is operational: kill a still-running child so its exit schedules a restart.
+      if (this.child === child && !this.closed) {
+        this.log(`[sidecar] handshake failed: ${(error as Error).message}; restarting`)
+        this.status = 'restarting'
+        child.kill('SIGKILL')
+      }
       throw error
     }
   }
