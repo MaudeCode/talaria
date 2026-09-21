@@ -60,6 +60,8 @@ export interface SessionServiceDeps {
   syncTitle: (session: Session) => void
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
+  /** Authoritative lookup through the sidecar (`models.context_length`), cached; used where the caller can await. */
+  resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
@@ -458,14 +460,14 @@ export class SessionService {
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
-    await this.store.withLock(sid, () => {
+    await this.store.withLock(sid, async () => {
       s.workspace = newWs
       if ('model' in body || 'model_provider' in body) {
         const [model, provider] = this.deps.modelStateFromRequest('model' in body ? body.model : s.model, 'model_provider' in body ? body.model_provider : undefined, s.model_provider)
         if (model !== null) s.model = model
         s.model_provider = provider
         if (str(oldModel) !== str(s.model) || str(oldProvider) !== str(s.model_provider)) {
-          s.context_length = this.deps.contextLengthFor(s.model, s.model_provider)
+          s.context_length = this.deps.resolveContextLength ? await this.deps.resolveContextLength(s.model, s.model_provider, s.profile) : this.deps.contextLengthFor(s.model, s.model_provider)
           s.threshold_tokens = 0
           s.last_prompt_tokens = 0
           this.deps.runtime.evictAgent(sid)

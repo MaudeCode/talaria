@@ -163,6 +163,16 @@ describe('runtime seams from review round 10', () => {
     expect(features).toEqual({ dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false })
   })
 
+  it('a model switch resolves the context length from the sidecar and the detail load reports it', async () => {
+    sidecar.respond('models.context_length', (params) => ({ model: params.model, context_length: params.model === 'big-model' ? 1_000_000 : 200_000 }))
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const updated = (await json(await post(s, '/api/session/update', { session_id: sid, model: 'big-model', model_provider: 'anthropic' }))).session as Json
+    expect(updated.context_length).toBe(1_000_000)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(detail.context_length).toBe(1_000_000)
+    expect(s.deps.sessions.deps.contextLengthFor('big-model', 'anthropic')).toBe(1_000_000)
+  })
+
   it('the per-identity stream budget defaults to eight', () => {
     const claims: (() => void)[] = []
     for (let i = 0; i < 8; i += 1) { const c = s.deps.streamSlots.claim('one'); expect(c, String(i)).not.toBeNull(); if (c) claims.push(c) }

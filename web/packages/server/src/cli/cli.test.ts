@@ -50,6 +50,22 @@ describe('startup environment order', () => {
   })
 })
 
+describe('serve argument precedence', () => {
+  it('explicit serve arguments win over the checkout .env host and port', () => {
+    const dir = scratch()
+    mkdirSync(join(dir, 'web'))
+    writeFileSync(join(dir, 'web', '.env'), 'HERMES_WEBUI_PORT=9999\nHERMES_WEBUI_HOST=0.0.0.0\n')
+    const env: Record<string, string | undefined> = {}
+    loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })
+    const args = parseBootstrapArgs(['8123', '--host', '127.0.0.1'], env)
+    env.HERMES_WEBUI_HOST = args.host
+    env.HERMES_WEBUI_PORT = String(args.port)
+    expect(env).toMatchObject({ HERMES_WEBUI_PORT: '8123', HERMES_WEBUI_HOST: '127.0.0.1' })
+    const defaults = parseBootstrapArgs([], { HERMES_WEBUI_PORT: '9999', HERMES_WEBUI_HOST: '0.0.0.0' })
+    expect([defaults.port, defaults.host]).toEqual([9999, '0.0.0.0'])
+  })
+})
+
 describe('launcher', () => {
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {
     expect(parseBootstrapArgs(['9000', '--host', '0.0.0.0', '--no-browser', '--foreground'], {})).toEqual({ port: 9000, host: '0.0.0.0', noBrowser: true, skipAgentInstall: false, foreground: true })

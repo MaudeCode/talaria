@@ -187,6 +187,23 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const cliSessions = new CliSessionSource({ store, profileHome, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: (kind, p) => projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || projects.hasUserProjects(p) }), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
   const journal = new RunJournal(config.sessionDir, env)
+  const contextLengths = new Map<string, number | null>()
+  const contextInflight = new Map<string, Promise<number | null>>()
+  const contextKey = (model: string | null, provider: string | null): string | null => (model?.trim() ? `${provider?.trim() ?? ''}\0${model.trim()}` : null)
+  const resolveContextLength = async (model: string | null, provider: string | null, profile: string | null): Promise<number | null> => {
+    const key = contextKey(model, provider)
+    if (!key || !sidecar) return null
+    const hit = contextLengths.get(key)
+    if (hit !== undefined) return hit
+    const pending = contextInflight.get(key)
+    if (pending) return pending
+    const run = sidecar.call('models.context_length', { profile_home: profileHome(profile ?? activeProfile()), model: model!.trim(), ...(provider?.trim() ? { provider: provider.trim() } : {}) })
+      .then((r) => { contextLengths.set(key, r.context_length); return r.context_length })
+      .catch((error: unknown) => { log(`[webui] context length for ${model ?? ''} failed: ${(error as Error).message}`); return null })
+      .finally(() => { contextInflight.delete(key) })
+    contextInflight.set(key, run)
+    return run
+  }
   const sessions = new SessionService({
     journal,
     store,
@@ -229,7 +246,17 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
       sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title }).catch((error: unknown) => { log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`) })
     },
-    contextLengthFor: () => null,
+    // Python `_resolve_model_context_length`: the sidecar's authoritative value per model/provider, cached; a sync miss
+    // starts the lookup in the background so the next read (detail load, composer gauge) has it.
+    contextLengthFor: (model, provider) => {
+      const key = contextKey(model, provider)
+      if (!key) return null
+      const hit = contextLengths.get(key)
+      if (hit !== undefined) return hit
+      void resolveContextLength(model, provider, activeProfile())
+      return null
+    },
+    resolveContextLength,
     // Python `_session_model_state_from_request`: a provider-qualified id (`@nous:openai/gpt-5.4-mini`) is split so the
     // sidecar receives the bare model and the explicit provider wins over the requested one.
     modelStateFromRequest: (model, requestedProvider, currentProvider) => {
