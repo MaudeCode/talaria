@@ -63,6 +63,8 @@ export interface TurnRunnerDeps {
   titleGenerationEnabled: () => boolean
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
+  /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
+  onTurnEnd?: (sessionId: string) => void
 }
 
 export interface StartTurnOptions {
@@ -597,6 +599,12 @@ export class TurnRunner {
     this.registry.clearWritebackOwnerIfOwned(sessionId, streamId)
     this.deps.pending.clearApprovals(sessionId)
     this.deps.pending.clearClarifies(sessionId)
+    try { this.deps.onTurnEnd?.(sessionId) } catch { /* best effort */ }
+  }
+
+  /** Journal files with a live writer (retention must leave them alone). */
+  activeJournalPaths(): Set<string> {
+    return new Set([...this.writers.values()].map((w) => this.deps.journal.pathFor(w.sessionId, w.runId)))
   }
 
   // ── title ────────────────────────────────────────────────────────────────

@@ -10,6 +10,9 @@ import { PasskeyStore } from './auth/passkeys.js'
 import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
+import { CompletionDrain } from './sessions/completions.js'
+import { HygieneTicker } from './tools/hygiene.js'
+import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { detectWebuiVersion, loadReleaseInfo } from './release.js'
@@ -62,6 +65,8 @@ export interface CreateDepsOptions extends LoadConfigOptions {
   pty?: import('./tools/terminal.js').PtyModuleLike | null
   /** Gateway watcher poll interval (tests shorten the 5 s default). */
   gatewayPollMs?: number
+  /** Completion drain poll interval (tests shorten the 1 s default). */
+  completionPollMs?: number
 }
 
 export function packageVersion(): string | undefined {
@@ -219,6 +224,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const override = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim()
     return override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'media_snapshots')
   }
+  // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
+  let completions: CompletionDrain
   const relay = new RelayService({
     registry, pending, store, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     stateDir: config.stateDir, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
@@ -228,6 +235,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     service: () => sessions,
     events,
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
+    onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     registry,
     channels,
     pending,
@@ -292,6 +300,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     translate: (path: string) => path,
   })
+  completions = new CompletionDrain({ sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
+  const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
   const deps: AppDeps = {
     config,
     settings,
@@ -353,7 +363,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     nativeOidcLimiter: new WindowLimiter(60, 10, now),
     clearPasskeys: () => { passkeys.clear() },
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
-    mcp: new McpService({ sidecar: () => sidecar, config: agentConfig }),
+    mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
+    completions,
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }] }),
+    mcpHealth,
     nowSeconds: now,
     runtimeDiagnostics: () => {
       const mem = process.memoryUsage()

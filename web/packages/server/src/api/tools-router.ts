@@ -180,7 +180,7 @@ export const toolsRouter = os.router({
   })),
   logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),
   ops: {
-    agent: os.ops.agent.handler(({ context: { ctx } }) => run(() => agentHealth(ctx.deps.config.env) as never)),
+    agent: os.ops.agent.handler(({ context: { ctx } }) => run(() => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => ctx.deps.profileHome(ctx.deps.activeProfile()), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds }) as Promise<never>)),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()

@@ -49,6 +49,9 @@ import type { TerminalRegistry } from '../tools/terminal.js'
 import type { OidcService } from '../auth/oidc.js'
 import type { RelayService } from '../sessions/relay.js'
 import type { CliSessionSource } from '../sessions/cli-sessions.js'
+import type { CompletionDrain } from '../sessions/completions.js'
+import type { HygieneTicker } from '../tools/hygiene.js'
+import type { McpHealthProber } from '../tools/mcp-health.js'
 import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
 
@@ -132,6 +135,10 @@ export interface AppDeps {
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter
   fetch: typeof fetch
+  // ── workers (checkpoint 7h) ──
+  completions: CompletionDrain
+  hygiene: HygieneTicker
+  mcpHealth: McpHealthProber
   // ── state.db projection and gateway watcher (checkpoint 7f) ──
   cliSessions: CliSessionSource
   gatewayWatchers: GatewayWatcherRegistry

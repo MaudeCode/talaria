@@ -1,9 +1,10 @@
-/** MCP server inventory from config.yaml plus the Agent's already-known runtime status (Python MCP handlers). ponytail: no background health prober; `health` reports `unknown`. */
+/** MCP server inventory from config.yaml plus the Agent's already-known runtime status and the background health verdicts (Python MCP handlers). */
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { redactString } from '../redact.js'
 import { str } from '../util.js'
+import type { McpHealthProber } from './mcp-health.js'
 
 const MASK = '••••••'
 const SENSITIVE = ['auth', 'token', 'key', 'secret', 'password', 'credential']
@@ -117,7 +118,7 @@ function toolSummary(name: string, toolRaw: unknown, server: Dict): Dict {
 }
 
 export class McpService {
-  constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig }) {}
+  constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig; health?: McpHealthProber }) {}
 
   private async runtime(profileHome: string, servers: Dict): Promise<Map<string, Dict>> {
     const byName = new Map<string, Dict>()
@@ -127,10 +128,13 @@ export class McpService {
         for (const entry of (await sidecar.call('mcp.status', { profile_home: profileHome })).servers) byName.set(entry.name, entry)
       } catch { /* runtime unavailable → configured only */ }
     }
+    const enabledServers = Object.fromEntries(Object.entries(servers).filter(([, cfg]) => isDict(cfg) && parseEnabled(cfg.enabled)))
+    const verdicts = this.deps.health?.refreshAndRead(enabledServers) ?? {}
     for (const [name, cfg] of Object.entries(servers)) {
       const entry = { ...(byName.get(name) ?? { name }) }
       const enabled = isDict(cfg) ? parseEnabled(cfg.enabled) : false
-      Object.assign(entry, enabled ? { health: str(entry.health) || 'unknown', health_detail: str(entry.health_detail), health_checked_at: entry.health_checked_at ?? null, health_pending: false } : { health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false })
+      const verdict = verdicts[name]
+      Object.assign(entry, enabled ? { health: verdict?.health ?? 'unknown', health_detail: verdict?.detail ?? '', health_checked_at: verdict?.checked_at ?? null, health_pending: verdict?.pending ?? true } : { health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false })
       byName.set(name, entry)
     }
     return byName

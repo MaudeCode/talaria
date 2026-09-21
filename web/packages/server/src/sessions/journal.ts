@@ -3,7 +3,7 @@
  * stream under `sessions/_run_journal/<sid>/<stream_id>.jsonl`, contiguous
  * `seq` from 1, `event_id = <stream_id>:<seq>`, fsync on terminal rows.
  */
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeSync, constants as fsConstants } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync, constants as fsConstants } from 'node:fs'
 import { join } from 'node:path'
 import { str } from '../util.js'
 
@@ -204,6 +204,60 @@ export class RunJournal {
     if (last) summary.event_count = last.seq || tail.events.length
     summary.journal_truncated = tail.truncated
     return summary
+  }
+
+  /**
+   * Python `prune_settled_run_journals`: compact terminal journals older than
+   * `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) into `.summary.json`, keeping
+   * the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest per session and any
+   * path with a live writer.
+   */
+  pruneSettled(opts: { now?: number; retentionSeconds?: number; keepRecent?: number; isActive?: (path: string) => boolean; dryRun?: boolean } = {}): { examined: number; terminal: number; pruned: number; bytes_reclaimed: number } {
+    const result = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
+    const days = Number.parseFloat(this.env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
+    const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
+    const keepEnv = Number.parseInt(this.env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
+    const keep = opts.keepRecent ?? (Number.isFinite(keepEnv) ? Math.max(0, keepEnv) : 3)
+    const now = opts.now ?? Date.now() / 1000
+    const cutoff = now - retention
+    const root = this.root()
+    if (retention <= 0 || !existsSync(root)) return result
+    for (const sessionRoot of readdirSync(root, { withFileTypes: true })) {
+      if (!sessionRoot.isDirectory() || !SAFE_ID_RE.test(sessionRoot.name)) continue
+      const sid = sessionRoot.name
+      const dir = join(root, sid)
+      const terminalRuns: { mtimeNs: bigint; path: string; runId: string }[] = []
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith('.jsonl')) continue
+        result.examined += 1
+        const path = join(dir, name)
+        const runId = name.slice(0, -'.jsonl'.length)
+        let st
+        try { st = statSync(path, { bigint: true }) } catch { continue }
+        const summary = RunJournal.summaryFromEvents(sid, runId, this.readRunEventTail(sid, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS).events)
+        if (!summary.terminal) continue
+        result.terminal += 1
+        terminalRuns.push({ mtimeNs: st.mtimeNs, path, runId })
+      }
+      terminalRuns.sort((a, b) => (b.mtimeNs > a.mtimeNs ? 1 : b.mtimeNs < a.mtimeNs ? -1 : b.path.localeCompare(a.path)))
+      terminalRuns.slice(keep).forEach(({ path, runId }) => {
+        if (opts.isActive?.(path)) return
+        let st
+        try { st = statSync(path) } catch { return }
+        if (st.mtimeMs / 1000 > cutoff) return
+        const summary = RunJournal.summaryFromEvents(sid, runId, this.readRunEventTail(sid, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS).events)
+        if (!summary.terminal) return
+        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += st.size; return }
+        const pruned = { ...summary, journal_pruned: true, journal_pruned_at: now, original_size: st.size, original_mtime: st.mtimeMs / 1000 }
+        try {
+          writeFileSync(path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX), JSON.stringify(pruned))
+          unlinkSync(path)
+        } catch { return }
+        result.pruned += 1
+        result.bytes_reclaimed += st.size
+      })
+    }
+    return result
   }
 
   /** Locate a run across sessions (Python `find_run_summary`). */
