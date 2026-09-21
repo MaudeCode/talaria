@@ -451,6 +451,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     writeFileSync(join(s.state, '.env'), 'OPENAI_API_KEY=sk-test-1234\n')
     chmodSync(join(s.state, '.env'), 0o600)
     // An unbounded upstream body is cut off at the 16 MiB cap instead of being buffered.
+    s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'big', engine: 'openai' })
     expect(res.status).toBe(500)
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
