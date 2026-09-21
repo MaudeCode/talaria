@@ -34,7 +34,12 @@ The complete checkout must be clean, including App/Relay edits and untracked
 files. Experimental source updates fetch only `origin/main`; Stable fetches the selected
 published tag, checks its commit against the manifest and verifies packaged
 compatibility metadata. Both paths perform
-a fast-forward that protects ignored files from overwrite. Divergent histories
+a fast-forward that protects ignored files from overwrite, then install and
+build the Web packages (`npm ci` for contracts and server, `npm run build` for
+each) before the release stamp is written; the supervisor re-executes the
+rebuilt `packages/server/dist/bin/talaria-web.js`. A failed build reports the
+npm error, keeps the previous stamp and running server, and the next Update
+retries the build from the advanced source. Divergent histories
 require manual reconciliation. A checkout ahead of the selected published release
 is reported as manual, rather than a successful automatic update, and stays at
 its current revision. At startup, an otherwise valid source stamp must match

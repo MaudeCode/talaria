@@ -70,7 +70,7 @@ import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { workspaceHash } from '../workspace/rollback.js'
 
@@ -241,6 +241,31 @@ describe('raw byte routes', () => {
     res = await s.get('/api/upload', { method: 'POST', body: noFile, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
     expect(res.status).toBe(400)
     expect(await json(res)).toEqual({ error: 'No file field in request' })
+  })
+
+  // The descriptor platform never resolves the leaf by pathname; this exercises the cwd anchor used on macOS.
+  it.runIf(process.platform !== 'linux')('a media file swapped for a symlink after the containment checks is not followed', async () => {
+    writeFileSync(join(ws, 'late.png'), 'png-bytes')
+    writeFileSync(join(s.state, 'settings.json'), '{"secret":true}')
+    const realChdir = process.chdir.bind(process)
+    let swapped = false
+    const spy = vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
+      realChdir(dir)
+      if (!swapped && dir === ws) {
+        swapped = true
+        rmSync(join(ws, 'late.png'))
+        symlinkSync(join(s.state, 'settings.json'), join(ws, 'late.png'))
+      }
+    })
+    try {
+      const res = await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'late.png'))}`)
+      expect(swapped).toBe(true)
+      expect(res.status).toBe(404)
+      expect(await res.text()).not.toContain('secret')
+    } finally {
+      spy.mockRestore()
+      rmSync(join(ws, 'late.png'), { force: true })
+    }
   })
 
   it('serves media only from allowed roots and denies Hermes state files', async () => {

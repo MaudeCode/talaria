@@ -51,7 +51,7 @@
  *   web/tests/test_issue_branch_context_at_fork.py
  * (issues #789, #1013, #1217, #1494, #1955, #2419, #2592, #2841, #2863, #2914, #3019, #3023, #3346, #3585, #3586, #3831, #3875, #3929, #3987, #4385, #4490, #4638, #4685, #4714, #4718, #4836, #4842, #4985, #5121, #5132, #5270, #5339, #5532, #5570, #5572, #5854, #6022, #6068, #6611, #6672, #6722, #6751, #6911, #7168) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -305,6 +305,26 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(await s.get(`/api/session/yolo?session_id=${String(b.session_id)}`))).toEqual({ yolo_enabled: false })
     expect((await post(s, '/api/session/yolo', { session_id: b.session_id, enabled: true })).status).toBe(200)
     expect(await json(await s.get(`/api/session/yolo?session_id=${String(b.session_id)}`))).toEqual({ yolo_enabled: true })
+  })
+})
+
+describe('session store disk freshness', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('reloads a cached session whose read identity is unknown instead of trusting the stale snapshot', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const cached = s.deps.sessionStore.get(sid)
+    cached.title = 'cached title'
+    s.deps.sessionStore.save(cached)
+    // Another process replaces the transcript; the cached read happened while the file was changing.
+    const doc = JSON.parse(readFileSync(cached.path ?? '', 'utf8')) as Record<string, unknown>
+    doc.title = 'written by the Agent'
+    writeFileSync(cached.path ?? '', JSON.stringify(doc))
+    cached.sidecarLoadedSignature = null
+    expect(s.deps.sessionStore.get(sid).title).toBe('written by the Agent')
+    expect(s.deps.sessionStore.get(sid).sidecarLoadedSignature).not.toBeNull()
   })
 })
 

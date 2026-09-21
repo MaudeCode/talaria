@@ -36,6 +36,7 @@ export interface SessionStoreDeps {
   cacheMax: () => number
 }
 
+const LOAD_STABLE_READ_ATTEMPTS = 3
 const UNSAVED_SHELL_GRACE_S = 1800
 const STALE_TMP_AGE_S = 3600
 const DELETED_TOMBSTONE_CAP = 1000
@@ -242,16 +243,23 @@ export class SessionStore {
     if (!isSafeSessionId(sid)) return null
     const path = this.pathFor(sid)
     if (!existsSync(path)) return null
-    const preSig = statSignature(path)
-    const data = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+    // Another process may replace the file atomically while we read it: retry until one read is bracketed by the
+    // same signature. A read that never stabilises keeps a null signature, which `cachedLagsDisk` treats as stale.
+    let data: Record<string, unknown> = {}
+    let signature: string | null = null
+    for (let attempt = 0; attempt < LOAD_STABLE_READ_ATTEMPTS; attempt += 1) {
+      const preSig = statSignature(path)
+      data = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+      const postSig = statSignature(path)
+      if (preSig !== null && preSig === postSig) { signature = postSig; break }
+    }
     const [messages, collapsed] = collapseAdjacentDuplicatePartials(data.messages)
     data.messages = messages
     const session = this.construct(data, (data.profile as string | null | undefined) ?? null)
     if (collapsed) {
       try { this.save(session, { touchUpdatedAt: false, skipIndex: true }) } catch { /* best effort */ }
     } else {
-      const postSig = statSignature(path)
-      session.sidecarLoadedSignature = preSig !== null && preSig === postSig ? postSig : null
+      session.sidecarLoadedSignature = signature
     }
     try {
       session.composer_draft = this.deps.drafts.read(sid, session.composer_draft)
@@ -326,7 +334,8 @@ export class SessionStore {
     if (cached.active_stream_id || cached.pending_user_message || cached.pending_started_at) return false
     const current = statSignature(this.pathFor(cached.session_id))
     if (current === null) return false
-    if (cached.sidecarLoadedSignature === null) return false
+    // An unknown read identity (the file changed underneath the load) must not be trusted: reload it.
+    if (cached.sidecarLoadedSignature === null) return true
     return current !== cached.sidecarLoadedSignature
   }
 

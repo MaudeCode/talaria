@@ -9,7 +9,7 @@ import { basename, extname, join, resolve } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
 import { createHash } from 'node:crypto'
 import type { RequestContext } from '../http/context.js'
-import { openAnchoredFd } from './fs.js'
+import { NotFoundError, openAnchoredFd } from './fs.js'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { str } from '../util.js'
 import type { Session } from '../sessions/session.js'
@@ -114,12 +114,14 @@ export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeF
   let fileSize: number
   try {
     fd = opts.anchorRoot ? openAnchoredFd(opts.anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
-    fileSize = fstatSync(fd).size
+    const st = fstatSync(fd)
+    if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
+    fileSize = st.size
   } catch (error) {
     if (fd !== null) closeSync(fd)
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'EACCES' || code === 'EPERM') { ctx.json({ error: 'Permission denied' }, { status: 403 }); return }
-    if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
+    if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
     if (error instanceof Error && !code) { ctx.json({ error: sanitizeError(error) }, { status: 403 }); return }
     ctx.json({ error: 'Could not stat file' }, { status: 500 })
     return
@@ -194,7 +196,7 @@ export function serveInlineHtmlPreview(ctx: RequestContext, target: string, cach
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'EACCES' || code === 'EPERM') { ctx.json({ error: 'Permission denied' }, { status: 403 }); return }
-    if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
+    if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
     if (error instanceof Error && !code) { ctx.json({ error: sanitizeError(error) }, { status: 403 }); return }
     ctx.json({ error: 'Could not read file' }, { status: 500 })
     return

@@ -4,7 +4,7 @@
  * handler and reuses the anchored file helpers.
  */
 import { createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
-import { basename, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { fileOpsSession } from './sessions-router.js'
@@ -148,14 +148,18 @@ function handleMedia(ctx: RequestContext): void {
       } catch { /* skip */ }
     }
   }
-  const withinAllowed = allowedRoots.some((root) => {
+  // The root that authorises the path also anchors the open: a component replaced by a symlink after these checks
+  // fails the descriptor walk instead of being followed. A session-token grant anchors at the file's own directory.
+  let authorizedRoot: string | null = null
+  for (const root of allowedRoots) {
     let resolvedRoot = root
-    try { resolvedRoot = realpathSync(root) } catch { return false }
-    return target === resolvedRoot || isWithin(target, resolvedRoot)
-  })
+    try { resolvedRoot = realpathSync(root) } catch { continue }
+    if (target === resolvedRoot || isWithin(target, resolvedRoot)) { authorizedRoot = resolvedRoot; break }
+  }
   const sessionMediaAllowed = sessionMediaTokenAllowsPath(mediaSession, target, SESSION_MEDIA_TOKEN_TYPES)
   if (mediaDenyReason(target, deps.mediaPolicy)) throw new HttpError(403, 'Path not in allowed location')
-  if (!withinAllowed && !sessionMediaAllowed) throw new HttpError(403, 'Path not in allowed location')
+  if (!authorizedRoot && !sessionMediaAllowed) throw new HttpError(403, 'Path not in allowed location')
+  const anchorRoot = authorizedRoot ?? dirname(target)
   const mime = mimeFor(target)
   const inlinePreview = ctx.query.get('inline') === '1'
   const htmlInlineOk = inlinePreview && mime === 'text/html'
@@ -176,13 +180,7 @@ function handleMedia(ctx: RequestContext): void {
       return
     }
   }
-  let isFile = false
-  try { isFile = statSync(target).isFile() } catch { isFile = false }
-  if (!isFile) {
-    ctx.json({ error: 'not found' }, { status: 404 })
-    return
-  }
-  serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp })
+  serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot })
 }
 
 /**

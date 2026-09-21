@@ -57,6 +57,43 @@ export const runGit: GitRun = (args, cwd, timeoutMs = 10_000) =>
     })
   })
 
+/** Runs one `npm` command in `cwd`; same outcome shape as `GitRun`. */
+export type BuildRun = (args: string[], cwd: string, timeoutMs: number) => Promise<GitOutcome>
+
+/** The steps a source checkout needs after its files change (README "From a source checkout"), run from `<root>/web`. */
+export const WEB_BUILD_STEPS: readonly string[][] = [
+  ['ci', '--workspace', 'packages/contracts', '--workspace', 'packages/server', '--include=dev'],
+  ['run', 'build', '--workspace', 'packages/contracts'],
+  ['run', 'build', '--workspace', 'packages/server'],
+]
+export const WEB_BUILD_TIMEOUT_MS = 10 * 60_000
+/** The artifact the supervisor re-executes; a build that does not leave it behind did not succeed. */
+export const WEB_SERVER_ENTRY = 'packages/server/dist/bin/talaria-web.js'
+
+export const runNpm: BuildRun = (args, cwd, timeoutMs) =>
+  new Promise((done) => {
+    // Prefer the npm beside the running node so a supervisor started with an absolute node path still finds it.
+    const beside = join(dirname(process.execPath), 'npm')
+    execFile(existsSync(beside) ? beside : 'npm', args, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, NODE_ENV: 'development' } }, (error, stdout, stderr) => {
+      if (!error) { done({ out: stdout.trim(), ok: true }); return }
+      const e = error as NodeJS.ErrnoException & { killed?: boolean; code?: number | string }
+      if (e.code === 'ENOENT') { done({ out: 'npm executable not found', ok: false }); return }
+      if (e.killed) { done({ out: `npm ${args.join(' ')} timed out after ${String(timeoutMs / 1000)}s`, ok: false }); return }
+      done({ out: (stderr.trim() || stdout.trim() || `npm exited with status ${String(e.code)}`).slice(-4000), ok: false })
+    })
+  })
+
+/** Install and build the checkout's Web packages; null on success, else the message for the caller. */
+async function buildWeb(root: string, build: BuildRun): Promise<string | null> {
+  const cwd = join(root, 'web')
+  for (const step of WEB_BUILD_STEPS) {
+    const result = await build(step, cwd, WEB_BUILD_TIMEOUT_MS)
+    if (!result.ok) return `\`npm ${step.join(' ')}\` failed: ${result.out || 'unknown error'}`
+  }
+  if (!existsSync(join(cwd, WEB_SERVER_ENTRY))) return `build finished without producing ${WEB_SERVER_ENTRY}`
+  return null
+}
+
 export const isGitLockError = (output: string): boolean => { const l = output.toLowerCase(); return GIT_LOCK_SIGNATURES.some((s) => l.includes(s)) }
 
 /** Python `_sanitize_git_diagnostic`: strip URL userinfo, GitHub token shapes, and secret query values. */
@@ -384,7 +421,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
 }
 
 /** Python `apply_web_update`: fast-forward a recognized clean checkout to main or a published Stable tag. */
-export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity): Promise<Dict> {
+export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, build: BuildRun = runNpm): Promise<Dict> {
   const root = await checkoutRoot(webRoot, git)
   if (root === null) return { ok: false, manual_update: true, message: 'Automatic updates require a Talaria monorepo checkout with Web under web/. Migrate this installation manually.' }
   const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
@@ -453,6 +490,10 @@ export async function applyWebUpdate(webRoot: string | null, channel: Channel, g
     const actual = await git(['rev-parse', 'HEAD'], root)
     if (!merged.ok || !actual.ok || actual.out !== source) return gitFailure(merged.out, 'Web fast-forward failed; no local changes were discarded.')
   }
+  // The supervisor re-executes the built artifact, so the checkout is installed and rebuilt before the stamp claims
+  // the new release; a failed build leaves the old stamp (and the running server) truthful.
+  const buildError = await buildWeb(root, build)
+  if (buildError !== null) return { ok: false, build_failed: true, target: 'webui', channel, sourceRevision: source, message: `Source advanced to ${tag}, but the Web build failed: ${buildError}. Run \`npm ci\` and \`npm run build\` in web/ (see README), then restart Web.` }
   const stamp = stampPath(root)
   if (main && installed !== null) {
     try {
@@ -746,6 +787,8 @@ export interface UpdateServiceDeps {
   /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
   webRoot: string
   git?: GitRun
+  /** Runs the checkout's npm install/build steps after a source update (default: the npm beside this node). */
+  build?: BuildRun
   getJson: GetJson
   identity: ReleaseIdentity
   webuiVersion: string
@@ -834,7 +877,7 @@ export class UpdateService {
 
   private async applyInner(target: string, channel: Channel): Promise<Dict> {
     if (target === 'webui') {
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity)
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.build ?? runNpm)
       if (result.ok && !result.up_to_date) { this.cache.checked_at = 0; this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result
     }
