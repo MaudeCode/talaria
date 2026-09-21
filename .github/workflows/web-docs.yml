@@ -82,4 +82,4 @@ jobs:
           # are passed as ARGUMENTS to python, never evaluated as shell.
           mapfile -t FILES < doc_files.txt
           if [ "${#FILES[@]}" -eq 0 ]; then echo "No doc files."; exit 0; fi
-          python3 web/scripts/critical_markdown_check.py "${FILES[@]}"
+          python3 scripts/critical-markdown-check.py "${FILES[@]}"

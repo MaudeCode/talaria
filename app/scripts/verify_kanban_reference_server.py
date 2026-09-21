@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Exercise the pinned Hermes Kanban HTTP bridge against an isolated real DB.
+"""Exercise the Kanban HTTP surface of the Talaria Web server against an isolated real DB.
 
 This verifier intentionally:
 
-- binds only to loopback on an ephemeral port;
+- boots the built Node server on loopback with an ephemeral port and a password;
 - stores all Hermes/Kanban state in a temporary directory;
-- imports the pinned reference WebUI and Hermes Agent source trees;
-- hard-disables the worker spawn function; and
-- calls Dispatcher only with ``dry_run=true``.
+- runs the Web Python sidecar on the pinned Hermes Agent checkout (``--agent-root``)
+  so ``hermes_cli.kanban_db`` is the real implementation;
+- calls Dispatcher only with ``dry_run=true``, which never spawns workers; and
+- never touches ``~/.hermes`` or a model provider.
 
 It prints aggregate evidence only. Task IDs, payload contents, local paths, and
 configuration values are never emitted.
@@ -16,22 +17,21 @@ configuration values are never emitted.
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import time
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
-from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
 EXPECTED_AGENT_REVISION = "2ccfdb2db4eedf385f6c5b3fe722e183cee1b6de"
-EXPECTED_WEBUI_REVISION = "2f3e42dc649e6d2bae572a0655681d9bb212c78d"
 
 
 class VerificationError(RuntimeError):
@@ -53,90 +53,54 @@ def require(condition: bool, label: str) -> None:
         raise VerificationError(label)
 
 
-def configure_imports(agent_root: Path, webui_root: Path, state_root: Path):
+def boot_server(agent_root: Path, webui_root: Path, state_root: Path, password: str) -> tuple[subprocess.Popen, int]:
+    """Start the built Node server with disposable state; the caller terminates it."""
     require(git_revision(agent_root) == EXPECTED_AGENT_REVISION, "agent-revision")
-    require(git_revision(webui_root) == EXPECTED_WEBUI_REVISION, "webui-revision")
-
-    os.environ["HERMES_HOME"] = str(state_root / "hermes")
-    os.environ["HERMES_KANBAN_HOME"] = str(state_root / "kanban-home")
-    os.environ["HERMES_KANBAN_DB"] = str(state_root / "kanban-home" / "kanban.db")
-    os.environ["HERMES_KANBAN_WORKSPACES_ROOT"] = str(state_root / "workspaces")
-    os.environ["HERMES_KANBAN_ATTACHMENTS_ROOT"] = str(state_root / "attachments")
-
-    sys.path.insert(0, str(webui_root))
-    sys.path.insert(0, str(agent_root))
-
-    from api import kanban_bridge
-    from hermes_cli import kanban_db
-
-    return kanban_bridge, kanban_db
-
-
-def make_handler(bridge):
-    class BridgeHandler(BaseHTTPRequestHandler):
-        server_version = "KanbanReferenceVerifier/1"
-
-        def log_message(self, _format: str, *_args: Any) -> None:
-            return
-
-        def _body(self) -> dict[str, Any]:
-            length = int(self.headers.get("Content-Length", "0") or 0)
-            if length == 0:
-                return {}
-            try:
-                value = json.loads(self.rfile.read(length))
-            except (TypeError, ValueError, json.JSONDecodeError):
-                return {}
-            return value if isinstance(value, dict) else {}
-
-        def _unknown(self) -> None:
-            payload = b'{"error":"unknown kanban endpoint"}'
-            self.send_response(404)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-
-        def do_GET(self) -> None:
-            result = bridge.handle_kanban_get(self, urlsplit(self.path))
-            if result is False:
-                self._unknown()
-
-        def do_POST(self) -> None:
-            result = bridge.handle_kanban_post(
-                self,
-                urlsplit(self.path),
-                self._body(),
-            )
-            if result is False:
-                self._unknown()
-
-        def do_PATCH(self) -> None:
-            result = bridge.handle_kanban_patch(
-                self,
-                urlsplit(self.path),
-                self._body(),
-            )
-            if result is False:
-                self._unknown()
-
-        def do_DELETE(self) -> None:
-            result = bridge.handle_kanban_delete(
-                self,
-                urlsplit(self.path),
-                self._body(),
-            )
-            if result is False:
-                self._unknown()
-
-    return BridgeHandler
+    server_bin = webui_root / "packages/server/dist/bin/talaria-web.js"
+    require(server_bin.is_file(), "server-bin")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    hermes_home = state_root / "hermes"
+    hermes_home.mkdir()
+    env = {
+        "PATH": os.environ["PATH"], "HOME": str(state_root / "home"), "TMPDIR": str(state_root / "tmp"),
+        "HERMES_HOME": str(hermes_home), "HERMES_WEBUI_STATE_DIR": str(state_root / "state"),
+        "HERMES_WEBUI_DEFAULT_WORKSPACE": str(state_root / "workspace"), "HERMES_WEBUI_AGENT_DIR": str(agent_root),
+        "HERMES_KANBAN_HOME": str(state_root / "kanban-home"), "HERMES_KANBAN_DB": str(state_root / "kanban-home" / "kanban.db"),
+        "HERMES_KANBAN_WORKSPACES_ROOT": str(state_root / "workspaces"), "HERMES_KANBAN_ATTACHMENTS_ROOT": str(state_root / "attachments"),
+        "HERMES_WEBUI_HOST": "127.0.0.1", "HERMES_WEBUI_PORT": str(port), "HERMES_WEBUI_PASSWORD": password,
+        "HERMES_WEBUI_SKIP_ONBOARDING": "1", "HERMES_WEBUI_TEST_NETWORK_BLOCK": "1", "TALARIA_WEB_WORKER": "1",
+    }
+    for name in ("home", "tmp", "state", "workspace", "kanban-home"):
+        (state_root / name).mkdir(exist_ok=True)
+    if os.environ.get("HERMES_WEBUI_PYTHON"):
+        env["HERMES_WEBUI_PYTHON"] = os.environ["HERMES_WEBUI_PYTHON"]
+    log = (state_root / "server.log").open("w")
+    process = subprocess.Popen(["node", str(server_bin), "serve"], cwd=webui_root, env=env, stdout=log, stderr=subprocess.STDOUT)
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise VerificationError("server-exited")
+        try:
+            with build_opener().open(f"http://127.0.0.1:{port}/health", timeout=5) as response:
+                if json.load(response).get("status") in ("ok", "degraded"):
+                    return process, port
+        except (OSError, URLError, ValueError):
+            time.sleep(0.25)
+    raise VerificationError("server-health")
 
 
 class ReferenceClient:
-    def __init__(self, port: int):
+    def __init__(self, port: int, password: str):
         self.base_url = f"http://127.0.0.1:{port}"
         self.request_count = 0
         self.mutation_request_count = 0
+        self.opener = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        login = Request(self.base_url + "/api/auth/login", data=json.dumps({"password": password}).encode("utf-8"),
+                        method="POST", headers={"Content-Type": "application/json"})
+        with self.opener.open(login, timeout=10) as response:
+            require(response.status == 200, "login")
 
     def request(
         self,
@@ -159,7 +123,7 @@ class ReferenceClient:
             },
         )
         try:
-            with urlopen(request, timeout=10) as response:
+            with self.opener.open(request, timeout=30) as response:
                 status = response.status
                 raw = response.read()
         except HTTPError as error:
@@ -174,16 +138,7 @@ class ReferenceClient:
         return payload
 
 
-def verify(client: ReferenceClient, kanban_db) -> dict[str, int]:
-    spawn_attempts = 0
-
-    def forbidden_spawn(*_args: Any, **_kwargs: Any):
-        nonlocal spawn_attempts
-        spawn_attempts += 1
-        raise VerificationError("worker-spawn-attempted")
-
-    kanban_db._default_spawn = forbidden_spawn
-
+def verify(client: ReferenceClient) -> dict[str, int]:
     initial_boards = client.request("initial-boards", "GET", "/api/kanban/boards")
     require(isinstance(initial_boards.get("boards"), list), "initial-boards-shape")
 
@@ -384,7 +339,7 @@ def verify(client: ReferenceClient, kanban_db) -> dict[str, int]:
         == after_dispatch.get("task", {}).get("status"),
         "dispatch-mutated-status",
     )
-    require(spawn_attempts == 0, "worker-spawn-attempted")
+    require(dispatch.get("spawned", 0) in (0, [], None), "worker-spawn-attempted")
 
     unlinked = client.request(
         "unlink-tasks",
@@ -427,36 +382,33 @@ def verify(client: ReferenceClient, kanban_db) -> dict[str, int]:
     return {
         "requests": client.request_count,
         "mutations": client.mutation_request_count,
-        "worker_spawns": spawn_attempts,
+        "worker_spawns": 0,
     }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent-root", type=Path, required=True)
-    parser.add_argument("--webui-root", type=Path, required=True)
+    parser.add_argument("--webui-root", type=Path, required=True, help="The monorepo web/ directory with packages/server built.")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    process = None
     try:
         with tempfile.TemporaryDirectory(prefix="talaria-kanban-reference-") as temporary:
             state_root = Path(temporary)
-            bridge, kanban_db = configure_imports(
-                args.agent_root.resolve(),
-                args.webui_root.resolve(),
-                state_root,
-            )
-            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(bridge))
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
+            password = "talaria-kanban-reference"
+            process, port = boot_server(args.agent_root.resolve(), args.webui_root.resolve(), state_root, password)
             try:
-                evidence = verify(ReferenceClient(server.server_port), kanban_db)
+                evidence = verify(ReferenceClient(port, password))
             finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=5)
+                process.terminate()
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
     except (OSError, subprocess.SubprocessError, VerificationError) as error:
         label = str(error) if isinstance(error, VerificationError) else type(error).__name__
         print(f"result=failed check={label}")

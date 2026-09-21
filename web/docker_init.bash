@@ -353,7 +353,7 @@ if [ -f $tmp_root_env ]; then
 fi
 
 ##
-if [ ! -f /app/server.py ] && [ -d /apptoo ]; then
+if [ ! -f /app/package.json ] && [ -d /apptoo ]; then
   echo ""; echo "-- Seeding /app from /apptoo (rootless startup)"
   cp -a /apptoo/. /app/ || error_exit "Failed to seed /app from /apptoo (is /app writable by the runtime user?)"
 fi
@@ -393,8 +393,13 @@ else
 fi
 
 echo ""; echo "==================="
-echo ""; echo "== Installing uv and creating a new virtual environment for hermes-webui"
+echo ""; echo "== Preparing the Hermes Agent virtual environment for the Talaria Web sidecar"
 
+# The TypeScript server needs no Python of its own. The sidecar (web/sidecar,
+# stdlib only) runs on the Agent's venv, which this phase creates from the
+# mounted Agent source exactly as the legacy image installed the Agent's
+# dependencies. Without an Agent checkout the server still starts, but chat and
+# Agent-backed features answer 503 sidecar_unavailable.
 export PATH="/home/hermeswebui/.local/bin/:$PATH"
 if command -v uv &>/dev/null; then
   echo "-- uv already installed ($(uv --version)), skipping download"
@@ -402,49 +407,18 @@ else
   echo "-- uv not found, downloading..."
   curl -LsSf https://astral.sh/uv/install.sh | sh || error_exit "Failed to install uv — check network connectivity"
 fi
-export UV_PROJECT_ENVIRONMENT=venv
 
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/uv_cache}
 mkdir -p "${UV_CACHE_DIR}" || error_exit "Failed to create ${UV_CACHE_DIR} directory"
 test -w "${UV_CACHE_DIR}" || error_exit "${UV_CACHE_DIR} is not writable by hermeswebui"
 
 cd /app
-if [ -f /app/venv/bin/python3 ]; then
-  echo ""; echo "== Existing virtual environment found — reusing (fast restart)"
+_stage_src="/app/hermes-agent-src"
+if [ -f "$_stage_src/venv/.deps_installed" ]; then
+  echo ""; echo "== Agent virtual environment already installed — skipping (fast restart)"
+  export HERMES_WEBUI_AGENT_DIR="$_stage_src"
 else
-  echo ""; echo "== Creating new virtual environment"
-  uv venv venv
-fi
-export VIRTUAL_ENV=/app/venv
-test -d /app/venv
-test -f /app/venv/bin/activate
-
-echo "";echo "== Activating hermes webui's virtual environment"
-source /app/venv/bin/activate || error_exit "Failed to activate hermeswebui virtual environment"
-test -x /app/venv/bin/python3
-
-ensure_hindsight_client_docker_dependency() {
-  # Keep this outside the .deps_installed fast-restart guard so existing
-  # two-container Docker venvs self-heal after this dependency was added.
-  _hindsight_client_requirement="hindsight-client>=0.4.22"
-  echo ""; echo "== Checking Hindsight memory provider dependency"
-  if uv pip show hindsight-client >/dev/null 2>&1; then
-    echo "-- hindsight-client already installed"
-  else
-    echo "-- Installing ${_hindsight_client_requirement} for Hindsight memory provider support"
-    uv pip install "${_hindsight_client_requirement}" --trusted-host pypi.org --trusted-host files.pythonhosted.org || error_exit "Failed to install hindsight-client"
-  fi
-}
-
-if [ -f /app/venv/.deps_installed ]; then
-  echo ""; echo "== Dependencies already installed — skipping (fast restart)"
-else
-  echo ""; echo "== Installing hermes-webui dependencies"
-  uv pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
-  uv pip install -U pip setuptools --trusted-host pypi.org --trusted-host files.pythonhosted.org
-  test -x /app/venv/bin/pip
-
-  echo ""; echo "== Adding hermes-agent's pyproject.toml base dependencies to the virtual environment"
+  echo ""; echo "== Staging the Hermes Agent source and installing its dependencies"
   _agent_paths=(
     "/home/hermeswebui/.hermes/hermes-agent"
     "/opt/hermes"
@@ -468,71 +442,60 @@ else
     fi
     # The agent source can be mounted read-only (see docker-compose.two-container.yml
     # / docker-compose.three-container.yml — the WebUI only reads this volume to
-    # install the agent's Python dependencies and never writes to it). setuptools'
-    # `egg_info` build step, however, touches `hermes_agent.egg-info/` inside the
-    # source tree even under PEP 517 build isolation, which `EROFS`-fails on a
-    # `:ro` mount and (under `set -e`) kills startup of every multi-container
-    # deploy. Stage the source into a writable directory so the editable install
+    # build the sidecar's Agent venv and never writes to it). setuptools'
+    # `egg_info` build step touches `hermes_agent.egg-info/` inside the source
+    # tree even under PEP 517 build isolation, which `EROFS`-fails on a `:ro`
+    # mount. Stage the source into a writable directory so the editable install
     # can write its metadata without touching the underlying mount.
     #
     # The staged copy lives under /app/ (persistent across container restarts)
-    # because the editable install records this path in a .pth file — Python
-    # imports resolve through it at runtime. Placing it alongside the venv gives
-    # it the same lifecycle as .deps_installed: both survive restarts and both
-    # are lost on container recreation (fresh boot re-stages automatically).
+    # because the editable install records this path in a .pth file and the
+    # sidecar imports the Agent from it at runtime. It has the same lifecycle as
+    # the venv marker: both survive restarts, both are lost on recreation.
     #
-    # The copy excludes any pre-baked `*.egg-info` / `build` / `dist` artifacts
-    # to avoid the timestamp-update path setuptools takes when one is present.
-    #
-    # NB: `rsync -a` / `cp -a` preserve the source tree's mode bits, so a `:ro`
-    # source mounted mode 555 leaves the staged copy also mode 555. setuptools
-    # then can't create `hermes_agent.egg-info/` next to the package — it dies
-    # with "Permission denied" even though `_stage_src` itself was created
-    # writable by hermeswebui. Re-add owner-write on the staged tree after the
-    # copy so the build dir is genuinely writable, not just owned by us.
-    _stage_src="/app/hermes-agent-src"
+    # `rsync -a` / `cp -a` preserve the source tree's mode bits, so a `:ro`
+    # source mounted mode 555 leaves the staged copy also mode 555; re-add
+    # owner-write so the build dir is genuinely writable.
     rm -rf "$_stage_src"
     mkdir -p "$_stage_src"
     if command -v rsync >/dev/null 2>&1; then
       rsync -a \
         --exclude='*.egg-info' --exclude='build' --exclude='dist' \
         --exclude='__pycache__' --exclude='.git' \
-        --exclude='.playwright' \
+        --exclude='.playwright' --exclude='venv' --exclude='.venv' \
         "$_agent_src"/ "$_stage_src"/ \
         || error_exit "Failed to stage hermes-agent source to writable build dir"
     else
-      # Fallback when rsync isn't in the image — straight cp -a, then drop
-      # the build artifacts that would trip setuptools.
       cp -a "$_agent_src"/. "$_stage_src"/ \
         || error_exit "Failed to copy hermes-agent source to writable build dir"
-      rm -rf "$_stage_src"/*.egg-info "$_stage_src"/build "$_stage_src"/dist 2>/dev/null || true
+      rm -rf "$_stage_src"/*.egg-info "$_stage_src"/build "$_stage_src"/dist "$_stage_src"/venv "$_stage_src"/.venv 2>/dev/null || true
       rm -rf "$_stage_src"/.playwright 2>/dev/null || true
       find "$_stage_src" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
     fi
     chmod -R u+w "$_stage_src" \
       || error_exit "Failed to make staged hermes-agent source writable (rsync/cp preserved :ro mount perms)"
-    uv pip install -e "$_stage_src[all]" --trusted-host pypi.org --trusted-host files.pythonhosted.org \
+    ( cd "$_stage_src" && uv venv venv --python "$(command -v python3)" ) \
+      || error_exit "Failed to create the Agent virtual environment"
+    uv pip install --python "$_stage_src/venv/bin/python" -e "$_stage_src[all]" --trusted-host pypi.org --trusted-host files.pythonhosted.org \
       || error_exit "Failed to install hermes-agent's requirements"
+    touch "$_stage_src/venv/.deps_installed"
+    export HERMES_WEBUI_AGENT_DIR="$_stage_src"
   else
     echo ""
     echo "!! WARNING: hermes-agent source not found."
     echo "!!   Looked in: ${_agent_paths[0]}"
     echo "!!              ${_agent_paths[1]}"
-    echo "!! The WebUI will start with reduced functionality (no model auto-detection,"
-    echo "!! no personality routing, no CLI session imports)."
+    echo "!! The WebUI will start without the Agent sidecar: chat, profiles, skills,"
+    echo "!! and other Agent-backed features answer 503 sidecar_unavailable."
     echo "!! To fix: mount the agent source volume into the container:"
     echo "!!   -v /path/to/hermes-agent:/home/hermeswebui/.hermes/hermes-agent"
-    echo "!! Or see the two-container compose example:"
-    echo "!!   https://github.com/nesquena/hermes-webui/blob/master/docker-compose.two-container.yml"
+    echo "!! Or see the two-container compose example (docker-compose.two-container.yml)."
     echo ""
   fi
-  touch /app/venv/.deps_installed
 fi
 
-ensure_hindsight_client_docker_dependency
-
-echo ""; echo "== Running hermes-webui"
-cd /app; python server.py || error_exit "hermes-webui failed or exited with an error"
+echo ""; echo "== Running Talaria Web"
+cd /app; node packages/server/dist/bin/talaria-web.js serve || error_exit "Talaria Web failed or exited with an error"
 
 # we should never be here because the server should be running indefinitely, but if we are, we exit safely
 ok_exit "Clean exit"

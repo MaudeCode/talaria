@@ -107,7 +107,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const release = loadReleaseInfo({ webRoot: config.webRoot })
   const stampedRelease = loadReleaseInfo({ webRoot: config.webRoot }, { verifyCheckout: false })
   const runningSourceRevision = checkoutRevision(config.webRoot)
-  const version = opts.version ?? detectWebuiVersion(release, config.webRoot, packageVersion())
+  // Container images bake `TALARIA_WEB_VERSION` (Python `api/_version.py`) because .git is not shipped.
+  const version = opts.version ?? detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
   const activeProfile = (): string => 'default'

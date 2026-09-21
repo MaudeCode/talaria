@@ -46,6 +46,8 @@ export interface CallOptions {
 
 export interface SidecarSpawnOptions {
   python: string
+  /** Full spawn command; defaults to `<python> -m talaria_sidecar` (a scripted replay sidecar for contract runs). */
+  command?: string[]
   agentDir: string
   sidecarDir: string
   hermesHome: string
@@ -94,7 +96,8 @@ export class SidecarClient implements SidecarLike {
   async start(): Promise<RuntimeDescribe> {
     if (this.closed) throw new SidecarError('sidecar client closed', { condition: 'sidecar_unavailable' })
     this.status = 'starting'
-    const child = spawn(this.opts.python, ['-m', 'talaria_sidecar'], {
+    const [command, ...args] = this.opts.command ?? [this.opts.python, '-m', 'talaria_sidecar']
+    const child = spawn(command ?? this.opts.python, args, {
       cwd: this.opts.sidecarDir,
       env: {
         PATH: process.env.PATH ?? '',

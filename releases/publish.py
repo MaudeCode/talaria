@@ -99,7 +99,34 @@ def web(plan, build, directory, output):
         raw = subprocess.check_output(["skopeo", "inspect", "--raw", "--authfile", auth, "docker://" + image])
         if "sha256:" + hashlib.sha256(raw).hexdigest() != image.split("@", 1)[1]:
             raise ValueError("published Web manifest digest differs from the build")
-    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image))
+    npm_identity = publish_npm(component, build, directory)
+    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
+
+
+def publish_npm(component, build, directory):
+    """Publish the packed tarballs (contracts first) and verify the registry readback."""
+    expected = f"@maudecode/talaria-web@{component['version']}"
+    if build.get("npm") != expected:
+        raise ValueError("Web build receipt does not name the npm package")
+    if not os.environ.get("NODE_AUTH_TOKEN"):
+        raise ValueError("npm publication requires NODE_AUTH_TOKEN from the web-release environment")
+    tarballs = {path.name: path for path in (directory / "npm").glob("*.tgz")}
+    ordered = [name for name in sorted(tarballs) if "contracts" in name] + [name for name in sorted(tarballs) if "contracts" not in name]
+    if len(ordered) != 2:
+        raise ValueError("Web publication requires the contracts and server tarballs")
+    tag_option = ["--tag", "experimental"] if component["tag"].startswith("web-exp-") else []
+    for name in ordered:
+        package = "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web"
+        view = subprocess.run(["npm", "view", f"{package}@{component['version']}", "version", "--json"], capture_output=True, text=True)
+        if view.returncode == 0 and view.stdout.strip():
+            continue  # A retry after a successful publication must not fail on the immutable version.
+        subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", *tag_option], check=True)
+    for name in ordered:
+        package = "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web"
+        published = json.loads(subprocess.check_output(["npm", "view", f"{package}@{component['version']}", "version", "--json"], text=True))
+        if published != component["version"]:
+            raise ValueError("npm registry readback differs from the published version")
+    return expected
 
 
 def _release_info(tag):
@@ -178,14 +205,14 @@ def finalize(plan, manifest, previous, artifacts):
     if manifest["contracts"] != plan["contracts"] or manifest["agent"] != plan["agent"]:
         raise ValueError("completed compatibility metadata differs from the plan")
     for name, component in plan["components"].items():
-        for key in ("tag", "version", "sourceRevision", "releaseSet", "deploymentId", "upstreamBase"):
+        for key in ("tag", "version", "sourceRevision", "releaseSet", "deploymentId"):
             if key in component and manifest["components"][name].get(key) != component[key]:
                 raise ValueError("completed component identity differs from the plan")
     root_tag = "release-set-" + plan["releaseSet"]
     require_current_predecessor(plan, previous)
-    wheels = sorted((artifacts / "web-build/wheel").glob("*.whl"))
-    if plan["changed"]["web"] and (len(wheels) != 1 or wheels[0].stat().st_size == 0):
-        raise ValueError("Web publication requires the built wheel")
+    tarballs = sorted((artifacts / "web-build/npm").glob("*.tgz"))
+    if plan["changed"]["web"] and (len(tarballs) != 2 or any(path.stat().st_size == 0 for path in tarballs)):
+        raise ValueError("Web publication requires the built npm tarballs")
     identity = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
     # Component releases are prepared first. The updater consumes only the root
     # completed manifest, which is published as the final operation.
@@ -193,7 +220,7 @@ def finalize(plan, manifest, previous, artifacts):
         if not changed:
             continue
         tag = plan["components"][name]["tag"]
-        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], wheels if name == "web" else [], identity)
+        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], tarballs if name == "web" else [], identity)
     with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
         directory = Path(temporary)
         write(directory / "release-set.json", manifest)

@@ -41,14 +41,14 @@ def main():
             home, scratch = state / f"{name}-home", state / f"{name}-tmp"
             home.mkdir(); scratch.mkdir()
             env = {"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(scratch)}
-            if "HERMES_WEBUI_TEST_PYTHON" in os.environ:
-                env["HERMES_WEBUI_TEST_PYTHON"] = os.environ["HERMES_WEBUI_TEST_PYTHON"]
             if "LD_LIBRARY_PATH" in os.environ:
                 env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
             with (output / f"{name}-contracts.log").open("w") as log:
                 if name == "web":
-                    subprocess.run(["./scripts/test.sh", "tests/test_monorepo_contracts.py", "-q"],
-                                   cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                    # The contracts package owns the monorepo fixture tests (publisher snapshot, activity scenes).
+                    subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                    subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                    subprocess.run(["npm", "test", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                 else:
                     # Producer and consumer fixtures come from their actual refs,
                     # not whichever unreleased code happens to be on main.

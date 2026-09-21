@@ -1,7 +1,7 @@
-FROM python:3.12-slim
+FROM node:24-slim
 
 LABEL maintainer="MaudeCode"
-LABEL description="Talaria Web — browser interface for Hermes Agent"
+LABEL description="Talaria Web — TypeScript server and browser interface for Hermes Agent"
 LABEL org.opencontainers.image.source="https://github.com/MaudeCode/talaria"
 
 # Install system packages
@@ -27,53 +27,11 @@ RUN apt-get update -y --fix-missing --no-install-recommends \
     openssh-client \
     git \
     xz-utils \
+    python3 \
+    python3-venv \
     && apt-get upgrade -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# ── SQLite upgrade ──────────────────────────────────────────────────────────
-# The python:3.12-slim base ships SQLite 3.46.1 (Debian Trixie), which is
-# vulnerable to the WAL-reset corruption bug discovered March 2026.
-# https://sqlite.org/wal.html#walresetbug
-#
-# Debian has not backported the fix, so we compile from the amalgamation.
-# Installs to /usr/local/lib (registered in ld.so.conf.d for arm64 priority).
-# Build tools are purged after compilation to keep the image lean.
-# Build args are for forward version bumps only (3.54+, etc.).
-# When bumping SQLITE_VERSION, recompute the SHA-256 from the official
-# download and update SQLITE_SHA256 accordingly.
-ARG SQLITE_VERSION=3530000
-ARG SQLITE_YEAR=2026
-ARG SQLITE_SHA256=851e9b38192fe2ceaa65e0baa665e7fa06230c3d9bd1a6a9662d02380d73365a
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc make libc6-dev \
-    && cd /tmp \
-    && curl -fsSL "https://sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-${SQLITE_VERSION}.tar.gz" \
-       -o sqlite.tar.gz \
-    && echo "${SQLITE_SHA256}  sqlite.tar.gz" | sha256sum -c - \
-    && tar xzf sqlite.tar.gz \
-    && cd "sqlite-autoconf-${SQLITE_VERSION}" \
-    && CPPFLAGS="-DSQLITE_SECURE_DELETE" ./configure --prefix=/usr/local --disable-static --disable-readline \
-       --enable-fts5 --enable-fts4 --enable-rtree \
-    && make -j"$(nproc)" \
-    && make install \
-    && echo "/usr/local/lib" > /etc/ld.so.conf.d/000-usr-local-lib.conf \
-    && /sbin/ldconfig \
-    && cd / && rm -rf /tmp/sqlite* \
-    && apt-get purge -y gcc make libc6-dev \
-    && apt-get autoremove -y \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && python3 -c "\
-import sqlite3; \
-v = sqlite3.sqlite_version; \
-assert tuple(int(x) for x in v.split('.')) >= (3, 51, 3), \
-    f'SQLite {v} still vulnerable'; \
-c = sqlite3.connect(':memory:'); \
-assert c.execute('PRAGMA secure_delete').fetchone()[0] == 1, \
-    'SQLITE_SECURE_DELETE not compiled in (deleted rows would remain recoverable)'; \
-c.execute('CREATE VIRTUAL TABLE _fts5_build_check USING fts5(x)'); \
-c.execute('DROP TABLE _fts5_build_check'); \
-c.close()"
 
 # Optional GPU user-space acceleration libraries for users who pass through
 # host GPU devices. The default image remains CPU-only.
@@ -100,10 +58,11 @@ RUN localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
 ENV LANG=en_US.utf8
 ENV LC_ALL=C
 
-# Set environment variables
+# The Python variables apply to the sidecar and the Agent venv it runs on.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONIOENCODING=utf-8
+    PYTHONIOENCODING=utf-8 \
+    NODE_ENV=production
 
 WORKDIR /apptoo
 
@@ -126,25 +85,34 @@ RUN rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/01proxy \
 
 USER root
 
-# Pre-install uv system-wide so the container doesn't need internet access at runtime.
-# Installing as root places uv in /usr/local/bin, available to all users.
-# The init script will skip the download when uv is already on PATH.
+# Pre-install uv system-wide so the container doesn't need internet access at runtime
+# to create the Agent venv the sidecar runs on. Installing as root places uv in
+# /usr/local/bin, available to all users; the init script skips the download when
+# uv is already on PATH.
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 COPY --chown=root:root . /apptoo
+
+# Build the contracts and server packages from the copied workspace, then keep only
+# production dependencies. The frontend bundle is the committed static/dist tree.
+RUN npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/server \
+    && npm run build --workspace packages/contracts \
+    && npm run build --workspace packages/server \
+    && npm prune --omit=dev --no-audit --no-fund --workspace packages/contracts --workspace packages/server \
+    && rm -rf /root/.npm
 
 # Bake the git version tag into the image so the settings badge works even
 # when .git is not present (it is excluded by .dockerignore).
 # CI passes: --build-arg HERMES_VERSION=$(git describe --tags --always)
 # Local builds that omit the arg get "unknown" as the fallback.
 ARG HERMES_VERSION=unknown
-RUN echo "__version__ = '${HERMES_VERSION}'" > /apptoo/api/_version.py
+ENV TALARIA_WEB_VERSION=${HERMES_VERSION}
 
 # The release workflow supplies the exact JSON emitted by stamp-release.py.
 # An unstamped local image has an empty label and reports development at /health.
 ARG TALARIA_PROVENANCE={}
 LABEL dev.talaria.provenance="${TALARIA_PROVENANCE}"
-RUN python3 -c 'import json, os; from pathlib import Path; from api.release_info import RELEASE_INFO; expected = RELEASE_INFO if Path("api/_release.json").exists() else {}; actual = json.loads(os.environ["TALARIA_PROVENANCE"]); assert actual == expected, "Container label must match stamped Web provenance"'
+RUN node --input-type=module -e 'import { existsSync } from "node:fs"; import { loadReleaseInfo } from "/apptoo/packages/server/dist/release.js"; const canon = (v) => JSON.stringify(v, Object.keys(v).sort()); const expected = existsSync("/apptoo/api/_release.json") ? loadReleaseInfo({ webRoot: "/apptoo" }) : {}; const actual = JSON.parse(process.env.TALARIA_PROVENANCE); if (canon(actual) !== canon(expected)) { console.error("Container label must match stamped Web provenance"); process.exit(1) }'
 
 # Default to binding all interfaces (required for container networking)
 ENV HERMES_WEBUI_HOST=0.0.0.0

@@ -52,7 +52,6 @@ upstream_dir="$monorepo_root/web"
 workspace_dir="$run_dir/workspace"
 hermes_home="$run_dir/hermes-home"
 state_dir="$run_dir/state"
-venv_dir="$run_dir/venv"
 responses_file="$run_dir/live-responses.json"
 mkdir -p "$workspace_dir" "$hermes_home" "$state_dir"
 printf 'talaria contract fixture\n' > "$workspace_dir/contract-fixture.txt"
@@ -76,7 +75,7 @@ if [[ -n "$candidate_ref" ]]; then
   mkdir -p "$upstream_dir"
   git -C "$monorepo_root" archive "${candidate_sha}:web" | tar -x -C "$upstream_dir"
 fi
-[[ -f "$upstream_dir/server.py" ]] || { echo "Missing checked-out web/server.py" >&2; exit 1; }
+[[ -f "$upstream_dir/package.json" ]] || { echo "Missing checked-out web/package.json" >&2; exit 1; }
 printf '%s\n' "$candidate_sha" > "$run_dir/candidate-sha.txt"
 {
   printf 'Monorepo commit: %s\nWeb tree: %s\n' "$candidate_sha" "$upstream_dir"
@@ -85,32 +84,44 @@ printf '%s\n' "$candidate_sha" > "$run_dir/candidate-sha.txt"
   fi
 } > "$run_dir/source-identity.log"
 
-echo "Preparing isolated Python environment"
-"${HERMES_WEBUI_TEST_PYTHON:-python3.13}" -m venv "$venv_dir"
-"$venv_dir/bin/python" -m pip install --disable-pip-version-check \
-  -r "$upstream_dir/requirements.txt" >"$run_dir/setup.log" 2>&1 || {
-    echo "Server fixture: Python environment setup failed; see $run_dir/setup.log" >&2
+echo "Preparing the Node server (contracts + server workspaces)"
+if [[ -n "$candidate_ref" || ! -f "$upstream_dir/packages/server/dist/bin/talaria-web.js" ]]; then
+  (
+    cd "$upstream_dir"
+    npm ci --no-audit --no-fund --workspace packages/contracts --workspace packages/server --include=dev
+    npm run build --workspace packages/contracts
+    npm run build --workspace packages/server
+  ) >"$run_dir/setup.log" 2>&1 || {
+    echo "Server fixture: Node workspace setup failed; see $run_dir/setup.log" >&2
     exit 1
   }
+fi
 
-port="$("$venv_dir/bin/python" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+port="$(node -e 'const s=require("node:net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
 password="talaria-contract-password"
+python_bin="$(command -v python3)"
 typeset -a loader_environment
 loader_environment=()
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
+# The fixture replay sidecar answers every Agent-backed route from recorded
+# fixtures and stages the approval the SSE probe expects; no Hermes Agent,
+# provider, or network is involved.
 (
   cd "$upstream_dir"
   env -i "${loader_environment[@]}" \
-    PATH="$venv_dir/bin:/usr/bin:/bin" \
+    PATH="$(dirname "$(command -v node)"):$(dirname "$python_bin"):/usr/bin:/bin" \
     HOME="$run_dir/home" \
-    PYTHONPATH="$upstream_dir" \
     HERMES_HOME="$hermes_home" \
     HERMES_WEBUI_STATE_DIR="$state_dir" \
     HERMES_WEBUI_DEFAULT_WORKSPACE="$workspace_dir" \
     HERMES_WEBUI_HOST=127.0.0.1 \
     HERMES_WEBUI_PORT="$port" \
     HERMES_WEBUI_PASSWORD="$password" \
-    "$venv_dir/bin/python" server.py
+    HERMES_WEBUI_SKIP_ONBOARDING=1 \
+    HERMES_WEBUI_TEST_NETWORK_BLOCK=1 \
+    HERMES_WEBUI_SIDECAR_COMMAND="[\"$python_bin\", \"$upstream_dir/sidecar/scripts/replay_sidecar.py\"]" \
+    TALARIA_WEB_WORKER=1 \
+    node packages/server/dist/bin/talaria-web.js serve
 ) >"$run_dir/server.log" 2>&1 &
 server_pid=$!
 

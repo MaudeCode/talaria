@@ -29,7 +29,6 @@ class PlanTests(unittest.TestCase):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repository / name, target)
-        (self.root / "web/UPSTREAM_BASE_SHA").write_text(base + "\n")
         self.git("add", ".")
         self.git("commit", "-m", "synthetic release source")
         self.source = self.git("rev-parse", "HEAD")

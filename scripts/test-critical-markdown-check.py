@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/critical_markdown_check.py — the docs-CI critical-markdown gate.
+"""Tests for scripts/critical-markdown-check.py — the docs-CI critical-markdown gate.
 
 The checker must flag ONLY catastrophic rendering breaks (a newline that splits an
 inline-link destination, or an unclosed inline link) and nothing that renders fine.
@@ -7,17 +7,16 @@ Each case is asserted against the intended CommonMark behavior. Where markdown-i
 is installed the test additionally cross-checks the checker's verdict against the
 reference parser; when it isn't, the hand-labeled expectations still run.
 
-Run: pytest scripts/test_critical_markdown_check.py -v
+Run: python3 scripts/test-critical-markdown-check.py
 """
 import importlib.util
 import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
 
 _spec = importlib.util.spec_from_file_location(
     "critical_markdown_check",
-    str(Path(__file__).with_name("critical_markdown_check.py")),
+    str(Path(__file__).with_name("critical-markdown-check.py")),
 )
 cmc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cmc)
@@ -96,40 +95,44 @@ SPEC_DIVERGENT = [
 ]
 
 
-@pytest.mark.parametrize("name,src,should_flag", CASES, ids=[c[0] for c in CASES])
-def test_checker_verdict(name, src, should_flag):
-    assert _flags(src) is should_flag
+class CriticalMarkdownTests(unittest.TestCase):
+    def test_checker_verdict(self):
+        for name, src, should_flag in CASES:
+            with self.subTest(name=name):
+                self.assertIs(_flags(src), should_flag)
+
+    def test_spec_divergent_verdict(self):
+        # Follow the formal GFM grammar / GitHub rendering, not markdown-it-py's permissive
+        # behavior — so these are asserted by hand, not cross-checked against the parser.
+        for name, src, should_flag in SPEC_DIVERGENT:
+            with self.subTest(name=name):
+                self.assertIs(_flags(src), should_flag)
+
+    def test_agrees_with_commonmark(self):
+        if _MD is None:
+            self.skipTest("markdown-it-py not installed")
+        # The checker should flag exactly the cases that do NOT render as a link/image.
+        for name, src, _should_flag in CASES:
+            with self.subTest(name=name):
+                self.assertIs(_flags(src), not _renders(src))
+
+    def test_code_spans_never_flagged(self):
+        for name, src in CODE_SAFE:
+            with self.subTest(name=name):
+                self.assertIs(_flags(src), False)
+
+    def test_empty_and_missing_inputs(self):
+        # No files -> ok (exit 0 path).
+        self.assertEqual(cmc.main(["prog"]), 0)
+        # A file with no links -> no problems.
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as tf:
+            tf.write("# Title\n\nJust prose, no links.\n")
+            p = Path(tf.name)
+        try:
+            self.assertEqual(cmc.check_file(p), [])
+        finally:
+            p.unlink()
 
 
-@pytest.mark.parametrize("name,src,should_flag", SPEC_DIVERGENT,
-                         ids=[c[0] for c in SPEC_DIVERGENT])
-def test_spec_divergent_verdict(name, src, should_flag):
-    # Follow the formal GFM grammar / GitHub rendering, not markdown-it-py's permissive
-    # behavior — so these are asserted by hand, not cross-checked against the parser.
-    assert _flags(src) is should_flag
-
-
-@pytest.mark.parametrize("name,src,should_flag", CASES, ids=[c[0] for c in CASES])
-def test_agrees_with_commonmark(name, src, should_flag):
-    if _MD is None:
-        pytest.skip("markdown-it-py not installed")
-    # The checker should flag exactly the cases that do NOT render as a link/image.
-    assert _flags(src) is (not _renders(src))
-
-
-@pytest.mark.parametrize("name,src", CODE_SAFE, ids=[c[0] for c in CODE_SAFE])
-def test_code_spans_never_flagged(name, src):
-    assert _flags(src) is False
-
-
-def test_empty_and_missing_inputs():
-    # No files -> ok (exit 0 path).
-    assert cmc.main(["prog"]) == 0
-    # A file with no links -> no problems.
-    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as tf:
-        tf.write("# Title\n\nJust prose, no links.\n")
-        p = Path(tf.name)
-    try:
-        assert cmc.check_file(p) == []
-    finally:
-        p.unlink()
+if __name__ == "__main__":
+    unittest.main()

@@ -42,3 +42,14 @@ describe('Agent discovery', () => {
     expect(discoverAgentPython({}, null)).toBeNull()
   })
 })
+
+describe('scripted sidecar command', () => {
+  it('parses a JSON array or a whitespace command and rejects malformed values', async () => {
+    const { scriptedSidecarCommand } = await import('./discover.js')
+    expect(scriptedSidecarCommand({})).toBeNull()
+    expect(scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: ' ' })).toBeNull()
+    expect(scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: '["python3", "/x y/replay.py"]' })).toEqual(['python3', '/x y/replay.py'])
+    expect(scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: 'python3 replay.py --flag' })).toEqual(['python3', 'replay.py', '--flag'])
+    expect(() => scriptedSidecarCommand({ HERMES_WEBUI_SIDECAR_COMMAND: '[1]' })).toThrow('JSON array')
+  })
+})

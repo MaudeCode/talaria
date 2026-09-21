@@ -28,7 +28,7 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('HERMES_')) env[k] = v
   // The isolated HERMES_HOME hides the developer's Agent checkout; point the sidecar at it explicitly (same default as sidecar/scripts/test.sh).
   env.HERMES_WEBUI_AGENT_DIR = process.env.HERMES_WEBUI_AGENT_DIR ?? join(process.env.HOME ?? '', '.hermes', 'hermes-agent')
-  if (process.env.HERMES_WEBUI_PYTHON) env.HERMES_WEBUI_PYTHON = process.env.HERMES_WEBUI_PYTHON
+  for (const key of ['HERMES_WEBUI_PYTHON', 'HERMES_WEBUI_SIDECAR_COMMAND']) if (process.env[key]) env[key] = process.env[key]
   Object.assign(env, {
     HERMES_WEBUI_PORT: port,
     HERMES_WEBUI_HOST: '127.0.0.1',
@@ -48,7 +48,8 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   const fd = openSync(log, 'w')
   ensureServerBuilt()
   env.TALARIA_WEB_ROOT = REPO_ROOT
-  const child: ChildProcess = spawn(process.execPath, [SERVER_BIN], { cwd: REPO_ROOT, env, stdio: ['ignore', fd, fd], detached: true })
+  // Foreground keeps the launcher attached as the supervisor of the server worker; SIGTERM to it stops both.
+  const child: ChildProcess = spawn(process.execPath, [SERVER_BIN, '--foreground', '--no-browser'], { cwd: REPO_ROOT, env, stdio: ['ignore', fd, fd], detached: true })
   child.unref()
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {

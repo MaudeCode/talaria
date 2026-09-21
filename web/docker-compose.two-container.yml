@@ -5,8 +5,8 @@
 #   Open http://localhost:8787
 #
 # This runs the agent and web UI in separate containers connected via shared
-# Docker volumes. The WebUI installs the agent's Python dependencies from the
-# shared agent source volume at startup.
+# Docker volumes. The WebUI builds the Agent virtual environment its Python
+# sidecar runs on from the shared agent source volume at startup.
 #
 # WHEN TO USE THIS:
 #   - You want isolation between the agent gateway and the WebUI
@@ -103,8 +103,8 @@ services:
       # Same hermes home as the agent — shares config, sessions, state
       - hermes-home:/home/hermeswebui/.hermes
       # Agent source mounted where docker_init.bash expects it.
-      # Mounted read-only — the WebUI only reads this volume to install
-      # the agent's Python dependencies at startup (`uv pip install`).
+      # Mounted read-only — the WebUI only reads this volume to build the
+      # sidecar's Agent virtual environment at startup (`uv pip install`).
       # Read-only enforces that defence-in-depth at the kernel layer.
       - hermes-agent-src:/home/hermeswebui/.hermes/hermes-agent:ro
       # Workspace directory — browse and edit files from the WebUI.

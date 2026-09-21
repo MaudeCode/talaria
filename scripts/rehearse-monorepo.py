@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def verify_web_base(repo, recipe, env):
     command = ["git", "-C", str(repo)]
+    listed = subprocess.run(command + ["ls-tree", "--name-only", recipe, "web/UPSTREAM_BASE_SHA"],
+                            env=env, text=True, capture_output=True, check=True).stdout.strip()
+    if not listed:
+        return  # Public upstream imports were retired with the TypeScript backend.
     pin = subprocess.check_output(command + ["show", f"{recipe}:web/UPSTREAM_BASE_SHA"],
                                   env=env, text=True, stderr=subprocess.PIPE).strip()
     if not re.fullmatch(r"[a-f0-9]{40}", pin):

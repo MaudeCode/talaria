@@ -7,20 +7,8 @@ if [[ $# -gt 0 ]]; then shift; fi
 case "$component" in
   app) exec app/scripts/test-ios "$@" ;;
   web)
-    cd web
-    # Test-owned HOME prevents Agent and credential discovery outside this run.
-    "$root/scripts/check-web-python" "$@"
-    npm ci --no-audit --no-fund
-    npm run build -w packages/contracts
-    npm run lint -w packages/contracts
-    npm run lint -w packages/server
-    npm run typecheck -w packages/contracts
-    npm run typecheck -w packages/server
-    npm test -w packages/contracts
-    npm test -w packages/server
-    npm run openapi
-    git diff --exit-code -- "$root/contracts/web-api.openapi.json"
-    cd packages/frontend
+    "$root/scripts/check-web-server" "$@"
+    cd web/packages/frontend
     npm run i18n:gate
     npm run typecheck
     npm run lint
@@ -39,7 +27,7 @@ case "$component" in
   tooling)
     python3 scripts/rehearse-monorepo.py --verify-only
     python3 scripts/changed-components.py --self-test
-    python3 scripts/test-monorepo-import.py
+    python3 scripts/test-critical-markdown-check.py
     scripts/check-releases
     python3 app/ci/release_notes_test.py
     python3 app/ci/load_env_test.py

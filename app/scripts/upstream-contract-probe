@@ -369,17 +369,19 @@ class Probe:
             raise ContractFailure(
                 f"SSE initial event: unexpected event {event!r} {payload!r}"
             )
-        self.request(
-            "SSE fixture injection",
-            "/api/approval/inject_test?"
-            + urllib.parse.urlencode(
-                {
-                    "session_id": session_id,
-                    "pattern_key": "talaria_contract_fixture",
-                    "command": "printf talaria-contract",
-                }
+        # The fixture replay sidecar stages one approval when a turn starts; the
+        # legacy inject_test route was dropped with the TypeScript backend.
+        started = self.require_keys(
+            "SSE fixture turn",
+            self.request(
+                "SSE fixture turn",
+                "/api/chat/start",
+                method="POST",
+                body={"session_id": session_id, "message": "talaria contract fixture"},
             ),
+            "stream_id",
         )
+        self.fixtures["chat_start"] = started
         event, payload = self.read_sse_event(
             stream_response, "SSE approval event"
         )

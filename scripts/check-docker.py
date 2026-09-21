@@ -23,7 +23,7 @@ def main():
     try:
         subprocess.run(["docker", "build", "-t", image, str(ROOT / "web")], check=True)
         subprocess.run(["docker", "run", "--rm", "--entrypoint", "/bin/sh", image, "-c",
-                        "test ! -e /apptoo/.venv && test ! -e /apptoo/.codex-tmp && test ! -e /apptoo/api/_scm_version.py"], check=True)
+                        "test ! -e /apptoo/.venv && test ! -e /apptoo/.codex-tmp && test ! -e /apptoo/packages/frontend/node_modules && test -f /apptoo/packages/server/dist/bin/talaria-web.js"], check=True)
         for variant in selected:
             with tempfile.TemporaryDirectory(prefix="talaria-docker-") as temporary:
                 state = Path(temporary)

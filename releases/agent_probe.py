@@ -21,9 +21,11 @@ home = Path(os.environ["HERMES_HOME"])
 home.mkdir(parents=True, exist_ok=True)
 for module in ("run_agent", "hermes_cli.runtime_provider", "agent.auxiliary_client", "agent.model_metadata"):
     importlib.import_module(module)
-from api.agent_sessions import read_importable_agent_session_rows
+import sqlite3
+
 from hermes_cli import __version__
 from hermes_state import SessionDB
+from talaria_sidecar.methods import state_db as sidecar_state_db
 
 assert __version__ == sys.argv[1], (__version__, sys.argv[1])
 database = home / "compatibility.db"
@@ -34,7 +36,12 @@ try:
     db.append_message("talaria-synthetic-session", role="assistant", content="Synthetic response")
 finally:
     db.close()
-rows = read_importable_agent_session_rows(database)
-assert len(rows) == 1 and rows[0]["id"] == "talaria-synthetic-session", rows
-assert rows[0]["message_count"] == 2, rows
-print(f"PASS Agent {__version__}: imports and real SessionDB -> Web projection")
+# The sidecar writes through the same SessionDB (state_db.* methods); the TypeScript
+# server projects the resulting rows read-only. Verify the write side and the row
+# shape that projection depends on.
+assert sidecar_state_db.sync_session_start(home, "talaria-sidecar-session", model="synthetic") is True
+with sqlite3.connect(database) as connection:
+    rows = connection.execute("SELECT id, (SELECT COUNT(*) FROM messages WHERE session_id = sessions.id) FROM sessions ORDER BY id").fetchall()
+assert rows[0] == ("talaria-sidecar-session", 0), rows
+assert rows[1] == ("talaria-synthetic-session", 2), rows
+print(f"PASS Agent {__version__}: imports, real SessionDB, and the sidecar write path")

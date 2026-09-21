@@ -55,9 +55,10 @@ class PublicationTests(unittest.TestCase):
         plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            wheel = root / "web-build/wheel/synthetic.whl"
-            wheel.parent.mkdir(parents=True)
-            wheel.write_bytes(b"synthetic")
+            for name in ("maudecode-talaria-web-contracts-1.0.0.tgz", "maudecode-talaria-web-1.0.0.tgz"):
+                tarball = root / "web-build/npm" / name
+                tarball.parent.mkdir(parents=True, exist_ok=True)
+                tarball.write_bytes(b"synthetic")
             for latest in (None, manifest["releaseSet"], "f" * 40):
                 releases = [] if latest is None else [{"tag_name": "release-set-" + latest,
                                                        "draft": False, "published_at": "2026-01-01"}]
@@ -111,9 +112,10 @@ class PublicationTests(unittest.TestCase):
                 if failure == "root-edit":
                     manifest["components"]["web"]["tag"] = "web-exp-v2.0.0"
                 plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
-                wheel = root / "web-build/wheel/talaria_web-1.0.0-py3-none-any.whl"
+                wheel = root / "web-build/npm/maudecode-talaria-web-1.0.0.tgz"
                 wheel.parent.mkdir(parents=True)
-                wheel.write_bytes(b"synthetic wheel")
+                wheel.write_bytes(b"synthetic tarball")
+                (root / "web-build/npm/maudecode-talaria-web-contracts-1.0.0.tgz").write_bytes(b"synthetic contracts tarball")
                 releases, assets, commands = {}, {}, []
                 failed = False
 
@@ -182,17 +184,19 @@ class PublicationTests(unittest.TestCase):
         plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
         with TemporaryDirectory() as temporary, patch("publish._publish_release") as run:
             root = Path(temporary)
-            with self.assertRaisesRegex(ValueError, "built wheel"):
+            with self.assertRaisesRegex(ValueError, "built npm tarballs"):
                 finalize(plan, manifest, None, root)
             run.assert_not_called()
-            wheel = root / "web-build/wheel/talaria_web-1.0.0-py3-none-any.whl"
+            wheel = root / "web-build/npm/maudecode-talaria-web-1.0.0.tgz"
             wheel.parent.mkdir(parents=True)
             wheel.write_bytes(b"synthetic archive; no publication")
+            contracts = root / "web-build/npm/maudecode-talaria-web-contracts-1.0.0.tgz"
+            contracts.write_bytes(b"synthetic contracts archive")
             finalize(plan, manifest, None, root)
             self.assertEqual(run.call_count, 4)
             self.assertEqual(run.call_args.args[0], "release-set-" + plan["releaseSet"])
             self.assertTrue(run.call_args.kwargs["latest"])
-            self.assertEqual(run.call_args_list[1].args[3], [wheel])
+            self.assertEqual(run.call_args_list[1].args[3], [wheel, contracts])
             run.reset_mock()
             broken = deepcopy(manifest)
             broken["agent"]["sourceRevision"] = "f" * 40
@@ -221,7 +225,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
         environments = {"relay-publish": "relay-production", "web-publish": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}
-        secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "app-publish": {
+        secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "web-publish": {"NPM_TOKEN"}, "app-publish": {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY"}}
         import re
         for name, job in document["jobs"].items():

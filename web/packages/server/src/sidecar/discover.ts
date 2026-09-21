@@ -95,8 +95,25 @@ export interface LaunchOptions extends DiscoverOptions {
   log: (line: string) => void
 }
 
+/** `HERMES_WEBUI_SIDECAR_COMMAND`: a JSON array (or whitespace-separated command) that replaces `<python> -m talaria_sidecar`, e.g. the fixture replay sidecar. */
+export function scriptedSidecarCommand(env: Record<string, string | undefined>): string[] | null {
+  const raw = (env.HERMES_WEBUI_SIDECAR_COMMAND ?? '').trim()
+  if (!raw) return null
+  if (raw.startsWith('[')) {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed) || !parsed.length || !parsed.every((v) => typeof v === 'string')) throw new Error('HERMES_WEBUI_SIDECAR_COMMAND must be a JSON array of strings')
+    return parsed
+  }
+  return raw.split(/\s+/)
+}
+
 /** Discover the Agent and spawn the sidecar on its venv; null when no Agent is installed (chat answers 503 `sidecar_unavailable`). */
 export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
+  const scripted = scriptedSidecarCommand(opts.env)
+  if (scripted) {
+    opts.log(`[sidecar] starting scripted sidecar ${scripted.join(' ')}`)
+    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, log: opts.log })
+  }
   const agentDir = discoverAgentDirForLaunch(opts)
   const python = discoverAgentPython(opts.env, agentDir)
   if (!agentDir || !python) {
