@@ -1,9 +1,12 @@
 """Newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation.
 
-One line per message. Requests dispatch on a worker thread each; a method may
-emit ``stream`` frames tagged with its request id before it returns its result.
+One line per message. Requests dispatch on a worker thread each, at most
+``max_calls`` at a time; beyond that a request is answered immediately with a
+``sidecar_busy`` error instead of growing the thread count. A method may emit
+``stream`` frames tagged with its request id before it returns its result.
 ``rpc.cancel`` sets the request's cancel event; the method decides how to stop
 and still returns (a result with ``status: "cancelled"`` or a CANCELLED error).
+Cancellation never takes a slot, so it always reaches the call it targets.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import traceback
 from typing import Any, Callable
 
 from .errors import (
+    APPLICATION_ERROR,
     INTERNAL_ERROR,
     INVALID_PARAMS,
     INVALID_REQUEST,
@@ -28,6 +32,8 @@ from .errors import (
 log = logging.getLogger("talaria_sidecar.rpc")
 
 Handler = Callable[["CallContext", dict], Any]
+
+DEFAULT_MAX_CALLS = 64
 
 
 class CallContext:
@@ -58,8 +64,9 @@ class CallContext:
 
 
 class RpcServer:
-    def __init__(self, methods: dict[str, Handler], *, stdin=None, stdout=None):
+    def __init__(self, methods: dict[str, Handler], *, stdin=None, stdout=None, max_calls: int = DEFAULT_MAX_CALLS):
         self.methods = dict(methods)
+        self._slots = threading.BoundedSemaphore(max(1, int(max_calls)))
         self.methods.setdefault("rpc.cancel", self._cancel)
         self.methods.setdefault("rpc.methods", lambda ctx, params: {"methods": sorted(self.methods)})
         self._in = stdin or sys.stdin.buffer
@@ -173,5 +180,14 @@ class RpcServer:
                 # Cancellation must not queue behind the call it targets.
                 self._dispatch(request)
                 continue
-            threading.Thread(target=self._dispatch, args=(request,), name=f"rpc-{request.get('method')}", daemon=True).start()
+            if not self._slots.acquire(blocking=False):
+                self._error(request.get("id"), APPLICATION_ERROR, "sidecar is at its concurrent call limit", {"condition": "sidecar_busy"})
+                continue
+            threading.Thread(target=self._dispatch_slot, args=(request,), name=f"rpc-{request.get('method')}", daemon=True).start()
         return self.exit_code
+
+    def _dispatch_slot(self, request: dict) -> None:
+        try:
+            self._dispatch(request)
+        finally:
+            self._slots.release()

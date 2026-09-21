@@ -1,6 +1,9 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { createTalariaMcpServer } from './server.js'
 
@@ -25,7 +28,7 @@ describe('talaria-web-mcp', () => {
   let s: TestServer
   let client: Client
   beforeAll(async () => {
-    s = await bootTestServer()
+    s = await bootTestServer({ sidecar: new FakeSidecar() })
     client = await connect(s)
   })
   afterAll(async () => { await client.close(); await s.close() })
@@ -84,6 +87,25 @@ describe('talaria-web-mcp', () => {
     const deleted = (await call(authed, 'delete_project', { project_id: project.project_id })) as Json
     expect(deleted).toEqual({ ok: true, deleted: 'Delta', unassigned_sessions: 1 })
     await authed.close()
+    await s.deps.settings.save({ _clear_password: true })
+    s.deps.auth.invalidatePasswordHashCache()
+  })
+
+  it('pins --profile through a session-signed cookie when auth is on, and refuses to fall back to the default profile', async () => {
+    mkdirSync(join(s.state, 'profiles', 'mcpprof'), { recursive: true })
+    await s.deps.settings.save({ _set_password: 'hunter22' })
+    s.deps.auth.invalidatePasswordHashCache()
+    const pinned = await connect(s, { password: 'hunter22', profile: 'mcpprof' })
+    const created = (await call(pinned, 'create_project', { name: 'Pinned' })) as Json
+    expect(created).toMatchObject({ name: 'Pinned', profile: 'mcpprof' })
+    expect(((await call(pinned, 'list_projects')) as Json[]).map((p) => p.name)).toContain('Pinned')
+    const owner = `${s.deps.auth.cookieName()}=${s.deps.auth.createSession({ authType: 'password' })}`
+    const defaultProjects = (await (await s.get('/api/projects', { headers: { cookie: owner } })).json()) as Json
+    expect((defaultProjects.projects as Json[]).map((p) => p.name)).not.toContain('Pinned')
+    await pinned.close()
+    const ghost = await connect(s, { password: 'hunter22', profile: 'no-such-profile' })
+    expect(await call(ghost, 'list_projects')).toMatchObject({ error: expect.stringContaining("Profile 'no-such-profile' could not be selected") as unknown })
+    await ghost.close()
     await s.deps.settings.save({ _clear_password: true })
     s.deps.auth.invalidatePasswordHashCache()
   })

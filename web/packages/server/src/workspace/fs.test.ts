@@ -2,8 +2,8 @@
 import { closeSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, PathTraversalError, rmtreeAnchored, unlinkAnchored } from './fs.js'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { FileExistsError, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, unlinkAnchored } from './fs.js'
 
 describe('anchored walk', () => {
   let root = ''
@@ -19,6 +19,7 @@ describe('anchored walk', () => {
     symlinkSync(join(outside, 'secret.txt'), join(root, 'a', 'link-file'))
   })
   afterAll(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }) })
+  afterEach(() => { vi.restoreAllMocks() })
 
   it('reads a real file through the walk', () => {
     const fd = openAnchoredFd(root, join(root, 'a', 'b', 'f.txt'), { wantDir: false })
@@ -54,5 +55,50 @@ describe('anchored walk', () => {
     makeAnchoredDir(root, join(root, 'made', 'dir'))
     expect(() => openAnchoredFd(root, join(outside, 'secret.txt'), { wantDir: false })).toThrow(PathTraversalError)
     expect(() => openAnchoredCreateFd(root, join(root, 'link-dir', 'evil.txt'))).toThrow(NotFoundError)
+  })
+
+  it('renames within and across directories through the walk and refuses an occupied destination', () => {
+    mkdirSync(join(root, 'ren', 'sub'), { recursive: true })
+    writeFileSync(join(root, 'ren', 'one.txt'), '1')
+    writeFileSync(join(root, 'ren', 'taken.txt'), 't')
+    renameAnchored(root, join(root, 'ren', 'one.txt'), join(root, 'ren', 'two.txt'))
+    expect(readFileSync(join(root, 'ren', 'two.txt'), 'utf8')).toBe('1')
+    renameAnchored(root, join(root, 'ren', 'two.txt'), join(root, 'ren', 'sub', 'two.txt'))
+    expect(readFileSync(join(root, 'ren', 'sub', 'two.txt'), 'utf8')).toBe('1')
+    expect(() => { renameAnchored(root, join(root, 'ren', 'sub', 'two.txt'), join(root, 'ren', 'taken.txt')) }).toThrow(FileExistsError)
+    expect(readFileSync(join(root, 'ren', 'taken.txt'), 'utf8')).toBe('t')
+    expect(() => { renameAnchored(root, join(root, 'ren', 'sub', 'two.txt'), join(outside, 'two.txt')) }).toThrow(PathTraversalError)
+  })
+
+  it('restores the working directory after a leaf operation succeeds or fails', () => {
+    const before = process.cwd()
+    closeSync(openAnchoredWriteFd(root, join(root, 'a', 'b', 'f.txt')))
+    expect(process.cwd()).toBe(before)
+    expect(() => openAnchoredWriteFd(root, join(root, 'a', 'b', 'missing.txt'))).toThrow(NotFoundError)
+    expect(process.cwd()).toBe(before)
+    writeFileSync(join(root, 'a', 'b', 'f.txt'), 'inside')
+  })
+
+  // The descriptor platform never resolves a pathname for the leaf; this exercises the cwd anchor used elsewhere.
+  it.runIf(process.platform !== 'linux')('a parent swapped for a symlink after the descriptor was opened cannot redirect the leaf write', () => {
+    mkdirSync(join(root, 'late'), { recursive: true })
+    writeFileSync(join(root, 'late', 'v.txt'), 'victim-inside')
+    writeFileSync(join(outside, 'v.txt'), 'victim-outside')
+    const realChdir = process.chdir.bind(process)
+    let swapped = false
+    vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
+      realChdir(dir)
+      if (!swapped && dir === join(root, 'late')) {
+        // The walk has finished and the leaf op is about to run: replace the pathname it would have used.
+        swapped = true
+        renameSync(join(root, 'late'), join(root, 'late-real'))
+        symlinkSync(outside, join(root, 'late'))
+      }
+    })
+    const fd = openAnchoredWriteFd(root, join(root, 'late', 'v.txt'))
+    closeSync(fd)
+    expect(swapped).toBe(true)
+    expect(readFileSync(join(outside, 'v.txt'), 'utf8')).toBe('victim-outside')
+    expect(readFileSync(join(root, 'late-real', 'v.txt'), 'utf8')).toBe('')
   })
 })

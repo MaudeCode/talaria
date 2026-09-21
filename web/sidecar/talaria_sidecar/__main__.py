@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .methods import build_methods
-from .rpc import RpcServer
+from .rpc import DEFAULT_MAX_CALLS, RpcServer
 from .runtime import AgentRuntime
 
 
@@ -36,7 +36,7 @@ def main() -> int:
         # Append, never prepend: the Agent venv's site-packages must win over
         # any same-named module in the checkout (api/config.py has the history).
         sys.path.append(str(runtime.agent_dir))
-    server = RpcServer(build_methods(runtime), stdout=rpc_out)
+    server = RpcServer(build_methods(runtime), stdout=rpc_out, max_calls=int(os.environ.get("TALARIA_SIDECAR_MAX_CALLS") or DEFAULT_MAX_CALLS))
     return server.serve_forever()
 
 

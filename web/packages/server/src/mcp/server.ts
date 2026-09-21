@@ -2,7 +2,10 @@
  * `talaria-web-mcp`: the seven project/session tools of Python `mcp_server.py`,
  * served over MCP. Every tool goes through the Web HTTP API (no in-process
  * state reads): a password from `HERMES_WEBUI_PASSWORD` logs in once and the
- * session cookie is reused; `--profile` pins the `hermes_profile` cookie.
+ * session cookie is reused; `--profile` pins the profile cookie. With auth on,
+ * the server only honours a profile cookie signed to the session, so the
+ * client obtains it from `/api/profile/switch` after login instead of
+ * synthesizing one.
  */
 import { readCapped } from '../http/capped.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -24,6 +27,7 @@ const AUTH_REUSE_S = 25 * 86400
 export class WebApiClient {
   private cookie: string | null = null
   private cookieExpires = 0
+  private profileCookie: string | null = null
   private readonly fetchImpl: typeof fetch
   private readonly now: () => number
 
@@ -37,8 +41,9 @@ export class WebApiClient {
     if (this.cookie && this.now() < this.cookieExpires) return this.cookie
     try {
       const res = await this.fetchImpl(`${this.opts.baseUrl}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: this.opts.password }), signal: AbortSignal.timeout(5000) })
-      const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0] ?? '').find((c) => c.includes('='))
+      const cookie = setCookies(res).find((c) => c.includes('='))
       if (cookie) {
+        this.profileCookie = this.opts.profile ? await this.signedProfileCookie(cookie) : null
         this.cookie = cookie
         this.cookieExpires = this.now() + AUTH_REUSE_S
         return cookie
@@ -47,12 +52,26 @@ export class WebApiClient {
     return null
   }
 
+  /** The session-signed profile cookie the switch route issues; null when the profile cannot be selected. */
+  private async signedProfileCookie(sessionCookie: string): Promise<string | null> {
+    const res = await this.fetchImpl(`${this.opts.baseUrl}/api/profile/switch`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sessionCookie }, body: JSON.stringify({ name: this.opts.profile }), signal: AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    const sessionName = sessionCookie.split('=')[0] ?? ''
+    return setCookies(res).find((c) => c.includes('=') && c.split('=')[0] !== sessionName) ?? null
+  }
+
   private async headers(json: boolean): Promise<Record<string, string>> {
     const headers: Record<string, string> = json ? { 'Content-Type': 'application/json' } : {}
     const cookies: string[] = []
     const auth = await this.auth()
-    if (auth) cookies.push(auth)
-    if (this.opts.profile) cookies.push(`hermes_profile=${encodeURIComponent(this.opts.profile)}`)
+    if (auth) {
+      cookies.push(auth)
+      if (this.opts.profile) {
+        // Never fall through to the process-default profile: an unsigned cookie is ignored once auth is on.
+        if (!this.profileCookie) throw new Error(`Profile '${this.opts.profile}' could not be selected`)
+        cookies.push(this.profileCookie)
+      }
+    } else if (this.opts.profile) cookies.push(`hermes_profile=${encodeURIComponent(this.opts.profile)}`)
     if (cookies.length) headers.Cookie = cookies.join('; ')
     return headers
   }
@@ -60,7 +79,8 @@ export class WebApiClient {
   private async request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Json> {
     let res: Response
     try {
-      res = await this.fetchImpl(`${this.opts.baseUrl}${path}`, { method, headers: await this.headers(body !== undefined), ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(5000) })
+      const headers = await this.headers(body !== undefined)
+      res = await this.fetchImpl(`${this.opts.baseUrl}${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(5000) })
     } catch (error) {
       return { error: `API unreachable: ${(error as Error).message}` }
     }
@@ -74,6 +94,10 @@ export class WebApiClient {
   get(path: string): Promise<Json> { return this.request('GET', path) }
   post(path: string, body: unknown): Promise<Json> { return this.request('POST', path, body) }
   hasAuth(): boolean { return Boolean(this.opts.password) }
+}
+
+function setCookies(res: Response): string[] {
+  return res.headers.getSetCookie().map((c) => c.split(';')[0] ?? '')
 }
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] })
