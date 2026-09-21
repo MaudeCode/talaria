@@ -424,6 +424,15 @@ export class ExtensionService {
   }
 
   /** Python `get_extension_status`. */
+  /** Python `get_extension_config()["enabled"]` for the bootstrap feature flag: a valid root with a loadable manifest. */
+  enabledSync(): boolean {
+    const d: Diagnostics = { warnings: [] }
+    const root = this.root()
+    if (!root) return false
+    const [manifest] = this.loadManifest(root, d)
+    return manifest !== null
+  }
+
   async status(): Promise<Dict> {
     const d: Diagnostics = { warnings: [] }
     const envDir = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()

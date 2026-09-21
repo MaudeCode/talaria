@@ -124,3 +124,50 @@ describe('runner event projection', () => {
     expect((out.messages as Json[])[0]).toEqual({ role: 'assistant', content: 'visible' })
   })
 })
+
+describe('runtime seams from review round 10', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  const synced: Json[] = []
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('state_db.sync_title', (params) => { synced.push(params); return { ok: true as const } })
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  it('a provider-qualified model is split before it is persisted or sent to the sidecar', async () => {
+    const created = (await json(await post(s, '/api/session/new', { model: '@nous:openai/gpt-5.4-mini' }))).session as Json
+    expect(created).toMatchObject({ model: 'openai/gpt-5.4-mini', model_provider: 'nous' })
+    let seen: Json | null = null
+    sidecar.respond('chat.start', (params) => { seen = params; return { status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
+    const started = await json(await post(s, '/api/chat/start', { session_id: created.session_id, message: 'hi', model: '@nous:openai/gpt-5.4-mini' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done')
+    expect(seen).toMatchObject({ model: 'openai/gpt-5.4-mini', model_provider: 'nous' })
+    const updated = (await json(await post(s, '/api/session/update', { session_id: created.session_id, model: '@openrouter:anthropic/claude-sonnet-4.6' }))).session as Json
+    expect(updated).toMatchObject({ model: 'anthropic/claude-sonnet-4.6', model_provider: 'openrouter' })
+  })
+
+  it('renaming a session syncs the title to state.db only when sync_to_insights is on', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    await post(s, '/api/session/rename', { session_id: sid, title: 'quiet' })
+    expect(synced).toEqual([])
+    await s.deps.settings.save({ sync_to_insights: true })
+    await post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state })
+  })
+
+  it('the bootstrap feature flags come from runtime state', async () => {
+    const features = (await json(await s.get('/api/bootstrap'))).features as Json
+    expect(features).toEqual({ dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false })
+  })
+
+  it('the per-identity stream budget defaults to eight', () => {
+    const claims: (() => void)[] = []
+    for (let i = 0; i < 8; i += 1) { const c = s.deps.streamSlots.claim('one'); expect(c, String(i)).not.toBeNull(); if (c) claims.push(c) }
+    expect(s.deps.streamSlots.claim('one')).toBeNull()
+    expect(s.deps.streamSlots.claim('two')).not.toBeNull()
+    for (const c of claims) c()
+  })
+})

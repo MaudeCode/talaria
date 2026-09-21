@@ -43,7 +43,7 @@ import { PendingPrompts } from './sessions/pending.js'
 import { RunJournal } from './sessions/journal.js'
 import { BackgroundTasks } from './api/chat-router.js'
 import { StreamSlots } from './api/sse-routes.js'
-import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict } from './config/agent-config.js'
+import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, parseProviderQualifiedModel } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
@@ -53,6 +53,7 @@ import { WindowLimiter } from './api/tools-router.js'
 import { CronService } from './tools/crons.js'
 import { KanbanService } from './tools/kanban.js'
 import { ExtensionService } from './tools/extensions.js'
+import { dashboardStatus } from './tools/health.js'
 import { TerminalRegistry } from './tools/terminal.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
@@ -223,9 +224,23 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     attachmentDir,
     hermesHome: config.hermesHome,
     home,
-    syncTitle: () => undefined,
+    // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.
+    syncTitle: (session) => {
+      if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
+      sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title }).catch((error: unknown) => { log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`) })
+    },
     contextLengthFor: () => null,
-    modelStateFromRequest: (model, requestedProvider, currentProvider) => [typeof model === 'string' && model.trim() ? model.trim() : null, typeof requestedProvider === 'string' && requestedProvider.trim() ? requestedProvider.trim() : currentProvider],
+    // Python `_session_model_state_from_request`: a provider-qualified id (`@nous:openai/gpt-5.4-mini`) is split so the
+    // sidecar receives the bare model and the explicit provider wins over the requested one.
+    modelStateFromRequest: (model, requestedProvider, currentProvider) => {
+      const raw = typeof model === 'string' ? model.trim() : ''
+      let provider = typeof requestedProvider === 'string' && requestedProvider.trim() ? requestedProvider.trim() : null
+      if (!raw) return [null, provider]
+      const parsed = parseProviderQualifiedModel(raw)
+      if (parsed) return [parsed[0], parsed[1]]
+      if (requestedProvider === undefined && !provider) provider = currentProvider
+      return [raw, provider]
+    },
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
   })
   const git = new GitRunner({ env })
@@ -234,7 +249,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
   const background = new BackgroundTasks(now)
-  const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 64 })
+  // Python `_MAX_SSE_CLIENTS_PER_IDENTITY`: eight concurrent streams per client identity unless overridden.
+  const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
   const mediaActiveWorkspace = (): string | null => {
     if (!workspaces.profileSupportsLocalIo(null)) return null
     try {
@@ -327,6 +343,16 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   completions = new CompletionDrain({ sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
   const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
+  // Dashboard reachability is probed in the background (Python `dashboard_probe.get_dashboard_status`), never per request.
+  let dashboardRunning = false
+  let dashboardCheckedAt = 0
+  const refreshDashboard = (): void => {
+    const at = now()
+    if (at - dashboardCheckedAt < 30) return
+    dashboardCheckedAt = at
+    agentConfig.read(profileHome(activeProfile())).then((cfg) => dashboardStatus(cfg, env, lazyFetch)).then((status) => { dashboardRunning = status.running === true }).catch(() => { dashboardRunning = false })
+  }
+  const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
   const deps: AppDeps = {
     config,
     settings,
@@ -339,7 +365,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     startedAt: now(),
     log,
     stats: { requestsTotal: 0, lastRequestAt: 0 },
-    features: () => ({ dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false }),
+    // Python bootstrap `features`: live dashboard, remote terminal backend, extensions enabled, isolated mode.
+    features: () => { refreshDashboard(); return { dashboard: dashboardRunning, terminal_remote_backend: !workspaces.profileSupportsLocalIo(activeProfile()), extensions: extensionsEnabled(), single_profile_mode: isolatedProfileMode() } },
     activeProfile,
     requestScope,
     isRootProfile,
