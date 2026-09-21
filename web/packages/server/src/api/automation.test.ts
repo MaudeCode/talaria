@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
@@ -14,7 +14,7 @@ import { jobForApi, jobFieldUpdates } from '../tools/crons.js'
 import { readZip } from '../workspace/unzip.js'
 import { normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
-import { TerminalRegistry } from '../tools/terminal.js'
+import { CLOSED_RETENTION_MS, TerminalRegistry } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
 
 type Json = Record<string, unknown>
@@ -258,16 +258,55 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(existsSync(join(s.state, 'extensions', 'ext-one'))).toBe(false)
   })
 
+  it('a shell that exits before the viewer attaches still replays its output and exit code, and the entry is retired later', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
+    const proc = pty.spawned.at(-1)!
+    proc.emit('login shell says bye\n')
+    proc.exit(3)
+    // Late attach: the closed terminal is still there with its backlog and exit code.
+    const frames = await s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 5_000 })
+    expect(frames.map((f) => f.event)).toEqual(['output', 'terminal_closed'])
+    expect(frames[1]?.data).toEqual({ exit_code: 3 })
+    expect((await post(s, '/api/terminal/input', { session_id: sid, data: 'x' })).status).toBe(404)
+    const registry = s.deps.terminals
+    expect(registry.get(sid)?.closed).toBe(true)
+    // The reaper retires it once the retention window passes; a new start replaces it meanwhile.
+    expect(registry.reapIdle(Date.now() + CLOSED_RETENTION_MS + 1)).toBeGreaterThanOrEqual(1)
+    expect(registry.get(sid)).toBeNull()
+    expect((await s.get(`/api/terminal/output?session_id=${sid}`)).status).toBe(404)
+  })
+
+  it('closeAll({ immediate: true }) hangs up and kills every shell synchronously for process exit', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
+    const proc = pty.spawned.at(-1)!
+    const killed: [number, string][] = []
+    const spy = vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: string | number) => { killed.push([pid, String(signal)]); return true })
+    try {
+      s.deps.terminals.closeAll({ immediate: true })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(proc.killed).toContain('SIGHUP')
+    expect(killed).toEqual([[-proc.pid, 'SIGKILL']])
+    expect(s.deps.terminals.get(sid)).toBeNull()
+    expect((await s.get(`/api/terminal/output?session_id=${sid}`)).status).toBe(404)
+  })
+
   it('terminal start/input/resize/output/close with the pty stub, gated to local origins', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    const spawnedBefore = pty.spawned.length
     let res = await post(s, '/api/terminal/start', { session_id: sid, rows: 500, cols: 10 })
     expect(res.status).toBe(200)
     let body = await json(res)
     expect(body).toMatchObject({ ok: true, session_id: sid, running: true })
-    const proc = pty.spawned[0]!
-    expect(pty.opts[0]).toMatchObject({ rows: 80, cols: 20, env: { TERM: 'xterm-256color', HERMES_WEBUI_TERMINAL: '1' } })
-    expect((pty.opts[0]?.env as Json).SECRET).toBeUndefined()
+    const proc = pty.spawned.at(-1)!
+    expect(pty.opts.at(-1)).toMatchObject({ rows: 80, cols: 20, env: { TERM: 'xterm-256color', HERMES_WEBUI_TERMINAL: '1' } })
+    expect((pty.opts.at(-1)?.env as Json).SECRET).toBeUndefined()
     res = await post(s, '/api/terminal/input', { session_id: sid, data: 'ls\n' })
     expect(await json(res)).toEqual({ ok: true })
     expect(proc.written).toEqual(['ls\n'])
@@ -289,7 +328,7 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(res.status).toBe(200)
     body = await json(res)
     expect(body.running).toBe(true)
-    expect(pty.spawned).toHaveLength(2)
+    expect(pty.spawned).toHaveLength(spawnedBefore + 2)
   })
   it('a live terminal locks its worktree, and deleting the session closes the terminal [py:test_issue2057_worktree_status.py::test_worktree_status_reports_live_terminal_lock]', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)

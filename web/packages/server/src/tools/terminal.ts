@@ -16,6 +16,8 @@ export interface PtyModuleLike { spawn: (file: string, args: string[], opts: { n
 const BACKLOG_MAX = 2000
 const MAX_TERMINALS = 32
 const IDLE_GRACE_MS = 900_000
+/** How long an exited terminal stays attachable so a viewer that connects late still replays its output and exit code. */
+export const CLOSED_RETENTION_MS = 60_000
 const SAFE_ENV_KEYS = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES', 'LANGUAGE', 'TZ', 'TMPDIR', 'TEMP', 'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'])
 
 export function loadPty(): PtyModuleLike | null {
@@ -41,6 +43,8 @@ export class TerminalSession {
   rows = 24
   cols = 80
   closed = false
+  /** When the shell exited or was torn down (`now()` clock); null while alive. */
+  closedAt: number | null = null
   exitCode: number | null = null
   lastActivity: number
   unwatchedSince: number | null
@@ -98,7 +102,9 @@ export class TerminalRegistry {
   reapIdle(now = this.deps.now()): number {
     let reaped = 0
     for (const [sid, term] of this.terminals) {
-      if (term.unwatchedSince !== null && now - term.unwatchedSince >= IDLE_GRACE_MS) { this.terminals.delete(sid); this.teardown(term); reaped += 1 }
+      const idle = term.unwatchedSince !== null && now - term.unwatchedSince >= IDLE_GRACE_MS
+      const retired = term.closed && term.closedAt !== null && now - term.closedAt >= CLOSED_RETENTION_MS
+      if (idle || retired) { this.terminals.delete(sid); this.teardown(term); reaped += 1 }
     }
     return reaped
   }
@@ -138,9 +144,10 @@ export class TerminalRegistry {
     proc.onExit(({ exitCode }) => {
       if (term.closed) return
       term.closed = true
+      term.closedAt = this.deps.now()
       term.exitCode = exitCode
+      // The entry stays attachable (backlog + exit code) until a viewer closes it or the reaper retires it.
       term.put('terminal_closed', { exit_code: exitCode })
-      if (this.terminals.get(sid) === term) this.terminals.delete(sid)
     })
     this.terminals.set(sid, term)
     this.ensureReaper()
@@ -172,17 +179,21 @@ export class TerminalRegistry {
     return true
   }
 
-  closeAll(): void {
-    for (const [sid, term] of this.terminals) { this.terminals.delete(sid); this.teardown(term) }
+  /** Close every terminal; `immediate` also SIGKILLs the process groups now (the process is exiting and no timer will run). */
+  closeAll(opts: { immediate?: boolean } = {}): void {
+    for (const [sid, term] of this.terminals) { this.terminals.delete(sid); this.teardown(term, opts.immediate ?? false) }
     if (this.reaper) { clearInterval(this.reaper); this.reaper = null }
   }
 
-  private teardown(term: TerminalSession): void {
+  private teardown(term: TerminalSession, immediate = false): void {
     if (term.closed) return
     term.closed = true
+    term.closedAt = this.deps.now()
     try { term.proc.kill('SIGHUP') } catch { /* gone */ }
     const pid = term.proc.pid
-    const killer = setTimeout(() => { try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } } }, 1_500)
+    const killGroup = (): void => { try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } } }
+    if (immediate) { killGroup(); term.put('terminal_closed', { exit_code: term.exitCode }); return }
+    const killer = setTimeout(killGroup, 1_500)
     killer.unref()
     term.put('terminal_closed', { exit_code: term.exitCode })
   }

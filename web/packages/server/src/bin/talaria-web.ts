@@ -47,6 +47,8 @@ async function serve(args: string[]): Promise<number> {
     }
   }
   const deps = createDeps({ webRoot, sidecar })
+  // Every exit path (SIGINT/SIGTERM shutdown, `/api/shutdown`, self-update restart) reaps embedded terminals first.
+  process.on('exit', () => { deps.terminals.closeAll({ immediate: true }) })
   // Renamed root profiles and the active profile's config must be known before the first request (Python read both
   // synchronously at startup); until then local-I/O gates fail closed.
   await deps.profiles.warmRootAliases()
