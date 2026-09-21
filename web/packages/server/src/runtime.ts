@@ -31,7 +31,7 @@ import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
 import { resolvePathLikePython } from './workspace/paths.js'
 import { existsSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { Session } from './sessions/session.js'
 import { GitRunner, GitWorkspaceError } from './workspace/git.js'
 import { RollbackStore } from './workspace/rollback.js'
@@ -116,7 +116,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   // the process default; a request's profile cookie or bound session overrides it for that request only, and
   // `activeProfile()` reads the request scope so every domain (sessions, workspaces, drains) sees the same answer.
   const requestScope = new AsyncLocalStorage<{ requestProfile: string | null }>()
-  const processProfile = readActiveProfileFile(config.hermesHome, PROFILE_RE)
+  // Python `_is_isolated_profile_mode`: the explicit startup opt-in AND a `.../profiles/<name>` shaped HERMES_HOME pin
+  // the process to that one profile (no switching, listing, creating, deleting, or cross-profile reads).
+  const isolatedProfile = truthy(env.HERMES_WEBUI_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null
+  const isolatedProfileMode = (): boolean => isolatedProfile !== null
+  const isolatedProfileName = (): string => isolatedProfile ?? 'default'
+  const processProfile = isolatedProfile ?? readActiveProfileFile(config.hermesHome, PROFILE_RE)
   const activeProfile = (): string => requestScope.getStore()?.requestProfile ?? processProfile
   // Python `_is_root_profile`: `default` plus any renamed root alias the Agent reports; bound to the profile service below.
   let rootAlias: (name: string) => boolean = () => false
@@ -127,7 +132,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     return r === a || (isRootProfile(r) && isRootProfile(a))
   }
   // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home.
-  const profileHome = (name: string): string => (name && !isRootProfile(name) && PROFILE_RE.test(name) ? join(config.hermesHome, 'profiles', name) : config.hermesHome)
+  const profileHome = (name: string): string => (name && name !== isolatedProfile && !isRootProfile(name) && PROFILE_RE.test(name) ? join(config.hermesHome, 'profiles', name) : config.hermesHome)
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
@@ -187,7 +192,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     now,
     log,
     activeProfile,
-    isolatedProfileMode: () => false,
+    isolatedProfileMode,
     profilesMatch,
     redactEnabled: () => { try { return settings.load().api_redact_enabled !== false } catch { return true } },
     pinnedSessionsLimit: () => { const v = settings.load().pinned_sessions_limit; return typeof v === 'number' && v >= 1 ? v : 3 },
@@ -278,8 +283,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     sidecar: () => sidecar,
     baseHome: config.hermesHome,
     profileHome,
-    isolatedProfileMode: () => false,
-    isolatedProfileName: () => 'default',
+    isolatedProfileMode,
+    isolatedProfileName,
     config: agentConfig,
     defaultWorkspace: (profile) => workspaces.profileDefaultWorkspace(profile),
     models: (h) => catalog.models(h),
@@ -339,7 +344,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     events,
     projects,
     workspaces,
-    isolatedProfileMode: () => false,
+    isolatedProfileMode,
     profilesMatch,
     // Python `_worktree_default_from_config`: only a real YAML `true` opts a profile's new sessions into worktrees.
     worktreeDefault: (profile) => agentConfig.peek(profileHome(profile ?? activeProfile()))?.worktree === true,
@@ -400,7 +405,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       profileHome,
       profileNames: async () => (await profiles.list('default')).map((r) => ({ name: String(r.name), visible: r.visible !== false })),
       profilesMatch,
-      isolatedProfileMode: () => false,
+      isolatedProfileMode,
       log,
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),

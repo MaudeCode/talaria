@@ -97,8 +97,9 @@
  *   web/tests/test_issues_907_908_909_model_dropdown.py
  * (issues #570, #572, #603, #604, #617, #644, #749, #1013, #1094, #1105, #1106, #1189, #1195, #1202, #1217, #1228, #1240, #1384, #1420, #1426, #1494, #1499, #1500, #1527, #1538, #1567, #1568, #1612, #1699, #1807, #1881, #1894, #1909, #2025, #2157, #2177, #2232, #2245, #2305, #2399, #2545, #2698, #2720, #2840, #2914, #2929, #3145, #3172, #3260, #3510, #3623, #3691, #3717, #3820, #3825, #3875, #3928, #3929, #3947, #3988, #4324, #4325, #4360, #4586, #4714, #4766, #4770, #4775, #4836, #4982, #5121, #5130, #5139, #5270, #5339, #5532, #5572, #6022, #6335, #6498, #6626, #6722, #6751, #7168, #7182, #7333, #7404, #7514, #7540, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -504,5 +505,38 @@ describe('catalog helpers', () => {
     expect(coerceReasoningEffort('silly', ['low'])).toBe('')
     expect(coerceReasoningEffort('max', [])).toBe('max')
     expect(splitProviderModel('@anthropic:claude-x', null)).toEqual(['claude-x', 'anthropic'])
+  })
+})
+
+describe('isolated profile mode', () => {
+  let s: TestServer
+  let home = ''
+  beforeAll(async () => {
+    const base = mkdtempSync(join(tmpdir(), 'talaria-isolated-'))
+    home = join(base, 'profiles', 'tenant')
+    mkdirSync(home, { recursive: true })
+    const sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: base, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'other', path: join(base, 'profiles', 'other'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
+  })
+  afterAll(async () => { await s.close(); rmSync(join(home, '..', '..'), { recursive: true, force: true }) })
+
+  it('pins the process to the HERMES_HOME profile and refuses every cross-profile surface', async () => {
+    expect(s.deps.isolatedProfileMode()).toBe(true)
+    expect(s.deps.activeProfile()).toBe('tenant')
+    expect(s.deps.profileHome('tenant')).toBe(home)
+    let body = await json(await s.get('/api/profiles'))
+    expect((body.profiles as Json[]).map((p) => p.name)).toEqual(['tenant'])
+    expect(body.single_profile_mode).toBe(true)
+    let res = await post(s, '/api/profile/switch', { name: 'other' })
+    expect(res.status).toBe(403)
+    res = await post(s, '/api/profile/create', { name: 'other2' })
+    expect(res.status).toBe(403)
+    res = await post(s, '/api/profile/delete', { name: 'other' })
+    expect(res.status).toBe(403)
+    body = await json(await s.get('/api/sessions?all_profiles=1'))
+    expect(body).toMatchObject({ active_profile: 'tenant', all_profiles: false })
+    body = await json(await s.get('/api/crons?all_profiles=1'))
+    expect(body.all_profiles).toBe(false)
   })
 })

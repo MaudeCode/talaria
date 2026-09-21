@@ -100,8 +100,8 @@ export const sessionsRouter = os.router({
     cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
   },
   session: {
+    // No visibility guard here: `detail()` answers 409 `session_profile_mismatch` so the frontend can switch to the owning profile.
     get: os.session.get.handler(({ input, context: { ctx } }) => run(() => {
-      guardVisibility(ctx, input.session_id)
       return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
     })),
     status: os.session.status.handler(({ input, context: { ctx } }) => run(() => {

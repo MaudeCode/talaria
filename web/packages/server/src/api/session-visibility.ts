@@ -10,7 +10,7 @@ import type { RequestContext } from '../http/context.js'
 import { isSafeSessionId } from '../sessions/session.js'
 
 /** Python `_request_session_visibility_exempt`: detail-load owns the mismatch so the frontend can switch profiles; import and chat/start (placeholder retag) run their own rules. */
-const EXEMPT_PROCEDURES = new Set(['sessions.get', 'sessions.import', 'chat.start'])
+const EXEMPT_PROCEDURES = new Set(['session.get', 'session.import', 'chat.start'])
 
 /** Python `_session_id_visible_to_request_profile`: unknown or unsafe ids fall through to the handler's own error. */
 export function sessionIdVisibleToRequest(ctx: RequestContext, sid: unknown): boolean {

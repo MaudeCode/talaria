@@ -182,10 +182,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   const fetched: string[] = []
   beforeAll(async () => {
     sidecar = new FakeSidecar()
-    const fakeFetch: typeof fetch = (input) => {
+    const fakeFetch: typeof fetch = (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       fetched.push(url)
       if (url.endsWith('/api/status')) return Promise.resolve(new Response(JSON.stringify({ version: '9.9.9', app: 'hermes-dashboard' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      if (url.includes('/audio/speech') && typeof init?.body === 'string' && init.body.includes('"input":"big"')) return Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(1024 * 1024)) } }), { status: 200, headers: { 'content-type': 'audio/mpeg' } }))
       if (url.includes('/audio/speech')) return Promise.resolve(new Response(Buffer.from('ID3fake-mp3'), { status: 200, headers: { 'content-type': 'audio/mpeg' } }))
       return Promise.resolve(new Response('nope', { status: 404 }))
     }
@@ -449,6 +450,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(503)
     writeFileSync(join(s.state, '.env'), 'OPENAI_API_KEY=sk-test-1234\n')
     chmodSync(join(s.state, '.env'), 0o600)
+    // An unbounded upstream body is cut off at the 16 MiB cap instead of being buffered.
+    res = await post(s, '/api/tts', { text: 'big', engine: 'openai' })
+    expect(res.status).toBe(500)
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'hi', engine: 'openai' })
     expect(res.status).toBe(200)

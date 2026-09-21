@@ -7,6 +7,7 @@ import { loadEnvFile } from '../providers/env-file.js'
 import { dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
+import { readCapped } from '../http/capped.js'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const CSP_MAX_BODY = 64 * 1024
@@ -73,8 +74,8 @@ function normalizedOpenAiBase(raw: string): string {
 async function bufferAudio(res: Response): Promise<Buffer> {
   const type = (res.headers.get('content-type') ?? '').toLowerCase()
   if (!type.startsWith('audio/') && !type.includes('octet-stream')) throw new Error(`unexpected content-type ${type}`)
-  const raw = Buffer.from(await res.arrayBuffer())
-  if (!raw.length || raw.length > TTS_MAX_AUDIO_BYTES) throw new Error('unexpected audio size')
+  const raw = await readCapped(res, TTS_MAX_AUDIO_BYTES)
+  if (!raw?.length) throw new Error('unexpected audio size')
   return raw
 }
 

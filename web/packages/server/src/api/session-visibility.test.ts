@@ -51,6 +51,13 @@ describe('request-profile session visibility', () => {
     // Detail load is exempt from the generic guard and reports the mismatch itself (frontend switches profile).
     expect((await s.get(`/api/session?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
     expect((await s.get(`/api/session?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
+    // A session that names its profile answers 409 so the frontend can offer to switch (Python detail-load behaviour).
+    const tagged = s.deps.sessionStore.get(sid)
+    tagged.profile = 'default'
+    s.deps.sessionStore.save(tagged)
+    const mismatch = await s.get(`/api/session?session_id=${sid}`, { headers: work.headers })
+    expect(mismatch.status).toBe(409)
+    expect(await mismatch.json()).toMatchObject({ code: 'session_profile_mismatch', profile: 'default' })
   })
 
   it('a body session_id outside the request profile answers 404 on every contract route', async () => {

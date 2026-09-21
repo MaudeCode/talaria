@@ -9,6 +9,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { terminalGate } from './automation-router.js'
 import { checkSameOriginBrowserRequest } from '../http/origin.js'
 import { str } from '../util.js'
+import { readCapped } from '../http/capped.js'
 import type { TerminalItem } from '../tools/terminal.js'
 
 const KANBAN_POLL_MS = 1_000
@@ -118,23 +119,6 @@ export function handleExtensionStatic(ctx: RequestContext): void {
   const headers: Record<string, string> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
   if (file.html) { headers['Content-Security-Policy'] = EXTENSION_PANEL_SANDBOX_CSP; headers['X-Frame-Options'] = 'SAMEORIGIN' }
   ctx.send({ status: 200, headers, body: file.body, security: true })
-}
-
-/** Python `_read_extension_sidecar_proxy_body`: read at most `cap` bytes, aborting the upstream stream past it (`null`). */
-async function readCapped(res: Response, cap: number): Promise<Buffer | null> {
-  if (!res.body) return Buffer.alloc(0)
-  const reader = (res.body as ReadableStream<Uint8Array>).getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    const value: Uint8Array = chunk.value
-    total += value.byteLength
-    if (total > cap) { await reader.cancel(); return null }
-    chunks.push(value)
-  }
-  return Buffer.concat(chunks)
 }
 
 export function matchSidecarProxy(path: string): [string, string] | null {

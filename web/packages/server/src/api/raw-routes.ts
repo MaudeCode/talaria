@@ -3,7 +3,7 @@
  * ZIPs, transcript exports, and multipart uploads. Each mirrors its Python
  * handler and reuses the anchored file helpers.
  */
-import { existsSync, readdirSync, readSync, closeSync, statSync, realpathSync } from 'node:fs'
+import { createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
@@ -229,7 +229,7 @@ function collectFolder(target: string, workspaceRoot: string, maxBytes: number, 
   return { files, total, limit: null }
 }
 
-function handleFolderDownload(ctx: RequestContext): void {
+async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id is required')
   const s = fileOpsSession(ctx, sid)
@@ -257,31 +257,27 @@ function handleFolderDownload(ctx: RequestContext): void {
     ctx.json({ error: 'folder too large', limit_bytes: maxBytes, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_MB' }, { status: 413 })
     return
   }
-  const chunks: Buffer[] = []
-  const zip = new ZipWriter((chunk) => chunks.push(chunk))
-  for (const [fp, arcname] of files) {
-    try {
-      const fd = openAnchoredFd(workspaceRoot, realpathSync(fp), { wantDir: false })
-      try {
-        const size = statSync(fp).size
-        const buf = Buffer.alloc(size)
-        let got = 0
-        while (got < size) {
-          const n = readSync(fd, buf, got, size - got, got)
-          if (n <= 0) break
-          got += n
-        }
-        zip.addFile(arcname, buf.subarray(0, got))
-      } finally {
-        closeSync(fd)
-      }
-    } catch (error) {
-      ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`)
-    }
-  }
-  zip.finish()
   const zipName = `${basename(target) || 'workspace'}.zip`
-  ctx.send({ status: 200, headers: { 'Content-Type': 'application/zip', 'Content-Disposition': contentDispositionValue('attachment', zipName), 'Cache-Control': 'no-store' }, body: Buffer.concat(chunks) })
+  ctx.res.writeHead(200, { ...ctx.securityHeaders(), 'Content-Type': 'application/zip', 'Content-Disposition': contentDispositionValue('attachment', zipName), 'Cache-Control': 'no-store' })
+  ctx.markFinished(200)
+  if (ctx.method === 'HEAD') { ctx.res.end(); return }
+  const zip = new ZipWriter(ctx.res)
+  try {
+    for (const [fp, arcname] of files) {
+      let fd: number
+      try {
+        fd = openAnchoredFd(workspaceRoot, realpathSync(fp), { wantDir: false })
+      } catch (error) {
+        ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`)
+        continue
+      }
+      // Skip (not abort) an entry that fails mid-read, as Python did; the archive stays valid.
+      try { await zip.addFile(arcname, createReadStream('', { fd, autoClose: true })) } catch (error) { if (ctx.res.destroyed) return; ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`) }
+    }
+    await zip.finish()
+  } finally {
+    ctx.res.end()
+  }
 }
 
 function handleSessionExport(ctx: RequestContext): void {
