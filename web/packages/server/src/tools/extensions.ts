@@ -182,6 +182,8 @@ interface State { version: 1; disabled_extensions: string[]; sidecar_proxy_conse
 export class ExtensionService {
   private registryCache: { at: number; entries: unknown[] } | null = null
   private registryInflight: Promise<unknown[]> | null = null
+  /** Read/validate/write of the state file runs one transaction at a time: `setConsent` awaits the sidecar probe mid-transaction. */
+  private stateLock: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly deps: ExtensionDeps) {}
 
@@ -467,12 +469,21 @@ export class ExtensionService {
     return { manifest, state, disabled: new Set(state.disabled_extensions) }
   }
 
-  async setEnabled(idRaw: unknown, enabled: unknown): Promise<Dict> {
+  private mutateState<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.stateLock.catch(() => undefined).then(fn)
+    this.stateLock = run
+    return run
+  }
+
+  setEnabled(idRaw: unknown, enabled: unknown): Promise<Dict> {
     if (!validId(idRaw)) throw new ExtensionError('Invalid extension id', 400)
     if (typeof enabled !== 'boolean') throw new ExtensionError('enabled must be a boolean', 400)
+    return this.mutateState(async () => this.setEnabledLocked(idRaw.trim(), enabled))
+  }
+
+  private async setEnabledLocked(id: string, enabled: boolean): Promise<Dict> {
     const root = this.root()
     if (!root) throw new ExtensionError('Extensions are not configured', 404)
-    const id = idRaw.trim()
     const d: Diagnostics = { warnings: [] }
     const { manifest, state, disabled } = this.loaded(root, d)
     const ext = this.extensionState(manifest, disabled, d, new Set(Object.keys(state.sidecar_proxy_consents)))
@@ -483,12 +494,15 @@ export class ExtensionService {
     return this.status()
   }
 
-  async setConsent(idRaw: unknown, approved: unknown): Promise<Dict> {
+  setConsent(idRaw: unknown, approved: unknown): Promise<Dict> {
     if (!validId(idRaw)) throw new ExtensionError('Invalid extension id', 400)
     if (typeof approved !== 'boolean') throw new ExtensionError('approved must be a boolean', 400)
+    return this.mutateState(() => this.setConsentLocked(idRaw.trim(), approved))
+  }
+
+  private async setConsentLocked(id: string, approved: boolean): Promise<Dict> {
     const root = this.root()
     if (!root) throw new ExtensionError('Extensions are not configured', 404)
-    const id = idRaw.trim()
     const d: Diagnostics = { warnings: [] }
     const { manifest, state, disabled } = this.loaded(root, d)
     const consents = { ...state.sidecar_proxy_consents }

@@ -3,7 +3,8 @@
  *   web/tests/test_issue6619_dotfile_archive_validator.py
  * (issues #6619) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -12,7 +13,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 import { jobForApi, jobFieldUpdates } from '../tools/crons.js'
 import { readZip } from '../workspace/unzip.js'
-import { normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
+import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
 import { CLOSED_RETENTION_MS, TerminalRegistry } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
@@ -445,5 +446,27 @@ describe('automation helpers', () => {
     off()
     reg.closeAll()
     expect(pty.spawned[1]?.killed).toEqual(['SIGHUP'])
+  })
+})
+
+describe('extension state transactions (review round 41)', () => {
+  it('a toggle that lands while a consent change awaits the auth probe is not overwritten by the consent write', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    const root = join(stateDir, 'ext-root')
+    mkdirSync(root)
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [{ id: 'ext-one', name: 'Ext One', sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567' } }] }))
+    let releaseAuth: (v: boolean) => void = () => undefined
+    const gate = new Promise<boolean>((r) => { releaseAuth = r })
+    const service = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => gate, fetch, log: () => undefined })
+    try {
+      const consent = service.setConsent('ext-one', true)
+      const toggle = service.setEnabled('ext-one', false)
+      await new Promise((r) => setTimeout(r, 20))
+      releaseAuth(false)
+      await Promise.all([consent, toggle])
+      expect(JSON.parse(readFileSync(join(stateDir, 'extension-overrides.json'), 'utf8'))).toMatchObject({ disabled_extensions: ['ext-one'], sidecar_proxy_consents: { 'ext-one': 'http://127.0.0.1:4567' } })
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
   })
 })
