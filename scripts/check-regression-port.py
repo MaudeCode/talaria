@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Verify the per-case regression port ledger (TAL-245).
 
-``web/docs/architecture/regression-port-cases.tsv`` lists every Python
-regression case at the ticket's merge base with a disposition:
+``web/docs/architecture/regression-port-cases.tsv`` lists every Python test
+case at the ticket's creation commit (``web/tests/test_*.py`` at db3f02679,
+enumerated in ``regression-port-baseline.tsv``) with a disposition:
 
   asserted   a TypeScript test carries the marker ``[py:<file>::<case>]`` in
              its title and asserts the same observable behaviour
@@ -10,22 +11,32 @@ regression case at the ticket's merge base with a disposition:
              one-to-one assertion (the ``ref`` column names the suite)
   dropped    no TypeScript counterpart; ``ref`` states why
 
-The checker fails when an ``asserted`` row has no marker in any ``*.test.ts``
+The baseline manifest is immutable: its SHA-256 is pinned below, so a removed
+or edited baseline row fails the check, and the ledger must contain exactly
+the manifest's cases (no missing rows, no rows outside the baseline). The
+checker also fails when an ``asserted`` row has no marker in any ``*.test.ts``
 or ``*.test.tsx`` under ``web/packages``, when a marker in a test has no ledger
 row, when a row has an unknown status or an empty ref, or when a case appears
 twice. Run: ``python3 scripts/check-regression-port.py [--root DIR]``.
+Regenerate the manifest only for a new baseline commit:
+``git ls-tree -r --name-only <rev> -- web/tests`` + ``def test_`` extraction,
+then update ``BASELINE_SHA256`` in the same change.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
 
 LEDGER = Path("web/docs/architecture/regression-port-cases.tsv")
+BASELINE = Path("web/docs/architecture/regression-port-baseline.tsv")
+BASELINE_COMMIT = "db3f026797162068e6815a1c284dbd78dd7cb74b"
+BASELINE_SHA256 = "a7f7ca0a3e877c4b6414011ea83be0634dcfa2145ebc984d4175981248c9cca7"
 TEST_ROOT = Path("web/packages")
 STATUSES = {"asserted", "subject", "dropped"}
-MARKER_RE = re.compile(r"\[py:([A-Za-z0-9_.-]+\.py)::(test_[A-Za-z0-9_]+)\]")
+MARKER_RE = re.compile(r"\[py:([A-Za-z0-9_.-]+\.py)::(test_\w+)\]")
 
 
 def load_ledger(path: Path) -> tuple[dict[tuple[str, str], tuple[str, str]], list[str]]:
@@ -52,6 +63,26 @@ def load_ledger(path: Path) -> tuple[dict[tuple[str, str], tuple[str, str]], lis
     return rows, errors
 
 
+def load_baseline(path: Path, expected_sha256: str | None = BASELINE_SHA256) -> tuple[set[tuple[str, str]], list[str]]:
+    """The immutable baseline case set; a digest mismatch means the manifest was edited."""
+    raw = path.read_bytes()
+    errors: list[str] = []
+    if expected_sha256 is not None and hashlib.sha256(raw).hexdigest() != expected_sha256:
+        errors.append(f"{path}: SHA-256 does not match the pinned baseline digest; the manifest must not change")
+    cases: set[tuple[str, str]] = set()
+    for lineno, line in enumerate(raw.decode("utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) != 2:
+            errors.append(f"{path}:{lineno}: expected 2 tab-separated columns, got {len(parts)}")
+            continue
+        if lineno == 1 and parts[0] == "file":
+            continue
+        cases.add((parts[0], parts[1]))
+    return cases, errors
+
+
 def collect_markers(root: Path) -> dict[tuple[str, str], list[str]]:
     found: dict[tuple[str, str], list[str]] = {}
     for test in list(root.rglob("*.test.ts")) + list(root.rglob("*.test.tsx")):
@@ -62,11 +93,20 @@ def collect_markers(root: Path) -> dict[tuple[str, str], list[str]]:
     return found
 
 
-def check(root: Path) -> list[str]:
+def check(root: Path, baseline_sha256: str | None = BASELINE_SHA256) -> list[str]:
     ledger = root / LEDGER
     if not ledger.exists():
         return [f"missing ledger {ledger}"]
+    baseline = root / BASELINE
+    if not baseline.exists():
+        return [f"missing baseline manifest {baseline}"]
     rows, errors = load_ledger(ledger)
+    cases, baseline_errors = load_baseline(baseline, baseline_sha256)
+    errors.extend(baseline_errors)
+    for key in sorted(cases - rows.keys()):
+        errors.append(f"baseline case {key[0]}::{key[1]} has no ledger row")
+    for key in sorted(rows.keys() - cases):
+        errors.append(f"ledger row {key[0]}::{key[1]} is not a baseline case")
     markers = collect_markers(root / TEST_ROOT)
     for key, (status, _ref) in sorted(rows.items()):
         if status == "asserted" and key not in markers:

@@ -1,5 +1,6 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement } from '@orpc/server'
+import { stateDbHasSession } from '../sessions/state-db.js'
 import { sessionsContract, workspacesContract } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync, writeSync } from 'node:fs'
@@ -11,7 +12,7 @@ import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
-import type { Session } from '../sessions/session.js'
+import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, readFileContent, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
@@ -586,13 +587,20 @@ function fileError(error: unknown, notFoundStatus = 400): Error {
 
 export interface FileOpsSession { workspace: string; profile: string | null; recovered: boolean; session: Session | null }
 
-/** Python `get_session_for_file_ops` + `_file_ops_session_or_error`. */
+/**
+ * Python `get_session_for_file_ops` + `_file_ops_session_or_error`. A session the Agent owns in the active profile's
+ * `state.db` but that has no `sessions/<sid>.json` (CLI, messaging) is served as an external view bound to the active
+ * workspace, as the sidebar already lists it (issue #3280).
+ */
 export function fileOpsSession(ctx: RequestContext, sid: string): FileOpsSession {
   let session: Session
   try {
     session = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
   } catch {
-    throw new HttpError(404, 'Session not found')
+    const profile = ctx.deps.activeProfile()
+    if (!isSafeSessionId(sid) || !stateDbHasSession(ctx.deps.cliSessions.dbPath(profile), sid)) throw new HttpError(404, 'Session not found')
+    if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
+    return { workspace: ctx.deps.workspaces.lastWorkspace(profile), profile, recovered: false, session: null }
   }
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })

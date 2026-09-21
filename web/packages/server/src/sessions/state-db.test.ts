@@ -9,12 +9,12 @@
  *   web/tests/test_issue5455_listing_readonly_connection.py
  * (issues #1494, #2628, #3238, #3762, #4385, #5455) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, type GatewayIdentity } from './list.js'
 
@@ -184,5 +184,20 @@ describe('state.db projection', () => {
     expect(readImportableAgentSessionRows(legacy, { log: (l) => logs.push(l) })).toEqual([])
     expect(logs[0]).toContain("no 'source' column")
     writeFileSync(join(s.state, 'profiles', 'legacy', 'note.txt'), 'x')
+  })
+
+  it('file operations resolve an Agent-owned state.db session without a sidecar file to the active workspace [py:test_file_manager_external_session.py::test_get_session_for_file_ops_state_db_fallback] [py:test_file_manager_external_session.py::test_get_session_for_file_ops_unknown_session_raises] [py:test_file_manager_external_session.py::test_state_db_has_session_present] [py:test_file_manager_external_session.py::test_state_db_has_session_missing_db]', async () => {
+    expect(stateDbHasSession(join(s.state, 'no-such.db'), 'tg-external-files')).toBe(false)
+    insertSession(db, { id: 'tg-external-files', source: 'telegram', started_at: 300, title: 'From Telegram', messages: [['user', 301]] })
+    const ws = realpathSync(join(s.state, 'workspace'))
+    writeFileSync(join(ws, 'from-agent.txt'), 'hello')
+    const res = await s.get('/api/list?session_id=tg-external-files&path=.')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { entries?: { name: string }[]; files?: { name: string }[] }
+    expect(JSON.stringify(body)).toContain('from-agent.txt')
+    expect((await s.get('/api/file?session_id=tg-external-files&path=from-agent.txt')).status).toBe(200)
+    expect(stateDbHasSession(dbPath, 'tg-external-files')).toBe(true)
+    expect(stateDbHasSession(dbPath, 'no-such-session')).toBe(false)
+    expect((await s.get('/api/list?session_id=no-such-session&path=.')).status).toBe(404)
   })
 })

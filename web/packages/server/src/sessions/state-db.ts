@@ -377,6 +377,22 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
   }
 }
 
+/** Python `state_db_has_session`: true only when `sid` is a row of the sessions table; a missing or unreadable db is false. */
+export function stateDbHasSession(dbPath: string, sid: string): boolean {
+  const id = sid.trim()
+  if (!id || !existsSync(dbPath)) return false
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return false }
+  try {
+    if (!tableColumns(db, 'sessions').has('id')) return false
+    return db.prepare('SELECT 1 FROM sessions WHERE id = ? LIMIT 1').get(id) !== undefined
+  } catch {
+    return false
+  } finally {
+    db.close()
+  }
+}
+
 /**
  * Python `_cheap_change_fingerprint`: `MAX(rowid)` of both tables, the file
  * stamps of the DB and its WAL, and the SQLite change counter (header bytes

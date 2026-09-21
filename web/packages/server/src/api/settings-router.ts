@@ -396,25 +396,32 @@ async function setProviderKey(ctx: RequestContext, pid: string, apiKey: string |
   try {
     writeEnvFile(envPath, { [envVar]: apiKey })
   } catch (error) {
+    // The file still holds the old state, so the sidecar must go back to it before the caller sees the failure.
+    await runtime.rollback()
     throw new HttpError(400, `Failed to save API key: ${str((error as Error).message)}`)
   }
-  runtime()
+  runtime.commit()
   ctx.deps.catalog.invalidate()
   return { ok: true, provider: pid, display_name: displayName(pid), action: apiKey ? 'updated' : 'removed' }
 }
 
+interface RuntimeCredentialEdit { commit: () => void; rollback: () => Promise<void> }
+const NO_RUNTIME_EDIT: RuntimeCredentialEdit = { commit: () => undefined, rollback: () => Promise.resolve() }
+
 /**
  * The default profile's `.env` was copied into the process environment at startup (and inherited by the sidecar). An
  * edit to that file must reach both: the sidecar is asked to apply it first and the edit fails (503) if it does not
- * confirm, then the returned thunk updates the process environment once the file is written. Values supplied by the
- * process environment itself are left alone. A restarted sidecar reads the live environment, so it stays in step.
+ * confirm; `commit` then updates the process environment once the file is written, while `rollback` restores the
+ * sidecar's previous value if the write fails so the two never disagree. Values supplied by the process environment
+ * itself are left alone. A restarted sidecar reads the live environment, so it stays in step.
  */
-async function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, apiKey: string | null): Promise<() => void> {
-  if (!ctx.deps.isRootProfile(activeProfileName(ctx))) return () => undefined
+async function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, apiKey: string | null): Promise<RuntimeCredentialEdit> {
+  if (!ctx.deps.isRootProfile(activeProfileName(ctx))) return NO_RUNTIME_EDIT
   const env = ctx.deps.config.env
   const owned = homeDotenvKeys(env)
   // A value the process environment supplied explicitly keeps precedence over the file, as it did at startup.
-  if (!owned.has(envVar) && env[envVar] !== undefined) return () => undefined
+  if (!owned.has(envVar) && env[envVar] !== undefined) return NO_RUNTIME_EDIT
+  const previous = env[envVar]
   const sidecar = ctx.deps.sidecar()
   if (sidecar) {
     try {
@@ -423,8 +430,18 @@ async function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, ap
       throw new HttpError(503, `The Agent sidecar did not apply the credential change (${str((error as Error).message)}); retry in a moment`)
     }
   }
-  return () => {
-    if (apiKey) { env[envVar] = apiKey; owned.add(envVar) } else { Reflect.deleteProperty(env, envVar); owned.delete(envVar) }
-    setHomeDotenvKeys(env, owned)
+  return {
+    commit: () => {
+      if (apiKey) { env[envVar] = apiKey; owned.add(envVar) } else { Reflect.deleteProperty(env, envVar); owned.delete(envVar) }
+      setHomeDotenvKeys(env, owned)
+    },
+    rollback: async () => {
+      if (!sidecar) return
+      try {
+        await sidecar.call('runtime.env', previous === undefined ? { unset: [envVar] } : { set: { [envVar]: previous } })
+      } catch (error) {
+        ctx.deps.log(`[providers] WARNING: sidecar environment for ${envVar} could not be restored after a failed .env write: ${str((error as Error).message)}`)
+      }
+    },
   }
 }

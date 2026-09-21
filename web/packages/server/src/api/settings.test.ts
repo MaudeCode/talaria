@@ -344,6 +344,18 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
       expect(loadEnvFile(join(s.state, '.env')).OPENAI_API_KEY).toBe('sk-added-later-1234')
       sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      // A write failure after the sidecar accepted the change rolls the sidecar back to the previous value.
+      chmodSync(s.state, 0o500)
+      try {
+        const envCalls = sidecar.calls.length
+        const failed = await post(s, '/api/providers/delete', { provider: 'openai' })
+        expect(failed.status).toBe(400)
+        const runtimeEnv = sidecar.calls.slice(envCalls).filter((c) => c.method === 'runtime.env').map((c) => c.params)
+        expect(runtimeEnv).toEqual([{ unset: ['OPENAI_API_KEY'] }, { set: { OPENAI_API_KEY: 'sk-added-later-1234' } }])
+        expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      } finally {
+        chmodSync(s.state, 0o700)
+      }
       // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
       expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
       expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')

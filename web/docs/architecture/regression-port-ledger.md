@@ -1,18 +1,25 @@
 # Regression port ledger (TAL-245)
 
-Every `web/tests/test_issue*.py` and `test_regressions.py` case at the ticket's creation commit (db3f02679), with its disposition after the TypeScript rewrite.
+Every `web/tests/test_*.py` case at the ticket's creation commit (db3f02679) — 972 files, 9 825 cases — with its disposition after the TypeScript rewrite.
+
+## Baseline manifest
+
+`regression-port-baseline.tsv` (same directory) enumerates every `def test_*` in `web/tests/test_*.py` at db3f02679 (one row per file/case; the four class-scoped duplicate names collapse to one row each). It is immutable: `scripts/check-regression-port.py` pins its SHA-256 and fails when the manifest changes or when the ledger below does not contain exactly the manifest's cases — a deleted or omitted ledger row is a check failure, not a smaller total.
 
 ## Per-case ledger
 
-`regression-port-cases.tsv` (same directory) lists every case with one of three dispositions, verified by `scripts/check-regression-port.py` (part of `scripts/check tooling`):
+`regression-port-cases.tsv` (same directory) lists every baseline case with one of three dispositions, verified by `scripts/check-regression-port.py` (part of `scripts/check tooling`):
 
 | Disposition | Meaning | Cases |
 |---|---|---|
-| `asserted` | a TypeScript test title carries `[py:<file>::<case>]` and asserts the same observable behaviour | 325 |
-| `dropped` | no TypeScript counterpart; the `ref` column states why (Python-only internals, dropped routes and features, or behaviour owned by the Agent sidecar) | 1461 |
-| `subject` | covered by the named suite without a one-to-one assertion (the file-level table below) | 1384 |
+| `asserted` | a TypeScript test title carries `[py:<file>::<case>]` and asserts the same observable behaviour | 329 |
+| `dropped` | no TypeScript counterpart; the `ref` column states why (Python-only internals, pytest/packaging/docs tooling, dropped routes and features, or behaviour owned by the Agent sidecar) | 1766 |
+| `subject` | covered by the named suite without a one-to-one assertion (the file-level tables below) | 7730 |
 
-The six highest-risk surfaces were ported case by case (`web/packages/server/src/port/*.port.test.ts` plus markers added to the existing suites): auth and profile isolation, startup and environment, proxies and size caps, worktrees and terminals, chat streams and journals, and per-profile behaviour. Within those 993 cases: 325 asserted, 667 dropped with a reason, 1 subject. The `subject` rows outside those surfaces are the file-level mapping below; they are not one-to-one assertions.
+Two scopes went through different processes:
+
+- **Regression files** (`test_issue*.py` and `test_regressions.py`: 390 files, 3 170 cases). The six highest-risk surfaces were ported case by case (`web/packages/server/src/port/*.port.test.ts` plus markers added to the existing suites): auth and profile isolation, startup and environment, proxies and size caps, worktrees and terminals, chat streams and journals, and per-profile behaviour. Within those 993 cases: 325 asserted, 667 dropped with a reason, 1 subject. The remaining regression files carry the reviewed file-level mapping in the first table below.
+- **Other baseline files** (582 files, 6 655 cases: `test_session_*`, `test_sprint*`, `test_hweb*`, `test_workspace_*`, …). These were mapped at file level by feature area to the TypeScript suite that owns that area (`subject`, ref prefixed `file-level mapping (not individually reviewed)`), or marked `dropped` for pytest/conftest harness, packaging, launcher, docs and repo-hygiene tests and for the dropped gateway chat backend and Edge TTS voices. Their cases were **not** reviewed one by one; the second table below records the mapping so a later port can pick any file up.
 
 ## File-level mapping
 
@@ -803,3 +810,591 @@ The six highest-risk surfaces were ported case by case (`web/packages/server/src
 - `tests/test_issues_853_857.py`: `test_strip_thinking_markup_drops_heres_thinking_process`, `test_strip_thinking_markup_drops_let_me_think`, `test_strip_thinking_markup_drops_ill_think_about`, `test_strip_thinking_markup_drops_okay_let_me`, `test_strip_thinking_markup_preserves_non_preamble_content`, `test_strip_thinking_markup_case_insensitive`, `test_looks_invalid_generated_title_catches_heres_thinking`, `test_looks_invalid_generated_title_accepts_real_titles`, `test_looks_invalid_generated_title_rejects_trivial_echo`, `test_snippet_extraction_skips_tool_preamble_echo`
 - `tests/test_issues_907_908_909_model_dropdown.py`: `test_get_label_for_model_helper_exists`, `test_label_helper_capitalizes_bare_id`, `test_label_helper_uses_catalog_when_available`, `test_label_helper_strips_at_prefix_for_lookup`, `test_config_uses_label_helper_not_raw_split`
 - `tests/test_regressions.py`: `test_chat_start_returns_stream_id`, `test_chat_stream_opens_successfully`, `test_session_with_tool_calls_in_json_loads_ok`, `test_streaming_py_imports_has_pending`, `test_aiagent_imported_in_streaming`, `test_cancel_nonexistent_stream_returns_not_cancelled`, `test_server_py_sse_loop_breaks_on_cancel`, `test_real_jobs_json_not_polluted_by_tests`, `test_all_api_modules_importable`, `test_server_py_importable`, `test_deleted_session_does_not_appear_in_list`, `test_server_delete_prunes_session_index`, `test_server_delete_removes_session_bak_snapshot`, `test_chat_start_persists_pending_turn_metadata_for_reload_recovery`, `test_session_detail_uses_runtime_streaming_state`, `test_streaming_bridge_accepts_current_tool_progress_callback_signature`, `test_streaming_reads_reasoning_effort_from_config_dict`, `test_streaming_agent_cache_signature_includes_reasoning_config`, `test_500_response_has_no_trace_field`, `test_upload_error_has_no_trace_field`, `test_provider_oauth_authenticated_accepts_credential_pool_entries`, `test_provider_oauth_authenticated_rejects_flag_only_credential_pool_entries`, `test_status_from_runtime_marks_openai_codex_ready_from_credential_pool`
+
+## File-level mapping of the other baseline files
+
+Files outside the regression scope, mapped by feature area; `subject` refs name the owning suite (server paths are under `web/packages/server/`).
+
+| Python file | Cases | Disposition | Target or reason |
+|---|---|---|---|
+| `tests/test_1003_appearance_autosave.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_1058_adaptive_title_refresh.py` | 37 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_1062_busy_input_modes.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_1079_cron_session_project.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_1560_password_env_var_no_op.py` | 7 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_1695_aiagent_import_error_detail.py` | 13 | subject | web/sidecar/tests/*.py and web/packages/contracts/src/sidecar/fixtures.test.ts |
+| `tests/test_1764_context_menu_essentials.py` | 9 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_2235_initial_aux_title.py` | 10 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_2558_reveal_path_translation.py` | 2 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_2735_open_in_vscode.py` | 16 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_3230_preserve_manual_session_title.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_3866_project_context_memory_section.py` | 9 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_4167_sidebar_payload_and_scope.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_4273_expanduser_and_nullbyte.py` | 5 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_4413_seed_provider_models.py` | 7 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_4504_clarify_stuck_on_expiry.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_465_session_branching.py` | 17 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_5144_busy_composer_placeholder_hint.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_5145_steer_default.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_5307_subagent_child_transcript.py` | 11 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_5455_agent_health_single_flight.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_5774b_atomic_config_writes.py` | 31 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_6728_cron_running_sidebar.py` | 7 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_7027_state_dir_uid_probe.py` | 18 | subject | src/cli/cli.test.ts |
+| `tests/test_732_gateway_routing_metadata.py` | 4 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_779_html_preview.py` | 4 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_acp_session_sidebar_visibility.py` | 7 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_admin_reload.py` | 1 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_context_docs.py` | 2 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_health_pid_path_fallback.py` | 5 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_health_remote.py` | 14 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_max_turns_parity.py` | 5 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_row_id_replay_order.py` | 3 | subject | src/port/streams.port.test.ts, src/api/sse-writer.test.ts, src/sessions/chat.test.ts |
+| `tests/test_agent_runtime_identity_loss.py` | 2 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_runtime_revision_guard.py` | 29 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_agent_source_dependency_audit.py` | 11 | subject | web/sidecar/tests/*.py and web/packages/contracts/src/sidecar/fixtures.test.ts |
+| `tests/test_agent_v021_transport_normalize.py` | 2 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_anchor_fallback_ownership.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_anchor_scene_persistence.py` | 45 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_approval_queue.py` | 9 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_approval_sse.py` | 37 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_approval_unblock.py` | 27 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_async_delegation_webui_bridge.py` | 41 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_atomic_settings_writes.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_atomic_writer_fsync.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_attachment_upload_toctou.py` | 3 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_attention_session_events.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_auth.py` | 16 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auth_oidc.py` | 17 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auth_password_hash_cache.py` | 13 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auth_session_persistence.py` | 14 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auth_session_sliding.py` | 12 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auth_sessions.py` | 22 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auth_settings_safety.py` | 21 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_auto_compression_card.py` | 20 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_auto_compression_terminal_failure.py` | 12 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_auxiliary_model_provider_prefix.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_background_process_restart_recovery.py` | 6 | subject | src/tools/updates.test.ts |
+| `tests/test_background_process_wakeup_format.py` | 10 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_background_tasks.py` | 5 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_batch_fixes.py` | 6 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_bg_dedup_reaper_prune.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_bg_task_complete_ab_coexistence.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_bg_task_complete_throttle.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_bg_task_complete_wakeup.py` | 7 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_bg_task_drain_loop_backoff.py` | 3 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_bg_thread_start_lock.py` | 1 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_blank_live_turn_preserve_guard.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_blockquote_rendering.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_bootstrap_discover_agent.py` | 17 | subject | src/cli/cli.test.ts |
+| `tests/test_bootstrap_dotenv.py` | 21 | subject | src/cli/cli.test.ts |
+| `tests/test_bootstrap_foreground.py` | 24 | subject | src/cli/cli.test.ts |
+| `tests/test_bootstrap_python_selection.py` | 5 | subject | src/cli/cli.test.ts |
+| `tests/test_broken_pipe_cascade.py` | 31 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_bugbatch_apr2026.py` | 2 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_bugfix_sweep.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_byok_model_dropdown.py` | 21 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_byte_range_parser.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_cancel_interrupt.py` | 11 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_cancelled_turn_status.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_cancelling_run_not_attachable.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_canonical_session_resolution_rfc.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_catalog_has_provider_compound_ids.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_chat_hot_path_budgets.py` | 2 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_chat_start_claim_cli_session.py` | 39 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_chat_upload_attachment_paths.py` | 2 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_checkpoint_skips_redundant_sidecar_rewrite.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_ci_hygiene.py` | 8 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_clarify_sse.py` | 19 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_clarify_unblock.py` | 17 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_claude_code_profile_agnostic_detail_load.py` | 3 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_claude_code_session_import.py` | 7 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_cli_entry_point.py` | 3 | subject | src/cli/cli.test.ts |
+| `tests/test_cli_only_slash_commands.py` | 1 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cli_session_tool_metadata.py` | 2 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_cli_sessions_cache_cap.py` | 3 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_cli_sessions_cache_fingerprint.py` | 4 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_client_event_diagnostics.py` | 5 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_commands_endpoint.py` | 25 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_compact_echo_suffix_linear_scan.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compaction_anchor_lineage_skew.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compaction_current_turn_order.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compaction_marker_writeback.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compress_status_404_fix.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compression_recovery_action.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compression_snapshot_revision.py` | 24 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_compression_snapshot_runtime_clear.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_configurable_pinned_sessions_limit.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_conftest_network_isolation.py` | 10 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_conftest_server_boot.py` | 5 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_context_history_sanitization.py` | 20 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_context_message_dedup.py` | 13 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_context_message_stable_ids.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_contract_review_gate.py` | 3 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_copilot_provider_model_settings_not_allowlist.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_core_data_loss_cases.py` | 14 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_cors_preflight_allowlist.py` | 12 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_credential_pool_profile_scoping.py` | 1 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_credential_pool_providers.py` | 36 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_cron_delivery_options.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cron_import_shadowing.py` | 1 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cron_manual_run_persistence.py` | 5 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cron_model_override.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_cron_model_provider_picker.py` | 3 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_cron_query_param_validation.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cron_run_job_import.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cron_session_title.py` | 5 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_cron_toast_notifications.py` | 2 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_csp_frame_src_extra.py` | 8 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_ctl_bash32_compat.py` | 5 | subject | src/cli/cli.test.ts |
+| `tests/test_ctl_foreign_server_guard.py` | 19 | subject | src/cli/cli.test.ts |
+| `tests/test_ctl_script.py` | 18 | subject | src/cli/cli.test.ts |
+| `tests/test_custom_provider_bare_model_reasoning.py` | 19 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_custom_provider_dict_models.py` | 7 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_custom_provider_display_name.py` | 7 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_custom_provider_prefix_collisions.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_custom_providers_in_panel.py` | 11 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_cvd3_terminal_local_origin_gate.py` | 13 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_dashboard_probe.py` | 10 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_default_personality.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_default_workspace_fallback.py` | 8 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_delete_cli_session_delegate_cascade.py` | 19 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_display_merge_cache.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_display_merge_cache_shortcut.py` | 23 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_docker_compose_gateway_and_password_forwarding.py` | 4 | subject | web-docker CI job (.github/workflows/web-verify.yml) and web/docker/* |
+| `tests/test_docker_docs_and_readonly.py` | 15 | subject | web-docker CI job (.github/workflows/web-verify.yml) and web/docker/* |
+| `tests/test_docker_env_readonly_vars.py` | 11 | subject | web-docker CI job (.github/workflows/web-verify.yml) and web/docker/* |
+| `tests/test_docker_gpu_runtime_docs.py` | 8 | subject | web-docker CI job (.github/workflows/web-verify.yml) and web/docker/* |
+| `tests/test_docs_gitignore_policy.py` | 4 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_dotted_model_label.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_early_session_title.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_embedded_agent_logging_hygiene.py` | 2 | subject | web/sidecar/tests/*.py and web/packages/contracts/src/sidecar/fixtures.test.ts |
+| `tests/test_embedded_workspace_terminal.py` | 5 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_empty_partial_activity_restore.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_empty_session_no_disk_write.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_evict_session_agent_active_run_guard.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_extension_hooks.py` | 21 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_extension_settings_runtime.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_extension_sidecar_proxy.py` | 28 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_extension_status_endpoint.py` | 40 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_extensions_settings_panel.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_file_manager_external_session.py` | 19 | subject (4 asserted) | src/sessions/state-db.test.ts (state.db fallback for file operations); remaining cases: src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_folder_download.py` | 9 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_font_size_setting.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_french_voices_tts_allowlist.py` | 2 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_full_session_resolve_gate.py` | 11 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_full_width_chat_setting.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_gateway_approval_legacy_path.py` | 17 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_gateway_approval_runs_api.py` | 76 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_gateway_lifecycle_controls.py` | 7 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_gateway_read_idle_timeout.py` | 14 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_gateway_sse_reconnect_dedupe.py` | 2 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_gateway_status_agent_health.py` | 11 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_gateway_sync.py` | 65 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_gateway_watcher_profile.py` | 10 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_gateway_yolo_webui_compat.py` | 25 | dropped | dropped feature (Edge TTS, office documents, native Windows, Nix, pip wheel/launchers, gateway chat backend) |
+| `tests/test_git_subprocess_windows_flags.py` | 3 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_glm_5_3_catalog.py` | 8 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_glm_5_3_flash_catalog.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_goal_command_webui.py` | 21 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_goal_silent_ingress_suppression.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_health_restart.py` | 14 | subject | src/tools/updates.test.ts |
+| `tests/test_hidden_tab_server_initiated_turn.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_home_route_html_error.py` | 1 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_hweb100_bootstrap.py` | 3 | subject | src/cli/cli.test.ts |
+| `tests/test_hweb100_contract_fixtures.py` | 1 | subject | web/packages/frontend/src/contracts/*.test.ts, web/packages/contracts/src/**/*.test.ts |
+| `tests/test_hweb100_extension_platform.py` | 7 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_hweb100_spa_shell_routes.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb103_session_load_tail_only.py` | 13 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb13_dead_run_journal_recovery.py` | 47 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb25_profile_scoped_agent_sessions.py` | 25 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_hweb28_large_state_session_discovery.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb30_session_list_constant_cost.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_hweb33_merged_sidebar_sse.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb34_bounded_state_db_locks.py` | 15 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_hweb35_deferred_startup.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb39_index_write_cost.py` | 7 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_hweb40_repeated_read_cost.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_hweb41_watcher_o1_poll.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb45_process_hygiene.py` | 66 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_hweb56_v021_provider_catalog.py` | 56 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_hweb57_cron_job_fields.py` | 16 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_hweb58_model_overrides_context_window.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_hweb60_delegation_cost_card.py` | 18 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_hweb62_mcp_background_health.py` | 41 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_hweb64_plugin_readiness.py` | 7 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_hweb70_update_owner_capability.py` | 6 | subject | src/tools/updates.test.ts |
+| `tests/test_hweb71_oidc_owner_mapping.py` | 63 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_hweb72_oidc_synthetic_provider.py` | 9 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_hweb84_webui_version_abbrev.py` | 5 | subject | src/release.test.ts |
+| `tests/test_hweb86_version_binding_stability.py` | 4 | subject | src/release.test.ts |
+| `tests/test_hweb8_approval_composer_hierarchy.py` | 2 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_hweb93_chronological_insert_index.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_hweb94_claude_code_prewarm.py` | 4 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_hweb97_talaria_presence.py` | 22 | subject | src/sessions/relay.test.ts |
+| `tests/test_import_cli_session_lineage.py` | 1 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_insights.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_kanban_bridge.py` | 50 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_kanban_view_toggle.py` | 3 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_large_session_fuzzy_duplicate_bound.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_large_text_paste_attachment.py` | 2 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_layout_helpers.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_lineage_anchor_profile_cache.py` | 1 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_lineage_display_cache.py` | 14 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_live_anchor_stable_run_identity.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_live_models_ttl_cache.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_live_rebuild_budget_warn_rate_limit.py` | 4 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_live_stream_ux.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_live_to_final_anchor_visible_order.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_live_tool_callback_events.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_logs_endpoint.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_mcp_server.py` | 38 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_mcp_tools_list_overflow.py` | 1 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_media_etag_revalidation.py` | 28 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_media_inline.py` | 34 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_media_message_snapshots.py` | 40 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_memory_session_lifecycle_generation.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_memory_write_symlink_guard.py` | 5 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_merge_append_only_normalization_cache.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_merge_backfill_perf_optimization.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_merge_key_tool_calls.py` | 18 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_message_timestamp_stamping.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_metadata_save_wipe_1558.py` | 16 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_metering_session_lifecycle.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_minimax_provider.py` | 16 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_moa_model_picker_provider.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_mobile_reload_compression_recovery.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_model_cache_metadata.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_model_picker_badges.py` | 3 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_model_resolver.py` | 87 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_models_dev_reasoning.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_monorepo_contracts.py` | 3 | subject | web/packages/frontend/src/contracts/*.test.ts, web/packages/contracts/src/**/*.test.ts |
+| `tests/test_multi_provider_quota.py` | 16 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_native_image_attachments.py` | 40 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_new_chat_default_model_frontend.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_nix_flake_module_source.py` | 12 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_none_providers_config_guard.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_norm_model_id_trailing_empty_guard.py` | 4 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_notify_on_complete_webui.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_nous_portal_routing.py` | 10 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_onboarding_existing_config.py` | 12 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_onboarding_mvp.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_onboarding_network.py` | 18 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_onboarding_oauth_single_flight.py` | 5 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_onboarding_static.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_openai_api_provider_alias.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_opencode_providers.py` | 10 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_options_content_length.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_optionz_liveview_perf.py` | 23 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_orphaned_tool_messages.py` | 13 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_oversized_metadata_field_reparse.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_parallel_session_switch.py` | 14 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_partial_bloat_fix.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_passkey_auth.py` | 21 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_passkey_login_content_length.py` | 2 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_pin_limit_lineage_visibility.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_plugin_model_providers.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_plugins_panel.py` | 23 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_pr1318_context_length_fallback.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_pr1339_fallback_providers_list.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_pr1341_context_window_persistence.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_pr1350_sse_atomic_subscribe.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_pr1350_sse_notify_correctness.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_pr1355_sse_handler_no_deadlock.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_pr1370_lineage_metadata_perf_and_orphan.py` | 10 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_pr1375_partial_tool_calls_sanitize.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_pr1445_opus_followups.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_pr1721_rtl_salvage.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_pr1947_same_model_multiple_custom_providers.py` | 3 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_pr1970_lmstudio_base_url_fallback.py` | 14 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_pr2520_extract_attachment_dir.py` | 4 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_process_wakeup_synthetic.py` | 12 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_profile_default_workspace_823.py` | 1 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_profile_env_isolation.py` | 2 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_profile_path_security.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_profile_skills_stats.py` | 9 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_profile_switch_1200.py` | 14 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_profile_terminal_env.py` | 5 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_profiles_route_endpoint.py` | 1 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_provider_cost_budget.py` | 19 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_provider_cost_history.py` | 14 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_provider_management.py` | 25 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_provider_mismatch.py` | 48 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_provider_quota_status.py` | 44 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_provider_sort_order.py` | 6 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_pwa_manifest_csp.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_pwa_manifest_sw.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_pycache_purge.py` | 3 | subject | src/tools/updates.test.ts |
+| `tests/test_pytest_config_isolation.py` | 1 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_pytest_execv_guard.py` | 2 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_pytest_state_isolation.py` | 1 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_quota_chip_settings_toggle.py` | 1 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_raster_data_uri_redaction.py` | 13 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_rate_limit_map_prune.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_raw_audio_upload.py` | 6 | subject | src/port/limits-tts.port.test.ts |
+| `tests/test_read_body_json_validation.py` | 9 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_readme_compat_section.py` | 1 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_real_steer.py` | 25 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_reasoning_content_replay.py` | 32 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_reasoning_effort_model_capabilities.py` | 35 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_reasoning_show_hide.py` | 12 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_reasoning_titles.py` | 14 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_recovered_anchor_settle_duplication.py` | 22 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_recovered_journal_context.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_remote_terminal_workspace.py` | 48 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_renderer_comprehensive.py` | 40 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_repair_workspace_user_turns.py` | 3 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_request_diagnostics_cache.py` | 4 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_resolve_model_provider_free_suffix.py` | 18 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_restart_compression_tip_recovery.py` | 4 | subject | src/tools/updates.test.ts |
+| `tests/test_rollback_diff_symlink_disclosure.py` | 6 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_rollback_restore_symlink_containment.py` | 3 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_route_approvals_extraction.py` | 9 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_route_session_list_cache_extraction.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_routes_file_api_toctou.py` | 8 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_ruff_forward_lint.py` | 4 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_run_journal.py` | 20 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_run_journal_routes.py` | 58 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_run_journal_seq_cache.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_run_journal_streaming_static.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_run_journal_writer_lock_evict.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_run_lifecycle_health.py` | 20 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_runner_client.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_runtime_adapter_seam.py` | 33 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_scheduled_jobs_profile_isolation.py` | 13 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_security_redaction.py` | 25 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_security_review_fixes.py` | 16 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_selected_context_user_render_runtime.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_server_bind_no_reverse_dns.py` | 1 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_server_port_exclusivity.py` | 5 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_session_active_profile_authorization.py` | 18 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_session_attention_badges.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_aware_vision_routing.py` | 11 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_cache_ownership.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_channel_option_x.py` | 23 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_cli_scan_fast_path.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_db_sidecar_reconciliation.py` | 15 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_session_discoverability_audit.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_discoverability_invariants.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_discoverability_repair.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_display_resolver_no_live_rebuild.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_draft_ordering.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_draft_sidecar.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_duplicate.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_duplicate_edit.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_duplicate_fields.py` | 44 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_events.py` | 10 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_events_http_integration.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_export_html_palette.py` | 17 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_import_cli_fallback_model.py` | 11 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_session_import_workspace_validation.py` | 4 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_session_index.py` | 46 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_index_lock_window.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_index_parse_bytes.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_index_write_cache.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_lifecycle_round2.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_lineage_full_transcript.py` | 11 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_lineage_metadata_api.py` | 19 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_lineage_report.py` | 9 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_list_cache_bounded.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_list_long_history_perf.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_lost_response_regression.py` | 30 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_message_window_renderable_tail.py` | 10 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_metadata_cli_lookup.py` | 2 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_session_metadata_fast_path.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_msg_limit_ceiling.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_ops.py` | 16 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_public_share.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_public_share_static.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_recovery_api.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_recovery_audit.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_save_empty_pending_guard.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_save_metadata_count.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_save_mode.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_sidebar_cache.py` | 19 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_sidebar_resilience.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_sidecar_repair.py` | 71 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_static_assets.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_session_summary_redaction.py` | 2 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_session_switch_performance.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_tail_payload.py` | 9 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_title_regenerate_controls.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_todo_state_route.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_truncate_alignment_performance.py` | 16 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_session_truncate_keep_count_validation.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_sessions_route.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_sessions_search_depth_validation.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_sessions_search_profile_scope.py` | 4 | subject | src/port/profile.port.test.ts, src/api/settings.test.ts |
+| `tests/test_settings_appearance_defaults_honoured.py` | 5 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_shutdown_audit_logging.py` | 2 | subject | src/app.test.ts, src/server.test.ts, src/index.test.ts, src/spa.test.ts |
+| `tests/test_sidebar_first_turn_visibility.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_sidebar_search_highlights.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_sidebar_tab_order.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_sidebar_tab_visibility.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_silent_control_suppression.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_silent_failure_detection.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_simplified_tool_calling_setting.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_skill_save_symlink_guard.py` | 2 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_skill_usage.py` | 7 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_skills_toggle.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_soul_memory.py` | 6 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_sprint1.py` | 23 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint10.py` | 13 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint11.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint12.py` | 13 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint13.py` | 7 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint14.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint15.py` | 13 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint16.py` | 64 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint17.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint19.py` | 10 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint2.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint20.py` | 2 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint23.py` | 9 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint26.py` | 13 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint27.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint28.py` | 10 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint29.py` | 65 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint3.py` | 31 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint30.py` | 10 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint31.py` | 9 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint32.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint33.py` | 2 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint34.py` | 25 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint36.py` | 2 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint39.py` | 10 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint4.py` | 20 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint40.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint40_ui_polish.py` | 6 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint41.py` | 4 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint42.py` | 29 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint43.py` | 19 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint45.py` | 2 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint46.py` | 13 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint48.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint49.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint5.py` | 25 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint51.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint6.py` | 14 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint7.py` | 19 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sprint8.py` | 8 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_sqlite_wal_reset_upgrade.py` | 9 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_sse_chunked.py` | 3 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_sse_relay_apperror_closes.py` | 5 | subject | src/sessions/relay.test.ts |
+| `tests/test_stable_assistant_turn_anchor_phase0.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stage268_opus_followups.py` | 4 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_stage299_opus_fixes.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_stage302_config_override_regression.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stage326_composer_draft_validation.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stage326_pending_goal_continuation_race.py` | 5 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_stage364_opus_live_sse_event_id.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stale_empty_session_restore.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stale_stream_cleanup.py` | 16 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stale_stream_pending_recovery.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stale_stream_writeback.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stale_user_context_contamination.py` | 34 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_start_session_turn_runtime_adapter.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_state_db_active_filter.py` | 3 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_state_db_backstop_boundary_gate.py` | 6 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_state_db_content_sentinel_decode.py` | 32 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_state_db_read_backstop.py` | 7 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_state_db_readonly_reads_models.py` | 14 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_state_db_session_signature.py` | 11 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_state_db_worktree_recovery.py` | 3 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_static_asset_compression_and_cache.py` | 15 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_static_asset_resolver.py` | 4 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_stream_offline_buffer_cap.py` | 10 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stream_offline_gap_recovery.py` | 13 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_stream_subscriber_queue_cap.py` | 7 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streaming_agent_cache_lifecycle.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streaming_done_payload_message_count.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streaming_live_usage_estimate.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streaming_max_tokens_quota.py` | 3 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_streaming_session_sidebar.py` | 8 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streaming_todo_state_static.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streaming_writeback_diagnostics.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_streams_locked_reads.py` | 3 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_subagent_parent_in_import_window.py` | 7 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_subpath_frontend_routes.py` | 1 | subject | src/app.test.ts, src/server.test.ts, src/index.test.ts, src/spa.test.ts |
+| `tests/test_symlink_cycle_detection.py` | 11 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_tal203_agent_dependency.py` | 1 | subject | src/tools/updates.test.ts |
+| `tests/test_tal203_legacy_migration.py` | 3 | subject | src/tools/updates.test.ts |
+| `tests/test_tal203_published_releases.py` | 8 | subject | src/tools/updates.test.ts |
+| `tests/test_tal203_release_info.py` | 5 | subject | src/tools/updates.test.ts |
+| `tests/test_tal203_source_update.py` | 21 | subject | src/tools/updates.test.ts |
+| `tests/test_tal62_client_owned_session_visibility.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_talaria_native_oidc_handoff.py` | 15 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_talaria_native_oidc_proxy_origin.py` | 10 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_talaria_relay.py` | 25 | subject | src/sessions/relay.test.ts |
+| `tests/test_terminal_auto_expand_setting.py` | 2 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_terminal_fd_leak.py` | 21 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_terminal_idle_reaper.py` | 15 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_terminal_linux_lifecycle.py` | 8 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_terminal_output_broadcast.py` | 12 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_terminal_process_cleanup.py` | 5 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_terminal_zombie_reaper.py` | 4 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_test_script_state_isolation.py` | 2 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_title_aux_routing.py` | 57 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_title_gen_reasoning_extra_gate.py` | 9 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_title_sanitization.py` | 16 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_tls_aware_probe.py` | 14 | subject | src/app.test.ts, src/server.test.ts, src/index.test.ts, src/spa.test.ts |
+| `tests/test_tls_support.py` | 7 | subject | src/app.test.ts, src/server.test.ts, src/index.test.ts, src/spa.test.ts |
+| `tests/test_todo_state.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_todo_state_emission.py` | 4 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_tool_call_persistence.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_tool_limit_terminal_state.py` | 29 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_truncate_session_at_keep.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_trusted_header_auth.py` | 39 | subject | src/app.test.ts, src/api/auth-flows.test.ts, src/port/auth.port.test.ts |
+| `tests/test_ttl_cache.py` | 5 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_turn_duration_display.py` | 1 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_turn_journal.py` | 15 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_turn_journal_callsite.py` | 2 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_turn_journal_lifecycle.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_turn_journal_lifecycle_callsite.py` | 5 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_uiux_docs_theme_contract.py` | 1 | subject | web/packages/frontend/src/**/*.test.ts(x) and e2e/*.spec.ts |
+| `tests/test_update_banner_fixes.py` | 63 | subject | src/tools/updates.test.ts |
+| `tests/test_update_channels.py` | 21 | subject | src/tools/updates.test.ts |
+| `tests/test_update_checker.py` | 14 | subject | src/tools/updates.test.ts |
+| `tests/test_update_stash_recovery.py` | 13 | subject | src/tools/updates.test.ts |
+| `tests/test_updates.py` | 62 | subject | src/tools/updates.test.ts |
+| `tests/test_updates_6088_manual_check.py` | 4 | subject | src/tools/updates.test.ts |
+| `tests/test_upload_rollback.py` | 3 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_v050253_opus_followups.py` | 2 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_v050255_opus_followups.py` | 5 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_v050257_opus_followups.py` | 6 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_v050258_opus_followups.py` | 6 | subject | mixed regression batch: src/api/*.test.ts, src/sessions/*.test.ts, src/port/*.test.ts |
+| `tests/test_v050259_sessiondb_fd_leak.py` | 11 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_v050260_docker_invariants.py` | 15 | subject | web-docker CI job (.github/workflows/web-verify.yml) and web/docker/* |
+| `tests/test_version_badge.py` | 28 | subject | web/packages/frontend/src/**/*.test.ts(x) and e2e/*.spec.ts |
+| `tests/test_voice_transcribe_endpoint.py` | 8 | subject | src/port/limits-tts.port.test.ts |
+| `tests/test_wakeup_defer_race.py` | 24 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_wakeup_display_meta.py` | 11 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_wakeup_meta_recovery_paths.py` | 4 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_wakeup_model_resolve_hang.py` | 7 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_watermark_advance_after_edit.py` | 7 | subject | src/port/streams.port.test.ts, src/api/sse-writer.test.ts, src/sessions/chat.test.ts |
+| `tests/test_webhook_project_sessions.py` | 6 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_webui_gateway_chat_backend.py` | 58 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_webui_lineage_display_merge.py` | 4 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
+| `tests/test_webui_notes_sources.py` | 14 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_webui_platform_hint.py` | 2 | subject | src/app.test.ts, src/server.test.ts, src/index.test.ts, src/spa.test.ts |
+| `tests/test_webui_prefill_context.py` | 18 | subject | src/sessions/sessions.test.ts, src/sessions/chat.test.ts, src/port/streams.port.test.ts, src/port/limits-sessions.port.test.ts |
+| `tests/test_webui_runtime_diagnostics.py` | 2 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_webui_session_db_adapter.py` | 10 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_webui_state_db_context_reconciliation.py` | 4 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_webui_state_db_reconciliation.py` | 51 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_webui_surface_context.py` | 9 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_window_function_collision.py` | 1 | subject | src/sessions/state-db.test.ts, src/sessions/sessions.test.ts |
+| `tests/test_windows_native_support.py` | 14 | dropped | python-internal or tooling: pytest/conftest harness, packaging, launchers, docs or repo hygiene with no TypeScript counterpart |
+| `tests/test_workspace_add_quote_strip.py` | 14 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_blank_page_fix.py` | 1 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_blocked_roots_macos.py` | 19 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_dir_signature.py` | 3 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_git.py` | 91 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_inaccessible_paths.py` | 4 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_stale_recovery.py` | 18 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_symlink_containment.py` | 19 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_symlink_delete_rename.py` | 12 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_workspace_upload.py` | 28 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_worktree_remove.py` | 13 | subject | src/api/raw-routes.test.ts, src/workspace/fs.test.ts, src/workspace/git.test.ts, src/port/worktree.port.test.ts |
+| `tests/test_xsession_wakeup_misroute.py` | 14 | subject | src/api/tools.test.ts, src/api/automation.test.ts, src/port/misc.port.test.ts |
+| `tests/test_zai_reasoning_effort_gating.py` | 29 | subject | src/api/settings.test.ts, src/settings.test.ts, src/port/startup.port.test.ts |
