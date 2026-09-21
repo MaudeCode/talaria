@@ -140,7 +140,9 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const { env, log } = ctx
   const discover = { env, hermesHome: ctx.hermesHome, webRoot: ctx.webRoot, home: ctx.home }
   let agentDir = discoverAgentDirForLaunch(discover)
-  if (!agentDir && !which('hermes', env)) {
+  // A scripted sidecar (fixture replay, contract runners) needs no Agent: never run the installer for it.
+  const scriptedSidecar = Boolean((env.HERMES_WEBUI_SIDECAR_COMMAND ?? '').trim())
+  if (!agentDir && !scriptedSidecar && !which('hermes', env)) {
     if (args.skipAgentInstall) throw new Error('Hermes Agent was not found and auto-install was disabled.')
     installHermesAgent(ctx.compatibleAgentRevision, log)
     agentDir = discoverAgentDirForLaunch(discover)
@@ -149,7 +151,8 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   if (agentDir && python) {
     const preflight = sidecarPreflight(python, agentDir, env)
     if (!preflight.ok) throw new Error(`Python environment at ${python} cannot import Hermes Agent (${preflight.detail || 'preflight failed'}). Set HERMES_WEBUI_PYTHON to the Agent venv interpreter.`)
-  } else log('[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until HERMES_WEBUI_AGENT_DIR points at an installed Agent')
+  } else if (scriptedSidecar) log('[bootstrap] Using the sidecar command from HERMES_WEBUI_SIDECAR_COMMAND; no Hermes Agent checkout required')
+  else log('[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until HERMES_WEBUI_AGENT_DIR points at an installed Agent')
   const stateDir = resolve((env.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, ctx.home) || join(ctx.hermesHome, 'webui'))
   mkdirSync(stateDir, { recursive: true })
   env.HERMES_WEBUI_HOST = args.host

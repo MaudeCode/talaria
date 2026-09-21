@@ -7,6 +7,7 @@
 import { os as orpcBase } from '@orpc/server'
 import { HttpError, type ApiContext } from './router.js'
 import type { RequestContext } from '../http/context.js'
+import { isSafeSessionId } from '../sessions/session.js'
 
 /** Python `_request_session_visibility_exempt`: detail-load owns the mismatch so the frontend can switch profiles; import and chat/start (placeholder retag) run their own rules. */
 const EXEMPT_PROCEDURES = new Set(['sessions.get', 'sessions.import', 'chat.start'])
@@ -32,3 +33,19 @@ export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(
   }
   return next()
 })
+
+/** Python `_stream_id_owner_session_id`: the live registry first, then the run journal once the run has finished. */
+export function streamOwnerSessionId(ctx: RequestContext, streamId: string): string | null {
+  const id = streamId.trim()
+  if (!id) return null
+  const live = ctx.deps.registry.ownerSessionId(id)
+  if (live) return live
+  if (!isSafeSessionId(id)) return null
+  return ctx.deps.journal.findRunSummary(id)?.session_id || null
+}
+
+/** Python `_stream_id_visible_to_request_profile`: a stream is visible when its owner session is (or it has no known owner). */
+export function streamVisibleToRequest(ctx: RequestContext, streamId: string): boolean {
+  const owner = streamOwnerSessionId(ctx, streamId)
+  return !owner || sessionIdVisibleToRequest(ctx, owner)
+}

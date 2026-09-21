@@ -73,4 +73,18 @@ describe('request-profile session visibility', () => {
     expect((await s.get(`/api/session/draft?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
     expect((await s.get(`/api/session/draft?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
   })
+
+  it('a finished run replays from the journal only to the owning profile', async () => {
+    const w = s.deps.journal.writer(sid, 'run1234abcd')
+    w.appendSseEvent('token', { text: 'hi' })
+    w.appendSseEvent('done', { session_id: sid })
+    w.close()
+    expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: work.headers })).status).toBe(404)
+    expect((await s.get('/api/chat/stream/status?stream_id=run1234abcd', { headers: work.headers })).status).toBe(404)
+    expect((await post(s, work, '/api/chat/cancel', { stream_id: 'run1234abcd' })).status).toBe(404)
+    const own = await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: root.headers })
+    expect(own.status).toBe(200)
+    expect(await own.text()).toContain('event: done')
+    expect(((await (await s.get('/api/chat/stream/status?stream_id=run1234abcd', { headers: root.headers })).json()) as { replay_available: boolean }).replay_available).toBe(true)
+  })
 })

@@ -3,7 +3,7 @@ import { implement } from '@orpc/server'
 import { chatContract } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
-import { requestSessionIdGuard } from './session-visibility.js'
+import { requestSessionIdGuard, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -142,15 +142,13 @@ export const chatRouter = os.router({
     cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(() => {
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')
-      const owner = ctx.deps.registry.ownerSessionId(streamId)
-      if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) throw new HttpError(404, 'Session not found')
+      if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
       const cancelled = ctx.deps.turns.cancel(streamId)
       return { ok: true, cancelled, stream_id: streamId }
     })),
     streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(() => {
       const streamId = str(input.stream_id)
-      const owner = ctx.deps.registry.ownerSessionId(streamId)
-      if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) throw new HttpError(404, 'Session not found')
+      if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.liveIds.has(streamId)
       const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown> } = { active, stream_id: streamId, replay_available: false }
       const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null

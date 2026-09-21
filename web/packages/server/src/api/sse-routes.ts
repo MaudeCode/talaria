@@ -12,6 +12,7 @@ import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
+import { streamOwnerSessionId } from './session-visibility.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
 const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
@@ -151,7 +152,7 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
-  const owner = ctx.deps.registry.ownerSessionId(streamId)
+  const owner = streamOwnerSessionId(ctx, streamId)
   if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)

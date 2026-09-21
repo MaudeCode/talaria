@@ -60,9 +60,10 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
     } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 200))
   }
-  const tail = readFileSync(log, 'utf8').slice(-3000)
+  const output = readFileSync(log, 'utf8')
+  const excerpt = output.length > 6000 ? `${output.slice(0, 3000)}\n[... ${String(output.length - 6000)} bytes ...]\n${output.slice(-3000)}` : output
   try { process.kill(child.pid!, 'SIGTERM') } catch { /* already gone */ }
-  throw new Error(`server on ${baseUrl} did not become healthy:\n${tail}`)
+  throw new Error(`server on ${baseUrl} did not become healthy (exit ${String(child.exitCode)}):\n${excerpt}`)
 }
 
 export function saveHandles(handles: ServerHandle[]): void { writeFileSync(STATE_FILE, JSON.stringify(handles)) }

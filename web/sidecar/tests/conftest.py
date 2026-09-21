@@ -70,6 +70,9 @@ class SidecarProcess:
             # unless told the state is disposable; every home here is.
             "HERMES_STATE_DB_GUARD_BYPASS": "1",
         }
+        # GitHub's relocated Linux Python (actions/setup-python) only loads libpython with this set.
+        if os.environ.get("LD_LIBRARY_PATH"):
+            environ["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
         environ.update(env or {})
         self.proc = subprocess.Popen(
             [python or AGENT_PYTHON or sys.executable, "-m", "talaria_sidecar"],
