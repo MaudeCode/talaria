@@ -3,7 +3,8 @@
  * ZIPs, transcript exports, and multipart uploads. Each mirrors its Python
  * handler and reuses the anchored file helpers.
  */
-import { createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
+import { closeSync, createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import { basename, dirname, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
@@ -200,8 +201,8 @@ export function folderZipMaxFiles(env: Record<string, string | undefined>): numb
   return Math.min(FOLDER_ZIP_MAX_FILES_CEILING, Math.max(1, Number.isFinite(n) ? n : 50000))
 }
 
-function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): { files: [string, string][]; total: number; limit: 'max_files' | 'max_bytes' | null } {
-  const files: [string, string][] = []
+function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): { files: [string, string, number][]; total: number; limit: 'max_files' | 'max_bytes' | null } {
+  const files: [string, string, number][] = []
   let total = 0
   const stack = [target]
   while (stack.length) {
@@ -226,7 +227,7 @@ function collectFolder(target: string, workspaceRoot: string, maxBytes: number, 
       try { size = statSync(fp).size } catch { continue }
       if (files.length >= maxFiles) return { files, total, limit: 'max_files' }
       if (total + size > maxBytes) return { files, total, limit: 'max_bytes' }
-      files.push([fp, relative(target, fp)])
+      files.push([fp, relative(target, fp), size])
       total += size
     }
     for (const sub of subdirs.reverse()) stack.push(sub)
@@ -268,7 +269,7 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   if (ctx.method === 'HEAD') { ctx.res.end(); return }
   const zip = new ZipWriter(ctx.res)
   try {
-    for (const [fp, arcname] of files) {
+    for (const [fp, arcname, size] of files) {
       let fd: number
       try {
         fd = openAnchoredFd(workspaceRoot, realpathSync(fp), { wantDir: false })
@@ -276,8 +277,11 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
         ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`)
         continue
       }
+      // The preflight sized the archive from these stats; a file that grows afterwards contributes only the bytes it
+      // had then, so the streamed total never exceeds the admitted limit (an empty file streams nothing).
+      const body = size > 0 ? createReadStream('', { fd, autoClose: true, start: 0, end: size - 1 }) : (closeSync(fd), Readable.from([]))
       // Skip (not abort) an entry that fails mid-read, as Python did; the archive stays valid.
-      try { await zip.addFile(arcname, createReadStream('', { fd, autoClose: true })) } catch (error) { if (ctx.res.destroyed) return; ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`) }
+      try { await zip.addFile(arcname, body) } catch (error) { if (ctx.res.destroyed) return; ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`) }
     }
     await zip.finish()
   } finally {

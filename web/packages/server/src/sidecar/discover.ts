@@ -119,7 +119,7 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
   const scripted = scriptedSidecarCommand(opts.env)
   if (scripted) {
     opts.log(`[sidecar] starting scripted sidecar ${scripted.join(' ')}`)
-    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: stringEnv(opts.env), log: opts.log })
+    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
   }
   const agentDir = discoverAgentDirForLaunch(opts)
   const python = discoverAgentPython(opts.env, agentDir)
@@ -127,7 +127,7 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
     opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
     return null
   }
-  const client = new SidecarClient({ python, agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: stringEnv(opts.env), log: opts.log })
+  const client = new SidecarClient({ python, agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
   opts.log(`[sidecar] starting on ${python} (agent ${agentDir})`)
   return client
 }

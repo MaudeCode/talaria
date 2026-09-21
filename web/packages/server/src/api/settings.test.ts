@@ -336,6 +336,14 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
       expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('OPENAI_API_KEY')
       expect(sidecar.calls.slice(added).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENAI_API_KEY: 'sk-added-later-1234' } })
+      // The sidecar must confirm the change: a refused refresh fails the edit and leaves the file and runtime as they were.
+      sidecar.respond('runtime.env', () => { throw new Error('sidecar busy') })
+      const refused = await post(s, '/api/providers/delete', { provider: 'openai' })
+      expect(refused.status).toBe(503)
+      expect(String((await json(refused)).error)).toContain('did not apply')
+      expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      expect(loadEnvFile(join(s.state, '.env')).OPENAI_API_KEY).toBe('sk-added-later-1234')
+      sidecar.respond('runtime.env', () => ({ ok: true as const }))
       // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
       expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
       expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')

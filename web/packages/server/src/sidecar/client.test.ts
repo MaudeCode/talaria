@@ -52,6 +52,12 @@ describe('FakeSidecar', () => {
   it('forwards the configured environment to the sidecar while keeping its identity keys', () => {
     const env = sidecarSpawnEnv({ env: { HERMES_API_KEY: 'k', HTTPS_PROXY: 'http://proxy:3128', PYTHONPATH: '/extra', HERMES_HOME: '/spoofed' }, hermesHome: '/home/u/.hermes', agentDir: '/agent', sidecarDir: '/web/sidecar' })
     expect(env).toMatchObject({ HERMES_API_KEY: 'k', HTTPS_PROXY: 'http://proxy:3128', HERMES_HOME: '/home/u/.hermes', TALARIA_SIDECAR_AGENT_DIR: '/agent', PYTHONPATH: `/web/sidecar${delimiter}/extra`, PYTHONUNBUFFERED: '1' })
+    // A getter is read at spawn time, so a runtime `.env` edit reaches a restarted child instead of the launch snapshot.
+    const live: Record<string, string> = { OPENAI_API_KEY: 'sk-old' }
+    const opts = { env: () => ({ ...live }), hermesHome: '/h', agentDir: '/a', sidecarDir: '/s' }
+    expect(sidecarSpawnEnv(opts).OPENAI_API_KEY).toBe('sk-old')
+    delete live.OPENAI_API_KEY
+    expect(sidecarSpawnEnv(opts)).not.toHaveProperty('OPENAI_API_KEY')
   })
 
   it('fails closed when not ready', async () => {

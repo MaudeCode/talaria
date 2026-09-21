@@ -52,7 +52,8 @@ export interface SidecarSpawnOptions {
   agentDir: string
   sidecarDir: string
   hermesHome: string
-  env?: Record<string, string>
+  /** The environment to spawn with; a getter is read at every (re)start so runtime `.env` edits reach a restarted child. */
+  env?: Record<string, string> | (() => Record<string, string>)
   log?: (line: string) => void
   /** Restart backoff schedule in milliseconds; the last value repeats. */
   backoffMs?: number[]
@@ -82,13 +83,14 @@ const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 
 /** The configured environment (credentials, proxies, CA bundles) flows through as it did in-process in Python; the sidecar identity keys win. */
 export function sidecarSpawnEnv(opts: Pick<SidecarSpawnOptions, 'env' | 'hermesHome' | 'agentDir' | 'sidecarDir'>): Record<string, string> {
+  const env = typeof opts.env === 'function' ? opts.env() : opts.env
   return {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
-    ...opts.env,
+    ...env,
     HERMES_HOME: opts.hermesHome,
     TALARIA_SIDECAR_AGENT_DIR: opts.agentDir,
-    PYTHONPATH: opts.env?.PYTHONPATH ? `${opts.sidecarDir}${delimiter}${opts.env.PYTHONPATH}` : opts.sidecarDir,
+    PYTHONPATH: env?.PYTHONPATH ? `${opts.sidecarDir}${delimiter}${env.PYTHONPATH}` : opts.sidecarDir,
     PYTHONUNBUFFERED: '1',
   }
 }

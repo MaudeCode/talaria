@@ -279,7 +279,7 @@ export const settingsRouter = os.router({
     setKey: os.providers.setKey.handler(({ input, context: { ctx } }) => run(() => setProviderKey(ctx, str(input.provider).trim().toLowerCase(), input.api_key === null || input.api_key === undefined ? null : str(input.api_key).trim() || null))),
     delete: os.providers.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const pid = str(input.provider).trim().toLowerCase()
-      const result = setProviderKey(ctx, pid, null)
+      const result = await setProviderKey(ctx, pid, null)
       // Provider detection canonicalises ids, so every alias block (`providers.ramp` for `router`) must go too.
       const canonical = canonicaliseProviderId(pid)
       await ctx.deps.agentConfig.update(home(ctx), (c) => {
@@ -381,7 +381,7 @@ export const settingsRouter = os.router({
 })
 
 /** Python `set_provider_key`: `.env` write; `null` removes the key. */
-function setProviderKey(ctx: RequestContext, pid: string, apiKey: string | null): { ok: true; provider: string; display_name: string; action: string } {
+async function setProviderKey(ctx: RequestContext, pid: string, apiKey: string | null): Promise<{ ok: true; provider: string; display_name: string; action: string }> {
   if (!pid) throw new HttpError(400, 'provider is required')
   if (OAUTH_PROVIDERS.has(pid)) throw new HttpError(400, `'${displayName(pid)}' uses OAuth authentication. Use \`hermes model\` in the terminal to configure it.`)
   const envVar = providerEnvVar(pid)
@@ -391,30 +391,40 @@ function setProviderKey(ctx: RequestContext, pid: string, apiKey: string | null)
     if (apiKey.length < 8) throw new HttpError(400, 'API key appears too short.')
   }
   const envPath = join(home(ctx), '.env')
+  // The running sidecar must confirm the change first: a credential the file no longer holds may not linger in it.
+  const runtime = await retireDotenvRuntimeValues(ctx, envVar, apiKey)
   try {
     writeEnvFile(envPath, { [envVar]: apiKey })
   } catch (error) {
     throw new HttpError(400, `Failed to save API key: ${str((error as Error).message)}`)
   }
-  retireDotenvRuntimeValues(ctx, envVar, apiKey)
+  runtime()
   ctx.deps.catalog.invalidate()
   return { ok: true, provider: pid, display_name: displayName(pid), action: apiKey ? 'updated' : 'removed' }
 }
 
 /**
  * The default profile's `.env` was copied into the process environment at startup (and inherited by the sidecar). An
- * edit to that file must reach both, so a removed credential stops being used before any restart; values supplied by
- * the process environment itself are left alone.
+ * edit to that file must reach both: the sidecar is asked to apply it first and the edit fails (503) if it does not
+ * confirm, then the returned thunk updates the process environment once the file is written. Values supplied by the
+ * process environment itself are left alone. A restarted sidecar reads the live environment, so it stays in step.
  */
-function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, apiKey: string | null): void {
-  if (!ctx.deps.isRootProfile(activeProfileName(ctx))) return
+async function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, apiKey: string | null): Promise<() => void> {
+  if (!ctx.deps.isRootProfile(activeProfileName(ctx))) return () => undefined
   const env = ctx.deps.config.env
   const owned = homeDotenvKeys(env)
   // A value the process environment supplied explicitly keeps precedence over the file, as it did at startup.
-  if (!owned.has(envVar) && env[envVar] !== undefined) return
-  if (apiKey) { env[envVar] = apiKey; owned.add(envVar) } else { Reflect.deleteProperty(env, envVar); owned.delete(envVar) }
-  setHomeDotenvKeys(env, owned)
+  if (!owned.has(envVar) && env[envVar] !== undefined) return () => undefined
   const sidecar = ctx.deps.sidecar()
-  if (!sidecar) return
-  sidecar.call('runtime.env', apiKey ? { set: { [envVar]: apiKey } } : { unset: [envVar] }).catch((error: unknown) => { ctx.deps.log(`[providers] sidecar environment not refreshed for ${envVar}: ${str((error as Error).message)}`) })
+  if (sidecar) {
+    try {
+      await sidecar.call('runtime.env', apiKey ? { set: { [envVar]: apiKey } } : { unset: [envVar] })
+    } catch (error) {
+      throw new HttpError(503, `The Agent sidecar did not apply the credential change (${str((error as Error).message)}); retry in a moment`)
+    }
+  }
+  return () => {
+    if (apiKey) { env[envVar] = apiKey; owned.add(envVar) } else { Reflect.deleteProperty(env, envVar); owned.delete(envVar) }
+    setHomeDotenvKeys(env, owned)
+  }
 }
