@@ -9,4 +9,5 @@ const webRoot = process.env.TALARIA_WEB_ROOT ?? resolve(import.meta.dirname, '..
 const deps = createDeps({ webRoot })
 const app = createApp(deps)
 const running = await startServer(app, deps.config)
+deps.relay.start()
 console.log(`  Then open:     ${running.scheme}://localhost:${running.port}`)

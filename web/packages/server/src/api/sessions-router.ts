@@ -16,6 +16,8 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, readFileContent, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { str } from '../util.js'
+import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { RelayPairingError } from '../sessions/relay.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>()
 
@@ -276,6 +278,22 @@ export const sessionsRouter = os.router({
       ctx.deps.events.publish('project_delete', { profile: activeProfile })
       return { ok: true as const }
     })),
+  },
+  talaria: {
+    pair: os.talaria.pair.handler(async ({ input, context }) => {
+      const { ctx } = context
+      const session = await ensureTrustedAuthSession(ctx)
+      const bound = str(session?.bound_profile).trim() || null
+      // Owner permission authorizes publisher registration; it never widens which profile's data the caller reaches.
+      const operator = await sessionCanManageServer(ctx, session)
+      return relayCall(() => ctx.deps.relay.pair(input, bound ?? ctx.deps.activeProfile(), operator))
+    }),
+    presence: os.talaria.presence.handler(async ({ input, context }) => {
+      const { ctx } = context
+      const session = await ensureTrustedAuthSession(ctx)
+      const bound = str(session?.bound_profile).trim() || null
+      return relayCall(() => Promise.resolve(ctx.deps.relay.presence.update(input, ctx.deps.isRootProfile(bound ?? ctx.deps.activeProfile()) ? 'default' : (bound ?? ctx.deps.activeProfile()))))
+    }),
   },
   share: {
     create: os.share.create.handler(({ input, context: { ctx } }) => run(() => {
@@ -574,4 +592,13 @@ function spawnDetached(cmd: string[]): void {
   const child = spawn(file, args, { detached: true, stdio: 'ignore' })
   child.on('error', () => undefined)
   child.unref()
+}
+
+async function relayCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    if (error instanceof RelayPairingError) throw new HttpError(error.status, error.message)
+    throw error
+  }
 }

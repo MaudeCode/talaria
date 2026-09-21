@@ -61,7 +61,8 @@ export interface TurnRunnerDeps {
   attachmentDir: (sid: string) => string
   agentName: () => string
   titleGenerationEnabled: () => boolean
-  /** Track ephemeral/background parents for `/api/background/status`. */
+  /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
+  onTerminal?: (streamId: string, phase: string) => void
 }
 
 export interface StartTurnOptions {
@@ -218,6 +219,9 @@ export class TurnRunner {
         }
       }
       channel.put([event, data, eventId])
+      if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
+        try { deps.onTerminal?.(streamId, event === 'done' ? 'completed' : event === 'cancel' ? 'cancelled' : 'failed') } catch { /* best effort */ }
+      }
     }
     const activeRun = this.registry.activeRuns.get(streamId)
     let s: Session

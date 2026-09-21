@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { AuthStore } from './auth/store.js'
 import { OidcService } from './auth/oidc.js'
 import { PasskeyStore } from './auth/passkeys.js'
+import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { detectWebuiVersion, loadReleaseInfo } from './release.js'
@@ -210,10 +211,15 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const override = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim()
     return override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'media_snapshots')
   }
+  const relay = new RelayService({
+    registry, pending, store, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
+    stateDir: config.stateDir, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
+  })
   const turns = new TurnRunner({
     store,
     service: () => sessions,
     events,
+    onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     registry,
     channels,
     pending,
@@ -331,6 +337,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     profiles,
     onboarding,
     agentVersion: () => sidecar?.describe?.agent_version ?? sidecar?.describe?.pinned_version ?? release.compatibleAgent.version,
+    relay,
     oidc,
     passkeys,
     nativeOidcLimiter: new WindowLimiter(60, 10, now),

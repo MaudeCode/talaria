@@ -3843,6 +3843,131 @@
         }
       }
     },
+    "/api/talaria/relay/pair": {
+      "post": {
+        "operationId": "talaria.pair",
+        "summary": "Register this server with Talaria Relay (owner) or enroll the active profile (any session).",
+        "tags": [
+          "talaria"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "relay_url": {
+                    "type": "string"
+                  },
+                  "publisher_id": {
+                    "type": "string"
+                  },
+                  "publisher_invitation": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relay_url",
+                  "publisher_id",
+                  "publisher_invitation"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "publisher_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "publisher_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/talaria/presence": {
+      "post": {
+        "operationId": "talaria.presence",
+        "summary": "Renew or revoke one browser tab's activity lease; a fresh lease mutes relay alerts for the profile.",
+        "tags": [
+          "talaria"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tab_id": {
+                    "type": "string"
+                  },
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "seq": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "tab_id",
+                  "active",
+                  "seq"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "lease_seconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "lease_seconds"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces": {
       "get": {
         "operationId": "workspaces.list",

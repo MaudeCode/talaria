@@ -99,4 +99,12 @@ export const sessionsContract = {
     revoke: oc.route({ method: 'POST', path: '/api/share/revoke', tags: ['shares'] }).input(z.object({ session_id: z.string() })).output(OkSchema.extend({ session: SessionRowSchema })),
     read: oc.route({ method: 'GET', path: '/api/share/{token}', tags: ['shares'], summary: 'Public read of a shared conversation snapshot.' }).input(z.object({ token: z.string() })).output(z.object({ share: ShareSchema })),
   },
+  talaria: {
+    pair: oc.route({ method: 'POST', path: '/api/talaria/relay/pair', tags: ['talaria'], summary: 'Register this server with Talaria Relay (owner) or enroll the active profile (any session).' })
+      .input(z.object({ relay_url: z.string(), publisher_id: z.string(), publisher_invitation: z.string(), label: z.string().optional() }))
+      .output(z.object({ ok: z.literal(true), publisher_id: z.string() })),
+    presence: oc.route({ method: 'POST', path: '/api/talaria/presence', tags: ['talaria'], summary: 'Renew or revoke one browser tab\'s activity lease; a fresh lease mutes relay alerts for the profile.' })
+      .input(z.object({ tab_id: z.string(), active: z.boolean(), seq: z.number().int() }))
+      .output(z.object({ ok: z.literal(true), lease_seconds: z.number().int() })),
+  },
 }
