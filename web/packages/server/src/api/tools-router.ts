@@ -11,7 +11,8 @@ import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
 import { notesSources } from '../tools/mcp.js'
 import { buildInsights } from '../tools/insights.js'
-import { agentHealth, dashboardStatus, readLogTail, summarizeUpdates, systemHealth, updatesCheck } from '../tools/health.js'
+import { agentHealth, dashboardStatus, readLogTail, systemHealth } from '../tools/health.js'
+import { normalizeChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 
@@ -231,18 +232,21 @@ export const toolsRouter = os.router({
     check: os.updates.check.handler(({ context: { ctx } }) => run(() => {
       const settings = ctx.deps.settings.load()
       if (settings.check_for_updates === false) return { disabled: true as const }
-      return updatesCheck(ctx.deps.version, ctx.deps.agentVersion(), !pyBool(settings.ignore_agent_updates), str(settings.update_channel) || 'stable') as never
+      return ctx.deps.updates.cachedStatus(!pyBool(settings.ignore_agent_updates)) as never
     })),
-    checkNow: os.updates.checkNow.handler(({ input, context: { ctx } }) => run(() => {
+    checkNow: os.updates.checkNow.handler(({ input, context: { ctx } }) => run(async () => {
       const settings = ctx.deps.settings.load()
-      if (settings.check_for_updates === false && !pyBool(input.force)) return { disabled: true as const }
-      const channel = input.channel === 'stable' || input.channel === 'experimental' ? input.channel : str(settings.update_channel) || 'stable'
-      return updatesCheck(ctx.deps.version, ctx.deps.agentVersion(), !pyBool(settings.ignore_agent_updates), channel) as never
+      const force = pyBool(input.force)
+      if (settings.check_for_updates === false && !force) return { disabled: true as const }
+      // An explicit body channel wins over a debounced, not-yet-saved setting.
+      const channel = input.channel === 'stable' || input.channel === 'experimental' ? input.channel : normalizeChannel(settings.update_channel)
+      ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
+      return (await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel)) as never
     })),
-    apply: os.updates.apply.handler(({ input }) => run(() => manualUpdate(input.target))),
-    force: os.updates.force.handler(({ input }) => run(() => manualUpdate(input.target))),
-    clearLock: os.updates.clearLock.handler(({ input }) => run(() => manualUpdate(input.target))),
-    summary: os.updates.summary.handler(({ input }) => run(() => summarizeUpdates(input.updates ?? {}, input.target === 'webui' || input.target === 'agent' ? input.target : null))),
+    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.apply(updateTarget(input.target), bodyChannel(input.channel)) as never)),
+    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.force(updateTarget(input.target), bodyChannel(input.channel)) as never)),
+    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.clearLock(updateTarget(input.target)) as never)),
+    summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.updates ?? {}, input.target) as never)),
   },
   transcribeCapability: os.transcribeCapability.handler(({ context: { ctx } }) => run(async () => {
     const sidecar = ctx.deps.sidecar()
@@ -262,8 +266,9 @@ export const toolsRouter = os.router({
   })),
 })
 
-function manualUpdate(targetRaw: unknown): never {
-  const target = str(targetRaw)
-  if (target !== 'webui' && target !== 'agent') throw new HttpError(400, 'target must be "webui" or "agent"')
-  throw new HttpError(501, `Self-update is not available for npm installs. Update ${target === 'webui' ? '@maudecode/talaria-web with npm' : 'Hermes Agent with its own installer'}, then restart the server.`, { ok: false, status: 'manual_update', target })
+function updateTarget(raw: unknown): 'webui' | 'agent' {
+  if (raw !== 'webui' && raw !== 'agent') throw new HttpError(400, 'target must be "webui" or "agent"')
+  return raw
 }
+
+const bodyChannel = (raw: unknown): 'stable' | 'experimental' | null => (raw === 'stable' || raw === 'experimental' ? raw : null)

@@ -21,7 +21,7 @@ describe('release info', () => {
   it('validates a stamp the way api/release_info.py does', () => {
     const sha = 'a'.repeat(40)
     const dev = developmentInfo(WEB_ROOT)
-    const good = { tag: 'web-v1.2.3', version: '1.2.3', sourceRevision: sha, releaseSet: sha, upstreamBase: sha, contracts: dev.contracts, compatibleAgent: compatibleAgent(WEB_ROOT) }
+    const good = { tag: 'web-v1.2.3', version: '1.2.3', sourceRevision: sha, releaseSet: sha, contracts: dev.contracts, compatibleAgent: compatibleAgent(WEB_ROOT) }
     expect(validateReleaseInfo(good, WEB_ROOT).tag).toBe('web-v1.2.3')
     expect(validateReleaseInfo({ ...good, tag: 'web-exp-v1.2.3' }, WEB_ROOT).tag).toBe('web-exp-v1.2.3')
     expect(() => validateReleaseInfo({ ...good, tag: 'app-v1.2.3' }, WEB_ROOT)).toThrow('namespaced version')
@@ -37,7 +37,7 @@ describe('release info', () => {
     const sha = 'c'.repeat(40)
     const dev = developmentInfo(WEB_ROOT)
     const stamp = join(dir, '_release.json')
-    writeFileSync(stamp, JSON.stringify({ tag: 'web-v9.9.9', version: '9.9.9', sourceRevision: sha, releaseSet: sha, upstreamBase: sha, contracts: dev.contracts, compatibleAgent: dev.compatibleAgent }))
+    writeFileSync(stamp, JSON.stringify({ tag: 'web-v9.9.9', version: '9.9.9', sourceRevision: sha, releaseSet: sha, contracts: dev.contracts, compatibleAgent: dev.compatibleAgent }))
     expect(loadReleaseInfo({ webRoot: WEB_ROOT, releaseFile: stamp }, { verifyCheckout: false }).tag).toBe('web-v9.9.9')
     // The temp dir has no .git marker, so the stamp is trusted as-is.
     expect(loadReleaseInfo({ webRoot: WEB_ROOT, releaseFile: stamp }).tag).toBe('web-v9.9.9')

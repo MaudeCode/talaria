@@ -2,7 +2,7 @@
 /**
  * `talaria-web` (Python `start.sh` + `bootstrap.py` + `ctl.sh`):
  *   talaria-web [port] [--host H] [--no-browser] [--foreground] [--skip-agent-install]   launch (detached unless supervised)
- *   talaria-web serve [launcher args]                                                     run the server in this process
+ *   talaria-web serve [launcher args]                                                     run the server (supervised worker; self-update restarts it)
  *   talaria-web ctl <start|stop|restart|status|logs> [...]                                daemon control
  */
 import { join, resolve } from 'node:path'
@@ -15,6 +15,7 @@ import { launchSidecar } from '../sidecar/discover.js'
 import { loadLauncherDotenv } from '../cli/dotenv.js'
 import { parseBootstrapArgs, runBootstrap } from '../cli/launcher.js'
 import { runCtl } from '../cli/ctl.js'
+import { supervise, WORKER_ENV } from '../cli/supervise.js'
 
 const webRoot = process.env.TALARIA_WEB_ROOT ?? resolve(import.meta.dirname, '..', '..', '..', '..')
 const log = (line: string): void => { console.log(line) }
@@ -28,8 +29,10 @@ function applyServeArgs(argv: string[]): void {
   process.env.HERMES_WEBUI_PORT = String(args.port)
 }
 
-/** The long-lived server: `.env` precedence, Agent sidecar, workers. */
-async function serve(): Promise<void> {
+/** The long-lived server: `.env` precedence, Agent sidecar, workers. A supervisor parent respawns the worker after a self-update. */
+async function serve(args: string[]): Promise<number> {
+  if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log })
+  applyServeArgs(args)
   const home = process.env.HOME ?? ''
   const hermesHome = resolve((process.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, home) || join(home, '.hermes'))
   loadLauncherDotenv({ env: process.env, repoEnvFile: join(webRoot, '.env'), hermesEnvFile: join(hermesHome, '.env'), log: warn })
@@ -51,12 +54,13 @@ async function serve(): Promise<void> {
   deps.hygiene.start()
   log(`  Then open:     ${running.scheme}://localhost:${running.port}`)
   await new Promise<void>(() => undefined)
+  return 0
 }
 
 async function main(argv: string[]): Promise<number> {
   const [first, ...rest] = argv
   if (first === 'ctl') return runCtl({ env: process.env, webRoot, home: process.env.HOME ?? '', serveCommand, log, warn }, rest)
-  if (first === 'serve') { applyServeArgs(rest); await serve(); return 0 }
+  if (first === 'serve') return serve(rest)
   if (first === '-h' || first === '--help' || first === 'help') {
     log('Usage: talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]\n       talaria-web serve [args]\n       talaria-web ctl <start|stop|restart|status|logs>')
     return 0
@@ -66,7 +70,7 @@ async function main(argv: string[]): Promise<number> {
   loadLauncherDotenv({ env: process.env, repoEnvFile: join(webRoot, '.env'), hermesEnvFile: null, log: warn })
   const args = parseBootstrapArgs(argv, process.env)
   const release = loadReleaseInfo({ webRoot })
-  return runBootstrap({ env: process.env, webRoot, hermesHome, home, compatibleAgentRevision: release.compatibleAgent.sourceRevision, serveCommand, log }, args, async () => { applyServeArgs([]); await serve() })
+  return runBootstrap({ env: process.env, webRoot, hermesHome, home, compatibleAgentRevision: release.compatibleAgent.sourceRevision, serveCommand, log }, args, async () => { await serve(['--host', args.host, String(args.port)]) })
 }
 
 try {

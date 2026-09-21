@@ -61,7 +61,6 @@ export const ReleaseInfoSchema = z.object({
   version: z.string(),
   sourceRevision: Sha1.nullable(),
   releaseSet: Sha1.nullable(),
-  upstreamBase: Sha1.nullable(),
   contracts: z.object({ appWeb: z.array(z.number().int()), webRelay: z.array(z.number().int()) }),
   compatibleAgent: z.object({ sourceRevision: Sha1, version: z.string(), image: z.string() }).catchall(z.unknown()),
 })

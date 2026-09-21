@@ -34,16 +34,16 @@ export function supportedContracts(webRoot: string): ReleaseInfo['contracts'] {
 }
 
 export function developmentInfo(webRoot: string): ReleaseInfo {
-  return { tag: null, version: 'development', sourceRevision: null, releaseSet: null, upstreamBase: null, contracts: supportedContracts(webRoot), compatibleAgent: compatibleAgent(webRoot) }
+  return { tag: null, version: 'development', sourceRevision: null, releaseSet: null, contracts: supportedContracts(webRoot), compatibleAgent: compatibleAgent(webRoot) }
 }
 
 export function validateReleaseInfo(metadata: unknown, webRoot: string): ReleaseInfo {
-  const fields = ['tag', 'version', 'sourceRevision', 'releaseSet', 'upstreamBase', 'contracts', 'compatibleAgent']
+  const fields = ['tag', 'version', 'sourceRevision', 'releaseSet', 'contracts', 'compatibleAgent']
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new Error('Invalid Web release metadata fields')
   const m = metadata as Record<string, unknown>
   const keys = Object.keys(m).sort()
   if (keys.join(',') !== [...fields].sort().join(',')) throw new Error('Invalid Web release metadata fields')
-  for (const key of ['sourceRevision', 'releaseSet', 'upstreamBase']) {
+  for (const key of ['sourceRevision', 'releaseSet']) {
     if (typeof m[key] !== 'string' || !SHA_RE.test(m[key])) throw new Error(`Web ${key} must be an immutable commit`)
   }
   if (m.sourceRevision !== m.releaseSet) throw new Error('Web release-set identity must match its source')

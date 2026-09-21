@@ -8,6 +8,7 @@ import { buildInsights } from '../tools/insights.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
 import { toggleName, walkSkillFiles } from '../tools/skills.js'
+import { UpdateService, type UpdateServiceDeps } from '../tools/updates.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, method = 'POST'): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -27,7 +28,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       if (url.includes('/audio/speech')) return Promise.resolve(new Response(Buffer.from('ID3fake-mp3'), { status: 200, headers: { 'content-type': 'audio/mpeg' } }))
       return Promise.resolve(new Response('nope', { status: 404 }))
     }
-    s = await bootTestServer({ sidecar, deps: (deps) => { (deps as { fetch: typeof fetch }).fetch = fakeFetch } })
+    s = await bootTestServer({ sidecar, deps: (deps) => {
+      (deps as { fetch: typeof fetch }).fetch = fakeFetch
+      // The test server's web root is this checkout; point the updater at an npm-style install so no fetch reaches GitHub or origin.
+      const original = deps.updates
+      deps.updates = new UpdateService({ ...(original as unknown as { deps: UpdateServiceDeps }).deps, webRoot: join(deps.config.stateDir, 'not-a-checkout'), agentDir: () => null })
+    } })
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: existsSync(join(params.profile_home, 'config.yaml')), config: configs.get(params.profile_home) ?? {} }))
     sidecar.respond('config.set', (params) => { configs.set(params.profile_home, params.config); writeFileSync(join(params.profile_home, 'config.yaml'), `# ${String(Math.random())}\n`); return { ok: true as const, path: join(params.profile_home, 'config.yaml') } })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
@@ -223,17 +229,26 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     body = await json(res)
     expect(body.empty).toBe(false)
     expect((body.plugins as Json[])[0]).toMatchObject({ key: 'memory/p' })
+    // GET answers the cache without network or git work; POST runs the check (an npm install has no checkout to fast-forward).
     res = await s.get('/api/updates/check')
     body = await json(res)
-    expect((body.webui as Json)).toMatchObject({ name: 'webui', manual_update: true, current_version: 'web-v0.0.0-test' })
+    expect(body).toMatchObject({ webui: null, agent: null, cached: true, channel: 'stable' })
+    res = await post(s, '/api/updates/check', { force: true })
+    body = await json(res)
+    expect((body.webui as Json)).toMatchObject({ name: 'webui', manual_update: true, no_git: true, current_version: 'web-v0.0.0-test' })
+    expect((body.agent as Json)).toMatchObject({ name: 'agent', behind: null, no_git: true })
+    expect((await json(await s.get('/api/updates/check'))).cached).toBe(true)
     res = await post(s, '/api/updates/apply', { target: 'webui' })
-    expect(res.status).toBe(501)
+    body = await json(res)
+    expect(body).toMatchObject({ ok: false, manual_update: true })
+    res = await post(s, '/api/updates/apply', { target: 'agent' })
+    expect(await json(res)).toEqual({ ok: false, message: 'Not a git repository' })
     res = await post(s, '/api/updates/apply', { target: 'x' })
     expect(res.status).toBe(400)
     res = await post(s, '/api/updates/summary', { updates: { webui: { behind: 2 } } })
     body = await json(res)
     expect(body.generated_by).toBe('fallback')
-    expect(body.summary).toContain('WebUI has 2 updates available.')
+    expect(body.summary).toContain('WebUI has 2 update(s) available.')
     res = await post(s, '/api/settings', { check_for_updates: false })
     expect(res.status).toBe(200)
     res = await s.get('/api/updates/check')

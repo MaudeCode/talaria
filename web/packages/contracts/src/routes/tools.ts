@@ -57,7 +57,7 @@ export const toolsContract = {
   },
   plugins: oc.route({ method: 'GET', path: '/api/plugins', tags }).output(PluginsSchema),
   updates: {
-    check: oc.route({ method: 'GET', path: '/api/updates/check', tags, summary: 'npm builds report `manual_update` targets; git-based self-update is not available.' }).output(UpdatesCheckSchema),
+    check: oc.route({ method: 'GET', path: '/api/updates/check', tags, summary: 'Cached status; `POST` runs the check. A Talaria git checkout fast-forwards to the newest completed release set (stable) or origin/main (experimental); npm builds report `manual_update`.' }).output(UpdatesCheckSchema),
     checkNow: oc.route({ method: 'POST', path: '/api/updates/check', tags }).input(z.object({ force: Json.optional(), channel: z.string().nullable().optional() })).output(UpdatesCheckSchema),
     apply: oc.route({ method: 'POST', path: '/api/updates/apply', tags }).input(Target).output(UpdateApplySchema),
     force: oc.route({ method: 'POST', path: '/api/updates/force', tags }).input(Target).output(UpdateApplySchema),

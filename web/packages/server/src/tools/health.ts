@@ -1,4 +1,4 @@
-/** Health, logs, dashboard probe, updates, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`, `api/updates.py`). */
+/** Health, logs, dashboard probe, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
 import { existsSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -249,28 +249,6 @@ export async function dashboardStatus(config: Config, env: Record<string, string
     } catch { /* next target */ }
   }
   return { running: false, enabled }
-}
-
-/** npm builds carry no git checkout to fast-forward; report the installed versions and defer to the package manager. */
-export function updatesCheck(webuiVersion: string, agentVersion: string, includeAgent: boolean, channel: string): Dict {
-  const target = (name: string, version: string): Dict => ({ name, behind: null, current_sha: null, latest_sha: null, current_version: version, manual_update: true, no_git: true })
-  return { webui: target('webui', webuiVersion), agent: includeAgent ? target('agent', agentVersion) : { name: 'agent', behind: 0, current_sha: null, latest_sha: null, manual_update: true, no_git: true, ignored: true }, checked_at: Date.now() / 1000, include_agent: includeAgent, channel, cached: false }
-}
-
-/** Python `summarize_update_payload` deterministic fallback (no LLM callback). */
-export function summarizeUpdates(updates: Dict, target: string | null): Dict {
-  const details: Dict[] = []
-  for (const [key, label] of [['webui', 'WebUI'], ['agent', 'Agent']] as const) {
-    if (target && key !== target) continue
-    const info = dict(updates[key])
-    const behind = Number.parseInt(str(info.behind ?? 0), 10) || 0
-    if (behind <= 0) continue
-    details.push({ name: key, label, behind, current_sha: info.current_sha ?? null, latest_sha: info.latest_sha ?? null, compare_url: info.compare_url ?? null, commits: [], commits_limit: 24, commits_truncated: false })
-  }
-  const notice = details.length ? details.map((d) => `${str(d.label)} has ${String(d.behind)} update${Number(d.behind) === 1 ? '' : 's'} available.`) : ['Everything is up to date.']
-  const sections = [{ title: "What you'll notice", items: notice }]
-  const summary = sections.map((s) => [s.title, ...s.items.map((i) => `- ${i}`), ''].join('\n')).join('\n').trim()
-  return { ok: true, summary, summary_sections: sections, generated_by: 'fallback', cached: false, target: target ?? null, targets: details }
 }
 
 export const LOG_FILE_KEYS = Object.keys(LOG_FILES)

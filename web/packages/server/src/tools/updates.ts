@@ -1,0 +1,960 @@
+/**
+ * Self-update (Python `api/updates.py` + `api/talaria_releases.py`, ticket §13).
+ *
+ * Web: a recognized clean Talaria checkout fast-forwards to the newest completed
+ * release set (stable) or `origin/main` (experimental) and stamps `_release.json`
+ * from immutable git blobs. npm builds and unrecognized checkouts report
+ * `manual_update`. Agent: the external checkout follows its own `v*` tags with a
+ * stash/pull or force reset, then the gateway restarts through the sidecar.
+ * Nothing here deletes git locks; `clearLock` only inventories them.
+ */
+import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import type { Dict } from '../config/agent-config.js'
+import { dict } from '../config/agent-config.js'
+import { str } from '../util.js'
+
+export const REPOSITORY = 'MaudeCode/talaria'
+export const REPOSITORY_URL = `https://github.com/${REPOSITORY}`
+export const API_ROOT = `https://api.github.com/repos/${REPOSITORY}`
+/** Anchored paths work from both the git root and Web's nested working directory. */
+export const WEB_UPDATE_PATHS = [':(top)web/', ':(top)contracts/']
+/** Relative to the git root: the release stamp and the blobs it is verified against. */
+export const RELEASE_STAMP = 'web/api/_release.json'
+const RELEASE_BLOBS = ['sidecar/agent_dependency.json', 'api/contract_versions.json']
+export const CACHE_TTL_S = 1800
+export const RESTART_MAX_WAIT_S = 300
+export const DEFAULT_CHANNEL = 'stable'
+export type Channel = 'stable' | 'experimental'
+
+const SHA = /^[a-f0-9]{40}$/
+const VERSION = '(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)'
+const AGENT_TAG_GLOB = 'v*'
+const GIT_LOCK_SIGNATURES = ["index.lock': file exists", ".lock': file exists", 'another git process seems to be running', 'unable to create .git/index.lock']
+const NETWORK_FAILURES = ['could not resolve host', 'failed to connect', 'network is unreachable', 'no route to host', 'connection timed out', 'timed out after', 'connection reset by peer', 'remote end hung up unexpectedly', 'tls connection was non-properly terminated', 'ssl certificate problem']
+
+export const normalizeChannel = (channel: unknown): Channel => (channel === 'experimental' ? 'experimental' : 'stable')
+
+// ── git ──────────────────────────────────────────────────────────────────────
+
+export interface GitOutcome { out: string; ok: boolean }
+export type GitRun = (args: string[], cwd: string, timeoutMs?: number) => Promise<GitOutcome>
+
+/** Python `_run_git`: stdout on success, else stderr/stdout/a status line, never a throw. */
+export const runGit: GitRun = (args, cwd, timeoutMs = 10_000) =>
+  new Promise((done) => {
+    execFile('git', args, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (error, stdout, stderr) => {
+      const out = stdout.trim()
+      const err = stderr.trim()
+      if (!error) { done({ out, ok: true }); return }
+      const e = error as NodeJS.ErrnoException & { killed?: boolean; code?: number | string }
+      if (e.code === 'ENOENT') { done({ out: 'git executable not found', ok: false }); return }
+      if (e.killed) { done({ out: err || `git ${args.join(' ')} timed out after ${String(timeoutMs / 1000)}s`, ok: false }); return }
+      done({ out: err || out || `git exited with status ${String(e.code)}`, ok: false })
+    })
+  })
+
+export const isGitLockError = (output: string): boolean => { const l = output.toLowerCase(); return GIT_LOCK_SIGNATURES.some((s) => l.includes(s)) }
+
+/** Python `_sanitize_git_diagnostic`: strip URL userinfo, GitHub token shapes, and secret query values. */
+export function sanitizeGitDiagnostic(output: string, limit = 300): string {
+  let s = output.replace(/([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/@\s'"]+)@/g, '$1<redacted>@')
+  s = s.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '<redacted>')
+  s = s.replace(/([?&](?:access_token|oauth_token|private_token|client_secret|app_secret|api[_-]?key|token|password|secret|auth|key)=)[^&\s'"]+/gi, '$1<redacted>').trim()
+  return s.length > limit ? `${s.slice(0, limit).trimEnd()}…` : s
+}
+
+function fetchFailureMessage(out: string, network: string): string {
+  const detail = sanitizeGitDiagnostic(out)
+  if (!detail) return network
+  const lower = detail.toLowerCase()
+  return NETWORK_FAILURES.some((s) => lower.includes(s)) ? network : `fetch failed: ${detail}`
+}
+
+function gitFailure(out: string, message: string): Dict {
+  if (isGitLockError(out)) return { ok: false, lock_conflict: true, message: 'Web update is blocked by a repository lock. Wait for the other Git operation or inspect the checkout manually.' }
+  return { ok: false, message }
+}
+
+function normalizeRemoteUrl(remote: string): string {
+  let url = remote.trim()
+  if (!url) return url
+  if (url.startsWith('git@')) url = url.replace(':', '/').replace('git@', 'https://')
+  url = url.replace(/\/+$/, '')
+  if (url.endsWith('.git')) url = url.slice(0, -4)
+  return url.replace(/\/+$/, '')
+}
+
+function compareUrl(repoUrl: string, current: string | null, latest: string | null): string | null {
+  if (!repoUrl || !current || !latest) return null
+  try { const u = new URL(repoUrl); if (u.protocol !== 'http:' && u.protocol !== 'https:') return null } catch { return null }
+  return `${repoUrl}/compare/${current}...${latest}`
+}
+
+const canon = (value: unknown): string => JSON.stringify(sortKeys(value))
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value as Dict).sort().map((k) => [k, sortKeys((value as Dict)[k])]))
+  return value
+}
+const same = (a: unknown, b: unknown): boolean => canon(a) === canon(b)
+
+// ── published release sets ───────────────────────────────────────────────────
+
+export class ReleaseUnavailable extends Error {}
+
+export type GetJson = (path: string, opts: { asset: boolean }) => Promise<unknown>
+
+/** GitHub API client: opt-in `TALARIA_RELEASE_TOKEN`, 2 MB cap, and asset redirects only to GitHub's release host with the token stripped. */
+export function githubJson(fetchImpl: typeof fetch, env: Record<string, string | undefined>): GetJson {
+  return async (path, { asset }) => {
+    const headers: Record<string, string> = { Accept: asset ? 'application/octet-stream' : 'application/vnd.github+json', 'User-Agent': 'Talaria-Web', 'X-GitHub-Api-Version': '2026-03-10' }
+    const token = (env.TALARIA_RELEASE_TOKEN ?? '').trim()
+    if (token) headers.Authorization = `Bearer ${token}`
+    let res = await fetchImpl(API_ROOT + path, { headers, redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    if (res.status >= 300 && res.status < 400) {
+      const target = new URL(res.headers.get('location') ?? '', API_ROOT + path)
+      if (target.protocol !== 'https:' || target.hostname !== 'release-assets.githubusercontent.com') throw new ReleaseUnavailable('Unexpected release download redirect')
+      const anonymous = { ...headers }
+      delete anonymous.Authorization
+      res = await fetchImpl(target.toString(), { headers: anonymous, signal: AbortSignal.timeout(5000) })
+    }
+    if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`)
+    const body = await res.text()
+    if (body.length > 2_000_000) throw new ReleaseUnavailable('Release metadata exceeds the download limit')
+    return JSON.parse(body) as unknown
+  }
+}
+
+export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; manifestReleaseSet: string; runtime: Dict; release_url: string }
+
+/** Python `published_web_release`: the newest completed `release-set-<sha>` whose Web component matches the channel's tag family. */
+export async function publishedWebRelease(channel: Channel, getJson: GetJson, now: () => number = () => performance.now()): Promise<PublishedRelease> {
+  const tagPattern = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`)
+  const deadline = now() + 15_000
+  const fetchJson = (path: string, asset = false): Promise<unknown> => {
+    if (now() >= deadline) throw new ReleaseUnavailable('Release lookup exceeded its deadline; retry or update manually')
+    return getJson(path, { asset })
+  }
+  const published: Dict[] = []
+  let exhausted = true
+  for (let page = 1; page <= 5; page += 1) {
+    const releases = await fetchJson(`/releases?per_page=100&page=${String(page)}`)
+    if (!Array.isArray(releases)) throw new ReleaseUnavailable('Invalid published release list')
+    for (const item of releases) if (item && typeof item === 'object' && !(item as Dict).draft && typeof (item as Dict).published_at === 'string') published.push(item as Dict)
+    if (releases.length < 100) { exhausted = false; break }
+  }
+  if (exhausted) throw new ReleaseUnavailable('Release history exceeds automatic lookup; update manually')
+  published.sort((a, b) => (str(a.published_at) < str(b.published_at) ? 1 : str(a.published_at) > str(b.published_at) ? -1 : 0))
+  for (const release of published) {
+    const tag = release.tag_name
+    if (typeof tag !== 'string' || !/^release-set-[a-f0-9]{40}$/.test(tag)) continue
+    if (!Array.isArray(release.assets)) throw new ReleaseUnavailable('Published release set has invalid assets')
+    const assets = release.assets.filter((a): a is Dict => Boolean(a) && typeof a === 'object' && (a as Dict).name === 'release-set.json')
+    const id = assets[0]?.id
+    if (assets.length !== 1 || typeof id !== 'number' || !Number.isInteger(id) || id < 1) throw new ReleaseUnavailable('Published release set lacks its immutable manifest')
+    const manifest = await fetchJson(`/releases/assets/${String(id)}`, true)
+    const m = manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? (manifest as Dict) : null
+    if (m?.schemaVersion !== 1 || m.status !== 'complete' || m.releaseSet !== tag.slice('release-set-'.length)) throw new ReleaseUnavailable('Release set is incomplete or has inconsistent provenance')
+    if (!m.components || typeof m.components !== 'object' || Array.isArray(m.components)) throw new ReleaseUnavailable('Release set lacks component metadata')
+    const componentRaw = (m.components as Dict).web ?? {}
+    if (!componentRaw || typeof componentRaw !== 'object' || Array.isArray(componentRaw)) throw new ReleaseUnavailable('Release set lacks Web metadata')
+    const component = componentRaw as Dict
+    const componentTag = component.tag
+    if (typeof componentTag !== 'string' || !tagPattern.test(componentTag)) continue
+    const source = component.sourceRevision
+    if (typeof source !== 'string' || !SHA.test(source) || component.releaseSet !== source || component.version !== componentTag.split('-v').pop() || typeof component.image !== 'string' || !/^ghcr\.io\/maudecode\/talaria-web@sha256:[a-f0-9]{64}$/.test(component.image)) {
+      throw new ReleaseUnavailable('Web release references are mutable or inconsistent')
+    }
+    const contracts = dict(m.contracts)
+    const supported: Dict = {}
+    for (const name of ['appWeb', 'webRelay']) {
+      const items = dict(contracts[name]).web
+      if (!Array.isArray(items) || !items.length || !items.every((v) => Number.isInteger(v) && (v as number) > 0)) throw new ReleaseUnavailable('Release set lacks Web compatibility provenance')
+      supported[name] = items
+    }
+    const agent = m.agent
+    if (!agent || typeof agent !== 'object' || Array.isArray(agent)) throw new ReleaseUnavailable('Release set lacks Web compatibility provenance')
+    return {
+      ...(component as unknown as PublishedRelease),
+      tag: componentTag,
+      version: str(component.version),
+      sourceRevision: source,
+      releaseSet: source,
+      image: component.image,
+      manifestReleaseSet: str(m.releaseSet),
+      runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
+      release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
+    }
+  }
+  throw new ReleaseUnavailable('No completed Talaria Web release is available on this channel')
+}
+
+// ── Web checkout ─────────────────────────────────────────────────────────────
+
+/** The git root when `webRoot` is `<root>/web` of a Talaria checkout with a GitHub `maudecode/talaria` origin; else null. */
+export async function checkoutRoot(webRoot: string | null, git: GitRun): Promise<string | null> {
+  if (!webRoot || !existsSync(webRoot)) return null
+  const web = realpathSync(webRoot)
+  const top = await git(['rev-parse', '--show-toplevel'], web)
+  if (!top.ok || !top.out || resolve(realpathSync(top.out), 'web') !== web) return null
+  const root = realpathSync(top.out)
+  if (!existsSync(join(root, 'contracts', 'versions.json')) || !existsSync(join(web, 'package.json'))) return null
+  const remote = await git(['remote', 'get-url', 'origin'], root)
+  if (!remote.ok) return null
+  const normalized = remote.out.trim().replace(/\/+$/, '').replace(/\.git$/, '').toLowerCase()
+  if (normalized === 'git@github.com:maudecode/talaria') return root
+  try {
+    const u = new URL(normalized)
+    const port = u.port === '' ? null : u.port
+    if ((u.protocol !== 'https:' && u.protocol !== 'ssh:') || u.hostname !== 'github.com' || u.pathname !== '/maudecode/talaria' || u.search || u.hash) return null
+    if (port !== null && port !== (u.protocol === 'https:' ? '443' : '22')) return null
+    return root
+  } catch {
+    return null
+  }
+}
+
+/** Python `verify_release_source`: the stamp Web expects for `release`, computed from immutable blobs at its source revision. */
+export async function verifyReleaseSource(root: string, release: PublishedRelease, git: GitRun): Promise<Dict> {
+  const files: Dict = {}
+  for (const name of RELEASE_BLOBS) {
+    const shown = await git(['show', `${release.sourceRevision}:web/${name}`], root)
+    if (!shown.ok) throw new Error('missing release metadata')
+    files[name] = JSON.parse(shown.out) as unknown
+  }
+  const pin = dict(files['sidecar/agent_dependency.json'])
+  const versions = dict(files['api/contract_versions.json'])
+  const expected = {
+    tag: release.tag,
+    version: release.version,
+    sourceRevision: release.sourceRevision,
+    releaseSet: release.sourceRevision,
+    contracts: { appWeb: [dict(versions.appWeb).fixtureVersion], webRelay: [dict(versions.webRelay).protocolVersion] },
+    compatibleAgent: { ...dict(pin['x-talaria']), image: dict(dict(pin.services)['hermes-agent']).image },
+  }
+  if (!same(expected, release.runtime)) throw new Error('release metadata differs from source')
+  return expected
+}
+
+export interface ReleaseIdentity {
+  /** `RELEASE_INFO`: the stamp when it matches the checkout, else development info. */
+  release: () => Dict
+  /** `STAMPED_RELEASE_INFO`: the validated stamp regardless of checkout identity. */
+  stamped: () => Dict
+  /** `RUNNING_SOURCE_REVISION`: HEAD when this process started. */
+  runningSourceRevision: () => string | null
+}
+
+const stampPath = (root: string): string => join(root, RELEASE_STAMP)
+const readStamp = (path: string): string | null => {
+  if (!existsSync(path) && !isSymlink(path)) return null
+  if (isSymlink(path)) throw new Error('local release stamp is a symbolic link')
+  return readFileSync(path, 'utf8')
+}
+const isSymlink = (path: string): boolean => { try { return lstatSync(path).isSymbolicLink() } catch { return false } }
+
+/** Python `_verified_release_stamp`: `[expected, installed]`; throws on a modified stamp. */
+async function verifiedReleaseStamp(root: string, release: PublishedRelease, git: GitRun, id: ReleaseIdentity): Promise<[Dict, Dict | null]> {
+  const expected = await verifyReleaseSource(root, release, git)
+  const raw = readStamp(stampPath(root))
+  const installed = raw === null ? null : (JSON.parse(raw) as Dict)
+  if (installed !== null && ![id.release(), id.stamped(), expected].some((c) => same(c, installed))) throw new Error('local release stamp was modified')
+  return [expected, installed]
+}
+
+/** Python `_main_stamp`: the unchanged generated stamp bytes (to discard when leaving a release), else null. */
+function mainStamp(root: string, id: ReleaseIdentity): string | null {
+  const data = readStamp(stampPath(root))
+  if (data !== null && (!id.stamped().tag || !same(JSON.parse(data), id.stamped()))) throw new Error('local release stamp was modified')
+  return data
+}
+
+async function mainRevision(root: string, git: GitRun): Promise<[string | null, string]> {
+  const fetched = await git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root, 30_000)
+  if (!fetched.ok) return [null, fetched.out]
+  const source = await git(['rev-parse', 'refs/remotes/origin/main^{commit}'], root)
+  return source.ok && SHA.test(source.out) ? [source.out, ''] : [null, '']
+}
+
+async function mainPathsDiffer(root: string, before: string, after: string, git: GitRun): Promise<boolean | null> {
+  const files = await git(['diff', '--no-renames', '--name-only', before, after, '--', ...WEB_UPDATE_PATHS], root)
+  return files.ok ? Boolean(files.out) : null
+}
+
+async function mainChangeCount(root: string, before: string, after: string, git: GitRun): Promise<number | null> {
+  const changed = await mainPathsDiffer(root, before, after, git)
+  if (changed === null) return null
+  if (!changed) return 0
+  const count = await git(['rev-list', '--count', '--full-history', `${before}..${after}`, '--', ...WEB_UPDATE_PATHS], root)
+  const n = Number.parseInt(count.out, 10)
+  return count.ok && /^\d+$/.test(count.out) && n > 0 ? n : null
+}
+
+async function mainRestartPending(root: string, head: string, git: GitRun, id: ReleaseIdentity): Promise<boolean> {
+  const running = id.runningSourceRevision()
+  if (running === head) return false
+  if (!running) return true
+  return (await mainPathsDiffer(root, running, head, git)) !== false
+}
+
+async function checkMainUpdate(root: string | null, result: Dict, git: GitRun, id: ReleaseIdentity): Promise<Dict> {
+  Object.assign(result, { branch: 'origin/main', release_based: false })
+  if (root === null) return { ...result, manual_update: true, message: 'Main updates require an authenticated Talaria source checkout with Web under web/.' }
+  const [source, error] = await mainRevision(root, git)
+  if (source === null) return { ...result, error: gitFailure(error, 'Could not fetch origin/main; check Git read access.').message }
+  Object.assign(result, { latest_sha: source, latest_version: `main@${source.slice(0, 12)}` })
+  const head = await git(['rev-parse', 'HEAD'], root)
+  const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
+  if (!head.ok || !SHA.test(head.out) || !status.ok) return { ...result, manual_update: true, error: 'Could not verify the source checkout' }
+  Object.assign(result, { installed_sha: head.out, dirty: Boolean(status.out) })
+  const base = await git(['merge-base', head.out, source], root)
+  result.current_sha = base.ok && SHA.test(base.out) ? base.out : null
+  if (result.current_sha) result.compare_url = `${REPOSITORY_URL}/compare/${base.out}...${source}`
+  if (!base.ok || base.out !== head.out) return { ...result, manual_update: true, message: 'This checkout is ahead of or diverged from origin/main; reconcile it manually.' }
+  const count = await mainChangeCount(root, head.out, source, git)
+  if (count === null) return { ...result, error: 'Could not compare the source checkout with origin/main' }
+  try { mainStamp(root, id) } catch { return { ...result, manual_update: true, error: 'Inspect the modified release stamp before updating.' } }
+  Object.assign(result, { behind: count, metadata_repair: count === 0 && (await mainRestartPending(root, head.out, git, id)) })
+  if (status.out) Object.assign(result, { manual_update: true, message: 'Commit or remove local changes before updating; Web updates never discard them.' })
+  else if (result.metadata_repair) result.message = 'Source is current; finish the update to restart with that revision.'
+  return result
+}
+
+/** Python `check_web_update`. */
+export async function checkWebUpdate(webRoot: string | null, currentVersion: string, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity): Promise<Dict> {
+  const root = await checkoutRoot(webRoot, git)
+  const result: Dict = { name: 'webui', channel, repo_url: REPOSITORY_URL, current_version: currentVersion, behind: null, no_git: root === null }
+  if (channel === 'experimental' && root !== null) return checkMainUpdate(root, result, git, id)
+  let release: PublishedRelease
+  try {
+    release = await publishedWebRelease(channel, getJson)
+  } catch (error) {
+    if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message }
+    return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
+  }
+  Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: release.tag, release_based: true, release_url: release.release_url, image: release.image })
+  if (root === null) {
+    const current = id.release().sourceRevision ?? null
+    const version = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(currentVersion)
+    let behind: number | null = version && current === release.sourceRevision ? 0 : null
+    if (behind === null && version) {
+      const installed = version.slice(1).map(Number)
+      const latest = release.version.split('.').map(Number)
+      const cmp = installed.map((v, i) => Math.sign(v - (latest[i] ?? 0))).find((s) => s !== 0) ?? 0
+      if (cmp !== 0) behind = cmp < 0 ? 1 : 0
+    }
+    return { ...result, current_sha: current, behind, no_git: true, manual_update: true, message: 'Use the published Talaria Web image or authenticated monorepo installation; legacy checkouts require migration.' }
+  }
+  const head = await git(['rev-parse', 'HEAD'], root)
+  const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
+  if (!head.ok || !SHA.test(head.out) || !status.ok) return { ...result, manual_update: true, error: 'Could not verify the source checkout' }
+  const current = head.out
+  Object.assign(result, { installed_sha: current, dirty: Boolean(status.out) })
+  let base: string
+  let knownBase: boolean
+  if (current === release.sourceRevision) {
+    try {
+      const [expected, installed] = await verifiedReleaseStamp(root, release, git, id)
+      result.behind = 0
+      result.metadata_repair = !same(installed, expected) || !same(id.release(), expected)
+      if (result.metadata_repair) result.message = 'Apply the selected release again to repair its metadata or restart with its recorded identity.'
+    } catch {
+      Object.assign(result, { behind: null, manual_update: true, error: 'Could not verify local release provenance; inspect the release stamp before updating.' })
+    }
+    base = current
+    knownBase = true
+  } else {
+    const contains = await git(['merge-base', '--is-ancestor', release.sourceRevision, current], root)
+    if (contains.ok) return { ...result, behind: null, manual_update: true, current_sha: null, message: 'This checkout is ahead of the selected release. Manage it manually or check out the published release and restart Web.' }
+    result.behind = 1
+    const mb = await git(['merge-base', current, release.sourceRevision], root)
+    base = mb.out
+    knownBase = mb.ok
+    if (knownBase && base !== current) Object.assign(result, { manual_update: true, message: 'Reconcile divergent source history before updating Web.' })
+  }
+  // Local-only commits cannot appear in a GitHub comparison; omit unresolvable links.
+  result.current_sha = knownBase && SHA.test(base) ? base : null
+  if (result.current_sha) result.compare_url = `${REPOSITORY_URL}/compare/${base}...${release.sourceRevision}`
+  if (status.out) Object.assign(result, { manual_update: true, message: 'Commit or remove local changes before updating; Web updates never discard them.' })
+  return result
+}
+
+/** Python `apply_web_update`: fast-forward a recognized clean checkout to main or a published Stable tag. */
+export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity): Promise<Dict> {
+  const root = await checkoutRoot(webRoot, git)
+  if (root === null) return { ok: false, manual_update: true, message: 'Automatic updates require a Talaria monorepo checkout with Web under web/. Migrate this installation manually.' }
+  const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
+  if (!status.ok || status.out) return { ok: false, dirty: true, message: 'Web update refused: the checkout must be clean, including untracked files.' }
+  for (const marker of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'BISECT_LOG']) {
+    const path = await git(['rev-parse', '--git-path', marker], root)
+    if (!path.ok || existsSync(resolve(root, path.out))) return { ok: false, message: 'Finish or abort the repository operation before updating Web.' }
+  }
+  const headRes = await git(['rev-parse', 'HEAD'], root)
+  if (!headRes.ok || !SHA.test(headRes.out)) return { ok: false, message: 'Could not verify the current source revision' }
+  const head = headRes.out
+  const main = channel === 'experimental'
+  let source: string
+  let tag: string
+  let release: PublishedRelease | null = null
+  if (main) {
+    const [revision, error] = await mainRevision(root, git)
+    if (revision === null) return gitFailure(error, 'Could not fetch origin/main; check Git read access.')
+    source = revision
+    tag = 'main'
+  } else {
+    try {
+      release = await publishedWebRelease(channel, getJson)
+    } catch {
+      return { ok: false, message: 'Cannot resolve a completed Talaria release. Check private-repository read access.' }
+    }
+    source = release.sourceRevision
+    tag = release.tag
+  }
+  if (head !== source && !main) {
+    // Fetch only this immutable tag; never force-replace a local tag or pull an unrecorded tip.
+    const fetched = await git(['fetch', '--no-tags', 'origin', `refs/tags/${tag}:refs/tags/${tag}`], root, 30_000)
+    if (!fetched.ok) return gitFailure(fetched.out, 'Could not fetch the published Web tag. Check Git credentials or a conflicting local tag.')
+    const resolved = await git(['rev-parse', `refs/tags/${tag}^{commit}`], root)
+    if (!resolved.ok || resolved.out !== source) return { ok: false, message: 'Published Web tag does not match the immutable release manifest' }
+  }
+  if (head !== source) {
+    const forward = await git(['merge-base', '--is-ancestor', head, source], root)
+    if (!forward.ok) {
+      const contains = await git(['merge-base', '--is-ancestor', source, head], root)
+      if (contains.ok) return { ok: false, manual_update: true, target: 'webui', channel, message: 'This checkout is ahead of the selected source. Manage it manually; updates never rewind local work.' }
+      return { ok: false, message: 'Web update refused: source histories diverge; reconcile the checkout manually.' }
+    }
+  }
+  if (main) {
+    const count = await mainChangeCount(root, head, source, git)
+    if (count === null) return { ok: false, message: 'Could not compare Web and contract changes against origin/main.' }
+    if (count === 0) source = head // No checkout mutation for App/Relay-only changes.
+  }
+  // Compare provenance with the immutable incoming files before modifying the checkout.
+  let expected: Dict | null = null
+  let installed: Dict | string | null
+  try {
+    if (main) installed = mainStamp(root, id)
+    else [expected, installed] = await verifiedReleaseStamp(root, release!, git, id)
+  } catch {
+    return { ok: false, message: 'Web update refused: source or local provenance does not match the release manifest.' }
+  }
+  const runtimeCurrent = main ? !(await mainRestartPending(root, head, git, id)) : same(installed, expected) && same(id.release(), expected)
+  if (head === source && runtimeCurrent) return { ok: true, up_to_date: true, target: 'webui', channel, message: main ? 'Web and shared contracts are current on main.' : 'Talaria Web already contains the selected release.' }
+  const again = await git(['rev-parse', 'HEAD'], root)
+  const clean = await git(['status', '--porcelain', '--untracked-files=all'], root)
+  if (!again.ok || again.out !== head || !clean.ok || clean.out) return { ok: false, message: 'The checkout changed during the update; retry after it is clean.' }
+  if (head !== source) {
+    const merged = await git(['merge', '--ff-only', '--no-stat', '--no-overwrite-ignore', source], root, 30_000)
+    const actual = await git(['rev-parse', 'HEAD'], root)
+    if (!merged.ok || !actual.ok || actual.out !== source) return gitFailure(merged.out, 'Web fast-forward failed; no local changes were discarded.')
+  }
+  const stamp = stampPath(root)
+  if (main && installed !== null) {
+    try {
+      if (isSymlink(stamp) || readFileSync(stamp, 'utf8') !== installed) throw new Error('release stamp changed during update')
+      unlinkSync(stamp)
+    } catch {
+      return { ok: false, message: 'Source advanced but its release stamp could not be cleared; inspect it before restarting Web.' }
+    }
+  } else if (!main && !same(installed, expected)) {
+    const temporary = join(dirname(stamp), `.release-${String(process.pid)}-${String(Date.now())}`)
+    try {
+      writeFileSync(temporary, `${JSON.stringify(expected, null, 2)}\n`)
+      renameSync(temporary, stamp)
+    } catch {
+      rmSync(temporary, { force: true })
+      return { ok: false, message: 'Source advanced, but release metadata could not be written. Repair file permissions before restarting Web.' }
+    }
+  }
+  return { ok: true, target: 'webui', channel, sourceRevision: source, message: `Updated Talaria Web to ${tag}.` }
+}
+
+// ── Agent checkout (external project, `v*` tags, stable only) ────────────────
+
+async function releaseTags(path: string, git: GitRun): Promise<string[]> {
+  const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname'], path)
+  return out.ok ? out.out.split('\n').map((l) => l.trim()).filter(Boolean) : []
+}
+async function currentReleaseTag(path: string, git: GitRun): Promise<string | null> {
+  const out = await git(['describe', '--tags', '--abbrev=0', '--match', AGENT_TAG_GLOB], path)
+  return out.ok && out.out ? out.out : null
+}
+const releaseGap = (tags: string[], current: string | null, latest: string): number => (current === latest ? 0 : current !== null && tags.includes(current) ? tags.indexOf(current) : 1)
+async function headIsPastLatestTag(path: string, current: string | null, git: GitRun): Promise<boolean> {
+  if (!current) return false
+  const full = await git(['describe', '--tags', '--always', '--match', AGENT_TAG_GLOB], path)
+  return full.ok && Boolean(full.out) && full.out !== current
+}
+const headContainsRef = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', ref, 'HEAD'], path)).ok
+const canFastForwardTo = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', 'HEAD', ref], path)).ok
+
+async function detectDefaultBranch(path: string, git: GitRun): Promise<string> {
+  const out = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], path)
+  if (out.ok && out.out) return out.out.split('/').pop() ?? 'master'
+  for (const branch of ['master', 'main']) if ((await git(['rev-parse', '--verify', `origin/${branch}`], path)).ok) return branch
+  return 'master'
+}
+async function upstreamRef(path: string, git: GitRun): Promise<string> {
+  const upstream = await git(['rev-parse', '--abbrev-ref', '@{upstream}'], path)
+  return upstream.ok && upstream.out ? upstream.out : `origin/${await detectDefaultBranch(path, git)}`
+}
+
+/** Python `_select_apply_compare_ref` for the Agent: the latest reachable `v*` tag, else the tracking branch. */
+async function selectAgentCompareRef(path: string, git: GitRun): Promise<string> {
+  const tags = await releaseTags(path, git)
+  const latest = tags[0]
+  if (latest) {
+    const current = await currentReleaseTag(path, git)
+    const behind = releaseGap(tags, current, latest)
+    const fallthrough = (behind === 0 && (await headIsPastLatestTag(path, current, git))) || (behind > 0 && (await headContainsRef(path, latest, git))) || (behind > 0 && !(await canFastForwardTo(path, latest, git)))
+    if (!fallthrough) return latest
+  }
+  return upstreamRef(path, git)
+}
+
+async function checkAgentRelease(path: string, git: GitRun): Promise<Dict | null> {
+  const tags = await releaseTags(path, git)
+  const latest = tags[0]
+  if (!latest) return null
+  const current = await currentReleaseTag(path, git)
+  let behind = releaseGap(tags, current, latest)
+  if (current === null) {
+    const ahead = await git(['tag', '--list', AGENT_TAG_GLOB, '--contains', 'HEAD'], path)
+    const count = ahead.ok ? ahead.out.split('\n').filter((l) => l.trim()).length : 0
+    if (count > 0) behind = count
+  }
+  if (behind === 0 && (await headIsPastLatestTag(path, current, git))) return null
+  if (behind > 0 && (await headContainsRef(path, latest, git))) return null
+  if (behind > 0 && !(await canFastForwardTo(path, latest, git))) return null
+  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
+  return { name: 'agent', behind, current_sha: current, latest_sha: latest, branch: latest, repo_url: remote, release_based: true, current_version: current, latest_version: latest, channel: DEFAULT_CHANNEL }
+}
+
+async function checkAgentBranch(path: string, git: GitRun): Promise<Dict> {
+  const ref = await upstreamRef(path, git)
+  const count = await git(['rev-list', '--count', `HEAD..${ref}`], path)
+  const behind = count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : 0
+  const mb = await git(['merge-base', 'HEAD', ref], path)
+  let current: string | null = null
+  if (mb.ok && mb.out) { const short = await git(['rev-parse', '--short', mb.out], path); current = short.ok && short.out ? short.out : null }
+  const latest = (await git(['rev-parse', '--short', ref], path)).out
+  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
+  return { name: 'agent', behind, current_sha: current, latest_sha: latest, branch: ref, repo_url: remote, compare_url: compareUrl(remote, current, latest) }
+}
+
+async function isDirty(path: string, git: GitRun): Promise<boolean> {
+  const out = await git(['diff-index', '--quiet', 'HEAD', '--'], path, 1000)
+  return !out.ok && (out.out === 'git exited with status 1' || !out.out || out.out.startsWith('git exited with status '))
+}
+
+/** Python `_check_repo` for the Agent checkout: fetch tags, prefer the release view, else the branch view. */
+export async function checkAgentUpdate(path: string | null, git: GitRun): Promise<Dict> {
+  if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
+  const fetched = await git(['fetch', 'origin', '--tags', '--force'], path, 15_000)
+  if (!fetched.ok) {
+    const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
+    const info = (await checkAgentRelease(path, git)) ?? { name: 'agent', behind: null }
+    return { ...info, error: message, stale_check: true, dirty: await isDirty(path, git) }
+  }
+  const info = (await checkAgentRelease(path, git)) ?? { ...(await checkAgentBranch(path, git)), channel: DEFAULT_CHANNEL }
+  return { ...info, dirty: await isDirty(path, git) }
+}
+
+/** Python `_apply_update_inner` (agent branch): fetch, stash, `pull --ff-only`, pop. */
+export async function applyAgentUpdate(path: string | null, git: GitRun): Promise<Dict> {
+  if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
+  const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
+  if (!fetched.ok) {
+    if (isGitLockError(fetched.out)) return { ok: false, message: `Fetch failed due to a repository lock: ${fetched.out.trim()}`, lock_conflict: true }
+    return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
+  }
+  const ref = await selectAgentCompareRef(path, git)
+  const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
+  if (!status.ok) {
+    if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
+    return { ok: false, message: `Failed to inspect repo status: ${status.out.slice(0, 200)}` }
+  }
+  if (status.out.split('\n').some((line) => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(line.slice(0, 2)))) {
+    return { ok: false, message: `The local agent repo has unresolved merge conflicts. To reset to the latest remote version run: git -C ${path} checkout . && git -C ${path} pull --ff-only`, conflict: true }
+  }
+  let stashed = false
+  if (status.out) {
+    if (!(await git(['stash', 'push', '-m', 'hermes-update-autostash'], path)).ok) return { ok: false, message: 'Failed to stash local changes' }
+    stashed = true
+  }
+  const slash = ref.indexOf('/')
+  const pullArgs = slash > 0 ? ['pull', '--ff-only', ref.slice(0, slash), ref.slice(slash + 1)] : ['pull', '--ff-only', 'origin', ref]
+  const pulled = await git(pullArgs, path, 30_000)
+  if (!pulled.ok) {
+    let note = ''
+    if (stashed) note = ` ${await restoreStash(path, git, pulled.out)}`
+    if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true }
+    return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}` }
+  }
+  let message = `agent updated to ${ref}`
+  if (stashed) {
+    const popped = await git(['stash', 'pop'], path)
+    if (!popped.ok) message += '. Local changes remain in `git stash list`; resolve them manually.'
+  }
+  return { ok: true, message, target: 'agent', ref }
+}
+
+async function restoreStash(path: string, git: GitRun, pullOut: string): Promise<string> {
+  if ((await git(['stash', 'pop'], path)).ok) return 'Local modifications were restored from the temporary stash.'
+  if ((await git(['stash', 'apply'], path)).ok) { await git(['stash', 'drop'], path); return 'Local modifications were restored from the temporary stash.' }
+  return `Your local modifications could not be restored automatically (stash pop failed after pull error: ${pullOut.trim().slice(0, 200) || 'no detail'}). They remain safely in \`git stash list\`; run \`git -C ${path} stash pop\` once the lock is cleared.`
+}
+
+/** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
+export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void): Promise<Dict> {
+  if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
+  const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
+  if (!fetched.ok) return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your connection.') }
+  const ref = await selectAgentCompareRef(path, git)
+  if ((await headContainsRef(path, ref, git)) && !(await canFastForwardTo(path, ref, git))) {
+    return { ok: false, message: `agent is already ahead of the stable channel (${ref}); refusing to rewind the checkout. Switching to a slower channel keeps your current version until that channel catches up.`, target: 'agent', channel: DEFAULT_CHANNEL, refused_rewind: true }
+  }
+  await git(['checkout', '.'], path)
+  const cleaned = await git(['clean', '-fd'], path)
+  if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${cleaned.out}`)
+  if (!(await git(['reset', '--hard', ref], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
+  return { ok: true, message: `agent force-updated to ${ref}`, target: 'agent', ref }
+}
+
+/** Python `_inventory_locks`: report `.git/**\/*.lock` without touching any of them. */
+export function inventoryLocks(path: string): { well_known_lock_present: boolean; well_known_lock_path: string | null; other_locks: string[] } {
+  const gitDir = join(path, '.git')
+  const out: { well_known_lock_present: boolean; well_known_lock_path: string | null; other_locks: string[] } = { well_known_lock_present: false, well_known_lock_path: null, other_locks: [] }
+  if (!existsSync(gitDir)) return out
+  const wellKnown = join(gitDir, 'index.lock')
+  try { out.well_known_lock_present = existsSync(wellKnown) } catch { out.well_known_lock_present = true }
+  out.well_known_lock_path = wellKnown
+  try {
+    for (const entry of readdirSync(gitDir, { recursive: true, encoding: 'utf8' }).sort()) {
+      const rel = entry.split('\\').join('/')
+      if (rel.endsWith('.lock') && rel !== 'index.lock') out.other_locks.push(rel)
+    }
+  } catch { /* unreadable subtrees are skipped */ }
+  return out
+}
+
+/** Python `_purge_agent_pycache`: stale bytecode after a pull must not outlive the restart. */
+export function purgePycache(root: string): void {
+  if (!existsSync(root)) return
+  const skip = new Set(['.git', 'venv', '.venv', 'node_modules'])
+  const walk = (dir: string): void => {
+    let entries: import('node:fs').Dirent[]
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || skip.has(entry.name)) continue
+      const full = join(dir, entry.name)
+      if (entry.name === '__pycache__') rmSync(full, { recursive: true, force: true })
+      else walk(full)
+    }
+  }
+  walk(root)
+}
+
+// ── summary ──────────────────────────────────────────────────────────────────
+
+const BULLET = /^\s*(?:[-*•]+|\d+[.)])\s*/
+function cleanBullet(line: string): string {
+  let s = line.replace(BULLET, '').trim().replace(/\s+/g, ' ')
+  if (!s) return ''
+  if (!'.!?'.includes(s[s.length - 1]!)) s += '.'
+  return s.slice(0, 240)
+}
+function uniqueBullets(items: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) { const c = cleanBullet(item); if (c && !seen.has(c.toLowerCase())) { seen.add(c.toLowerCase()); out.push(c) } }
+  return out
+}
+function splitCategory(line: string): [string | null, string] {
+  const raw = line.trim()
+  const m = /^\s*(?:[-*•]+|\d+[.)])?\s*(notice|what you(?:ll|'ll| will) notice|user(?:s)? will notice|worth knowing|worth|note)\s*:\s*(.+)$/i.exec(raw)
+  if (!m) return [null, raw]
+  const label = (m[1] ?? '').toLowerCase()
+  return [['worth knowing', 'worth', 'note'].includes(label) ? 'worth' : 'notice', m[2] ?? '']
+}
+function fallbackBullets(details: Dict[]): string[] {
+  const out = details.map((item) => {
+    const label = str(item.label || item.name) || 'Hermes'
+    const commits = item.commits as string[]
+    if (commits.length) return `${label} has ${String(item.behind)} update(s), including ${item.commits_truncated ? 'recent updates' : 'updates'}: ${commits.slice(0, 3).join('; ')}.`
+    return `${label} has ${String(item.behind)} update(s) available.`
+  })
+  return out.length ? out : ['Updates are available.']
+}
+function worthKnowingBullets(details: Dict[]): string[] {
+  const truncated = details.filter((d) => d.commits_truncated && d.commits_limit)
+  if (truncated.length) return truncated.slice(0, 2).map((d) => `${str(d.label || d.name) || 'Hermes'} has ${String(d.behind)} updates; this summary uses the latest ${String(d.commits_limit)} commit subjects, with the full comparison still available in the diff link.`)
+  const targets = details.filter((d) => d.behind).map((d) => `${str(d.label || d.name) || 'Hermes'} (${String(d.behind)} update${d.behind === 1 ? '' : 's'})`)
+  return targets.length > 1 ? [`This summary combines updates from ${targets.join(' and ')}.`] : []
+}
+function formatSections(text: string, details: Dict[]): [Dict[], string] {
+  const noticeRaw: string[] = []
+  const worthRaw: string[] = []
+  for (const line of text.split('\n')) {
+    const [category, body] = splitCategory(line)
+    if (category === 'notice') noticeRaw.push(body)
+    else if (category === 'worth') worthRaw.push(body)
+    else if (/^\s*(?:[-*•]+|\d+[.)])?\s*[A-Za-z][A-Za-z ]{1,32}\s*:/.test(line)) noticeRaw.push(body)
+  }
+  let notice = uniqueBullets(noticeRaw)
+  if (!notice.length) {
+    const raw = text.trim()
+    let candidates = raw.split('\n').map((l) => cleanBullet(splitCategory(l)[1])).filter(Boolean)
+    if (candidates.length <= 1 && raw) candidates = raw.split(/(?<=[.!?])\s+/).map(cleanBullet).filter(Boolean)
+    if (!candidates.length) candidates = fallbackBullets(details).map(cleanBullet)
+    notice = uniqueBullets(candidates)
+    if (!notice.length) notice = ['Updates are available.']
+  }
+  const keys = new Set(notice.map((n) => n.toLowerCase()))
+  const worth = uniqueBullets(worthRaw).filter((w) => !keys.has(w.toLowerCase()))
+  for (const item of worthKnowingBullets(details)) if (!keys.has(item.toLowerCase()) && !worth.some((w) => w.toLowerCase() === item.toLowerCase())) worth.push(item)
+  const sections: Dict[] = [{ title: "What you'll notice", items: notice }]
+  if (worth.length) sections.push({ title: 'Worth knowing', items: worth })
+  const summary = sections.map((s) => [str(s.title), ...(s.items as string[]).map((i) => `- ${i}`), ''].join('\n')).join('\n').trim()
+  return [sections, summary]
+}
+function summaryPrompt(details: Dict[]): [string, string] {
+  const system = 'You write human-readable release summaries for Hermes users. Focus on what the user will notice in the product. Keep it simple, specific, and short. avoid technical jargon, implementation details, SHA names, branch names, and file paths unless necessary. Return only bullets. Do not include headings, markdown tables, intro paragraphs, or closing notes.'
+  const lines = ['Summarize these available updates as concise bullets.', 'Prefix each bullet with `Notice:` for user-visible behavior changes or `Worth knowing:` for useful context.', 'Put user-visible Notice bullets first and include every meaningful user-facing change from the available commit subjects.', 'Use Worth knowing only for helpful context that is not a duplicate of a Notice bullet.', 'Use everyday language and explain visible behavior changes, not code mechanics.', 'Return only prefixed bullets; the WebUI will add the fixed section headings separately.', '']
+  for (const item of details) {
+    lines.push(`${str(item.label)}: ${String(item.behind)} commit(s) behind`)
+    const commits = item.commits as string[]
+    if (commits.length) {
+      if (item.commits_truncated) lines.push(`- Showing latest ${String(commits.length)} of ${String(item.behind)} commit subjects; summarize trends, not every commit.`)
+      lines.push(...commits.map((c) => `- ${c}`))
+    } else lines.push('- No local commit subjects available; summarize only the update count.')
+    lines.push('')
+  }
+  return [system, lines.join('\n')]
+}
+
+// ── service ──────────────────────────────────────────────────────────────────
+
+export interface RestartBlockers { active_streams: number; active_runs: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
+
+export interface UpdateServiceDeps {
+  /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
+  webRoot: string
+  git?: GitRun
+  getJson: GetJson
+  identity: ReleaseIdentity
+  webuiVersion: string
+  agentDir: () => string | null
+  channel: () => Channel
+  includeAgent: () => boolean
+  blockers: () => RestartBlockers
+  /** Re-exec the server once active work drains (`restartWhenSafe`). */
+  scheduleRestart: () => void
+  /** Sidecar `gateway.restart` for the active profile. */
+  gatewayRestart: () => Promise<Dict>
+  /** Optional What's New generator (sidecar `aux.complete`); null keeps the deterministic fallback. */
+  llm?: ((system: string, user: string) => Promise<string>) | null
+  now?: () => number
+  sleep?: (ms: number) => Promise<void>
+  log: (line: string) => void
+}
+
+export class UpdateService {
+  private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL }
+  private checking: Promise<Dict> | null = null
+  private applying = false
+  private readonly summaries = new Map<string, Dict>()
+  private readonly git: GitRun
+  private readonly now: () => number
+  private readonly sleep: (ms: number) => Promise<void>
+
+  constructor(private readonly deps: UpdateServiceDeps) {
+    this.git = deps.git ?? runGit
+    this.now = deps.now ?? (() => Date.now() / 1000)
+    this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+  }
+
+  /** Python `cached_update_status`: no network, no git mutations. */
+  cachedStatus(includeAgent = this.deps.includeAgent(), channel = this.deps.channel()): Dict {
+    const cached: Dict = { ...this.cache }
+    if (cached.channel !== channel) { cached.channel = channel; cached.stale_channel = true }
+    if (cached.include_agent !== includeAgent) {
+      cached.include_agent = includeAgent
+      if (!includeAgent) cached.agent = ignoredAgent()
+    }
+    cached.cached = true
+    return cached
+  }
+
+  /** Python `check_for_updates`: 30 min cache keyed on channel + include_agent; one in-flight check per key. */
+  async check(force = false, includeAgent = this.deps.includeAgent(), channel = this.deps.channel()): Promise<Dict> {
+    const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel
+    if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) return { ...this.cache }
+    if (this.checking && matches) return this.checking
+    this.checking = (async () => {
+      try {
+        const webui = await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity)
+        // The channel is a Web concept; the Agent always follows its own stable tags.
+        const agent = includeAgent ? await checkAgentUpdate(this.deps.agentDir(), this.git) : ignoredAgent()
+        Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel })
+        return { ...this.cache }
+      } finally {
+        this.checking = null
+      }
+    })()
+    return this.checking
+  }
+
+  blockedResponse(target: string): Dict | null {
+    const b = this.deps.blockers()
+    if (!b.restart_blocked) return null
+    const parts: string[] = []
+    if (b.active_streams) parts.push(`${String(b.active_streams)} active chat stream${b.active_streams === 1 ? '' : 's'}`)
+    if (b.active_runs) parts.push(`${String(b.active_runs)} active agent run${b.active_runs === 1 ? '' : 's'}`)
+    return { ok: false, message: `Cannot update ${target} while ${parts.join(' and ') || 'active chat work'} is running. Wait for the response to finish, then retry the update.`, target, restart_blocked: true, active_streams: b.active_streams, active_runs: b.active_runs, blocking_stream_ids: b.blocking_stream_ids, blocking_run_ids: b.blocking_run_ids }
+  }
+
+  private async locked(fn: () => Promise<Dict>): Promise<Dict> {
+    if (this.applying) return { ok: false, message: 'Update already in progress' }
+    this.applying = true
+    try { return await fn() } finally { this.applying = false }
+  }
+
+  /** Python `apply_update`. */
+  apply(target: string, channel?: Channel | null): Promise<Dict> {
+    const blocked = this.blockedResponse(target)
+    if (blocked) return Promise.resolve(blocked)
+    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel()))
+  }
+
+  private async applyInner(target: string, channel: Channel): Promise<Dict> {
+    if (target === 'webui') {
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity)
+      if (result.ok && !result.up_to_date) { this.cache.checked_at = 0; this.deps.scheduleRestart(); result.restart_scheduled = true }
+      return result
+    }
+    if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
+    const result = await applyAgentUpdate(this.deps.agentDir(), this.git)
+    if (!result.ok) return result
+    return this.finishAgent(result)
+  }
+
+  private async finishAgent(result: Dict): Promise<Dict> {
+    this.cache.checked_at = 0
+    const [ok, gateway] = await this.restartGateway()
+    if (!ok) return { ok: false, message: gateway.message ? `agent updated, but gateway restart did not complete: ${str(gateway.message)}. Run \`hermes gateway restart\` manually.` : 'agent updated, but gateway restart did not complete. Run `hermes gateway restart` manually.', target: 'agent', gateway_restart: gateway.status }
+    this.deps.scheduleRestart()
+    return { ...result, restart_scheduled: true, gateway_restart: gateway.status }
+  }
+
+  /** Python `_ensure_gateway_restart_for_agent_update`: retry once after a transient supervisor handoff failure. */
+  private async restartGateway(): Promise<[boolean, Dict]> {
+    const attempt = async (): Promise<Dict> => { try { return await this.deps.gatewayRestart() } catch (error) { return { status: 'failed', message: (error as Error).message } } }
+    const first = await attempt()
+    const status = str(first.status)
+    if (status === 'completed' || status === 'in_progress') return [true, first]
+    if (status !== 'failed') return [false, first]
+    await this.sleep(1000)
+    const retry = await attempt()
+    const retryStatus = str(retry.status)
+    const annotated = { ...retry, retry_attempted: true, initial_failure: first.message }
+    if (retryStatus === 'completed' || retryStatus === 'in_progress') return [true, annotated]
+    if (retryStatus !== 'failed') return [false, annotated]
+    return [false, { ...annotated, message: `${str(first.message) || 'Restart failed'}; recovery retry did not complete: ${str(retry.message) || 'retry did not complete'}` }]
+  }
+
+  /** Python `apply_force_update`: Web keeps its clean-only policy; the Agent resets hard. */
+  force(target: string, channel?: Channel | null): Promise<Dict> {
+    if (target === 'webui') return this.apply(target, channel)
+    const blocked = this.blockedResponse(target)
+    if (blocked) return Promise.resolve(blocked)
+    return this.locked(async () => {
+      if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
+      const result = await forceAgentUpdate(this.deps.agentDir(), this.git, this.deps.log)
+      return result.ok ? this.finishAgent(result) : result
+    })
+  }
+
+  /** Python `apply_clear_lock`: never removes a lock; Web retries the clean path, the Agent gets the manual command. */
+  clearLock(target: string): Promise<Dict> {
+    if (target === 'webui') return this.apply(target).then((r) => ({ ...r, lock_recovery: { action: 'retry-only' } }))
+    const blocked = this.blockedResponse(target)
+    if (blocked) return Promise.resolve(blocked)
+    return this.locked(async () => {
+      if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
+      const path = this.deps.agentDir()
+      if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
+      const inv = inventoryLocks(path)
+      const manual = `rm -f ${str(inv.well_known_lock_path)}`
+      if (!inv.well_known_lock_present) {
+        this.cache.checked_at = 0
+        const retry = await this.applyInner(target, this.deps.channel())
+        return { ...retry, lock_recovery: { action: 'no-lock-found', manual_command: manual, other_locks: inv.other_locks } }
+      }
+      return { ok: false, message: `A git lock file (.git/index.lock) is present. The server does not delete locks automatically -- git uses O_CREAT|O_EXCL locking, which cannot be detected with advisory probes. To recover: confirm no other git process is running against this checkout, then run: ${manual}  Click "Retry update" once you have removed it.`, lock_held: true, target, manual_command: manual, well_known_lock_path: inv.well_known_lock_path, other_locks: inv.other_locks }
+    })
+  }
+
+  /** Python `_commit_subjects_for_update_with_limit`. */
+  private async commitSubjects(target: string, info: Dict, limit = 24): Promise<[string[], boolean]> {
+    const path = target === 'webui' ? await checkoutRoot(this.deps.webRoot, this.git) : this.deps.agentDir()
+    const current = str(info.current_sha).trim()
+    const latest = str(info.latest_sha).trim()
+    if (!path || !current || !latest) return [[], false]
+    const args = ['log', '--format=%s', `${current}..${latest}`, `-n${String(limit + 1)}`]
+    if (target === 'webui' && info.channel === 'experimental') args.push('--', ...WEB_UPDATE_PATHS)
+    const out = await this.git(args, path, 5000)
+    if (!out.ok || !out.out) return [[], false]
+    const subjects = out.out.split('\n').map((l) => l.trim()).filter(Boolean)
+    return [subjects.slice(0, limit), subjects.length > limit]
+  }
+
+  /** Python `summarize_update_payload`: What's New sections, LLM when available, cached per exact range. */
+  async summarize(updates: Dict, targetRaw: unknown): Promise<Dict> {
+    const target = targetRaw === 'webui' || targetRaw === 'agent' ? targetRaw : null
+    const details: Dict[] = []
+    for (const [key, label] of [['webui', 'WebUI'], ['agent', 'Agent']] as const) {
+      if (target && key !== target) continue
+      const info = updates[key]
+      if (!info || typeof info !== 'object' || Array.isArray(info)) continue
+      const behind = Number.parseInt(str((info as Dict).behind ?? 0), 10) || 0
+      if (behind <= 0) continue
+      const [commits, truncated] = await this.commitSubjects(key, info as Dict)
+      details.push({ name: key, label, behind, current_sha: (info as Dict).current_sha ?? null, latest_sha: (info as Dict).latest_sha ?? null, compare_url: (info as Dict).compare_url ?? null, commits, commits_limit: 24, commits_truncated: truncated || (commits.length > 0 && behind > commits.length) })
+    }
+    const cacheKey = createHash('sha256').update(JSON.stringify(details.map((d) => sortKeys({ name: d.name, behind: d.behind, current_sha: d.current_sha, latest_sha: d.latest_sha, compare_url: d.compare_url, commits: d.commits })))).digest('hex')
+    const cached = this.summaries.get(cacheKey)
+    if (cached) { this.summaries.delete(cacheKey); this.summaries.set(cacheKey, cached); return { ...cached, cached: true } }
+    let generatedBy = 'fallback'
+    let candidate = ''
+    if (details.length && this.deps.llm) {
+      const [system, user] = summaryPrompt(details)
+      try { candidate = (await this.deps.llm(system, user)).trim(); if (candidate) generatedBy = 'llm' } catch { candidate = '' }
+    }
+    const [sections, summary] = formatSections(candidate, details)
+    const result: Dict = { ok: true, summary, summary_sections: sections, generated_by: generatedBy, cached: false, cache_key: cacheKey, target, targets: details }
+    if (this.summaries.size >= 16) this.summaries.delete(this.summaries.keys().next().value!)
+    this.summaries.set(cacheKey, result)
+    return result
+  }
+}
+
+const ignoredAgent = (): Dict => ({ name: 'agent', behind: 0, ignored: true })
+
+/** Python `_wait_until_restart_safe`: poll until no chat work is active, bounded so a stuck run cannot jam the update forever. */
+export async function waitUntilRestartSafe(blockers: () => RestartBlockers, opts: { pollMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number; log?: (line: string) => void } = {}): Promise<RestartBlockers & { wait_timed_out?: boolean }> {
+  const now = opts.now ?? (() => Date.now())
+  const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+  const deadline = now() + (opts.maxWaitMs ?? RESTART_MAX_WAIT_S * 1000)
+  let snapshot = blockers()
+  while (snapshot.restart_blocked) {
+    if (now() >= deadline) { opts.log?.(`[updates] restart-safety wait exceeded ${String((opts.maxWaitMs ?? RESTART_MAX_WAIT_S * 1000) / 1000)}s with work still in flight; proceeding with restart`); return { ...snapshot, wait_timed_out: true } }
+    await sleep(Math.max(100, opts.pollMs ?? 2000))
+    snapshot = blockers()
+  }
+  return snapshot
+}

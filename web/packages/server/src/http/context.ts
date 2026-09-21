@@ -54,6 +54,7 @@ import type { HygieneTicker } from '../tools/hygiene.js'
 import type { McpHealthProber } from '../tools/mcp-health.js'
 import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
+import type { UpdateService } from '../tools/updates.js'
 
 export interface AppDeps {
   config: ServerConfig
@@ -131,6 +132,9 @@ export interface AppDeps {
   runtimeDiagnostics: () => Record<string, unknown>
   /** `/api/shutdown`: SIGINT the process shortly after the response is flushed. */
   requestShutdown: () => void
+  /** Self-update: exit with the supervisor's restart code once active chat work drains (ticket §13). */
+  requestRestart: () => void
+  updates: UpdateService
   cspLimiter: WindowLimiter
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter

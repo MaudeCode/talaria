@@ -15,8 +15,10 @@ import { HygieneTicker } from './tools/hygiene.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
-import { detectWebuiVersion, loadReleaseInfo } from './release.js'
-import { SettingsStore } from './settings.js'
+import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
+import { githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
+import { RESTART_EXIT_CODE } from './cli/supervise.js'
+import { pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
 import { SessionStore } from './sessions/store.js'
@@ -103,6 +105,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   settings.applyStartupWorkspace()
   config.defaultWorkspace = settings.defaultWorkspace
   const release = loadReleaseInfo({ webRoot: config.webRoot })
+  const stampedRelease = loadReleaseInfo({ webRoot: config.webRoot }, { verifyCheckout: false })
+  const runningSourceRevision = checkoutRevision(config.webRoot)
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, packageVersion())
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
@@ -373,6 +377,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return { pid: process.pid, uptime_seconds: Math.round(process.uptime()), rss_bytes: mem.rss, heap_used_bytes: mem.heapUsed, sessions_cached: store.sessions.size, active_streams: activeStreamIds.size, active_runs: registry.activeRuns.size, sse_clients: streamSlots.active, sidecar_status: sidecar?.status ?? 'stopped' }
     },
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => { purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    updates: null as unknown as UpdateService,
     cspLimiter: new WindowLimiter(60, 100, now),
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
@@ -394,5 +400,33 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return result.text
     },
   }
+  const restartBlockers = (): RestartBlockers => {
+    const streams = [...activeStreamIds].map(String)
+    const runs = [...registry.activeRuns.keys()].map(String)
+    return { active_streams: streams.length, active_runs: runs.length, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 }
+  }
+  const purgeAgentPycache = (): void => { const dir = sidecar?.describe?.agent_dir; if (dir) purgePycache(dir) }
+  deps.updates = new UpdateService({
+    webRoot: config.webRoot,
+    getJson: githubJson(lazyFetch, env),
+    identity: { release: () => release, stamped: () => stampedRelease, runningSourceRevision: () => runningSourceRevision },
+    webuiVersion: version,
+    agentDir: () => sidecar?.describe?.agent_dir ?? null,
+    channel: () => normalizeChannel(settings.load().update_channel),
+    includeAgent: () => !pyBool(settings.load().ignore_agent_updates),
+    blockers: restartBlockers,
+    scheduleRestart: () => { setTimeout(() => { deps.requestRestart() }, 2000).unref() },
+    gatewayRestart: async () => {
+      if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
+      return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })
+    },
+    llm: async (system, user) => {
+      if (!sidecar || !pyBool(settings.load().whats_new_summary_enabled)) return ''
+      const result = await sidecar.call('aux.complete', { profile_home: profileHome(activeProfile()), task: 'update_summary', messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
+      return result.text
+    },
+    log,
+  })
+
   return deps
 }
