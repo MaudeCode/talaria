@@ -513,8 +513,9 @@ export class TurnRunner {
       let fd: number
       try { fd = openAnchoredFd(root, target, { wantDir: false }) } catch { continue }
       try {
-        const size = fstatSync(fd).size
-        if (size <= 0 || size > 20 * 1024 * 1024) continue
+        const st = fstatSync(fd)
+        // A hard link to a file outside the roots passes the pathname walk; refuse it on the inode like the share and media paths.
+        if (!st.isFile() || st.nlink > 1 || st.size <= 0 || st.size > 20 * 1024 * 1024) continue
         const bytes = readFileSync(fd)
         const sniffed = sniffImageMime(bytes)
         if (!sniffed) continue

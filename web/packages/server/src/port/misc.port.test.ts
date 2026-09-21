@@ -4,7 +4,7 @@
  * runner event projection. Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.js.
  */
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -254,12 +254,14 @@ describe('image attachments in user messages (review round 14)', () => {
     }
   })
 
-  it('never embeds a symlink out of the workspace or a non-image labelled as an image', async () => {
+  it('never embeds a symlink or hard link out of the workspace or a non-image labelled as an image', async () => {
     mode = 'native'
     writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')
     symlinkSync(join(s.state, 'secret.env'), join(ws(), 'looks-like.png'))
     writeFileSync(join(ws(), 'notes.png'), 'just text, not an image')
-    const message = await turn([{ path: join(ws(), 'looks-like.png'), mime: 'image/png', name: 'looks-like.png' }, { path: join(ws(), 'notes.png'), mime: 'image/png', name: 'notes.png' }])
+    writeFileSync(join(s.state, 'private.png'), png)
+    linkSync(join(s.state, 'private.png'), join(ws(), 'hard-link.png'))
+    const message = await turn([{ path: join(ws(), 'looks-like.png'), mime: 'image/png', name: 'looks-like.png' }, { path: join(ws(), 'notes.png'), mime: 'image/png', name: 'notes.png' }, { path: join(ws(), 'hard-link.png'), mime: 'image/png', name: 'hard-link.png' }])
     expect(typeof message).toBe('string')
     expect(String(message)).not.toContain('leak')
   })

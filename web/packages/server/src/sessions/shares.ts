@@ -82,7 +82,8 @@ function readAnchoredImage(root: string, path: string): Buffer | null {
   try { fd = openAnchoredFd(root, path, { wantDir: false }) } catch { return null }
   try {
     const st = fstatSync(fd)
-    if (!st.isFile() || st.size > SHARE_EMBED_MAX_BYTES) return null
+    // A hard link to a private image outside the roots passes the pathname walk; the inode's link count does not.
+    if (!st.isFile() || st.nlink > 1 || st.size > SHARE_EMBED_MAX_BYTES) return null
     return readFileSync(fd)
   } catch {
     return null
