@@ -356,6 +356,21 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       } finally {
         chmodSync(s.state, 0o700)
       }
+      // If the compensating call fails too, the divergent child is recycled so its replacement starts from the unchanged environment.
+      let envCalls2 = 0
+      sidecar.respond('runtime.env', () => { envCalls2 += 1; if (envCalls2 === 2) throw new Error('sidecar restarting'); return { ok: true as const } })
+      chmodSync(s.state, 0o500)
+      try {
+        const recycledBefore = sidecar.recycled.length
+        expect((await post(s, '/api/providers/delete', { provider: 'openai' })).status).toBe(400)
+        expect(sidecar.recycled.length).toBe(recycledBefore + 1)
+        expect(sidecar.recycled.at(-1)).toContain('OPENAI_API_KEY')
+        expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      } finally {
+        chmodSync(s.state, 0o700)
+        sidecar.status = 'ready'
+        sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      }
       // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
       expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
       expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')

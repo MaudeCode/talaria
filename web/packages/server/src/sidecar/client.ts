@@ -67,6 +67,8 @@ export interface SidecarLike {
   readonly describe: RuntimeDescribe | null
   call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts?: CallOptions): Promise<SidecarResult<M>>
   close(): Promise<void>
+  /** Kill the child so it restarts from the current environment; pending calls fail with `sidecar_unavailable`. */
+  recycle(reason: string): void
 }
 
 export type SidecarStatus = 'stopped' | 'starting' | 'ready' | 'incompatible' | 'restarting'
@@ -252,6 +254,14 @@ export class SidecarClient implements SidecarLike {
     const child = this.child
     if (!child?.stdin?.writable) return
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: this.nextId++, method: 'rpc.cancel', params: { id } }) + '\n')
+  }
+
+  recycle(reason: string): void {
+    const child = this.child
+    if (!child || this.closed) return
+    this.log(`[sidecar] recycling: ${reason}`)
+    this.status = 'restarting'
+    child.kill('SIGKILL')
   }
 
   async close(): Promise<void> {

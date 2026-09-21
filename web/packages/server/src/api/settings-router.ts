@@ -440,7 +440,9 @@ async function retireDotenvRuntimeValues(ctx: RequestContext, envVar: string, ap
       try {
         await sidecar.call('runtime.env', previous === undefined ? { unset: [envVar] } : { set: { [envVar]: previous } })
       } catch (error) {
-        ctx.deps.log(`[providers] WARNING: sidecar environment for ${envVar} could not be restored after a failed .env write: ${str((error as Error).message)}`)
+        // The live child holds an unpersisted credential it can no longer be talked out of: recycle it so the
+        // replacement starts from the unchanged server environment instead of serving with the divergent one.
+        sidecar.recycle(`sidecar environment for ${envVar} could not be restored after a failed .env write (${str((error as Error).message)})`)
       }
     },
   }

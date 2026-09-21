@@ -74,4 +74,10 @@ export class FakeSidecar implements SidecarLike {
     this.status = 'stopped'
     return Promise.resolve()
   }
+
+  readonly recycled: string[] = []
+  recycle(reason: string): void {
+    this.recycled.push(reason)
+    this.status = 'restarting'
+  }
 }

@@ -2,8 +2,9 @@
  * Non-global address classification for outbound destinations that carry a
  * secret (Python `ipaddress.is_global` is False): every IANA special-purpose
  * range — loopback, private, link-local, CGNAT, benchmarking, documentation,
- * discard-only, NAT64 local-use translation, the `2001::/23` special block,
- * 6to4, multicast, reserved, unspecified — plus IPv4-mapped and NAT64 forms of them. The
+ * discard-only, the dummy prefix, NAT64 local-use translation, the `2001::/23`
+ * special block, 6to4, the `3fff::/20` documentation block, SRv6 SIDs, multicast,
+ * reserved, unspecified — plus IPv4-mapped and NAT64 forms of them. The
  * small global carve-outs inside those blocks stay refused: stricter is fine here.
  */
 import { BlockList, isIP } from 'node:net'
@@ -15,8 +16,8 @@ for (const [net, bits] of [
   ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
 ] as const) NON_GLOBAL.addSubnet(net, bits, 'ipv4')
 for (const [net, bits] of [
-  ['::', 128], ['::1', 128], ['64:ff9b:1::', 48], ['100::', 64], ['2001::', 23], ['2001:db8::', 32],
-  ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
+  ['::', 128], ['::1', 128], ['64:ff9b:1::', 48], ['100::', 64], ['100:0:0:1::', 64], ['2001::', 23], ['2001:db8::', 32],
+  ['2002::', 16], ['3fff::', 20], ['5f00::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
 ] as const) NON_GLOBAL.addSubnet(net, bits, 'ipv6')
 
 /** The eight 16-bit groups of an IPv6 literal (dotted-quad tail accepted), or null when it is not one. */
