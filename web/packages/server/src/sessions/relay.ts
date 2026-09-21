@@ -4,6 +4,7 @@
  * `api/talaria_relay.py`). Snapshots are Ed25519-signed complete states per
  * enrolled profile; failures back off and never block a turn.
  */
+import { readCapped } from '../http/capped.js'
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign as cryptoSign, type KeyObject } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -446,7 +447,7 @@ export class RelayService {
     }
     if (!res.ok) throw new RelayPairingError(`${reject} (HTTP ${String(res.status)})`, res.status >= 400 && res.status < 500 ? 409 : 502)
     let payload: unknown
-    try { payload = await res.json() } catch { throw new RelayPairingError('Talaria Relay returned an invalid response', 502) }
+    try { const raw = await readCapped(res, 256 * 1024); if (!raw) throw new Error('too large'); payload = JSON.parse(raw.toString('utf8')) } catch { throw new RelayPairingError('Talaria Relay returned an invalid response', 502) }
     return payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}
   }
 

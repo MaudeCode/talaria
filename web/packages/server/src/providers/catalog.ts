@@ -8,6 +8,7 @@
  * here. ponytail: one live-id cache with a 24h TTL replaces the Python
  * publisher/provenance machinery; `refresh()` evicts it.
  */
+import { readCapped } from '../http/capped.js'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -542,7 +543,9 @@ export class ProviderCatalog {
     try {
       const res = await f(OPENROUTER_KEY_URL, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(QUOTA_TIMEOUT_MS) })
       if (!res.ok) return { kind: res.status === 401 || res.status === 403 ? 'invalid_key' : 'unavailable' }
-      let payload: unknown = await res.json()
+      const raw = await readCapped(res, 256 * 1024)
+      if (!raw) return { kind: 'unavailable' }
+      let payload: unknown = JSON.parse(raw.toString('utf8'))
       if (isDict(payload) && isDict(payload.data)) payload = payload.data
       const d = dict(payload)
       const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)

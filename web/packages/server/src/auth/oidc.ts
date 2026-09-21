@@ -5,6 +5,7 @@
  * RS/ES JWT verification through `node:crypto`, allow/owner/profile policies,
  * and the session fingerprint = sha256(canonical policy JSON).
  */
+import { readCapped } from '../http/capped.js'
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { existsSync, statSync } from 'node:fs'
@@ -522,7 +523,7 @@ export class OidcService {
     try { res = await this.deps.fetch()(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(10_000) }) } catch { throw new OidcAuthError(failure, 502) }
     if (!res.ok) throw new OidcAuthError(failure, 502)
     let text: string
-    try { text = await res.text() } catch { throw new OidcAuthError(failure, 502) }
+    try { const raw = await readCapped(res, 1024 * 1024); if (!raw) throw new Error('too large'); text = raw.toString('utf8') } catch { throw new OidcAuthError(failure, 502) }
     if (/\b(NaN|Infinity|-Infinity)\b/.test(text.replace(/"(?:[^"\\]|\\.)*"/g, ''))) throw new OidcAuthError(`OIDC endpoint returned invalid JSON: ${url}`, 502)
     let payload: unknown
     try { payload = JSON.parse(text) } catch { throw new OidcAuthError(`OIDC endpoint returned invalid JSON: ${url}`, 502) }

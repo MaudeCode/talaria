@@ -8,6 +8,7 @@
  * stash/pull or force reset, then the gateway restarts through the sidecar.
  * Nothing here deletes git locks; `clearLock` only inventories them.
  */
+import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -122,9 +123,9 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
       res = await fetchImpl(target.toString(), { headers: anonymous, signal: AbortSignal.timeout(5000) })
     }
     if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`)
-    const body = await res.text()
-    if (body.length > 2_000_000) throw new ReleaseUnavailable('Release metadata exceeds the download limit')
-    return JSON.parse(body) as unknown
+    const body = await readCapped(res, 2_000_000)
+    if (!body) throw new ReleaseUnavailable('Release metadata exceeds the download limit')
+    return JSON.parse(body.toString('utf8')) as unknown
   }
 }
 

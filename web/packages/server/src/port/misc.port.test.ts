@@ -9,6 +9,9 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { atomicWriteText } from '../fs/atomic.js'
 import { AgentConfig } from '../config/agent-config.js'
+import { probeServer } from '../tools/mcp-health.js'
+import { agentHealth } from '../tools/health.js'
+import { githubJson } from '../tools/updates.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -295,5 +298,29 @@ describe('onboarding probe cap (review round 16)', () => {
       const res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'http://127.0.0.1:9/v1' })
       expect(await json(res)).toMatchObject({ ok: false, error: 'parse', detail: expect.stringContaining('exceeded') as unknown })
     } finally { await s.close() }
+  })
+})
+
+describe('upstream probe caps (review round 17)', () => {
+  const endless = (): Response => new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/json' } })
+
+  it('the MCP health probe stops reading past its body cap', async () => {
+    const started = Date.now()
+    const [state] = await probeServer({ url: 'https://mcp.example/mcp' }, () => Promise.resolve(endless()))
+    expect(Date.now() - started).toBeLessThan(5000)
+    expect(state).not.toBe('healthy')
+  })
+
+  it('the remote gateway health probe stops reading past its body cap', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-gw-'))
+    try {
+      const result = await agentHealth({ env: { HERMES_WEBUI_CHAT_BACKEND: 'gateway', HERMES_WEBUI_GATEWAY_URL: 'https://gw.example' }, hermesHome: home, profileHome: () => home, fetch: () => () => Promise.resolve(endless()), now: () => Date.now() / 1000 })
+      expect(JSON.stringify(result)).not.toContain('gateway_state')
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  })
+
+  it('the release metadata fetch aborts past two megabytes', async () => {
+    const getJson = githubJson(() => Promise.resolve(endless()), {})
+    await expect(getJson('/repos/x/y/releases/latest', { asset: false })).rejects.toThrow(/download limit/)
   })
 })

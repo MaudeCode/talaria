@@ -3,6 +3,7 @@
  * driven, fingerprint keyed, at most four in flight, eight seconds each, one
  * probe per server identity per 120 s. `unknown` is never treated as healthy.
  */
+import { readCapped } from '../http/capped.js'
 import { createHash } from 'node:crypto'
 import { accessSync, constants as fsConstants } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
@@ -11,6 +12,7 @@ import { str } from '../util.js'
 type Dict = Record<string, unknown>
 export const HEALTH_INTERVAL_S = 120
 export const PROBE_TIMEOUT_MS = 8000
+const PROBE_BODY_LIMIT_BYTES = 64 * 1024
 const MAX_CONCURRENT_PROBES = 4
 const MAX_PROBE_BODY_BYTES = 64 * 1024
 const AUTH_STATUSES = new Set([401, 403, 407])
@@ -71,7 +73,7 @@ async function probeHttp(url: string, cfg: Dict, fetchImpl: typeof fetch): Promi
     let payload: Dict | null = null
     if (res.ok) {
       const remaining = deadline - Date.now()
-      const text = await Promise.race([res.text(), new Promise<string>((_, reject) => { setTimeout(() => { reject(new Error('timeout')) }, Math.max(1, remaining)).unref() })]).catch(() => '')
+      const text = await Promise.race([readCapped(res, PROBE_BODY_LIMIT_BYTES).then((b) => (b ? b.toString('utf8') : '')), new Promise<string>((_, reject) => { setTimeout(() => { reject(new Error('timeout')) }, Math.max(1, remaining)).unref() })]).catch(() => '')
       payload = jsonRpcFromBody(text)
       protocolVersion = str(initializeResult(payload)?.protocolVersion) || null
     }

@@ -1,4 +1,5 @@
 /** Health, logs, dashboard probe, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
+import { readCapped } from '../http/capped.js'
 import { existsSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -64,6 +65,7 @@ const REMOTE_PROBE_TIMEOUT_MS = 2000
 const REMOTE_PROBE_CACHE_TTL_S = 5
 const REMOTE_PROBE_PATHS = ['/health/detailed', '/health', '/v1/health']
 const REMOTE_PROBE_BODY_LIMIT_BYTES = 64 * 1024
+const DASHBOARD_PROBE_BODY_LIMIT_BYTES = 64 * 1024
 const GATEWAY_FRESHNESS_THRESHOLD_S = 120
 
 export interface AgentHealthDeps {
@@ -140,8 +142,8 @@ async function runRemoteProbe(base: string, env: Record<string, string | undefin
       const res = await fetchImpl(base + path, { headers, signal: AbortSignal.timeout(REMOTE_PROBE_TIMEOUT_MS) })
       if (res.ok) {
         const details: Dict = { state: 'alive', reason: 'remote_gateway', endpoint: base + path, status_code: res.status }
-        const body = await res.text().catch(() => '')
-        if (body.length <= REMOTE_PROBE_BODY_LIMIT_BYTES) { try { const data: unknown = JSON.parse(body); if (data && typeof data === 'object' && 'gateway_state' in data) details.gateway_state = (data as Dict).gateway_state } catch { /* not json */ } }
+        const body = ((await readCapped(res, REMOTE_PROBE_BODY_LIMIT_BYTES).catch(() => null)) ?? null)?.toString('utf8') ?? null
+        if (body !== null) { try { const data: unknown = JSON.parse(body); if (data && typeof data === 'object' && 'gateway_state' in data) details.gateway_state = (data as Dict).gateway_state } catch { /* not json */ } }
         return { alive: true, checked_at: checkedAt(), details }
       }
       lastStatus = res.status
@@ -240,7 +242,10 @@ export async function dashboardStatus(config: Config, env: Record<string, string
     try {
       const res = await f(`${base}/api/status`, { headers: { Accept: 'application/json', 'User-Agent': 'hermes-webui-dashboard-probe' }, signal: AbortSignal.timeout(500) })
       if (res.status !== 200) continue
-      const payload = (await res.json())
+      const raw = await readCapped(res, DASHBOARD_PROBE_BODY_LIMIT_BYTES).catch(() => null)
+      if (!raw) continue
+      let payload: unknown
+      try { payload = JSON.parse(raw.toString('utf8')) } catch { continue }
       const p = dict(payload)
       if (!(typeof p.version === 'string' || p.hermes === true || str(p.app).toLowerCase().includes('hermes'))) continue
       const result: Dict = { running: true, enabled, host, port, url: browserUrl || base, browser_url: browserUrl || base }

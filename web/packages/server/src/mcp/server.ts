@@ -4,6 +4,7 @@
  * state reads): a password from `HERMES_WEBUI_PASSWORD` logs in once and the
  * session cookie is reused; `--profile` pins the `hermes_profile` cookie.
  */
+import { readCapped } from '../http/capped.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
@@ -64,7 +65,7 @@ export class WebApiClient {
       return { error: `API unreachable: ${(error as Error).message}` }
     }
     let payload: unknown = null
-    try { payload = await res.json() } catch { payload = null }
+    try { const raw = await readCapped(res, 8 * 1024 * 1024); payload = raw ? JSON.parse(raw.toString('utf8')) : null } catch { payload = null }
     const data = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Json) : {}
     if (!res.ok) return { error: `API ${String(res.status)}: ${typeof data.error === 'string' ? data.error : 'unknown'}` }
     return data
