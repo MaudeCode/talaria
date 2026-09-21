@@ -4,8 +4,10 @@
  * runner event projection. Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.js.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { atomicWriteText } from '../fs/atomic.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -184,5 +186,72 @@ describe('runtime seams from review round 10', () => {
     expect(s.deps.streamSlots.claim('one')).toBeNull()
     expect(s.deps.streamSlots.claim('two')).not.toBeNull()
     for (const c of claims) c()
+  })
+})
+
+describe('image attachments in user messages (review round 14)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let mode: 'native' | 'text' = 'native'
+  let sent: unknown = null
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
+    sidecar.respond('chat.start', (params) => { sent = params.user_message; return { status: 'completed', messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 1)])
+  const turn = async (attachments: Json[]): Promise<unknown> => {
+    sent = null
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look', attachments }))
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    return sent
+  }
+  const ws = (): string => join(s.state, 'workspace')
+
+  it('embeds a real image from the workspace as a native part when the Agent resolves native mode', async () => {
+    mode = 'native'
+    writeFileSync(join(ws(), 'shot.png'), png)
+    const message = (await turn([{ path: join(ws(), 'shot.png'), mime: 'image/png', name: 'shot.png' }])) as Json[]
+    expect(Array.isArray(message)).toBe(true)
+    expect(message[1]).toMatchObject({ type: 'image_url' })
+    expect(String((message[1]!.image_url as Json).url)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('sends plain text when the Agent resolves text mode for the model', async () => {
+    mode = 'text'
+    writeFileSync(join(ws(), 'shot2.png'), png)
+    const message = await turn([{ path: join(ws(), 'shot2.png'), mime: 'image/png', name: 'shot2.png' }])
+    expect(typeof message).toBe('string')
+  })
+
+  it('never embeds a symlink out of the workspace or a non-image labelled as an image', async () => {
+    mode = 'native'
+    writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')
+    symlinkSync(join(s.state, 'secret.env'), join(ws(), 'looks-like.png'))
+    writeFileSync(join(ws(), 'notes.png'), 'just text, not an image')
+    const message = await turn([{ path: join(ws(), 'looks-like.png'), mime: 'image/png', name: 'looks-like.png' }, { path: join(ws(), 'notes.png'), mime: 'image/png', name: 'notes.png' }])
+    expect(typeof message).toBe('string')
+    expect(String(message)).not.toContain('leak')
+  })
+})
+
+describe('atomic writes honour the umask for new files', () => {
+  it('a new file is created under the process umask while an existing mode is preserved', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-atomic-'))
+    const previous = process.umask(0o077)
+    try {
+      atomicWriteText(join(dir, 'fresh.json'), '{}')
+      expect(statSync(join(dir, 'fresh.json')).mode & 0o777).toBe(0o600)
+      writeFileSync(join(dir, 'open.json'), '{}', { mode: 0o644 })
+      chmodSync(join(dir, 'open.json'), 0o644)
+      atomicWriteText(join(dir, 'open.json'), '{"a":1}')
+      expect(statSync(join(dir, 'open.json')).mode & 0o777).toBe(0o644)
+    } finally {
+      process.umask(previous)
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -6,7 +6,9 @@
  * `api/streaming.py::_run_agent_streaming`, `cancel_stream`).
  */
 import { randomUUID } from 'node:crypto'
-import { readFileSync, rmSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, readFileSync, rmSync } from 'node:fs'
+import { openAnchoredFd } from '../workspace/fs.js'
+import { resolvePathLikePython } from '../workspace/paths.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
@@ -128,6 +130,15 @@ export function providerErrorPayload(message: string, errType: string, hint = ''
   return payload
 }
 
+/** The image formats a provider accepts inline; the MIME comes from the bytes, never from the client. */
+export function sniffImageMime(bytes: Buffer): string | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.length >= 6 && ['GIF87a', 'GIF89a'].includes(bytes.subarray(0, 6).toString('latin1'))) return 'image/gif'
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp'
+  return null
+}
+
 export class TurnRunner {
   readonly writers = new Map<string, RunJournalWriter>()
   private readonly abortControllers = new Map<string, AbortController>()
@@ -247,7 +258,7 @@ export class TurnRunner {
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
-    const userMessage = this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId)
+    const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts)
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
     try {
@@ -471,23 +482,42 @@ export class TurnRunner {
     }
   }
 
-  private buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string): string | Record<string, unknown>[] {
+  /**
+   * Python `_build_user_message`: image attachments are embedded as native `image_url` parts only when the Agent's
+   * resolved image mode for this model is `native` (text mode routes them through the Agent's vision tool path), and
+   * only after the bytes are read through an anchored descriptor and sniffed as a real image format.
+   */
+  private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
-    if (!attachments.length) return text
+    const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
+    if (!candidates.length) return text
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return text
+    try {
+      const mode = await sidecar.call('text.image_mode', { profile_home: this.deps.profileHome(s.profile), provider: str(opts.modelProvider ?? s.model_provider), model: str(opts.model ?? s.model) })
+      if (mode.mode !== 'native') return text
+    } catch (error) {
+      this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)
+      return text
+    }
     const parts: Record<string, unknown>[] = [{ type: 'text', text }]
     let images = 0
-    const roots = [workspace, this.deps.attachmentDir(sessionId)]
-    for (const att of attachments) {
-      const path = str(att.path).trim()
-      const mime = str(att.mime).trim()
-      if (!path || !mime.startsWith('image/')) continue
-      if (!roots.some((root) => path === root || path.startsWith(`${root}/`))) continue
+    const roots = [workspace, this.deps.attachmentDir(sessionId)].map((r) => resolvePathLikePython(r))
+    for (const att of candidates) {
+      const target = resolvePathLikePython(str(att.path).trim())
+      const root = roots.find((r) => target === r || target.startsWith(`${r}/`))
+      if (!root) continue
+      let fd: number
+      try { fd = openAnchoredFd(root, target, { wantDir: false }) } catch { continue }
       try {
-        const size = statSync(path).size
+        const size = fstatSync(fd).size
         if (size <= 0 || size > 20 * 1024 * 1024) continue
-        parts.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${readFileSync(path).toString('base64')}` } })
+        const bytes = readFileSync(fd)
+        const sniffed = sniffImageMime(bytes)
+        if (!sniffed) continue
+        parts.push({ type: 'image_url', image_url: { url: `data:${sniffed};base64,${bytes.toString('base64')}` } })
         images += 1
-      } catch { /* skip unreadable */ }
+      } catch { /* skip unreadable */ } finally { closeSync(fd) }
     }
     return images ? parts : text
   }
