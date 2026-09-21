@@ -79,7 +79,15 @@ class RpcServer:
 
     # ── output ────────────────────────────────────────────────────────────
     def _write(self, message: dict) -> None:
-        line = json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n"
+        try:
+            # Strict JSON: a NaN/Infinity anywhere would be an unparsable line the client silently drops (a hung call).
+            line = json.dumps(message, separators=(",", ":"), ensure_ascii=False, allow_nan=False) + "\n"
+        except ValueError as exc:
+            if "id" in message and "result" in message:
+                self._error(message["id"], INTERNAL_ERROR, f"result is not JSON-serialisable: {exc}")
+                return
+            log.error("dropping unserialisable %s message: %s", message.get("method"), exc)
+            return
         data = line.encode("utf-8")
         with self._write_lock:
             try:

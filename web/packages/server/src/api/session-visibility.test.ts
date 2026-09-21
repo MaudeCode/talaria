@@ -73,6 +73,17 @@ describe('request-profile session visibility', () => {
     }
     const own = await post(s, root, '/api/session/rename', { session_id: sid, title: 'renamed' })
     expect(own.status).toBe(200)
+    // A padded id is what a trimming handler would act on: it is checked as such, never waved through as "unsafe".
+    for (const [path, body] of [
+      ['/api/session/yolo', { session_id: ` ${sid}`, enabled: true }],
+      ['/api/terminal/start', { session_id: `${sid} ` }],
+      ['/api/session/worktree/remove', { session_id: ` ${sid} ` }],
+    ] as const) {
+      const res = await post(s, work, path, body)
+      expect(res.status, path).toBe(404)
+    }
+    expect((await s.get(`/api/terminal/output?session_id=${encodeURIComponent(` ${sid}`)}`, { headers: work.headers })).status).toBe(404)
+    expect((await post(s, work, '/api/session/rename', { session_id: 'not a session id', title: 'x' })).status).toBe(404)
   })
 
   it('a query session_id outside the request profile answers 404 before dispatch', async () => {

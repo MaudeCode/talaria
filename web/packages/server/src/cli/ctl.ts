@@ -403,6 +403,8 @@ async function warnIfUnmanaged(ctx: CtlContext, p: CtlPaths): Promise<void> {
 }
 
 export async function stopCmd(ctx: CtlContext): Promise<number> {
+  // Same `.env` order as `start`: HERMES_HOME / PID-file overrides must resolve to the same daemon it started.
+  loadStartupEnv({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, log: ctx.warn })
   const p = ctlPaths(ctx)
   ensureHome(p)
   const pid = pidFromFile(p)
@@ -420,15 +422,16 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
     await sleep(100)
   }
   ctx.warn('[ctl] Process did not exit after SIGTERM; sending SIGKILL')
-  try { process.kill(pid, 'SIGKILL') } catch { /* gone */ }
+  // The daemon is its own process group (detached supervisor + worker): kill the group so the worker cannot keep the port.
+  try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } }
   rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true })
   return 0
 }
 
 export async function statusCmd(ctx: CtlContext): Promise<number> {
+  loadStartupEnv({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, log: ctx.warn })
   const p = ctlPaths(ctx)
   ensureHome(p)
-  applyDotenv(ctx, p)
   const state = readState(p)
   const host = state.HOST ?? ((ctx.env.HERMES_WEBUI_HOST ?? '').trim() || '127.0.0.1')
   const port = Number.parseInt(state.PORT ?? ((ctx.env.HERMES_WEBUI_PORT ?? '').trim() || '8787'), 10) || 8787
@@ -466,6 +469,7 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
 }
 
 export function logsCmd(ctx: CtlContext, argv: string[]): number {
+  loadStartupEnv({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, log: ctx.warn })
   const p = ctlPaths(ctx)
   ensureHome(p)
   let lines = 100

@@ -129,11 +129,16 @@ def path_suites(path):
         # The Agent pin is baked into the container images and extended by the Compose files: it needs the smoke too.
         if local == "sidecar/agent_dependency.json":
             return {"web_server", "contracts", "docker"}
-        # The sidecar RPC surface and the server are one consumer of the shared contracts.
+        # The regression-port ledger and its port suites are verified by the tooling checker as well.
+        if local.startswith("docs/architecture/regression-port-") or local.startswith("packages/server/src/port/"):
+            return {"web_server", "contracts", "tooling"}
+        # The sidecar RPC surface and the server are one consumer of the shared contracts; the Playwright suite drives
+        # the real Node server from the frontend job, so server changes run it too.
         if local.startswith(("packages/server/", "sidecar/")):
-            return {"web_server", "contracts"}
+            return {"web_server", "web_frontend", "contracts"}
+        # The lockfile and Node version feed both the workspace builds and the container image.
         if local in ("package.json", "package-lock.json", ".nvmrc"):
-            return {"web_server", "web_frontend"}
+            return WEB_BUILD
         if local.startswith("static/"):
             return {"web_frontend", "web_server"}
         if local.startswith(("Dockerfile", "docker", ".docker", ".env.docker", "scripts/lib/")):

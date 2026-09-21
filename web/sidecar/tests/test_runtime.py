@@ -80,3 +80,19 @@ def test_runtime_env_edits_the_sidecar_process_environment(sidecar: SidecarProce
     assert message["error"]["code"] == -32602
     message, _ = sidecar.call("runtime.env", {"unset": "OPENAI_API_KEY"})
     assert message["error"]["code"] == -32602
+
+
+def test_an_untracked_agent_install_is_compatible_only_when_its_version_matches_the_pin(tmp_path, monkeypatch) -> None:
+    from talaria_sidecar.runtime import AgentRuntime
+
+    runtime = AgentRuntime(tmp_path / "home", None)
+    runtime.loaded = True
+    runtime.revision = None
+    monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: runtime.pin["version"]))
+    assert runtime.describe()["compatible"] is True
+    monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: "0.0.0-other"))
+    assert runtime.describe()["compatible"] is False
+    monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: None))
+    assert runtime.describe()["compatible"] is False
+    runtime.revision = runtime.pin["source_revision"]
+    assert runtime.describe()["compatible"] is True

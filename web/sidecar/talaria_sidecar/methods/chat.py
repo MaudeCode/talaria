@@ -10,6 +10,7 @@ through ``approval.respond`` / ``clarify.respond``; ``rpc.cancel`` or
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 import json
@@ -122,6 +123,53 @@ def _resolve_runtime(provider: str | None, model: str) -> dict:
     return runtime
 
 
+@contextlib.contextmanager
+def _turn_identity(session_id: str, workspace: str):
+    """Bind this turn's identity to the calling context the way the predecessor's ``_set_turn_session_identity`` did:
+    the approval session key (so ``register_gateway_notify`` cards reach this turn and dangerous commands are gated
+    instead of auto-approved), the gateway session vars (platform ``webui``, chat/ui session ids), and the session cwd
+    (so terminals and AGENTS.md discovery run in the selected workspace, not the sidecar's launch directory). Every
+    binding is a context variable, so concurrent turns cannot overwrite each other. Missing Agent surfaces are logged,
+    not fatal."""
+    resets: list = []
+    try:
+        try:
+            from tools.approval_context import reset_current_session_key, set_current_session_key
+        except ImportError:
+            from tools.approval import reset_current_session_key, set_current_session_key  # type: ignore[no-redef]
+        token = set_current_session_key(session_id)
+        resets.append(lambda: reset_current_session_key(token))
+    except Exception:  # noqa: BLE001
+        log.debug("per-turn approval session-key bind failed", exc_info=True)
+    try:
+        from gateway import session_context as sc
+
+        pairs = [
+            (sc._SESSION_KEY, session_id), (sc._SESSION_UI_SESSION_ID, session_id), (sc._SESSION_PLATFORM, "webui"),
+            (sc._SESSION_CHAT_ID, session_id), (sc._SESSION_ID, session_id),
+        ]
+        for var, value in pairs:
+            tok = var.set(value)
+            resets.append(lambda var=var, tok=tok: var.reset(tok))
+    except Exception:  # noqa: BLE001
+        log.debug("per-turn session context bind failed", exc_info=True)
+    try:
+        from agent.runtime_cwd import _SESSION_CWD
+
+        tok = _SESSION_CWD.set(str(workspace))
+        resets.append(lambda: _SESSION_CWD.reset(tok))
+    except Exception:  # noqa: BLE001
+        log.debug("per-turn session cwd bind failed", exc_info=True)
+    try:
+        yield
+    finally:
+        for reset in reversed(resets):
+            try:
+                reset()
+            except Exception:  # noqa: BLE001
+                log.debug("per-turn identity reset failed", exc_info=True)
+
+
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
@@ -137,6 +185,19 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
     }
     return json.dumps(bundle, sort_keys=True, default=str)
+
+
+def _evict_idle_agents_locked() -> None:
+    """Trim the agent LRU (caller holds ``_AGENT_CACHE_LOCK``), never dropping a session whose turn is still running."""
+    if len(_AGENT_CACHE) <= _AGENT_CACHE_MAX:
+        return
+    with _RUNS_LOCK:
+        live = {sid for sid, sid_stream in _RUNS_BY_SESSION.items() if (r := _RUNS.get(sid_stream)) is not None and not r.finished.is_set()}
+    for sid in list(_AGENT_CACHE):
+        if len(_AGENT_CACHE) <= _AGENT_CACHE_MAX:
+            break
+        if sid not in live:
+            _AGENT_CACHE.pop(sid, None)
 
 
 def evict_all_agents() -> int:
@@ -181,6 +242,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     system_message = params.get("system_message")
     run = _Run(stream_id, session_id, ctx)
     with _RUNS_LOCK:
+        prior = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
+        # A previous turn for this session that never returned (a tool ignoring its interrupt) still owns the cached
+        # agent; this turn must not share, rebind, or un-interrupt that live instance.
+        session_busy = prior is not None and not prior.finished.is_set()
         _RUNS[stream_id] = run
         _RUNS_BY_SESSION[session_id] = stream_id
     emit = ctx.emit
@@ -290,7 +355,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 payload.setdefault("session_id", session_id)
                 payload.setdefault("approval_id", str(payload.get("request_id") or uuid.uuid4().hex))
                 emit("approval", payload)
-            register_gateway_notify(session_id, _approval_cb)
+            approval_cb = _approval_cb
+        else:
+            approval_cb = None
 
         kwargs: dict = dict(
             model=resolved_model,
@@ -325,11 +392,12 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             kwargs["max_tokens"] = params["max_tokens"]
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
-        with _AGENT_CACHE_LOCK:
-            cached = _AGENT_CACHE.get(session_id)
-            if cached and cached[1] == signature:
-                agent = cached[0]
-                _AGENT_CACHE.move_to_end(session_id)
+        if not session_busy:
+            with _AGENT_CACHE_LOCK:
+                cached = _AGENT_CACHE.get(session_id)
+                if cached and cached[1] == signature:
+                    agent = cached[0]
+                    _AGENT_CACHE.move_to_end(session_id)
         if agent is not None:
             for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback"):
                 if name in kwargs and hasattr(agent, name):
@@ -339,8 +407,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with _AGENT_CACHE_LOCK:
                 _AGENT_CACHE[session_id] = (agent, signature)
                 _AGENT_CACHE.move_to_end(session_id)
-                while len(_AGENT_CACHE) > _AGENT_CACHE_MAX:
-                    _AGENT_CACHE.popitem(last=False)
+                _evict_idle_agents_locked()
+        if approval_cb is not None:
+            register_gateway_notify(session_id, approval_cb)
         run.agent = agent
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 
@@ -448,8 +517,13 @@ def _run_for(params: dict) -> _Run | None:
 def register(registry) -> None:
     @registry.method("chat.start")
     def start_(ctx: CallContext, params: dict) -> dict:
+        session_id = str(params.get("session_id") or "").strip()
+        workspace = params.get("workspace")
+        if not isinstance(workspace, str) or not workspace.strip():
+            raise InvalidParams("workspace is required")
         with scoped_home(profile_home_param(params)):
-            return start(ctx, params)
+            with _turn_identity(session_id, workspace):
+                return start(ctx, params)
 
     @registry.method("chat.interrupt", requires_agent=False)
     def interrupt_(ctx: CallContext, params: dict) -> dict:
@@ -514,7 +588,12 @@ def register(registry) -> None:
                     approval_mod.approve_session(session_id, k)
                     approval_mod.approve_permanent(k)
                 try:
-                    approval_mod.save_permanent_allowlist(approval_mod._permanent_approved)
+                    # Persist the set that governs THIS home (per-profile under the home override), not the launch
+                    # profile's module-level set, which would overwrite a named profile's allowlist with the wrong keys.
+                    permanent_set = getattr(approval_mod, "_permanent_set", None)
+                    with approval_mod._lock:
+                        snapshot = set(permanent_set()) if callable(permanent_set) else set(approval_mod._permanent_approved)
+                    approval_mod.save_permanent_allowlist(snapshot)
                 except Exception:  # noqa: BLE001
                     log.debug("save_permanent_allowlist failed", exc_info=True)
             resolved = approval_mod.resolve_gateway_approval(session_id, choice, request_id=request_id)

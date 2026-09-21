@@ -53,6 +53,8 @@ interface ClientState {
 }
 
 const CSRF_EXEMPT = /\/api\/(auth\/login|csp-report)$/
+/** A 401 from these is the answer to a login attempt (or a logout), not a lost session: never bounce to /login. */
+const NO_401_REDIRECT = /\/api\/auth\/(login|passkey\/options|passkey\/login|logout)$/
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 const state: ClientState = {
@@ -150,7 +152,7 @@ export async function request<T>(path: string, opts: RequestOptions<T>): Promise
         headers.set('X-Hermes-CSRF-Token', state.csrfToken)
       }
       const response = await state.transport({ url, method, headers, body, signal: controller.signal, credentials: 'include', keepalive: opts.keepalive ?? false })
-      if (response.status === 401 && state.authEnabled && opts.redirect401 !== false) {
+      if (response.status === 401 && state.authEnabled && opts.redirect401 !== false && !NO_401_REDIRECT.test(url.pathname)) {
         state.onUnauthorized(currentAppPath())
         throw new ApiError({ kind: 'unauthorized', status: 401, path, message: 'Authentication required', retryable: false })
       }
@@ -231,36 +233,36 @@ export async function contractFetch(req: Request): Promise<Response> {
   const body = idempotent ? null : await req.text()
   // Identical in-flight GETs share one transport call until the next mutation (legacy HWEB-43 coalescing).
   const dedupeKey = idempotent ? `${req.method} ${url.href} @${state.mutationSeq} contract` : null
+  // Followers share the leader's *processed* outcome (401 redirect, ApiError envelope), never the raw transport promise.
   if (dedupeKey) {
     const existing = state.inflight.get(dedupeKey) as Promise<Response> | undefined
     if (existing) return (await existing).clone()
   }
   if (!idempotent) state.mutationSeq += 1
   const send = async (): Promise<Response> => {
+    let response: Response
     try {
-      return await state.transport({ url, method: req.method, headers, body, signal: req.signal, credentials: 'include' })
+      response = await state.transport({ url, method: req.method, headers, body, signal: req.signal, credentials: 'include' })
     } catch (error) {
       throw ApiError.from(error, path)
     }
+    if (response.status === 401 && state.authEnabled && !NO_401_REDIRECT.test(url.pathname)) {
+      state.onUnauthorized(currentAppPath())
+      throw new ApiError({ kind: 'unauthorized', status: 401, path, message: 'Authentication required', retryable: false })
+    }
+    if (!response.ok) {
+      const text = await response.text()
+      let parsed: unknown = null
+      try { parsed = text ? JSON.parse(text) : null } catch { parsed = { error: text.slice(0, 500) } }
+      const errBody = ErrorBodySchema.safeParse(parsed)
+      throw new ApiError({ kind: 'http', status: response.status, code: errBody.success ? errBody.data.code : undefined, body: parsed, path, message: errBody.success ? errBody.data.error : `HTTP ${response.status} from ${path}`, retryable: false })
+    }
+    return response
   }
-  let response: Response
-  if (dedupeKey) {
-    const started = send()
-    state.inflight.set(dedupeKey, started)
-    const clear = () => { if (state.inflight.get(dedupeKey) === started) state.inflight.delete(dedupeKey) }
-    started.then(clear, clear)
-    response = (await started).clone()
-  } else response = await send()
-  if (response.status === 401 && state.authEnabled && !CSRF_EXEMPT.test(url.pathname)) {
-    state.onUnauthorized(currentAppPath())
-    throw new ApiError({ kind: 'unauthorized', status: 401, path, message: 'Authentication required', retryable: false })
-  }
-  if (!response.ok) {
-    const text = await response.text()
-    let parsed: unknown = null
-    try { parsed = text ? JSON.parse(text) : null } catch { parsed = { error: text.slice(0, 500) } }
-    const errBody = ErrorBodySchema.safeParse(parsed)
-    throw new ApiError({ kind: 'http', status: response.status, code: errBody.success ? errBody.data.code : undefined, body: parsed, path, message: errBody.success ? errBody.data.error : `HTTP ${response.status} from ${path}`, retryable: false })
-  }
-  return response
+  if (!dedupeKey) return send()
+  const started = send()
+  state.inflight.set(dedupeKey, started)
+  const clear = () => { if (state.inflight.get(dedupeKey) === started) state.inflight.delete(dedupeKey) }
+  started.then(clear, clear)
+  return (await started).clone()
 }

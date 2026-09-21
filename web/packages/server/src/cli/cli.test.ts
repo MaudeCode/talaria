@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
-import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, waitForHealth } from './launcher.js'
+import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
 import { ctlPaths, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
 import { bootTestServer } from '../test/harness.js'
 
@@ -72,6 +72,20 @@ describe('serve argument precedence', () => {
 })
 
 describe('launcher', () => {
+  it('a detached launch passes the resolved host and port to the worker so a checkout .env cannot override them', async () => {
+    const home = scratch()
+    mkdirSync(join(home, 'web'), { recursive: true })
+    writeFileSync(join(home, 'web', '.env'), 'HERMES_WEBUI_PORT=1\n')
+    const port = await freePort()
+    // The stand-in worker binds the port it is told on the command line and answers /health.
+    const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}))}).listen(port,'127.0.0.1');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),8000)`
+    const logs: string[] = []
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_SIDECAR_COMMAND: 'x', HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve())
+    expect(code).toBe(0)
+    expect(logs.some((l) => l.includes(`127.0.0.1:${String(port)}`))).toBe(true)
+  }, 20_000)
+
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {
     expect(parseBootstrapArgs(['9000', '--host', '0.0.0.0', '--no-browser', '--foreground'], {})).toEqual({ port: 9000, host: '0.0.0.0', noBrowser: true, skipAgentInstall: false, foreground: true })
     expect(parseBootstrapArgs([], { HERMES_WEBUI_PORT: '8790', HERMES_WEBUI_HOST: '::' })).toMatchObject({ port: 8790, host: '::' })
@@ -162,6 +176,31 @@ describe('ctl', () => {
     ctx.out.length = 0
     expect(await runCtl(ctx, ['status'])).toBe(0)
     expect(ctx.out[0]).toBe('● hermes-webui — stopped')
+  })
+
+  it('stop, status, and logs resolve the daemon through the checkout .env like start does', async () => {
+    const home = scratch()
+    const port = await freePort()
+    const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok',sessions:0,active_streams:0}))}).listen(port,'127.0.0.1');setInterval(()=>{},1000)`
+    const ctx = makeCtx(home, fakeServe(script))
+    // The checkout .env relocates the Hermes home; every subcommand must read it, not only `start`.
+    const relocated = join(home, 'elsewhere')
+    mkdirSync(relocated, { recursive: true })
+    writeFileSync(join(ctx.webRoot, '.env'), `HERMES_HOME=${relocated}\n`)
+    delete ctx.env.HERMES_HOME
+    expect(await runCtl(ctx, ['start', String(port)])).toBe(0)
+    stops.push(async () => { await runCtl(ctx, ['stop']) })
+    expect(existsSync(join(relocated, 'webui.pid'))).toBe(true)
+    const fresh = makeCtx(home, fakeServe(script))
+    delete fresh.env.HERMES_HOME
+    expect(await runCtl(fresh, ['status'])).toBe(0)
+    expect(fresh.out[0]).toBe('● hermes-webui — running')
+    const stopper = makeCtx(home, fakeServe(script))
+    delete stopper.env.HERMES_HOME
+    expect(await runCtl(stopper, ['stop'])).toBe(0)
+    expect(stopper.out).toContain('[ctl] Stopped')
+    expect(existsSync(join(relocated, 'webui.pid'))).toBe(false)
+    expect(await portIsBindable('127.0.0.1', port)).toBe(true)
   })
 
   it('refuses to start when a foreign server already answers on the port and warns on stop', async () => {

@@ -241,11 +241,6 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
       if (path.startsWith('/api/')) await deps.agentConfig.read(deps.profileHome(deps.activeProfile())).catch(() => undefined)
-      const sidecarProxy = matchSidecarProxy(path)
-      if (sidecarProxy) {
-        await handleExtensionSidecarProxy(ctx, sidecarProxy[0], sidecarProxy[1])
-        return
-      }
       if (ctx.method === 'GET' || ctx.method === 'HEAD') {
         if (handleSpa(ctx)) return
         if (path.startsWith('/extensions/')) {
@@ -284,6 +279,13 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           await runRaw(ctx, raw)
           return
         }
+      }
+      // The extension sidecar proxy dispatches only after the CSRF check above has run for unsafe methods (Python
+      // ran `_check_csrf` before `_handle_extension_sidecar_proxy`).
+      const sidecarProxy = matchSidecarProxy(path)
+      if (sidecarProxy) {
+        await handleExtensionSidecarProxy(ctx, sidecarProxy[0], sidecarProxy[1])
+        return
       }
       const { matched } = await orpc.handle(req, res, { context: { ctx } })
       if (matched) {

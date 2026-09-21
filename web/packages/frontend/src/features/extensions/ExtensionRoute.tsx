@@ -29,7 +29,7 @@ export function ExtensionPanel({ manifest }: { manifest: ExtensionManifest }) {
     const el = iframe.current
     if (!el || !manifest.panel) return
     const host = new ExtensionHost(manifest, el, {
-      fetchSidecar: (id, p) => request(`api/extensions/${encodeURIComponent(id)}/sidecar/${p.path.replace(/^\/+/, '')}`, { method: p.method ?? 'GET', schema: SidecarFetchResult, retries: 0, ...(p.body !== undefined ? { body: p.body } : {}), ...(p.headers ? { headers: p.headers } : {}) }).catch((e: unknown) => {
+      fetchSidecar: (id, p) => request(`api/extensions/${encodeURIComponent(id)}/sidecar/${sidecarProxyPath(p.path)}`, { method: p.method ?? 'GET', schema: SidecarFetchResult, retries: 0, ...(p.body !== undefined ? { body: p.body } : {}), ...(p.headers ? { headers: p.headers } : {}) }).catch((e: unknown) => {
         const err = e as { status?: number; body?: unknown; message?: string }
         return { status: err.status ?? 0, headers: {}, body: typeof err.body === 'string' ? err.body : JSON.stringify(err.body ?? { error: err.message ?? 'sidecar request failed' }) }
       }),
@@ -61,6 +61,22 @@ export function ExtensionPanel({ manifest }: { manifest: ExtensionManifest }) {
       />
     </div>
   )
+}
+
+/**
+ * The panel's `sidecar.fetch` path may only name a location under this extension's proxy: every segment is encoded so
+ * `..`, `?`, `#`, or an encoded slash cannot resolve to another `/api` route with the user's cookies and CSRF token.
+ */
+export function sidecarProxyPath(raw: string): string {
+  const [pathPart, query] = raw.replace(/^\/+/, '').split('?', 2)
+  const segments = (pathPart ?? '').split('/').filter((seg) => seg.length > 0)
+  if (segments.some((seg) => seg === '.' || seg === '..' || /%2e|%2f|#/i.test(seg))) throw new Error('sidecar path must stay under the extension proxy')
+  const encoded = segments.map((seg) => encodeURIComponent(decodeSegment(seg))).join('/')
+  return query !== undefined && !query.includes('#') ? `${encoded}?${query}` : encoded
+}
+
+function decodeSegment(seg: string): string {
+  try { return decodeURIComponent(seg) } catch { return seg }
 }
 
 export function ExtensionRoute({ extensionId }: { extensionId: string }) {

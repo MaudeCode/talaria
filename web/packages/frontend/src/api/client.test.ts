@@ -89,6 +89,30 @@ describe('typed client against the in-memory adapter', () => {
     expect(onUnauthorized).toHaveBeenCalledWith('/settings?x=1')
   })
 
+  it('coalesced followers get the same typed outcome as the leader (error envelope and 401 redirect)', async () => {
+    configureClient({ transport: createMemoryAdapter() })
+    const [leader, follower] = await Promise.allSettled([fetchSession('missing'), fetchSession('missing')])
+    expect(leader.status).toBe('rejected')
+    expect(follower.status).toBe('rejected')
+    for (const outcome of [leader, follower]) expect(isApiError((outcome as PromiseRejectedResult).reason) && (outcome as PromiseRejectedResult).reason.message).toBe('Session not found')
+    const onUnauthorized = vi.fn()
+    resetClientForTests()
+    configureClient({ transport: createMemoryAdapter({ routes: { 'GET /api/session': () => [401, { error: 'Authentication required' }] } }), authEnabled: true, onUnauthorized })
+    const results = await Promise.allSettled([fetchSession('sess-1'), fetchSession('sess-1')])
+    for (const outcome of results) expect(isApiError((outcome as PromiseRejectedResult).reason) && (outcome as PromiseRejectedResult).reason.kind).toBe('unauthorized')
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failed passkey login or logout never bounces to /login', async () => {
+    const onUnauthorized = vi.fn()
+    configureClient({ transport: createMemoryAdapter({ routes: { 'POST /api/auth/passkey/login': () => [401, { error: 'Invalid passkey assertion' }], 'POST /api/auth/passkey/options': () => [401, { error: 'no passkeys' }], 'POST /api/auth/logout': () => [401, { error: 'Authentication required' }] } }), authEnabled: true, onUnauthorized })
+    window.history.replaceState(null, '', '/settings')
+    await expect(post('api/auth/passkey/login', { id: 'x' }, z.any(), { retries: 0 })).rejects.toMatchObject({ kind: 'http', status: 401, message: 'Invalid passkey assertion' })
+    await expect(post('api/auth/passkey/options', {}, z.any(), { retries: 0 })).rejects.toMatchObject({ kind: 'http', status: 401 })
+    await expect(post('api/auth/logout', {}, z.any(), { retries: 0 })).rejects.toMatchObject({ kind: 'http', status: 401 })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
   it('does not redirect on 401 when auth is disabled or opted out', async () => {
     const onUnauthorized = vi.fn()
     configureClient({ transport: createMemoryAdapter({ routes: { 'GET /api/settings': () => [401, { error: 'nope' }] } }), authEnabled: false, onUnauthorized })

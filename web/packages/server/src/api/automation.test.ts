@@ -231,6 +231,18 @@ describe('crons, kanban, extensions, terminal', () => {
     res = await s.get('/api/extensions/ext-one/sidecar/ping?x=1', { headers: browserHeaders })
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('proxied GET /ping?x=1')
+    // An unsafe browser request to the proxy goes through the CSRF check like every other /api write.
+    await s.deps.settings.save({ _set_password: 'hunter22' })
+    s.deps.auth.invalidatePasswordHashCache()
+    try {
+      const sessionCookie = `${s.deps.auth.cookieName()}=${s.deps.auth.createSession({ authType: 'password' })}`
+      const noToken = await post(s, '/api/extensions/ext-one/sidecar/ping', { a: 1 }, 'POST', { ...browserHeaders, cookie: sessionCookie })
+      expect(noToken.status).toBe(403)
+      expect(String((await json(noToken)).error)).toBe('Session expired - reload the page')
+    } finally {
+      await s.deps.settings.save({ _clear_password: true })
+      s.deps.auth.invalidatePasswordHashCache()
+    }
     expect(res.headers.get('set-cookie')).toBeNull()
     expect(res.headers.get('x-hermes-secret')).toBeNull()
     // Same-origin redirects are followed server-side; cross-origin hops, loops, and oversized bodies answer 502.

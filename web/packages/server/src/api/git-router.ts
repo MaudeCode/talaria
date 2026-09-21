@@ -17,7 +17,7 @@ const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGua
 function gitBad(error: unknown, status = 400): never {
   if (error instanceof HttpError) throw error
   if (error instanceof GitWorkspaceError) throw new HttpError(status, sanitizeError(error), { code: error.code || 'git_failed' })
-  if (error instanceof Error) throw new HttpError(400, error.message)
+  if (error instanceof Error) throw new HttpError(400, sanitizeError(error))
   throw error
 }
 

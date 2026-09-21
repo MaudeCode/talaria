@@ -38,6 +38,18 @@ describe('open server (no auth)', () => {
     expect(res.headers.get('report-to')).toContain('csp-endpoint')
   })
 
+  it('/health never names sessions or streams (it is public)', async () => {
+    s.deps.registry.registerActiveRun({ stream_id: 'stream-secret', session_id: 'sess-secret', phase: 'running', started_at: 1, workspace: '/w', model: null, provider: null, ephemeral: false })
+    try {
+      const body = HealthSchema.parse(await (await s.get('/health')).json())
+      expect(body.active_runs).toBe(1)
+      expect(JSON.stringify(body)).not.toContain('secret')
+      expect(body.runs[0]).toEqual({ phase: 'running', started_at: 1 })
+    } finally {
+      s.deps.registry.activeRuns.delete('stream-secret')
+    }
+  })
+
   it('/health?deep=1 answers 503 starting while the startup gate is armed', async () => {
     s.deps.startup.arm()
     try {

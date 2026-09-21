@@ -104,3 +104,18 @@ def test_a_cancel_read_immediately_after_the_call_still_finds_it() -> None:
         assert replies["c"]["result"] == {"cancelled": True}
         assert replies[1]["result"] == {"cancelled": True}
     assert all(seen)
+
+
+def test_a_result_that_is_not_json_becomes_an_error_answer_instead_of_a_dropped_line() -> None:
+    requests = [{"jsonrpc": "2.0", "id": 7, "method": "nan"}]
+    stdin = io.BytesIO(b"".join(json.dumps(line).encode() + b"\n" for line in requests))
+    stdout = io.BytesIO()
+    server = RpcServer({"nan": lambda ctx, params: {"value": float("nan")}}, stdin=stdin, stdout=stdout)
+    server.serve_forever()
+    for _ in range(100):
+        replies = [json.loads(raw) for raw in stdout.getvalue().splitlines()]
+        if replies:
+            break
+        threading.Event().wait(0.01)
+    assert replies[0]["id"] == 7 and replies[0]["error"]["code"] == -32603
+    assert "JSON" in replies[0]["error"]["message"]

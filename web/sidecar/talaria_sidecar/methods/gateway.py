@@ -45,6 +45,7 @@ def restart(home: Path, cli_profile: str | None, ctx: CallContext, *, quick_time
     try:
         env = dict(os.environ)
         env["HERMES_HOME"] = str(home)
+        env.pop("HERMES_EXEC_ASK", None)  # the sidecar's own approval posture, not the gateway's
         cmd = [_hermes_command()]
         if cli_profile:
             cmd.extend(["--profile", cli_profile])

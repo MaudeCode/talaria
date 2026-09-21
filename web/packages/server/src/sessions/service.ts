@@ -85,9 +85,15 @@ export class SessionService {
     return this.deps.profilesMatch(typeof profile === 'string' ? profile : null, this.deps.activeProfile())
   }
 
-  /** Python `_session_id_visible_to_request_profile`. */
-  sessionIdVisible(sid: unknown): boolean {
-    if (typeof sid !== 'string' || !sid || !isSafeSessionId(sid)) return true
+  /**
+   * Python `_session_id_visible_to_request_profile`, applied to the id as handlers see it (trimmed): a padded id must
+   * not slip past the profile check into a handler that trims and trusts it. A non-empty id that is still unsafe after
+   * trimming can name no session and is refused here instead of falling through.
+   */
+  sessionIdVisible(raw: unknown): boolean {
+    if (typeof raw !== 'string' || !raw.trim()) return true
+    const sid = raw.trim()
+    if (!isSafeSessionId(sid)) return false
     let session: Session
     try {
       session = this.store.get(sid, { metadataOnly: true })

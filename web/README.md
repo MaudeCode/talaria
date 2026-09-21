@@ -116,7 +116,6 @@ commented template.
 | `HERMES_WEBUI_OIDC_OWNER_CLAIM` / `HERMES_WEBUI_OIDC_OWNER_VALUES` | unset | OIDC owner policy for operator-only routes |
 | `HERMES_WEBUI_SESSION_TTL`, `HERMES_WEBUI_SESSION_SLIDING`, `HERMES_WEBUI_SECURE`, `HERMES_WEBUI_COOKIE_NAME`, `HERMES_WEBUI_PROFILE_COOKIE_NAME` | 30 d, on, auto | Login cookie policy |
 | `HERMES_WEBUI_GATEWAY_BASE_URL` / `HERMES_WEBUI_GATEWAY_API_KEY` | `http://127.0.0.1:8642` | Hermes gateway API used by health probes and the gateway chat backend |
-| `HERMES_WEBUI_CHAT_BACKEND` | `local` | `gateway` routes chat through the Hermes gateway API ([docs](docs/advanced-chat-setup.md)) |
 | `HERMES_WEBUI_MAX_UPLOAD_MB`, `HERMES_WEBUI_FOLDER_ZIP_MAX_MB`, `HERMES_WEBUI_FOLDER_ZIP_MAX_FILES` | 20, 1024, 50000 | Upload and folder-download limits; the folder archive is plain ZIP32, so the last two are clamped to 4000 MB and 65535 entries |
 | `HERMES_WEBUI_MAX_SSE_CLIENTS` | 8 per client | Concurrent stream cap per client identity |
 | `HERMES_WEBUI_EXTENSION_DIR`, `HERMES_WEBUI_EXTENSION_MANIFEST` | unset | Local extensions ([docs](docs/EXTENSIONS.md)) |
@@ -132,8 +131,8 @@ commented template.
 ### How chat runs
 
 The sidecar runs `run_agent.AIAgent` in-process on the Agent venv, reading your `HERMES_HOME` config
-directly, exactly as the Agent CLI does. It does not route chat through the gateway API unless
-`HERMES_WEBUI_CHAT_BACKEND=gateway`. To use an external OpenAI-compatible endpoint as a model, add it in
+directly, exactly as the Agent CLI does. Chat never routes through the gateway API (the gateway chat
+backend was dropped with TAL-245). To use an external OpenAI-compatible endpoint as a model, add it in
 **Settings → Providers**.
 
 ### Remote access

@@ -403,7 +403,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     requestScope,
     isRootProfile,
     onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.load().onboarding_completed),
-    health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ stream_id: r.stream_id, session_id: r.session_id, phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
+    health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
     sessions,
     sessionStore: store,
     events,

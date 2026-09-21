@@ -140,6 +140,11 @@ export class SidecarClient implements SidecarLike {
       this.restartAttempt = 0
       return describe
     } catch (error) {
+      // A decoded version mismatch is final: the sidecar exits 3 on its own and restarting cannot help.
+      if (error instanceof SidecarError && error.condition === 'sidecar_rpc_version_mismatch') {
+        this.status = 'incompatible'
+        throw error
+      }
       // `incompatible` is reserved for a decoded handshake that says so (or the version-mismatch exit). A handshake
       // that hangs, fails to parse, or dies is operational: kill a still-running child so its exit schedules a restart.
       if (this.child === child && !this.closed) {
@@ -192,7 +197,7 @@ export class SidecarClient implements SidecarLike {
       pending.reject(error)
     }
     if (this.closed) { this.status = 'stopped'; return }
-    if (code === 3) {
+    if (code === 3 || this.status === 'incompatible') {
       // Version mismatch: restarting cannot help.
       this.status = 'incompatible'
       return

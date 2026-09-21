@@ -202,6 +202,15 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
+  it('the ElevenLabs voice comes from the operator config only, never from the request', async () => {
+    fresh()
+    setConfig({ tts: { elevenlabs: { voice_id: 'voiceCONFIG' } } })
+    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
+    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'elevenlabs', voice_id: 'voiceATTACKER' })).status).toBe(200)
+    expect(requests[0]?.url).toContain('/text-to-speech/voiceCONFIG/')
+    setEnv({ ELEVENLABS_API_KEY: null })
+  })
+
   it('a named profile never uses a key the default profile .env put into the process environment', async () => {
     fresh()
     setConfig({})

@@ -142,7 +142,8 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
     const apiKey = (env.ELEVENLABS_API_KEY ?? '').trim()
     if (!apiKey) { ctx.json({ error: 'ELEVENLABS_API_KEY not configured' }, { status: 503 }); return }
     const el = dict(tts.elevenlabs)
-    const voiceId = str(body.voice_id ?? el.voice_id ?? '21m00Tcm4TlvDq8ikWAM').trim()
+    // The voice comes from the operator's config only (Python parity): a caller may not pick voices on the operator's key.
+    const voiceId = str(el.voice_id ?? '21m00Tcm4TlvDq8ikWAM').trim()
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(voiceId)) { ctx.json({ error: 'invalid voice_id in config' }, { status: 400 }); return }
     try {
       const res = await f(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128`, { method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ text, model_id: str(el.model_id) || 'eleven_multilingual_v2' }), redirect: 'error', signal: AbortSignal.timeout(TTS_TIMEOUT_MS) })

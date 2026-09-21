@@ -35,6 +35,25 @@ describe('SidecarClient handshake recovery', () => {
   })
 })
 
+describe('SidecarClient version mismatch', () => {
+  let client: SidecarClient | null = null
+  afterEach(async () => { await client?.close(); client = null })
+
+  it('a decoded RPC version mismatch parks the client as incompatible instead of restarting forever', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-ver-'))
+    // Answers every handshake with the mismatch error the real sidecar sends, then exits 3 like it does.
+    const script = `require('readline').createInterface({input:process.stdin}).on('line',(line)=>{const req=JSON.parse(line);if(req.method==='runtime.handshake'){process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,error:{code:-32000,message:'sidecar RPC version mismatch',data:{condition:'sidecar_rpc_version_mismatch'}}})+'\\n',()=>process.exit(3))}})`
+    const logs: string[] = []
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script], agentDir: '', sidecarDir: dir, hermesHome: dir, log: (l) => logs.push(l), backoffMs: [20], handshakeTimeoutMs: 2_000 })
+    await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_rpc_version_mismatch' })
+    expect(client.status).toBe('incompatible')
+    await new Promise((r) => setTimeout(r, 300))
+    expect(client.status).toBe('incompatible')
+    expect(logs.filter((l) => l.includes('restarting'))).toEqual([])
+    expect(logs.filter((l) => l.includes('exited')).length).toBeLessThanOrEqual(1)
+  })
+})
+
 describe('FakeSidecar', () => {
   it('answers from fixtures and validates shapes', async () => {
     const fake = new FakeSidecar()

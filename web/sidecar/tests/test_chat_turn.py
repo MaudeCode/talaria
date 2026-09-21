@@ -130,3 +130,70 @@ def test_a_rotated_credential_never_reuses_the_cached_agent(monkeypatch) -> None
     assert chat.evict_all_agents() == 1
     assert chat.start(Ctx(), _params("st-8", "s3"))["status"] == "completed"
     assert len(FakeAgent.instances) == 3
+
+
+def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path) -> None:
+    """The approval key, gateway session vars, and session cwd are bound for the turn and reset afterwards."""
+    import contextvars
+    import sys
+    import types
+
+    seen: dict = {}
+    approval_ctx = types.ModuleType("tools.approval_context")
+    key_var: contextvars.ContextVar = contextvars.ContextVar("key", default="default")
+    approval_ctx.set_current_session_key = lambda k: key_var.set(k)
+    approval_ctx.reset_current_session_key = lambda t: key_var.reset(t)
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.approval_context = approval_ctx
+    sc = types.ModuleType("gateway.session_context")
+    for name in ("_SESSION_KEY", "_SESSION_UI_SESSION_ID", "_SESSION_PLATFORM", "_SESSION_CHAT_ID", "_SESSION_ID"):
+        setattr(sc, name, contextvars.ContextVar(name, default=""))
+    gateway_pkg = types.ModuleType("gateway")
+    gateway_pkg.session_context = sc
+    cwd_mod = types.ModuleType("agent.runtime_cwd")
+    cwd_mod._SESSION_CWD = contextvars.ContextVar("cwd", default="")
+    agent_pkg = types.ModuleType("agent")
+    agent_pkg.runtime_cwd = cwd_mod
+    for name, mod in {"tools": tools_pkg, "tools.approval_context": approval_ctx, "gateway": gateway_pkg, "gateway.session_context": sc, "agent": agent_pkg, "agent.runtime_cwd": cwd_mod}.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    class ObservingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            seen.update(key=key_var.get(), platform=sc._SESSION_PLATFORM.get(), chat_id=sc._SESSION_CHAT_ID.get(), ui=sc._SESSION_UI_SESSION_ID.get(), cwd=cwd_mod._SESSION_CWD.get())
+            return super().run_conversation(**kwargs)
+
+    _patch(monkeypatch)
+    monkeypatch.setattr(chat, "_agent_class", lambda: ObservingAgent)
+    workspace = str(tmp_path / "ws")
+    with chat._turn_identity("s-ident", workspace):
+        assert chat.start(Ctx(), {**_params("st-9", "s-ident"), "workspace": workspace})["status"] == "completed"
+    assert seen == {"key": "s-ident", "platform": "webui", "chat_id": "s-ident", "ui": "s-ident", "cwd": workspace}
+    # Everything is reset once the turn is over.
+    assert key_var.get() == "default" and sc._SESSION_PLATFORM.get() == "" and cwd_mod._SESSION_CWD.get() == ""
+
+
+def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> None:
+    _patch(monkeypatch)
+    gate = threading.Event()
+    started = threading.Event()
+    orig_init = FakeAgent.__init__
+
+    def init(self, **kwargs):
+        orig_init(self, **kwargs)
+        if len(FakeAgent.instances) == 1:
+            self.block = gate
+            started.set()
+
+    monkeypatch.setattr(FakeAgent, "__init__", init)
+    first: dict = {}
+    worker = threading.Thread(target=lambda: first.update(chat.start(Ctx(), _params("st-10", "s-busy"))))
+    worker.start()
+    assert started.wait(5)
+    # The first turn is still inside run_conversation; the second gets its own agent and does not clear its interrupt.
+    second = chat.start(Ctx(), _params("st-11", "s-busy"))
+    assert second["status"] == "completed"
+    assert len(FakeAgent.instances) == 2
+    assert FakeAgent.instances[0].cleared == 1  # only its own start cleared it
+    gate.set()
+    worker.join(5)
+    assert first["status"] == "completed"

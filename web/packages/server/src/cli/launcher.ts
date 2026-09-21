@@ -171,7 +171,9 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const logPath = join(stateDir, `bootstrap-${String(args.port)}.log`)
   log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${args.host}:${String(args.port)}`)
   const fd = openSync(logPath, 'a')
-  const [cmd, ...cmdArgs] = ctx.serveCommand
+  // The worker re-applies the checkout `.env` before serving; the resolved host/port travel as explicit serve
+  // arguments so a `.env` HERMES_WEBUI_PORT cannot override what the user asked for on the command line.
+  const [cmd, ...cmdArgs] = [...ctx.serveCommand, '--host', args.host, String(args.port)]
   const child = spawn(cmd ?? process.execPath, cmdArgs, { cwd: (env.HERMES_WEBUI_SERVER_CWD ?? '').trim() || agentDir || ctx.webRoot, env, stdio: ['ignore', fd, fd], detached: true })
   child.unref()
   closeSync(fd)

@@ -30,6 +30,8 @@ def main() -> int:
     rpc_out = _claim_stdout()
     logging.basicConfig(stream=sys.stderr, level=os.environ.get("TALARIA_SIDECAR_LOG_LEVEL", "INFO"), format="[sidecar] %(levelname)s %(name)s: %(message)s")
     hermes_home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+    # Every turn here has a human behind the Web UI: flagged actions must ask (approval cards), never auto-approve.
+    os.environ.setdefault("HERMES_EXEC_ASK", "1")
     agent_dir = os.environ.get("TALARIA_SIDECAR_AGENT_DIR") or os.environ.get("HERMES_WEBUI_AGENT_DIR")
     runtime = AgentRuntime(hermes_home, Path(agent_dir) if agent_dir else None)
     if runtime.agent_dir is not None and str(runtime.agent_dir) not in sys.path:

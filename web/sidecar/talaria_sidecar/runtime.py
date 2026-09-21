@@ -84,6 +84,36 @@ def read_agent_revision(agent_dir: Path | None, module_path: Path | None) -> str
     return _git(Path(worktree), "rev-parse", "--verify", "HEAD")
 
 
+def _head_stamp(agent_dir: Path | None) -> tuple | None:
+    """Identity of the checkout's HEAD without spawning git: stats of ``.git/HEAD`` and of the ref it names."""
+    if agent_dir is None:
+        return None
+    git_dir = agent_dir / ".git"
+    try:
+        if git_dir.is_file():  # worktree: ``gitdir: <path>``
+            target = git_dir.read_text(encoding="utf-8").strip()
+            git_dir = Path(target[len("gitdir:"):].strip()) if target.startswith("gitdir:") else git_dir
+        head = git_dir / "HEAD"
+        st = head.stat()
+        parts: list = [st.st_mtime_ns, st.st_size, st.st_ino]
+        content = head.read_text(encoding="utf-8").strip()
+        if content.startswith("ref:"):
+            ref = git_dir / content[len("ref:"):].strip()
+            try:
+                rst = ref.stat()
+                parts.extend([rst.st_mtime_ns, rst.st_size, rst.st_ino])
+            except OSError:
+                parts.append("packed")
+                try:
+                    pst = (git_dir / "packed-refs").stat()
+                    parts.extend([pst.st_mtime_ns, pst.st_size])
+                except OSError:
+                    parts.append(None)
+        return tuple(parts)
+    except OSError:
+        return None
+
+
 def _pid_is_alive(pid: int) -> bool | None:
     if pid <= 0:
         return False
@@ -180,6 +210,9 @@ class AgentRuntime:
 
     def __init__(self, hermes_home: Path, agent_dir: Path | None = None):
         self.hermes_home = Path(hermes_home)
+        self._stale_lock = threading.Lock()
+        self._stale = False
+        self._stale_stamp: tuple | None = None
         self.agent_dir = Path(agent_dir).resolve() if agent_dir else None
         self.pin = read_pin()
         self.loaded = False
@@ -241,14 +274,29 @@ class AgentRuntime:
         return "unverified" if live == "absent" else live
 
     def is_stale(self) -> bool:
-        """True when the checkout revision no longer matches the loaded module."""
+        """True when the checkout revision no longer matches the loaded module.
+
+        The revision read spawns git, so it is memoised on the checkout's HEAD stamp (``.git/HEAD`` plus the ref it
+        points at, both plain stat calls) across the worker pool, and a read that fails (timeout under load) is retried
+        once before it counts as a change.
+        """
         if not self.loaded or self.revision is None:
             return False
-        try:
-            fresh = read_agent_revision(self.agent_dir, self.module_path)
-        except Exception:  # noqa: BLE001 - unreadable fails closed like a change
+        with self._stale_lock:
+            stamp = _head_stamp(self.agent_dir)
+            if stamp is not None and stamp == self._stale_stamp:
+                return self._stale
             fresh = None
-        return fresh != self.revision
+            for _ in range(2):
+                try:
+                    fresh = read_agent_revision(self.agent_dir, self.module_path)
+                except Exception:  # noqa: BLE001 - unreadable fails closed like a change
+                    fresh = None
+                if fresh is not None:
+                    break
+            self._stale = fresh != self.revision
+            self._stale_stamp = stamp if fresh is not None else None
+            return self._stale
 
     def ensure_current(self) -> None:
         """Raise ``agent_runtime_stale`` when the checkout changed since import."""
@@ -257,7 +305,14 @@ class AgentRuntime:
 
     # ── handshake ─────────────────────────────────────────────────────────
     def describe(self) -> dict:
-        compatible = bool(self.loaded and (self.revision is None or self.revision == self.pin["source_revision"]))
+        # A checkout answers by revision; an untracked install (pip, image, no .git) must match the pinned version
+        # instead of passing unchecked, and an unknown version fails closed.
+        if not self.loaded:
+            compatible = False
+        elif self.revision is not None:
+            compatible = self.revision == self.pin["source_revision"]
+        else:
+            compatible = self.agent_version is not None and self.agent_version == self.pin["version"]
         return {
             "rpc_version": SIDECAR_RPC_VERSION,
             "python": sys.executable,
