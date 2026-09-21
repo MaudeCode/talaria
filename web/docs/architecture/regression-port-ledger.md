@@ -1,6 +1,22 @@
 # Regression port ledger (TAL-245)
 
-Every `web/tests/test_issue*.py` and `test_regressions.py` case at the ticket's creation commit (db3f02679), with its disposition after the TypeScript rewrite. `ported` cases keep their subject under the named Vitest suites, whose header comments list the inherited Python files and issue numbers; `dropped` cases name the decided removal or dropped route that retired them. Counts: dropped 1217, ported 1957, total 3174, unaccounted 0.
+Every `web/tests/test_issue*.py` and `test_regressions.py` case at the ticket's creation commit (db3f02679), with its disposition after the TypeScript rewrite.
+
+## Per-case ledger
+
+`regression-port-cases.tsv` (same directory) lists every case with one of three dispositions, verified by `scripts/check-regression-port.py` (part of `scripts/check tooling`):
+
+| Disposition | Meaning | Cases |
+|---|---|---|
+| `asserted` | a TypeScript test title carries `[py:<file>::<case>]` and asserts the same observable behaviour | 325 |
+| `dropped` | no TypeScript counterpart; the `ref` column states why (Python-only internals, dropped routes and features, or behaviour owned by the Agent sidecar) | 1461 |
+| `subject` | covered by the named suite without a one-to-one assertion (the file-level table below) | 1384 |
+
+The six highest-risk surfaces were ported case by case (`web/packages/server/src/port/*.port.test.ts` plus markers added to the existing suites): auth and profile isolation, startup and environment, proxies and size caps, worktrees and terminals, chat streams and journals, and per-profile behaviour. Within those 993 cases: 325 asserted, 667 dropped with a reason, 1 subject. The `subject` rows outside those surfaces are the file-level mapping below; they are not one-to-one assertions.
+
+## File-level mapping
+
+`ported` cases keep their subject under the named Vitest suites, whose header comments list the inherited Python files and issue numbers; `dropped` cases name the decided removal or dropped route that retired them.
 
 | Python file | Cases | Disposition | Target or reason |
 |---|---|---|---|
