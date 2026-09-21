@@ -8,7 +8,7 @@ import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, 
 import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { atomicWriteText } from '../fs/atomic.js'
-import { AgentConfig } from '../config/agent-config.js'
+import { AgentConfig, ConfigUnavailable } from '../config/agent-config.js'
 import { probeServer } from '../tools/mcp-health.js'
 import { agentHealth } from '../tools/health.js'
 import { githubJson } from '../tools/updates.js'
@@ -322,6 +322,53 @@ describe('config path override (review round 39)', () => {
     expect(seen).toEqual([override, override])
     expect(new AgentConfig({ sidecar: () => sidecar, env: { HERMES_CONFIG_PATH: '~/x.yaml' } }).path(home)).toBe(join(homedir(), 'x.yaml'))
     rmSync(home, { recursive: true, force: true })
+  })
+})
+
+describe('config file readability and shared-override locking (review round 40)', () => {
+  it.skipIf(process.getuid?.() === 0)('an unreadable config.yaml is unavailable, never an empty config', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-cfg-'))
+    const dir = join(home, 'locked')
+    mkdirSync(dir)
+    writeFileSync(join(dir, 'config.yaml'), 'webui_oidc:\n  issuer: https://idp.example\n')
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', () => { throw new Error('must not be reached') })
+    const config = new AgentConfig({ sidecar: () => sidecar, env: {} })
+    chmodSync(dir, 0o000)
+    try {
+      await expect(config.read(dir)).rejects.toThrow(ConfigUnavailable)
+      expect(config.peek(dir)).toBeNull()
+    } finally {
+      chmodSync(dir, 0o700)
+      rmSync(home, { recursive: true, force: true })
+    }
+    // A genuinely absent file is still the empty config.
+    expect(await config.read(join(tmpdir(), 'talaria-absent-home'))).toEqual({})
+  })
+
+  it('updates from different homes that share an HERMES_CONFIG_PATH override serialise on the file', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-cfg-'))
+    const override = join(root, 'shared.yaml')
+    writeFileSync(override, '# 0\n')
+    let stored: Json = {}
+    let n = 0
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: structuredClone(stored) }))
+    sidecar.respond('config.set', async (params) => {
+      await new Promise((r) => setTimeout(r, 5))
+      stored = params.config
+      n += 1
+      const t = Date.now() / 1000 + n
+      writeFileSync(override, `# ${String(n)}\n`)
+      utimesSync(override, t, t)
+      return { ok: true as const, path: params.config_path }
+    })
+    const config = new AgentConfig({ sidecar: () => sidecar, env: { HERMES_CONFIG_PATH: override } })
+    await Promise.all([config.update(join(root, 'a'), (c) => { c.from_a = 1 }), config.update(join(root, 'b'), (c) => { c.from_b = 1 })])
+    expect(stored).toEqual({ from_a: 1, from_b: 1 })
+    config.invalidate(join(root, 'a'))
+    expect(config.peek(join(root, 'b'))).toBeNull()
+    rmSync(root, { recursive: true, force: true })
   })
 })
 

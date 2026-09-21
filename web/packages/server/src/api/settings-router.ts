@@ -279,8 +279,9 @@ export const settingsRouter = os.router({
     setKey: os.providers.setKey.handler(({ input, context: { ctx } }) => run(() => setProviderKey(ctx, str(input.provider).trim().toLowerCase(), input.api_key === null || input.api_key === undefined ? null : str(input.api_key).trim() || null))),
     delete: os.providers.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const pid = str(input.provider).trim().toLowerCase()
-      const result = await setProviderKey(ctx, pid, null)
-      // Provider detection canonicalises ids, so every alias block (`providers.ramp` for `router`) must go too.
+      // The YAML copy goes first and its failure is the response: a credential deletion is only "removed" once every
+      // persisted source is clear. Provider detection canonicalises ids, so every alias block (`providers.ramp` for
+      // `router`) must go too.
       const canonical = canonicaliseProviderId(pid)
       await ctx.deps.agentConfig.update(home(ctx), (c) => {
         let changed = false
@@ -294,8 +295,8 @@ export const settingsRouter = os.router({
         const model = c.model
         if (model && typeof model === 'object' && !Array.isArray(model) && canonicaliseProviderId((model as Dict).provider) === canonical && 'api_key' in (model as Dict)) { Reflect.deleteProperty(model, 'api_key'); changed = true }
         return changed
-      }).catch(() => undefined)
-      return result
+      })
+      return setProviderKey(ctx, pid, null)
     })),
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null))),

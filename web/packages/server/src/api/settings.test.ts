@@ -103,6 +103,7 @@ import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel } from '../providers/catalog.js'
@@ -406,6 +407,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await json(await post(s, '/api/providers/delete', { provider: 'router' }))).action).toBe('removed')
     expect(configs.get(s.state)?.providers).toEqual({ ramp: {}, 'ramp-router': { base_url: 'https://router.example' } })
     expect(((await json(await s.get('/api/providers'))).providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'router')).toMatchObject({ has_key: false })
+  })
+
+  it('a failed YAML credential removal is the response, and the dotenv credential stays until every source is clear', async () => {
+    writeEnvFile(join(s.state, '.env'), { ...loadEnvFile(join(s.state, '.env')), DEEPSEEK_API_KEY: 'sk-deepseek-keep-1234' })
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), providers: { deepseek: { api_key: 'sk-deepseek-yaml-1234' } } })
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    const original = sidecar.responderFor('config.set')
+    sidecar.respond('config.set', () => { throw new SidecarError('config.yaml is not valid YAML', { condition: 'config_invalid' }) })
+    try {
+      const res = await post(s, '/api/providers/delete', { provider: 'deepseek' })
+      expect(res.status).toBeGreaterThanOrEqual(500)
+      expect(loadEnvFile(join(s.state, '.env')).DEEPSEEK_API_KEY).toBe('sk-deepseek-keep-1234')
+      expect((configs.get(s.state)?.providers as Json).deepseek).toEqual({ api_key: 'sk-deepseek-yaml-1234' })
+    } finally {
+      if (original) sidecar.respond('config.set', original)
+    }
+    expect((await json(await post(s, '/api/providers/delete', { provider: 'deepseek' }))).action).toBe('removed')
+    expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
+    expect((configs.get(s.state)?.providers as Json).deepseek).toEqual({})
   })
 
   it('quota endpoints answer per-provider status without network for unsupported providers', async () => {

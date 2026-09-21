@@ -43,6 +43,11 @@ export class FakeSidecar implements SidecarLike {
     if (handshake) this.describe = SIDECAR_METHODS['runtime.handshake'].result.parse(handshake.result)
   }
 
+  /** The responder currently installed for `method`, so a test can restore it. */
+  responderFor<M extends SidecarMethodName>(method: M): Responder<M> | undefined {
+    return this.responders.get(method)
+  }
+
   /** Override one method for the rest of the test. */
   respond<M extends SidecarMethodName>(method: M, responder: Responder<M>): void {
     this.responders.set(method, responder)

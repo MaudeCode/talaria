@@ -33,19 +33,23 @@ export class AgentConfig {
     return override ? resolvePath(override.replace(/^~(?=$|\/)/, homedir())) : join(profileHome, 'config.yaml')
   }
 
+  /** Fingerprint of the config file; `missing` only when it does not exist. Any other stat failure (EACCES, EIO, ...) is unreadable, never empty. */
   private statKey(profileHome: string): string {
     try {
       const st = statSync(this.path(profileHome), { bigint: true })
       return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}`
-    } catch {
-      return 'missing'
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing'
+      throw new ConfigUnavailable(`config.yaml is unreadable (${code ?? 'stat failed'}); refusing to treat it as empty`)
     }
   }
 
   /** Parsed config.yaml (empty object when the file is missing). */
   async read(profileHome: string): Promise<Config> {
+    const file = this.path(profileHome)
     const key = this.statKey(profileHome)
-    const hit = this.cache.get(profileHome)
+    const hit = this.cache.get(file)
     if (hit?.key === key) return structuredClone(hit.config)
     if (key === 'missing') return {}
     const sidecar = this.deps.sidecar()
@@ -57,7 +61,7 @@ export class AgentConfig {
       const result = await sidecar.call('config.get', { profile_home: profileHome, config_path: this.path(profileHome) })
       const config = isDict(result.config) ? result.config : {}
       if (this.statKey(profileHome) === before) {
-        this.cache.set(profileHome, { key: before, config })
+        this.cache.set(file, { key: before, config })
         return structuredClone(config)
       }
     }
@@ -66,8 +70,9 @@ export class AgentConfig {
 
   /** Synchronous last-known config for callers that cannot await (workspace resolution); refreshes in the background. */
   peek(profileHome: string): Config | null {
-    const key = this.statKey(profileHome)
-    const hit = this.cache.get(profileHome)
+    let key: string
+    try { key = this.statKey(profileHome) } catch { return null }
+    const hit = this.cache.get(this.path(profileHome))
     if (hit?.key === key) return hit.config
     if (key === 'missing') return {}
     // A changed file invalidates the snapshot: callers gate on `null` (fail closed) until the matching read lands.
@@ -75,24 +80,25 @@ export class AgentConfig {
     return null
   }
 
-  /** Read-modify-write under a per-home lock; `mutate` returns false to skip the write. */
+  /** Read-modify-write under a per-file lock (homes sharing an `HERMES_CONFIG_PATH` override serialise); `mutate` returns false to skip the write. */
   async update(profileHome: string, mutate: (config: Config) => unknown): Promise<Config> {
-    const prev = this.locks.get(profileHome) ?? Promise.resolve()
+    const file = this.path(profileHome)
+    const prev = this.locks.get(file) ?? Promise.resolve()
     const run = prev.catch(() => undefined).then(async () => {
       const config = await this.read(profileHome)
       if (mutate(config) === false) return config
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
-      await sidecar.call('config.set', { profile_home: profileHome, config_path: this.path(profileHome), config })
-      this.cache.delete(profileHome)
+      await sidecar.call('config.set', { profile_home: profileHome, config_path: file, config })
+      this.cache.delete(file)
       return config
     })
-    this.locks.set(profileHome, run)
+    this.locks.set(file, run)
     return run
   }
 
   invalidate(profileHome?: string): void {
-    if (profileHome) this.cache.delete(profileHome)
+    if (profileHome) this.cache.delete(this.path(profileHome))
     else this.cache.clear()
   }
 }
