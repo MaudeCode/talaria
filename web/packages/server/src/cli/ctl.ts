@@ -134,7 +134,8 @@ function isOwnedPid(p: CtlPaths, ctx: CtlContext, pid: number): boolean {
   const args = procArgs(pid)
   if (!args) return false
   const serve = ctx.serveCommand.slice(1).join(' ')
-  return args.includes(ctx.webRoot) || (Boolean(state.NODE_EXE) && args.includes(state.NODE_EXE ?? '\0')) || (Boolean(serve) && args.includes(serve))
+  // A reused PID belonging to an unrelated Node process must not be treated as ours: the command line has to name this checkout or the serve bin.
+  return args.includes(ctx.webRoot) || (Boolean(serve) && args.includes(serve))
 }
 
 function currentPid(p: CtlPaths, ctx: CtlContext): number | null {

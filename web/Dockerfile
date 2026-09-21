@@ -95,11 +95,17 @@ COPY --chown=root:root . /apptoo
 
 # Build the contracts and server packages from the copied workspace, then keep only
 # production dependencies. The frontend bundle is the committed static/dist tree.
-RUN npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/server \
+# node-pty compiles from source where no prebuild matches; the toolchain is purged after the build.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends make g++ \
+    && npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/server \
     && npm run build --workspace packages/contracts \
     && npm run build --workspace packages/server \
     && npm prune --omit=dev --no-audit --no-fund --workspace packages/contracts --workspace packages/server \
-    && rm -rf /root/.npm
+    && rm -rf /root/.npm \
+    && apt-get purge -y make g++ \
+    && apt-get autoremove -y \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Bake the git version tag into the image so the settings badge works even
 # when .git is not present (it is excluded by .dockerignore).

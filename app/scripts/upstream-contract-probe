@@ -7,6 +7,7 @@ import argparse
 import http.cookiejar
 import json
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -394,6 +395,21 @@ class Probe:
                 f"SSE approval event: unexpected event {event!r} {payload!r}"
             )
         print("PASS [SSE boundary] initial and approval events decoded")
+        # Answer the staged approval so the fixture turn finishes before cleanup deletes the session.
+        self.request(
+            "approval response",
+            "/api/approval/respond",
+            method="POST",
+            body={"session_id": session_id, "choice": "deny", "approval_id": str(pending.get("approval_id") or "")},
+        )
+        for _ in range(100):
+            active = self.request(
+                "stream drain",
+                "/api/chat/stream/status?" + urllib.parse.urlencode({"stream_id": str(started["stream_id"])}),
+            )
+            if active.get("active") is False:
+                break
+            time.sleep(0.1)
 
         for disposable_id in (branch_id, session_id):
             deleted = self.require_keys(

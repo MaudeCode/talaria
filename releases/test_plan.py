@@ -127,7 +127,7 @@ class PlanTests(unittest.TestCase):
     def test_relay_upgrade_preserves_previous_web_capability(self):
         first = resolve(self.root, self.request)
         previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
-        web = self.root / "web/api/contract_versions.json"
+        web = self.root / "web/contract_versions.json"
         relay = self.root / "relay/convex/releaseInfo.json"
         versions, info = json.loads(web.read_text()), json.loads(relay.read_text())
         old = versions["webRelay"]["protocolVersion"]

@@ -28,7 +28,7 @@ from hermes_state import SessionDB
 from talaria_sidecar.methods import state_db as sidecar_state_db
 
 assert __version__ == sys.argv[1], (__version__, sys.argv[1])
-database = home / "compatibility.db"
+database = home / "state.db"  # the canonical Agent database the sidecar writes through
 db = SessionDB(database)
 try:
     db.create_session("talaria-synthetic-session", source="cli")
@@ -39,9 +39,11 @@ finally:
 # The sidecar writes through the same SessionDB (state_db.* methods); the TypeScript
 # server projects the resulting rows read-only. Verify the write side and the row
 # shape that projection depends on.
-assert sidecar_state_db.sync_session_start(home, "talaria-sidecar-session", model="synthetic") is True
 with sqlite3.connect(database) as connection:
     rows = connection.execute("SELECT id, (SELECT COUNT(*) FROM messages WHERE session_id = sessions.id) FROM sessions ORDER BY id").fetchall()
-assert rows[0] == ("talaria-sidecar-session", 0), rows
-assert rows[1] == ("talaria-synthetic-session", 2), rows
+assert rows == [("talaria-synthetic-session", 2)], rows
+assert sidecar_state_db.sync_session_start(home, "talaria-sidecar-session", model="synthetic") is True
+with sqlite3.connect(database) as connection:
+    sidecar_rows = connection.execute("SELECT id FROM sessions WHERE id = ?", ("talaria-sidecar-session",)).fetchall()
+assert sidecar_rows == [("talaria-sidecar-session",)], sidecar_rows
 print(f"PASS Agent {__version__}: imports, real SessionDB, and the sidecar write path")

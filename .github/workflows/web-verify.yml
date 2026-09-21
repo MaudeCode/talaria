@@ -32,6 +32,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Native module toolchain (node-pty)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
+
       - name: Clean install (workspace lockfile is authoritative)
         run: npm ci --no-audit --no-fund
 
@@ -90,6 +93,9 @@ jobs:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: Native module toolchain (node-pty)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
 
       - name: Clean install (workspace lockfile is authoritative)
         run: npm ci --no-audit --no-fund
