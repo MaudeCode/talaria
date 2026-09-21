@@ -7,11 +7,11 @@
  * against repo-local config, and bounded by a timeout.
  */
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
-import { rmtreeAnchored, safeResolveWs, unlinkAnchored } from './fs.js'
+import { openAnchoredFd, rmtreeAnchored, safeResolveWs, unlinkAnchored } from './fs.js'
 import { str } from '../util.js'
 
 export const GIT_TIMEOUT_MS = 5_000
@@ -447,19 +447,26 @@ export class GitRunner {
     return this.parseNumstat(result.stdout, ctx)
   }
 
-  private static countUntrackedFile(path: string): [number, number, boolean] {
+  /** An untracked file's bytes through the anchored walk (no symlinked component), or null when unreadable/too large. */
+  private static readUntracked(workspace: string, path: string): { data: Buffer } | { tooLarge: true } | null {
+    let fd: number
+    try { fd = openAnchoredFd(workspace, path, { wantDir: false }) } catch { return null }
     try {
-      const st = statSync(path)
-      if (!st.isFile() || st.size > DIFF_SIZE_LIMIT) return [0, 0, false]
+      const st = fstatSync(fd)
+      if (!st.isFile()) return null
+      if (st.size > DIFF_SIZE_LIMIT) return { tooLarge: true }
+      return { data: readFileSync(fd) }
     } catch {
-      return [0, 0, false]
+      return null
+    } finally {
+      closeSync(fd)
     }
-    let data: Buffer
-    try {
-      data = readFileSync(path)
-    } catch {
-      return [0, 0, false]
-    }
+  }
+
+  private static countUntrackedFile(workspace: string, path: string): [number, number, boolean] {
+    const read = GitRunner.readUntracked(workspace, path)
+    if (!read || 'tooLarge' in read) return [0, 0, false]
+    const data = read.data
     if (data.includes(0)) return [0, 0, true]
     const text = data.toString('utf8')
     if (text.includes('�') && !data.equals(Buffer.from(text, 'utf8'))) return [0, 0, true]
@@ -566,7 +573,7 @@ export class GitRunner {
           binary = binary || entry[2]
         }
       }
-      if (untracked) [additions, deletions, binary] = GitRunner.countUntrackedFile(join(ctx.workspace, workspacePath))
+      if (untracked) [additions, deletions, binary] = GitRunner.countUntrackedFile(ctx.workspace, join(ctx.workspace, workspacePath))
       let staged = x !== '.' && x !== '?' && !untracked
       let unstaged = y !== '.' && y !== ' ' && !untracked
       if (staged && stagedStats && !renamed) {
@@ -839,21 +846,11 @@ export class GitRunner {
 
   // ── diff ─────────────────────────────────────────────────────────────────
 
-  private static syntheticUntrackedDiff(path: string, label: string): Omit<GitDiff, 'path' | 'kind'> {
-    let st
-    try {
-      st = statSync(path)
-    } catch (error) {
-      throw new GitWorkspaceError((error as Error).message)
-    }
-    if (!st.isFile()) throw new GitWorkspaceError('Path is not a file')
-    if (st.size > DIFF_SIZE_LIMIT) return { binary: false, too_large: true, diff: '', additions: 0, deletions: 0 }
-    let data: Buffer
-    try {
-      data = readFileSync(path)
-    } catch (error) {
-      throw new GitWorkspaceError((error as Error).message)
-    }
+  private static syntheticUntrackedDiff(workspace: string, path: string, label: string): Omit<GitDiff, 'path' | 'kind'> {
+    const read = GitRunner.readUntracked(workspace, path)
+    if (!read) throw new GitWorkspaceError('Path is not a file')
+    if ('tooLarge' in read) return { binary: false, too_large: true, diff: '', additions: 0, deletions: 0 }
+    const data = read.data
     const text = data.toString('utf8')
     if (data.includes(0) || (text.includes('�') && !data.equals(Buffer.from(text, 'utf8')))) return { binary: true, too_large: false, diff: '', additions: 0, deletions: 0 }
     const diffLines = unifiedDiffFromEmpty(splitLines(text), `b/${label}`)
@@ -872,7 +869,7 @@ export class GitRunner {
     const workspaceRel = GitRunner.workspaceRel(ctx, repoRel) ?? path
     const status = this.status(workspace)
     const fileState = (status.files ?? []).find((f) => f.path === workspaceRel)
-    if (kind === 'unstaged' && fileState?.untracked) return { path: workspaceRel, kind, ...GitRunner.syntheticUntrackedDiff(join(ctx.workspace, workspaceRel), workspaceRel) }
+    if (kind === 'unstaged' && fileState?.untracked) return { path: workspaceRel, kind, ...GitRunner.syntheticUntrackedDiff(ctx.workspace, join(ctx.workspace, workspaceRel), workspaceRel) }
     const args = ['diff', '--no-ext-diff', '--no-textconv', '--unified=3']
     if (kind === 'staged') args.push('--cached')
     args.push('--', repoRel)

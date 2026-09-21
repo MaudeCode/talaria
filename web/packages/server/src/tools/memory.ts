@@ -1,5 +1,5 @@
 /** Memory panel files and saved prompts (Python `_handle_memory_read`, `_handle_memory_write`, saved prompts helpers). */
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, constants as fsConstants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
@@ -122,9 +122,19 @@ export function writeMemory(profileHome: string, config: Config, section: string
   else throw new HttpFailure(400, 'section must be "memory", "user", or "soul"')
   try { if (lstatSync(target).isSymbolicLink()) throw new HttpFailure(400, 'Cannot write to a symlinked memory file') } catch (error) { if (error instanceof HttpFailure) throw error }
   try {
-    writeFileSync(target, content, 'utf8')
+    // `O_NOFOLLOW` on the open itself: a link swapped in after the check above is refused, not followed.
+    const fd = openSync(target, fsConstants.O_WRONLY | fsConstants.O_CREAT | (fsConstants.O_NOFOLLOW ?? 0), 0o644)
+    try {
+      if (!fstatSync(fd).isFile()) throw new HttpFailure(400, 'Cannot write to a non-regular memory file')
+      ftruncateSync(fd, 0)
+      writeFileSync(fd, content, 'utf8')
+    } finally {
+      closeSync(fd)
+    }
   } catch (error) {
+    if (error instanceof HttpFailure) throw error
     const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ELOOP') throw new HttpFailure(400, 'Cannot write to a symlinked memory file')
     if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw error
     let hint = ''
     try { hint = ` (mode ${(statSync(target).mode & 0o777).toString(8)})` } catch { /* none */ }

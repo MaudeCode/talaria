@@ -63,6 +63,9 @@ export interface AuthStoreOptions {
   passkeyConfigFlag?: () => unknown
 }
 
+/** Returned while settings.json cannot be read: auth counts as enabled and no password verifies against it. */
+const UNREADABLE_PASSWORD_HASH = 'unreadable'
+
 export class AuthStore {
   readonly stateDir: string
   readonly env: Env
@@ -80,7 +83,7 @@ export class AuthStore {
   passkeysEnabled: () => boolean
   oidcEnabled: () => boolean
   private readonly oidcProbe: () => Promise<unknown>
-  private readonly passkeyConfigFlag: () => unknown
+  passkeyConfigFlag: () => unknown
 
   constructor(opts: AuthStoreOptions) {
     this.stateDir = opts.stateDir
@@ -162,14 +165,26 @@ export class AuthStore {
     if (this.passwordHash.computed) return this.passwordHash.value
     if (this.passwordHash.pending) return this.passwordHash.pending
     // Single flight: a burst of requests computes PBKDF2 once (Python's double-checked lock).
+    let settled = false
     const pending = (async () => {
       const envPw = (this.env.HERMES_WEBUI_PASSWORD ?? '').trim()
-      const stored = this.settings.load().password_hash
+      let stored: unknown
+      try {
+        stored = this.settings.readRaw({ strict: true }).password_hash
+      } catch (error) {
+        // An unreadable settings.json (permissions, I/O, corrupt JSON) must not read as "no password": report a hash
+        // that no input can match, and do not cache so the next request retries the read.
+        settled = true
+        this.passwordHash = { computed: false, value: null, pending: null }
+        this.log(`[auth] settings.json unreadable; password auth stays enabled and login is refused: ${(error as Error).message}`)
+        return UNREADABLE_PASSWORD_HASH
+      }
       const value = envPw ? await this.hashPassword(envPw) : typeof stored === 'string' && stored ? stored : null
+      settled = true
       this.passwordHash = { computed: true, value, pending: null }
       return value
     })()
-    if (!this.passwordHash.computed) this.passwordHash.pending = pending
+    if (!settled) this.passwordHash.pending = pending
     return pending
   }
 
@@ -178,18 +193,27 @@ export class AuthStore {
   }
 
   /** Python `_passkey_feature_flag_enabled`: env wins, else `webui_passkey_enabled` in the operator config. */
-  passkeyFeatureFlagEnabled(): boolean {
+  /** The flag as configured: `null` while the operator config cannot be read (the last-known snapshot is cold). */
+  passkeyFeatureFlagState(): boolean | null {
     const raw = this.env.HERMES_WEBUI_PASSKEY ?? ''
     if (raw) return truthy(raw)
     const cfg = this.passkeyConfigFlag()
+    if (cfg === null) return null
     if (typeof cfg === 'boolean') return cfg
     if (typeof cfg === 'string') return truthy(cfg)
     return false
   }
 
-  /** Feature flag AND at least one registered credential (Python `are_passkeys_enabled`). */
+  passkeyFeatureFlagEnabled(): boolean {
+    return this.passkeyFeatureFlagState() === true
+  }
+
+  /**
+   * Feature flag AND at least one registered credential (Python `are_passkeys_enabled`). With credentials on disk and
+   * the flag unknown (sidecar down, config changed underneath), the gate stays closed rather than opening the API.
+   */
   passkeysAvailable(): boolean {
-    return this.passkeyFeatureFlagEnabled() && this.passkeysEnabled()
+    return this.passkeysEnabled() && this.passkeyFeatureFlagState() !== false
   }
 
   isTrustedAuthEnabled(): boolean {

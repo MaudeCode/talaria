@@ -190,6 +190,14 @@ export interface SendOptions {
   gzip?: boolean
 }
 
+/** WHATWG-resolved pathname (dot segments collapsed) without a trailing slash; `/` stays `/`. */
+export function normalizeRequestPath(raw: string): string {
+  let path: string
+  try { path = new URL(raw.startsWith('/') ? raw : `/${raw}`, 'http://placeholder').pathname } catch { path = '/' }
+  path = path.replace(/\/{2,}/g, '/')
+  return path.length > 1 ? path.replace(/\/+$/, '') : path
+}
+
 export class RequestContext {
   readonly req: IncomingMessage
   readonly res: ServerResponse
@@ -223,7 +231,9 @@ export class RequestContext {
     const hash = raw.indexOf('#')
     const target = hash >= 0 ? raw.slice(0, hash) : raw
     const q = target.indexOf('?')
-    this.path = q >= 0 ? target.slice(0, q) : target
+    // One canonical path for the auth gate, CSRF, and routing: dot segments resolved and the trailing slash dropped, so
+    // `/api/share/create/` can never reach a handler under a different gate decision than `/api/share/create`.
+    this.path = normalizeRequestPath(q >= 0 ? target.slice(0, q) : target)
     this.search = q >= 0 ? target.slice(q) : ''
     this.peer = req.socket.remoteAddress ?? ''
     this.cspExtras = cspExtras(deps.config.env, (line) => { deps.log(`[webui] WARNING: ${line}`) })

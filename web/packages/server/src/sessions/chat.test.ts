@@ -40,6 +40,7 @@
  * (issues #607, #1217, #1913, #2028, #2592, #2914, #3293, #3405, #3455, #3468, #3548, #3583, #3599, #3800, #3802, #3831, #3875, #3929, #4283, #4685, #4928, #5121, #5139, #5141, #5270, #5339, #5871, #6611, #6722, #6751, #6935, #7396, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
  */
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -229,6 +230,37 @@ describe('chat turns through the sidecar', () => {
     expect(detail.active_stream_id).toBeNull()
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })).status).toBe(200)
     expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope' })
+  })
+
+  it('a follow-up message is admitted as soon as the turn is done, while title generation is still running', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'first answer' }]))
+    let releaseTitle: (() => void) | null = null
+    sidecar.respond('aux.complete', () => new Promise((resolve) => { releaseTitle = () => { resolve({ model: 'aux', text: 'Title: "Slow title"', usage: null }) } }))
+    try {
+      const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'first' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'done')
+      // The title prompt has not answered; the next turn must not be refused with 409 meanwhile.
+      const deadline = Date.now() + 5000
+      let res = await post(s, '/api/chat/start', { session_id: sid, message: 'second' })
+      while (res.status === 409 && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 25)); res = await post(s, '/api/chat/start', { session_id: sid, message: 'second' }) }
+      expect(res.status).toBe(200)
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'done')
+    } finally {
+      (releaseTitle as (() => void) | null)?.()
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Greeting exchange"', usage: null }))
+    }
+  })
+
+  it('a run that has been cancelling past the unwind ceiling with no live channel no longer blocks the session', () => {
+    const registry = s.deps.registry
+    registry.registerActiveRun({ stream_id: 'stuck-run', session_id: 'stuck-session', phase: 'cancelling', cancelled_at: 1_000, started_at: 900 } as never)
+    try {
+      expect(registry.activeRunStreamForSession('stuck-session', 1_000 + 60)).toBe('stuck-run')
+      expect(registry.activeRunStreamForSession('stuck-session', 1_000 + CANCEL_UNWIND_CEILING_S)).toBeNull()
+    } finally {
+      registry.activeRuns.delete('stuck-run')
+    }
   })
 
   it('turns sidecar failures into apperror frames and a persisted error bubble [py:test_issue5121_provider_auth_terminal_error.py::test_auth_401_without_delivery_persists_error_turn] [py:test_issue5121_provider_auth_terminal_error.py::test_non_auth_silent_failure_still_uses_no_response]', async () => {

@@ -97,6 +97,9 @@ export interface ActiveRun {
 }
 
 /** Process-wide stream registry: live channels, owners, active runs, cancel flags, partial buffers. */
+/** How long a cancelling worker may hold its session before a new turn is admitted anyway. */
+export const CANCEL_UNWIND_CEILING_S = 180
+
 export class StreamRegistry {
   readonly streams = new Map<string, StreamChannel>()
   readonly owners = new Map<string, string>()
@@ -134,9 +137,17 @@ export class StreamRegistry {
     this.activeRuns.set(run.stream_id, run)
   }
 
-  /** Python `_active_run_stream_for_session`: the live worker for a session, if any. */
-  activeRunStreamForSession(sessionId: string): string | null {
-    for (const run of this.activeRuns.values()) if (run.session_id === sessionId) return run.stream_id
+  /**
+   * Python `_active_run_stream_for_session`: the live worker for a session, if any. A run that has been cancelling for
+   * longer than `CANCEL_UNWIND_CEILING_S` with no live channel no longer blocks the session (Python's 180 s escape hatch
+   * for an Agent thread that never returns from `interrupt()`).
+   */
+  activeRunStreamForSession(sessionId: string, now = Date.now() / 1000): string | null {
+    for (const run of this.activeRuns.values()) {
+      if (run.session_id !== sessionId) continue
+      if (run.cancelled_at && !this.liveIds.has(run.stream_id) && now - run.cancelled_at >= CANCEL_UNWIND_CEILING_S) continue
+      return run.stream_id
+    }
     return null
   }
 

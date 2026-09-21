@@ -446,6 +446,10 @@ export class TurnRunner {
       }
       put('done', donePayload)
       for (const record of this.takeConsumedSteers(streamId, result.pending_steer)) put('steer_consumed', record)
+      // The turn is over: release admission before the title work so a follow-up message is accepted while the
+      // (up to two) title prompts run; the channel and journal stay open for the `title` events (Python retired the
+      // worker before its daemon-thread title generation).
+      this.registry.activeRuns.delete(streamId)
       await this.backgroundTitle(s, put)
       if (opts.onDone) opts.onDone(result.final_response)
     } catch (error) {

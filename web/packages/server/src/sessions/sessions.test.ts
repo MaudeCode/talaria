@@ -51,7 +51,7 @@
  *   web/tests/test_issue_branch_context_at_fork.py
  * (issues #789, #1013, #1217, #1494, #1955, #2419, #2592, #2841, #2863, #2914, #3019, #3023, #3346, #3585, #3586, #3831, #3875, #3929, #3987, #4385, #4490, #4638, #4685, #4714, #4718, #4836, #4842, #4985, #5121, #5132, #5270, #5339, #5532, #5570, #5572, #5854, #6022, #6068, #6611, #6672, #6722, #6751, #6911, #7168) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -312,6 +312,18 @@ describe('session store disk freshness', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
+
+  it('a cached session whose file was deleted underneath it is evicted and never recreated by a later mutation', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const cached = s.deps.sessionStore.get(sid)
+    cached.title = 'persisted'
+    s.deps.sessionStore.save(cached)
+    rmSync(cached.path ?? '')
+    expect(() => s.deps.sessionStore.get(sid)).toThrow()
+    expect(() => s.deps.sessionStore.get(sid, { metadataOnly: true })).toThrow()
+    expect((await post(s, '/api/session/rename', { session_id: sid, title: 'ghost' })).status).toBe(404)
+    expect(existsSync(cached.path ?? '')).toBe(false)
+  })
 
   it('reloads a cached session whose read identity is unknown instead of trusting the stale snapshot', async () => {
     const sid = String((await newSession(s)).session_id)

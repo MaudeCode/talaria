@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -64,6 +64,20 @@ describe('workspace git over HTTP', () => {
     const untracked = (await json(await s.get(`/api/git/diff?session_id=${sid}&path=new.txt`))).diff as Json
     expect(untracked.diff).toBe('--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,1 @@\n+fresh\n')
     expect((await s.get(`/api/git/diff?session_id=${sid}&path=../outside`)).status).toBe(400)
+  })
+
+  it('an untracked entry that is a symlink out of the workspace is never read for the synthetic diff or the counts', async () => {
+    const { sid, ws } = await repoSession(s)
+    writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')
+    symlinkSync(join(s.state, 'secret.env'), join(ws, 'linked.txt'))
+    // The status cache is keyed on the index/HEAD fingerprint (Python parity); a new untracked entry needs a fresh scan.
+    ;(s.deps.git as unknown as { statusCache: Map<string, unknown> }).statusCache.clear()
+    const status = (await json(await s.get(`/api/git/status?session_id=${sid}`))).git as Json
+    const row = (status.files as Json[]).find((f) => f.path === 'linked.txt')
+    expect(row, JSON.stringify(status)).toMatchObject({ untracked: true, additions: 0 })
+    const linked = await s.get(`/api/git/diff?session_id=${sid}&path=linked.txt`)
+    expect(await linked.text()).not.toContain('TOKEN=leak')
+    rmSync(join(ws, 'linked.txt'))
   })
 
   it('stages, commits selected files, discards, and lists branches', async () => {

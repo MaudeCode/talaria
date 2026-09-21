@@ -99,7 +99,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     passkeysEnabled: () => passkeys.available(),
     oidcEnabled: () => oidc?.enabledSync() ?? false,
     oidcProbe: () => oidc?.resolve() ?? Promise.resolve(),
-    passkeyConfigFlag: () => operatorConfigPeek()?.webui_passkey_enabled,
+    passkeyConfigFlag: () => { const cfg = operatorConfigPeek(); return cfg === null ? null : cfg.webui_passkey_enabled },
   })
   settings.hooks = {
     hashPassword: (pw) => auth.hashPassword(pw),
@@ -349,6 +349,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     config: agentConfig,
     env,
     profileHome: () => profileHome(activeProfile()),
+    isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome),
+    sidecar: () => sidecar,
     agentStatus,
     isAuthEnabled: () => auth.isAuthEnabled(),
     workspaces: () => ({ items: workspaces.load(activeProfile()), last: workspaces.lastWorkspace(activeProfile()) }),

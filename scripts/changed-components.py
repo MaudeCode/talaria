@@ -126,6 +126,9 @@ def path_suites(path):
             return {"web_frontend"}
         if local.startswith("packages/contracts/"):
             return {"web_server", "web_frontend", "contracts"}
+        # The Agent pin is baked into the container images and extended by the Compose files: it needs the smoke too.
+        if local == "sidecar/agent_dependency.json":
+            return {"web_server", "contracts", "docker"}
         # The sidecar RPC surface and the server are one consumer of the shared contracts.
         if local.startswith(("packages/server/", "sidecar/")):
             return {"web_server", "contracts"}

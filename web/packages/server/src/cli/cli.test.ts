@@ -49,6 +49,9 @@ describe('startup environment order', () => {
     expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES: 'h', HERMES_WEBUI_HOME_DOTENV_KEYS: 'FROM_HERMES' })
     // Only the Hermes home's own keys are recorded as the default profile's; the checkout .env is deployment config.
     expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES'])
+    // The supervisor worker inherits the values and loads again: nothing is new to apply, but the marker must survive.
+    loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })
+    expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES'])
   })
 })
 

@@ -515,9 +515,15 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', api_key: 'sk-or-12345' })
     expect(res.status).toBe(200)
     expect(await json(res)).toMatchObject({ error: 'config_exists', requires_confirm: true })
+    const envCalls = sidecar.calls.length
     res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', api_key: 'sk-or-12345', confirm_overwrite: true })
     expect(res.status).toBe(200)
     expect((await json(res)).completed).toBe(true)
+    // A root-profile key written by setup reaches the running process and the sidecar like a settings-panel edit.
+    expect(sidecar.calls.slice(envCalls).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENROUTER_API_KEY: 'sk-or-12345' } })
+    expect(s.deps.config.env.OPENROUTER_API_KEY).toBe('sk-or-12345')
+    delete s.deps.config.env.OPENROUTER_API_KEY
+    delete s.deps.config.env.HERMES_WEBUI_HOME_DOTENV_KEYS
     expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' })
     res = await post(s, '/api/onboarding/setup', { provider: 'custom', model: 'x' })
     expect(res.status).toBe(400)

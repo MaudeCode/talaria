@@ -1,7 +1,7 @@
 /** Skills panel: list/view through the Agent (sidecar `skills.*`), file writes and config.yaml toggles here (Python `api/routes.py` skills section). */
-import { makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd } from '../workspace/fs.js'
+import { makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, rmtreeAnchored } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
-import { closeSync, fstatSync, mkdirSync, lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, fstatSync, mkdirSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Dict } from '../config/agent-config.js'
@@ -100,9 +100,11 @@ export class SkillsService {
   delete(profileHome: string, nameRaw: string): { ok: true; name: string } {
     const name = nameRaw.trim().toLowerCase().replaceAll(' ', '-')
     if (!name || name.includes('/') || name.includes('..')) throw new HttpFailure(400, 'Invalid skill name')
-    const match = walkSkillFiles(SkillsService.skillsDir(profileHome)).find((p) => relative(join(p, '..', '..'), join(p, '..')) === name)
+    const skillsDir = SkillsService.skillsDir(profileHome)
+    const match = walkSkillFiles(skillsDir).find((p) => relative(join(p, '..', '..'), join(p, '..')) === name)
     if (!match) throw new HttpFailure(404, 'Skill not found')
-    rmSync(join(match, '..'), { recursive: true, force: true })
+    // Delete through the anchored walk from the skills root so a symlinked root or category cannot redirect the removal.
+    try { rmtreeAnchored(skillsDir, join(match, '..')) } catch { throw new HttpFailure(404, 'Skill not found') }
     return { ok: true, name: nameRaw }
   }
 

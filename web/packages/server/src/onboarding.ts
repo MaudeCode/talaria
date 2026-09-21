@@ -1,5 +1,7 @@
 /** First-run wizard: status, setup, self-hosted providers, endpoint probe (Python `api/onboarding.py`). */
 import { readCapped } from './http/capped.js'
+import { RuntimeCredentialError, writeRuntimeCredential } from './providers/runtime-env.js'
+import type { SidecarLike } from './sidecar/client.js'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
@@ -22,6 +24,8 @@ export interface OnboardingDeps {
   config: AgentConfig
   env: Record<string, string | undefined>
   profileHome: () => string
+  isRootProfileHome: (home: string) => boolean
+  sidecar: () => SidecarLike | null
   /** Whether the Agent runtime imports (sidecar handshake compatible). */
   agentStatus: () => { found: boolean; importsOk: boolean; missing: string[]; errors: Record<string, string> }
   isAuthEnabled: () => Promise<boolean>
@@ -230,8 +234,19 @@ export class Onboarding {
       else Reflect.deleteProperty(m, 'base_url')
       c.model = m
     })
-    if (apiKey) writeEnvFile(envPath, { [meta.env_var]: apiKey })
+    if (apiKey) await this.writeCredential(home, meta.env_var, apiKey)
     return this.status()
+  }
+
+  /** A root-profile key written by setup reaches the running process and sidecar like a settings-panel edit does. */
+  private async writeCredential(home: string, envVar: string, apiKey: string): Promise<void> {
+    const rootProfile = this.deps.isRootProfileHome(home)
+    try {
+      await writeRuntimeCredential({ env: this.deps.env, sidecar: this.deps.sidecar, log: this.deps.log }, rootProfile, envVar, apiKey, () => { writeEnvFile(join(home, '.env'), { [envVar]: apiKey }) })
+    } catch (error) {
+      if (error instanceof RuntimeCredentialError) throw new OnboardingError(error.message, 503)
+      throw error
+    }
   }
 
   /** Python `apply_self_hosted_provider_setup`. */
@@ -263,7 +278,7 @@ export class Onboarding {
         persisted = str(m.default)
       }
     })
-    if (apiKey && meta?.env_var) writeEnvFile(join(home, '.env'), { [meta.env_var]: apiKey })
+    if (apiKey && meta?.env_var) await this.writeCredential(home, meta.env_var, apiKey)
     const result: Dict = { ok: true, provider, base_url: baseUrl }
     if (activate) result.model = persisted
     return result

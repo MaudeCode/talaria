@@ -69,7 +69,7 @@ import { readZip } from '../workspace/unzip.js'
 import { FOLDER_ZIP_MAX_FILES_CEILING, FOLDER_ZIP_MAX_MB_CEILING, folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
 import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { appendFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -123,6 +123,11 @@ describe('raw byte routes', () => {
 
     res = await s.get(`/api/file/raw?session_id=${sid}&path=page.html`)
     expect(res.headers.get('content-disposition')).toContain('attachment')
+    // A sparse multi-gigabyte HTML file is not buffered for the preview rewrite.
+    const hugeFd = openSync(join(ws, 'huge.html'), 'w')
+    ftruncateSync(hugeFd, 3 * 1024 * 1024 * 1024)
+    closeSync(hugeFd)
+    expect((await s.get(`/api/file/raw?session_id=${sid}&path=huge.html&inline=1`)).status).toBe(413)
     res = await s.get(`/api/file/raw?session_id=${sid}&path=page.html&inline=1`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-security-policy')).toBe('sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox')

@@ -83,8 +83,9 @@ export function loadStartupEnv(opts: { env: Record<string, string | undefined>; 
   loadLauncherDotenv({ env: opts.env, repoEnvFile: join(opts.webRoot, '.env'), hermesEnvFile: null, ...(opts.log ? { log: opts.log } : {}) })
   const hermesHome = resolve((opts.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, opts.home) || join(opts.home, '.hermes'))
   const fromHome = loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}) })
-  // Values that came from the default profile's own `.env` are that profile's credentials, not process-wide ones.
-  opts.env[HOME_DOTENV_KEYS_VAR] = fromHome.join(',')
+  // Values that came from the default profile's own `.env` are that profile's credentials, not process-wide ones. The
+  // supervisor worker inherits both the values and this marker, so a second load must keep what the first recorded.
+  opts.env[HOME_DOTENV_KEYS_VAR] = [...new Set([...homeDotenvKeys(opts.env), ...fromHome])].join(',')
   return { hermesHome }
 }
 

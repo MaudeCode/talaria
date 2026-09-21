@@ -38,6 +38,8 @@ class _Run:
         self.ctx = ctx
         self.agent = None
         self.cancel = threading.Event()
+        # Set when the turn is over for any reason; the cancel watcher must not mistake it for a cancellation.
+        self.finished = threading.Event()
         self.clarify_entries: dict[str, "_ClarifyEntry"] = {}
         self.lock = threading.Lock()
 
@@ -240,7 +242,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             timeout = float(params.get("clarify_timeout_seconds") or 3600)
             deadline = time.monotonic() + timeout
             while not entry.event.is_set():
-                if run.cancel.is_set():
+                if run.cancel.is_set() or run.finished.is_set():
                     break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -316,11 +318,24 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         run.agent = agent
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 
+        # A cached agent may still carry the interrupt a previous cancel left behind; the Agent keeps a pending
+        # interrupt across turn start, so it would abort this turn immediately.
+        clear_interrupt = getattr(agent, "clear_interrupt", None)
+        if callable(clear_interrupt):
+            try:
+                clear_interrupt()
+            except Exception:  # noqa: BLE001
+                log.debug("agent.clear_interrupt failed", exc_info=True)
+
         def _watch_cancel():
             while not run.cancel.wait(0.25):
+                if run.finished.is_set():
+                    return
                 if ctx.cancelled:
                     run.cancel.set()
                     break
+            if run.finished.is_set() and not run.cancel.is_set():
+                return
             try:
                 agent.interrupt("Cancelled by user", hard_cancel=True)
             except TypeError:
@@ -352,16 +367,14 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             log.warning("agent turn failed for %s: %s", session_id, exc)
             error = f"{type(exc).__name__}: {exc}"
         finally:
-            run.cancel.set()
+            run.finished.set()
             watcher.join(timeout=2)
             if unregister_gateway_notify is not None:
                 try:
                     unregister_gateway_notify(session_id)
                 except Exception:  # noqa: BLE001
                     pass
-        cancelled = ctx.cancelled or bool(getattr(agent, "_interrupt_requested", False)) and (error is None and not result.get("final_response"))
-        if ctx.cancelled:
-            cancelled = True
+        cancelled = ctx.cancelled or run.cancel.is_set() or (bool(getattr(agent, "_interrupt_requested", False)) and error is None and not result.get("final_response"))
         compressions_after = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
         last_error = getattr(agent, "_last_error", None)
         if not error and last_error:

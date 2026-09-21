@@ -159,7 +159,7 @@
  *   web/tests/test_issue7426_skill_not_found_listing_truncation.py
  * (issues #357, #470, #477, #484, #486, #487, #492, #538, #569, #609, #616, #617, #634, #646, #673, #697, #716, #1013, #1096, #1144, #1217, #1431, #1436, #1438, #1446, #1560, #1579, #1617, #1623, #1625, #1680, #1765, #1800, #1823, #1867, #1879, #1880, #1896, #1897, #1908, #1909, #1910, #1955, #1968, #2057, #2157, #2211, #2237, #2472, #2508, #2513, #2540, #2542, #2572, #2655, #2661, #2698, #2768, #2785, #2823, #2841, #2914, #2929, #2965, #3012, #3019, #3023, #3066, #3103, #3225, #3238, #3283, #3340, #3402, #3405, #3429, #3460, #3510, #3571, #3582, #3587, #3595, #3717, #3718, #3797, #3800, #3825, #3831, #3929, #3947, #3959, #3987, #3994, #4006, #4053, #4067, #4164, #4183, #4300, #4346, #4385, #4465, #4470, #4490, #4536, #4685, #4714, #4729, #4749, #4759, #4766, #4768, #4775, #4836, #4842, #4982, #4985, #5127, #5130, #5204, #5269, #5270, #5311, #5334, #5339, #5345, #5420, #5532, #5572, #5578, #5686, #5731, #5749, #5940, #5941, #6006, #6022, #6066, #6174, #6481, #6498, #6571, #6722, #6751, #6757, #6853, #6892, #6964, #7228, #7426) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -244,6 +244,14 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(existsSync(join(s.state, 'skills', 'custom', 'my-skill'))).toBe(false)
     res = await post(s, '/api/skills/delete', { name: 'my-skill' })
     expect(res.status).toBe(404)
+    // A category directory that is a symlink out of the skills root is never followed by the delete.
+    const outside = join(s.state, 'outside-skills')
+    mkdirSync(join(outside, 'victim-skill'), { recursive: true })
+    writeFileSync(join(outside, 'victim-skill', 'SKILL.md'), '# victim')
+    symlinkSync(outside, join(s.state, 'skills', 'linked-category'))
+    res = await post(s, '/api/skills/delete', { name: 'victim-skill' })
+    expect(res.status).toBe(404)
+    expect(existsSync(join(outside, 'victim-skill', 'SKILL.md'))).toBe(true)
   })
 
   it('reads and writes memory files, honours config flags, and reports project context [py:test_issue4164_bound_non_git_project_context_walk.py::test_non_git_workspace_still_reads_in_workspace_context]', async () => {
@@ -268,6 +276,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(200)
     res = await post(s, '/api/memory/write', { section: 'nope', content: 'x' })
     expect(res.status).toBe(400)
+    // A symlinked USER.md is refused by the open itself (O_NOFOLLOW), not only by the pre-check, and its target is untouched.
+    writeFileSync(join(s.state, 'victim.txt'), 'untouched')
+    symlinkSync(join(s.state, 'victim.txt'), join(s.state, 'memories', 'USER.md'))
+    res = await post(s, '/api/memory/write', { section: 'user', content: 'overwrite' })
+    expect(res.status).toBe(400)
+    expect(readFileSync(join(s.state, 'victim.txt'), 'utf8')).toBe('untouched')
     res = await s.get('/api/memory')
     body = await json(res)
     expect(body.memory).toBe('# remembered')

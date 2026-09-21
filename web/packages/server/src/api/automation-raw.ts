@@ -103,7 +103,13 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
       if (term.closed) { sse.event('terminal_closed', { exit_code: term.exitCode }); return }
       const remaining = SSE_HEARTBEAT_INTERVAL_MS - (Date.now() - lastWrite)
       if (remaining <= 0) { sse.comment('terminal heartbeat'); lastWrite = Date.now(); continue }
-      await new Promise<void>((resolve) => { wake = resolve; const t = setTimeout(resolve, remaining); abort.signal.addEventListener('abort', () => { clearTimeout(t); resolve() }, { once: true }) })
+      await new Promise<void>((resolve) => {
+        const onAbort = (): void => { clearTimeout(t); finish() }
+        const finish = (): void => { abort.signal.removeEventListener('abort', onAbort); resolve() }
+        const t = setTimeout(finish, remaining)
+        wake = () => { clearTimeout(t); finish() }
+        abort.signal.addEventListener('abort', onAbort, { once: true })
+      })
       wake = null
     }
   } finally {

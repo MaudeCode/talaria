@@ -11,7 +11,7 @@
  * a pathname swapped underneath us can never be followed. The sections are
  * synchronous, so nothing else in the process observes the temporary cwd.
  */
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -21,6 +21,8 @@ export const MAX_FILE_BYTES = 400_000
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0
 const O_DIRECTORY = constants.O_DIRECTORY ?? 0
+// A FIFO planted where a file is expected would park the single-threaded server in open(2); regular files ignore the flag.
+const O_NONBLOCK = constants.O_NONBLOCK ?? 0
 
 export class PathTraversalError extends Error {}
 export class NotFoundError extends Error {}
@@ -146,7 +148,7 @@ export function openAnchoredFd(root: string, target: string, opts: { wantDir: bo
   }
   const { dir, leaf } = openAnchoredParent(root, target)
   try {
-    try { return dir.anchored(() => openSync(dir.child(leaf), constants.O_RDONLY | O_NOFOLLOW | (opts.wantDir ? O_DIRECTORY : 0))) } catch { throw new NotFoundError(`Not found: ${target}`) }
+    try { return dir.anchored(() => openSync(dir.child(leaf), constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK | (opts.wantDir ? O_DIRECTORY : 0))) } catch { throw new NotFoundError(`Not found: ${target}`) }
   } finally {
     dir.close()
   }
@@ -156,7 +158,7 @@ export function openAnchoredFd(root: string, target: string, opts: { wantDir: bo
 export function openAnchoredCreateFd(root: string, dest: string): number {
   const { dir, leaf } = openAnchoredParent(root, dest, { createMissingDirs: true })
   try {
-    return dir.anchored(() => openSync(dir.child(leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644))
+    return dir.anchored(() => openSync(dir.child(leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW | O_NONBLOCK, 0o644))
   } catch (error) {
     if (error instanceof NotFoundError) throw error
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new FileExistsError(dest)
@@ -185,7 +187,13 @@ export function openAnchoredWriteFd(root: string, target: string): number {
   const targetResolved = resolvePathLikePython(target)
   const { dir, leaf } = openAnchoredParent(root, targetResolved)
   try {
-    return dir.anchored(() => openSync(dir.child(leaf), constants.O_WRONLY | constants.O_TRUNC | O_NOFOLLOW))
+    return dir.anchored(() => {
+      const fd = openSync(dir.child(leaf), constants.O_WRONLY | O_NOFOLLOW | O_NONBLOCK)
+      // Truncate only once the descriptor is known to be a regular file (never a FIFO or device).
+      if (!fstatSync(fd).isFile()) { closeSync(fd); throw new NotFoundError(`Not a file: ${target}`) }
+      ftruncateSync(fd, 0)
+      return fd
+    })
   } catch {
     throw new NotFoundError(`Not found: ${target}`)
   } finally {

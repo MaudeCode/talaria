@@ -278,6 +278,28 @@ describe('crons, kanban, extensions, terminal', () => {
     expect((await s.get(`/api/terminal/output?session_id=${sid}`)).status).toBe(404)
   })
 
+  it('the output stream does not accumulate abort listeners across wakes', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
+    const proc = pty.spawned.at(-1)!
+    const warnings: string[] = []
+    const onWarning = (w: Error): void => { warnings.push(w.name) }
+    process.on('warning', onWarning)
+    try {
+      // Hundreds of output chunks each wake the loop once; the abort listener must be removed on every wake.
+      const chunks = 300
+      setTimeout(() => { for (let i = 0; i < chunks; i += 1) proc.emit(`line ${String(i)}\n`); setTimeout(() => { proc.exit(0) }, 50) }, 20)
+      const frames = await s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 10_000 })
+      expect(frames.filter((f) => f.event === 'output').length).toBe(chunks)
+      await new Promise((r) => setTimeout(r, 20))
+      expect(warnings).not.toContain('MaxListenersExceededWarning')
+    } finally {
+      process.off('warning', onWarning)
+      await post(s, '/api/terminal/close', { session_id: sid })
+    }
+  })
+
   it('closeAll({ immediate: true }) hangs up and kills every shell synchronously for process exit', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     mkdirSync(join(s.state, 'workspace'), { recursive: true })

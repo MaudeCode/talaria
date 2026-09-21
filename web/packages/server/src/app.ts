@@ -238,6 +238,9 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         return
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
+      // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
+      // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
+      if (path.startsWith('/api/')) await deps.agentConfig.read(deps.profileHome(deps.activeProfile())).catch(() => undefined)
       const sidecarProxy = matchSidecarProxy(path)
       if (sidecarProxy) {
         await handleExtensionSidecarProxy(ctx, sidecarProxy[0], sidecarProxy[1])

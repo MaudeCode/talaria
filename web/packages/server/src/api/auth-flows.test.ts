@@ -11,7 +11,7 @@
  * (issues #1909, #2572, #2929, #3510, #3582, #3825, #4982, #5578) is covered here; see docs/architecture/regression-port-ledger.md.
  */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -475,6 +475,40 @@ describe('OIDC outbound vetting', () => {
       s.deps.dnsLookup = () => Promise.reject(new Error('ENOTFOUND'))
       expect((await s.get('/api/auth/oidc/start')).status).toBe(502)
       expect(requests).toEqual([])
+    } finally { await s.close() }
+  })
+})
+
+describe('auth gate fails closed on unknown or unreadable auth state', () => {
+  it('passkey-only auth keeps the API gated while the operator config flag cannot be read', async () => {
+    const s = await bootTestServer()
+    try {
+      // A registered credential with the flag only in config.yaml: the flag is unknown while the snapshot is cold.
+      s.deps.auth.passkeysEnabled = () => true
+      s.deps.auth.passkeyConfigFlag = () => null
+      expect(s.deps.auth.passkeysAvailable()).toBe(true)
+      expect(await s.deps.auth.isAuthEnabled()).toBe(true)
+      expect((await s.get('/api/sessions')).status).toBe(401)
+      // The flag read back as false: passkeys are off and the gate opens.
+      s.deps.auth.passkeyConfigFlag = () => false
+      expect(s.deps.auth.passkeysAvailable()).toBe(false)
+    } finally { await s.close() }
+  })
+
+  it('an unreadable settings.json keeps password auth enabled and refuses every password', async () => {
+    const s = await bootTestServer()
+    try {
+      await s.deps.settings.save({ _set_password: 'hunter22' })
+      s.deps.auth.invalidatePasswordHashCache()
+      chmodSync(join(s.state, 'settings.json'), 0o000)
+      try {
+        expect((await s.get('/api/sessions')).status).toBe(401)
+        expect(await s.deps.auth.verifyPassword('hunter22')).toBe(false)
+      } finally {
+        chmodSync(join(s.state, 'settings.json'), 0o600)
+      }
+      // The failure was not cached: once readable the real hash is used again.
+      expect(await s.deps.auth.verifyPassword('hunter22')).toBe(true)
     } finally { await s.close() }
   })
 })

@@ -303,8 +303,11 @@ export class SessionStore {
         this.sessions.delete(sid)
       } else {
         if (opts.promote ?? true) { this.sessions.delete(sid); this.sessions.set(sid, cached) }
+        const lags = this.cachedLagsDisk(cached)
+        // A persisted session whose file vanished was deleted underneath us: evict it so nothing recreates the sidecar.
+        if (lags && !existsSync(this.pathFor(sid))) { this.sessions.delete(sid); throw new SessionNotFound(sid) }
         // A sidebar-only stub (metadata load) must be upgraded to the full transcript when messages are requested.
-        if (!opts.metadataOnly && (cached.loadedMetadataOnly || this.cachedLagsDisk(cached))) {
+        if (!opts.metadataOnly && (cached.loadedMetadataOnly || lags)) {
           const fresh = this.load(sid)
           if (fresh) {
             this.sessions.set(sid, fresh)
@@ -333,7 +336,9 @@ export class SessionStore {
   private cachedLagsDisk(cached: Session): boolean {
     if (cached.active_stream_id || cached.pending_user_message || cached.pending_started_at) return false
     const current = statSignature(this.pathFor(cached.session_id))
-    if (current === null) return false
+    // A session that was persisted and whose file has since vanished was deleted underneath us: it is stale, and the
+    // reload's miss evicts it rather than letting a later mutation recreate the deleted sidecar.
+    if (current === null) return cached.sidecarLoadedSignature !== null
     // An unknown read identity (the file changed underneath the load) must not be trusted: reload it.
     if (cached.sidecarLoadedSignature === null) return true
     return current !== cached.sidecarLoadedSignature

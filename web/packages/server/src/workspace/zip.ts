@@ -51,20 +51,33 @@ export class ZipWriter {
     let uncompressed = 0
     let compressed = 0
     const deflate = createDeflateRaw()
+    // A client disconnect surfaces in the pump first; it must fail this call (and wake the producer) rather than
+    // becoming an unhandled rejection while the producer still waits on `drain`.
+    const failure: { error: Error | null } = { error: null }
     const pump = (async (): Promise<void> => {
-      for await (const chunk of deflate) { const buf = chunk as Buffer; compressed += buf.length; await this.write(buf) }
+      try {
+        for await (const chunk of deflate) { const buf = chunk as Buffer; compressed += buf.length; await this.write(buf) }
+      } catch (error) {
+        failure.error = error as Error
+        deflate.destroy(error as Error)
+        throw error
+      }
     })()
+    pump.catch(() => undefined)
     try {
       for await (const chunk of data) {
+        if (failure.error) throw failure.error
         const buf = chunk as Buffer
         crc = crc32(buf, crc)
         uncompressed += buf.length
-        if (!deflate.write(buf)) await new Promise<void>((resolve) => { deflate.once('drain', resolve) })
+        if (!deflate.write(buf)) await new Promise<void>((resolve) => { const done = (): void => { deflate.off('drain', done); deflate.off('close', done); deflate.off('error', done); resolve() }; deflate.once('drain', done); deflate.once('close', done); deflate.once('error', done) })
       }
+      if (failure.error) throw failure.error
       deflate.end()
       await pump
     } catch (error) {
       deflate.destroy()
+      if (typeof (data as { destroy?: unknown }).destroy === 'function') (data as { destroy: () => void }).destroy()
       throw error
     }
     const descriptor = Buffer.alloc(16)

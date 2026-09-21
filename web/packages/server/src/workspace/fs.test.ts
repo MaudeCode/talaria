@@ -1,5 +1,6 @@
 /** Anchored file helpers: descriptor-relative walks refuse symlinked components at every depth (Python `openat`). */
-import { closeSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -156,5 +157,15 @@ describe('anchored walk', () => {
     const names = listDir(root, 'late-ls').map((e) => e.name)
     expect(swapped).toBe(true)
     expect(names).toEqual(['inside.txt'])
+  })
+
+  it.runIf(process.platform !== 'win32')('a FIFO where a file is expected neither blocks the open nor is truncated', () => {
+    const fifo = join(root, 'pipe.png')
+    expect(spawnSync('mkfifo', [fifo]).status).toBe(0)
+    // Reads: the open returns (non-blocking) and the caller's fstat check sees a non-file.
+    const fd = openAnchoredFd(root, fifo, { wantDir: false })
+    try { expect(fstatSync(fd).isFile()).toBe(false) } finally { closeSync(fd) }
+    // Writes: refused before any truncation.
+    expect(() => openAnchoredWriteFd(root, fifo)).toThrow(NotFoundError)
   })
 })

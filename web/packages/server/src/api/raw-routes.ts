@@ -227,9 +227,12 @@ function collectFolder(target: string, workspaceRoot: string, maxBytes: number, 
       let size: number
       try { size = statSync(fp).size } catch { continue }
       if (files.length >= maxFiles) return { files, total, limit: 'max_files' }
-      if (total + size > maxBytes) return { files, total, limit: 'max_bytes' }
-      files.push([fp, relative(target, fp), size])
-      total += size
+      const arcname = relative(target, fp)
+      // Budget the ZIP32 record overhead (local header + descriptor + central entry, name twice) with the bytes.
+      const cost = size + 76 + 2 * Buffer.byteLength(arcname, 'utf8')
+      if (total + cost > maxBytes) return { files, total, limit: 'max_bytes' }
+      files.push([fp, arcname, size])
+      total += cost
     }
     for (const sub of subdirs.reverse()) stack.push(sub)
   }

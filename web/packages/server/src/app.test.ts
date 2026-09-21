@@ -214,6 +214,12 @@ describe('password auth', () => {
     expect(page.headers.get('location')).toBe('login?next=/session/abc%3Ftab%3Dfiles%26x%3D1')
     const nested = await s.get('/session/login?next=/tasks')
     expect(nested.headers.get('location')).toBe('../login?next=/tasks')
+    // The gate and the router see one canonical path: a trailing slash or dot segment cannot reach a handler ungated.
+    for (const path of ['/api/sessions/', '/api/share/create/', '/api/x/../share/create', '/api//share/create', '/api/shutdown/', '/api/updates/apply/']) {
+      const res = await s.get(path, path.includes('sessions') ? {} : { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })
+      expect(res.status, path).toBe(401)
+    }
+    expect((await s.get('/health/')).status).toBe(200)
     const loop = await s.get('/session/login?next=/session/login%3Fnext%3D/x')
     expect(loop.headers.get('location')).toBe('../login')
   })
