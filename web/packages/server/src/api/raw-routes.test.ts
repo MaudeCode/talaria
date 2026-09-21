@@ -65,6 +65,7 @@
  * (issues #492, #538, #617, #697, #1013, #1217, #1436, #1896, #1909, #1955, #2157, #2472, #2508, #2572, #2698, #2841, #2914, #2929, #3019, #3023, #3066, #3238, #3402, #3405, #3460, #3510, #3582, #3717, #3800, #3825, #3831, #3947, #3987, #3994, #4067, #4164, #4385, #4490, #4685, #4714, #4766, #4775, #4836, #4982, #4985, #5127, #5130, #5270, #5339, #5420, #5532, #5572, #5578, #5731, #6022, #6498, #6722, #6751, #6757, #7426) is covered here; see docs/architecture/regression-port-ledger.md.
  */
 import { spawnSync } from 'node:child_process'
+import { FOLDER_ZIP_MAX_FILES_CEILING, FOLDER_ZIP_MAX_MB_CEILING, folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
 import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -178,6 +179,13 @@ describe('raw byte routes', () => {
     } finally {
       await capped.close()
     }
+  })
+
+  it('clamps the folder download limits to what ZIP32 records can describe', () => {
+    expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '999999' })).toBe(FOLDER_ZIP_MAX_MB_CEILING * 1024 * 1024)
+    expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '512' })).toBe(512 * 1024 * 1024)
+    expect(folderZipMaxFiles({ HERMES_WEBUI_FOLDER_ZIP_MAX_FILES: '1000000' })).toBe(FOLDER_ZIP_MAX_FILES_CEILING)
+    expect(folderZipMaxFiles({})).toBe(50000)
   })
 
   it('exports the transcript as JSON and self-contained HTML', async () => {

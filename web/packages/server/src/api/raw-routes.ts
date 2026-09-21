@@ -185,14 +185,21 @@ function handleMedia(ctx: RequestContext): void {
   serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp })
 }
 
-function folderZipMaxBytes(env: Record<string, string | undefined>): number {
+/**
+ * The writer emits plain ZIP32 records (no ZIP64), so the configurable limits are clamped to what those fields can
+ * describe: 65 535 entries, and an archive under 4 GiB even after per-entry headers and deflate's worst-case growth.
+ */
+export const FOLDER_ZIP_MAX_MB_CEILING = 4000
+export const FOLDER_ZIP_MAX_FILES_CEILING = 65_535
+
+export function folderZipMaxBytes(env: Record<string, string | undefined>): number {
   const mb = Number.parseInt((env.HERMES_WEBUI_FOLDER_ZIP_MAX_MB ?? '1024').trim(), 10)
-  return Math.max(1, Number.isFinite(mb) ? mb : 1024) * 1024 * 1024
+  return Math.min(FOLDER_ZIP_MAX_MB_CEILING, Math.max(1, Number.isFinite(mb) ? mb : 1024)) * 1024 * 1024
 }
 
-function folderZipMaxFiles(env: Record<string, string | undefined>): number {
+export function folderZipMaxFiles(env: Record<string, string | undefined>): number {
   const n = Number.parseInt((env.HERMES_WEBUI_FOLDER_ZIP_MAX_FILES ?? '50000').trim(), 10)
-  return Math.max(1, Number.isFinite(n) ? n : 50000)
+  return Math.min(FOLDER_ZIP_MAX_FILES_CEILING, Math.max(1, Number.isFinite(n) ? n : 50000))
 }
 
 function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): { files: [string, string][]; total: number; limit: 'max_files' | 'max_bytes' | null } {

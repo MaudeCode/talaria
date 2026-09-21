@@ -6,12 +6,13 @@ import { str } from '../util.js'
  * references become inline images only when they resolve inside an allowed
  * root and pass the image allow-list.
  */
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { basename, extname, join, resolve } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import { redactSensitive } from '../redact.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
+import { openAnchoredFd } from '../workspace/fs.js'
 import type { Session } from './session.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -53,19 +54,20 @@ function checkImageMagic(data: Buffer, mime: string): boolean {
   return true
 }
 
-function resolveAgainstRoots(raw: string, allowed: string[], home: string): string | null {
+/** The candidate file and the allowed root it sits under; the bytes are then read through an anchored walk from that root. */
+function resolveAgainstRoots(raw: string, allowed: string[], home: string): { path: string; root: string } | null {
   if (raw.startsWith('file://')) return null
   if (raw.startsWith('/') || raw.startsWith('~')) {
     let p: string
     try { p = resolvePathLikePython(expandHome(raw, home), home) } catch { return null }
-    if (!allowed.length || !allowed.some((r) => isWithin(p, r))) return null
-    return isFile(p) ? p : null
+    const root = allowed.find((r) => isWithin(p, r))
+    return root && isFile(p) ? { path: p, root } : null
   }
   for (const root of allowed) {
     let candidate: string
     try { candidate = resolvePathLikePython(resolve(root, raw), home) } catch { continue }
     if (!isWithin(candidate, root)) continue
-    if (isFile(candidate)) return candidate
+    if (isFile(candidate)) return { path: candidate, root }
   }
   return null
 }
@@ -74,26 +76,34 @@ function isFile(p: string): boolean {
   try { return statSync(p).isFile() } catch { return false }
 }
 
+/** The file's bytes read through the anchored walk (no symlinked component, nothing swapped since resolution), or null. */
+function readAnchoredImage(root: string, path: string): Buffer | null {
+  let fd: number
+  try { fd = openAnchoredFd(root, path, { wantDir: false }) } catch { return null }
+  try {
+    const st = fstatSync(fd)
+    if (!st.isFile() || st.size > SHARE_EMBED_MAX_BYTES) return null
+    return readFileSync(fd)
+  } catch {
+    return null
+  } finally {
+    closeSync(fd)
+  }
+}
+
 export function embedShareMedia(text: string, allowedRoots: string[], home: string): string {
   if (!text) return text
   const allowed = allowedRoots.filter(Boolean).map((r) => resolvePathLikePython(r, home))
   return text.replace(SHARE_MEDIA_RE, (whole, rawRef: string) => {
     const raw = rawRef.trim()
     if (!raw) return whole
-    const p = resolveAgainstRoots(raw, allowed, home)
-    if (p === null) return PLACEHOLDER
-    let size: number
-    try { size = statSync(p).size } catch { return PLACEHOLDER }
-    if (size > SHARE_EMBED_MAX_BYTES) return PLACEHOLDER
-    const mime = ALLOWED_MIME[extname(p).toLowerCase()]
+    const found = resolveAgainstRoots(raw, allowed, home)
+    if (found === null) return PLACEHOLDER
+    const mime = ALLOWED_MIME[extname(found.path).toLowerCase()]
     if (!mime) return PLACEHOLDER
-    try {
-      const data = readFileSync(p)
-      if (!checkImageMagic(data, mime)) return PLACEHOLDER
-      return `<img src="data:${mime};base64,${data.toString('base64')}" class="msg-media-img" alt="${escapeHtml(basename(p))}" loading="lazy">`
-    } catch {
-      return PLACEHOLDER
-    }
+    const data = readAnchoredImage(found.root, found.path)
+    if (!data || !checkImageMagic(data, mime)) return PLACEHOLDER
+    return `<img src="data:${mime};base64,${data.toString('base64')}" class="msg-media-img" alt="${escapeHtml(basename(found.path))}" loading="lazy">`
   })
 }
 
