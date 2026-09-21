@@ -8,6 +8,7 @@ import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
 import type { RequestContext } from '../http/context.js'
 import { HttpError, type ApiContext } from './router.js'
+import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import type { Session } from '../sessions/session.js'
@@ -19,7 +20,7 @@ import { str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 
-const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>()
+const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
 
 /** Map service failures to the Python-shaped error body. */
 export function failure(error: unknown): never {

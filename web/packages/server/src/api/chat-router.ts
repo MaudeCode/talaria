@@ -3,6 +3,7 @@ import { implement } from '@orpc/server'
 import { chatContract } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
+import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -11,7 +12,7 @@ import { isSafeSessionId } from '../sessions/session.js'
 import { str } from '../util.js'
 import type { TurnRunner } from '../sessions/turn.js'
 
-const os = implement(chatContract).$context<ApiContext>()
+const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard)
 const STEER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 

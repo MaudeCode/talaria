@@ -373,4 +373,3 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
     ctx.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
-

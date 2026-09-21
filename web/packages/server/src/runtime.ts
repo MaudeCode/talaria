@@ -2,6 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AuthStore } from './auth/store.js'
@@ -111,7 +112,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
-  const activeProfile = (): string => 'default'
+  // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
+  // the process default; a request's profile cookie or bound session overrides it for that request only, and
+  // `activeProfile()` reads the request scope so every domain (sessions, workspaces, drains) sees the same answer.
+  const requestScope = new AsyncLocalStorage<{ requestProfile: string | null }>()
+  const processProfile = readActiveProfileFile(config.hermesHome, PROFILE_RE)
+  const activeProfile = (): string => requestScope.getStore()?.requestProfile ?? processProfile
   const isRootProfile = (name: string): boolean => name === 'default'
   const profilesMatch = (row: string | null | undefined, active: string | null | undefined): boolean => {
     const r = row ?? 'default'
@@ -321,6 +327,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     stats: { requestsTotal: 0, lastRequestAt: 0 },
     features: () => ({ dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false }),
     activeProfile,
+    requestScope,
     isRootProfile,
     onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.load().onboarding_completed),
     health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ stream_id: r.stream_id, session_id: r.session_id, phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
@@ -430,4 +437,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
 
   return deps
+}
+
+/** Python `_read_active_profile_file`: the sticky profile name, or `default` when absent, unreadable, or malformed. */
+function readActiveProfileFile(hermesHome: string, pattern: RegExp): string {
+  try {
+    const name = readFileSync(join(hermesHome, 'active_profile'), 'utf8').trim()
+    return name && pattern.test(name) ? name : 'default'
+  } catch {
+    return 'default'
+  }
 }

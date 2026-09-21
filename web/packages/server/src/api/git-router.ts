@@ -2,6 +2,7 @@
 import { implement } from '@orpc/server'
 import { gitContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, type ApiContext } from './router.js'
+import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { cleanGeneratedCommitMessage, GitWorkspaceError, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
@@ -10,7 +11,7 @@ import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { sanitizeError } from '../workspace/media.js'
 import { str } from '../util.js'
 
-const os = implement(gitContract).$context<ApiContext>()
+const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGuard)
 
 /** Python `_git_bad`: `{error, code}` with the classified reason. */
 function gitBad(error: unknown, status = 400): never {

@@ -2,6 +2,7 @@
 import { implement } from '@orpc/server'
 import { automationContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, type ApiContext } from './router.js'
+import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -15,7 +16,7 @@ import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
 import { str } from '../util.js'
 
-const os = implement(automationContract).$context<ApiContext>()
+const os = implement(automationContract).$context<ApiContext>().use(requestSessionIdGuard)
 
 export const TERMINAL_GATE_DENIED = 'Embedded terminal is only available from local networks when authentication is not configured. Configure a password/passkey, or set HERMES_WEBUI_ONBOARDING_OPEN=1 to allow it on a deliberately-exposed server.'
 const REMOTE_TERMINAL_ERROR = { error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' }

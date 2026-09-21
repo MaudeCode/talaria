@@ -1,11 +1,10 @@
 /**
- * Text-to-speech: an extension engine when one is registered, a server engine
- * (`POST /api/tts`, OpenAI or ElevenLabs) when configured,
- * otherwise the browser's speechSynthesis. Voice, rate and pitch keep the
+ * Text-to-speech: an extension engine when one is registered, otherwise the
+ * browser's speechSynthesis (the Edge server engine was removed; `POST /api/tts`
+ * still serves OpenAI and ElevenLabs to API clients). Voice, rate and pitch keep the
  * legacy localStorage keys.
  */
 import { readPersisted } from '../../lib/persisted'
-import { resolveApiUrl, csrfToken } from '../../api/client'
 import { ttsEngine } from '../../extensions/registry'
 
 let current: HTMLAudioElement | null = null

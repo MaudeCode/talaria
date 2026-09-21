@@ -14,7 +14,8 @@ state="${TMPDIR:-/tmp}/talaria-sidecar-tests.$$"
 mkdir -p "$state"
 trap 'rm -rf -- "$state"' EXIT
 cd "$here"
-env -i PATH="$PATH" HOME="$state" TMPDIR="$state" \
+# GitHub's relocated Linux Python needs LD_LIBRARY_PATH; nothing else from the caller's environment leaks in.
+env -i PATH="$PATH" HOME="$state" TMPDIR="$state" ${LD_LIBRARY_PATH:+LD_LIBRARY_PATH="$LD_LIBRARY_PATH"} \
   HERMES_WEBUI_AGENT_DIR="${HERMES_WEBUI_AGENT_DIR:-$HOME/.hermes/hermes-agent}" \
   HERMES_WEBUI_PYTHON="${HERMES_WEBUI_PYTHON:-}" \
   PYTHONPATH="$here" \

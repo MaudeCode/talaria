@@ -4,6 +4,7 @@
  * security headers, CSP report-only policy, sliding-session renewal, queued
  * cookies, and the structured access log.
  */
+import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
 import { gzipSync } from 'node:zlib'
@@ -73,8 +74,10 @@ export interface AppDeps {
   stats: { requestsTotal: number; lastRequestAt: number }
   /** Later checkpoints replace these seams with the real domains. */
   features: () => BootstrapFeatures
-  /** Process-global active profile (profile domain, checkpoint 7). */
+  /** The request's profile when called inside `requestScope.run`, else the process default. */
   activeProfile: () => string
+  /** Binds `activeProfile()` to the request context for the whole handler (cookie, bound session, and later retags). */
+  requestScope: AsyncLocalStorage<{ requestProfile: string | null }>
   isRootProfile: (name: string) => boolean
   onboardingCompleted: () => boolean
   /** Counts for `/health`: sessions and live runs (checkpoints 5/6). */

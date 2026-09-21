@@ -20,6 +20,7 @@ import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsS
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
+import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
 import { coreRouter, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
 import { isSpaPath } from './spa.js'
@@ -209,8 +210,13 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     ],
   })
 
-  const handler: RequestHandler = async (req, res) => {
+  const handler: RequestHandler = (req, res) => {
     const ctx = new RequestContext(req, res, deps)
+    return deps.requestScope.run(ctx, () => dispatch(ctx))
+  }
+
+  const dispatch = async (ctx: RequestContext): Promise<void> => {
+    const { req, res } = ctx
     deps.stats.requestsTotal += 1
     deps.stats.lastRequestAt = Date.now() / 1000
     try {
@@ -231,6 +237,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         startupUnavailable(ctx)
         return
       }
+      if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
       const sidecarProxy = matchSidecarProxy(path)
       if (sidecarProxy) {
         await handleExtensionSidecarProxy(ctx, sidecarProxy[0], sidecarProxy[1])

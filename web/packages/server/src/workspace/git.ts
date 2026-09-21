@@ -1153,4 +1153,3 @@ export function cleanGeneratedCommitMessage(message: unknown): string {
 export function ensureDir(dir: string): void {
   mkdirSync(dir, { recursive: true })
 }
-

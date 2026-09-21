@@ -57,4 +57,3 @@ export const PROVIDER_CATEGORIES = [
   { id: 'specialized', label: 'Specialized', order: 2 },
 ]
 export const UNSUPPORTED_PROVIDER_NOTE = 'Advanced provider flows such as Nous Portal and GitHub Copilot are still terminal-first. OpenAI Codex and Anthropic Claude Code can be authenticated in this onboarding flow when your Hermes config selects the corresponding provider.'
-

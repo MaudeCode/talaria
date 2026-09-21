@@ -2,6 +2,7 @@
 import { implement } from '@orpc/server'
 import { toolsContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, type ApiContext } from './router.js'
+import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -16,7 +17,7 @@ import { normalizeChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 
-const os = implement(toolsContract).$context<ApiContext>()
+const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
 function failure(error: unknown): never {
   if (error instanceof HttpError) throw error

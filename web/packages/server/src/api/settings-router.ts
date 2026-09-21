@@ -3,6 +3,7 @@ import { implement } from '@orpc/server'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
 import { join } from 'node:path'
 import { HttpError, type ApiContext } from './router.js'
+import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, buildProfileCookie, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { forwardedClientIp, ipInNetworks, isLoopback, rawPeerIsTrustedProxy } from '../http/origin.js'
@@ -18,7 +19,7 @@ import { OAUTH_PROVIDERS } from '../providers/tables.js'
 import { SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
 
-const os = implement(settingsContract).$context<ApiContext>()
+const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
 function failure(error: unknown): never {
   if (error instanceof HttpError) throw error
