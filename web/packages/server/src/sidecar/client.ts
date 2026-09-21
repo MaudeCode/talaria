@@ -126,6 +126,8 @@ export class SidecarClient implements SidecarLike {
     stderr.on('line', (line) => { this.log(`[sidecar] ${line}`) })
     child.on('exit', (code, signal) => { this.onExit(child, code, signal) })
     child.on('error', (error) => { this.log(`[sidecar] spawn error: ${error.message}`) })
+    // A request or cancel written to a child that just died surfaces as EPIPE on stdin; the exit handler owns recovery.
+    child.stdin?.on('error', (error: Error) => { this.log(`[sidecar] stdin write failed: ${error.message}`) })
 
     try {
       const describe = await this.rawCall('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION }, { timeoutMs: this.opts.handshakeTimeoutMs ?? 60_000 })
