@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 SIDECAR_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,7 @@ from talaria_sidecar.rpc import RpcServer  # noqa: E402
 FIXTURES = SIDECAR_ROOT.parent / "packages" / "contracts" / "fixtures" / "sidecar"
 APPROVAL_PATTERN_KEY = "talaria_contract_fixture"
 APPROVAL_COMMAND = "printf talaria-contract"
+_APPROVAL_ANSWERED = threading.Event()
 
 
 def _substitutions() -> list[tuple[str, str]]:
@@ -55,7 +57,12 @@ def _replay(entry: dict):
 
 
 def _chat_start(ctx, params: dict) -> dict:
+    _APPROVAL_ANSWERED.clear()
     ctx.emit("approval", {"request_id": "talaria-contract-approval", "pattern_key": APPROVAL_PATTERN_KEY, "command": APPROVAL_COMMAND, "tool_name": "terminal", "cwd": params.get("workspace") or ""})
+    # Like a real turn, stay pending until the approval is answered (or the request is cancelled / times out).
+    for _ in range(200):
+        if _APPROVAL_ANSWERED.wait(0.1) or ctx.cancelled:
+            break
     ctx.emit("token", {"text": "talaria-contract"})
     history = [*params.get("conversation_history", []), {"role": "user", "content": params.get("user_message", "")}, {"role": "assistant", "content": "talaria-contract"}]
     return {
@@ -64,6 +71,11 @@ def _chat_start(ctx, params: dict) -> dict:
         "context": {}, "model": params.get("model") or "replay", "provider": params.get("model_provider") or "replay", "compressed": False,
         "agent_session_id": params.get("session_id", ""), "token_sent": True, "pending_steer": "", "live_tool_calls": [],
     }
+
+
+def _approval_respond(ctx, params: dict) -> dict:
+    _APPROVAL_ANSWERED.set()
+    return {"ok": True, "resolved": 1, "choice": str(params.get("choice") or "once")}
 
 
 def _shutdown(ctx, params: dict) -> dict:
@@ -84,7 +96,7 @@ def build_methods() -> dict:
     methods["chat.interrupt"] = lambda ctx, params: {"ok": True, "reason": "replay"}
     methods["chat.steer"] = lambda ctx, params: {"accepted": True, "fallback": None}
     methods["chat.evict_agent"] = lambda ctx, params: {"evicted": False}
-    methods["approval.respond"] = lambda ctx, params: {"ok": True, "resolved": 1, "choice": str(params.get("choice") or "once")}
+    methods["approval.respond"] = _approval_respond
     methods["approval.pending"] = lambda ctx, params: {"pending": []}
     methods["approval.set_yolo"] = lambda ctx, params: {"yolo_enabled": bool(params.get("enabled")), "released": 0}
     methods["runtime.shutdown"] = _shutdown

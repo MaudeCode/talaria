@@ -25,12 +25,14 @@ describe.skipIf(!python)('replay sidecar', () => {
     expect(profiles.profiles.map((p) => p.name)).toContain('default')
     const created = await (await fetch(`${s.base}/api/session/new`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: join(s.state, 'workspace') }) })).json() as { session: { session_id: string } }
     const sid = created.session.session_id
-    const approval = s.sse(`/api/approval/stream?session_id=${sid}`, (frame) => frame.event === 'approval')
+    const approval = s.sse(`/api/approval/stream?session_id=${sid}`, (frame) => frame.event === 'approval' && Boolean((frame.data as { pending: unknown }).pending))
     const start = await (await fetch(`${s.base}/api/chat/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: sid, message: 'contract fixture' }) })).json() as { stream_id?: string; error?: string }
     expect(start.stream_id).toBeTruthy()
     const frames = await approval
     expect(frames[0]?.event).toBe('initial')
     const event = frames.find((f) => f.event === 'approval')
     expect((event!.data as { pending: { pattern_key: string } }).pending.pattern_key).toBe('talaria_contract_fixture')
+    const answered = await fetch(`${s.base}/api/approval/respond`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: sid, choice: 'once', approval_id: 'talaria-contract-approval' }) })
+    expect(answered.status).toBe(200)
   })
 })
