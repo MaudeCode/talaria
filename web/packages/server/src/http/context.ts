@@ -321,6 +321,28 @@ export class RequestContext {
     this.logRequest(status)
   }
 
+  /** Stream a body with backpressure (large file spans); headers and cookies are applied like `send`, the stream owns its source. */
+  sendStream(opts: { status?: number; headers?: HeaderMap; security?: boolean }, body: NodeJS.ReadableStream & { destroy?: (error?: Error) => void }): void {
+    if (this.finished) return
+    this.finished = true
+    const status = opts.status ?? 200
+    this.refreshSessionForResponse(status)
+    const headers: HeaderMap = {}
+    if (opts.security ?? true) Object.assign(headers, this.securityHeaders())
+    Object.assign(headers, opts.headers ?? {})
+    headers['Content-Security-Policy-Report-Only'] = buildCspReportOnlyPolicy(this.cspExtras)
+    headers['Report-To'] = CSP_REPORT_TO
+    const cookies = [...(Array.isArray(headers['Set-Cookie']) ? headers['Set-Cookie'] : headers['Set-Cookie'] ? [headers['Set-Cookie']] : []), ...this.pendingCookies]
+    this.pendingCookies = []
+    if (cookies.length) headers['Set-Cookie'] = cookies
+    this.res.writeHead(status, headers)
+    if (this.method === 'HEAD') { body.destroy?.(); this.res.end(); this.logRequest(status); return }
+    this.res.on('close', () => { body.destroy?.() })
+    body.on('error', () => { this.res.destroy() })
+    body.pipe(this.res)
+    this.logRequest(status)
+  }
+
   logRequest(status: number): void {
     const record: Record<string, unknown> = {
       ts: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),

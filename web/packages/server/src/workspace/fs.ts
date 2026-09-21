@@ -1,12 +1,15 @@
 /**
  * Workspace file operations (Python `api/workspace.py` list/read/anchored
- * helpers). Node has no `openat`, so the race guards are approximated: every
- * path component is `lstat`-checked to be a real directory after resolution,
- * the leaf is opened with `O_NOFOLLOW`, and the opened descriptor is
- * re-verified against the expected inode. ponytail: an `openat` walk needs a
- * native addon; revisit if a symlink race is ever demonstrated on this path.
+ * helpers). The anchored helpers walk the path one component at a time from
+ * an open directory descriptor (Python `openat`): on Linux every component is
+ * opened through `/proc/self/fd/<dirfd>/<name>` with `O_NOFOLLOW`, so a parent
+ * swapped for a symlink mid-walk cannot redirect the next step. Where the
+ * kernel offers no descriptor-relative open (macOS), each component is opened
+ * by pathname with `O_NOFOLLOW` and then verified to be the very directory
+ * entry the parent descriptor holds (same device and inode) before the walk
+ * continues; the remaining window is the single open call, not the whole walk.
  */
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -18,6 +21,7 @@ const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0
 const O_DIRECTORY = constants.O_DIRECTORY ?? 0
 
 export class PathTraversalError extends Error {}
+export class NotFoundError extends Error {}
 
 /** Python `safe_resolve_ws`: the resolved target must stay under the resolved root. */
 export function safeResolveWs(root: string, requested: string): string {
@@ -42,56 +46,109 @@ function relParts(root: string, target: string): string[] {
   return rel ? rel.split(sep) : []
 }
 
-/** Verify no component under the root is a symlink (the target must already be resolved). */
-function assertSymlinkFreeWalk(root: string, target: string, opts: { allowMissingLeaf?: boolean; createMissingDirs?: boolean } = {}): void {
-  const rootResolved = resolvePathLikePython(root)
-  const parts = relParts(rootResolved, target)
-  let current = rootResolved
-  const rootStat = lstatSync(rootResolved)
-  if (rootStat.isSymbolicLink()) throw new PathTraversalError(`Path traversal blocked: ${target}`)
-  for (let i = 0; i < parts.length; i += 1) {
-    current = join(current, parts[i] ?? '')
-    const isLast = i === parts.length - 1
-    let st: Stats
-    try {
-      st = lstatSync(current)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        if (isLast && opts.allowMissingLeaf) return
-        if (opts.createMissingDirs) {
-          mkdirSync(current, { mode: 0o755 })
-          continue
-        }
-      }
-      throw new NotFoundError(`Not found: ${target}`)
-    }
-    if (st.isSymbolicLink()) throw new NotFoundError(`Not found: ${target}`)
-    if (!isLast && !st.isDirectory()) throw new NotFoundError(`Not found: ${target}`)
-  }
+const DESCRIPTOR_PATHS = process.platform === 'linux' && existsSync('/proc/self/fd')
+
+/** The pathname that names `name` relative to an open directory descriptor (Linux only). */
+function fdPath(dirfd: number, name: string): string {
+  return `/proc/self/fd/${String(dirfd)}/${name}`
 }
 
-export class NotFoundError extends Error {}
+class DirHandle {
+  constructor(readonly fd: number, readonly path: string) {}
+  /** The pathname to use for an operation on `name` inside this directory. */
+  child(name: string): string {
+    return DESCRIPTOR_PATHS ? fdPath(this.fd, name) : join(this.path, name)
+  }
+  close(): void { try { closeSync(this.fd) } catch { /* already closed */ } }
+}
+
+function sameFile(a: Stats, b: Stats): boolean {
+  return a.dev === b.dev && a.ino === b.ino
+}
+
+/** Open `name` inside `dir` as a directory, refusing symlinks; the pathname fallback re-verifies identity against the parent. */
+function openChildDir(dir: DirHandle, name: string, opts: { createMissing?: boolean } = {}): DirHandle {
+  const target = dir.child(name)
+  let fd: number
+  try {
+    fd = openSync(target, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' && opts.createMissing) {
+      mkdirSync(target, { mode: 0o755 })
+      fd = openSync(target, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+    } else throw new NotFoundError(`Not found: ${join(dir.path, name)}`)
+  }
+  if (!DESCRIPTOR_PATHS) {
+    // Pathname fallback: the descriptor we hold must be the entry the parent lists under this name right now.
+    try {
+      const entry = lstatSync(join(dir.path, name))
+      if (entry.isSymbolicLink() || !sameFile(entry, fstatSync(fd)) || !sameFile(statSync(dir.path), fstatSync(dir.fd))) { closeSync(fd); throw new NotFoundError(`Not found: ${join(dir.path, name)}`) }
+    } catch (error) {
+      closeSync(fd)
+      if (error instanceof NotFoundError) throw error
+      throw new NotFoundError(`Not found: ${join(dir.path, name)}`)
+    }
+  }
+  return new DirHandle(fd, join(dir.path, name))
+}
+
+/** Walk from the root to the parent of the leaf, one descriptor at a time. Caller closes the returned handle. */
+function openAnchoredParent(root: string, target: string, opts: { createMissingDirs?: boolean } = {}): { dir: DirHandle; leaf: string } {
+  const rootResolved = resolvePathLikePython(root)
+  const parts = relParts(rootResolved, target)
+  if (!parts.length) throw new PathTraversalError(`Invalid target: ${target}`)
+  const leaf = parts[parts.length - 1] ?? ''
+  if (!leaf || leaf === '.' || leaf === '..') throw new PathTraversalError(`Invalid target: ${target}`)
+  let fd: number
+  try { fd = openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW) } catch { throw new NotFoundError(`Not found: ${target}`) }
+  let dir = new DirHandle(fd, rootResolved)
+  try {
+    for (const part of parts.slice(0, -1)) {
+      if (!part || part === '.' || part === '..') throw new PathTraversalError(`Path traversal blocked: ${target}`)
+      const next = openChildDir(dir, part, { createMissing: opts.createMissingDirs ?? false })
+      dir.close()
+      dir = next
+    }
+  } catch (error) {
+    dir.close()
+    throw error
+  }
+  return { dir, leaf }
+}
 
 /** Open `target` for reading with the anchored walk (Python `open_anchored_fd`). Caller closes the fd. */
 export function openAnchoredFd(root: string, target: string, opts: { wantDir: boolean }): number {
-  assertSymlinkFreeWalk(root, target)
+  const rootResolved = resolvePathLikePython(root)
+  if (relParts(rootResolved, target).length === 0) {
+    if (!opts.wantDir) throw new NotFoundError(`Not found: ${target}`)
+    try { return openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW) } catch { throw new NotFoundError(`Not found: ${target}`) }
+  }
+  const { dir, leaf } = openAnchoredParent(root, target)
   try {
-    return openSync(target, constants.O_RDONLY | O_NOFOLLOW | (opts.wantDir ? O_DIRECTORY : 0))
-  } catch {
-    throw new NotFoundError(`Not found: ${target}`)
+    let fd: number
+    try { fd = openSync(dir.child(leaf), constants.O_RDONLY | O_NOFOLLOW | (opts.wantDir ? O_DIRECTORY : 0)) } catch { throw new NotFoundError(`Not found: ${target}`) }
+    if (!DESCRIPTOR_PATHS) {
+      try {
+        const entry = lstatSync(join(dir.path, leaf))
+        if (entry.isSymbolicLink() || !sameFile(entry, fstatSync(fd))) { closeSync(fd); throw new NotFoundError(`Not found: ${target}`) }
+      } catch (error) { closeSync(fd); if (error instanceof NotFoundError) throw error; throw new NotFoundError(`Not found: ${target}`) }
+    }
+    return fd
+  } finally {
+    dir.close()
   }
 }
 
 /** Exclusive create under the root, creating missing parents (Python `open_anchored_create_fd`). */
 export function openAnchoredCreateFd(root: string, dest: string): number {
-  const parts = relParts(resolvePathLikePython(root), dest)
-  if (!parts.length) throw new PathTraversalError(`Invalid destination: ${dest}`)
-  assertSymlinkFreeWalk(root, dirname(dest), { createMissingDirs: true })
+  const { dir, leaf } = openAnchoredParent(root, dest, { createMissingDirs: true })
   try {
-    return openSync(dest, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
+    return openSync(dir.child(leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new FileExistsError(dest)
     throw new NotFoundError(`Not found: ${dest}`)
+  } finally {
+    dir.close()
   }
 }
 
@@ -101,54 +158,79 @@ export function makeAnchoredDir(root: string, dest: string): void {
   const rootResolved = resolvePathLikePython(root)
   const destResolved = resolvePathLikePython(dest)
   if (destResolved === rootResolved) return
-  relParts(rootResolved, destResolved)
-  assertSymlinkFreeWalk(rootResolved, destResolved, { createMissingDirs: true })
+  const { dir, leaf } = openAnchoredParent(rootResolved, destResolved, { createMissingDirs: true })
+  try {
+    const last = openChildDir(dir, leaf, { createMissing: true })
+    last.close()
+  } finally {
+    dir.close()
+  }
 }
 
 export function openAnchoredWriteFd(root: string, target: string): number {
   const targetResolved = resolvePathLikePython(target)
-  const parts = relParts(resolvePathLikePython(root), targetResolved)
-  if (!parts.length) throw new PathTraversalError(`Invalid target: ${target}`)
-  assertSymlinkFreeWalk(root, targetResolved)
-  return openSync(targetResolved, constants.O_WRONLY | constants.O_TRUNC | O_NOFOLLOW)
+  const { dir, leaf } = openAnchoredParent(root, targetResolved)
+  try {
+    return openSync(dir.child(leaf), constants.O_WRONLY | constants.O_TRUNC | O_NOFOLLOW)
+  } catch {
+    throw new NotFoundError(`Not found: ${target}`)
+  } finally {
+    dir.close()
+  }
 }
 
 export function unlinkAnchored(root: string, target: string): void {
   const targetResolved = resolvePathLikePython(target)
-  const parts = relParts(resolvePathLikePython(root), targetResolved)
-  if (!parts.length) throw new PathTraversalError(`Invalid target: ${target}`)
-  assertSymlinkFreeWalk(root, targetResolved)
-  unlinkSync(targetResolved)
+  const { dir, leaf } = openAnchoredParent(root, targetResolved)
+  try {
+    unlinkSync(dir.child(leaf))
+  } catch {
+    throw new NotFoundError(`Not found: ${target}`)
+  } finally {
+    dir.close()
+  }
 }
 
 export function rmtreeAnchored(root: string, target: string): void {
   const targetResolved = resolvePathLikePython(target)
-  const parts = relParts(resolvePathLikePython(root), targetResolved)
-  if (!parts.length) throw new PathTraversalError(`Invalid target: ${target}`)
-  assertSymlinkFreeWalk(root, targetResolved)
-  rmSync(targetResolved, { recursive: true, force: false })
+  const { dir, leaf } = openAnchoredParent(root, targetResolved)
+  try {
+    const entry = lstatSync(dir.child(leaf))
+    if (entry.isSymbolicLink()) throw new NotFoundError(`Not found: ${target}`)
+    rmSync(dir.child(leaf), { recursive: true, force: false })
+  } catch (error) {
+    if (error instanceof NotFoundError) throw error
+    throw new NotFoundError(`Not found: ${target}`)
+  } finally {
+    dir.close()
+  }
 }
 
 export function renameAnchored(root: string, source: string, dest: string): void {
   const rootResolved = resolvePathLikePython(root)
   const sourceResolved = resolvePathLikePython(source)
   const destParent = resolvePathLikePython(dirname(dest))
-  const sourceParts = relParts(rootResolved, sourceResolved)
   if (!isWithin(destParent, rootResolved)) throw new PathTraversalError(`Path traversal blocked: ${dest}`)
-  if (!sourceParts.length) throw new PathTraversalError(`Invalid source: ${source}`)
   const leaf = basename(dest)
-  if (!leaf) throw new PathTraversalError(`Invalid destination: ${dest}`)
-  assertSymlinkFreeWalk(rootResolved, sourceResolved)
-  assertSymlinkFreeWalk(rootResolved, destParent)
-  const target = join(destParent, leaf)
+  if (!leaf || leaf === '.' || leaf === '..') throw new PathTraversalError(`Invalid destination: ${dest}`)
+  const from = openAnchoredParent(rootResolved, sourceResolved)
   try {
-    lstatSync(target)
-    throw new FileExistsError(leaf)
-  } catch (error) {
-    if (!(error instanceof FileExistsError) && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    if (error instanceof FileExistsError) throw error
+    const to = destParent === rootResolved ? new DirHandle(openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW), rootResolved) : (() => { const p = openAnchoredParent(rootResolved, destParent); const h = openChildDir(p.dir, p.leaf); p.dir.close(); return h })()
+    try {
+      try {
+        lstatSync(to.child(leaf))
+        throw new FileExistsError(leaf)
+      } catch (error) {
+        if (error instanceof FileExistsError) throw error
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      renameSync(from.dir.child(from.leaf), to.child(leaf))
+    } finally {
+      to.close()
+    }
+  } finally {
+    from.dir.close()
   }
-  renameSync(sourceResolved, target)
 }
 
 export interface DirEntry {

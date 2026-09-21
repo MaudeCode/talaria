@@ -60,8 +60,9 @@ export class AgentConfig {
     const hit = this.cache.get(profileHome)
     if (hit?.key === key) return hit.config
     if (key === 'missing') return {}
+    // A changed file invalidates the snapshot: callers gate on `null` (fail closed) until the matching read lands.
     void this.read(profileHome).catch(() => undefined)
-    return hit?.config ?? null
+    return null
   }
 
   /** Read-modify-write under a per-home lock; `mutate` returns false to skip the write. */

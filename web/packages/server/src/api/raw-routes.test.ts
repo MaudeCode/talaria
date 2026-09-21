@@ -134,6 +134,23 @@ describe('raw byte routes', () => {
     expect((await s.get('/api/file/raw?path=photo.png')).status).toBe(400)
   })
 
+  it('a file past the ETag snapshot cap streams its bytes and ranges without buffering the whole file', async () => {
+    const big = Buffer.alloc(3 * 1024 * 1024, 7)
+    writeFileSync(join(ws, 'big.bin'), big)
+    let res = await s.get(`/api/file/raw?session_id=${sid}&path=big.bin`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-length')).toBe(String(big.length))
+    expect(res.headers.get('etag')).toBeNull()
+    expect(Buffer.from(await res.arrayBuffer()).equals(big)).toBe(true)
+    res = await s.get(`/api/file/raw?session_id=${sid}&path=big.bin`, { headers: { range: 'bytes=1048576-1048579' } })
+    expect(res.status).toBe(206)
+    expect(res.headers.get('content-range')).toBe(`bytes 1048576-1048579/${String(big.length)}`)
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.from([7, 7, 7, 7]))
+    res = await s.get(`/api/file/raw?session_id=${sid}&path=big.bin`, { method: 'HEAD' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-length')).toBe(String(big.length))
+  })
+
   it('streams a folder as a zip and enforces the caps', async () => {
     let res = await s.get(`/api/folder/download?session_id=${sid}&path=docs`)
     expect(res.status).toBe(200)

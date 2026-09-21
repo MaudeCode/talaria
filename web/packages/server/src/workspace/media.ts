@@ -3,7 +3,7 @@
  * `_serve_file_bytes`, `_media_deny_reason`, `_session_media_token_allows_path`,
  * and the serve side of `api/media_snapshots.py`).
  */
-import { closeSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
 import { constants as fsConstants } from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
@@ -154,22 +154,17 @@ export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeF
     if (etag) headers.ETag = etag
     if (byteRange) headers['Content-Range'] = `bytes ${String(start)}-${String(end)}/${String(fileSize)}`
     if (opts.csp) Object.assign(headers, previewHeaders(opts.csp))
-    let body: Buffer
-    if (!contentLength) body = Buffer.alloc(0)
-    else if (snapshot) body = snapshot.subarray(start, start + contentLength)
-    else {
-      const buf = Buffer.alloc(contentLength)
-      let got = 0
-      while (got < contentLength) {
-        const n = readSync(fd, buf, got, contentLength - got, start + got)
-        if (n <= 0) break
-        got += n
-      }
-      body = buf.subarray(0, got)
+    if (!contentLength || snapshot) {
+      ctx.send({ status: byteRange ? 206 : 200, headers, body: snapshot ? snapshot.subarray(start, start + contentLength) : Buffer.alloc(0), security: !opts.csp })
+      closeSync(fd)
+      return
     }
-    ctx.send({ status: byteRange ? 206 : 200, headers, body, security: !opts.csp })
+    // Large files stream the selected span from the descriptor with backpressure (Python copied bounded chunks); the
+    // stream owns the descriptor from here.
+    ctx.sendStream({ status: byteRange ? 206 : 200, headers: { ...headers, 'Content-Length': String(contentLength) }, security: !opts.csp }, createReadStream('', { fd, start, end: start + contentLength - 1, autoClose: true, highWaterMark: 256 * 1024 }))
+    fd = -1
   } finally {
-    closeSync(fd)
+    if (fd !== -1) closeSync(fd)
   }
 }
 
