@@ -189,8 +189,9 @@ export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional() }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
 } as const
 export const CONFIG_METHODS = {
-  'config.get': { params: ProfileHomeParams, result: z.object({ path: z.string(), exists: z.boolean(), config: Loose }) },
-  'config.set': { params: ProfileHomeParams.extend({ config: Loose }), result: z.object({ ok: z.literal(true), path: z.string() }) },
+  // `config_path` is the server-resolved file (honouring HERMES_CONFIG_PATH); the sidecar reads and writes exactly that path.
+  'config.get': { params: ProfileHomeParams.extend({ config_path: z.string().min(1) }), result: z.object({ path: z.string(), exists: z.boolean(), config: Loose }) },
+  'config.set': { params: ProfileHomeParams.extend({ config_path: z.string().min(1), config: Loose }), result: z.object({ ok: z.literal(true), path: z.string() }) },
   'models.reasoning_efforts': { params: ProfileHomeParams.extend({ model: z.string(), provider: z.string() }), result: z.object({ efforts: z.array(z.string()), supports_reasoning: z.boolean().nullable() }) },
 } as const
 export const WORKTREE_METHODS = {

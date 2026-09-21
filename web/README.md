@@ -102,7 +102,7 @@ commented template.
 | `HERMES_WEBUI_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for all IPv4, `::` for all IPv6) |
 | `HERMES_WEBUI_PORT` | `8787` | Port |
 | `HERMES_HOME` | `~/.hermes` | Hermes state base directory |
-| `HERMES_CONFIG_PATH` | `$HERMES_HOME/config.yaml` | Hermes config file |
+| `HERMES_CONFIG_PATH` | `$HERMES_HOME/config.yaml` | Hermes config file; the sidecar reads and writes this exact path (a symlink is updated through its target) |
 | `HERMES_WEBUI_STATE_DIR` | `$HERMES_HOME/webui` | Sessions, settings, auth records, journals, shares |
 | `HERMES_WEBUI_DEFAULT_WORKSPACE` | `~/workspace` | Default workspace |
 | `HERMES_WEBUI_DEFAULT_MODEL` | provider default | Optional model override |

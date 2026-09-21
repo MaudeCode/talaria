@@ -7,7 +7,8 @@
  * personalities) port Python `api/config.py`.
  */
 import { statSync } from 'node:fs'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve as resolvePath } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import { PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, AUX_TASK_SLOTS, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
@@ -26,9 +27,10 @@ export class AgentConfig {
 
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; env: Record<string, string | undefined> }) {}
 
+  /** The authoritative config file: the documented `HERMES_CONFIG_PATH` override, else `<home>/config.yaml`. Every read, write, and fingerprint uses this one path. */
   path(profileHome: string): string {
     const override = (this.deps.env.HERMES_CONFIG_PATH ?? '').trim()
-    return override || join(profileHome, 'config.yaml')
+    return override ? resolvePath(override.replace(/^~(?=$|\/)/, homedir())) : join(profileHome, 'config.yaml')
   }
 
   private statKey(profileHome: string): string {
@@ -52,7 +54,7 @@ export class AgentConfig {
     // is re-read once and otherwise reported unavailable rather than cached under the new key.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const before = this.statKey(profileHome)
-      const result = await sidecar.call('config.get', { profile_home: profileHome })
+      const result = await sidecar.call('config.get', { profile_home: profileHome, config_path: this.path(profileHome) })
       const config = isDict(result.config) ? result.config : {}
       if (this.statKey(profileHome) === before) {
         this.cache.set(profileHome, { key: before, config })
@@ -81,7 +83,7 @@ export class AgentConfig {
       if (mutate(config) === false) return config
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
-      await sidecar.call('config.set', { profile_home: profileHome, config })
+      await sidecar.call('config.set', { profile_home: profileHome, config_path: this.path(profileHome), config })
       this.cache.delete(profileHome)
       return config
     })

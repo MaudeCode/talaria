@@ -117,7 +117,7 @@ def test_error_conditions_are_typed(handshaken: SidecarProcess, hermes_home: pat
     assert message["error"]["code"] == -32602
     message, _ = handshaken.call("worktree.create", {"profile_home": home, "repo_root": home})
     assert message["error"]["data"]["condition"] == "not_a_repo"
-    message, _ = handshaken.call("config.set", {"profile_home": home, "config": "not an object"})
+    message, _ = handshaken.call("config.set", {"profile_home": home, "config_path": home + "/config.yaml", "config": "not an object"})
     assert message["error"]["code"] == -32602
 
 
@@ -128,17 +128,50 @@ def test_config_round_trip_keeps_mode_and_key_order(handshaken: SidecarProcess, 
     path = hermes_home / "config.yaml"
     path.write_text("model:\n  default: claude-sonnet-4-6\n  provider: anthropic\nagent:\n  reasoning_effort: high\n", encoding="utf-8")
     path.chmod(0o600)
-    message, _ = handshaken.call("config.get", {"profile_home": home})
+    message, _ = handshaken.call("config.get", {"profile_home": home, "config_path": str(path)})
     config = message["result"]["config"]
     assert config["model"]["provider"] == "anthropic" and message["result"]["exists"] is True
     config["max_tokens"] = 4096
-    message, _ = handshaken.call("config.set", {"profile_home": home, "config": config})
+    message, _ = handshaken.call("config.set", {"profile_home": home, "config_path": str(path), "config": config})
     assert message["result"]["ok"] is True
     assert path.stat().st_mode & 0o777 == 0o600
     text = path.read_text(encoding="utf-8")
     assert text.index("model:") < text.index("agent:") < text.index("max_tokens: 4096")
-    message, _ = handshaken.call("config.get", {"profile_home": home})
+    message, _ = handshaken.call("config.get", {"profile_home": home, "config_path": str(path)})
     assert message["result"]["config"]["max_tokens"] == 4096
+
+
+@requires_agent
+def test_config_rpcs_use_the_server_resolved_path(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """``config_path`` (the server's HERMES_CONFIG_PATH resolution) is the file read and written, not ``<home>/config.yaml``."""
+    home = str(hermes_home)
+    override = tmp_path / "managed" / "override.yaml"
+    override.parent.mkdir()
+    override.write_text("webui_oidc:\n  issuer: https://idp.example\n", encoding="utf-8")
+    assert not (hermes_home / "config.yaml").exists()
+    result = handshaken.result("config.get", {"profile_home": home, "config_path": str(override)})
+    assert result["exists"] is True and result["config"]["webui_oidc"]["issuer"] == "https://idp.example"
+    handshaken.result("config.set", {"profile_home": home, "config_path": str(override), "config": {"max_tokens": 7}})
+    assert "max_tokens: 7" in override.read_text(encoding="utf-8")
+    assert not (hermes_home / "config.yaml").exists()
+    message, _ = handshaken.call("config.get", {"profile_home": home, "config_path": "relative.yaml"})
+    assert message["error"]["code"] == -32602
+
+
+@requires_agent
+def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """An operator-managed ``config.yaml`` symlink keeps pointing at its referent; the referent gets the bytes."""
+    home = str(hermes_home)
+    managed = tmp_path / "managed.yaml"
+    managed.write_text("model:\n  provider: anthropic\n", encoding="utf-8")
+    managed.chmod(0o600)
+    link = hermes_home / "config.yaml"
+    link.symlink_to(managed)
+    handshaken.result("config.set", {"profile_home": home, "config_path": str(link), "config": {"model": {"provider": "anthropic"}, "max_tokens": 9}})
+    assert link.is_symlink() and os.readlink(link) == str(managed)
+    assert "max_tokens: 9" in managed.read_text(encoding="utf-8")
+    assert managed.stat().st_mode & 0o777 == 0o600
+    assert handshaken.result("config.get", {"profile_home": home, "config_path": str(link)})["config"]["max_tokens"] == 9
 
 
 @requires_agent

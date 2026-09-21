@@ -4,9 +4,9 @@
  * runner event projection. Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.js.
  */
-import { chmodSync, existsSync, linkSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { atomicWriteText } from '../fs/atomic.js'
 import { AgentConfig } from '../config/agent-config.js'
 import { probeServer } from '../tools/mcp-health.js'
@@ -301,6 +301,27 @@ describe('atomic writes honour the umask for new files', () => {
       process.umask(previous)
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('config path override (review round 39)', () => {
+  it('HERMES_CONFIG_PATH is the file the sidecar reads, writes, and the server fingerprints', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-cfg-'))
+    const override = join(home, 'managed', 'override.yaml')
+    mkdirSync(join(home, 'managed'))
+    writeFileSync(override, 'webui_oidc:\n  issuer: https://idp.example\n')
+    const sidecar = new FakeSidecar()
+    const seen: string[] = []
+    sidecar.respond('config.get', (params) => { seen.push(params.config_path); return { path: params.config_path, exists: true, config: { webui_oidc: { issuer: 'https://idp.example' } } } })
+    sidecar.respond('config.set', (params) => { seen.push(params.config_path); writeFileSync(params.config_path, `# ${String(Math.random())}\n`); return { ok: true as const, path: params.config_path } })
+    const config = new AgentConfig({ sidecar: () => sidecar, env: { HERMES_CONFIG_PATH: override } })
+    expect(config.path(home)).toBe(override)
+    // No <home>/config.yaml: without the override the read would short-circuit to {} and never reach the sidecar.
+    expect(((await config.read(home)).webui_oidc as Json).issuer).toBe('https://idp.example')
+    await config.update(home, (c) => { c.max_tokens = 1 })
+    expect(seen).toEqual([override, override])
+    expect(new AgentConfig({ sidecar: () => sidecar, env: { HERMES_CONFIG_PATH: '~/x.yaml' } }).path(home)).toBe(join(homedir(), 'x.yaml'))
+    rmSync(home, { recursive: true, force: true })
   })
 })
 

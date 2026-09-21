@@ -28,8 +28,20 @@ def _yaml():
     return yaml
 
 
-def read_config(home: Path) -> dict:
-    path = home / "config.yaml"
+def config_path_param(params: dict) -> Path:
+    """The server-resolved config file (``HERMES_CONFIG_PATH`` aware); defaults to ``<profile_home>/config.yaml``."""
+    raw = params.get("config_path")
+    if raw is None:
+        return profile_home_param(params) / "config.yaml"
+    if not isinstance(raw, str) or not raw.strip():
+        raise InvalidParams("config_path must be a non-empty string")
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise InvalidParams("config_path must be absolute")
+    return path
+
+
+def read_config(path: Path) -> dict:
     if not path.exists():
         return {"path": str(path), "exists": False, "config": {}}
     try:
@@ -41,18 +53,28 @@ def read_config(home: Path) -> dict:
     return {"path": str(path), "exists": True, "config": data if isinstance(data, dict) else {}}
 
 
-def write_config(home: Path, config: dict) -> dict:
+def _write_target(path: Path) -> Path:
+    """Where the bytes land: a symlinked config.yaml (operator-managed file) is updated through its referent."""
+    if not path.is_symlink():
+        return path
+    target = path.resolve()
+    if target.is_dir():
+        raise RpcError(f"{path} links to a directory", condition="config_invalid")
+    return target
+
+
+def write_config(path: Path, config: dict) -> dict:
     if not isinstance(config, dict):
         raise InvalidParams("config must be an object")
-    path = home / "config.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    target = _write_target(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
     text = _yaml().safe_dump(config, sort_keys=False, allow_unicode=True)
     mode = None
     try:
-        mode = path.stat().st_mode & 0o777
+        mode = target.stat().st_mode & 0o777
     except FileNotFoundError:
         pass
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".config_", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".config_", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -60,7 +82,10 @@ def write_config(home: Path, config: dict) -> dict:
             os.fsync(handle.fileno())
         if mode is not None:
             os.chmod(tmp, mode)
-        os.replace(tmp, path)
+        # A link retargeted while the temp file was being written would otherwise send the write to the wrong file.
+        if _write_target(path) != target:
+            raise RpcError(f"{path} was retargeted while config.yaml was being written; retry", condition="config_changed")
+        os.replace(tmp, target)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -94,11 +119,11 @@ def reasoning_efforts(model: str, provider: str) -> dict:
 def register(registry) -> None:
     @registry.method("config.get", requires_agent=True)
     def get(ctx: CallContext, params: dict) -> dict:
-        return read_config(profile_home_param(params))
+        return read_config(config_path_param(params))
 
     @registry.method("config.set", requires_agent=True)
     def set_(ctx: CallContext, params: dict) -> dict:
-        return write_config(profile_home_param(params), params.get("config"))
+        return write_config(config_path_param(params), params.get("config"))
 
     @registry.method("models.reasoning_efforts")
     def efforts(ctx: CallContext, params: dict) -> dict:

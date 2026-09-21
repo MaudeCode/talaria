@@ -2,7 +2,8 @@
   "config.get": [
     {
       "params": {
-        "profile_home": "<home>"
+        "profile_home": "<home>",
+        "config_path": "<home>/config.yaml"
       },
       "result": {
         "path": "<home>/config.yaml",
