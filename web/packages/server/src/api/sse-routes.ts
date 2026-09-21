@@ -276,39 +276,6 @@ async function nextWithin<T>(next: (signal: AbortSignal) => Promise<T | null>, w
   }
 }
 
-/** `/api/sessions/gateway/stream`: standalone gateway watcher relay (`?probe=1` answers the status JSON). */
-export async function handleGatewaySessionsStream(ctx: RequestContext): Promise<void> {
-  const watcher = ctx.deps.gatewayWatchers.get(ctx.deps.activeProfile())
-  const [payload, status] = gatewayProbePayload(ctx, watcher)
-  if (truthyQuery(ctx.query.get('probe'))) { ctx.json(payload, { status }); return }
-  if (status === 404) { ctx.json({ error: 'agent sessions not enabled' }, { status: 404 }); return }
-  if (status === 503) { ctx.json({ error: 'watcher not started' }, { status: 503 }); return }
-  const sse = claimOrReject(ctx, false)
-  if (!sse) return
-  const abort = new AbortController()
-  ctx.res.on('close', () => { abort.abort() })
-  const sub = watcher.subscribe()
-  try {
-    sse.start()
-    sse.event('sessions_changed', { sessions: initialGatewaySessions(ctx) })
-    for (;;) {
-      if (sse.isClosed || abort.signal.aborted) return
-      const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
-      if (sse.isClosed) return
-      if (event === null) {
-        if (abort.signal.aborted) return
-        if (!watcher.isAlive()) return
-        sse.comment('keepalive')
-        continue
-      }
-      sse.event(event.type, event)
-    }
-  } finally {
-    sub.close()
-    sse.end()
-  }
-}
-
 /** `/api/sessions/events`: global session-list invalidation; `?gateway=1` merges the watcher feed with a `stream` discriminator. */
 export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   const wantGateway = truthyQuery(ctx.query.get('gateway'))

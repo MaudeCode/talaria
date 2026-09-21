@@ -78,7 +78,7 @@ sidecar proxy), `relay`, `e2e`. Auth class: `public`, `auth`, `operator`.
 | R-S7 | `POST /api/session/draft` | browser | auth | server | vitest, fixture | pass | monotonic `_draft_version`; checkpoint 5a: `sessions/drafts.ts`, 409 with the current draft on stale versions |
 | R-S8 | `GET /api/session/worktree/status`, `POST /api/session/worktree/remove` | browser | auth | server | vitest | pass | checkpoint 5b: `workspace/worktrees.ts`; creation goes through the new sidecar `worktree.create` (Agent `_setup_worktree`) |
 | R-S9 | `POST /api/sessions/cleanup_zero_message` | browser | auth | server | vitest | pass | checkpoint 5a |
-| R-S10 | `GET /api/sessions/events`, `GET /api/sessions/gateway/stream` | browser | auth | server | vitest | pass | checkpoint 6: session half; 7f: `?gateway=1` merges the watcher feed with the `stream` discriminator and a 250 ms drain, `gateway_status` probe payload, standalone gateway stream with `?probe=1` |
+| R-S10 | `GET /api/sessions/events` | browser | auth | server | vitest | pass | checkpoint 6: session half; 7f: `?gateway=1` merges the watcher feed with the `stream` discriminator and a 250 ms drain plus the `gateway_status` probe payload; the standalone `GET /api/sessions/gateway/stream` stays dropped (no consumer) |
 | R-S11 | `GET /api/session/anchor-scene`, `POST /api/session/anchor-scene`, `POST /api/session/compression-recovery/start`, `POST /api/session/conversation-rounds`, `GET /api/session/recovery/audit`, `POST /api/session/recovery/repair-safe`, `GET /api/session/lineage/report`, `POST /api/sessions/cleanup`, `GET /api/sessions/gateway/stream`, `GET /api/sessions/<sid>/events`, `GET /api/session/stream` | none | | dropped | dropped | TAL-245 dropped list. `/api/session/stream` reference in `contracts/sse.ts` is a comment only; checkpoint 5a keeps `anchor-scene` GET/POST (browser consumer) in `sessions/anchor.ts` |
 | R-S12 | `GET /api/projects`, `POST /api/projects/create|rename|delete` | browser, ios | auth | server | vitest, fixture | pass | checkpoint 5a: `projects.ts` with profile backfill; cascading unlink on delete |
 
@@ -316,7 +316,7 @@ See `sidecar-rpc.md` for the method surface. Each row is one RPC namespace.
 | ID | Consumer | Verification | Status | Notes |
 |---|---|---|---|---|
 | K1 | iOS app (`app/scripts/validate-upstream-contract`, `scripts/check-previous-app.py`) | ci | pending | |
-| K2 | MCP bin (login, rename, move) | vitest | pending | |
+| K2 | MCP bin (login, rename, move) | vitest | pass | checkpoint 7g (`mcp/server.ts`, bin `talaria-web-mcp`): the seven `mcp_server.py` tools on `@modelcontextprotocol/sdk` over stdio, every read and mutation through the HTTP API (`/api/projects*`, `/api/sessions/search`, `/api/session/rename|move`), password login reused for 25 days, `--profile` as the profile cookie; `delete_project` unassigns only when authenticated, like Python |
 | K3 | Extension SDK v1 and sidecar proxy sample | vitest, pw | pending | |
 | K4 | Relay publisher contract fixture | vitest | pending | |
 | K5 | `contracts/versions.json` and `contract_versions.json` parity | ci | pending | |

@@ -17,7 +17,7 @@ import { settingsRouter } from './api/settings-router.js'
 import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
 import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
-import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleGatewaySessionsStream, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
+import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -156,7 +156,6 @@ const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
   '/api/chat/stream': handleChatStream,
   '/api/session/stream': handleSessionStream,
   '/api/sessions/events': handleSessionEvents,
-  '/api/sessions/gateway/stream': handleGatewaySessionsStream,
   '/api/kanban/events/stream': handleKanbanEventsStream,
   '/api/terminal/output': handleTerminalOutput,
   '/api/approval/stream': handleApprovalStream,

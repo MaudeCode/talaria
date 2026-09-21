@@ -44,11 +44,6 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
   },
   {
-    method: 'GET', path: '/api/sessions/gateway/stream', summary: 'Gateway/agent session watcher relay (state.db polling); `probe=1` answers the status JSON instead of streaming.', tags: ['sessions'],
-    query: { probe: { description: '`1` returns `{enabled, ok, watcher_running, fallback_poll_ms, scope, session_stream_available, session_stream_path, error?}` with 200/404/503.' } },
-    responses: { 200: { description: 'Event stream: initial `sessions_changed` snapshot, then one per state.db change.', contentType: 'text/event-stream' }, 404: { description: '`show_cli_sessions` is off.', contentType: 'application/json' }, 503: { description: 'Watcher not running.', contentType: 'application/json' } },
-  },
-  {
     method: 'GET', path: '/api/sessions/{session_id}/events', summary: 'Per-session run-journal relay with `Last-Event-ID` resume and `session_snapshot` fallback.', tags: ['sessions'],
     query: { after_event_id: { description: 'Resume cursor when the header is unavailable.' } },
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' }, 404: { description: 'Session not found.', contentType: 'application/json' } },

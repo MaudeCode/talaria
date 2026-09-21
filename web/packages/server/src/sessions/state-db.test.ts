@@ -131,12 +131,9 @@ describe('state.db projection', () => {
     expect(snapshotHash([{ session_id: 'b', updated_at: 1 }, { session_id: 'a', updated_at: 2 }])).toBe(snapshotHash([{ session_id: 'a', updated_at: 2 }, { session_id: 'b', updated_at: 1 }]))
   })
 
-  it('serves the gateway stream and the merged sidebar feed with state.db snapshots', async () => {
+  it('serves the merged sidebar feed with state.db snapshots (the standalone gateway stream is dropped)', async () => {
     await s.deps.settings.save({ show_cli_sessions: true })
-    expect(await json(await s.get('/api/sessions/gateway/stream?probe=1'))).toMatchObject({ enabled: true, ok: true, watcher_running: true, scope: 'gateway_sessions', session_stream_available: true })
-    const frames = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { timeoutMs: 3000 })
-    expect(frames[0]?.event).toBe('sessions_changed')
-    expect(((frames[0]?.data as Json).sessions as Json[]).map((r) => r.session_id)).toContain('tg-2')
+    expect((await s.get('/api/sessions/gateway/stream')).status).toBe(404)
     const merged = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway', { timeoutMs: 3000 })
     expect(merged[0]).toMatchObject({ event: 'gateway_status', data: { ok: true, watcher_running: true } })
     expect(merged.some((f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway')).toBe(true)
@@ -147,7 +144,6 @@ describe('state.db projection', () => {
     const liveFrames = await live
     expect(liveFrames.some((f) => (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'))).toBe(true)
     await s.deps.settings.save({ show_cli_sessions: false })
-    expect((await s.get('/api/sessions/gateway/stream')).status).toBe(404)
     const status = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'gateway_status', { timeoutMs: 2000 })
     expect(status[0]?.data).toMatchObject({ ok: false, enabled: false, error: 'agent sessions not enabled' })
   })
