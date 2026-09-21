@@ -1,0 +1,126 @@
+/**
+ * One-to-one ports of the remaining Python regression cases (TAL-245): the
+ * Nous picker signals, import scrubbing, ephemeral turn projection, and
+ * runner event projection. Markers `[py:<file>::<case>]` are verified by
+ * scripts/check-regression-port.js.
+ */
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+import { writeEnvFile } from '../providers/env-file.js'
+import { projectRunnerEventPayload } from '../api/automation-raw.js'
+import { str } from '../util.js'
+
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+
+describe('Nous picker signals', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let loggedIn = false
+  let liveIds: string[] | Error = []
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'anthropic', default: 'claude-sonnet-4-6' } } }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: params.provider === 'nous' ? { logged_in: loggedIn, error: loggedIn ? null : 'not logged in' } : { logged_in: false, error: 'not logged in' } }))
+    sidecar.respond('providers.model_ids', (params) => { if (liveIds instanceof Error) throw liveIds; return { provider: params.provider, model_ids: params.provider === 'nous' ? liveIds : [] } })
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-1234' })
+  })
+  afterAll(() => s.close())
+  const groups = async (): Promise<{ provider_id: string; models: { id: string }[] }[]> => { s.deps.catalog.invalidate(); return (await json(await s.get('/api/models'))).groups as { provider_id: string; models: { id: string }[] }[] }
+
+  it('[py:test_issue1567_nous_picker_capacity_and_symmetry.py::test_picker_includes_nous_when_get_auth_status_logged_in] a logged-in Nous account puts the Nous group in the picker', async () => {
+    loggedIn = true
+    liveIds = ['Hermes-4-70B', 'Hermes-4-405B']
+    const nous = (await groups()).find((g) => g.provider_id === 'nous')
+    expect(nous?.models.map((m) => m.id.replace(/^@nous:/, ''))).toEqual(['Hermes-4-70B', 'Hermes-4-405B'])
+  })
+
+  it('[py:test_issue1567_nous_picker_capacity_and_symmetry.py::test_picker_omits_nous_when_both_auth_signals_false] without a key or a login the Nous group is absent', async () => {
+    loggedIn = false
+    liveIds = ['Hermes-4-70B']
+    expect((await groups()).map((g) => g.provider_id)).not.toContain('nous')
+  })
+
+  it('[py:test_issue1567_nous_picker_capacity_and_symmetry.py::test_authenticated_empty_catalog_omits_nous_group] a logged-in account with an empty live catalog shows no Nous group', async () => {
+    loggedIn = true
+    liveIds = []
+    expect((await groups()).map((g) => g.provider_id)).not.toContain('nous')
+  })
+
+  it('[py:test_issue1567_nous_picker_capacity_and_symmetry.py::test_hermes_cli_unavailable_falls_back_to_static_4] when the live lookup fails the curated Nous models answer', async () => {
+    loggedIn = true
+    liveIds = new SidecarError('hermes_cli unavailable', { condition: 'sidecar_error' })
+    const nous = (await groups()).find((g) => g.provider_id === 'nous')
+    expect(nous).toBeDefined()
+    expect(nous!.models.length).toBeGreaterThanOrEqual(4)
+    expect(nous!.models.every((m) => m.id.startsWith('@nous:'))).toBe(true)
+  })
+})
+
+describe('import scrubbing and ephemeral projection', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => { sidecar = new FakeSidecar(); s = await bootTestServer({ sidecar }) })
+  afterAll(() => s.close())
+
+  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_json_import_strips_internal_aliases_before_persistence] an import drops provider sidecars and row-id aliases but keeps nested alias-named keys', async () => {
+    const res = await post(s, '/api/session/import', {
+      messages: [{ role: 'user', content: { text: 'hi', api_content: 'nested stays' }, api_content: 'provider only', _state_db_row_id: 4, state_db_row_id: 5 }, { role: 'assistant', content: 'yo', _db_row_id: 6 }],
+      tool_calls: [{ name: 'read', api_content: 'gone', _state_db_row_id: 7 }],
+    })
+    expect(res.status, await res.clone().text()).toBe(200)
+    const sid = String(((await json(res)).session as Json).session_id)
+    const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
+    const messages = raw.messages as Json[]
+    for (const m of messages) for (const k of ['api_content', '_state_db_row_id', 'state_db_row_id', '_db_row_id']) expect(m, k).not.toHaveProperty(k)
+    expect((messages[0]!.content as Json).api_content).toBe('nested stays')
+    expect((raw.tool_calls as Json[])[0]).not.toHaveProperty('api_content')
+    expect((raw.tool_calls as Json[])[0]).not.toHaveProperty('_state_db_row_id')
+  })
+
+  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_json_import_rejects_non_list_session_tool_calls] a non-list tool_calls answers 400 and creates nothing', async () => {
+    const before = s.deps.sessionStore.persistedIds().size
+    const res = await post(s, '/api/session/import', { messages: [{ role: 'user', content: 'hi' }], tool_calls: { name: 'not a list' } })
+    expect(res.status).toBe(400)
+    expect(s.deps.sessionStore.persistedIds().size).toBe(before)
+  })
+
+  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_ephemeral_terminal_sse_projects_agent_messages] a btw turn ends with only role and content per message', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    sidecar.respond('chat.start', (params) => ({
+      status: 'completed', messages: [{ role: 'user', content: str(params.user_message), api_content: 'secret', _state_db_row_id: 1 }, { role: 'assistant', content: 'because', api_content: 'secret' }], final_response: 'because', error: null, result_status: 'completed',
+      tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+    }))
+    const started = await json(await post(s, '/api/btw', { session_id: sid, question: 'why?' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    expect(done.ephemeral).toBe(true)
+    const session = done.session as Json
+    expect(session.session_id).toBe(started.session_id)
+    expect(session.messages).toEqual([{ role: 'user', content: expect.any(String) as unknown }, { role: 'assistant', content: 'because' }])
+    expect(existsSync(join(s.state, 'sessions', `${String(started.session_id)}.json`))).toBe(false)
+  })
+})
+
+describe('runner event projection', () => {
+  const message = { role: 'assistant', content: 'visible', api_content: 'provider', _state_db_row_id: 3 }
+
+  it('[py:test_issue6757_redaction_and_runner_sse_fixes.py::test_project_runner_event_payload_strips_api_content_from_session] session snapshots inside runner events lose api_content but keep the envelope', () => {
+    const out = projectRunnerEventPayload({ id: 'evt', status: 'running', session: { session_id: 's', messages: [message] } }) as Json
+    expect(out.status).toBe('running')
+    expect(((out.session as Json).messages as Json[])[0]).toEqual({ role: 'assistant', content: 'visible' })
+  })
+
+  it('[py:test_issue6757_redaction_and_runner_sse_fixes.py::test_project_runner_event_payload_strips_api_content_from_message_shaped] a bare message-shaped payload is projected the same way', () => {
+    const out = projectRunnerEventPayload({ id: 'evt', messages: [message] }) as Json
+    expect(out.id).toBe('evt')
+    expect((out.messages as Json[])[0]).toEqual({ role: 'assistant', content: 'visible' })
+  })
+})

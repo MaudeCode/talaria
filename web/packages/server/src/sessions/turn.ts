@@ -321,7 +321,8 @@ export class TurnRunner {
           if (m.role === 'assistant') { answer = str(m.content); break }
         }
         opts.onDone?.(answer)
-        put('done', { session: { session_id: sessionId, messages: result.messages }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer })
+        // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
+        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer })
         put('stream_end', { session_id: sessionId })
         try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
         deps.store.sessions.delete(sessionId)

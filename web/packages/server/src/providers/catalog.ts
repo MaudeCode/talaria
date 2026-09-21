@@ -127,6 +127,7 @@ export function deduplicateModelIds(groups: ModelGroup[]): void {
 interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean }
 
 export class ProviderCatalog {
+  private readonly liveFailed = new Set<string>()
   private readonly liveIds = new Map<string, { at: number; ids: string[] }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
@@ -226,8 +227,8 @@ export class ProviderCatalog {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return hit?.ids ?? []
     const run = sidecar.call('providers.model_ids', { profile_home: profileHome, provider: pid, ...(opts.force ? { force_refresh: true } : {}) }, { timeoutMs: 30_000 })
-      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids }); return r.model_ids })
-      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); return hit?.ids ?? [] })
+      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids }); this.liveFailed.delete(key); return r.model_ids })
+      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(key); return hit?.ids ?? [] })
       .finally(() => { this.liveInflight.delete(key) })
     this.liveInflight.set(key, run)
     return run
@@ -376,6 +377,8 @@ export class ProviderCatalog {
       if (!raw.length && (this.providerHasKey(pid, config, envValues) || oauthLoggedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
+        // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
+        else if (pid === 'nous' && !this.liveFailed.has(`${profileHome}\0${pid}`)) continue
       }
       if (!raw.length) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })

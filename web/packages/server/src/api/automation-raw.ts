@@ -10,6 +10,7 @@ import { terminalGate } from './automation-router.js'
 import { checkSameOriginBrowserRequest } from '../http/origin.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
+import { stripPublicInternalFields } from '../redact.js'
 import type { TerminalItem } from '../tools/terminal.js'
 
 const KANBAN_POLL_MS = 1_000
@@ -55,7 +56,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
         if (events.length) cursor = Number(page.cursor) || cursor
       } catch { events = [] }
       if (sse.isClosed) return
-      if (events.length) { sse.event('events', { events, cursor }, String(cursor)); lastWrite = Date.now() }
+      if (events.length) { sse.event('events', { events: events.map((e) => projectRunnerEventPayload(e)), cursor }, String(cursor)); lastWrite = Date.now() }
       else if (Date.now() - lastWrite >= KANBAN_HEARTBEAT_MS) { sse.comment('keepalive'); lastWrite = Date.now() }
       await sleep(KANBAN_POLL_MS, abort.signal)
     }
@@ -119,6 +120,21 @@ export function handleExtensionStatic(ctx: RequestContext): void {
   const headers: Record<string, string> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
   if (file.html) { headers['Content-Security-Policy'] = EXTENSION_PANEL_SANDBOX_CSP; headers['X-Frame-Options'] = 'SAMEORIGIN' }
   ctx.send({ status: 200, headers, body: file.body, security: true })
+}
+
+/**
+ * Python `_project_runner_event_payload`: runner events relay session snapshots (`session.messages`) or bare
+ * message-shaped payloads (`messages`) to the browser; provider sidecars and row-id aliases never leave the server.
+ */
+export function projectRunnerEventPayload<T>(payload: T): T {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload
+  const out: Record<string, unknown> = { ...(payload as Record<string, unknown>) }
+  const session = out.session
+  if (session && typeof session === 'object' && !Array.isArray(session) && Array.isArray((session as Record<string, unknown>).messages)) {
+    out.session = { ...(session as Record<string, unknown>), messages: stripPublicInternalFields((session as Record<string, unknown>).messages, { messageRecords: true }) }
+  }
+  if (Array.isArray(out.messages)) out.messages = stripPublicInternalFields(out.messages, { messageRecords: true })
+  return out as T
 }
 
 export function matchSidecarProxy(path: string): [string, string] | null {
