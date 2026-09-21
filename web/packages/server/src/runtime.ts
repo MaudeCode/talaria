@@ -8,6 +8,8 @@ import { AuthStore } from './auth/store.js'
 import { OidcService } from './auth/oidc.js'
 import { PasskeyStore } from './auth/passkeys.js'
 import { PresenceLeases, RelayService } from './sessions/relay.js'
+import { CliSessionSource } from './sessions/cli-sessions.js'
+import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { detectWebuiVersion, loadReleaseInfo } from './release.js'
@@ -58,6 +60,8 @@ export interface CreateDepsOptions extends LoadConfigOptions {
   fetch?: typeof fetch
   /** `node-pty` module override (tests inject a fake); null disables the terminal. */
   pty?: import('./tools/terminal.js').PtyModuleLike | null
+  /** Gateway watcher poll interval (tests shorten the 5 s default). */
+  gatewayPollMs?: number
 }
 
 export function packageVersion(): string | undefined {
@@ -151,8 +155,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const shares = new ShareStore(resolve(config.stateDir, 'shares'), now)
   const yoloSessions = new Set<string>()
   const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
+  const cliSessions = new CliSessionSource({ store, profileHome, lastWorkspace: (p) => workspaces.lastWorkspace(p), now, log })
+  const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
   const sessions = new SessionService({
     store,
+    cliSessions: (profile, o) => cliSessions.load(profile, o),
+    profileHome,
     drafts,
     events,
     workspaces,
@@ -337,6 +345,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     profiles,
     onboarding,
     agentVersion: () => sidecar?.describe?.agent_version ?? sidecar?.describe?.pinned_version ?? release.compatibleAgent.version,
+    cliSessions,
+    gatewayWatchers,
     relay,
     oidc,
     passkeys,

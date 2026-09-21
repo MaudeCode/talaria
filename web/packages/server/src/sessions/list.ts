@@ -10,6 +10,8 @@ import { createHash } from 'node:crypto'
 import { redactText } from '../redact.js'
 import { Session, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, MESSAGING_SOURCES as STATE_DB_MESSAGING_SOURCES } from './state-db.js'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -223,7 +225,6 @@ function sidecarMtimeAfterIndexTimestamp(store: SessionStore, row: Row): boolean
   }
 }
 
-import { statSync } from 'node:fs'
 function statSyncMtime(path: string): number {
   return statSync(path).mtimeMs / 1000
 }
@@ -349,6 +350,156 @@ export interface ListParams {
   archivedOffset: number
   isolatedProfileMode: boolean
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
+  /** state.db rows for the sidebar (Python `get_cli_sessions`); omitted when no non-WebUI source is shown. */
+  cliRows?: Row[]
+  /** Gateway `sessions.json` identity map for the messaging dedupe (Python `_load_gateway_session_identity_map`). */
+  gatewayIdentity?: Map<string, GatewayIdentity>
+  sourceFilter?: string | null
+}
+
+export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
+
+const first = (...values: unknown[]): string => { for (const v of values) { if (v === null || v === undefined) continue; const t = str(v).trim(); if (t) return t } return '' }
+const STALE_MESSAGING_END_REASONS = new Set(['session_reset', 'session_switch'])
+const identityCache = new Map<string, { mtime: number; map: Map<string, GatewayIdentity> }>()
+
+/** Python `_load_gateway_session_identity_map`: `<home>/sessions/sessions.json` keyed by session id, cached on mtime. */
+export function loadGatewaySessionIdentityMap(path: string): Map<string, GatewayIdentity> {
+  if (!existsSync(path)) return new Map()
+  let mtime: number
+  try { mtime = statSync(path).mtimeMs } catch { return new Map() }
+  const hit = identityCache.get(path)
+  if (hit?.mtime === mtime) return new Map(hit.map)
+  let raw: unknown
+  try { raw = JSON.parse(readFileSync(path, 'utf8')) } catch { return new Map() }
+  const map = new Map<string, GatewayIdentity>()
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const entry of Object.values(raw as Record<string, unknown>)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+      const e = entry as Row
+      const sid = first(e.session_id)
+      if (!sid) continue
+      const origin = (e.origin && typeof e.origin === 'object' && !Array.isArray(e.origin) ? e.origin : {}) as Row
+      const platform = first(origin.platform, e.platform)
+      map.set(sid, { session_key: first(e.session_key, e.key), chat_id: first(origin.chat_id, e.chat_id), thread_id: first(origin.thread_id, e.thread_id), chat_type: first(origin.chat_type, e.chat_type), user_id: first(origin.user_id, e.user_id), platform, raw_source: platform })
+    }
+  }
+  identityCache.set(path, { mtime, map })
+  return new Map(map)
+}
+
+const isKnownMessagingSource = (raw: string): boolean => STATE_DB_MESSAGING_SOURCES.has(raw.trim().toLowerCase())
+
+function sessionMessagingRawSource(row: Row): string {
+  const raw = first(row.raw_source, row.source_tag, row.source, row.platform) || first(row.source_label) || 'messaging'
+  return raw.toLowerCase()
+}
+
+/** Python `_is_messaging_session_record`. */
+export function isMessagingSessionRecord(row: Row): boolean {
+  if (str(row.session_source) === 'messaging') return true
+  return isKnownMessagingSource(first(row.raw_source, row.source_tag, row.source, row.source_label))
+}
+
+/** Python `_merge_cli_sidebar_metadata`: state.db truth for drifting metadata, UI-owned archived/pinned kept. */
+export function mergeCliSidebarMetadata(ui: Row, meta: Row): Row {
+  const merged: Row = { ...ui, is_cli_session: isStateDbCliRow(meta) }
+  for (const key of ['source_tag', 'raw_source', 'session_source', 'source_label', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'platform', 'parent_session_id', 'end_reason', 'actual_message_count', '_lineage_root_id', '_lineage_tip_id', '_compression_segment_count']) {
+    const value = first(meta[key])
+    if (value) merged[key] = value
+  }
+  if (meta.created_at !== null && meta.created_at !== undefined) merged.created_at = meta.created_at
+  if (meta.updated_at !== null && meta.updated_at !== undefined) merged.updated_at = meta.updated_at
+  if (meta.last_message_at !== null && meta.last_message_at !== undefined) merged.last_message_at = meta.last_message_at
+  if (meta.message_count !== null && meta.message_count !== undefined) merged.message_count = Math.max(num(merged.message_count), num(meta.message_count))
+  else if (meta.actual_message_count !== null && meta.actual_message_count !== undefined) merged.message_count = Math.max(num(merged.message_count), num(meta.actual_message_count))
+  if (meta.title && (!merged.title || merged.title === 'Untitled')) merged.title = meta.title
+  if (meta.model && (!merged.model || merged.model === 'unknown')) merged.model = meta.model
+  return merged
+}
+
+function sessionSourceIsWebui(row: Row): boolean {
+  return ['source_tag', 'raw_source', 'session_source', 'source'].some((k) => str(row[k]).trim().toLowerCase() === 'webui')
+}
+
+function sessionLineageIds(row: Row): Set<string> {
+  const ids = new Set<string>()
+  for (const key of ['session_id', '_lineage_root_id', '_lineage_tip_id']) if (row[key]) ids.add(str(row[key]))
+  return ids
+}
+
+/** Python `_dedupe_cli_sidebar_sessions_for_api`: additive state rows, keeping project-hidden background rows addressable. */
+export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, opts: { showCli: boolean; showCron: boolean; showWebhook: boolean; showKanban: boolean; sourceFilter: string | null; requestVisibilityOverrides: boolean }): Row[] {
+  const sf = str(opts.sourceFilter).trim().toLowerCase()
+  const showCron = opts.showCron || sf === 'cron'
+  const showWebhook = opts.showWebhook || sf === 'webhook'
+  const showKanban = opts.showKanban || sf === 'kanban'
+  const candidates = cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && isCliSessionRowVisible(r))
+  const visible = candidates.filter((r) => (!isIntentionallyBackground(r) && opts.showCli) || (isIntentionallyBackground(r) && !hideFromDefaultSidebar(r, { showCron, showWebhook, showKanban })))
+  if (opts.requestVisibilityOverrides) return visible
+  return includeProjectHiddenBackground(candidates, visible)
+}
+
+function messagingSessionIdentity(row: Row, raw: string, identity: Map<string, GatewayIdentity>, isPreCompressionContinuation: (row: Row) => boolean): string {
+  const sid = first(row.session_id)
+  if (sid && isPreCompressionContinuation(row)) return `${raw}|session_id:${sid}`
+  const meta = identity.get(sid) ?? null
+  const sessionKey = first(meta?.session_key, row.session_key, row.gateway_session_key)
+  if (sessionKey) return `${raw}|session_key:${sessionKey}`
+  const chatId = first(meta?.chat_id, row.chat_id, row.origin_chat_id)
+  const threadId = first(meta?.thread_id, row.thread_id)
+  const chatType = first(meta?.chat_type, row.chat_type)
+  const userId = first(meta?.user_id, row.user_id, row.origin_user_id)
+  const parts: string[] = []
+  if (chatType) parts.push(`chat_type:${chatType}`)
+  if (chatId) parts.push(`chat_id:${chatId}`)
+  if (threadId) parts.push(`thread_id:${threadId}`)
+  if (userId) parts.push(`user_id:${userId}`)
+  return parts.length ? `${raw}|${parts.join('|')}` : raw
+}
+
+/** Python `_keep_latest_messaging_session_per_source`. */
+export function keepLatestMessagingSessionPerSource(rows: Row[], opts: { showPrevious: boolean; identity: Map<string, GatewayIdentity>; isPreCompressionSnapshotId: (sid: string) => boolean }): Row[] {
+  if (opts.showPrevious) return [...rows].sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
+  const isPreCompressionContinuation = (row: Row): boolean => { const parent = first(row.parent_session_id); return Boolean(parent && opts.isPreCompressionSnapshotId(parent)) }
+  const activeIds = new Set([...opts.identity.keys()].filter(Boolean))
+  const sessionIds = new Set(rows.map((r) => first(r.session_id)))
+  const visibleActiveIds = new Set([...activeIds].filter((id) => sessionIds.has(id)))
+  const activeSources = new Set([...opts.identity.entries()].filter(([sid]) => visibleActiveIds.has(sid)).map(([, m]) => first(m.raw_source, m.platform).toLowerCase()).filter(isKnownMessagingSource))
+  const shouldHideStale = (row: Row): boolean => {
+    const raw = sessionMessagingRawSource(row)
+    if (!isKnownMessagingSource(raw) || !visibleActiveIds.size || !activeSources.has(raw)) return false
+    const sid = first(row.session_id)
+    if (sid && visibleActiveIds.has(sid)) return false
+    if (STALE_MESSAGING_END_REASONS.has(first(row.end_reason))) return true
+    const meta = opts.identity.get(sid) ?? null
+    const durable = Boolean(first(meta?.session_key, row.session_key, row.gateway_session_key, meta?.chat_id, row.chat_id, row.origin_chat_id, meta?.thread_id, row.thread_id))
+    if (!durable) return !isPreCompressionContinuation(row)
+    if (row.parent_session_id && !isPreCompressionContinuation(row)) return true
+    return num(row.message_count) <= 0 && num(row.actual_message_count) <= 0
+  }
+  const kept: Row[] = []
+  const bestBySource = new Map<string, Row>()
+  for (const row of rows) {
+    const raw = sessionMessagingRawSource(row)
+    const key = isKnownMessagingSource(raw) ? messagingSessionIdentity(row, raw, opts.identity, isPreCompressionContinuation) : null
+    if (!key) { kept.push(row); continue }
+    if (shouldHideStale(row)) continue
+    const current = bestBySource.get(key)
+    if (!current || sessionSortTimestamp(row) > sessionSortTimestamp(current)) bestBySource.set(key, row)
+  }
+  kept.push(...bestBySource.values())
+  kept.sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
+  return kept
+}
+
+export const CLI_VISIBLE_SESSION_CAP = 20
+
+/** Python `_cap_recent_cli_sessions`. */
+export function capRecentCliSessions(rows: Row[], cap = CLI_VISIBLE_SESSION_CAP): Row[] {
+  if (cap <= 0) return rows
+  let seen = 0
+  return rows.filter((r) => { if (!isCliSessionForSettings(r)) return true; seen += 1; return seen <= cap })
 }
 
 function sessionHasServerVisibleMessages(row: Row): boolean {
@@ -397,14 +548,32 @@ export interface ListPayload {
   settings: Record<string, boolean>
 }
 
-/** Python `_build_session_list_cache_payload` without the state.db merge. */
+/** Python `_build_session_list_cache_payload`; the orphaned-sidecar prune (#3238/#4985) is not applied. */
 export function buildSessionListPayload(store: SessionStore, params: ListParams): ListPayload {
   let webuiSessions: Row[] = allSessions(store, { sidebarMetadataOnly: true }).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
-  webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r) || params.showCliSessions)
+  let dedupedCli: Row[] = []
+  if (params.cliRows) {
+    const cliById = new Map(params.cliRows.map((r) => [str(r.session_id), r]))
+    webuiSessions = webuiSessions.map((s) => {
+      const meta = cliById.get(str(s.session_id))
+      if (!meta) return s
+      if (isMessagingSessionRecord(meta)) { const merged = mergeCliSidebarMetadata(s, meta); if (merged.session_id !== meta.session_id) merged.session_id = meta.session_id; return merged }
+      for (const key of ['source_tag', 'raw_source', 'session_source', 'source_label']) if (!s[key] && meta[key]) s[key] = meta[key]
+      return s
+    })
+    webuiSessions = webuiSessions.map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
+    if (!params.showCliSessions) webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
+    webuiSessions = webuiSessions.filter(isCliSessionRowVisible)
+    const represented = new Set<string>()
+    for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
+    dedupedCli = dedupeCliSidebarSessions(params.cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
+  } else {
+    webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
+  }
   if (params.requestVisibilityOverrides) {
     webuiSessions = webuiSessions.filter((r) => !hideFromDefaultSidebar(r, { showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions }))
   }
-  const merged = webuiSessions.sort((a, b) => (num(b.last_message_at) || num(b.updated_at)) - (num(a.last_message_at) || num(a.updated_at)))
+  const merged = [...webuiSessions, ...dedupedCli].sort((a, b) => (num(b.last_message_at) || num(b.updated_at)) - (num(a.last_message_at) || num(a.updated_at)))
   let scoped: Row[]
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
@@ -412,8 +581,15 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     scoped = merged.filter((r) => params.profilesMatch(str(r.profile) || null, params.activeProfile))
     otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
   }
-  let archivedScoped = [...scoped]
-  let visibleScoped = scoped.filter((r) => !r.archived)
+  const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()
+  const isPreCompressionSnapshotId = (sid: string): boolean => { if (!/^[a-z0-9_]+$/.test(sid)) return false; return Boolean(store.loadMetadataOnly(sid)?.pre_compression_snapshot) }
+  const dedupeOpts = { showPrevious: params.showPreviousMessagingSessions, identity, isPreCompressionSnapshotId }
+  let archivedScoped = keepLatestMessagingSessionPerSource([...scoped], dedupeOpts)
+  let visibleScoped = keepLatestMessagingSessionPerSource(scoped.filter((r) => !r.archived), dedupeOpts)
+  if (params.showCliSessions) {
+    archivedScoped = capRecentCliSessions(archivedScoped)
+    visibleScoped = capRecentCliSessions(visibleScoped)
+  }
   if (params.visibleOnly) {
     archivedScoped = archivedScoped.filter(sessionHasServerVisibleMessages)
     visibleScoped = visibleScoped.filter(sessionHasServerVisibleMessages)

@@ -18160,6 +18160,45 @@
         }
       }
     },
+    "/api/sessions/gateway/stream": {
+      "get": {
+        "summary": "Gateway/agent session watcher relay (state.db polling); `probe=1` answers the status JSON instead of streaming.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "probe",
+            "in": "query",
+            "required": false,
+            "description": "`1` returns `{enabled, ok, watcher_running, fallback_poll_ms, scope, session_stream_available, session_stream_path, error?}` with 200/404/503.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream: initial `sessions_changed` snapshot, then one per state.db change.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "404": {
+            "description": "`show_cli_sessions` is off.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "503": {
+            "description": "Watcher not running.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/events": {
       "get": {
         "summary": "Per-session run-journal relay with `Last-Event-ID` resume and `session_snapshot` fallback.",

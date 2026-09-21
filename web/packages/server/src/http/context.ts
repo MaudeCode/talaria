@@ -48,6 +48,8 @@ import type { ExtensionService } from '../tools/extensions.js'
 import type { TerminalRegistry } from '../tools/terminal.js'
 import type { OidcService } from '../auth/oidc.js'
 import type { RelayService } from '../sessions/relay.js'
+import type { CliSessionSource } from '../sessions/cli-sessions.js'
+import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
 
 export interface AppDeps {
@@ -130,6 +132,9 @@ export interface AppDeps {
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter
   fetch: typeof fetch
+  // ── state.db projection and gateway watcher (checkpoint 7f) ──
+  cliSessions: CliSessionSource
+  gatewayWatchers: GatewayWatcherRegistry
   // ── Talaria Relay (checkpoint 7e) ──
   relay: RelayService
   // ── OIDC and passkeys (checkpoint 7d) ──

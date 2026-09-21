@@ -263,7 +263,7 @@ describe('chat turns through the sidecar', () => {
     const frames = await events
     expect(frames.some((f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'sessions')).toBe(true)
     const gateway = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'gateway_status')
-    expect(gateway[0]?.data).toMatchObject({ ok: false, scope: 'gateway_sessions', session_stream_path: '/api/session/stream' })
+    expect(gateway[0]?.data).toMatchObject({ ok: true, watcher_running: true, scope: 'gateway_sessions', session_stream_path: '/api/session/stream' })
     const session = await s.sse(`/api/session/stream?session_id=${sid}&known_count=0`, (f) => f.event === 'initial')
     expect(session[0]).toMatchObject({ event: 'initial', data: { session_id: sid } })
     const approvals = await s.sse(`/api/approval/stream?session_id=${sid}`, (f) => f.event === 'initial')

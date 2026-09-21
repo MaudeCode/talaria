@@ -20,6 +20,8 @@ import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, type ShareStore } from './shares.js'
 import type { ProjectStore } from '../projects.js'
+import { loadGatewaySessionIdentityMap } from './list.js'
+import { join } from 'node:path'
 
 export class HttpFailure extends Error {
   constructor(readonly status: number, message: string, readonly extra: Record<string, unknown> = {}) {
@@ -58,6 +60,9 @@ export interface SessionServiceDeps {
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
+  /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
+  cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Row[]
+  profileHome: (profile: string) => string
 }
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -255,8 +260,13 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
-  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch'>): { body: ListResponse; etag: string } {
-    const payload = buildSessionListPayload(this.store, { ...params, activeProfile: this.deps.activeProfile(), isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity'>): { body: ListResponse; etag: string } {
+    const activeProfile = this.deps.activeProfile()
+    const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
+    // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
+    const cliRows = wantState ? this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
+    const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
+    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), gatewayIdentity, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now())
   }
 

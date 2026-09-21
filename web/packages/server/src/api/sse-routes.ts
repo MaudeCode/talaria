@@ -10,6 +10,7 @@ import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent } fro
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
+import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
@@ -244,30 +245,106 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   }
 }
 
-/** `/api/sessions/events`: global session-list invalidation. */
+/** Python `_gateway_sse_probe_payload`: status of the optional gateway stream only, never of `/api/session/stream`. */
+export function gatewayProbePayload(ctx: RequestContext, watcher: GatewayWatcher | null): [Record<string, unknown>, number] {
+  const enabled = Boolean(ctx.deps.settings.load().show_cli_sessions)
+  const alive = watcher?.isAlive() ?? false
+  const payload: Record<string, unknown> = { enabled, fallback_poll_ms: 30000, ok: enabled && alive, watcher_running: alive, scope: 'gateway_sessions', session_stream_available: true, session_stream_path: '/api/session/stream' }
+  if (!enabled) { payload.error = 'agent sessions not enabled'; return [payload, 404] }
+  if (!alive) { payload.error = 'watcher not started'; return [payload, 503] }
+  return [payload, 200]
+}
+
+const truthyQuery = (value: string | null): boolean => ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase())
+const MERGED_SIDEBAR_DRAIN_MS = 250
+
+function initialGatewaySessions(ctx: RequestContext): Record<string, unknown>[] {
+  return ctx.deps.cliSessions.load(ctx.deps.activeProfile(), {})
+}
+
+/** Wait for the next session event, or null after `waitMs` / request abort. */
+async function nextWithin<T>(next: (signal: AbortSignal) => Promise<T | null>, waitMs: number, abort: AbortSignal): Promise<T | null> {
+  const timer = new AbortController()
+  const timeout = setTimeout(() => { timer.abort() }, waitMs)
+  const onAbort = (): void => { timer.abort() }
+  abort.addEventListener('abort', onAbort, { once: true })
+  try {
+    return await next(timer.signal)
+  } finally {
+    clearTimeout(timeout)
+    abort.removeEventListener('abort', onAbort)
+  }
+}
+
+/** `/api/sessions/gateway/stream`: standalone gateway watcher relay (`?probe=1` answers the status JSON). */
+export async function handleGatewaySessionsStream(ctx: RequestContext): Promise<void> {
+  const watcher = ctx.deps.gatewayWatchers.get(ctx.deps.activeProfile())
+  const [payload, status] = gatewayProbePayload(ctx, watcher)
+  if (truthyQuery(ctx.query.get('probe'))) { ctx.json(payload, { status }); return }
+  if (status === 404) { ctx.json({ error: 'agent sessions not enabled' }, { status: 404 }); return }
+  if (status === 503) { ctx.json({ error: 'watcher not started' }, { status: 503 }); return }
+  const sse = claimOrReject(ctx, false)
+  if (!sse) return
+  const abort = new AbortController()
+  ctx.res.on('close', () => { abort.abort() })
+  const sub = watcher.subscribe()
+  try {
+    sse.start()
+    sse.event('sessions_changed', { sessions: initialGatewaySessions(ctx) })
+    for (;;) {
+      if (sse.isClosed || abort.signal.aborted) return
+      const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
+      if (sse.isClosed) return
+      if (event === null) {
+        if (abort.signal.aborted) return
+        if (!watcher.isAlive()) return
+        sse.comment('keepalive')
+        continue
+      }
+      sse.event(event.type, event)
+    }
+  } finally {
+    sub.close()
+    sse.end()
+  }
+}
+
+/** `/api/sessions/events`: global session-list invalidation; `?gateway=1` merges the watcher feed with a `stream` discriminator. */
 export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
-  const wantGateway = ['1', 'true', 'yes'].includes((ctx.query.get('gateway') ?? '').toLowerCase())
+  const wantGateway = truthyQuery(ctx.query.get('gateway'))
+  let watcher: GatewayWatcher | null = null
+  let gatewayStatus: Record<string, unknown> | null = null
+  if (wantGateway) {
+    watcher = ctx.deps.gatewayWatchers.get(ctx.deps.activeProfile())
+    gatewayStatus = gatewayProbePayload(ctx, watcher)[0]
+  }
   const sub = ctx.deps.events.subscribe()
   const sse = claimOrReject(ctx, false)
   if (!sse) { sub.close(); return }
   const abort = new AbortController()
   ctx.res.on('close', () => { abort.abort() })
+  const gatewaySub = wantGateway && gatewayStatus?.ok === true && watcher ? watcher.subscribe() : null
   try {
     sse.start()
-    if (wantGateway) {
-      // The gateway watcher (state.db polling) lands with the profile domain; until then the feed reports itself unusable so clients poll.
-      sse.event('gateway_status', { enabled: Boolean(ctx.deps.settings.load().show_cli_sessions), fallback_poll_ms: 30000, ok: false, watcher_running: false, scope: 'gateway_sessions', session_stream_available: true, session_stream_path: '/api/session/stream', error: 'watcher not started' })
-    }
+    if (wantGateway && gatewayStatus) sse.event('gateway_status', gatewayStatus)
+    if (gatewaySub) sse.event('sessions_changed', { type: 'sessions_changed', sessions: initialGatewaySessions(ctx), stream: 'gateway' })
     let lastWrite = Date.now()
     for (;;) {
       if (sse.isClosed) return
-      const timer = new AbortController()
-      const timeout = setTimeout(() => { timer.abort() }, SSE_HEARTBEAT_INTERVAL_MS)
-      const onAbort = (): void => { timer.abort() }
-      abort.signal.addEventListener('abort', onAbort, { once: true })
-      const event = await sub.next(timer.signal)
-      clearTimeout(timeout)
-      abort.signal.removeEventListener('abort', onAbort)
+      // ponytail: 250 ms alternating drain instead of a fan-in; the watcher polls on a multi-second cadence.
+      if (gatewaySub) {
+        for (;;) {
+          const pending = await nextWithin((signal) => gatewaySub.next(signal), 0, abort.signal)
+          if (pending === null) {
+            // The watcher stopped (a profile switch swapped it): end the response so EventSource reconnects both halves.
+            if (!watcher?.isAlive() || abort.signal.aborted) return
+            break
+          }
+          sse.event(pending.type, { ...pending, stream: 'gateway' })
+          lastWrite = Date.now()
+        }
+      }
+      const event = await nextWithin((signal) => sub.next(signal), gatewaySub ? MERGED_SIDEBAR_DRAIN_MS : SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
       if (sse.isClosed) return
       if (!event) {
         if (Date.now() - lastWrite < SSE_HEARTBEAT_INTERVAL_MS) continue
@@ -280,6 +357,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
     }
   } finally {
     sub.close()
+    gatewaySub?.close()
     sse.end()
   }
 }
