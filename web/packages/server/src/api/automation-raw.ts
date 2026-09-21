@@ -14,6 +14,7 @@ import type { TerminalItem } from '../tools/terminal.js'
 const KANBAN_POLL_MS = 1_000
 const KANBAN_HEARTBEAT_MS = 15_000
 const PROXY_MAX_RESPONSE = 512 * 1024
+const PROXY_MAX_REDIRECTS = 10
 const PROXY_RE = /^\/api\/extensions\/([^/]+)\/sidecar(?:\/(.*))?$/
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
 
@@ -119,6 +120,23 @@ export function handleExtensionStatic(ctx: RequestContext): void {
   ctx.send({ status: 200, headers, body: file.body, security: true })
 }
 
+/** Python `_read_extension_sidecar_proxy_body`: read at most `cap` bytes, aborting the upstream stream past it (`null`). */
+async function readCapped(res: Response, cap: number): Promise<Buffer | null> {
+  if (!res.body) return Buffer.alloc(0)
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    const value: Uint8Array = chunk.value
+    total += value.byteLength
+    if (total > cap) { await reader.cancel(); return null }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks)
+}
+
 export function matchSidecarProxy(path: string): [string, string] | null {
   const m = PROXY_RE.exec(path)
   return m ? [m[1] ?? '', m[2] ?? ''] : null
@@ -147,15 +165,26 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
     if (typeof value === 'string') headers[name] = value
   }
   try {
-    const res = await ctx.deps.fetch(target.upstream_url, { method: ctx.method, headers, ...(body ? { body } : {}), redirect: 'manual', signal: AbortSignal.timeout(10_000) })
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location') ?? ''
+    // Python `_extension_sidecar_proxy_same_origin_opener`: redirects are followed here, never handed to the browser,
+    // and every hop must stay on the declared origin (urllib's default hop limit).
+    const allowedOrigin = new URL(target.origin).origin
+    let url = target.upstream_url
+    let method = ctx.method
+    let requestBody: Buffer | null = body
+    let res: Response
+    for (let hop = 0; ; hop += 1) {
+      res = await ctx.deps.fetch(url, { method, headers, ...(requestBody ? { body: requestBody } : {}), redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+      if (res.status < 300 || res.status >= 400 || !res.headers.has('location')) break
       let resolved: URL | null = null
-      try { resolved = new URL(location, target.upstream_url) } catch { resolved = null }
-      if (resolved?.origin !== new URL(target.origin).origin) { ctx.json({ error: 'Extension sidecar redirect crossed declared origin' }, { status: 502 }); return }
+      try { resolved = new URL(res.headers.get('location') ?? '', url) } catch { resolved = null }
+      if (resolved?.origin !== allowedOrigin) { ctx.json({ error: 'Extension sidecar redirect crossed declared origin' }, { status: 502 }); return }
+      if (hop >= PROXY_MAX_REDIRECTS) { ctx.json({ error: 'Extension sidecar redirect limit exceeded' }, { status: 502 }); return }
+      await res.body?.cancel()
+      url = resolved.href
+      if ((res.status === 301 || res.status === 302 || res.status === 303) && method !== 'GET' && method !== 'HEAD') { method = 'GET'; requestBody = null; delete headers['content-type']; delete headers['Content-Type'] }
     }
-    const raw = Buffer.from(await res.arrayBuffer())
-    if (raw.length > PROXY_MAX_RESPONSE) { ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 }); return }
+    const raw = await readCapped(res, PROXY_MAX_RESPONSE)
+    if (raw === null) { ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 }); return }
     const out: Record<string, string> = {}
     let contentType = false
     res.headers.forEach((value, name) => {

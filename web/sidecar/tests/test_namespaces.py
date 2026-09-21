@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -20,7 +21,10 @@ def _seed_state_db(home: pathlib.Path) -> None:
         "db = SessionDB(pathlib.Path(sys.argv[2]) / 'state.db'); db.create_session('cli-1', source='cli'); "
         "db.append_message('cli-1', role='user', content='hi'); db.close()"
     )
-    subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(home)], check=True, env={"HOME": str(home.parent), "HERMES_HOME": str(home), "PATH": "/usr/bin:/bin", "HERMES_STATE_DB_GUARD_BYPASS": "1"})
+    env = {"HOME": str(home.parent), "HERMES_HOME": str(home), "PATH": "/usr/bin:/bin", "HERMES_STATE_DB_GUARD_BYPASS": "1"}
+    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
+        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(home)], check=True, env=env)
 
 
 def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
