@@ -214,7 +214,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests[0]?.url).toBe('http://localhost:8080/v1/audio/speech')
   })
 
-  it.each(['http://169.254.169.254/v1', 'https://user:pass@api.example.com/v1', 'http://user:pass@localhost:8080/v1', 'https://169.254.169.254/v1', 'https://10.0.0.5/v1', 'https://192.168.1.10/v1', 'https://127.0.0.1/v1', 'https://[::1]/v1'])(
+  it.each(['http://169.254.169.254/v1', 'https://user:pass@api.example.com/v1', 'http://user:pass@localhost:8080/v1', 'https://169.254.169.254/v1', 'https://10.0.0.5/v1', 'https://192.168.1.10/v1', 'https://127.0.0.1/v1', 'https://[::1]/v1', 'https://[::ffff:7f00:1]/v1', 'https://[64:ff9b::a9fe:a9fe]/v1'])(
     '[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_invalid_base_url_config] base_url %s answers 400', async (baseUrl) => {
       fresh()
       setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })

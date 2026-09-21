@@ -29,6 +29,9 @@ export async function isAlreadyServing(host: string, port: number): Promise<bool
   })
 }
 
+export const REQUEST_TIMEOUT_MS = 120_000
+const CONNECTIONS_CHECKING_INTERVAL_MS = 5_000
+
 export interface RunningServer {
   server: Server
   scheme: 'http' | 'https'
@@ -46,19 +49,21 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const listener = (req: Parameters<App['handler']>[0], res: Parameters<App['handler']>[1]) => { void app.handler(req, res) }
   if (config.tlsCert && config.tlsKey) {
     try {
-      server = createHttpsServer({ cert: readFileSync(config.tlsCert), key: readFileSync(config.tlsKey), minVersion: 'TLSv1.2' }, listener)
+      server = createHttpsServer({ cert: readFileSync(config.tlsCert), key: readFileSync(config.tlsKey), minVersion: 'TLSv1.2', connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
       scheme = 'https'
       log(`  TLS enabled: cert=${config.tlsCert}, key=${config.tlsKey}`)
     } catch (error) {
       log(`[!!] WARNING: TLS setup failed (${String(error)}), falling back to HTTP`)
-      server = createHttpServer(listener)
+      server = createHttpServer({ connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
     }
   } else {
-    server = createHttpServer(listener)
+    server = createHttpServer({ connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
   }
   server.keepAliveTimeout = 30_000
   server.headersTimeout = 35_000
-  server.requestTimeout = 0
+  // Bounds receiving the request (headers and body) only; a streamed response outlives it. A client that drips or
+  // stalls an in-limit body therefore holds a socket for at most this long (Python's handler timeout was 30 s).
+  server.requestTimeout = REQUEST_TIMEOUT_MS
   server.on('connection', (socket) => {
     socket.setNoDelay(true)
     socket.setKeepAlive(true, 10_000)

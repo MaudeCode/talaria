@@ -3,7 +3,7 @@
  * secret (Python `ipaddress.is_global` is False): every IANA special-purpose
  * range — loopback, private, link-local, CGNAT, benchmarking, documentation,
  * discard-only, NAT64 local-use translation, the `2001::/23` special block,
- * 6to4, multicast, reserved, unspecified — plus IPv4-mapped forms of them. The
+ * 6to4, multicast, reserved, unspecified — plus IPv4-mapped and NAT64 forms of them. The
  * small global carve-outs inside those blocks stay refused: stricter is fine here.
  */
 import { BlockList, isIP } from 'node:net'
@@ -19,12 +19,44 @@ for (const [net, bits] of [
   ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
 ] as const) NON_GLOBAL.addSubnet(net, bits, 'ipv6')
 
-/** True for any address that is not globally routable; unparseable input is refused too. */
+/** The eight 16-bit groups of an IPv6 literal (dotted-quad tail accepted), or null when it is not one. */
+function ipv6Groups(address: string): number[] | null {
+  if (isIP(address) !== 6) return null
+  let text = address
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text)
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number]
+    text = text.slice(0, dotted.index) + ((a << 8) | b).toString(16) + ':' + ((c << 8) | d).toString(16)
+  }
+  const [head, tail] = text.split('::')
+  const heads = head ? head.split(':').map((g) => parseInt(g, 16)) : []
+  const tails = tail ? tail.split(':').map((g) => parseInt(g, 16)) : []
+  const fill = text.includes('::') ? new Array<number>(8 - heads.length - tails.length).fill(0) : []
+  const groups = [...heads, ...fill, ...tails]
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g)) ? groups : null
+}
+
+/** The IPv4 address an IPv6 literal embeds (IPv4-mapped `::ffff:0:0/96` or NAT64 `64:ff9b::/96`), in any spelling. */
+function embeddedIPv4(groups: number[]): string | null {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups as [number, number, number, number, number, number, number, number]
+  const mapped = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff
+  const nat64 = g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0
+  if (!mapped && !nat64) return null
+  return `${String(g6 >> 8)}.${String(g6 & 0xff)}.${String(g7 >> 8)}.${String(g7 & 0xff)}`
+}
+
+/**
+ * True for any address that is not globally routable; unparseable input is refused too. An IPv6 literal that embeds
+ * an IPv4 address (mapped or NAT64, hex or dotted spelling) is classified by that IPv4 address as well.
+ */
 export function isNonGlobalAddress(address: string): boolean {
   const bare = address.replace(/^\[|\]$/g, '').trim()
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare)?.[1]
-  if (mapped) return isNonGlobalAddress(mapped)
   const family = isIP(bare)
   if (!family) return true
-  return NON_GLOBAL.check(bare, family === 4 ? 'ipv4' : 'ipv6')
+  if (family === 4) return NON_GLOBAL.check(bare, 'ipv4')
+  const groups = ipv6Groups(bare)
+  if (!groups) return true
+  const embedded = embeddedIPv4(groups)
+  if (embedded && NON_GLOBAL.check(embedded, 'ipv4')) return true
+  return NON_GLOBAL.check(bare, 'ipv6')
 }
