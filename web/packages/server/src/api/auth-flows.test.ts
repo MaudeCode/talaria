@@ -11,7 +11,7 @@
  * (issues #1909, #2572, #2929, #3510, #3582, #3825, #4982, #5578) is covered here; see docs/architecture/regression-port-ledger.md.
  */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -475,6 +475,26 @@ describe('OIDC outbound vetting', () => {
       s.deps.dnsLookup = () => Promise.reject(new Error('ENOTFOUND'))
       expect((await s.get('/api/auth/oidc/start')).status).toBe(502)
       expect(requests).toEqual([])
+    } finally { await s.close() }
+  })
+})
+
+describe('OIDC operator config availability', () => {
+  it('an unreadable operator config with no last-known policy keeps the API gated until it can be read', async () => {
+    let clock = 1_700_000_000
+    // config.yaml exists at boot but no sidecar can read it: the auth policy inside is unknown from the first request.
+    const s = await bootTestServer({ now: () => clock, deps: (deps) => { writeFileSync(join(deps.config.hermesHome, 'config.yaml'), 'webui_oidc: {}\n') } })
+    try {
+      expect((await s.get('/api/sessions')).status).toBe(401)
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: true })
+      const start = await s.get('/api/auth/oidc/start')
+      expect(start.status).toBe(404)
+      expect(String((await json(start)).error)).toContain('operator config could not be resolved')
+      // Once the config is readable again (here: gone) the gate reopens after the resolve cache expires.
+      rmSync(join(s.state, 'config.yaml'))
+      s.deps.agentConfig.invalidate()
+      clock += 10
+      expect((await s.get('/api/sessions')).status).toBe(200)
     } finally { await s.close() }
   })
 })

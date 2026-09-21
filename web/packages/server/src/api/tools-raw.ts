@@ -125,7 +125,12 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   if (ctx.deps.ttsLimiter.limited(rateLimitClientIp(ctx) || 'unknown')) { ctx.json({ error: 'rate limit exceeded — please wait' }, { status: 429 }); return }
   const home = ctx.deps.profileHome(activeProfileName(ctx))
   const env = { ...loadEnvFile(join(home, '.env')), ...ctx.deps.config.env }
-  const config: Record<string, unknown> = await ctx.deps.agentConfig.read(home).catch(() => ({}))
+  // An unreadable config must not degrade to the public defaults: the operator's endpoint, model, and voice are unknown.
+  let config: Record<string, unknown>
+  try { config = await ctx.deps.agentConfig.read(home) } catch (error) {
+    ctx.deps.log(`[tts] config.yaml unavailable: ${str((error as Error).message)}`)
+    ctx.json({ error: 'Agent configuration is unavailable; retry shortly' }, { status: 503 }); return
+  }
   const tts = dict(config.tts)
   const f = ctx.deps.fetch
   if (engine === 'elevenlabs') {

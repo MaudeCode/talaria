@@ -53,7 +53,8 @@ describe('TTS validation, limits, and engines', () => {
   let s: TestServer
   let requests: Captured[]
   let configs: Map<string, Json>
-  beforeAll(async () => { ({ s, requests, configs } = await bootTts()) })
+  let sidecar: FakeSidecar
+  beforeAll(async () => { ({ s, requests, configs, sidecar } = await bootTts()) })
   afterAll(() => s.close())
   const setConfig = (cfg: Json): void => { configs.set(s.state, cfg); s.deps.agentConfig.invalidate() }
   const setEnv = (keys: Record<string, string | null>): void => { writeEnvFile(join(s.state, '.env'), keys) }
@@ -199,6 +200,22 @@ describe('TTS validation, limits, and engines', () => {
     setConfig({ tts: { openai: { base_url: 'https://nxdomain.example.com/v1' } } })
     expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(502)
     expect(requests).toEqual([])
+  })
+
+  it('an unreadable profile config answers 503 instead of falling back to the public OpenAI endpoint', async () => {
+    fresh()
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
+    setConfig({ tts: { openai: { base_url: 'https://custom.example.com/v1' } } })
+    // The config read fails between the config change and the request: the operator's endpoint is unknown.
+    sidecar.respond('config.get', () => { throw new Error('sidecar restarting') })
+    try {
+      const res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
+      expect(res.status).toBe(503)
+      expect(String((await json(res)).error)).toContain('configuration is unavailable')
+      expect(requests).toEqual([])
+    } finally {
+      sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+    }
   })
 
   it('a public http base_url is refused while loopback http is allowed for development', async () => {

@@ -461,7 +461,8 @@ export class ProviderCatalog {
    * model under this profile (`model.context_length`, `providers.<p>.models[].context_length`, custom providers).
    */
   async contextLengthInputs(profileHome: string, model: string, provider: string | null): Promise<{ base_url?: string; api_key?: string; config_context_length?: number | null }> {
-    const config = await this.deps.config.read(profileHome).catch((): Config => ({}))
+    // An unreadable config is an error (the caller answers with no context length), never "no custom endpoint".
+    const config = await this.deps.config.read(profileHome)
     const section = modelSection(config)
     const pid = canonicaliseProviderId(provider ?? section.provider) || null
     const bare = model.replace(/^@[^:]+:/, '')
