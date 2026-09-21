@@ -39,8 +39,10 @@ export async function prepareRuntimeCredentialEdit(deps: RuntimeEnvDeps, rootPro
   }
   return {
     commit: () => {
-      if (apiKey) { env[envVar] = apiKey; owned.add(envVar) } else { Reflect.deleteProperty(env, envVar); owned.delete(envVar) }
-      setHomeDotenvKeys(env, owned)
+      // Merge into the ownership set as it is now: an overlapping edit of another key may have committed meanwhile.
+      const current = homeDotenvKeys(env)
+      if (apiKey) { env[envVar] = apiKey; current.add(envVar) } else { Reflect.deleteProperty(env, envVar); current.delete(envVar) }
+      setHomeDotenvKeys(env, current)
     },
     rollback: async () => {
       if (!sidecar) return

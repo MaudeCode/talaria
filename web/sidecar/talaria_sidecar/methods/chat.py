@@ -10,6 +10,7 @@ through ``approval.respond`` / ``clarify.respond``; ``rpc.cancel`` or
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import logging
@@ -119,6 +120,31 @@ def _resolve_runtime(provider: str | None, model: str) -> dict:
     if not isinstance(runtime, dict):
         runtime = dict(vars(runtime)) if hasattr(runtime, "__dict__") else {}
     return runtime
+
+
+def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
+    """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
+    a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
+    itself only enters as a digest."""
+    api_key = runtime.get("api_key")
+    key_digest = hashlib.sha256(str(api_key).encode("utf-8")).hexdigest()[:16] if api_key else None
+    pool = runtime.get("credential_pool")
+    pool_identity = pool if isinstance(pool, (str, int, float, bool, list, dict)) or pool is None else f"{type(pool).__name__}:{getattr(pool, 'name', None) or getattr(pool, 'provider', None) or id(pool)}"
+    bundle = {
+        "model": model, "provider": provider, "base_url": runtime.get("base_url"), "api_key": key_digest,
+        "api_mode": runtime.get("api_mode"), "acp_command": runtime.get("acp_command"), "acp_args": runtime.get("acp_args"),
+        "credential_pool": pool_identity, "toolsets": toolsets, "home": home,
+        "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
+    }
+    return json.dumps(bundle, sort_keys=True, default=str)
+
+
+def evict_all_agents() -> int:
+    """Drop every cached agent (credentials or environment changed underneath them)."""
+    with _AGENT_CACHE_LOCK:
+        count = len(_AGENT_CACHE)
+        _AGENT_CACHE.clear()
+    return count
 
 
 def _agent_class():
@@ -297,7 +323,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             kwargs["max_iterations"] = params["max_iterations"]
         if isinstance(params.get("max_tokens"), int) and params["max_tokens"] > 0 and _supported(AIAgent, "max_tokens"):
             kwargs["max_tokens"] = params["max_tokens"]
-        signature = json.dumps({"model": resolved_model, "provider": resolved_provider, "base_url": runtime.get("base_url"), "toolsets": toolsets, "home": str(params.get("profile_home"))}, sort_keys=True, default=str)
+        signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
         with _AGENT_CACHE_LOCK:
             cached = _AGENT_CACHE.get(session_id)

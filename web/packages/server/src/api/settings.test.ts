@@ -371,6 +371,20 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
         sidecar.status = 'ready'
         sidecar.respond('runtime.env', () => ({ ok: true as const }))
       }
+      // Two overlapping root-profile edits both keep their ownership: commits merge into the live set.
+      const gates: (() => void)[] = []
+      sidecar.respond('runtime.env', () => new Promise((resolve) => { gates.push(() => { resolve({ ok: true as const }) }) }))
+      const a = post(s, '/api/providers', { provider: 'anthropic', api_key: 'sk-ant-overlap-1234' })
+      const b = post(s, '/api/providers', { provider: 'openrouter', api_key: 'sk-or-overlap-1234' })
+      const until = Date.now() + 5000
+      while (gates.length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+      for (const release of gates) release()
+      sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      expect((await a).status).toBe(200)
+      expect((await b).status).toBe(200)
+      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS?.split(',').sort()).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
+      delete env.ANTHROPIC_API_KEY
+      delete env.OPENROUTER_API_KEY
       // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
       expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
       expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')

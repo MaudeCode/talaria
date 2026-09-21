@@ -113,3 +113,20 @@ def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monke
     follow = chat.start(Ctx(), _params("st-4", "s2"))
     assert follow["status"] == "completed", follow
     assert agent.cleared >= 2
+
+
+def test_a_rotated_credential_never_reuses_the_cached_agent(monkeypatch) -> None:
+    _patch(monkeypatch)
+    runtime = {"model": "m", "provider": "p", "api_key": "sk-old"}
+    monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: dict(runtime))
+    assert chat.start(Ctx(), _params("st-5", "s3"))["status"] == "completed"
+    assert chat.start(Ctx(), _params("st-6", "s3"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 1
+    runtime["api_key"] = "sk-rotated"
+    assert chat.start(Ctx(), _params("st-7", "s3"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 2
+    assert FakeAgent.instances[-1].kwargs["api_key"] == "sk-rotated"
+    # runtime.env drops every cached agent as well.
+    assert chat.evict_all_agents() == 1
+    assert chat.start(Ctx(), _params("st-8", "s3"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 3

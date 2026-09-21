@@ -53,6 +53,10 @@ def register(registry) -> None:
             os.environ.pop(name, None)
         for name, value in to_set.items():
             os.environ[name] = value
+        # Cached agents bound the credentials they were built with; none of them may outlive a credential change.
+        from .chat import evict_all_agents
+
+        evict_all_agents()
         return {"ok": True}
 
     @registry.method("runtime.shutdown", requires_agent=False)
