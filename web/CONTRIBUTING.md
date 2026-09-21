@@ -2,7 +2,7 @@
 
 Thanks for contributing.
 
-Hermes WebUI is intentionally simple to operate: Python on the server, a committed production build of the TanStack Start / React / TypeScript frontend in `static/dist`, and no Node.js at runtime. The best pull requests preserve that shape while solving a real problem cleanly.
+Talaria Web is intentionally simple to operate: one TypeScript server on Node 24, a committed production build of the TanStack Start / React frontend in `static/dist`, and a stdlib-only Python sidecar that runs on the Hermes Agent's own venv. The best pull requests preserve that shape while solving a real problem cleanly.
 
 ## Before You Start
 
@@ -74,15 +74,15 @@ Keep each PR focused. A small related group of fixes is fine. A bug fix plus a C
 
 ### 2. Local Verification
 
-Run the test suite locally through the repo runner. It creates/uses a supported
-Python 3.11-3.13 `.venv` and installs missing dev test dependencies, avoiding
-unsupported system interpreters during collection:
+Run the gates locally from `web/` (see [TESTING.md](TESTING.md) for the full table):
 
 ```bash
-./scripts/test.sh
+npm ci && npm run build -w packages/contracts
+npm run typecheck && npm run lint && npm test
+sidecar/scripts/test.sh
 ```
 
-CI runs this suite on Python `3.13` across five parallel shards.
+CI runs the server, sidecar, and frontend jobs selected by the changed paths (`.github/workflows/web-verify.yml`).
 
 If your change affects browser behavior, also run the relevant manual checks from [TESTING.md](TESTING.md).
 
@@ -159,7 +159,7 @@ Do not introduce new infrastructure or dependencies unless the gain is clear and
 
 ### Match the Existing Shape of the Codebase
 
-- Server logic belongs in `api/` with `server.py` staying thin
+- Server logic belongs in `packages/server/src` behind a contract in `packages/contracts`; Agent-backed logic belongs in `sidecar/talaria_sidecar/methods`
 - Frontend behavior belongs in `frontend/src` (routes, features, contracts); rebuild `static/dist` with `npm run build` and commit it with the source change
 - Prefer extending current patterns over introducing parallel abstractions
 - Keep changes legible to future contributors working directly from the repo in a terminal
@@ -194,7 +194,7 @@ Example:
 
 Another example:
 
-> - Hermes WebUI is intentionally a simple Python server plus one committed frontend build
+> - Talaria Web is intentionally a simple TypeScript server plus one committed frontend build
 > - The right panel is used for workspace browsing and previews
 > - On mobile, panel state changes need to be obvious and touch-friendly
 > - The existing close affordance was inconsistent with the bottom-nav flow

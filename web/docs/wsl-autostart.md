@@ -1,6 +1,6 @@
 # Windows / WSL auto-start
 
-Hermes WebUI runs well under WSL2, but native Windows login does not automatically start Linux user processes. This guide covers two supported options:
+Talaria Web runs well under WSL2, but native Windows login does not automatically start Linux user processes. This guide covers two supported options:
 
 1. **WSL session startup** — simple and low-risk. WebUI starts the next time you open a WSL shell.
 2. **Windows Task Scheduler** — true Windows logon startup. Windows invokes `wsl.exe`, which runs the WSL launch script.
@@ -11,7 +11,7 @@ Both paths use the same WSL launch script:
 scripts/wsl/hermes_webui_autostart.sh
 ```
 
-The script is safe to call repeatedly. It uses a lock file, checks the `/health` endpoint, checks a pid file, and writes logs before starting `start.sh --foreground` in the background. It does not hardcode a user path; by default it derives the repository root from its own location.
+The script is safe to call repeatedly. It uses a lock file, checks the `/health` endpoint, checks a pid file, and writes logs before starting `talaria-web --foreground --no-browser` in the background. It does not hardcode a user path; by default it derives the repository root from its own location.
 
 ## Script settings
 
@@ -19,9 +19,10 @@ The WSL launcher supports these environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HERMES_WEBUI_REPO` | repo containing the script | WebUI checkout to start |
+| `HERMES_WEBUI_REPO` | repo containing the script | Web checkout to start (`web/`); leave unset with a global `npm install -g @maudecode/talaria-web` |
+| `HERMES_WEBUI_BIN` | `talaria-web` on `PATH`, else `packages/server/dist/bin/talaria-web.js` in the repo | Launcher to run |
 | `HERMES_WEBUI_LOG_DIR` | `$HOME/.hermes/webui/logs` | Autostart and WebUI logs |
-| `HERMES_WEBUI_HOST` | `127.0.0.1` | Host passed through to `start.sh` / `bootstrap.py` |
+| `HERMES_WEBUI_HOST` | `127.0.0.1` | Host passed through to `talaria-web` |
 | `HERMES_WEBUI_PORT` | `8787` | WebUI port and health-check port |
 | `HERMES_WEBUI_HEALTH_URL` | `http://127.0.0.1:$HERMES_WEBUI_PORT/health` | URL used to decide whether WebUI is already running |
 | `HERMES_WEBUI_PID_FILE` | `$HERMES_WEBUI_LOG_DIR/hermes-webui.pid` | pid file used for duplicate prevention |
@@ -30,7 +31,7 @@ The WSL launcher supports these environment variables:
 Make the script executable once inside WSL:
 
 ```bash
-cd /path/to/hermes-webui
+cd /path/to/talaria/web
 chmod +x scripts/wsl/hermes_webui_autostart.sh
 ```
 
@@ -55,9 +56,9 @@ This starts WebUI when your WSL login shell starts. It is the easiest option if 
 Add this to `~/.profile` or `~/.bashrc` inside WSL, adjusting the repo path:
 
 ```bash
-if [ -x "$HOME/hermes-webui/scripts/wsl/hermes_webui_autostart.sh" ]; then
-  HERMES_WEBUI_REPO="$HOME/hermes-webui" \
-    "$HOME/hermes-webui/scripts/wsl/hermes_webui_autostart.sh" >/dev/null 2>&1 &
+if [ -x "$HOME/talaria/web/scripts/wsl/hermes_webui_autostart.sh" ]; then
+  HERMES_WEBUI_REPO="$HOME/talaria/web" \
+    "$HOME/talaria/web/scripts/wsl/hermes_webui_autostart.sh" >/dev/null 2>&1 &
 fi
 ```
 
@@ -73,30 +74,21 @@ If you open several WSL terminals, the launcher should still start only one WebU
 
 Use this if you want WebUI to start automatically at Windows logon even before you open a WSL terminal.
 
-The helper PowerShell script is:
-
-```text
-scripts/windows/setup_webui_autostart.ps1
-```
-
-From Windows PowerShell, run it with the WSL path to the launch script:
+Register a logon task that runs the WSL launch script through `wsl.exe`. From an
+elevated-free Windows PowerShell (adjust the distro and path):
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\windows\setup_webui_autostart.ps1 `
-  -WslScriptPath "/home/your-user/hermes-webui/scripts/wsl/hermes_webui_autostart.sh" `
-  -Distro "Ubuntu"
+$action  = New-ScheduledTaskAction -Execute "wsl.exe" -Argument '-d Ubuntu -- /home/your-user/talaria/web/scripts/wsl/hermes_webui_autostart.sh'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+Register-ScheduledTask -TaskName HermesWebUIAutoStart -Action $action -Trigger $trigger -RunLevel Limited -Force
 ```
 
 Notes:
 
-- `-Distro` is optional. Omit it to use your default WSL distro.
-- The default task name is `HermesWebUIAutoStart`; pass `-TaskName` if you need a different name.
-- The script is idempotent: rerunning it updates the existing scheduled task instead of creating duplicates.
+- Omit `-d Ubuntu` to use your default WSL distro.
+- `-Force` updates an existing task instead of creating duplicates.
 - The task runs as the current Windows user at logon with least privilege.
-- Add `-WhatIf` to preview the scheduled task registration.
-- Add `-RunNow` to start the task immediately after registration.
-- Add `-SkipValidation` only if you need to register the task before the WSL path exists.
+- Native Windows (outside WSL2) is not supported.
 
 To inspect or remove the task later:
 
@@ -118,7 +110,7 @@ Common causes:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Task exists but WebUI is not reachable | WSL script path is wrong for the selected distro | Re-run the PowerShell setup with the correct `-WslScriptPath` and `-Distro` |
+| Task exists but WebUI is not reachable | WSL script path is wrong for the selected distro | Re-register the task with the correct script path and `-d <distro>` |
 | WebUI starts only after opening WSL | You used the WSL session startup option, not Task Scheduler | Install the Windows scheduled task |
 | Multiple login events happen quickly | Normal Windows startup behavior | The WSL script should log `already running` and avoid duplicate processes |
 | Health check fails but pid exists | WebUI is still booting or the port differs | Check `HERMES_WEBUI_PORT` and `hermes_webui.log` |

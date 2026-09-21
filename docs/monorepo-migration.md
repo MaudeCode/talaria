@@ -129,30 +129,15 @@ tracked tree to equal the recipe commit's tree. Nothing is pushed or deployed.
 
 ## Public upstream imports
 
-From a clean monorepo checkout:
-
-```sh
-scripts/import-web-upstream <public-upstream-sha>
-python3 scripts/test-monorepo-import.py
-scripts/check web
-scripts/check contracts
-```
-
-The command fetches the selected public commit into a dedicated
-`refs/remotes/hermes-upstream/selected` ref and uses Git's `ort` merge with
-`-Xsubtree=web`. The original Web history supplies the real merge base. Review
-the uncommitted result, resolve any conflicts, and commit only after validation.
-Successful imports stage `web/UPSTREAM_BASE_SHA` for release provenance and
-reject revisions that do not extend the recorded public base. If the merge
-stops for conflicts, resolve them and set that file to the selected immutable
-upstream SHA before committing; aborting the import must retain the old base.
-The synthetic proof covers nonconflicting updates, retained downstream edits,
-untouched app files, ancestry, dirty-state rejection, and conflicting edits.
+Public Hermes WebUI imports (`scripts/import-web-upstream`, `web/UPSTREAM_BASE_SHA`,
+the weekly upstream watch) were retired when Talaria Web's backend was rewritten in
+TypeScript (TAL-245). The original Web history stays reachable through the import
+merge parents recorded above; no further upstream merges are expected.
 
 ## Validation boundaries
 
 Root `scripts/check` exposes app, web, relay, contracts, Docker, tooling, and all
-checks without a workspace framework. Python and browser tests get disposable
+checks without a workspace framework. Server, sidecar, and browser tests get disposable
 home/state directories. Convex checks use an anonymous local deployment with no
 production credentials. Docker smoke uses unique project/container/volume names,
 loopback-only ephemeral ports, and test-owned mounts for all three Compose variants.
@@ -161,7 +146,7 @@ UID preservation. It runs on the existing macOS runner with Docker Desktop.
 A trap/finally block cleans up only each check's resources.
 
 CI classifies the complete PR or main-push diff with `scripts/changed-components.py`.
-App, App tooling, Web Python, Web frontend, Docker, Relay, shared contracts and
+App, App tooling, Web server, Web frontend, Docker, Relay, shared contracts and
 repository tooling have independent gates. A frontend change plus its changelog
 fragment runs frontend checks; changelog-only edits run release metadata
 validation without App tests. Documentation keeps its existing lightweight
@@ -173,17 +158,8 @@ fragments and runs its full tests only when tooling is affected.
 The release templates contain their original credentials and approvals but do
 not execute during source consolidation.
 
-The Web forward-lint gate compares against the verified pure Web import when
-the PR base predates `web/`. It checks the import tree against the recorded
-standalone source and requires that source to be an ancestor. Rehearsals may
-recreate the import commit while retaining the original source history. Later PRs use
-their normal merge base. Existing upstream lint debt remains visible in the
-informational report; integration edits still pass the forward gate.
-
-The isolated Python launchers preserve an explicit `LD_LIBRARY_PATH` supplied by
-the toolchain while dropping application credentials and state. This is required
-by GitHub's relocated Linux Python binaries. The macOS contract job installs a
-portable CPython under its job-owned temporary directory using the same uv
-toolchain already used by the Web image. Diagnostic uploads are non-blocking;
+The isolated launchers preserve an explicit `LD_LIBRARY_PATH` supplied by
+the toolchain while dropping application credentials and state. The macOS contract
+job runs the Node server on the fixture replay sidecar and needs no Agent. Diagnostic uploads are non-blocking;
 the test result and job summary remain authoritative when artifact storage is
 unavailable. Release-artifact validation and delivery remain separate strict gates.

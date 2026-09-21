@@ -1,4 +1,4 @@
-# Hermes WebUI — Docker setup guide
+# Talaria Web — Docker setup guide
 
 This is the comprehensive Docker reference. For a 5-minute quickstart, see the [README Docker section](../README.md#docker).
 
@@ -67,8 +67,9 @@ those tools in a dev-only Dockerfile instead of reintroducing passwordless sudo 
 ## 5-minute quickstart (single container)
 
 ```bash
-git clone https://github.com/nesquena/hermes-webui
-cd hermes-webui
+git clone --filter=blob:none --sparse https://github.com/MaudeCode/talaria.git talaria
+git -C talaria sparse-checkout set web contracts scripts
+cd talaria/web
 cp .env.docker.example .env
 # Edit .env if needed (most users can skip this on Linux)
 docker compose up -d
@@ -390,7 +391,7 @@ failed to load .env: open .env: permission denied
 - `HERMES_SKIP_CHMOD=1` — bypass the fixer entirely
 - `HERMES_HOME_MODE=0640` — allow group bits, only strip world-readable
 
-Both are documented in `api/startup.py::fix_credential_permissions()`.
+Both are handled by the server's startup credential-permission fixer.
 
 > ⚠️ **Multi-container warning**: `HERMES_HOME_MODE` has DIFFERENT semantics in the agent image vs. the WebUI:
 > - **WebUI**: credential FILE mode threshold (`0640` allows group bits on `.env`)
@@ -531,11 +532,11 @@ The two- and three-container setups use **named Docker volumes** (not bind mount
               ↓                                       │
       ┌─────────────────────────┐                     │
       │ hermes-agent-src (vol)  │─────────────────────┘
-      │ (agent's Python source) │
+      │ (agent's Python source)  │
       └─────────────────────────┘
 ```
 
-The WebUI container doesn't ship with the agent's Python deps — at startup it runs `uv pip install /home/hermeswebui/.hermes/hermes-agent` to install them from the shared volume. The WebUI mount is read-only; the agent container is the only writer.
+The WebUI container doesn't ship with the agent — at startup it stages the source from the shared volume into `/app/hermes-agent-src`, builds the venv its Python sidecar runs on (`uv venv` + `uv pip install -e .[all]`), and reuses it on later restarts. The WebUI mount is read-only; the agent container is the only writer.
 
 ## Upgrading the agent container
 
@@ -559,7 +560,7 @@ docker compose -f docker-compose.three-container.yml pull
 docker compose -f docker-compose.three-container.yml up -d
 ```
 
-Replace `<project>` with your Compose project name (the parent directory by default; check with `docker volume ls`). The `hermes-home` volume (config, sessions, state) is left untouched — only `hermes-agent-src` (the agent's installed Python source) is recreated.
+Replace `<project>` with your Compose project name (the parent directory by default; check with `docker volume ls`). The `hermes-home` volume (config, sessions, state) is left untouched — only `hermes-agent-src` (the agent's source) is recreated; the staged copy and venv under `/app` are rebuilt on the next container recreation.
 
 > The single-container setup (`docker-compose.yml`) does not use `hermes-agent-src` and is not affected by this upgrade pattern — pulling a newer WebUI image and `docker compose up -d --force-recreate` is sufficient.
 
@@ -576,7 +577,7 @@ What multi-container does **not** isolate:
 
 - **Filesystem boundary.** Both services share `hermes-home` (config, sessions, state), and the WebUI mounts the agent's installed source from `hermes-agent-src`. The WebUI mount is read-only (since v0.51.84), but the agent service still has write access, and both services share the home volume.
 - **UID/GID boundary.** Both services default to `${UID:-1000}` so files written by one are readable by the other. If you align them to different UIDs you'll get permission errors on the shared volume.
-- **Trust boundary on the agent source.** The WebUI installs Python dependencies from the shared `hermes-agent-src` volume at startup. The read-only mount means a compromised WebUI cannot rewrite the agent source, but it does run code from that volume.
+- **Trust boundary on the agent source.** The WebUI's sidecar runs Agent code from the staged copy of the shared `hermes-agent-src` volume. The read-only mount means a compromised WebUI cannot rewrite the agent source, but it does run code from that volume.
 
 If you need **filesystem isolation** between the chat UI and the agent (e.g. you don't trust the WebUI to read agent state), the multi-container setup is not enough — run the agent on a separate host and connect the WebUI to it via the gateway HTTP API. If you don't need any boundary, the single-container setup is simpler.
 
@@ -632,7 +633,7 @@ volumes:
 - #569 — UID/GID detection priority order
 - #7027 — state dir probed before `/workspace` in UID/GID detection (see [#9 above](#9-failed-to-verify-state-directory--restart-loop-on-a-bind-mounted-state-dir-7027))
 
-If you hit a new failure mode not covered here, please [open an issue](https://github.com/nesquena/hermes-webui/issues/new) with:
+If you hit a new failure mode not covered here, please open a Talaria issue with:
 
 1. Which compose file you used
 2. The error from `docker logs hermes-webui`

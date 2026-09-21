@@ -2,7 +2,7 @@
 
 Concrete diagnostic flows for the most common failure modes when running Hermes WebUI. Each entry has the symptom, the diagnostic commands you should run *before* opening an issue, and the fix that has worked for past reporters.
 
-If your symptom isn't listed and the diagnostics don't narrow it down, file a bug at https://github.com/nesquena/hermes-webui/issues — include the relevant command output after redacting secrets, private paths, full `.env` files, full `auth.json` files, cookies, tokens, and password hashes.
+If your symptom isn't listed and the diagnostics don't narrow it down, file a bug in the Talaria tracker — include the relevant command output after redacting secrets, private paths, full `.env` files, full `auth.json` files, cookies, tokens, and password hashes.
 
 ---
 
@@ -33,83 +33,58 @@ contention rather than a missing session.
 
 ---
 
-## "AIAgent not available -- check that hermes-agent is on sys.path"
+## "Hermes Agent sidecar is not running" (HTTP 503, `condition: sidecar_unavailable`)
 
-**Symptom.** WebUI starts, shows the chat interface, but every chat request fails immediately with this error in the response or the server log. As of v0.51.6 the error includes a diagnostic block with the running Python interpreter, the relevant `sys.path` entries, and the most-common fix; on older versions the message is bare.
+**Symptom.** The UI loads, but chat, profiles, skills, crons, kanban, and other Agent-backed
+routes answer `503` with `{"condition": "sidecar_unavailable"}` (or `agent_incompatible` /
+`agent_runtime_stale`). The server log shows `[sidecar] Hermes Agent not found` or a handshake failure.
 
-**Why it happens.** The WebUI imports the agent class at chat time via `from run_agent import AIAgent`. That import only succeeds if the running Python's `sys.path` contains either the hermes-agent checkout or a pip-installed copy of the agent. Three common failure modes:
+**Why it happens.** The TypeScript server never imports Agent code. It spawns one Python sidecar,
+`python -m talaria_sidecar`, on the Agent's own venv and talks to it over stdio. If no Agent checkout is
+found, the venv is missing, or the sidecar cannot import `run_agent`, the server keeps serving the UI and
+fails those routes closed. Common causes:
 
-1. **Agent installed but not on `sys.path`.** Most common. The agent is checked out somewhere (e.g. `~/Programmes/hermes-agent`), the WebUI was launched with a Python that doesn't know about it, and there's no `pip install -e .` linking the two.
-2. **Symlink with a typo or wrong target.** A symlink to the agent looks correct on `ls`, but `readlink` resolves to a path that doesn't exist or doesn't contain `agent/__init__.py`.
-3. **`HERMES_WEBUI_AGENT_DIR` set to the wrong directory.** Override env var beats auto-discovery and points at a directory that has no agent code.
-4. **Agent installed as root, under the FHS layout.** When the Hermes Agent installer runs as root on Linux it places the agent at `/usr/local/lib/hermes-agent` (CLI linked into `/usr/local/bin`), not `~/.hermes/hermes-agent`. Older `bootstrap.py` didn't probe that path, so it built a WebUI-only `.venv` and failed at launch with **"Python environment cannot import both WebUI dependencies and Hermes Agent."** `git pull` to update the WebUI (current `bootstrap.py` auto-discovers the FHS layout and follows the `hermes` launcher to the agent), or set `HERMES_WEBUI_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python` and relaunch.
+1. **No Agent checkout in a discovered location.** Discovery tries `HERMES_WEBUI_AGENT_DIR`,
+   `$HERMES_HOME/hermes-agent`, a sibling `hermes-agent` checkout, `~/hermes-agent`, `/opt/hermes`,
+   `/usr/local/lib/hermes-agent`, and the `hermes` launcher on `PATH`.
+2. **Checkout without a venv.** The sidecar runs on `<agent>/venv` or `<agent>/.venv`; `HERMES_WEBUI_PYTHON`
+   overrides the interpreter.
+3. **`HERMES_WEBUI_AGENT_DIR` pointing at the wrong directory.** The override beats discovery.
+4. **Agent revision drift.** The handshake compares the loaded Agent with `sidecar/agent_dependency.json`;
+   `agent_incompatible` means the checkout is not the tested revision, `agent_runtime_stale` means the
+   checkout changed while the server was running.
 
-### Step 1 — confirm the agent location
+### Step 1 — read what the launcher resolved
 
 ```bash
-# If you have ~/hermes-agent (the default location):
-ls -la ~/hermes-agent
-readlink ~/hermes-agent          # if it's a symlink, where does it resolve?
-ls ~/hermes-agent/agent/__init__.py 2>&1
+talaria-web --foreground --no-browser 2>&1 | grep -iE 'sidecar|agent' | head -20
 ```
 
-The third command must succeed (the file must exist). If it fails, your symlink is broken or pointing at a directory that's missing the agent module — fix that first.
+The startup lines print the Agent directory and interpreter the sidecar was started on, or the list of
+locations that were probed.
 
-### Step 2 — confirm the WebUI is using the right Python
-
-```bash
-cd ~/hermes-webui && ./start.sh 2>&1 | grep -iE 'agent|python|hermes_webui_python' | head -20
-```
-
-The startup banner prints which Python and agent dir it resolved. If the agent dir is empty or the Python is the wrong one, set the override:
+### Step 2 — point at the right checkout and venv
 
 ```bash
 export HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent
-export HERMES_WEBUI_PYTHON=/absolute/path/to/agent/venv/bin/python
-./start.sh
+export HERMES_WEBUI_PYTHON=/absolute/path/to/hermes-agent/venv/bin/python
+talaria-web ctl restart
 ```
 
-### Step 3 — install the agent in editable mode
-
-This is the most common fix and resolves the original issue #1695:
+### Step 3 — verify the sidecar can import the Agent
 
 ```bash
-cd /path/to/hermes-agent          # the directory holding pyproject.toml + the agent/ module
-pip install -e .                  # use the same python that runs the WebUI
+cd /path/to/talaria/web
+HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent sidecar/scripts/test.sh tests/test_runtime.py
 ```
 
-Then restart the WebUI:
-
-```bash
-cd ~/hermes-webui
-./start.sh
-```
-
-### Step 4 — verify by importing manually
-
-If steps 1-3 still don't work, check whether the WebUI's Python can import the agent at all:
-
-```bash
-$HERMES_WEBUI_PYTHON -c "from run_agent import AIAgent; print('ok')" 2>&1
-```
-
-(Replace `$HERMES_WEBUI_PYTHON` with the actual Python path from step 2 if the env var isn't set.) If this prints `ok`, the agent IS on `sys.path` for that Python — and the WebUI should work.
-
-If this fails, `import run_agent` itself is broken — check that the agent's pyproject.toml lists `run_agent` as a top-level module or that the agent dir is on PYTHONPATH:
-
-```bash
-PYTHONPATH=/path/to/hermes-agent $HERMES_WEBUI_PYTHON -c "from run_agent import AIAgent; print('ok')"
-```
-
-If adding PYTHONPATH fixes it, persist the path either via `pip install -e .` (preferred) or by setting `HERMES_WEBUI_AGENT_DIR` to that directory.
+The runtime tests spawn the sidecar exactly as the server does and report the import error verbatim.
+`/api/health/agent` and `/health` also carry the sidecar status once the server is up.
 
 ### When to file a bug
 
-If after running steps 1-4 the import still fails *and* `pip install -e .` succeeded *and* `PYTHONPATH=... python -c "from run_agent import AIAgent"` succeeds — that's a real WebUI bug. File at https://github.com/nesquena/hermes-webui/issues with:
-
-- The output of every command in steps 1-4
-- The full diagnostic block printed by the WebUI's `ImportError` (v0.51.6+)
-- Your OS, Python version, and how the agent was installed
+If the sidecar tests pass but the server still answers `sidecar_unavailable`, that is a Web bug. Include
+the startup lines from step 1, the `/health` payload, and your OS, Node, and Agent versions.
 
 ---
 
@@ -216,7 +191,7 @@ another, and half a turn read on its own looks pending:
 
 Any uncertainty keeps the shards. Deleting the session releases them.
 
-Retention is disabled entirely on platforms without `fcntl` — Windows. The
+Retention needs POSIX file locks; native Windows is not supported (use WSL2). The
 appender's advisory lock is a documented no-op there, so nothing would stop a
 first append from landing between the size check and the truncation and being
 erased. There is no second mechanism to reach for, because the appender does
@@ -249,7 +224,7 @@ no in-process log handler owns that sink. Rather than depending on each launcher
 to declare its path, the server asks the OS where its own descriptors point —
 `/proc/self/fd/N` on Linux and WSL, `fcntl(F_GETPATH)` on macOS — so a launchd
 plist, a shell redirect, or any future launcher is covered without extra wiring.
-An *absolute* `HERMES_WEBUI_LOG_FILE` overrides the probe; `ctl.sh` and the WSL
+An *absolute* `HERMES_WEBUI_LOG_FILE` overrides the probe; `talaria-web ctl` and the WSL
 autostart script both set one. A relative value is ignored in favour of the
 descriptors, because the launcher opened it against its own working directory
 and the server would resolve it against a different one.
@@ -337,7 +312,7 @@ turn in the exhausted session instead of being blocked with recovery guidance.
 
 **Symptom.** An action that uses the in-process Agent runtime stops with a message telling you to restart Hermes WebUI manually. This can happen after `hermes update`, a Git checkout/pull in the Agent source tree, or another tool updates Hermes Agent without restarting the already-running WebUI backend.
 
-**Why.** WebUI imports `run_agent.AIAgent` into its long-lived Python process. Continuing after a known Agent Git revision changes could combine cached modules from the old revision with source read from the new revision. Local Agent-backed actions return a retryable `409 agent_runtime_stale` with `restart_scheduled: false` before accepting a new turn. Gateway- and runner-owned chat keep their existing runtime ownership. Non-Git Agent installs preserve their existing behavior because there is no revision identity to compare; losing a previously known revision remains fail-closed.
+**Why.** The sidecar imports `run_agent.AIAgent` into its long-lived Python process. Continuing after a known Agent Git revision changes could combine cached modules from the old revision with source read from the new revision. Local Agent-backed actions return a retryable `409 agent_runtime_stale` with `restart_scheduled: false` before accepting a new turn. Gateway- and runner-owned chat keep their existing runtime ownership. Non-Git Agent installs preserve their existing behavior because there is no revision identity to compare; losing a previously known revision remains fail-closed.
 
 **Diagnostic.** The stale-runtime response includes `agent_update_state`, also preserved in asynchronous compression error status:
 
@@ -354,14 +329,14 @@ These are observations, not success receipts. Hermes Agent removes `.hermes-upda
 **Fix.** Check the Agent updater's outcome and resolve any failed or incomplete Agent update first. Once the Agent checkout and environment are healthy and no updater is running, restart WebUI using the same launch method that started it:
 
 ```bash
-./ctl.sh restart
+talaria-web ctl restart
 # Or, for a user systemd service:
 systemctl --user restart hermes-webui.service
 ```
 
-For a foreground `python3 bootstrap.py`, stop it with Ctrl-C and start it again. Restarting the whole computer or WSL is not required when restarting the WebUI backend succeeds. Retry the action after restarting the backend; refreshing the browser alone does not replace its imported Agent modules.
+For a foreground `talaria-web --foreground`, stop it with Ctrl-C and start it again. Restarting the whole computer or WSL is not required when restarting the WebUI backend succeeds. Retry the action after restarting the backend; refreshing the browser alone does not replace its imported Agent modules.
 
-**Automatic restart prerequisite.** Revision mismatch does not schedule a WebUI restart. Safe automation requires an Agent-owned terminal success receipt bound to the exact update transaction, final revision, and healthy environment, plus an Agent-owned atomic handoff or lease that excludes new mutations across process replacement (or an Agent updater that performs the restart itself). No such public contract is verified for this integration. Repeated readiness checks followed by `os.execv()` leave a race; WebUI's own update lock does not exclude an external Agent updater. Explicit updates initiated through WebUI retain their existing behavior and are outside this revision-mismatch guard.
+**Automatic restart prerequisite.** Revision mismatch does not schedule a WebUI restart. Safe automation requires an Agent-owned terminal success receipt bound to the exact update transaction, final revision, and healthy environment, plus an Agent-owned atomic handoff or lease that excludes new mutations across process replacement (or an Agent updater that performs the restart itself). No such public contract is verified for this integration. Repeated readiness checks followed by a process replacement leave a race; WebUI's own update lock does not exclude an external Agent updater. Explicit updates initiated through WebUI retain their existing behavior and are outside this revision-mismatch guard.
 
 **When to file a bug.** File a WebUI bug if the restart-required message appears even though the Agent revision did not change or become unreadable, or if a clean WebUI restart still produces the same import error. Include the launch method, WebUI and Agent revisions, the marker diagnostic, and sanitized error text.
 

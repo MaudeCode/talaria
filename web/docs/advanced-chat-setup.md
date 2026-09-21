@@ -31,7 +31,7 @@ or:
 ```bash
 HERMES_WEBUI_PREFILL_MESSAGES_SCRIPT="python3 /path/to/notes_recall.py" \
 HERMES_WEBUI_PREFILL_MESSAGES_SCRIPT_TIMEOUT=5 \
-./ctl.sh restart
+talaria-web ctl restart
 ```
 
 The script may print either an OpenAI-style JSON message list, a JSON object with
@@ -113,7 +113,7 @@ and `/api/chat/stream` browser contract:
 HERMES_WEBUI_CHAT_BACKEND=gateway \
 HERMES_WEBUI_GATEWAY_BASE_URL=http://127.0.0.1:8642 \
 HERMES_WEBUI_GATEWAY_API_KEY=... \
-./ctl.sh restart
+talaria-web ctl restart
 ```
 
 Gateway-backed approval prompts need one more explicit opt-in because they use the Gateway runs API path:
@@ -123,7 +123,7 @@ HERMES_WEBUI_CHAT_BACKEND=gateway \
 HERMES_WEBUI_GATEWAY_BASE_URL=http://127.0.0.1:8642 \
 HERMES_WEBUI_GATEWAY_API_KEY=... \
 HERMES_WEBUI_GATEWAY_USE_RUNS_API=true \
-./ctl.sh restart
+talaria-web ctl restart
 ```
 
 Use this when the connected gateway advertises approval support and you want tool approval cards to appear in WebUI. Without `HERMES_WEBUI_GATEWAY_USE_RUNS_API=true`, gateway chat stays on the legacy chat-completions transport and approval-capable commands can remain pending in the agent without a WebUI approval card.

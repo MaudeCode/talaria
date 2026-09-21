@@ -89,7 +89,7 @@ Extensions cannot:
   `/extensions/<panel>` with a `sandbox` Content-Security-Policy. An entry
   without `panel` is headless (skin, TTS or sidecar only).
 - `capabilities`, `settings_schema`, `theme`, `tts` and `sidecar` are
-  sanitized by `api/extension_manifests.py`; rejected fields produce stable
+  sanitized by the server's extension manifest loader (`packages/server/src/tools/extensions.ts`); rejected fields produce stable
   warning codes in `GET /api/extensions/manifests` and never reach the client
   raw.
 - `scripts` and `stylesheets` are ignored. An entry that has only those is
@@ -156,7 +156,7 @@ path:
 ```bash
 export HERMES_WEBUI_EXTENSION_DIR=/path/to/my-extensions
 export HERMES_WEBUI_EXTENSION_MANIFEST=extensions.json   # relative to the directory (default)
-./start.sh
+talaria-web
 ```
 
 The manifest lists entries with the fields shown in [Manifest shape](#manifest-shape).
@@ -296,7 +296,7 @@ control, append the exact origin with `HERMES_WEBUI_CSP_CONNECT_EXTRA` before
 starting WebUI:
 
 ```bash
-HERMES_WEBUI_CSP_CONNECT_EXTRA=https://companion.example.internal HERMES_WEBUI_EXTENSION_DIR=/path/to/my-extension/static HERMES_WEBUI_EXTENSION_MANIFEST=extensions.json ./start.sh
+HERMES_WEBUI_CSP_CONNECT_EXTRA=https://companion.example.internal HERMES_WEBUI_EXTENSION_DIR=/path/to/my-extension/static HERMES_WEBUI_EXTENSION_MANIFEST=extensions.json talaria-web
 ```
 
 `HERMES_WEBUI_CSP_CONNECT_EXTRA` accepts space-separated `http(s)://` or
@@ -426,7 +426,7 @@ Hermes.connect().then((hermes) => {
 
 The engine appears in Settings, Conversation. When selected, the host sends
 `tts:synthesize` events to the panel and plays the returned audio buffer through
-the same path as Edge TTS. The engine is only available while its panel is
+the same path as the OpenAI and ElevenLabs engines. The engine is only available while its panel is
 open; the host falls back to the browser voice otherwise.
 
 ## Extension authoring guidance

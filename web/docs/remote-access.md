@@ -19,7 +19,7 @@ ssh -N -L 8787:127.0.0.1:8787 user@your.server.com
 
 Then open `http://localhost:8787` in your local browser.
 
-`start.sh` will print this command for you automatically when it detects you
+`talaria-web` will print this command for you automatically when it detects you
 are running over SSH.
 
 ---
@@ -41,7 +41,7 @@ so it works well as a daily-driver agent interface from your phone.
 2. Keep the WebUI bound to localhost and enable password auth:
 
 ```bash
-HERMES_WEBUI_PASSWORD=your-secret ./start.sh
+HERMES_WEBUI_PASSWORD=your-secret talaria-web
 ```
 
 3. Publish the local WebUI port through Tailscale Serve:
@@ -75,7 +75,7 @@ permitted. Because this binds WebUI beyond loopback, always enable password
 auth:
 
 ```bash
-HERMES_WEBUI_HOST=0.0.0.0 HERMES_WEBUI_PASSWORD=your-secret ./start.sh
+HERMES_WEBUI_HOST=0.0.0.0 HERMES_WEBUI_PASSWORD=your-secret talaria-web
 ```
 
 Then open `http://<server-tailscale-ip>:8787` in your phone's browser (find

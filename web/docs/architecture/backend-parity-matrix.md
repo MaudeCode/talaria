@@ -272,25 +272,25 @@ See `sidecar-rpc.md` for the method surface. Each row is one RPC namespace.
 
 | ID | Capability | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|
-| D1 | `node:24-slim` image with Python runtime for the Agent venv; user, UID/GID detection, seeding, deps marker, healthcheck, provenance label, GHCR identity, compose env forwarding | server | docker | pending | |
-| D2 | Two/three-container variants with read-only `hermes-agent-src` mount | server | docker | pending | |
+| D1 | `node:24-slim` image with Python runtime for the Agent venv; user, UID/GID detection, seeding, deps marker, healthcheck, provenance label, GHCR identity, compose env forwarding | server | docker | partial (9c) | Dockerfile rewritten on `node:24-slim` (git, curl, rsync, OpenSSH, python3/venv, uv); `npm ci`/build/prune of the contracts and server workspaces in the image; `TALARIA_WEB_VERSION` replaces `api/_version.py`; the provenance label is checked against `release.ts`; SQLite-from-source, `hindsight-client`, and wheel dockerignore entries dropped. `docker_init.bash` keeps the UID/GID alignment, `/app` seeding, and `.deps_installed` semantics but builds the sidecar's Agent venv under `/app/hermes-agent-src` and execs the Node bin. The npm install/build/prune sequence was verified locally in a copy of the context; the image build and `scripts/check-docker.py` variants need the Docker daemon (CI `web-docker-smoke`) |
+| D2 | Two/three-container variants with read-only `hermes-agent-src` mount | server | docker | partial (9c) | Compose files keep the read-only mount and env forwarding; comments describe the sidecar venv. Smoke pending on a Docker daemon |
 
 ## 13. Self-update and provenance
 
 | ID | Capability | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|
-| V1 | Channels, release-set manifest resolution, checkout validation, clean-tree, fetch/ancestry/ff-only, `_release.json` stamping, running-code identity, restart-when-safe via re-exec | server | vitest (synthetic release sets, `file://` remotes) | pending | |
-| V2 | Agent update and gateway restart | sidecar | pytest | pending | |
-| V3 | Health `release` block without `upstreamBase`; release tooling scripts updated | server, tooling | ci | partial (9b) | `ReleaseInfoSchema`, `release.ts`, the updater's stamp verification, and the OpenAPI document drop `upstreamBase` (published manifests may still carry it; the updater ignores it). `scripts/stamp-release.py`, `releases/plan.py`, `releases/release-set.schema.json`, and `web/UPSTREAM_BASE_SHA` follow in checkpoint 9c/10 |
+| V1 | Channels, release-set manifest resolution, checkout validation, clean-tree, fetch/ancestry/ff-only, `_release.json` stamping, running-code identity, restart-when-safe via re-exec | server | vitest (synthetic release sets, `file://` remotes) | pass | checkpoint 9b: `tools/updates.ts` + `updates.test.ts` (63 cases porting `test_tal203_source_update.py` and `test_tal203_published_releases.py` by name); restart is exit code 75 handled by `cli/supervise.ts` |
+| V2 | Agent update and gateway restart | sidecar | pytest | pass | checkpoint 9b: the Agent checkout follows its `v*` tags (fetch, stash/pull `--ff-only`, force reset with the rewind guard) in `tools/updates.ts`; the gateway restarts through the sidecar `gateway.restart` with one retry (vitest) |
+| V3 | Health `release` block without `upstreamBase`; release tooling scripts updated | server, tooling | ci | pass | `ReleaseInfoSchema`, `release.ts`, the updater, and the OpenAPI document drop `upstreamBase`; `scripts/stamp-release.py` validates stamps without importing Web Python; `releases/plan.py`, `release-set.schema.json` (adds the optional `npm` identity), `build.py` (`npm pack` of contracts + server instead of the wheel), `publish.py` (tarball assets on the Web release and `npm publish` under the `web-release` environment with `NPM_TOKEN`), and `check-release-contracts.py` (contracts Vitest) updated; `web/UPSTREAM_BASE_SHA` removed; `scripts/check-releases` passes |
 
 ## 14. CI and repository tooling
 
 | ID | Capability | Owner | Verification | Status | Notes |
 |---|---|---|---|---|---|
-| T1 | `web-verify.yml` Node 24 jobs, OpenAPI diff gate, sidecar pytest against the pinned Agent, `static/dist` gate, Playwright | tooling | ci | pending | |
-| T2 | `changed-components.py` routing for `web/packages/**`, `web/sidecar/**`; `scripts/check`, `check-web-server` | tooling | ci (`--self-test`) | pending | |
-| T3 | Workflow removals (`web-native-windows-startup.yml`, `upstream-watch.yml`), `actionlint`, `git diff --check` | tooling | ci | pending | |
-| T4 | App contract runner boots the TS server; kanban reference server repointed at the sidecar | tooling | ci | pending | |
+| T1 | `web-verify.yml` Node 24 jobs, OpenAPI diff gate, sidecar pytest against the pinned Agent, `static/dist` gate, Playwright | tooling | ci | pass | checkpoint 9c: `server` (lint, typecheck, Vitest, OpenAPI diff), `sidecar` (`scripts/check-agent-compatibility.py --skip-docker` provisions the pinned Agent and runs the sidecar suite), `frontend` (gates, `static/dist` diff, Playwright on the fixture replay sidecar via `scripts/check-web-browser`); Python lint/pytest jobs removed |
+| T2 | `changed-components.py` routing for `web/packages/**`, `web/sidecar/**`; `scripts/check`, `check-web-server` | tooling | ci (`--self-test`) | pass | `web_python` suite removed; `web_server` owns `packages/server`, `sidecar/`, `scripts/`, `.env.example`; Docker paths include `scripts/lib/`; `scripts/check web` runs `check-web-server` (npm gates + OpenAPI diff + sidecar pytest) then the frontend gates and the browser suite |
+| T3 | Workflow removals (`web-native-windows-startup.yml`, `upstream-watch.yml`), `actionlint`, `git diff --check` | tooling | ci | pass | both workflows, `scripts/import-web-upstream`, `scripts/test-monorepo-import.py`, and `web/UPSTREAM_BASE_SHA` removed; `critical_markdown_check.py` moved to `scripts/critical-markdown-check.py` with a unittest port; `rehearse-monorepo.py` tolerates the retired base file; `actionlint` and `git diff --check` pass |
+| T4 | App contract runner boots the TS server; kanban reference server repointed at the sidecar | tooling | ci | pass | `app/scripts/validate-upstream-contract` builds the contracts/server workspaces (for `--ref` exports) and boots the Node bin on `HERMES_WEBUI_SIDECAR_COMMAND` = `sidecar/scripts/replay_sidecar.py` (fixture replay + staged approval); the probe's `inject_test` step became `POST /api/chat/start`; `--server-only` passes locally end to end. `verify_kanban_reference_server.py` boots the Node server with the real Agent sidecar and drives `/api/kanban/*` over HTTP with a password login |
 
 ## 15. Tests
 
@@ -299,17 +299,17 @@ See `sidecar-rpc.md` for the method surface. Each row is one RPC namespace.
 | Q1 | Contracts: schema and fixture tests, OpenAPI snapshot, monorepo `contracts/fixtures` tests | contracts | vitest | pending | |
 | Q2 | Server: unit tests with fake sidecar, HTTP integration tests, SSE lifecycle, auth/CSRF/cookie/proxy, state-file and crypto compatibility fixtures, git runner, terminal, update, Docker invariants | server | vitest | pending | |
 | Q3 | Sidecar pytest per RPC method | sidecar | pytest | pending | |
-| Q4 | Frontend Vitest and Playwright | frontend | vitest, pw | pending | |
+| Q4 | Frontend Vitest and Playwright | frontend | vitest, pw | pass | 187 Vitest; 32 Playwright specs on the Node server (real sidecar or the fixture replay sidecar) |
 | Q5 | Regression-port rule: every `test_issue*.py` and `test_regressions.py` case ported by name or listed as dropped with reason | all | ci | pending | Counts reported in the PR body |
 
 ## 16. Documentation
 
 | ID | Document set | Status | Notes |
 |---|---|---|---|
-| G1 | `web/` READMEs, `ARCHITECTURE.md`, `TESTING.md`, `CONTRIBUTING.md`, `AGENTS.md` | pending | |
-| G2 | `docs/*.md` operational guides (troubleshooting, supervisor, onboarding checklist, docker, updates, WSL, chat setup, remote access, extensions) | pending | |
-| G3 | Architecture and RFC documents (agent API contract, source boundary, frontend migration, SSE and run-adapter RFCs, lock ownership) | pending | |
-| G4 | Root `README.md`, `CONTRACT_TESTS.md`, `docs/monorepo-migration.md`, changelog fragment | pending | |
+| G1 | `web/` READMEs, `ARCHITECTURE.md`, `TESTING.md`, `CONTRIBUTING.md`, `AGENTS.md` | pass | checkpoint 9c: README, ARCHITECTURE, and TESTING rewritten for the npm launcher, contract package, server, sidecar, and gates; CONTRIBUTING and AGENTS updated |
+| G2 | `docs/*.md` operational guides (troubleshooting, supervisor, onboarding checklist, docker, updates, WSL, chat setup, remote access, extensions) | pass | checkpoint 9c: `talaria-web` replaces `start.sh`/`bootstrap.py`/`ctl.sh`; supervisor units and the PID tree describe the serve supervisor; troubleshooting documents `sidecar_unavailable`; WSL launcher and doc use the bin (native Windows dropped); docker/updates describe the sidecar venv and npm distribution |
+| G3 | Architecture and RFC documents (agent API contract, source boundary, frontend migration, SSE and run-adapter RFCs, lock ownership) | pass | checkpoint 9c: agent API contract and source-boundary RFC describe the sidecar boundary; frontend migration/parity docs name the TS server; `sse-streams.md` names `gateway-watcher.ts` and the dropped standalone gateway stream; `lock-ownership.md` rewritten for the event-loop model |
+| G4 | Root `README.md`, `CONTRACT_TESTS.md`, `docs/monorepo-migration.md`, changelog fragment | partial (9c) | root README, `CONTRACT_TESTS.md`, `docs/monorepo-migration.md` (upstream import section retired), and the contract skill updated; `changelog.d/TAL-245.json` lands in checkpoint 10 |
 
 ## 17. Consumers to keep green
 

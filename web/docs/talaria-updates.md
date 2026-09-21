@@ -11,8 +11,8 @@ shared contracts do change, applying the update advances to the exact latest
 main commit, including its shared history metadata.
 Stable source updates follow completed releases. Stable tags are
 `web-vX.Y.Z`; experimental tags are `web-exp-vX.Y.Z`. App and Relay tags cannot
-become Web's version. Public Hermes WebUI imports remain a maintainer operation
-through root `scripts/import-web-upstream`; they are not an end-user update feed.
+become Web's version. Public Hermes WebUI imports were retired with the TypeScript backend; there is no
+upstream import feed.
 
 For Stable source updates and both packaged channels, the updater reads root releases named `release-set-<commit SHA>` and their
 `release-set.json` asset. Only `status: complete` manifests with matching immutable
@@ -49,7 +49,10 @@ completed release identity. Switching back to Stable does not rewind a checkout
 that is ahead of the published release.
 
 Source updates advance the monorepo checkout; deployment remains component-specific.
-The operation updates Web provenance and schedules a Web restart. Existing
+The operation updates Web provenance and schedules a Web restart: once active chat
+work drains (bounded at 300 s) the server worker exits with code 75 and the
+`talaria-web serve` supervisor respawns it, so the PID tracked by `ctl`, launchd,
+or systemd never changes. Existing
 active-run guards still apply. The compatibility `force` and `clear_lock` endpoints
 use this same clean-only path for Web. Git owns its locks; the server never deletes
 them. External Agent update and gateway-restart behavior stays separate. Settings
@@ -62,8 +65,8 @@ while keeping the real commit distance at zero. Settings offers **Finish applyin
 until the stamp is verified and Web restarts with that identity. Modified local
 stamps require manual inspection and are not overwritten.
 
-Containers and wheels use manual artifact replacement, with the image digest or
-source/build identity from the completed manifest. Settings distinguishes a
+Containers and npm installs use manual artifact replacement: the image digest from
+the completed manifest, or `npm install -g @maudecode/talaria-web@<version>`. Settings distinguishes a
 failed check, an unknown status, local changes, and an available automatic update.
 Manual installations link to the Talaria releases page. Keep persistent state and
 the previous immutable artifact when replacing an installation.
@@ -107,9 +110,10 @@ Stable preparation checks out the selected tag's commit detached and stamps
 its verified provenance. The receipt reports `updateChannel`. Select that channel
 in Settings after activating the deployment; preparation does not edit existing
 user settings or state. The repository already commits its frontend build, so
-Git updates deliver those assets without a production npm build. Runtime setup
-and startup remain the repository's existing commands, independently of whether
-Git selected main or a release; no wheel-only update requirement is introduced.
+Git updates deliver those assets without a frontend build. The receipt lists the
+`install`, `build`, and `launch` commands (`npm ci` for the contracts and server
+workspaces, their builds, then the `talaria-web` bin), independently of whether
+Git selected main or a release.
 
 After preparation succeeds, stop the old service, change its working directory
 and launch command to the paths in the preparation receipt, then start and check
@@ -117,17 +121,16 @@ and launch command to the paths in the preparation receipt, then start and check
 rollback. An unsuccessful preparation leaves any partial new directory available
 for inspection. There is no supported in-place rewrite of the standalone root.
 
-For a legacy pip installation, stop its service, uninstall the `hermes-webui`
-distribution from that environment **before** installing the released
-`talaria-web` wheel. Both distributions contain the same top-level runtime module
-names, so concurrent installation is unsupported. The new wheel supplies both
-`talaria-web` and the legacy `hermes-webui` command; preserve the environment and
-state settings when restarting. Container migrations replace only the Web image
-reference with the completed manifest's digest and preserve persistent mounts.
+For a legacy pip installation (`hermes-webui` or the `talaria-web` wheel), stop its
+service, then install the npm package (`npm install -g @maudecode/talaria-web`) and
+point the service at the `talaria-web` bin with the same `HERMES_HOME`,
+`HERMES_WEBUI_STATE_DIR`, and `.env`. The Python environment can be removed once
+the new service is healthy; state files are read in place without migration.
+Container migrations replace only the Web image reference with the completed
+manifest's digest and preserve persistent mounts.
 
-Validation lives in `tests/test_tal203_source_update.py`,
-`tests/test_tal203_published_releases.py`, and the frontend System settings/browser
-tests. Source tests own their repositories, tags, worktrees, locks, and state;
+Validation lives in `packages/server/src/tools/updates.test.ts` and the frontend
+System settings/browser tests. Source tests own their repositories, tags, worktrees, locks, and state;
 browser fixtures own release responses and never install updates.
 
 Packaged installations compare version numbers only within the selected channel.

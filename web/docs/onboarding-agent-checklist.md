@@ -47,7 +47,7 @@ Confirm the basic context:
 pwd
 git branch --show-current
 git rev-parse --short HEAD
-python3 --version
+node --version
 ```
 
 Check whether repo-local environment overrides will affect bootstrap:
@@ -71,7 +71,7 @@ mkdir -p ~/hermes-onboarding-test
 HERMES_HOME=~/hermes-onboarding-test/.hermes \
 HERMES_WEBUI_STATE_DIR=~/hermes-onboarding-test/webui \
 HERMES_WEBUI_PORT=8789 \
-python3 bootstrap.py
+talaria-web --foreground --no-browser
 ```
 
 Open:
@@ -80,14 +80,14 @@ Open:
 http://127.0.0.1:8789
 ```
 
-The bootstrap writes a port-specific log under the selected WebUI state
-directory:
+A detached `talaria-web` run writes a port-specific log under the selected WebUI
+state directory:
 
 ```text
 ~/hermes-onboarding-test/webui/bootstrap-8789.log
 ```
 
-For daemon-style installs, `ctl.sh` writes the daemon log to the active
+For daemon-style installs, `talaria-web ctl` writes the daemon log to the active
 `HERMES_HOME` by default:
 
 ```text
@@ -95,7 +95,7 @@ For daemon-style installs, `ctl.sh` writes the daemon log to the active
 ```
 
 When using the isolated trial environment, prefer the bootstrap command above
-unless the human specifically wants to validate `ctl.sh`.
+unless the human specifically wants to validate `talaria-web ctl`.
 
 ## Non-secret evidence commands
 
@@ -155,14 +155,14 @@ If the server does not start:
 
 - check the bootstrap log
 - check for a port conflict on `8789`
-- confirm Python can run `bootstrap.py`
+- confirm Node 24+ can run `talaria-web`
 - confirm `.env` is not overriding the isolated directories or port
 
 If onboarding reports `agent_unavailable`:
 
 - confirm the bootstrap found or installed Hermes Agent
-- check whether the running Python can import `run_agent.AIAgent`
-- use `docs/troubleshooting.md`, especially the `AIAgent not available` flow
+- check the startup `[sidecar]` lines for the Agent directory and interpreter
+- use `docs/troubleshooting.md`, especially the `sidecar_unavailable` flow
 
 If onboarding reports `provider_incomplete`:
 
@@ -191,7 +191,7 @@ Use this shape when reporting results to the human, Discord, or GitHub:
 
 ```text
 Install path:
-OS / Python:
+OS / Node:
 Repo commit:
 Command used:
 WebUI URL:

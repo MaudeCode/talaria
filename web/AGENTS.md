@@ -51,17 +51,16 @@ Follow that checklist's safety rules:
 - Keep one logical change per PR; split unrelated refactors or cleanup.
 - Read `docs/CONTRACTS.md` and the linked contract/RFC for the touched
   subsystem before editing.
-- For local pytest runs, use `./scripts/test.sh` instead of bare `python3`,
-  `python -m pytest`, or `pytest`. The script creates/uses the repo `.venv`,
-  pins execution to Python 3.11-3.13, and installs missing dev test dependencies.
-  `HERMES_WEBUI_TEST_PYTHON` selects the supported base interpreter used to
-  create or rebuild `.venv`; it must not install test dependencies into a
-  system/Homebrew interpreter directly.
-  If a direct pytest invocation reports an unsupported interpreter, rerun through
-  `./scripts/test.sh` before debugging product code.
-- Preserve the existing Python server and TanStack Start/React frontend structure. Do not add
-  dependencies, build tools, frameworks, or long-lived processes without clear
-  justification and a rollback story.
+- Run checks with the npm workspace commands in `TESTING.md` (`npm test -w packages/server`,
+  `npm run e2e -w packages/frontend`, `sidecar/scripts/test.sh`). The sidecar suite
+  uses the pinned Agent's venv; `HERMES_WEBUI_AGENT_DIR` points it at a checkout.
+- The server is TypeScript on Node 24 and never imports Hermes Agent code; everything
+  that needs Agent Python goes through the stdlib-only sidecar (`sidecar/talaria_sidecar`)
+  and its versioned RPC in `packages/contracts`. Do not fork, patch, or vendor the Agent.
+- Every route, SSE event, and sidecar method is defined once in `packages/contracts`;
+  regenerate `../contracts/web-api.openapi.json` with `npm run openapi` and keep it committed.
+- Do not add third-party dependencies, build tools, frameworks, or long-lived processes
+  without clear justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,
   testing guidance, or user-facing workflows.
 - Do not edit `CHANGELOG.md` in ordinary contributor PRs. The release workflow
@@ -123,7 +122,7 @@ Prefer isolated trial state for experiments:
 HERMES_HOME=/tmp/hermes-webui-agent-home \
 HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-agent-state \
 HERMES_WEBUI_PORT=8789 \
-python3 bootstrap.py
+node packages/server/dist/bin/talaria-web.js --foreground --no-browser
 ```
 
 Do not include private machine instructions in this tracked file. Use a
