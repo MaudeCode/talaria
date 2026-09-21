@@ -53,9 +53,14 @@ export interface AuthStoreOptions {
   log?: (line: string) => void
   /** Seconds since the epoch; tests inject a clock. */
   now?: () => number
-  /** Later checkpoints: passkeys and OIDC report through these. */
+  /** At least one passkey credential is registered (feature flag applied by the caller). */
   passkeysEnabled?: () => boolean
+  /** Last-known OIDC availability (sync for the auth gate). */
   oidcEnabled?: () => boolean
+  /** Refresh the OIDC config before `isAuthEnabled` answers; errors are swallowed. */
+  oidcProbe?: () => Promise<unknown>
+  /** `webui_passkey_enabled` from the base-home config.yaml (last known), consulted when the env flag is unset. */
+  passkeyConfigFlag?: () => unknown
 }
 
 export class AuthStore {
@@ -74,6 +79,8 @@ export class AuthStore {
   private readonly warned = new Set<string>()
   passkeysEnabled: () => boolean
   oidcEnabled: () => boolean
+  private readonly oidcProbe: () => Promise<unknown>
+  private readonly passkeyConfigFlag: () => unknown
 
   constructor(opts: AuthStoreOptions) {
     this.stateDir = opts.stateDir
@@ -87,6 +94,8 @@ export class AuthStore {
     this.attempts = this.loadLoginAttempts()
     this.passkeysEnabled = opts.passkeysEnabled ?? (() => false)
     this.oidcEnabled = opts.oidcEnabled ?? (() => false)
+    this.oidcProbe = opts.oidcProbe ?? (() => Promise.resolve())
+    this.passkeyConfigFlag = opts.passkeyConfigFlag ?? (() => undefined)
   }
 
   private warnPersistence(prefix: string, artifact: string, error: unknown, consequence: string): void {
@@ -168,10 +177,19 @@ export class AuthStore {
     return (await this.getPasswordHash()) !== null
   }
 
+  /** Python `_passkey_feature_flag_enabled`: env wins, else `webui_passkey_enabled` in the operator config. */
   passkeyFeatureFlagEnabled(): boolean {
     const raw = this.env.HERMES_WEBUI_PASSKEY ?? ''
     if (raw) return truthy(raw)
+    const cfg = this.passkeyConfigFlag()
+    if (typeof cfg === 'boolean') return cfg
+    if (typeof cfg === 'string') return truthy(cfg)
     return false
+  }
+
+  /** Feature flag AND at least one registered credential (Python `are_passkeys_enabled`). */
+  passkeysAvailable(): boolean {
+    return this.passkeyFeatureFlagEnabled() && this.passkeysEnabled()
   }
 
   isTrustedAuthEnabled(): boolean {
@@ -179,7 +197,10 @@ export class AuthStore {
   }
 
   async isAuthEnabled(): Promise<boolean> {
-    return (await this.isPasswordAuthEnabled()) || this.passkeysEnabled() || this.oidcEnabled() || this.isTrustedAuthEnabled()
+    if (await this.isPasswordAuthEnabled()) return true
+    if (this.passkeysAvailable() || this.isTrustedAuthEnabled()) return true
+    try { await this.oidcProbe() } catch { /* last-known config stands */ }
+    return this.oidcEnabled()
   }
 
   async verifyPassword(plain: string): Promise<boolean> {

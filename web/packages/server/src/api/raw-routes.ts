@@ -19,6 +19,7 @@ import { parseMultipart, UploadConflict, UploadRejected } from '../workspace/upl
 import { pythonPrettyJson, renderSessionHtml } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
 import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
+import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -26,6 +27,8 @@ const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/sv
 type RawHandler = (ctx: RequestContext) => Promise<void> | void
 
 export const RAW_GET_ROUTES: Record<string, RawHandler> = {
+  '/api/auth/oidc/start': handleOidcStart,
+  '/api/auth/oidc/callback': handleOidcCallback,
   '/api/file/raw': handleFileRaw,
   '/api/media': handleMedia,
   '/api/folder/download': handleFolderDownload,

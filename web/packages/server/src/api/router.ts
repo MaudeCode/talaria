@@ -6,7 +6,13 @@
 import { implement, ORPCError } from '@orpc/server'
 import { coreContract, type AuthStatus, type Bootstrap, type Health } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
-import { authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession } from '../auth/gate.js'
+import { authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
+import { PasskeyError, PasskeyRateLimitError, rpContext } from '../auth/passkeys.js'
+import { requestBaseUrl } from './auth-raw.js'
+import { onboardingGateAllows } from './settings-router.js'
+import { forwardedClientIp, rawPeerIsTrustedProxy } from '../http/origin.js'
+import { truthy } from '../config.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
 
 export interface ApiContext { ctx: RequestContext }
@@ -167,8 +173,127 @@ export const coreRouter = os.router({
       ctx.queueCookie(clearProfileCookieHeader(ctx))
       return payload
     }),
+    oidcNativeStart: os.auth.oidcNativeStart.handler(async ({ input, context }) => {
+      const { ctx } = context
+      if (input.code_challenge_method !== 'S256') throw new HttpError(400, 'Native OIDC requires S256 PKCE')
+      if (ctx.deps.nativeOidcLimiter.limited(rateLimitClientIp(ctx))) throw new HttpError(429, 'Too many native OIDC starts; try again in a minute')
+      return oidcCall(() => ctx.deps.oidc.beginNative(requestBaseUrl(ctx), input.callback_url, input.state, input.code_challenge))
+    }),
+    oidcNativeExchange: os.auth.oidcNativeExchange.handler(async ({ input, context }) => {
+      const { ctx } = context
+      const identity = await oidcCall(() => ctx.deps.oidc.exchangeNative(requestBaseUrl(ctx), input.flow_id, input.code, input.state, input.code_verifier))
+      const cookieVal = ctx.deps.auth.createSession({ authType: 'oidc', username: identity.email || identity.subject, boundProfile: identity.bound_profile, oidcBinding: identity.oidc_binding ?? null })
+      ctx.queueCookie(ctx.authCookieHeader(cookieVal))
+      return { ok: true as const }
+    }),
+    oidcNativeCancel: os.auth.oidcNativeCancel.handler(({ input, context }) => ({ ok: context.ctx.deps.oidc.cancelNative(input.flow_id, input.state) })),
+    passkeyOptions: os.auth.passkeyOptions.handler(async ({ context }) => {
+      const { ctx } = context
+      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled. Set HERMES_WEBUI_PASSKEY=1 or webui_passkey_enabled: true to enable.')
+      if (!(await ctx.deps.auth.isAuthEnabled())) throw new HttpError(400, 'Auth not enabled')
+      const [rpId, origin] = passkeyRp(ctx)
+      return { ok: true as const, publicKey: passkeyCall(() => ctx.deps.passkeys.authenticationOptions(rpId, origin)) }
+    }),
+    passkeyLogin: os.auth.passkeyLogin.handler(async ({ input, context }) => {
+      const { ctx } = context
+      const auth = ctx.deps.auth
+      if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
+      if (!(await auth.isAuthEnabled())) throw new HttpError(400, 'Auth not enabled')
+      const clientIp = ctx.peer
+      if (!auth.checkLoginRate(clientIp)) throw new HttpError(429, 'Too many attempts. Try again in a minute.')
+      try {
+        ctx.deps.passkeys.finishLogin(input)
+      } catch (error) {
+        if (!(error instanceof PasskeyError)) throw error
+        auth.recordLoginAttempt(clientIp)
+        throw new HttpError(401, error.message)
+      }
+      ctx.queueCookie(ctx.authCookieHeader(auth.createSession({ authType: 'passkey' })))
+      return { ok: true as const }
+    }),
+    passkeyRegisterOptions: os.auth.passkeyRegisterOptions.handler(async ({ context }) => {
+      const { ctx } = context
+      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
+      await requirePasskeyManagementAuth(ctx)
+      const [rpId, origin] = passkeyRp(ctx)
+      return { ok: true as const, publicKey: passkeyCall(() => ctx.deps.passkeys.registrationOptions(rpId, origin)) }
+    }),
+    passkeyRegister: os.auth.passkeyRegister.handler(async ({ input, context }) => {
+      const { ctx } = context
+      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
+      await requirePasskeyManagementAuth(ctx)
+      const result = passkeyCall(() => ctx.deps.passkeys.finishRegistration(input))
+      return { ...result, credentials: ctx.deps.passkeys.registered() as never }
+    }),
+    passkeyDelete: os.auth.passkeyDelete.handler(async ({ input, context }) => {
+      const { ctx } = context
+      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
+      await requirePasskeyManagementAuth(ctx)
+      const creds = ctx.deps.passkeys.registered()
+      if ((await ctx.deps.auth.getPasswordHash()) === null && creds.length <= 1 && creds.some((c) => c.id === input.id)) {
+        throw new HttpError(409, 'Set a password or disable auth before removing the last passkey.')
+      }
+      try {
+        return ctx.deps.passkeys.delete(input.id) as never
+      } catch (error) {
+        if (error instanceof PasskeyError) throw new HttpError(404, error.message)
+        throw error
+      }
+    }),
+    passkeys: os.auth.passkeys.handler(({ context }) => {
+      const { ctx } = context
+      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) return { credentials: [], disabled: true }
+      return { credentials: ctx.deps.passkeys.registered() as never }
+    }),
   },
 })
+
+/** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding for the native OIDC start limiter. */
+function rateLimitClientIp(ctx: RequestContext): string {
+  const env = ctx.deps.config.env
+  if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(ctx.peer, env)) {
+    const forwarded = forwardedClientIp(ctx.headerAll('x-forwarded-for'), ctx.header('x-real-ip'), ctx.peer, env)
+    if (forwarded !== null) return forwarded
+  }
+  return ctx.peer
+}
+
+async function oidcCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    if (error instanceof OidcConfigError) throw new HttpError(404, error.message)
+    if (error instanceof OidcAuthError) throw new HttpError(error.status, error.message)
+    throw error
+  }
+}
+
+function passkeyCall<T>(fn: () => T): T {
+  try {
+    return fn()
+  } catch (error) {
+    if (error instanceof PasskeyRateLimitError) throw new HttpError(429, error.message)
+    if (error instanceof PasskeyError) throw new HttpError(400, error.message)
+    throw error
+  }
+}
+
+function passkeyRp(ctx: RequestContext): [string, string] {
+  return rpContext({ origin: ctx.header('origin'), host: ctx.header('host'), forwardedProto: ctx.header('x-forwarded-proto') }, ctx.isSecureContext())
+}
+
+/** Python `_require_passkey_management_auth`: an owner session, or the local first-run bootstrap gate while auth is off. */
+async function requirePasskeyManagementAuth(ctx: RequestContext): Promise<void> {
+  const auth = ctx.deps.auth
+  const enabled = await auth.isAuthEnabled()
+  if (!enabled) {
+    if (await onboardingGateAllows(ctx, enabled)) return
+    throw new HttpError(401, 'Authentication required')
+  }
+  const cookieVal = ctx.authCookie()
+  if (!cookieVal || !auth.verifySession(cookieVal)) throw new HttpError(401, 'Authentication required')
+  if (!(await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))) throw new HttpError(403, 'An owner session is required to manage owner authentication credentials')
+}
 
 export type CoreRouter = typeof coreRouter
 

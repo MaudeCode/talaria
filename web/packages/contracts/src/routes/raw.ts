@@ -19,6 +19,16 @@ export interface RawRoute {
 
 export const RAW_ROUTES: readonly RawRoute[] = [
   {
+    method: 'GET', path: '/api/auth/oidc/start', summary: 'Redirect the browser to the configured OIDC provider (302, `Cache-Control: no-store`).', tags: ['auth'],
+    query: { next: { description: 'Safe path-absolute return target after login.' }, native_flow: { description: 'Pending native handoff id from `/api/auth/oidc/native/start`.' } },
+    responses: { 302: { description: 'Provider authorization URL in `Location`.' }, 404: { description: 'OIDC is not configured.', contentType: 'application/json' }, 502: { description: 'Provider discovery failed.', contentType: 'application/json' } },
+  },
+  {
+    method: 'GET', path: '/api/auth/oidc/callback', summary: 'Authorization-code callback: verifies the id_token, sets the session cookie, and redirects to `next` (or the native app).', tags: ['auth'],
+    query: { state: { description: 'Opaque state issued by `/api/auth/oidc/start`.', required: true }, code: { description: 'Provider authorization code.' }, error: { description: 'Provider error code (yields 401 or a native failure redirect).' }, error_description: { description: 'Provider error detail.' } },
+    responses: { 302: { description: 'Session established; `Set-Cookie` plus `Location`.' }, 400: { description: 'Missing state or code.', contentType: 'application/json' }, 401: { description: 'Provider error or claim policy rejection.', contentType: 'application/json' }, 404: { description: 'OIDC is not configured.', contentType: 'application/json' } },
+  },
+  {
     method: 'GET', path: '/api/chat/stream', summary: 'Live agent-turn relay (SSE). Journal-backed frames carry `id: <stream_id>:<seq>`; resume with `after_event_id`, `after_seq`, or `Last-Event-ID`.', tags: ['chat'],
     query: { stream_id: { description: 'Stream returned by `/api/chat/start`.', required: true }, after_event_id: { description: 'Resume cursor (`<stream_id>:<seq>`).' }, after_seq: { description: 'Numeric resume cursor.' }, replay: { description: '`1` replays the journal from the start.' } },
     responses: { 200: { description: 'Event stream; ends after `stream_end`, `cancel`, `apperror`, or `error`.', contentType: 'text/event-stream' }, 404: { description: 'No live stream and no journal.', contentType: 'application/json' }, 503: { description: 'Client stream limit reached (`condition: client_stream_limit`).', contentType: 'application/json' } },

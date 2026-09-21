@@ -194,6 +194,11 @@ export async function ensureTrustedAuthSession(ctx: RequestContext): Promise<Ses
   let cookieValue = ctx.authCookie()
   const info = cookieValue && auth.verifySession(cookieValue) ? auth.getSessionInfo(cookieValue) : null
   if (info?.auth_type !== undefined && info?.auth_type !== 'trusted') {
+    if (info.auth_type === 'oidc' && !(await ctx.deps.oidc.sessionBindingIsCurrent(info))) {
+      auth.invalidateSession(cookieValue)
+      ctx.trusted.rejected = true
+      return remember(ctx, null)
+    }
     await applyBoundSessionProfile(ctx, (info.bound_profile ?? '').trim() || null, cookieValue ?? '')
     return remember(ctx, info)
   }
@@ -229,7 +234,10 @@ export function trustedSessionAllowsActiveProfile(ctx: RequestContext, info: Ses
 export async function sessionCanManageServer(ctx: RequestContext, info: SessionInfo | null): Promise<boolean> {
   if (!(await ctx.deps.auth.isAuthEnabled())) return true
   if (!info) return false
-  if (info.auth_type === 'oidc') return false
+  const authType = info.auth_type ?? ''
+  if (authType === 'oidc') return ctx.deps.oidc.sessionCanManageServer(info)
+  // An untyped record predates typed logins; unknown provenance is not owner authority under a selective policy.
+  if (!authType && (await ctx.deps.oidc.ownerPolicyConfigured())) return false
   return !(info.bound_profile ?? '').trim()
 }
 
@@ -362,7 +370,7 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     loggedIn = Boolean(sessionInfo)
   }
   const passkeyFlag = auth.passkeyFeatureFlagEnabled()
-  const passkeys = passkeyFlag && auth.passkeysEnabled() ? 1 : 0
+  const passkeys = passkeyFlag ? ctx.deps.passkeys.registered().length : 0
   const passwordAuthEnabled = (await auth.getPasswordHash()) !== null
   const payload: AuthStatus = {
     auth_enabled: authEnabled,

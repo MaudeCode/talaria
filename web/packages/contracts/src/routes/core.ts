@@ -86,6 +86,25 @@ export const LoginRequestSchema = z.object({ password: z.string().optional() })
 export const LoginResponseSchema = z.object({ ok: z.literal(true), message: z.string().optional() })
 export const LogoutResponseSchema = z.object({ ok: z.literal(true), trusted_logout_url: z.string().optional() })
 
+export const OidcNativeStartRequestSchema = z.object({ callback_url: z.string(), state: z.string(), code_challenge: z.string(), code_challenge_method: z.string() })
+export const OidcNativeStartResponseSchema = z.object({ flow_id: z.string(), authorization_url: z.string(), server_id: z.string(), expires_in: z.number().int() })
+export const OidcNativeExchangeRequestSchema = z.object({ flow_id: z.string(), code: z.string(), state: z.string(), code_verifier: z.string() })
+export const OidcNativeCancelRequestSchema = z.object({ flow_id: z.string(), state: z.string() })
+const AuthOkSchema = z.object({ ok: z.literal(true) })
+const OkFlagSchema = z.object({ ok: z.boolean() })
+
+/** WebAuthn options are handed to the browser verbatim (`PublicKeyCredentialCreationOptions` / `RequestOptions` with base64url binaries). */
+export const PasskeyOptionsResponseSchema = z.object({ ok: z.literal(true), publicKey: z.record(z.string(), z.unknown()) })
+export const PasskeyCredentialSchema = z.object({ id: z.string(), label: z.string(), created_at: z.number(), last_used_at: z.number().nullable(), sign_count: z.number().int() })
+export type PasskeyCredential = z.infer<typeof PasskeyCredentialSchema>
+/** A serialised `PublicKeyCredential` (`id`, `rawId`, `type`, `response.{clientDataJSON,attestationObject|authenticatorData,signature}`), plus an optional `label` on register (the Python field; the frontend's `name` is reconciled in checkpoint 8). */
+export const PasskeyAssertionSchema = z.object({ id: z.string().optional(), rawId: z.string().optional(), type: z.string().optional(), name: z.string().optional(), response: z.record(z.string(), z.unknown()).optional() }).catchall(z.unknown())
+export const PasskeyRegisterResponseSchema = z.object({ ok: z.literal(true), credential: z.object({ id: z.string(), label: z.string() }), credentials: z.array(PasskeyCredentialSchema) })
+export const PasskeyLoginResponseSchema = z.object({ ok: z.literal(true) })
+export const PasskeyDeleteRequestSchema = z.object({ id: z.string() })
+export const PasskeyDeleteResponseSchema = z.object({ ok: z.literal(true), credentials: z.array(PasskeyCredentialSchema) })
+export const PasskeysListSchema = z.object({ credentials: z.array(PasskeyCredentialSchema), disabled: z.boolean().optional() })
+
 export const coreContract = {
   health: oc
     .route({ method: 'GET', path: '/health', tags: ['core'], summary: 'Liveness and release identity; `deep=1` adds startup and store probes.' })
@@ -98,5 +117,32 @@ export const coreContract = {
     status: oc.route({ method: 'GET', path: '/api/auth/status', tags: ['auth'] }).output(AuthStatusSchema),
     login: oc.route({ method: 'POST', path: '/api/auth/login', tags: ['auth'] }).input(LoginRequestSchema).output(LoginResponseSchema),
     logout: oc.route({ method: 'POST', path: '/api/auth/logout', tags: ['auth'] }).output(LogoutResponseSchema),
+    oidcNativeStart: oc
+      .route({ method: 'POST', path: '/api/auth/oidc/native/start', tags: ['auth'], summary: 'Begin a native-app OIDC handoff (S256 PKCE, rate limited per client IP).' })
+      .input(OidcNativeStartRequestSchema).output(OidcNativeStartResponseSchema),
+    oidcNativeExchange: oc
+      .route({ method: 'POST', path: '/api/auth/oidc/native/exchange', tags: ['auth'], summary: 'Redeem the one-time native handoff code for a session cookie.' })
+      .input(OidcNativeExchangeRequestSchema).output(AuthOkSchema),
+    oidcNativeCancel: oc
+      .route({ method: 'POST', path: '/api/auth/oidc/native/cancel', tags: ['auth'], summary: 'Abandon a pending native handoff.' })
+      .input(OidcNativeCancelRequestSchema).output(OkFlagSchema),
+    passkeyOptions: oc
+      .route({ method: 'POST', path: '/api/auth/passkey/options', tags: ['auth'], summary: 'WebAuthn assertion options for login (public; CSRF exempt).' })
+      .output(PasskeyOptionsResponseSchema),
+    passkeyLogin: oc
+      .route({ method: 'POST', path: '/api/auth/passkey/login', tags: ['auth'], summary: 'Verify a passkey assertion and start a session (public; CSRF exempt).' })
+      .input(PasskeyAssertionSchema).output(PasskeyLoginResponseSchema),
+    passkeyRegisterOptions: oc
+      .route({ method: 'POST', path: '/api/auth/passkey/register/options', tags: ['auth'], summary: 'WebAuthn creation options (owner session or local first-run bootstrap).' })
+      .output(PasskeyOptionsResponseSchema),
+    passkeyRegister: oc
+      .route({ method: 'POST', path: '/api/auth/passkey/register', tags: ['auth'], summary: 'Store a new ES256 passkey credential.' })
+      .input(PasskeyAssertionSchema).output(PasskeyRegisterResponseSchema),
+    passkeyDelete: oc
+      .route({ method: 'POST', path: '/api/auth/passkey/delete', tags: ['auth'], summary: 'Remove a passkey; the last one is kept while no password is set (409).' })
+      .input(PasskeyDeleteRequestSchema).output(PasskeyDeleteResponseSchema),
+    passkeys: oc
+      .route({ method: 'GET', path: '/api/auth/passkeys', tags: ['auth'], summary: 'Registered passkey metadata (`disabled: true` when the feature flag is off).' })
+      .output(PasskeysListSchema),
   },
 }

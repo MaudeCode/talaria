@@ -1,0 +1,367 @@
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+import { cborDecode } from '../auth/passkeys.js'
+import { canonicalJson, safeNextPath } from '../auth/oidc.js'
+import { validatedRequestHost } from './auth-raw.js'
+
+type Json = Record<string, unknown>
+const b64u = (b: Buffer): string => b.toString('base64url')
+const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+const cookieOf = (res: Response, name: string): string | null => res.headers.getSetCookie().map((c) => c.split(';')[0] ?? '').find((c) => c.startsWith(name + '='))?.slice(name.length + 1) ?? null
+
+// ── fake identity provider ────────────────────────────────────────────────
+
+const ISSUER = 'https://idp.example'
+const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
+const jwk = rsa.publicKey.export({ format: 'jwk' })
+
+function idToken(claims: Json): string {
+  const header = b64u(Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'k1', typ: 'JWT' })))
+  const payload = b64u(Buffer.from(JSON.stringify(claims)))
+  const sig = cryptoSign('sha256', Buffer.from(`${header}.${payload}`, 'ascii'), rsa.privateKey)
+  return `${header}.${payload}.${b64u(sig)}`
+}
+
+interface Idp { tokens: Json[]; claimsFor: (nonce: string) => Json; fetch: typeof fetch }
+function fakeIdp(now: () => number): Idp {
+  const idp: Idp = {
+    tokens: [],
+    claimsFor: (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-1', email: 'kim@example.com', groups: ['admins'], exp: now() + 300, iat: now(), nonce }),
+    fetch: (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url === `${ISSUER}/.well-known/openid-configuration`) return Promise.resolve(Response.json({ issuer: ISSUER, authorization_endpoint: `${ISSUER}/authorize`, token_endpoint: `${ISSUER}/token`, jwks_uri: `${ISSUER}/jwks` }))
+      if (url === `${ISSUER}/jwks`) return Promise.resolve(Response.json({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] }))
+      if (url === `${ISSUER}/token`) {
+        const form = Object.fromEntries(new URLSearchParams(typeof init?.body === 'string' ? init.body : ''))
+        idp.tokens.push(form)
+        const nonce = (form.code ?? '').split(':')[1] ?? ''
+        return Promise.resolve(Response.json({ id_token: idToken(idp.claimsFor(nonce)), token_type: 'Bearer' }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    },
+  }
+  return idp
+}
+
+/** Follow the start redirect, pull the nonce from the provider URL, and return a code the fake token endpoint accepts. */
+function providerCode(location: string): { state: string; code: string } {
+  const u = new URL(location)
+  expect(u.origin + u.pathname).toBe(`${ISSUER}/authorize`)
+  expect(u.searchParams.get('code_challenge_method')).toBe('S256')
+  return { state: u.searchParams.get('state') ?? '', code: `code:${u.searchParams.get('nonce') ?? ''}` }
+}
+
+describe('OIDC browser login', () => {
+  let s: TestServer
+  let idp: Idp
+  const now = () => Date.now() / 1000
+  beforeAll(async () => {
+    s = await bootTestServer({
+      env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'owners' },
+    })
+    idp = fakeIdp(now)
+    s.deps.fetch = idp.fetch
+  })
+  afterAll(() => s.close())
+
+  it('reports OIDC as the enabled auth method and gates the API', async () => {
+    const status = await json(await s.get('/api/auth/status'))
+    expect(status).toMatchObject({ auth_enabled: true, oidc_enabled: true, oidc_native_handoff_enabled: true, logged_in: false, password_auth_enabled: false })
+    expect((await s.get('/api/sessions')).status).toBe(401)
+  })
+
+  it('start → provider → callback establishes a typed oidc session', async () => {
+    const start = await s.get('/api/auth/oidc/start?next=%2Fsettings')
+    expect(start.status).toBe(302)
+    expect(start.headers.get('cache-control')).toBe('no-store')
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    expect(cb.status).toBe(302)
+    expect(cb.headers.get('location')).toBe('/settings')
+    const cookie = cookieOf(cb, s.deps.auth.cookieName())
+    expect(cookie).toBeTruthy()
+    expect(idp.tokens.at(-1)).toMatchObject({ grant_type: 'authorization_code', client_id: 'web-client', redirect_uri: `http://127.0.0.1:${String(s.running.port)}/api/auth/oidc/callback` })
+    const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
+    expect(status).toMatchObject({ logged_in: true, auth_type: 'oidc', user: 'kim@example.com', bound_profile: null, can_manage_server: false })
+    expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
+  })
+
+  it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes', async () => {
+    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
+    const start = await s.get('/api/auth/oidc/start')
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    const cookie = `${s.deps.auth.cookieName()}=${cookieOf(cb, s.deps.auth.cookieName()) ?? ''}`
+    expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).can_manage_server).toBe(true)
+    // A policy change invalidates the stored binding on the next request.
+    s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'someone-else'
+    await new Promise((r) => setTimeout(r, 5100))
+    expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(false)
+    s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'owners'
+  }, 15_000)
+
+  it('rejects identities outside the allowlist, bad state, and provider errors', async () => {
+    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-3', groups: ['guests'], exp: now() + 300, nonce })
+    const start = await s.get('/api/auth/oidc/start')
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const denied = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    expect(denied.status).toBe(403)
+    expect((await json(denied)).error).toBe('OIDC identity is not allowed')
+    expect((await s.get('/api/auth/oidc/callback?state=nope&code=x')).status).toBe(401)
+    expect((await s.get('/api/auth/oidc/callback?state=nope')).status).toBe(400)
+    const errored = await s.get('/api/auth/oidc/callback?state=x&error=access_denied&error_description=Nope')
+    expect(errored.status).toBe(401)
+    expect((await json(errored)).error).toBe('Nope')
+  })
+
+  it('native handoff: start → browser flow → app callback → exchange with PKCE', async () => {
+    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-4', email: 'app@example.com', groups: ['admins'], exp: now() + 300, nonce })
+    const verifier = b64u(randomBytes(48))
+    const challenge = b64u(createHash('sha256').update(verifier, 'ascii').digest())
+    const clientState = b64u(randomBytes(24))
+    const bad = await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: clientState, code_challenge: challenge, code_challenge_method: 'plain' })
+    expect(bad.status).toBe(400)
+    const started = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: clientState, code_challenge: challenge, code_challenge_method: 'S256' }))
+    expect(started).toMatchObject({ expires_in: 600 })
+    const authz = new URL(String(started.authorization_url))
+    expect(authz.pathname).toBe('/api/auth/oidc/start')
+    const start = await s.get(authz.pathname + authz.search)
+    const { state, code } = providerCode(start.headers.get('location') ?? '')
+    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+    expect(cb.status).toBe(302)
+    expect(cb.headers.getSetCookie()).toEqual([])
+    const app = new URL(cb.headers.get('location') ?? '')
+    expect(`${app.protocol}//${app.host}`).toBe('talaria://oidc-callback')
+    expect(app.searchParams.get('state')).toBe(clientState)
+    expect(app.searchParams.get('server_id')).toBe(started.server_id)
+    const wrongVerifier = await post(s, '/api/auth/oidc/native/exchange', { flow_id: started.flow_id, code: app.searchParams.get('code'), state: clientState, code_verifier: b64u(randomBytes(48)) })
+    expect(wrongVerifier.status).toBe(401)
+    // The code is single-use: mint a fresh one for the successful exchange.
+    const again = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: clientState, code_challenge: challenge, code_challenge_method: 'S256' }))
+    const start2 = await s.get(new URL(String(again.authorization_url)).search ? `/api/auth/oidc/start${new URL(String(again.authorization_url)).search}` : '')
+    const p2 = providerCode(start2.headers.get('location') ?? '')
+    const cb2 = await s.get(`/api/auth/oidc/callback?state=${p2.state}&code=${p2.code}`)
+    const app2 = new URL(cb2.headers.get('location') ?? '')
+    const exchanged = await post(s, '/api/auth/oidc/native/exchange', { flow_id: again.flow_id, code: app2.searchParams.get('code'), state: clientState, code_verifier: verifier })
+    expect(exchanged.status).toBe(200)
+    const cookie = cookieOf(exchanged, s.deps.auth.cookieName())
+    expect(cookie).toBeTruthy()
+    const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
+    expect(status).toMatchObject({ logged_in: true, auth_type: 'oidc', user: 'app@example.com' })
+    expect((await json(await post(s, '/api/auth/oidc/native/cancel', { flow_id: again.flow_id, state: clientState }))).ok).toBe(false)
+  })
+
+  it('native cancel drops a pending flow and provider errors bounce back to the app', async () => {
+    const challenge = b64u(createHash('sha256').update(b64u(randomBytes(48)), 'ascii').digest())
+    const clientState = b64u(randomBytes(24))
+    const started = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria-branch://oidc-callback/', state: clientState, code_challenge: challenge, code_challenge_method: 'S256' }))
+    expect((await json(await post(s, '/api/auth/oidc/native/cancel', { flow_id: started.flow_id, state: 'wrong-state-value-1' }))).ok).toBe(false)
+    expect((await json(await post(s, '/api/auth/oidc/native/cancel', { flow_id: started.flow_id, state: clientState }))).ok).toBe(true)
+    expect((await s.get(`/api/auth/oidc/start?native_flow=${String(started.flow_id)}`)).status).toBe(401)
+    const second = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: clientState, code_challenge: challenge, code_challenge_method: 'S256' }))
+    const start = await s.get(`/api/auth/oidc/start?native_flow=${String(second.flow_id)}`)
+    const { state } = providerCode(start.headers.get('location') ?? '')
+    const failed = await s.get(`/api/auth/oidc/callback?state=${state}&error=access_denied`)
+    expect(failed.status).toBe(302)
+    const app = new URL(failed.headers.get('location') ?? '')
+    expect(app.searchParams.get('error')).toBe('provider_error')
+    expect(app.searchParams.get('flow_id')).toBe(second.flow_id)
+  })
+
+  it('rate limits native starts per client IP', async () => {
+    const challenge = b64u(createHash('sha256').update(b64u(randomBytes(48)), 'ascii').digest())
+    let last = 200
+    for (let i = 0; i < 12 && last !== 429; i += 1) {
+      last = (await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: challenge, code_challenge_method: 'S256' })).status
+    }
+    expect(last).toBe(429)
+  })
+})
+
+describe('OIDC unconfigured', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('answers 404 on every OIDC entry point and leaves auth disabled', async () => {
+    expect((await json(await s.get('/api/auth/status'))).oidc_enabled).toBe(false)
+    expect((await s.get('/api/auth/oidc/start')).status).toBe(404)
+    expect((await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: b64u(randomBytes(32)), code_challenge_method: 'S256' })).status).toBe(404)
+  })
+})
+
+// ── passkeys ──────────────────────────────────────────────────────────────
+
+function cborEncode(value: unknown): Buffer {
+  const head = (major: number, n: number): Buffer => {
+    if (n < 24) return Buffer.from([(major << 5) | n])
+    if (n < 256) return Buffer.from([(major << 5) | 24, n])
+    const b = Buffer.alloc(3); b[0] = (major << 5) | 25; b.writeUInt16BE(n, 1); return b
+  }
+  if (typeof value === 'number') return value >= 0 ? head(0, value) : head(1, -1 - value)
+  if (typeof value === 'string') { const b = Buffer.from(value, 'utf8'); return Buffer.concat([head(3, b.length), b]) }
+  if (Buffer.isBuffer(value)) return Buffer.concat([head(2, value.length), value])
+  if (value instanceof Map) return Buffer.concat([head(5, value.size), ...[...value.entries()].flatMap(([k, v]) => [cborEncode(k), cborEncode(v)])])
+  throw new Error('unsupported')
+}
+
+class FakeAuthenticator {
+  readonly key = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+  readonly credentialId = randomBytes(16)
+  counter = 0
+  private authData(rpId: string, flags: number, extra: Buffer): Buffer {
+    const head = Buffer.alloc(37)
+    createHash('sha256').update(rpId, 'ascii').digest().copy(head, 0)
+    head[32] = flags
+    head.writeUInt32BE(this.counter, 33)
+    return Buffer.concat([head, extra])
+  }
+  register(options: Json, origin: string): Json {
+    const rp = options.rp as Json
+    const pub = this.key.publicKey.export({ format: 'jwk' })
+    const cose = new Map<number, unknown>([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(String(pub.x), 'base64url')], [-3, Buffer.from(String(pub.y), 'base64url')]])
+    const idLen = Buffer.alloc(2); idLen.writeUInt16BE(this.credentialId.length)
+    const credData = Buffer.concat([Buffer.alloc(16), idLen, this.credentialId, cborEncode(cose)])
+    const authData = this.authData(String(rp.id), 0x41, credData)
+    const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.create', challenge: options.challenge, origin }))
+    const attestation = cborEncode(new Map<string, unknown>([['fmt', 'none'], ['attStmt', new Map()], ['authData', authData]]))
+    return { id: b64u(this.credentialId), rawId: b64u(this.credentialId), type: 'public-key', response: { clientDataJSON: b64u(clientData), attestationObject: b64u(attestation) } }
+  }
+  assert(options: Json, origin: string, opts: { advance?: boolean } = {}): Json {
+    if (opts.advance !== false) this.counter += 1
+    const authData = this.authData(String(options.rpId), 0x01, Buffer.alloc(0))
+    const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin }))
+    const signature = cryptoSign('sha256', Buffer.concat([authData, createHash('sha256').update(clientData).digest()]), this.key.privateKey)
+    return { id: b64u(this.credentialId), rawId: b64u(this.credentialId), type: 'public-key', response: { clientDataJSON: b64u(clientData), authenticatorData: b64u(authData), signature: b64u(signature) } }
+  }
+}
+
+describe('passkeys', () => {
+  let s: TestServer
+  let origin: string
+  const authenticator = new FakeAuthenticator()
+  beforeAll(async () => {
+    s = await bootTestServer({ env: { HERMES_WEBUI_PASSKEY: '1' } })
+    origin = s.base
+  })
+  afterAll(() => s.close())
+
+  it('lists nothing and refuses login options until a passkey exists', async () => {
+    expect(await json(await s.get('/api/auth/passkeys'))).toEqual({ credentials: [] })
+    expect((await json(await s.get('/api/auth/status'))).passkey_feature_flag).toBe(true)
+    expect((await post(s, '/api/auth/passkey/options', {})).status).toBe(400)
+  })
+
+  it('registers the first passkey through the local bootstrap gate, then logs in with it', async () => {
+    const optRes = await post(s, '/api/auth/passkey/register/options', {}, { origin })
+    expect(optRes.status).toBe(200)
+    const options = (await json(optRes)).publicKey as Json
+    expect(options).toMatchObject({ rp: { id: '127.0.0.1' }, attestation: 'none' })
+    const reg = await post(s, '/api/auth/passkey/register', { ...authenticator.register(options, origin), label: 'Laptop' }, { origin })
+    expect(reg.status).toBe(200)
+    const regBody = await json(reg)
+    expect(regBody).toMatchObject({ ok: true, credential: { id: b64u(authenticator.credentialId), label: 'Laptop' } })
+    expect((regBody.credentials as Json[]).length).toBe(1)
+    const stored = JSON.parse(readFileSync(join(s.state, 'passkeys.json'), 'utf8')) as Json[]
+    expect(stored[0]).toMatchObject({ id: b64u(authenticator.credentialId), label: 'Laptop', sign_count: 0 })
+    expect(statSync(join(s.state, 'passkeys.json')).mode & 0o777).toBe(0o600)
+    expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, passkeys_enabled: true, passkeys_count: 1, passwordless_enabled: true, logged_in: false })
+    expect((await s.get('/api/sessions')).status).toBe(401)
+
+    const loginOptions = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json
+    expect(loginOptions.allowCredentials).toEqual([{ type: 'public-key', id: b64u(authenticator.credentialId) }])
+    const login = await post(s, '/api/auth/passkey/login', authenticator.assert(loginOptions, origin), { origin })
+    expect(login.status).toBe(200)
+    const cookie = cookieOf(login, s.deps.auth.cookieName())
+    expect(cookie).toBeTruthy()
+    const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
+    expect(status).toMatchObject({ logged_in: true, can_manage_server: true })
+    expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
+  })
+
+  it('rejects replayed challenges, stale counters, and wrong origins', async () => {
+    const opts = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json
+    const assertion = authenticator.assert(opts, origin)
+    expect((await post(s, '/api/auth/passkey/login', assertion, { origin })).status).toBe(200)
+    const replay = await post(s, '/api/auth/passkey/login', assertion, { origin })
+    expect(replay.status).toBe(401)
+    expect((await json(replay)).error).toBe('Passkey challenge expired. Try again.')
+    const stale = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json
+    const staleRes = await post(s, '/api/auth/passkey/login', { ...authenticator.assert(stale, origin, { advance: false }), response: { ...(authenticator.assert(stale, origin, { advance: false }).response as Json) } }, { origin })
+    expect(staleRes.status).toBe(401)
+    const other = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json
+    const mismatch = await post(s, '/api/auth/passkey/login', authenticator.assert(other, 'https://evil.example'), { origin })
+    expect(mismatch.status).toBe(401)
+    expect((await json(mismatch)).error).toBe('Passkey origin mismatch')
+  })
+
+  it('requires an owner session to manage passkeys once auth is on and keeps the last passkey without a password', async () => {
+    expect((await post(s, '/api/auth/passkey/register/options', {}, { origin })).status).toBe(401)
+    const opts = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json
+    const login = await post(s, '/api/auth/passkey/login', authenticator.assert(opts, origin), { origin })
+    const cookie = `${s.deps.auth.cookieName()}=${cookieOf(login, s.deps.auth.cookieName()) ?? ''}`
+    const csrf = s.deps.auth.csrfTokenForSession(cookieOf(login, s.deps.auth.cookieName()) ?? '') ?? ''
+    const headers = { cookie, origin, 'x-csrf-token': csrf }
+    const id = b64u(authenticator.credentialId)
+    const last = await post(s, '/api/auth/passkey/delete', { id }, headers)
+    expect(last.status).toBe(409)
+    expect((await post(s, '/api/auth/passkey/delete', { id: 'missing' }, headers)).status).toBe(404)
+    // A second passkey makes the first deletable.
+    const second = new FakeAuthenticator()
+    const regOpts = (await json(await post(s, '/api/auth/passkey/register/options', {}, headers))).publicKey as Json
+    expect((regOpts.excludeCredentials as Json[]).map((c) => c.id)).toEqual([id])
+    expect((await post(s, '/api/auth/passkey/register', second.register(regOpts, origin), headers)).status).toBe(200)
+    const deleted = await json(await post(s, '/api/auth/passkey/delete', { id }, headers))
+    expect((deleted.credentials as Json[]).map((c) => c.id)).toEqual([b64u(second.credentialId)])
+    expect((await json(await s.get('/api/auth/passkeys', { headers }))).credentials).toHaveLength(1)
+  })
+
+  it('clearing passwords through settings also clears passkeys', () => {
+    s.deps.clearPasskeys()
+    expect(JSON.parse(readFileSync(join(s.state, 'passkeys.json'), 'utf8'))).toEqual([])
+    expect(existsSync(join(s.state, '.passkey_challenges.json'))).toBe(true)
+  })
+})
+
+describe('passkey flag off', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+  it('hides the surface', async () => {
+    expect(await json(await s.get('/api/auth/passkeys'))).toEqual({ credentials: [], disabled: true })
+    expect((await post(s, '/api/auth/passkey/options', {})).status).toBe(404)
+    expect((await post(s, '/api/auth/passkey/register/options', {})).status).toBe(404)
+  })
+})
+
+describe('auth helpers', () => {
+  it('cborDecode round-trips the encoder used by the fake authenticator', () => {
+    const value = new Map<unknown, unknown>([[1, 2], [-2, Buffer.from('ab')], ['s', 'x']])
+    const decoded = cborDecode(cborEncode(value)) as Map<unknown, unknown>
+    expect(decoded.get(1)).toBe(2)
+    expect(decoded.get(-2)).toEqual(Buffer.from('ab'))
+    expect(decoded.get('s')).toBe('x')
+  })
+  it('safeNextPath and validatedRequestHost mirror the Python guards', () => {
+    expect(safeNextPath('/x')).toBe('/x')
+    expect(safeNextPath('//evil')).toBe('/')
+    expect(safeNextPath('/a b')).toBe('/')
+    expect(validatedRequestHost('example.com:8787')).toBe('example.com:8787')
+    expect(validatedRequestHost('user@example.com')).toBeNull()
+    expect(validatedRequestHost('example.com/x')).toBeNull()
+    expect(validatedRequestHost('example.com:')).toBeNull()
+  })
+  it('canonicalJson sorts keys deterministically', () => {
+    expect(canonicalJson({ b: 1, a: [true, null] })).toBe('{"a":[true,null],"b":1}')
+  })
+  it('signature helper sanity: a P-256 assertion verifies with the SPKI export', () => {
+    const a = new FakeAuthenticator()
+    const pem = a.key.publicKey.export({ type: 'spki', format: 'pem' })
+    expect(createPublicKey(pem).asymmetricKeyType).toBe('ec')
+    expect(createPrivateKey(a.key.privateKey.export({ type: 'pkcs8', format: 'pem' })).asymmetricKeyType).toBe('ec')
+  })
+})

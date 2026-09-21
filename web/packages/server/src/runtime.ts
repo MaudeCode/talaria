@@ -5,6 +5,8 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AuthStore } from './auth/store.js'
+import { OidcService } from './auth/oidc.js'
+import { PasskeyStore } from './auth/passkeys.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { detectWebuiVersion, loadReleaseInfo } from './release.js'
@@ -72,7 +74,18 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   mkdirSync(config.stateDir, { recursive: true })
   mkdirSync(config.sessionDir, { recursive: true })
   const settings = new SettingsStore({ file: config.settingsFile, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
-  const auth = new AuthStore({ stateDir: config.stateDir, env, settings, log, ...(opts.now ? { now: opts.now } : {}) })
+  const now = opts.now ?? (() => Date.now() / 1000)
+  const passkeys = new PasskeyStore(config.stateDir, now)
+  // Resolved below once the sidecar-backed config store exists; the auth store reads it lazily.
+  let oidc: OidcService | null = null
+  let operatorConfigPeek: () => Record<string, unknown> | null = () => null
+  const auth = new AuthStore({
+    stateDir: config.stateDir, env, settings, log, now,
+    passkeysEnabled: () => passkeys.available(),
+    oidcEnabled: () => oidc?.enabledSync() ?? false,
+    oidcProbe: () => oidc?.resolve() ?? Promise.resolve(),
+    passkeyConfigFlag: () => operatorConfigPeek()?.webui_passkey_enabled,
+  })
   settings.hooks = {
     hashPassword: (pw) => auth.hashPassword(pw),
     onPasswordChanged: () => { auth.invalidatePasswordHashCache() },
@@ -81,7 +94,6 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   config.defaultWorkspace = settings.defaultWorkspace
   const release = loadReleaseInfo({ webRoot: config.webRoot })
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, packageVersion())
-  const now = opts.now ?? (() => Date.now() / 1000)
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
   const activeProfile = (): string => 'default'
@@ -252,6 +264,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     defaultModel: () => (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim(),
     log,
   })
+  oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(config.hermesHome), profileHome, fetch: () => lazyFetch, now, log })
+  operatorConfigPeek = () => agentConfig.peek(config.hermesHome)
   settings.hooks.defaultModel = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); if (!cfg) return ''; if (typeof cfg.model === 'string') return cfg.model.trim(); const d = asDict(cfg.model).default; return typeof d === 'string' ? d.trim() : '' }
   settings.hooks.defaultModelProvider = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); const p = asDict(cfg?.model).provider; return typeof p === 'string' && p ? p : undefined }
   const terminals = new TerminalRegistry({ env, now: () => Date.now(), log, ...(opts.pty !== undefined ? { pty: opts.pty } : {}) })
@@ -317,7 +331,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     profiles,
     onboarding,
     agentVersion: () => sidecar?.describe?.agent_version ?? sidecar?.describe?.pinned_version ?? release.compatibleAgent.version,
-    clearPasskeys: () => undefined,
+    oidc,
+    passkeys,
+    nativeOidcLimiter: new WindowLimiter(60, 10, now),
+    clearPasskeys: () => { passkeys.clear() },
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig }),
     nowSeconds: now,

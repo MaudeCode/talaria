@@ -46,6 +46,8 @@ import type { CronService } from '../tools/crons.js'
 import type { KanbanService } from '../tools/kanban.js'
 import type { ExtensionService } from '../tools/extensions.js'
 import type { TerminalRegistry } from '../tools/terminal.js'
+import type { OidcService } from '../auth/oidc.js'
+import type { PasskeyStore } from '../auth/passkeys.js'
 
 export interface AppDeps {
   config: ServerConfig
@@ -113,7 +115,7 @@ export interface AppDeps {
   onboarding: Onboarding
   /** Running Agent version from the sidecar handshake, else the pinned version. */
   agentVersion: () => string
-  /** Passkey credentials are dropped when password auth is cleared (passkeys land with R-A6). */
+  /** Passkey credentials are dropped when password auth is cleared. */
   clearPasskeys: () => void
   // ── tools (checkpoint 7b) ──
   skills: SkillsService
@@ -127,6 +129,11 @@ export interface AppDeps {
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter
   fetch: typeof fetch
+  // ── OIDC and passkeys (checkpoint 7d) ──
+  oidc: OidcService
+  passkeys: PasskeyStore
+  /** Python `_native_oidc_start_rate_limited`: 10 starts per client IP per 60 s. */
+  nativeOidcLimiter: WindowLimiter
   // ── crons, kanban, extensions, terminal (checkpoint 7c) ──
   crons: CronService
   kanban: KanbanService
