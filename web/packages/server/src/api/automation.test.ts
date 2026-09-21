@@ -3,7 +3,7 @@
  *   web/tests/test_issue6619_dotfile_archive_validator.py
  * (issues #6619) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -213,6 +213,12 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(res.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
     res = await s.get('/extensions/ext-one/../manifest.json')
     expect(res.status).toBe(404)
+    // A symlink inside the extension directory never exposes its target (Python `serve_extension_static`).
+    writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')
+    symlinkSync(join(s.state, 'secret.env'), join(s.state, 'extensions', 'ext-one', 'secret'))
+    res = await s.get('/extensions/ext-one/secret')
+    expect(res.status).toBe(404)
+    unlinkSync(join(s.state, 'extensions', 'ext-one', 'secret'))
     res = await s.get('/api/extensions/manifests')
     body = await json(res)
     expect((body.manifests as Json[])[0]).toMatchObject({ id: 'ext-one', enabled: true, legacy_injection: false, capabilities: [] })

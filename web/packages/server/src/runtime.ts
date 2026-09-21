@@ -189,15 +189,17 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const journal = new RunJournal(config.sessionDir, env)
   const contextLengths = new Map<string, number | null>()
   const contextInflight = new Map<string, Promise<number | null>>()
-  const contextKey = (model: string | null, provider: string | null): string | null => (model?.trim() ? `${provider?.trim() ?? ''}\0${model.trim()}` : null)
+  const contextKey = (model: string | null, provider: string | null, profile: string | null): string | null => (model?.trim() ? `${profileHome(profile ?? activeProfile())}\0${provider?.trim() ?? ''}\0${model.trim()}` : null)
   const resolveContextLength = async (model: string | null, provider: string | null, profile: string | null): Promise<number | null> => {
-    const key = contextKey(model, provider)
+    const key = contextKey(model, provider, profile)
     if (!key || !sidecar) return null
     const hit = contextLengths.get(key)
     if (hit !== undefined) return hit
     const pending = contextInflight.get(key)
     if (pending) return pending
-    const run = sidecar.call('models.context_length', { profile_home: profileHome(profile ?? activeProfile()), model: model!.trim(), ...(provider?.trim() ? { provider: provider.trim() } : {}) })
+    const home = profileHome(profile ?? activeProfile())
+    const run = catalog.contextLengthInputs(home, model!.trim(), provider?.trim() || null)
+      .then((inputs) => sidecar.call('models.context_length', { profile_home: home, model: model!.trim(), ...(provider?.trim() ? { provider: provider.trim() } : {}), ...inputs }))
       .then((r) => { contextLengths.set(key, r.context_length); return r.context_length })
       .catch((error: unknown) => { log(`[webui] context length for ${model ?? ''} failed: ${(error as Error).message}`); return null })
       .finally(() => { contextInflight.delete(key) })
@@ -249,7 +251,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     // Python `_resolve_model_context_length`: the sidecar's authoritative value per model/provider, cached; a sync miss
     // starts the lookup in the background so the next read (detail load, composer gauge) has it.
     contextLengthFor: (model, provider) => {
-      const key = contextKey(model, provider)
+      const key = contextKey(model, provider, null)
       if (!key) return null
       const hit = contextLengths.get(key)
       if (hit !== undefined) return hit

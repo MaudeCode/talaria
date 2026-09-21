@@ -1,7 +1,9 @@
 /** Browser extension registry: manifest scan, user overrides, sidecar consent, gallery install (Python `api/extensions.py`, `api/extension_manifests.py`). */
 import { readCapped } from '../http/capped.js'
+import { openAnchoredFd } from '../workspace/fs.js'
+import { resolvePathLikePython } from '../workspace/paths.js'
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import { readZip } from '../workspace/unzip.js'
@@ -661,15 +663,21 @@ export class ExtensionService {
   staticFile(rel: string): { body: Buffer; contentType: string; html: boolean } | null {
     const root = this.root()
     if (!root || !isSafeRelativePath(rel)) return null
-    const file = resolve(root, rel)
-    if (!file.startsWith(root + sep)) return null
+    // Python `serve_extension_static`: an anchored, symlink-free open so a link inside the extension dir cannot expose its target.
+    const anchor = resolvePathLikePython(root)
+    const file = resolve(anchor, rel)
+    if (!file.startsWith(anchor + sep)) return null
+    let fd: number
+    try { fd = openAnchoredFd(anchor, file, { wantDir: false }) } catch { return null }
     try {
-      if (!statSync(file).isFile()) return null
+      if (!fstatSync(fd).isFile()) return null
       const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
       const ct = EXTENSION_MIME[ext] ?? 'text/plain'
-      return { body: readFileSync(file), contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html' }
+      return { body: readFileSync(fd), contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html' }
     } catch {
       return null
+    } finally {
+      closeSync(fd)
     }
   }
 

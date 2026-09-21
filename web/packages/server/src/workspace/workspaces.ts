@@ -191,7 +191,9 @@ export class WorkspaceRegistry {
   profileSupportsLocalIo(profile: string | null = null): boolean {
     try {
       // Python: `get_config_for_profile_home(...) or {}`; a missing config or terminal block means local.
-      const cfg = this.deps.profileConfig(profile) ?? {}
+      const cfg = this.deps.profileConfig(profile)
+      // Fail closed while a profile's config is still unresolved (null); a missing file resolves to `{}` and means local.
+      if (cfg === null) return false
       const terminal = cfg.terminal ?? {}
       if (typeof terminal !== 'object') return false
       return !isRemoteTerminalBackend(terminal)

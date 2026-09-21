@@ -47,8 +47,10 @@ async function serve(args: string[]): Promise<number> {
     }
   }
   const deps = createDeps({ webRoot, sidecar })
-  // Renamed root profiles must be known before the first request (Python populated its cache synchronously).
+  // Renamed root profiles and the active profile's config must be known before the first request (Python read both
+  // synchronously at startup); until then local-I/O gates fail closed.
   await deps.profiles.warmRootAliases()
+  await deps.agentConfig.read(deps.profileHome(deps.activeProfile())).catch(() => undefined)
   const app = createApp(deps)
   const running = await startServer(app, deps.config)
   deps.relay.start()

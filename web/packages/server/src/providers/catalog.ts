@@ -455,6 +455,43 @@ export class ProviderCatalog {
     return { provider, source, models: ids.map((id) => ({ id, label: labelForModel(id, []) })) }
   }
 
+  /**
+   * Python `_resolve_model_context_length` inputs: the effective base URL, key, and any configured window for this
+   * model under this profile (`model.context_length`, `providers.<p>.models[].context_length`, custom providers).
+   */
+  async contextLengthInputs(profileHome: string, model: string, provider: string | null): Promise<{ base_url?: string; api_key?: string; config_context_length?: number | null }> {
+    const config = await this.deps.config.read(profileHome).catch((): Config => ({}))
+    const section = modelSection(config)
+    const pid = canonicaliseProviderId(provider ?? section.provider) || null
+    const bare = model.replace(/^@[^:]+:/, '')
+    const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n > 0 ? n : null }
+    const fromModels = (models: unknown): number | null => {
+      if (isDict(models)) { for (const key of [model, bare]) { const e = models[key]; const n = positive(isDict(e) ? e.context_length : e); if (n !== null) return n } }
+      if (Array.isArray(models)) for (const e of models) if (isDict(e) && [model, bare].includes(str(e.id || e.model || e.name).trim())) { const n = positive(e.context_length); if (n !== null) return n }
+      return null
+    }
+    let baseUrl = ''
+    let configContextLength: number | null = null
+    const sectionModel = str(section.default || (typeof config.model === 'string' ? config.model : '')).trim()
+    if (sectionModel && [model, bare].includes(sectionModel.replace(/^@[^:]+:/, ''))) configContextLength = positive(section.context_length)
+    if (!pid || canonicaliseProviderId(section.provider) === pid) baseUrl = str(section.base_url).trim()
+    if (pid) {
+      const providersCfg = dict(config.providers)
+      const key = Object.keys(providersCfg).find((k) => canonicaliseProviderId(k) === pid)
+      const providerCfg = key ? dict(providersCfg[key]) : {}
+      if (!baseUrl) baseUrl = str(providerCfg.base_url).trim()
+      configContextLength ??= fromModels(providerCfg.models)
+    }
+    for (const cp of customProviderEntries(config)) {
+      const name = str(cp.name).trim().toLowerCase()
+      if (!name || !(pid === name || pid === `custom:${name}` || pid === customProviderSlug(name) || (Boolean(baseUrl) && str(cp.base_url).trim().replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')))) continue
+      if (!baseUrl) baseUrl = str(cp.base_url).trim()
+      configContextLength ??= fromModels(cp.models)
+    }
+    const apiKey = pid ? this.apiKeyFor(pid, profileHome, config) : null
+    return { ...(baseUrl ? { base_url: baseUrl } : {}), ...(apiKey ? { api_key: apiKey } : {}), config_context_length: configContextLength }
+  }
+
   private apiKeyFor(pid: string, profileHome: string, config: Config): string | null {
     const envValues = loadEnvFile(join(profileHome, '.env'))
     const envVar = providerEnvVar(pid)
