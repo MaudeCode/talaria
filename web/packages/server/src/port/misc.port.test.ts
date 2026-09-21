@@ -254,6 +254,25 @@ describe('image attachments in user messages (review round 14)', () => {
     }
   })
 
+  it('a cancel that lands before the image-mode lookup starts never waits on the sidecar', async () => {
+    mode = 'native'
+    writeFileSync(join(ws(), 'pre.png'), png)
+    let lookups = 0
+    sidecar.respond('text.image_mode', () => { lookups += 1; return new Promise(() => undefined) })
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const session = s.deps.sessionStore.get(sid)
+      const controller = new AbortController()
+      controller.abort()
+      interface Builder { buildUserMessage: (ctx: string, text: string, atts: Record<string, unknown>[], workspace: string, sid: string, session: unknown, opts: Record<string, unknown>, signal: AbortSignal) => Promise<unknown> }
+      const built = await (s.deps.turns as unknown as Builder).buildUserMessage('', 'look', [{ path: join(ws(), 'pre.png'), mime: 'image/png', name: 'pre.png' }], ws(), sid, session, {}, controller.signal)
+      expect(built).toBe('look')
+      expect(lookups).toBe(0)
+    } finally {
+      sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
+    }
+  })
+
   it('never embeds a symlink or hard link out of the workspace or a non-image labelled as an image', async () => {
     mode = 'native'
     writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')

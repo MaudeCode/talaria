@@ -498,10 +498,12 @@ export class TurnRunner {
     if (!candidates.length) return text
     const sidecar = this.deps.sidecar()
     if (!sidecar) return text
+    // A cancel that landed before this point is final: never start the lookup or wait on it.
+    if (signal.aborted) return text
     try {
       // A cancelled turn must not sit behind this lookup: the abort wins the race and `run()` then takes the cancelled path.
       const lookup = sidecar.call('text.image_mode', { profile_home: this.deps.profileHome(s.profile), provider: str(opts.modelProvider ?? s.model_provider), model: str(opts.model ?? s.model) }, { signal, timeoutMs: IMAGE_MODE_TIMEOUT_MS })
-      const mode = await Promise.race([lookup, new Promise<never>((_, reject) => { signal.addEventListener('abort', () => { reject(new Error('turn cancelled')) }, { once: true }) })])
+      const mode = await Promise.race([lookup, new Promise<never>((_, reject) => { if (signal.aborted) { reject(new Error('turn cancelled')); return } signal.addEventListener('abort', () => { reject(new Error('turn cancelled')) }, { once: true }) })])
       if (mode.mode !== 'native') return text
     } catch (error) {
       if (!signal.aborted) this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)

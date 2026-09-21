@@ -11,7 +11,7 @@ import { str } from '../util.js'
  * reconciliation) is not part of this store; it layers on in the sidebar
  * builder once the read-only SQLite projection lands.
  */
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DraftStore } from './drafts.js'
 import type { SessionEventBus } from './events.js'
@@ -73,9 +73,27 @@ export function statSignature(path: string): string | null {
 
 /** Python `_read_metadata_json_prefix`: everything before the top-level `messages` (or `anchor_activity_scenes`) key. */
 export function readMetadataJsonPrefix(path: string, maxBytes = 1024 * 1024): string | null {
-  let stage = Math.min(64 * 1024, maxBytes)
+  return readMetadataJsonPrefixWithSignature(path, maxBytes).prefix
+}
+
+/**
+ * The metadata prefix together with the signature of the inode it was read from (fstat of the open descriptor), so a
+ * file atomically replaced during the read is never cached under the replacement's identity.
+ */
+export function readMetadataJsonPrefixWithSignature(path: string, maxBytes = 1024 * 1024): { prefix: string | null; signature: string } {
   const fd = openSync(path, 'r')
   try {
+    const st = fstatSync(fd, { bigint: true })
+    const signature = `${path}:${st.mtimeNs}:${st.size}:${st.ctimeNs}`
+    return { prefix: readPrefixFromFd(fd, maxBytes, Math.min(64 * 1024, maxBytes)), signature }
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function readPrefixFromFd(fd: number, maxBytes: number, initialStage: number): string | null {
+  let stage = initialStage
+  {
     let raw = Buffer.alloc(0)
     let text = ''
     let stopPos: number | null = null
@@ -96,8 +114,6 @@ export function readMetadataJsonPrefix(path: string, maxBytes = 1024 * 1024): st
     let prefix = text.slice(0, stopPos).trimEnd()
     if (prefix.endsWith(',')) prefix = prefix.slice(0, -1).trimEnd()
     return `${prefix}\n}`
-  } finally {
-    closeSync(fd)
   }
 }
 
@@ -272,7 +288,7 @@ export class SessionStore {
     const path = this.pathFor(sid)
     if (!existsSync(path)) return null
     try {
-      const prefix = readMetadataJsonPrefix(path)
+      const { prefix, signature } = readMetadataJsonPrefixWithSignature(path)
       if (!prefix) return this.load(sid)
       const parsed = JSON.parse(prefix) as Record<string, unknown>
       for (const key of ['session_id', 'title', 'created_at', 'updated_at']) if (!(key in parsed)) return this.load(sid)
@@ -287,7 +303,7 @@ export class SessionStore {
       const known = [indexCount, modernCount].filter((c): c is number => c !== null)
       session.metadataMessageCount = known.length ? Math.max(...known) : null
       session.loadedMetadataOnly = true
-      session.sidecarLoadedSignature = statSignature(path)
+      session.sidecarLoadedSignature = signature
       return session
     } catch {
       return this.load(sid)

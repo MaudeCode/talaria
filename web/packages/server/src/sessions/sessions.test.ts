@@ -51,7 +51,8 @@
  *   web/tests/test_issue_branch_context_at_fork.py
  * (issues #789, #1013, #1217, #1494, #1955, #2419, #2592, #2841, #2863, #2914, #3019, #3023, #3346, #3585, #3586, #3831, #3875, #3929, #3987, #4385, #4490, #4638, #4685, #4714, #4718, #4836, #4842, #4985, #5121, #5132, #5270, #5339, #5532, #5570, #5572, #5854, #6022, #6068, #6611, #6672, #6722, #6751, #6911, #7168) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -323,6 +324,25 @@ describe('session store disk freshness', () => {
     expect(() => s.deps.sessionStore.get(sid, { metadataOnly: true })).toThrow()
     expect((await post(s, '/api/session/rename', { session_id: sid, title: 'ghost' })).status).toBe(404)
     expect(existsSync(cached.path ?? '')).toBe(false)
+  })
+
+  it('a metadata-only read is signed by the inode it read, so a file replaced meanwhile is reloaded', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const full = s.deps.sessionStore.get(sid)
+    full.title = 'old owner'
+    s.deps.sessionStore.save(full)
+    const path = full.path ?? ''
+    const before = readMetadataJsonPrefixWithSignature(path)
+    // Atomic replacement after the descriptor was opened: the signature must describe the old inode, not the new file.
+    const replacement = { ...(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>), title: 'new owner' }
+    writeFileSync(`${path}.tmp`, JSON.stringify(replacement))
+    renameSync(`${path}.tmp`, path)
+    expect(before.prefix).toContain('old owner')
+    expect(before.signature).not.toBe(statSignature(path))
+    s.deps.sessionStore.sessions.delete(sid)
+    const stub = s.deps.sessionStore.loadMetadataOnly(sid)
+    expect(stub?.title).toBe('new owner')
+    expect(stub?.sidecarLoadedSignature).toBe(statSignature(path))
   })
 
   it('reloads a cached session whose read identity is unknown instead of trusting the stale snapshot', async () => {
