@@ -249,7 +249,7 @@ export const coreRouter = os.router({
 })
 
 /** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding for the native OIDC start limiter. */
-function rateLimitClientIp(ctx: RequestContext): string {
+export function rateLimitClientIp(ctx: RequestContext): string {
   const env = ctx.deps.config.env
   if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(ctx.peer, env)) {
     const forwarded = forwardedClientIp(ctx.headerAll('x-forwarded-for'), ctx.header('x-real-ip'), ctx.peer, env)

@@ -558,7 +558,8 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
       const meta = cliById.get(str(s.session_id))
       if (!meta) return s
       if (isMessagingSessionRecord(meta)) { const merged = mergeCliSidebarMetadata(s, meta); if (merged.session_id !== meta.session_id) merged.session_id = meta.session_id; return merged }
-      for (const key of ['source_tag', 'raw_source', 'session_source', 'source_label']) if (!s[key] && meta[key]) s[key] = meta[key]
+      // Python `_apply_sidebar_state_db_overrides`: the state.db source classification is authoritative over stale sidecar JSON.
+      for (const key of ['source_tag', 'raw_source', 'session_source', 'source_label']) if (meta[key]) s[key] = meta[key]
       return s
     })
     webuiSessions = webuiSessions.map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))

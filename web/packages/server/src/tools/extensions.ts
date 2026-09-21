@@ -554,7 +554,17 @@ export class ExtensionService {
     if (!root) throw new ExtensionError('Extensions not configured', 404)
     let raw: Buffer
     try {
-      const res = await this.deps.fetch(downloadUrl, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
+      // Python `_safe_download`: redirects are followed only while they stay on an allowed gallery host.
+      let url = downloadUrl
+      let res = await this.deps.fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
+      for (let hop = 0; res.status >= 300 && res.status < 400 && hop < 3; hop += 1) {
+        const location = res.headers.get('location') ?? ''
+        let next: URL | null = null
+        try { next = new URL(location, url) } catch { next = null }
+        if (next?.protocol !== 'https:' || !ALLOWED_DOWNLOAD_HOSTS.has(next.hostname)) throw new ExtensionError('Download redirected to a disallowed host')
+        url = next.href
+        res = await this.deps.fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
+      }
       if (!res.ok) throw new Error(`download ${String(res.status)}`)
       const capped = await readCapped(res, MAX_ZIP_BYTES)
       if (!capped) throw new ExtensionError('Download too large')

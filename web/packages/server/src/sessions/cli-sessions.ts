@@ -19,6 +19,8 @@ export interface CliSessionsDeps {
   store: SessionStore
   profileHome: (profile: string) => string
   lastWorkspace: (profile: string) => string
+  /** Python `_state_row_project_id`: the profile's Cron Jobs / Webhooks chip, or null when the profile has not opted into projects. */
+  backgroundProjectId?: (kind: 'cron' | 'webhook', profile: string) => string | null
   now: () => number
   log: (line: string) => void
 }
@@ -92,6 +94,12 @@ export class CliSessionSource {
     const tombstone = this.deps.store.loadDeletedTombstone()
     const out: Dict[] = []
     const seen = new Set<string>()
+    // Memoised per scan (Python `_cron_pid` / `_webhook_pid`): one projects.json read per kind, not per row.
+    const projectIds = new Map<'cron' | 'webhook', string | null>()
+    const projectFor = (kind: 'cron' | 'webhook'): string | null => {
+      if (!projectIds.has(kind)) { try { projectIds.set(kind, this.deps.backgroundProjectId?.(kind, profile) ?? null) } catch { projectIds.set(kind, null) } }
+      return projectIds.get(kind) ?? null
+    }
     const toRow = (row: Dict, sourceTag: string, defaultTitle: string): Dict => {
       const sid = str(row.id)
       const meta = normalizeAgentSessionSource(row.source || sourceTag)
@@ -103,7 +111,7 @@ export class CliSessionSource {
         session_id: sid, title: title ?? defaultTitle, workspace: cliWorkspace(), model: row.model || null,
         message_count: Number(row.message_count) || Number(row.actual_message_count) || 0,
         created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, pinned: false, archived: sidecar.archived,
-        project_id: null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,
+        project_id: sourceTag === 'cron' || sourceTag === 'webhook' ? projectFor(sourceTag) : null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,
         user_id: row.user_id ?? null, chat_id: row.chat_id ?? row.origin_chat_id ?? null, chat_type: row.chat_type ?? null, thread_id: row.thread_id ?? null,
         session_key: row.session_key ?? null, platform: row.platform ?? null,
         session_source: row.session_source ?? meta.session_source, source_label: row.source_label ?? meta.source_label,

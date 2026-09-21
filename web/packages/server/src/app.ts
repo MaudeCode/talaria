@@ -268,6 +268,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           await handleSessionJournalStream(ctx, journalSessionId)
           return
         }
+        if (RAW_POST_ROUTES[path]) {
+          ctx.json({ error: `POST required for ${path}` }, { status: 405 })
+          return
+        }
       } else if (path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {
         ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
         return

@@ -1,5 +1,6 @@
 /** Binary and public raw handlers: `/api/transcribe`, `/api/tts`, `/api/csp-report` (Python `handle_transcribe`, `_handle_tts`, `_handle_csp_report`). */
 import { join } from 'node:path'
+import { isIPv4, isIPv6 } from 'node:net'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
 import { parseMultipart, sanitizeUploadName } from '../workspace/upload.js'
@@ -8,6 +9,7 @@ import { dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
+import { rateLimitClientIp } from './router.js'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const CSP_MAX_BODY = 64 * 1024
@@ -65,18 +67,48 @@ function prosody(value: unknown, unit: string): string | null {
   return `${sign}${String(n)}${unit}`
 }
 
+/** Python `_tts_addr_is_blocked`: every non-global range (loopback, private, link-local, CGNAT, benchmarking, documentation, multicast, reserved). */
+function blockedTtsAddress(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase()
+  if (h === 'localhost' || h.endsWith('.localhost')) return true
+  const v4 = (ip: string): boolean => {
+    const p = ip.split('.').map(Number)
+    if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true
+    const [a, b] = p as [number, number, number, number]
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 0 || b === 168))
+      || (a === 198 && (b === 18 || b === 19 || b === 51)) || (a === 203 && b === 0) || a >= 224
+  }
+  if (isIPv4(h)) return v4(h)
+  if (isIPv6(h)) {
+    if (h.startsWith('::ffff:')) { const tail = h.slice(7); return isIPv4(tail) ? v4(tail) : true }
+    return h === '::1' || h === '::' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith('2001:db8')
+  }
+  return false
+}
+
 function normalizedOpenAiBase(raw: string): string {
   const u = new URL(raw)
   if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('invalid base_url')
+  if (blockedTtsAddress(u.hostname)) throw new Error('invalid base_url')
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`
 }
 
+/** An upstream engine answered, but not with usable audio (Python answers 502 for these; 500 stays for unexpected faults). */
+class UpstreamAudioError extends Error {}
+
 async function bufferAudio(res: Response): Promise<Buffer> {
   const type = (res.headers.get('content-type') ?? '').toLowerCase()
-  if (!type.startsWith('audio/') && !type.includes('octet-stream')) throw new Error(`unexpected content-type ${type}`)
+  // A present non-audio Content-Type is rejected; a missing one is tolerated (some OpenAI-compatible servers omit it).
+  if (type && !type.startsWith('audio/') && !type.includes('octet-stream')) throw new UpstreamAudioError(`unexpected content-type ${type}`)
   const raw = await readCapped(res, TTS_MAX_AUDIO_BYTES)
-  if (!raw?.length) throw new Error('unexpected audio size')
+  if (!raw) throw new UpstreamAudioError('audio exceeds the proxy limit')
+  if (!raw.length) throw new UpstreamAudioError('empty audio')
   return raw
+}
+
+/** Redirects (`redirect: 'error'`), non-audio bodies, and oversize bodies are upstream failures (502); anything else is a server fault (500). */
+function upstreamFailureStatus(error: unknown): number {
+  return error instanceof UpstreamAudioError || (error instanceof TypeError && /redirect/i.test(error.message)) ? 502 : 500
 }
 
 export async function handleTts(ctx: RequestContext): Promise<void> {
@@ -90,9 +122,8 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   if (pitch === null) { ctx.json({ error: 'invalid pitch' }, { status: 400 }); return }
   if (!text) { ctx.json({ error: 'text is required' }, { status: 400 }); return }
   if (text.length > 5000) { ctx.json({ error: 'text too long (max 5000 characters)' }, { status: 400 }); return }
-  const cookie = ctx.authCookie()
-  const key = cookie?.includes('.') ? cookie.split('.', 1)[0] ?? ctx.peer : ctx.peer || 'unknown'
-  if (ctx.deps.ttsLimiter.limited(key)) { ctx.json({ error: 'rate limit exceeded — please wait' }, { status: 429 }); return }
+  // Python `_client_ip_for_rate_limit`: the peer address, or the forwarded client only behind an opted-in trusted proxy.
+  if (ctx.deps.ttsLimiter.limited(rateLimitClientIp(ctx) || 'unknown')) { ctx.json({ error: 'rate limit exceeded — please wait' }, { status: 429 }); return }
   const home = ctx.deps.profileHome(activeProfileName(ctx))
   const env = { ...loadEnvFile(join(home, '.env')), ...ctx.deps.config.env }
   const config: Record<string, unknown> = await ctx.deps.agentConfig.read(home).catch(() => ({}))
@@ -111,12 +142,13 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
       ctx.send({ status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }, body: audio, security: true })
     } catch (error) {
       ctx.deps.log(`[tts] elevenlabs failed: ${str((error as Error).message)}`)
-      ctx.json({ error: 'ElevenLabs TTS generation failed' }, { status: 500 })
+      ctx.json({ error: 'ElevenLabs TTS generation failed' }, { status: upstreamFailureStatus(error) })
     }
     return
   }
   if (engine === 'openai') {
-    const apiKey = (env.OPENAI_API_KEY ?? '').trim()
+    // Python: the dedicated voice-tools key wins over the general OpenAI key.
+    const apiKey = ((env.VOICE_TOOLS_OPENAI_KEY ?? '').trim() || (env.OPENAI_API_KEY ?? '').trim())
     if (!apiKey) { ctx.json({ error: 'OpenAI API key not configured' }, { status: 503 }); return }
     const oai = dict(tts.openai)
     let base = 'https://api.openai.com/v1'
@@ -128,7 +160,7 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
       ctx.send({ status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }, body: audio, security: true })
     } catch (error) {
       ctx.deps.log(`[tts] openai failed: ${str((error as Error).message)}`)
-      ctx.json({ error: 'OpenAI TTS generation failed' }, { status: 500 })
+      ctx.json({ error: 'OpenAI TTS generation failed' }, { status: upstreamFailureStatus(error) })
     }
     return
   }

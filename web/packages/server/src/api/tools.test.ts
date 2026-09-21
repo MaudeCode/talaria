@@ -453,7 +453,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     // An unbounded upstream body is cut off at the 16 MiB cap instead of being buffered.
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'big', engine: 'openai' })
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(502)
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'hi', engine: 'openai' })
     expect(res.status).toBe(200)

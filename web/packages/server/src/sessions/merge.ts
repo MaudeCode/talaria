@@ -9,8 +9,9 @@ import type { Message } from './session.js'
 export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
 const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
 const TOOL_RESULT_SNIPPET_MAX = 4000
-const TOOL_ARG_CONTENT_KEYS = new Set(['content', 'text', 'body', 'data', 'code', 'command', 'input', 'query', 'message', 'prompt'])
-const TOOL_ARG_CONTENT_CAP = TOOL_RESULT_SNIPPET_MAX
+// Python `_TOOL_ARG_CONTENT_KEYS`: file bodies, commands, and patch text keep up to the content cap; incidental args cut at 120.
+export const TOOL_ARG_CONTENT_KEYS = new Set(['command', 'cmd', 'script', 'code', 'patch', 'diff', 'old_string', 'new_string', 'content', 'path', 'file_path'])
+export const TOOL_ARG_CONTENT_CAP = TOOL_RESULT_SNIPPET_MAX
 
 export const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
