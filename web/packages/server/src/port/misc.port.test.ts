@@ -4,10 +4,11 @@
  * runner event projection. Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.js.
  */
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { atomicWriteText } from '../fs/atomic.js'
+import { AgentConfig } from '../config/agent-config.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -253,5 +254,32 @@ describe('atomic writes honour the umask for new files', () => {
       process.umask(previous)
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('config snapshot fingerprint (review round 15)', () => {
+  it('a config.yaml replaced during the read is re-read, and reported unavailable if it keeps changing', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-cfg-'))
+    writeFileSync(join(home, 'config.yaml'), 'terminal:\n  backend: local\n')
+    let calls = 0
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (params) => {
+      calls += 1
+      // Simulate an atomic replacement landing while the RPC is in flight: first answer is the old contents.
+      if (calls === 1) { const t = Date.now() / 1000 + 5; writeFileSync(join(home, 'config.yaml'), 'terminal:\n  backend: ssh\n'); utimesSync(join(home, 'config.yaml'), t, t); return { path: join(params.profile_home, 'config.yaml'), exists: true, config: { terminal: { backend: 'local' } } } }
+      return { path: join(params.profile_home, 'config.yaml'), exists: true, config: { terminal: { backend: 'ssh' } } }
+    })
+    const config = new AgentConfig({ sidecar: () => sidecar, env: {} })
+    const first = await config.read(home)
+    expect(calls).toBe(2)
+    expect((first.terminal as Json).backend).toBe('ssh')
+    expect((config.peek(home)?.terminal as Json).backend).toBe('ssh')
+    // A file that keeps changing under the reader is unavailable rather than cached under the wrong key.
+    let n = 0
+    sidecar.respond('config.get', (params) => { n += 1; const t = Date.now() / 1000 + 10 + n; writeFileSync(join(home, 'config.yaml'), `# ${String(n)}\n`); utimesSync(join(home, 'config.yaml'), t, t); return { path: join(params.profile_home, 'config.yaml'), exists: true, config: {} } })
+    config.invalidate()
+    await expect(config.read(home)).rejects.toThrow(/changed while it was being read/)
+    expect(config.peek(home)).toBeNull()
+    rmSync(home, { recursive: true, force: true })
   })
 })

@@ -5,7 +5,7 @@
  * and profile-scoped session routes. Markers `[py:<file>::<case>]` are
  * verified by scripts/check-regression-port.py.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -427,6 +427,21 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     res = await post(s, '/api/skills/delete', { name: 'cookie-skill' }, asWork())
     expect(res.status, await res.clone().text()).toBe(200)
     expect(existsSync(join(workHome, 'skills', 'cookie-skill'))).toBe(false)
+  })
+
+  it('skill content never follows a symlink out of the skill directory, and a symlinked skill directory is not written through', async () => {
+    mkdirSync(join(workHome, 'skills', 'linked-skill', 'references'), { recursive: true })
+    writeFileSync(join(workHome, 'skills', 'linked-skill', 'SKILL.md'), '# linked\n')
+    writeFileSync(join(s.state, 'outside-secret.md'), 'secret\n')
+    symlinkSync(join(s.state, 'outside-secret.md'), join(workHome, 'skills', 'linked-skill', 'references', 'secret.md'))
+    const res = await s.get('/api/skills/content?name=linked-skill&file=references/secret.md', { headers: asWork() })
+    expect(res.status).toBe(404)
+    const outsideDir = join(s.state, 'outside-skill-dir')
+    mkdirSync(outsideDir, { recursive: true })
+    symlinkSync(outsideDir, join(workHome, 'skills', 'escape-skill'))
+    const save = await post(s, '/api/skills/save', { name: 'escape-skill', content: '# pwned\n' }, asWork())
+    expect(save.status).toBe(400)
+    expect(existsSync(join(outsideDir, 'SKILL.md'))).toBe(false)
   })
 
   it('[py:test_issue3066_profile_skill_disabled_state.py::test_skills_list_reads_disabled_state_from_active_profile] the skills list reflects the active profile disabled state', async () => {

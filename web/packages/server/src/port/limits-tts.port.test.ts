@@ -177,6 +177,19 @@ describe('TTS validation, limits, and engines', () => {
     expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'tts-custom', input: 'Hello', voice: 'nova' })
   })
 
+  it('a public http base_url is refused while loopback http is allowed for development', async () => {
+    fresh()
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
+    setConfig({ tts: { openai: { base_url: 'http://tts.example.com/v1' } } })
+    let res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
+    expect(res.status).toBe(400)
+    expect(requests).toEqual([])
+    setConfig({ tts: { openai: { base_url: 'http://localhost:8080/v1' } } })
+    res = await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })
+    expect(res.status).toBe(200)
+    expect(requests[0]?.url).toBe('http://localhost:8080/v1/audio/speech')
+  })
+
   it.each(['http://169.254.169.254/v1', 'https://user:pass@api.example.com/v1', 'http://user:pass@localhost:8080/v1', 'https://169.254.169.254/v1', 'https://10.0.0.5/v1', 'https://192.168.1.10/v1', 'https://127.0.0.1/v1', 'https://[::1]/v1'])(
     '[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_invalid_base_url_config] base_url %s answers 400', async (baseUrl) => {
       fresh()

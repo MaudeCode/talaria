@@ -1,5 +1,7 @@
 /** Skills panel: list/view through the Agent (sidecar `skills.*`), file writes and config.yaml toggles here (Python `api/routes.py` skills section). */
-import { existsSync, mkdirSync, lstatSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd } from '../workspace/fs.js'
+import { resolvePathLikePython } from '../workspace/paths.js'
+import { closeSync, fstatSync, mkdirSync, lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Dict } from '../config/agent-config.js'
@@ -58,11 +60,16 @@ export class SkillsService {
     if (/[*?[\]]/.test(name)) throw new HttpFailure(400, 'Invalid skill name')
     const found = await this.sidecar().call('skills.find', { profile_home: profileHome, name })
     if (!found.found || !found.skill_dir) throw new HttpFailure(404, 'Skill not found')
-    const skillDir = resolve(found.skill_dir)
+    const skillDir = resolvePathLikePython(found.skill_dir)
     const target = resolve(skillDir, file)
     if (target !== skillDir && !target.startsWith(skillDir + sep)) throw new HttpFailure(400, 'Invalid file path')
-    if (!existsSync(target) || !statSync(target).isFile()) throw new HttpFailure(404, 'File not found')
-    return { content: readFileSync(target, 'utf8'), path: file }
+    // Anchored, symlink-free read: a linked file inside the skill directory never exposes its target.
+    let fd: number
+    try { fd = openAnchoredFd(skillDir, target, { wantDir: false }) } catch { throw new HttpFailure(404, 'File not found') }
+    try {
+      if (!fstatSync(fd).isFile()) throw new HttpFailure(404, 'File not found')
+      return { content: readFileSync(fd, 'utf8'), path: file }
+    } finally { closeSync(fd) }
   }
 
   save(profileHome: string, nameRaw: string, content: string, categoryRaw: string): { ok: true; name: string; path: string } {
@@ -70,13 +77,23 @@ export class SkillsService {
     if (!name || name.includes('/') || name.includes('..')) throw new HttpFailure(400, 'Invalid skill name')
     const category = categoryRaw.trim()
     if (category && (category.includes('/') || category.includes('..'))) throw new HttpFailure(400, 'Invalid category')
-    const skillsDir = resolve(SkillsService.skillsDir(profileHome))
+    mkdirSync(SkillsService.skillsDir(profileHome), { recursive: true })
+    const skillsDir = resolvePathLikePython(SkillsService.skillsDir(profileHome))
     const skillDir = resolve(category ? join(skillsDir, category, name) : join(skillsDir, name))
     if (!skillDir.startsWith(skillsDir + sep)) throw new HttpFailure(400, 'Invalid skill path')
-    mkdirSync(skillDir, { recursive: true })
     const file = join(skillDir, 'SKILL.md')
-    try { if (lstatSync(file).isSymbolicLink()) throw new HttpFailure(400, 'Cannot save to a symlinked skill file') } catch (error) { if (error instanceof HttpFailure) throw error }
-    writeFileSync(file, content, 'utf8')
+    // Anchored creation: a symlinked skill or category directory (or SKILL.md) is refused instead of written through.
+    let fd: number
+    try {
+      makeAnchoredDir(skillsDir, skillDir)
+      let exists = false
+      try { exists = lstatSync(file).isFile() } catch { exists = false }
+      fd = exists ? openAnchoredWriteFd(skillsDir, file) : openAnchoredCreateFd(skillsDir, file)
+    } catch (error) {
+      if (error instanceof HttpFailure) throw error
+      throw new HttpFailure(400, 'Cannot save to a symlinked skill path')
+    }
+    try { writeFileSync(fd, content, 'utf8') } finally { closeSync(fd) }
     return { ok: true, name, path: file }
   }
 

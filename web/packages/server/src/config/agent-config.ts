@@ -48,10 +48,18 @@ export class AgentConfig {
     if (key === 'missing') return {}
     const sidecar = this.deps.sidecar()
     if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml is unavailable')
-    const result = await sidecar.call('config.get', { profile_home: profileHome })
-    const config = isDict(result.config) ? result.config : {}
-    this.cache.set(profileHome, { key: this.statKey(profileHome), config })
-    return structuredClone(config)
+    // The snapshot is keyed by the fingerprint observed before the read; a file replaced while the RPC was in flight
+    // is re-read once and otherwise reported unavailable rather than cached under the new key.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const before = this.statKey(profileHome)
+      const result = await sidecar.call('config.get', { profile_home: profileHome })
+      const config = isDict(result.config) ? result.config : {}
+      if (this.statKey(profileHome) === before) {
+        this.cache.set(profileHome, { key: before, config })
+        return structuredClone(config)
+      }
+    }
+    throw new ConfigUnavailable('config.yaml changed while it was being read; retry')
   }
 
   /** Synchronous last-known config for callers that cannot await (workspace resolution); refreshes in the background. */

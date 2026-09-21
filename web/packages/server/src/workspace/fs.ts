@@ -7,7 +7,8 @@
  * kernel offers no descriptor-relative open (macOS), each component is opened
  * by pathname with `O_NOFOLLOW` and then verified to be the very directory
  * entry the parent descriptor holds (same device and inode) before the walk
- * continues; the remaining window is the single open call, not the whole walk.
+ * continues, and every leaf operation re-verifies the parent identity immediately before and after the call (undoing a
+ * completed create whose parent moved); the remaining window is the single syscall, not the whole walk.
  */
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -58,6 +59,26 @@ class DirHandle {
   /** The pathname to use for an operation on `name` inside this directory. */
   child(name: string): string {
     return DESCRIPTOR_PATHS ? fdPath(this.fd, name) : join(this.path, name)
+  }
+  /** Pathname fallback: the directory at our pathname must still be the one our descriptor holds. */
+  assertIdentity(): void {
+    if (DESCRIPTOR_PATHS) return
+    let current: Stats
+    try { current = statSync(this.path) } catch { throw new NotFoundError(`Not found: ${this.path}`) }
+    if (!sameFile(current, fstatSync(this.fd))) throw new NotFoundError(`Not found: ${this.path}`)
+  }
+  /**
+   * Run a leaf operation by pathname with the parent verified immediately before and after it; on the descriptor
+   * platform the pathname is already descriptor-relative and no check is needed. `undo` reverts a completed
+   * operation whose parent turned out to have moved.
+   */
+  leafOp<T>(op: () => T, undo?: (result: T) => void): T {
+    this.assertIdentity()
+    const result = op()
+    if (!DESCRIPTOR_PATHS) {
+      try { this.assertIdentity() } catch (error) { try { undo?.(result) } catch { /* best effort */ } throw error }
+    }
+    return result
   }
   close(): void { try { closeSync(this.fd) } catch { /* already closed */ } }
 }
@@ -143,8 +164,9 @@ export function openAnchoredFd(root: string, target: string, opts: { wantDir: bo
 export function openAnchoredCreateFd(root: string, dest: string): number {
   const { dir, leaf } = openAnchoredParent(root, dest, { createMissingDirs: true })
   try {
-    return openSync(dir.child(leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
+    return dir.leafOp(() => openSync(dir.child(leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644), (fd) => { closeSync(fd); try { unlinkSync(dir.child(leaf)) } catch { /* ignore */ } })
   } catch (error) {
+    if (error instanceof NotFoundError) throw error
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new FileExistsError(dest)
     throw new NotFoundError(`Not found: ${dest}`)
   } finally {
@@ -160,7 +182,7 @@ export function makeAnchoredDir(root: string, dest: string): void {
   if (destResolved === rootResolved) return
   const { dir, leaf } = openAnchoredParent(rootResolved, destResolved, { createMissingDirs: true })
   try {
-    const last = openChildDir(dir, leaf, { createMissing: true })
+    const last = dir.leafOp(() => openChildDir(dir, leaf, { createMissing: true }))
     last.close()
   } finally {
     dir.close()
@@ -171,7 +193,7 @@ export function openAnchoredWriteFd(root: string, target: string): number {
   const targetResolved = resolvePathLikePython(target)
   const { dir, leaf } = openAnchoredParent(root, targetResolved)
   try {
-    return openSync(dir.child(leaf), constants.O_WRONLY | constants.O_TRUNC | O_NOFOLLOW)
+    return dir.leafOp(() => openSync(dir.child(leaf), constants.O_WRONLY | constants.O_TRUNC | O_NOFOLLOW), (fd) => { closeSync(fd) })
   } catch {
     throw new NotFoundError(`Not found: ${target}`)
   } finally {
@@ -183,7 +205,7 @@ export function unlinkAnchored(root: string, target: string): void {
   const targetResolved = resolvePathLikePython(target)
   const { dir, leaf } = openAnchoredParent(root, targetResolved)
   try {
-    unlinkSync(dir.child(leaf))
+    dir.leafOp(() => { unlinkSync(dir.child(leaf)) })
   } catch {
     throw new NotFoundError(`Not found: ${target}`)
   } finally {
@@ -195,9 +217,11 @@ export function rmtreeAnchored(root: string, target: string): void {
   const targetResolved = resolvePathLikePython(target)
   const { dir, leaf } = openAnchoredParent(root, targetResolved)
   try {
-    const entry = lstatSync(dir.child(leaf))
-    if (entry.isSymbolicLink()) throw new NotFoundError(`Not found: ${target}`)
-    rmSync(dir.child(leaf), { recursive: true, force: false })
+    dir.leafOp(() => {
+      const entry = lstatSync(dir.child(leaf))
+      if (entry.isSymbolicLink()) throw new NotFoundError(`Not found: ${target}`)
+      rmSync(dir.child(leaf), { recursive: true, force: false })
+    })
   } catch (error) {
     if (error instanceof NotFoundError) throw error
     throw new NotFoundError(`Not found: ${target}`)
@@ -224,7 +248,9 @@ export function renameAnchored(root: string, source: string, dest: string): void
         if (error instanceof FileExistsError) throw error
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
-      renameSync(from.dir.child(from.leaf), to.child(leaf))
+      to.assertIdentity()
+      from.dir.leafOp(() => { renameSync(from.dir.child(from.leaf), to.child(leaf)) })
+      to.assertIdentity()
     } finally {
       to.close()
     }

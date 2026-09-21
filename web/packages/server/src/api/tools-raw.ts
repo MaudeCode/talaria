@@ -86,10 +86,18 @@ function blockedTtsAddress(host: string): boolean {
   return false
 }
 
+const TTS_LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+/** Python `_normalized_openai_tts_base_url`: public hosts over HTTPS only (bearer never travels in clear); plain HTTP only to loopback for local development. */
 function normalizedOpenAiBase(raw: string): string {
   const u = new URL(raw)
-  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('invalid base_url')
-  if (blockedTtsAddress(u.hostname)) throw new Error('invalid base_url')
+  if (u.username || u.password || u.search || u.hash) throw new Error('invalid base_url')
+  const host = u.hostname.toLowerCase()
+  if (u.protocol === 'https:') {
+    if (blockedTtsAddress(host)) throw new Error('invalid base_url')
+  } else if (u.protocol === 'http:') {
+    if (!TTS_LOCALHOST_HOSTS.has(host)) throw new Error('invalid base_url')
+  } else throw new Error('invalid base_url')
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`
 }
 
