@@ -175,6 +175,8 @@ export interface StartTurnInput { sessionId: string; message: string; request: O
 /** Send a turn: POST /api/chat/start, adopt the server turn identity, open the stream. */
 export async function startTurn(input: StartTurnInput) {
   const res = await api.startChat({ session_id: input.sessionId, message: input.message, ...input.request })
+  // A silent control message is admitted without a turn (`status: suppressed`).
+  if (!res.stream_id) { invalidateSession(input.sessionId); return res }
   dispatch({ type: 'start', sessionId: input.sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: input.message, now: Date.now() })
   open(input.sessionId, res.stream_id, null)
   invalidateSession(input.sessionId)
@@ -200,7 +202,7 @@ export async function cancelTurn(sessionId: string): Promise<boolean> {
   if (!turn || isTerminal(turn.status)) return false
   try {
     const res = await api.cancelChat(turn.streamId)
-    if (res.cancelled === false) {
+    if (!res.cancelled) {
       dispatch({ type: 'settle', sessionId, streamId: turn.streamId, session: null })
       closeLive(sessionId)
       showToast('Stream is no longer active', 2000)

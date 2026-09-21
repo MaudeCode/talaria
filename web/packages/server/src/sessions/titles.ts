@@ -34,7 +34,8 @@ export function sanitizeGeneratedTitle(text: unknown): string {
   return s.slice(0, GENERATED_TITLE_MAX_CHARS)
 }
 
-export function firstExchangeSnippets(messages: unknown[]): [string, string] {
+/** `scanPastConsecutiveUsers` keeps scanning past queued opening user rows to the first complete pair (manual regenerate, #7543). */
+export function firstExchangeSnippets(messages: unknown[], opts: { scanPastConsecutiveUsers?: boolean } = {}): [string, string] {
   let user = ''
   let asst = ''
   for (const m of messages) {
@@ -43,13 +44,34 @@ export function firstExchangeSnippets(messages: unknown[]): [string, string] {
     if (row.role === 'user') {
       const candidate = stripThinkingMarkup(stripWorkspacePrefix(messageText(row.content), true))
       if (candidate && !user) user = candidate
-      else if (user && candidate) break
+      else if (user && candidate && !opts.scanPastConsecutiveUsers) break
     } else if (row.role === 'assistant' && user) {
       const candidate = messageText(row.content)
       if (row.tool_calls && (!candidate || isBadNewTitle(candidate))) continue
       if (candidate) asst = candidate
     }
     if (user && asst) break
+  }
+  return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS)]
+}
+
+/** Python `_latest_exchange_snippets`: the last complete user+assistant pair, walking backwards. */
+export function latestExchangeSnippets(messages: unknown[]): [string, string] {
+  let user = ''
+  let asst = ''
+  for (const m of [...messages].reverse()) {
+    if (!m || typeof m !== 'object') continue
+    const row = m as Record<string, unknown>
+    if (row.role === 'assistant' && !asst) {
+      const candidate = messageText(row.content)
+      if (row.tool_calls && (!candidate || isBadNewTitle(candidate))) continue
+      if (candidate) asst = candidate
+    } else if (row.role === 'user') {
+      const candidate = stripThinkingMarkup(stripWorkspacePrefix(messageText(row.content), true))
+      if (!candidate) { user = ''; asst = ''; break }
+      if (!user) user = candidate
+      if (user && asst) break
+    }
   }
   return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS)]
 }

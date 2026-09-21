@@ -1,14 +1,23 @@
-import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+/** `web/` (the npm workspaces root). */
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..')
+const SERVER_BIN = join(REPO_ROOT, 'packages', 'server', 'dist', 'bin', 'talaria-web.js')
+
+/** The TS server ships as a built bin; build it once when a fresh checkout has no `dist/`. */
+function ensureServerBuilt(): void {
+  if (existsSync(SERVER_BIN)) return
+  execFileSync('npm', ['run', 'build', '-w', 'packages/contracts'], { cwd: REPO_ROOT, stdio: 'inherit' })
+  execFileSync('npm', ['run', 'build', '-w', 'packages/server'], { cwd: REPO_ROOT, stdio: 'inherit' })
+}
 const STATE_FILE = join(tmpdir(), `hermes-e2e-${process.env.HERMES_E2E_PORT ?? '8797'}.json`)
 
 export interface ServerHandle { pid: number; state: string; log: string }
 
-/** Boot one isolated `server.py` and wait for `/health`. */
+/** Boot one isolated Talaria Web server (the Node bin) and wait for `/health`. */
 export async function bootServer(baseUrl: string, extraEnv: Record<string, string> = {}): Promise<ServerHandle> {
   const port = new URL(baseUrl).port
   const state = mkdtempSync(join(tmpdir(), 'hermes-e2e-'))
@@ -17,6 +26,9 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   mkdirSync(join(state, 'sessions'))
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('HERMES_')) env[k] = v
+  // The isolated HERMES_HOME hides the developer's Agent checkout; point the sidecar at it explicitly (same default as sidecar/scripts/test.sh).
+  env.HERMES_WEBUI_AGENT_DIR = process.env.HERMES_WEBUI_AGENT_DIR ?? join(process.env.HOME ?? '', '.hermes', 'hermes-agent')
+  if (process.env.HERMES_WEBUI_PYTHON) env.HERMES_WEBUI_PYTHON = process.env.HERMES_WEBUI_PYTHON
   Object.assign(env, {
     HERMES_WEBUI_PORT: port,
     HERMES_WEBUI_HOST: '127.0.0.1',
@@ -34,8 +46,9 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   })
   const log = join(state, 'server.log')
   const fd = openSync(log, 'w')
-  const python = process.env.HERMES_E2E_PYTHON ?? 'python3'
-  const child: ChildProcess = spawn(python, [join(REPO_ROOT, 'server.py')], { cwd: REPO_ROOT, env, stdio: ['ignore', fd, fd], detached: true })
+  ensureServerBuilt()
+  env.TALARIA_WEB_ROOT = REPO_ROOT
+  const child: ChildProcess = spawn(process.execPath, [SERVER_BIN], { cwd: REPO_ROOT, env, stdio: ['ignore', fd, fd], detached: true })
   child.unref()
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {

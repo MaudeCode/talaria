@@ -3,9 +3,7 @@
  * streams, multipart uploads, downloads). They are documented here so the
  * generated OpenAPI document covers every HTTP path a consumer may call.
  */
-import { z } from 'zod'
 
-export const UploadResponseSchema = z.object({ filename: z.string(), path: z.string(), size: z.number().int(), mime: z.string(), is_image: z.boolean(), rollback_token: z.string() })
 
 export interface RawRoute {
   method: 'GET' | 'POST'

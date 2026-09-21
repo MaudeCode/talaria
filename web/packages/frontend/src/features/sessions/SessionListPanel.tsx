@@ -193,7 +193,7 @@ export function SessionListPanel() {
             <span role="button" tabIndex={0} className={cn('project-chip', !project && 'active')} onClick={() => setProject(null)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(null) }}>{m.project_all()}</span>
             {hasUnprojected && <span role="button" tabIndex={0} className={cn('project-chip no-project', project === NO_PROJECT && 'active')} title={m.project_unassigned_hint()} onClick={() => setProject(NO_PROJECT)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(NO_PROJECT) }}>{m.project_unassigned()}</span>}
             {projectList.map((p) => (
-              <span key={p.id} role="button" tabIndex={0} className={cn('project-chip', project === p.id && 'active')} onClick={() => setProject(p.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(p.id) }}>
+              <span key={p.project_id} role="button" tabIndex={0} className={cn('project-chip', project === p.project_id && 'active')} onClick={() => setProject(p.project_id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(p.project_id) }}>
                 {p.color && <span className="color-dot" style={{ background: p.color }} aria-hidden="true" />}
                 <span>{p.name}</span>
               </span>
@@ -219,7 +219,7 @@ export function SessionListPanel() {
               <div className="session-date-body" style={isCollapsed ? { display: 'none' } : undefined}>
                 {g.rows.map((row) => {
                   const active = row.session_id === activeId
-                  const proj = row.project_id ? projectList.find((p) => p.id === row.project_id) : undefined
+                  const proj = row.project_id ? projectList.find((p) => p.project_id === row.project_id) : undefined
                   return (
                     <Link
                       key={row.session_id}

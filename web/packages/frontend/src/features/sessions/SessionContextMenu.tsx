@@ -98,7 +98,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           <form onSubmit={(e) => { e.preventDefault(); move.mutate() }} className="flex flex-col gap-3">
             <Select value={projectId} onValueChange={(v) => setProjectId(v)} aria-label={m.session_move_project()} className="w-full">
               <option value="">—</option>
-              {(projects.data?.projects ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {(projects.data?.projects ?? []).map((p) => <option key={p.project_id} value={p.project_id}>{p.name}</option>)}
             </Select>
             <div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={move.isPending}>{m.save()}</Button></div>
           </form>

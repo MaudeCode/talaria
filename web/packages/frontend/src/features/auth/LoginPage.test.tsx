@@ -23,7 +23,7 @@ describe('LoginPage', () => {
   beforeEach(() => { vi.mocked(api.login).mockReset() })
 
   it('shows the server error for a rejected password and keeps the form usable', async () => {
-    vi.mocked(api.login).mockResolvedValue({ ok: false, error: 'Invalid password' })
+    vi.mocked(api.login).mockRejectedValue(new ApiError({ kind: 'http', status: 401, path: 'api/auth/login', message: 'Invalid password', retryable: false }))
     renderLogin()
     await userEvent.type(screen.getByPlaceholderText(/password/i), 'nope')
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))

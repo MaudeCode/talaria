@@ -25,8 +25,8 @@ export function ExtensionsSection() {
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null)
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.extensions.manifests }); void qc.invalidateQueries({ queryKey: keys.extensions.status }) }
   const act = useMutation({
-    mutationFn: ({ action, body }: { action: Parameters<typeof api.extensionAction>[0]; body: Record<string, unknown> }) => api.extensionAction(action, body),
-    onSuccess: (r) => { if (r.error) showToast(r.error, 5000, 'error'); else showToast(m.saved()); invalidate() },
+    mutationFn: async ({ action, body }: { action: Parameters<typeof api.extensionAction>[0]; body: Record<string, unknown> }) => { await api.extensionAction(action, body) },
+    onSuccess: () => { showToast(m.saved()); invalidate() },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
   if (manifests.isPending) return <LoadingState />
@@ -34,7 +34,7 @@ export function ExtensionsSection() {
   const list = manifests.data.manifests
   const gallery = (registry.data?.entries ?? registry.data?.extensions ?? []) as { id?: string; name?: string; description?: string; version?: string; download_url?: string; sha256?: string }[]
   const installed = new Set(list.map((e) => e.id))
-  const canManage = bootstrap.auth.can_manage_server !== false
+  const canManage = bootstrap.auth.can_manage_server
   return (
     <div className="flex flex-col gap-5" data-section="extensions">
       {!bootstrap.features.extensions && <p className="text-xs text-muted">{m.extensions_disabled_hint()}</p>}

@@ -1,9 +1,6 @@
 import { z } from 'zod'
 
-/** Unix seconds as the Python server emits them (float). */
-export const UnixSeconds = z.number()
-export const NullableString = z.string().nullable()
-export const NullableNumber = z.number().nullable()
+export { UnixSeconds, NullableString, NullableNumber } from '@maudecode/talaria-web-contracts'
 export const OptionalBool = z.boolean().optional()
 
 /** Server error body: `{ error, code?, ... }`. Kept loose so route-specific fields survive. */

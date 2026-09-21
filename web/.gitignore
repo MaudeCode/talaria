@@ -78,10 +78,10 @@ graphify-out/
 # Node tooling. The workspace lockfile web/package-lock.json is authoritative and committed (TAL-245).
 node_modules/
 packages/frontend/dist/
-frontend/src/paraglide/
-frontend/playwright-report/
-frontend/test-results/
-frontend/.tanstack/
+packages/frontend/src/paraglide/
+packages/frontend/playwright-report/
+packages/frontend/test-results/
+packages/frontend/.tanstack/
 docs/ui-ux/review-shots/
 
 # Python build metadata (never commit generated egg-info)

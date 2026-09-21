@@ -15,9 +15,10 @@ const os = implement(chatContract).$context<ApiContext>()
 const STEER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
-async function run<T>(fn: () => Promise<T> | T): Promise<T> {
+/** Handler boundary: contract outputs are pinned loose objects (index signatures), so the concrete return type is erased here like the `as never` casts elsewhere. */
+async function run<T>(fn: () => Promise<T> | T): Promise<never> {
   try {
-    return await fn()
+    return (await fn()) as never
   } catch (error) {
     if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra)
     if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')

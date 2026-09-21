@@ -75,7 +75,7 @@ function CreateProfileDialog({ existing, onClose, onCreated }: { existing: strin
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
     mutationFn: () => api.createProfile({ name: name.trim(), clone_from: cloneFrom || undefined, clone_config: !!cloneFrom, default_model: model.trim() || undefined }),
-    onSuccess: (res) => { if (res.error) setError(res.error); else { showToast(m.profile_created_toast()); onCreated() } },
+    onSuccess: () => { showToast(m.profile_created_toast()); onCreated() },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
   const valid = /^[a-z0-9][a-z0-9-]{0,63}$/.test(name.trim())

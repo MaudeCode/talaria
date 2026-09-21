@@ -22,7 +22,7 @@ export function SystemSection() {
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })
   const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 60_000 })
-  const passkeys = useQuery({ queryKey: ['auth', 'passkeys'], queryFn: api.passkeysList, staleTime: 30_000, enabled: bootstrap.auth.passkey_feature_flag === true })
+  const passkeys = useQuery({ queryKey: ['auth', 'passkeys'], queryFn: api.passkeysList, staleTime: 30_000, enabled: bootstrap.auth.passkey_feature_flag })
   const logout = useLogout()
   const [pw, setPw] = useState('')
   const [currentPw, setCurrentPw] = useState('')
@@ -51,8 +51,7 @@ export function SystemSection() {
   const registerPasskey = useMutation({
     mutationFn: async () => {
       const opt = await api.passkeyRegisterOptions()
-      if (!opt.publicKey) throw new Error(opt.error ?? 'Passkey unavailable')
-      const cred = await navigator.credentials.create({ publicKey: decodeCreationOptions(opt.publicKey as Parameters<typeof decodeCreationOptions>[0]) })
+      const cred = await navigator.credentials.create({ publicKey: decodeCreationOptions(opt.publicKey as unknown as Parameters<typeof decodeCreationOptions>[0]) })
       if (!cred) throw new Error('Passkey cancelled')
       return api.passkeyRegister(encodeAttestation(cred as PublicKeyCredential))
     },
@@ -62,7 +61,7 @@ export function SystemSection() {
   const deletePasskey = useMutation({ mutationFn: (id: string) => api.passkeyDelete(id), onSuccess: () => { void qc.invalidateQueries({ queryKey: ['auth', 'passkeys'] }) }, onError: fail })
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
-  const canManage = bootstrap.auth.can_manage_server !== false
+  const canManage = bootstrap.auth.can_manage_server
   const passwordLocked = bool('password_env_var')
   const webUpdate = updates.data?.webui
   const canApplyWeb = ((webUpdate?.behind ?? 0) > 0 || webUpdate?.metadata_repair === true) && !webUpdate?.error && !webUpdate?.manual_update && !webUpdate?.no_git
@@ -134,8 +133,8 @@ export function SystemSection() {
         <section>
           <h2 className="mb-1 text-sm font-semibold text-text">{m.system_passkeys()}</h2>
           <ul className="text-sm">
-            {(passkeys.data?.passkeys ?? []).map((k) => (
-              <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.name ?? k.id}</span><Button variant="ghost" className="text-error" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
+            {(passkeys.data?.credentials ?? []).map((k) => (
+              <li key={k.id} className="flex items-center justify-between gap-2 py-1"><span>{k.label || k.id}</span><Button variant="ghost" className="text-error" onClick={() => deletePasskey.mutate(k.id)}>{m.delete()}</Button></li>
             ))}
           </ul>
           {passkeysSupported() && <Button onClick={() => registerPasskey.mutate()} disabled={registerPasskey.isPending}>{m.system_passkey_register()}</Button>}

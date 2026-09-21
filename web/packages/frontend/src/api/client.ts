@@ -214,7 +214,53 @@ export function postForm<T>(path: string, form: FormData, schema: ZodType<T>, op
   return request(path, { ...opts, method: 'POST', body: form, schema, retries: opts.retries ?? 0 })
 }
 
-/** Fire-and-forget beacon-style POST used on pagehide (presence, drafts). */
-export function beacon(path: string, json: unknown): void {
-  void request(path, { method: 'POST', json, schema: { safeParse: () => ({ success: true, data: undefined }) } as unknown as ZodType<undefined>, retries: 0, timeoutMs: 4000, keepalive: true, redirect401: false }).catch(() => undefined)
+/**
+ * Transport for the contract client (`api/orpc.ts`): the same CSRF header,
+ * credentials, 401 redirect, and error envelope as `request()`; the contract
+ * link owns URL building and JSON (de)serialisation. Non-2xx answers throw
+ * `ApiError` so React code sees one error type for both paths.
+ */
+export async function contractFetch(req: Request): Promise<Response> {
+  const url = new URL(req.url)
+  const path = url.pathname.replace(/^.*?\/api\//, 'api/')
+  const headers = new Headers(req.headers)
+  if (UNSAFE.has(req.method) && url.origin === window.location.origin && !CSRF_EXEMPT.test(url.pathname) && state.csrfToken && !headers.has('X-Hermes-CSRF-Token')) {
+    headers.set('X-Hermes-CSRF-Token', state.csrfToken)
+  }
+  const idempotent = req.method === 'GET' || req.method === 'HEAD'
+  const body = idempotent ? null : await req.text()
+  // Identical in-flight GETs share one transport call until the next mutation (legacy HWEB-43 coalescing).
+  const dedupeKey = idempotent ? `${req.method} ${url.href} @${state.mutationSeq} contract` : null
+  if (dedupeKey) {
+    const existing = state.inflight.get(dedupeKey) as Promise<Response> | undefined
+    if (existing) return (await existing).clone()
+  }
+  if (!idempotent) state.mutationSeq += 1
+  const send = async (): Promise<Response> => {
+    try {
+      return await state.transport({ url, method: req.method, headers, body, signal: req.signal, credentials: 'include' })
+    } catch (error) {
+      throw ApiError.from(error, path)
+    }
+  }
+  let response: Response
+  if (dedupeKey) {
+    const started = send()
+    state.inflight.set(dedupeKey, started)
+    const clear = () => { if (state.inflight.get(dedupeKey) === started) state.inflight.delete(dedupeKey) }
+    started.then(clear, clear)
+    response = (await started).clone()
+  } else response = await send()
+  if (response.status === 401 && state.authEnabled && !CSRF_EXEMPT.test(url.pathname)) {
+    state.onUnauthorized(currentAppPath())
+    throw new ApiError({ kind: 'unauthorized', status: 401, path, message: 'Authentication required', retryable: false })
+  }
+  if (!response.ok) {
+    const text = await response.text()
+    let parsed: unknown = null
+    try { parsed = text ? JSON.parse(text) : null } catch { parsed = { error: text.slice(0, 500) } }
+    const errBody = ErrorBodySchema.safeParse(parsed)
+    throw new ApiError({ kind: 'http', status: response.status, code: errBody.success ? errBody.data.code : undefined, body: parsed, path, message: errBody.success ? errBody.data.error : `HTTP ${response.status} from ${path}`, retryable: false })
+  }
+  return response
 }

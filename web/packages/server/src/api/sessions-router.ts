@@ -28,9 +28,10 @@ export function failure(error: unknown): never {
   throw error
 }
 
-async function run<T>(fn: () => Promise<T> | T): Promise<T> {
+/** Handler boundary: contract outputs are pinned loose objects (index signatures), so the concrete return type is erased here like the `as never` casts elsewhere. */
+async function run<T>(fn: () => Promise<T> | T): Promise<never> {
   try {
-    return await fn()
+    return (await fn()) as never
   } catch (error) {
     return failure(error)
   }
@@ -197,6 +198,33 @@ export const sessionsRouter = os.router({
     yoloGet: os.session.yoloGet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.yolo(input.session_id) as { yolo_enabled: boolean })),
     yoloSet: os.session.yoloSet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.setYolo(input.session_id.trim(), input.enabled ?? true) as { ok: true; yolo_enabled: boolean })),
     import: os.session.import.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.import(input) as { ok: true; session: { session_id: string; title: string } })),
+    regenerateTitle: os.session.regenerateTitle.handler(({ input, context: { ctx } }) => run(async () => {
+      const sid = input.session_id
+      let session: Session
+      try { session = ctx.deps.sessionStore.get(sid) } catch { throw new HttpError(404, 'Session not found') }
+      if (session.read_only) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
+      const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
+      if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
+      const title = generated.title.trim().slice(0, 80) || 'Untitled'
+      let current: Session
+      try { current = ctx.deps.sessionStore.get(sid) } catch { throw new HttpError(404, 'Session not found') }
+      current.title = title
+      current.llm_title_generated = true
+      ctx.deps.sessionStore.save(current, { touchUpdatedAt: false })
+      ctx.deps.events.publish('session_title_regenerate', { profile: current.profile, sessionId: sid })
+      return { session: current.compact({ includeRuntime: true, activeStreamIds: ctx.deps.sessions.deps.runtime.activeStreamIds }), title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
+    })),
+    // Manual compression runs the Agent's context compressor in-process in Python; the sidecar has no such method yet.
+    compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(() => {
+      let session: Session
+      try { session = ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true }) } catch { throw new HttpError(404, 'Session not found') }
+      if (session.active_stream_id) throw new HttpError(409, 'Session is still streaming; wait for the current turn to finish.')
+      throw new HttpError(501, 'Manual compression is not available in this release', { code: 'manual_compression_unavailable' })
+    })),
+    compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(() => {
+      try { ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true }) } catch { throw new HttpError(404, 'Session not found') }
+      return { status: 'idle' as const, session_id: input.session_id }
+    })),
     draftGet: os.session.draftGet.handler(({ input, context: { ctx } }) => run(() => {
       guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.readDraft(input.session_id) as { draft: { text: string; files: unknown[] }; draft_version: string | null }

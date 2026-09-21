@@ -23,7 +23,7 @@ export function MemoryPage() {
   const [section, setSection] = useState<Section>('memory')
   const [draft, setDraft] = useState<Record<string, string>>({})
   const write = useMutation({
-    mutationFn: ({ target, content }: { target: 'memory' | 'user' | 'soul'; content: string }) => api.writeMemory({ target, content }),
+    mutationFn: ({ target, content }: { target: 'memory' | 'user' | 'soul'; content: string }) => api.writeMemory({ section: target, content }),
     onSuccess: (_r, vars) => { showToast(m.memory_saved()); setDraft((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== vars.target))); void qc.invalidateQueries({ queryKey: keys.memory }) },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })

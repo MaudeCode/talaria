@@ -29,9 +29,10 @@ function failure(error: unknown): never {
   throw error
 }
 
-async function run<T>(fn: () => Promise<T> | T): Promise<T> {
+/** Handler boundary: contract outputs are pinned loose objects (index signatures), so the concrete return type is erased here like the `as never` casts elsewhere. */
+async function run<T>(fn: () => Promise<T> | T): Promise<never> {
   try {
-    return await fn()
+    return (await fn()) as never
   } catch (error) {
     return failure(error)
   }

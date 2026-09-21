@@ -1,15 +1,11 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { WorkspaceEntrySchema, WorkspacesSchema, DirListingSchema, FileContentSchema } from '../views.js'
 
 const Json = z.unknown()
 const tags = ['workspaces']
-export const WorkspaceEntrySchema = z.object({ path: z.string(), name: z.string() })
-export const WorkspacesSchema = z.object({ workspaces: z.array(WorkspaceEntrySchema), last: z.string(), terminal_remote_backend: z.boolean() })
 const WorkspacesMutation = z.object({ ok: z.literal(true), workspaces: z.array(WorkspaceEntrySchema) })
 
-export const FileEntrySchema = z.object({ name: z.string(), path: z.string(), type: z.enum(['dir', 'file', 'symlink']), is_dir: z.boolean().optional(), size: z.number().nullable().optional(), mtime_ns: z.union([z.number(), z.string()]).nullable().optional(), birthtime_ns: z.union([z.number(), z.string()]).nullable().optional(), workspace_sort_rank: z.number().int(), target: z.string().optional(), target_outside_workspace: z.boolean().optional() })
-export const DirListingSchema = z.object({ entries: z.array(FileEntrySchema), signature: z.string(), path: z.string(), workspace: z.string(), workspace_recovered: z.boolean() })
-export const FileContentSchema = z.object({ path: z.string(), content: z.string(), size: z.number().int(), lines: z.number().int() })
 
 const SessionPath = z.object({ session_id: z.string(), path: z.string() })
 const OkPath = z.object({ ok: z.literal(true), path: z.string() })

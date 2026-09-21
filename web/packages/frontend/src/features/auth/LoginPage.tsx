@@ -28,9 +28,8 @@ export function LoginPage({ next }: { next: string | undefined }) {
     setError(null)
     setBusy(true)
     try {
-      const res = await api.login(password)
-      if (res.ok) finish()
-      else setError(res.error ?? m.login_invalid_pw())
+      await api.login(password)
+      finish()
     } catch (err) {
       setError(isApiError(err) && err.kind === 'http' ? (err.message || m.login_invalid_pw()) : m.login_conn_failed())
     } finally {
@@ -44,12 +43,10 @@ export function LoginPage({ next }: { next: string | undefined }) {
     setBusy(true)
     try {
       const opt = await api.passkeyOptions()
-      if (!opt.publicKey) throw new Error(opt.error ?? 'Passkey unavailable')
-      const cred = await navigator.credentials.get({ publicKey: decodeRequestOptions(opt.publicKey as Parameters<typeof decodeRequestOptions>[0]) })
+      const cred = await navigator.credentials.get({ publicKey: decodeRequestOptions(opt.publicKey as unknown as Parameters<typeof decodeRequestOptions>[0]) })
       if (!cred) throw new Error('Passkey cancelled')
-      const res = await api.passkeyLogin(encodeAssertion(cred as PublicKeyCredential))
-      if (res.ok) finish()
-      else setError(res.error ?? m.login_invalid_pw())
+      await api.passkeyLogin(encodeAssertion(cred as PublicKeyCredential))
+      finish()
     } catch (err) {
       setError(err instanceof Error ? err.message : m.login_conn_failed())
     } finally {
@@ -58,7 +55,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
   }
 
   const oidcHref = appUrl(`api/auth/oidc/start${target !== './' ? `?next=${encodeURIComponent(target)}` : ''}`).href
-  const showPassword = bootstrap.auth.password_auth_enabled !== false && !bootstrap.auth.passwordless_enabled
+  const showPassword = bootstrap.auth.password_auth_enabled && !bootstrap.auth.passwordless_enabled
 
   return (
     <main className="flex h-full items-center justify-center bg-bg p-4 text-text">

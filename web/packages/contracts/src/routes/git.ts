@@ -1,5 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { GitInfoSchema } from '../views.js'
 
 /** Workspace git panel, rollback checkpoints, worktrees, and upload receipts. */
 
@@ -20,7 +21,6 @@ export const GitStatusSchema = z.object({
 export const GitRefSchema = z.object({ name: z.string(), sha: z.string(), updated: z.number().int(), updated_relative: z.string(), author: z.string(), subject: z.string(), upstream: z.string(), ahead: z.number().int(), behind: z.number().int() })
 export const GitBranchesSchema = z.object({ is_git: z.literal(true), current: z.string(), detached: z.boolean(), head: z.string(), local: z.array(GitRefSchema), remote: z.array(GitRefSchema), upstream: z.string(), ahead: z.number().int(), behind: z.number().int() })
 export const GitDiffSchema = z.object({ path: z.string(), kind: z.string(), binary: z.boolean(), too_large: z.boolean(), additions: z.number().int(), deletions: z.number().int(), diff: z.string() })
-export const GitInfoSchema = z.object({ git: z.object({ branch: z.string(), dirty: z.number().int(), modified: z.number().int(), untracked: z.number().int(), ahead: z.number().int(), behind: z.number().int(), is_git: z.literal(true) }).nullable() })
 /** Every git failure answers `{error, code}`; `code` is the classified reason (`not_a_repo`, `dirty_worktree`, ...). */
 export const GitErrorSchema = z.object({ error: z.string(), code: z.string() })
 

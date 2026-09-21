@@ -34,7 +34,7 @@ export function WorkspacePanel({ workspace, sessionId, open, onToggle, onClose }
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: open })
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? ''), enabled: !!file && open, staleTime: 5_000 })
   const save = useMutation({ mutationFn: (text: string) => api.saveFile(sessionId, file ?? '', text), onSuccess: () => { showToast(m.ws_panel_saved()); setDraft(null); void qc.invalidateQueries({ queryKey: keys.files.content(workspace, file ?? '') }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
-  const entries = (listing.data?.entries ?? listing.data?.items ?? []).slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
+  const entries = (listing.data?.entries ?? []).slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
   const g = git.data?.git
   const isMarkdown = !!file && /\.(md|markdown)$/i.test(file)
   const text = draft ?? content.data?.content ?? ''

@@ -107,7 +107,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } void updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
   const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } void updateSession({ workspace: path }) }, [sessionId, updateSession])
   const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } void api.setSessionToolsets(sessionId, toolsets).then(() => refresh()).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, refresh])
-  const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(!!r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
+  const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
 
   const onRegenerate = useCallback(async () => {
     if (!sessionId) return

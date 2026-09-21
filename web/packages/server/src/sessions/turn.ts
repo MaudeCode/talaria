@@ -19,7 +19,7 @@ import { RunJournal, type RunJournalWriter } from './journal.js'
 import { Session, titleFrom, type Message } from './session.js'
 import { buildActiveTurnToken, redactSessionData, redactString } from '../redact.js'
 import { buildPartialMessage, extractToolCallsFromMessages, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
-import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titlePrompts } from './titles.js'
+import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 
@@ -608,6 +608,37 @@ export class TurnRunner {
   }
 
   // ── title ────────────────────────────────────────────────────────────────
+
+  /** Python `generate_session_title_for_session`: on-demand title from the persisted transcript; never touches `llm_title_generated`. */
+  async generateTitle(s: Session, opts: { preferLatest?: boolean } = {}): Promise<{ title: string | null; status: string; rawPreview: string }> {
+    const [userText, assistantText] = opts.preferLatest ? latestExchangeSnippets(s.messages) : firstExchangeSnippets(s.messages, { scanPastConsecutiveUsers: true })
+    if (!userText) return { title: null, status: 'empty_user_message', rawPreview: '' }
+    if (!this.deps.titleGenerationEnabled()) return { title: null, status: 'title_generation_disabled', rawPreview: '' }
+    let next = ''
+    let llmStatus = 'llm_error'
+    let rawPreview = ''
+    const sidecar = this.deps.sidecar()
+    if (sidecar && assistantText) {
+      const [qa, prompts] = titlePrompts(userText, assistantText)
+      for (const prompt of prompts) {
+        try {
+          const result = await sidecar.call('aux.complete', { profile_home: this.deps.profileHome(s.profile), task: 'title_generation', messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64 }, { timeoutMs: 15_000 })
+          rawPreview = str(result.text)
+          next = sanitizeGeneratedTitle(result.text)
+          llmStatus = next ? 'ok' : 'llm_invalid'
+          if (next) break
+        } catch (error) {
+          this.deps.log(`[webui] title generation failed for ${s.session_id}: ${(error as Error).message}`)
+          llmStatus = 'llm_error'
+          break
+        }
+      }
+    } else if (!assistantText) llmStatus = 'empty_assistant_message'
+    if (next) return { title: next, status: llmStatus, rawPreview }
+    const fallback = fallbackTitleFromExchange(userText, assistantText)
+    if (fallback && !isGenericFallbackTitle(fallback)) return { title: fallback, status: `local_summary:${llmStatus}`, rawPreview }
+    return { title: null, status: llmStatus || 'empty_title', rawPreview }
+  }
 
   private async backgroundTitle(s: Session, put: (event: string, data: Record<string, unknown>) => void): Promise<void> {
     const sessionId = s.session_id

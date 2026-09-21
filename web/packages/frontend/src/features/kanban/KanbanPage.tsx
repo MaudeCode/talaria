@@ -95,7 +95,7 @@ function TaskDialog({ task, columns, readOnly, onClose, onChanged }: { task: Kan
   const log = useQuery({ queryKey: ['kanban', 'task-log', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(task.id), staleTime: 10_000 })
   const act = useMutation({
     mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[1]; body: Record<string, unknown> }) => api.kanbanTaskAction(task.id, action, body),
-    onSuccess: (res) => { if (res.error) showToast(res.error, 4000, 'error'); else { showToast(m.saved()); onChanged(); void log.refetch() } },
+    onSuccess: () => { showToast(m.saved()); onChanged(); void log.refetch() },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
   const entries: unknown[] = log.data?.log ?? log.data?.entries ?? []
@@ -150,7 +150,7 @@ function CreateTaskDialog({ columns, onClose, onCreated }: { columns: string[]; 
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
     mutationFn: () => api.createKanbanTask({ title: title.trim(), description: description.trim() || undefined, status: status || undefined }),
-    onSuccess: (res) => { if (res.error) setError(res.error); else onCreated() },
+    onSuccess: () => { onCreated() },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
   return (

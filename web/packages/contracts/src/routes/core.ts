@@ -1,5 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { LoginResponseSchema } from '../views.js'
 
 /**
  * Core routes: liveness, the public bootstrap document, and password
@@ -83,7 +84,6 @@ export const HealthSchema = z.object({
 export type Health = z.infer<typeof HealthSchema>
 
 export const LoginRequestSchema = z.object({ password: z.string().optional() })
-export const LoginResponseSchema = z.object({ ok: z.literal(true), message: z.string().optional() })
 export const LogoutResponseSchema = z.object({ ok: z.literal(true), trusted_logout_url: z.string().optional() })
 
 export const OidcNativeStartRequestSchema = z.object({ callback_url: z.string(), state: z.string(), code_challenge: z.string(), code_challenge_method: z.string() })
