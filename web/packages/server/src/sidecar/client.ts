@@ -8,6 +8,7 @@
  * incompatible, calls fail closed with a `SidecarError` whose `condition` the
  * HTTP layer forwards as the 503 `condition` field.
  */
+import { delimiter } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import {
@@ -77,6 +78,19 @@ interface Pending {
 
 const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 
+/** The configured environment (credentials, proxies, CA bundles) flows through as it did in-process in Python; the sidecar identity keys win. */
+export function sidecarSpawnEnv(opts: Pick<SidecarSpawnOptions, 'env' | 'hermesHome' | 'agentDir' | 'sidecarDir'>): Record<string, string> {
+  return {
+    PATH: process.env.PATH ?? '',
+    HOME: process.env.HOME ?? '',
+    ...opts.env,
+    HERMES_HOME: opts.hermesHome,
+    TALARIA_SIDECAR_AGENT_DIR: opts.agentDir,
+    PYTHONPATH: opts.env?.PYTHONPATH ? `${opts.sidecarDir}${delimiter}${opts.env.PYTHONPATH}` : opts.sidecarDir,
+    PYTHONUNBUFFERED: '1',
+  }
+}
+
 export class SidecarClient implements SidecarLike {
   status: SidecarStatus = 'stopped'
   describe: RuntimeDescribe | null = null
@@ -99,15 +113,7 @@ export class SidecarClient implements SidecarLike {
     const [command, ...args] = this.opts.command ?? [this.opts.python, '-m', 'talaria_sidecar']
     const child = spawn(command ?? this.opts.python, args, {
       cwd: this.opts.sidecarDir,
-      env: {
-        PATH: process.env.PATH ?? '',
-        HOME: process.env.HOME ?? '',
-        HERMES_HOME: this.opts.hermesHome,
-        TALARIA_SIDECAR_AGENT_DIR: this.opts.agentDir,
-        PYTHONPATH: this.opts.sidecarDir,
-        PYTHONUNBUFFERED: '1',
-        ...this.opts.env,
-      },
+      env: sidecarSpawnEnv(this.opts),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.child = child

@@ -5,14 +5,13 @@
  *   talaria-web serve [launcher args]                                                     run the server (supervised worker; self-update restarts it)
  *   talaria-web ctl <start|stop|restart|status|logs> [...]                                daemon control
  */
-import { join, resolve } from 'node:path'
 import { createApp } from '../app.js'
 import { loadConfig } from '../config.js'
 import { createDeps } from '../runtime.js'
 import { loadReleaseInfo } from '../release.js'
 import { startServer } from '../server.js'
 import { launchSidecar } from '../sidecar/discover.js'
-import { loadLauncherDotenv } from '../cli/dotenv.js'
+import { loadStartupEnv } from '../cli/dotenv.js'
 import { parseBootstrapArgs, runBootstrap } from '../cli/launcher.js'
 import { runCtl } from '../cli/ctl.js'
 import { resolveWebRoot } from '../cli/web-root.js'
@@ -35,8 +34,7 @@ async function serve(args: string[]): Promise<number> {
   if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log })
   applyServeArgs(args)
   const home = process.env.HOME ?? ''
-  const hermesHome = resolve((process.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, home) || join(home, '.hermes'))
-  loadLauncherDotenv({ env: process.env, repoEnvFile: join(webRoot, '.env'), hermesEnvFile: join(hermesHome, '.env'), log: warn })
+  loadStartupEnv({ env: process.env, webRoot, home, log: warn })
   const config = loadConfig({ webRoot })
   const sidecar = launchSidecar({ env: config.env, hermesHome: config.hermesHome, webRoot, home: config.homeDir, log })
   if (sidecar) {
@@ -48,6 +46,8 @@ async function serve(args: string[]): Promise<number> {
     }
   }
   const deps = createDeps({ webRoot, sidecar })
+  // Renamed root profiles must be known before the first request (Python populated its cache synchronously).
+  await deps.profiles.warmRootAliases()
   const app = createApp(deps)
   const running = await startServer(app, deps.config)
   deps.relay.start()
@@ -67,8 +67,7 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   const home = process.env.HOME ?? ''
-  const hermesHome = resolve((process.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, home) || join(home, '.hermes'))
-  loadLauncherDotenv({ env: process.env, repoEnvFile: join(webRoot, '.env'), hermesEnvFile: null, log: warn })
+  const { hermesHome } = loadStartupEnv({ env: process.env, webRoot, home, log: warn })
   const args = parseBootstrapArgs(argv, process.env)
   const release = loadReleaseInfo({ webRoot })
   return runBootstrap({ env: process.env, webRoot, hermesHome, home, compatibleAgentRevision: release.compatibleAgent.sourceRevision, serveCommand, log }, args, async () => { await serve(['--host', args.host, String(args.port)]) })

@@ -81,6 +81,7 @@ describe('crons, kanban, extensions, terminal', () => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url.endsWith('/registry.json')) return Promise.resolve(new Response(JSON.stringify({ extensions: [{ id: 'ext-one' }] }), { status: 200 }))
       if (url.endsWith('/ext-one.zip')) return Promise.resolve(new Response(zip, { status: 200 }))
+      if (url.endsWith('/big.zip')) return Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(1024 * 1024)) } }), { status: 200 }))
       if (url === 'http://127.0.0.1:4567/redirect') return Promise.resolve(new Response(null, { status: 302, headers: { location: '/ping?via=redirect' } }))
       if (url === 'http://127.0.0.1:4567/redirect-out') return Promise.resolve(new Response(null, { status: 302, headers: { location: 'http://127.0.0.1:9999/ping' } }))
       if (url === 'http://127.0.0.1:4567/loop') return Promise.resolve(new Response(null, { status: 302, headers: { location: '/loop' } }))
@@ -192,6 +193,8 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(await json(res)).toEqual({ entries: [{ id: 'ext-one' }] })
     res = await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://evil.example/ext-one.zip', sha256: sha })
     expect(res.status).toBe(400)
+    res = await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://hermes-webui.github.io/x/big.zip', sha256: sha })
+    expect((await json(res)).error).toBe('Download too large')
     res = await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://hermes-webui.github.io/x/ext-one.zip', sha256: 'f'.repeat(64) })
     expect((await json(res)).error).toBe('SHA-256 mismatch')
     res = await post(s, '/api/extensions/install', { id: 'ext-one', download_url: 'https://hermes-webui.github.io/x/ext-one.zip', sha256: sha })

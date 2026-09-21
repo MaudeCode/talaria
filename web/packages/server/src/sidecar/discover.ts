@@ -107,12 +107,19 @@ export function scriptedSidecarCommand(env: Record<string, string | undefined>):
   return raw.split(/\s+/)
 }
 
+/** The configured process environment (shell plus launcher-loaded `.env` files) as the Agent saw it in-process in Python. */
+function stringEnv(env: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(env)) if (v !== undefined) out[k] = v
+  return out
+}
+
 /** Discover the Agent and spawn the sidecar on its venv; null when no Agent is installed (chat answers 503 `sidecar_unavailable`). */
 export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
   const scripted = scriptedSidecarCommand(opts.env)
   if (scripted) {
     opts.log(`[sidecar] starting scripted sidecar ${scripted.join(' ')}`)
-    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, log: opts.log })
+    return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: stringEnv(opts.env), log: opts.log })
   }
   const agentDir = discoverAgentDirForLaunch(opts)
   const python = discoverAgentPython(opts.env, agentDir)
@@ -120,7 +127,7 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
     opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
     return null
   }
-  const client = new SidecarClient({ python, agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, log: opts.log })
+  const client = new SidecarClient({ python, agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: stringEnv(opts.env), log: opts.log })
   opts.log(`[sidecar] starting on ${python} (agent ${agentDir})`)
   return client
 }

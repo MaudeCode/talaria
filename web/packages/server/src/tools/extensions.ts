@@ -1,4 +1,5 @@
 /** Browser extension registry: manifest scan, user overrides, sidecar consent, gallery install (Python `api/extensions.py`, `api/extension_manifests.py`). */
+import { readCapped } from '../http/capped.js'
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
@@ -525,8 +526,8 @@ export class ExtensionService {
     this.registryInflight = (async () => {
       const res = await this.deps.fetch(REGISTRY_URL, { redirect: 'follow', signal: AbortSignal.timeout(10_000) })
       if (!res.ok) throw new Error(`registry ${String(res.status)}`)
-      const raw = Buffer.from(await res.arrayBuffer())
-      if (raw.length > 2 * 1024 * 1024) throw new Error('registry too large')
+      const raw = await readCapped(res, 2 * 1024 * 1024)
+      if (!raw) throw new Error('registry too large')
       const data = JSON.parse(raw.toString('utf8')) as unknown
       const entries: unknown[] = Array.isArray(data) ? data : isDict(data) ? (Array.isArray(data.extensions) ? data.extensions : Array.isArray(data.entries) ? data.entries : []) : []
       this.registryCache = { at: now, entries }
@@ -555,11 +556,12 @@ export class ExtensionService {
     try {
       const res = await this.deps.fetch(downloadUrl, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
       if (!res.ok) throw new Error(`download ${String(res.status)}`)
-      raw = Buffer.from(await res.arrayBuffer())
+      const capped = await readCapped(res, MAX_ZIP_BYTES)
+      if (!capped) throw new ExtensionError('Download too large')
+      raw = capped
     } catch (error) {
-      throw new ExtensionError('Download failed', error instanceof ExtensionError ? error.status : 502)
+      throw new ExtensionError(error instanceof ExtensionError ? error.message : 'Download failed', error instanceof ExtensionError ? error.status : 502)
     }
-    if (raw.length > MAX_ZIP_BYTES) throw new ExtensionError('Download too large')
     if (createHash('sha256').update(raw).digest('hex') !== sha256) throw new ExtensionError('SHA-256 mismatch')
     let entries: ReturnType<typeof readZip>
     try { entries = readZip(raw) } catch { throw new ExtensionError('Invalid zip archive') }

@@ -1,3 +1,4 @@
+import { delimiter } from 'node:path'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -5,7 +6,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
-import { SidecarClient, SidecarError } from './client.js'
+import { SidecarClient, SidecarError, sidecarSpawnEnv } from './client.js'
 import { FakeSidecar } from './fake.js'
 
 const agentDir = process.env.HERMES_WEBUI_AGENT_DIR ?? resolve(homedir(), '.hermes/hermes-agent')
@@ -25,6 +26,11 @@ describe('FakeSidecar', () => {
     const fake = new FakeSidecar()
     fake.respond('runtime.ensure_current', () => ({ current: true, agent_revision: 42 as unknown as string }))
     await expect(fake.call('runtime.ensure_current', {})).rejects.toThrow()
+  })
+
+  it('forwards the configured environment to the sidecar while keeping its identity keys', () => {
+    const env = sidecarSpawnEnv({ env: { HERMES_API_KEY: 'k', HTTPS_PROXY: 'http://proxy:3128', PYTHONPATH: '/extra', HERMES_HOME: '/spoofed' }, hermesHome: '/home/u/.hermes', agentDir: '/agent', sidecarDir: '/web/sidecar' })
+    expect(env).toMatchObject({ HERMES_API_KEY: 'k', HTTPS_PROXY: 'http://proxy:3128', HERMES_HOME: '/home/u/.hermes', TALARIA_SIDECAR_AGENT_DIR: '/agent', PYTHONPATH: `/web/sidecar${delimiter}/extra`, PYTHONUNBUFFERED: '1' })
   })
 
   it('fails closed when not ready', async () => {

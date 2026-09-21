@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { loadLauncherDotenv, parseDotenv } from './dotenv.js'
+import { loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, waitForHealth } from './launcher.js'
 import { ctlPaths, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
 import { bootTestServer } from '../test/harness.js'
@@ -34,6 +34,19 @@ describe('.env loading', () => {
     expect(preserved.HERMES_WEBUI_PORT).toBe('8787')
     const off: Record<string, string | undefined> = { HERMES_WEBUI_NO_DOTENV: '1' }
     expect(loadLauncherDotenv({ env: off, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })).toEqual([])
+  })
+})
+
+describe('startup environment order', () => {
+  it('loads the checkout .env before resolving the Hermes home, then that home\'s .env as a fallback', () => {
+    const dir = scratch()
+    mkdirSync(join(dir, 'web'))
+    mkdirSync(join(dir, 'h'))
+    writeFileSync(join(dir, 'web', '.env'), `HERMES_HOME=${join(dir, 'h')}\nFROM_REPO=r\n`)
+    writeFileSync(join(dir, 'h', '.env'), 'FROM_HERMES=h\nFROM_REPO=ignored\n')
+    const env: Record<string, string | undefined> = {}
+    expect(loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })).toEqual({ hermesHome: join(dir, 'h') })
+    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES: 'h' })
   })
 })
 

@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path'
 import { createServer, connect as netConnect } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { loadLauncherDotenv } from './dotenv.js'
+import { loadLauncherDotenv, loadStartupEnv } from './dotenv.js'
 import { str } from '../util.js'
 
 export interface CtlContext {
@@ -310,9 +310,10 @@ function applyDotenv(ctx: CtlContext, p: CtlPaths): void {
 }
 
 export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number> {
+  // The checkout `.env` may define HERMES_HOME, so it loads before the paths are resolved.
+  loadStartupEnv({ env: ctx.env, webRoot: ctx.webRoot, home: ctx.home, log: ctx.warn })
   const p = ctlPaths(ctx)
   ensureHome(p)
-  applyDotenv(ctx, p)
   ctx.env.HERMES_WEBUI_STATE_DIR = (ctx.env.HERMES_WEBUI_STATE_DIR ?? '').trim() || p.stateDir
   mkdirSync(ctx.env.HERMES_WEBUI_STATE_DIR, { recursive: true })
   const binding = parseLaunchBinding(argv, ctx.env)

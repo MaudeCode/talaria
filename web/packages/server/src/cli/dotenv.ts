@@ -6,6 +6,7 @@
  * credentials referenced as `${VAR}` in config.yaml). `HERMES_WEBUI_NO_DOTENV=1`
  * skips both.
  */
+import { join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 
 const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
@@ -71,4 +72,16 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
   const hermes = read(opts.hermesEnvFile)
   if (hermes) for (const [k, v] of Object.entries(hermes)) { if (env[k] !== undefined) continue; env[k] = v; applied.push(k) }
   return applied
+}
+
+/**
+ * Startup order shared by the launcher, `serve`, and `ctl`: the checkout `.env`
+ * first (it may define `HERMES_HOME`), then the Hermes home resolved from the
+ * result, then `$HERMES_HOME/.env` as a fallback. One authoritative home.
+ */
+export function loadStartupEnv(opts: { env: Record<string, string | undefined>; webRoot: string; home: string; log?: (line: string) => void }): { hermesHome: string } {
+  loadLauncherDotenv({ env: opts.env, repoEnvFile: join(opts.webRoot, '.env'), hermesEnvFile: null, ...(opts.log ? { log: opts.log } : {}) })
+  const hermesHome = resolve((opts.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, opts.home) || join(opts.home, '.hermes'))
+  loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}) })
+  return { hermesHome }
 }

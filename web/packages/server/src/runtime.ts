@@ -445,7 +445,6 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     log,
   })
 
-  void profiles.warmRootAliases()
   return deps
 }
 
