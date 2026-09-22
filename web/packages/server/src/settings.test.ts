@@ -153,6 +153,7 @@ describe('load', () => {
     expect(s.theme).toBe('dark')
     expect(s.skin).toBe('default')
     expect(s.show_cli_sessions).toBe(true)
+    expect(s.auto_apply_updates).toBe(false)
     expect(s.default_workspace).toBe(join(dir, 'workspace'))
     expect(s.default_model).toBe('')
     expect(s.password_hash).toBeNull()
@@ -201,6 +202,12 @@ describe('load', () => {
 })
 
 describe('save', () => {
+  it('requires an explicit boolean opt-in for automatic application', async () => {
+    const s = store()
+    for (const value of ['false', 'true', 1, {}, []]) expect((await s.save({ auto_apply_updates: value })).auto_apply_updates).toBe(false)
+    expect((await s.save({ auto_apply_updates: true })).auto_apply_updates).toBe(true)
+    expect(store().load().auto_apply_updates).toBe(true)
+  })
   it('ignores unknown keys, validates enums, ranges, lists, and coerces bools [py:test_issue5435_tts_voice_preferences.py::test_unrelated_settings_save_does_not_materialize_absent_speech_defaults]', async () => {
     const s = store()
     const saved = await s.save({
@@ -217,6 +224,7 @@ describe('save', () => {
       hidden_tabs: ['chat', 'tasks', ' tasks ', 'kanban', 3],
       composer_control_order: ['hide_composer_mic', 'nope', 'hide_composer_mic'],
       show_tps: 'yes',
+      auto_apply_updates: true,
       password_hash: 'forged',
       default_model: 'forged',
       provider_cost_budget: '12.345',
@@ -235,6 +243,7 @@ describe('save', () => {
     expect(saved.hidden_tabs).toEqual(['tasks', 'kanban'])
     expect(saved.composer_control_order).toEqual(['hide_composer_mic'])
     expect(saved.show_tps).toBe(true)
+    expect(saved.auto_apply_updates).toBe(true)
     expect(saved.password_hash).toBeNull()
     expect(saved.provider_cost_budget).toBe(12.35)
     expect(saved.dashboard_plugins).toEqual({ a: true, b: false })

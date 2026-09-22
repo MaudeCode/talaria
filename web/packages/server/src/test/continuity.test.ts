@@ -181,10 +181,12 @@ describe('state continuity from the Python backend', () => {
     expect(Object.keys(afterDoc)).toEqual(Object.keys(beforeDoc))
     // Python's rename also marks the title as manual; nothing else in the document changes.
     expect(Object.keys(beforeDoc).filter((k) => JSON.stringify(beforeDoc[k]) !== JSON.stringify(afterDoc[k]))).toEqual(['updated_at', 'manual_title'])
-    // Settings: same keys, same order, same values; Python wrote floats as `1.0` where JSON.stringify writes `1`.
+    // Settings preserve Python values and key order; the new opt-in defaults to off on the first save.
     expect((await post('/api/settings', { bot_name: 'Continuity Bot' })).status).toBe(200)
     const settingsBefore = JSON.parse(before.get('settings.json')!.toString()) as Json
     const settingsAfter = JSON.parse(readFileSync(join(root, 'state', 'settings.json'), 'utf8')) as Json
+    expect(settingsAfter.auto_apply_updates).toBe(false)
+    delete settingsAfter.auto_apply_updates
     expect(Object.keys(settingsAfter)).toEqual(Object.keys(settingsBefore))
     expect(settingsAfter).toEqual(settingsBefore)
   })

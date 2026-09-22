@@ -52,6 +52,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     show_previous_messaging_sessions: false,
     sync_to_insights: false,
     check_for_updates: true,
+    auto_apply_updates: false,
     update_channel: 'stable',
     ignore_agent_updates: false,
     whats_new_summary_enabled: false,
@@ -355,6 +356,7 @@ export class SettingsStore {
     }
     for (const [k, rawValue] of Object.entries(settings)) {
       let v: unknown = rawValue
+      if (k === 'auto_apply_updates' && typeof v !== 'boolean') continue
       if (k === 'dashboard_plugins' || !allowed.has(k)) continue
       if (k === 'theme') {
         if (typeof v === 'string' && v.trim()) { pendingTheme = v; themeExplicit = true }
