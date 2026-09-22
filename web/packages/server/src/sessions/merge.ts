@@ -113,6 +113,50 @@ export function findCurrentUserTurn(messages: unknown[], msgText: string): numbe
 export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number }
 
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
+/** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
+function assistantHasFinalVisibleText(msg: Message): boolean {
+  if (msg.role !== 'assistant' || msg._error) return false
+  return messageText(msg.content).trim().length > 0
+}
+
+/** Python `_assistant_reply_added_after_current_turn`: only the just-finished turn counts, never replayed history. */
+export function assistantReplyAddedAfterCurrentTurn(resultMessages: Message[], previousContext: Message[], msgText: string): boolean {
+  let candidates: Message[]
+  if (messagesHavePrefix(resultMessages, previousContext)) candidates = resultMessages.slice(previousContext.length)
+  else {
+    const idx = findCurrentUserTurn(resultMessages, msgText)
+    candidates = idx === null ? resultMessages : resultMessages.slice(idx + 1)
+  }
+  return candidates.some((m) => assistantHasFinalVisibleText(m))
+}
+
+/** Python `_session_lacks_final_assistant_answer`: the transcript ends on tool activity instead of an answer. */
+export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i]
+    if (!msg) continue
+    if (msg._error) return false
+    if (isContextCompressionMarker(msg)) continue
+    if (msg.role === 'tool') return true
+    if (msg.role === 'assistant') {
+      if (assistantHasFinalVisibleText(msg)) return false
+      continue
+    }
+    if (msg.role === 'user') return true
+  }
+  return true
+}
+
+/**
+ * Python `_maybe_inject_max_iteration_summary_fallback`: when the Agent exhausted its tool budget its closing
+ * explanation can live only in `final_response`, so it is appended as the turn's assistant answer.
+ */
+export function injectMaxIterationSummaryFallback(messages: Message[], finalResponse: string): Message[] {
+  if (!finalResponse.trim()) return messages
+  if (!sessionLacksFinalAssistantAnswer(messages)) return messages
+  return [...messages, { role: 'assistant', content: finalResponse, _max_iteration_summary_fallback: true }]
+}
+
 export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[], previousContext: Message[], resultMessages: Message[], msgText: string, opts: MergeOptions = {}): Message[] {
   const display = previousDisplay.filter((m) => !isContextCompressionMarker(m))
   const seenPartial = new Set<string>()

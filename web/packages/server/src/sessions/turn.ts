@@ -26,7 +26,7 @@ import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessage
 import { attachTodoState } from './todo.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { buildPartialMessage, extractToolCallsFromMessages, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -463,8 +463,15 @@ export class TurnRunner {
         return
       }
       s = current
-      const resultMessages = result.messages as Message[]
-      const assistantAdded = resultMessages.some((m) => m.role === 'assistant' && messageText(m.content).trim()) || Boolean(result.final_response.trim())
+      // Python `_maybe_inject_max_iteration_summary_fallback`: an exhausted tool budget leaves the closing
+      // explanation in `final_response` only, so it becomes the turn's assistant answer before anything else reads it.
+      const resultMessages = result.tool_limit_reached ? injectMaxIterationSummaryFallback(result.messages, result.final_response) : (result.messages as Message[])
+      // Python `_assistant_reply_added_after_current_turn`: replayed history never counts as this turn's answer (the
+      // sidecar reports `completed` whenever a failed run still carries messages).
+      // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
+      // ends on a final answer (the current user row or trailing tool activity makes it "lacking").
+      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now() })
+      const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || !sessionLacksFinalAssistantAnswer(mergedForCheck())
       const lastErr = result.error ?? capturedTerminalError ?? ''
       // Python `_turn_transcript_lacks_final_assistant_answer`: a partial result with no final answer is a silent failure even if tokens streamed.
       const stalePartial = result.result_status === 'partial' && !assistantAdded

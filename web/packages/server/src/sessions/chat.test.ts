@@ -837,6 +837,47 @@ describe('chat turns through the sidecar', () => {
     expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
   })
 
+  it('a failed follow-up that replays history is an error turn, not a silent success', async () => {
+    const sid = await newSession(s)
+    const seeded = s.deps.sessionStore.get(sid)
+    seeded.messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
+    seeded.context_messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
+    s.deps.sessionStore.save(seeded)
+    // The sidecar reports `completed` whenever a failed run still carries messages: history plus the unanswered prompt.
+    sidecar.respond('chat.start', (params) => ({
+      ...completed([{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }, { role: 'user', content: str(params.user_message), timestamp: 200 }]),
+      final_response: '', error: '401 invalid api key', result_status: 'partial', token_sent: false,
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'second question' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')
+    const apperror = frames.find((f) => f.event === 'apperror')?.data as Json | undefined
+    expect(apperror, JSON.stringify(frames.map((f) => f.event))).toBeDefined()
+    expect(str(apperror?.message)).toContain('401 invalid api key')
+    const messages = s.deps.sessionStore.get(sid).messages
+    expect(messages.some((m) => m._error)).toBe(true)
+  })
+
+  it('keeps the closing explanation when the Agent exhausts its tool budget', async () => {
+    const sid = await newSession(s)
+    // The budget ran out mid tool-run: the graceful summary exists only in `final_response`.
+    sidecar.respond('chat.start', (params) => ({
+      ...completed([
+        { role: 'user', content: str(params.user_message), timestamp: 300 },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }], timestamp: 301 },
+        { role: 'tool', tool_call_id: 'c1', content: 'file contents', timestamp: 302 },
+      ]),
+      final_response: 'I reached the iteration limit and could not finish.', tool_limit_reached: true,
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'do a lot' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json | undefined
+    expect(done?.terminal_state).toBe('tool_limit_reached')
+    const persisted = s.deps.sessionStore.get(sid).messages
+    expect(str(persisted[persisted.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
+    const shown = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(str(shown[shown.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })
