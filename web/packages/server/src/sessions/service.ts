@@ -810,7 +810,11 @@ export class SessionService {
     const forked = keepCount !== null ? sourceMessages.slice(0, keepCount) : [...sourceMessages]
     const title = customTitle ?? `${source.title || 'Untitled'} (fork)`
     const forkKeep = keepCount ?? sourceMessages.length
-    const forkedContext = copyJson(truncateContextForDisplayKeep(source.context_messages, sourceMessages, forkKeep))
+    // The branch's model context must carry the retained state.db rows too: the new id has no state.db rows of its
+    // own, and the runner prefers a non-empty context over the displayed messages.
+    const stateRows = this.stateDbRows(source)
+    const sourceContext = stateRows.length ? this.mergedTranscript(source, source.context_messages.length ? source.context_messages : source.messages) : source.context_messages
+    const forkedContext = copyJson(truncateContextForDisplayKeep(sourceContext, sourceMessages, forkKeep))
     const branch = new Session(
       {
         workspace: source.workspace, model: source.model, model_provider: source.model_provider, profile: source.profile, title, messages: forked, project_id: source.project_id,

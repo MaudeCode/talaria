@@ -170,8 +170,9 @@ export class ProfileService {
       // create skips the sidecar (which would refuse the existing directory) but re-applies the requested settings
       // before clearing the record, so a partially configured home never becomes the final state.
       let row: Dict
-      if (this.deleted.has(opts.name) && isDir(this.deps.profileHome(opts.name))) {
-        row = { name: opts.name, path: this.deps.profileHome(opts.name) }
+      const home = this.deps.profileHome(opts.name)
+      if ((this.deleted.has(opts.name) || this.incomplete.has(opts.name)) && isDir(home)) {
+        row = { name: opts.name, path: home }
       } else {
         try {
           row = (await this.sidecar().call('profiles.create', params)).profile
@@ -180,10 +181,31 @@ export class ProfileService {
         }
       }
       this.invalidate()
-      const home = str(row.path) || this.deps.profileHome(opts.name)
-      if (opts.base_url) await this.deps.config.update(home, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
-      if (opts.api_key) writeEnvFile(join(home, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
-      if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
+      const target = str(row.path) || home
+      // The home exists from here on; until the requested settings are applied the creation is incomplete, so a
+      // failed write rolls the home back (a clean retry recreates it) or, if even that fails, leaves a marker that
+      // lets the retry re-apply the settings without a second sidecar create against the existing directory.
+      this.incomplete.add(opts.name)
+      try {
+        if (opts.base_url) await this.deps.config.update(target, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
+        if (opts.api_key) writeEnvFile(join(target, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
+        if (model || provider) await this.deps.config.update(target, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
+      } catch (error) {
+        let rolledBack = false
+        if (!this.deleted.has(opts.name)) {
+          try {
+            await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name: opts.name })
+            this.incomplete.delete(opts.name)
+            this.invalidate()
+            rolledBack = true
+          } catch (rollbackError) {
+            this.deps.log(`[webui] WARNING: half-created profile '${opts.name}' could not be rolled back: ${str((rollbackError as Error).message)}`)
+          }
+        }
+        if (error instanceof ProfileError) throw error
+        throw new ProfileError(`Profile '${opts.name}' could not be configured (${str((error as Error).message)}); ${rolledBack ? 'the created home was rolled back — retry the create' : 'retry the create to apply the settings'}`, 500)
+      }
+      this.incomplete.delete(opts.name)
       // The deletion tombstone lifts only once the recreation fully succeeded, and only durably: if the removal cannot
       // be persisted the in-memory mark is kept too, so the response and a restart agree (the profile stays refused
       // until the record can be written), instead of a working profile turning unusable on the next start.
@@ -196,6 +218,8 @@ export class ProfileService {
 
   /** Per-profile lifecycle chain: creation (+ its configuration) and deletion of one name never overlap. */
   private readonly lifecycles = new Map<string, Promise<unknown>>()
+  /** Homes created by the sidecar whose requested configuration has not been applied yet (and could not be rolled back). */
+  private readonly incomplete = new Set<string>()
 
   private clearTombstoneDurably(name: string): void {
     this.deleted.delete(name)

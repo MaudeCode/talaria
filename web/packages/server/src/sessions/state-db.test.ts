@@ -251,5 +251,7 @@ describe('state.db projection', () => {
     // the sidecar tail keeps the CLI turns instead of silently dropping them.
     const branched = (await (await post('/api/session/branch', { session_id: webSid, keep_count: 3 })).json()) as { session_id: string }
     expect(s.deps.sessionStore.get(branched.session_id).messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
+    // ...and the branch's model context carries the retained CLI row as well (the branch id has no state.db rows).
+    expect(s.deps.sessionStore.get(branched.session_id).context_messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
   })
 })

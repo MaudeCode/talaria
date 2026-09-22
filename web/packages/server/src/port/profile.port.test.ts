@@ -823,6 +823,32 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     if (previous === null) rmSync(file, { force: true }); else writeFileSync(file, previous)
   })
 
+  it('a first-time creation whose configuration write fails is rolled back, so a retry creates cleanly', async () => {
+    let creates = 0
+    let deletes = 0
+    sidecar.respond('profiles.create', (params) => { creates += 1; mkdirSync(join(s.state, 'profiles', params.name), { recursive: true }); return { profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never } })
+    sidecar.respond('profiles.delete', (params) => { deletes += 1; rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const originalSet = sidecar.responderFor('config.set')
+    sidecar.respond('config.set', (params, emit, opts) => {
+      if (str(params.profile_home).endsWith('halfway') && creates === 1) throw new Error('disk full')
+      return originalSet ? originalSet(params, emit, opts) : { ok: true, path: join(params.profile_home, 'config.yaml') }
+    })
+    try {
+      const failed = await post(s, '/api/profile/create', { name: 'halfway', base_url: 'https://llm.example/v1' })
+      expect(failed.status).toBe(500)
+      expect(String((await json(failed)).error)).toContain('rolled back')
+      expect(existsSync(join(s.state, 'profiles', 'halfway'))).toBe(false)
+      expect(deletes).toBe(1)
+      // The retry is a clean create (the sidecar would have refused a leftover directory) and applies the settings.
+      const retried = await post(s, '/api/profile/create', { name: 'halfway', base_url: 'https://llm.example/v1' })
+      expect(retried.status, await retried.clone().text()).toBe(200)
+      expect(creates).toBe(2)
+      expect(sidecar.calls.some((c) => c.method === 'config.set' && str((c.params as Json).profile_home).endsWith('halfway') && JSON.stringify((c.params as Json).config).includes('https://llm.example/v1'))).toBe(true)
+    } finally {
+      if (originalSet) sidecar.respond('config.set', originalSet)
+    }
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())
