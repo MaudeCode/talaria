@@ -91,7 +91,7 @@ export class SkillsService {
       fd = exists ? openAnchoredWriteFd(skillsDir, file) : openAnchoredCreateFd(skillsDir, file)
     } catch (error) {
       if (error instanceof HttpFailure) throw error
-      throw new HttpFailure(400, 'Cannot save to a symlinked skill path')
+      throw new HttpFailure(400, 'Cannot save to a symlinked skill file')
     }
     try { writeFileSync(fd, content, 'utf8') } finally { closeSync(fd) }
     return { ok: true, name, path: file }
@@ -111,13 +111,15 @@ export class SkillsService {
   async toggle(profileHome: string, name: string, enabled: boolean): Promise<{ ok: true; name: string; enabled: boolean }> {
     const found = await this.sidecar().call('skills.find', { profile_home: profileHome, name })
     if (!found.found) throw new HttpFailure(404, `Skill '${name}' not found`)
+    // Python `_active_profile_config_path`: skill toggles follow the profile's own config.yaml, never HERMES_CONFIG_PATH —
+    // the sidecar reads the disabled set from the same file.
     await this.deps.config.update(profileHome, (c) => {
       const skills = dict(c.skills)
       skills.disabled = toggleName(skills.disabled, name, enabled)
       const platform = skills.platform_disabled
       if (isDict(platform) && 'webui' in platform) platform.webui = toggleName(platform.webui, name, enabled)
       c.skills = skills
-    })
+    }, { profileFile: true })
     return { ok: true, name, enabled }
   }
 }

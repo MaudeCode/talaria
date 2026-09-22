@@ -70,9 +70,11 @@ export function providerApiKeyPresent(provider: string, cfg: Config, envValues: 
   return false
 }
 
+/** Python `_oauth_payload_has_token`: token material at the top level or under a nested `tokens` dict. */
 function oauthPayloadHasToken(state: unknown): boolean {
   if (!isDict(state)) return false
-  return ['access_token', 'refresh_token', 'token', 'api_key', 'id_token'].some((k) => str(state[k]).trim())
+  const candidates = [state, isDict(state.tokens) ? state.tokens : {}]
+  return candidates.some((c) => ['access_token', 'refresh_token', 'api_key'].some((k) => str(c[k]).trim()))
 }
 
 /** Python `_provider_oauth_authenticated`: reads the profile's auth.json directly. */
@@ -88,7 +90,7 @@ export function providerOauthAuthenticated(providerRaw: string, home: string): b
     if (isDict(pool) && Array.isArray(pool[provider])) {
       for (const entry of pool[provider] as unknown[]) {
         if (oauthPayloadHasToken(entry)) return true
-        if (provider === 'anthropic' && isDict(entry) && ['oauth', 'claude-code', 'claude_code'].includes(str(entry.source).toLowerCase())) return true
+        if (provider === 'anthropic' && isDict(entry) && entry.auth_type === 'oauth' && entry.source === 'claude_code_linked') return true
       }
     }
   } catch {
@@ -321,12 +323,12 @@ export class Onboarding {
     let entries: unknown[]
     if (isDict(payload) && Array.isArray(payload.data)) entries = payload.data
     else if (Array.isArray(payload)) entries = payload
-    else return { ok: false, error: 'parse', detail: 'response is not an OpenAI-style /models listing' }
+    else return { ok: false, error: 'parse', detail: "response is not in OpenAI /models shape (expected {'data': [...]} or [...])" }
     const models: { id: string; label: string }[] = []
     for (const entry of entries) {
       const id = isDict(entry) ? str(entry.id ?? entry.name).trim() : str(entry).trim()
       if (id && !models.some((m) => m.id === id)) models.push({ id, label: id })
     }
-    return { ok: true, models }
+    return { ok: true, models, status: res.status }
   }
 }

@@ -1,7 +1,7 @@
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, diagnostics (Python `api/routes.py` handlers of the same paths). */
 import { implement } from '@orpc/server'
 import { toolsContract } from '@maudecode/talaria-web-contracts'
-import { HttpError, type ApiContext } from './router.js'
+import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
@@ -75,6 +75,16 @@ export function sanitizeClientEvent(payload: unknown): Dict {
     }
     out[field] = text.slice(0, limit)
   }
+  // Python keeps `ready_state` (0..3, never a bool) and `online` (bool or a yes/no string) as typed values.
+  const readyState = body.ready_state
+  if (typeof readyState === 'number' && Number.isInteger(readyState) && readyState >= 0 && readyState <= 3) out.ready_state = readyState
+  const online = body.online
+  if (typeof online === 'boolean') out.online = online
+  else if (typeof online === 'string') {
+    const lowered = online.trim().toLowerCase()
+    if (['true', '1', 'yes', 'on'].includes(lowered)) out.online = true
+    else if (['false', '0', 'no', 'off'].includes(lowered)) out.online = false
+  }
   if (!out.event) out.event = 'unknown'
   return out
 }
@@ -109,7 +119,7 @@ export const toolsRouter = os.router({
       return ctx.deps.skills.view(home(ctx), name)
     })),
     save: os.skills.save.handler(({ input, context: { ctx } }) => run(() => {
-      if (input.name === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): name, content')
+      requireFields(input, 'name', 'content')
       return ctx.deps.skills.save(home(ctx), str(input.name), str(input.content), str(input.category))
     })),
     delete: os.skills.delete.handler(({ input, context: { ctx } }) => run(() => {

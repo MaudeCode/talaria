@@ -72,10 +72,11 @@ export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: num
     const rowCost = Math.round(stats.cost * 1e6) / 1e6
     return {
       model, sessions: stats.sessions, input_tokens: stats.input_tokens, output_tokens: stats.output_tokens, cache_read_tokens: stats.cache_read_tokens,
-      cache_hit_percent: cacheHitPercent(stats.cache_read_tokens, stats.input_tokens), total_tokens: rowTotal, cost: rowCost,
+      cache_hit_percent: cacheHitPercent(stats.cache_read_tokens, stats.input_tokens + stats.cache_read_tokens), total_tokens: rowTotal, cost: rowCost,
       session_share: totalSessions ? Math.round((stats.sessions / totalSessions) * 100) : 0, token_share: totalTokens ? Math.round((rowTotal / totalTokens) * 100) : 0, cost_share: totalCost ? Math.round((rowCost / totalCost) * 100) : 0,
     }
-  }).sort((a, b) => b.total_tokens - a.total_tokens)
+  // Python: `(-cost, -sessions, model)`.
+  }).sort((a, b) => b.cost - a.cost || b.sessions - a.sessions || (a.model < b.model ? -1 : a.model > b.model ? 1 : 0))
   const series: Dict[] = []
   for (let i = 0; i < days; i += 1) {
     const d = new Date((cutoff + i * 86_400) * 1000)
@@ -86,7 +87,7 @@ export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: num
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   return {
     period_days: days, total_sessions: totalSessions, total_messages: totalMessages, total_input_tokens: totalInput, total_output_tokens: totalOutput, total_cache_read_tokens: totalCache,
-    total_cache_hit_percent: cacheHitPercent(totalCache, totalInput), total_tokens: totalTokens, total_cost: Math.round(totalCost * 1e6) / 1e6, models: breakdown, daily_tokens: series,
+    total_cache_hit_percent: cacheHitPercent(totalCache, totalInput + totalCache), total_tokens: totalTokens, total_cost: Math.round(totalCost * 1e6) / 1e6, models: breakdown, daily_tokens: series,
     activity_by_day: labels.map((day, i) => ({ day, sessions: dow[i] ?? 0 })), activity_by_hour: hod.map((sessions, hour) => ({ hour, sessions })),
   }
 }

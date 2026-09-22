@@ -194,7 +194,8 @@ export const settingsRouter = os.router({
     switch: os.profiles.switch.handler(({ input, context: { ctx } }) => run(async () => {
       const name = str(input.name ?? input.profile).trim()
       if (!name) throw new HttpError(400, 'name is required')
-      if (name !== 'default') validateProfileName(name)
+      // Python `switch_profile`: an invalid name is a `ValueError`, which the route answered as 404.
+      if (name !== 'default') { try { validateProfileName(name) } catch (error) { throw new HttpError(404, (error as Error).message) } }
       const info = await ensureTrustedAuthSession(ctx)
       if (ctx.trusted.rejected) throw new HttpError(401, 'Authentication required')
       const bound = str(info?.bound_profile).trim() || null
@@ -293,8 +294,8 @@ export const settingsRouter = os.router({
       return setProviderKey(ctx, pid, null)
     })),
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
-    quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null))),
-    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null }) as Promise<never>)),
+    quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
+    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) }) as Promise<never>)),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)
       const days = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 365)) : 7

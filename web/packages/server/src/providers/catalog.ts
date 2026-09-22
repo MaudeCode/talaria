@@ -10,8 +10,8 @@
  */
 import { readCapped } from '../http/capped.js'
 import { homeDotenvKeys } from '../cli/dotenv.js'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -22,11 +22,35 @@ import {
 } from './tables.js'
 import {
   activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderSlug, dict, effectiveDefaultModel, isDict,
-  isOpenAiFamilyProvider, modelSection, resolveProviderAlias, type AgentConfig, type Config, type Dict,
+  isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
 } from '../config/agent-config.js'
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean }
-export interface ModelGroup { provider: string; provider_id: string; models: ModelEntry[] }
+export interface ModelGroup { provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[] }
+
+/** Python `_model_matches_picker_selection`: same bare id, and the routing hints agree when both name one. */
+function modelMatchesPickerSelection(modelId: string, selected: string, providerId: string): boolean {
+  const candidate = modelId.trim()
+  const sel = selected.trim()
+  if (!sel || !candidate) return false
+  if (candidate === sel) return true
+  const bare = (v: string): string => (v.startsWith('@') && v.includes(':') ? v.slice(v.indexOf(':') + 1) : v)
+  if (bare(sel) !== bare(candidate)) return false
+  const selProvider = sel.startsWith('@') && sel.includes(':') ? sel.slice(1, sel.indexOf(':')).toLowerCase() : ''
+  const candProvider = candidate.startsWith('@') && candidate.includes(':') ? candidate.slice(1, candidate.indexOf(':')).toLowerCase() : providerId.trim().toLowerCase()
+  return !selProvider || !candProvider || selProvider === candProvider
+}
+
+/** Python `_split_picker_overflow_models`: past 25 rows the picker shows 15, keeping the selected model visible. */
+export function splitPickerOverflow(models: ModelEntry[], selected: string, providerId: string): [ModelEntry[], ModelEntry[]] {
+  if (models.length <= MODEL_PICKER_OVERFLOW_THRESHOLD) return [models, []]
+  const visible = models.slice(0, MODEL_PICKER_VISIBLE_TARGET)
+  const extras = models.slice(MODEL_PICKER_VISIBLE_TARGET)
+  if (!selected || visible.some((m) => modelMatchesPickerSelection(m.id, selected, providerId))) return [visible, extras]
+  const idx = extras.findIndex((m) => modelMatchesPickerSelection(m.id, selected, providerId))
+  if (idx >= 0) { const displaced = visible[visible.length - 1]!; visible[visible.length - 1] = extras[idx]!; extras[idx] = displaced }
+  return [visible, extras]
+}
 export interface ModelsCatalog { active_provider: string | null; default_model: string; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
 
 export interface CatalogDeps {
@@ -40,8 +64,21 @@ export interface CatalogDeps {
   fetch?: typeof fetch
   /** Whether `profileHome` is the default profile's home (`$HERMES_HOME`). */
   isRootProfileHome: (profileHome: string) => boolean
+  /** WebUI state directory; holds `.quota_scope_id`, the stable public identity namespace for quota sources. */
+  stateDir?: string
 }
 
+/** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
+const BESPOKE_CATALOG_PROVIDERS = new Set(['openai-codex', 'nous', 'xai-oauth', 'lmstudio', 'opencode-go'])
+/** Python `_unqualified_model_id`: strip a picker routing hint (`@provider:`). */
+function unqualifiedModelId(id: string): string {
+  const raw = id.trim()
+  return raw.startsWith('@') && raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : raw
+}
+/** Python `_MODEL_PICKER_OVERFLOW_THRESHOLD` / `_MODEL_PICKER_VISIBLE_TARGET`. */
+const MODEL_PICKER_OVERFLOW_THRESHOLD = 25
+const MODEL_PICKER_VISIBLE_TARGET = 15
+const ACCOUNT_USAGE_CACHE_TTL_S = 45
 const LIVE_TTL_S = 86_400
 const PROVIDERS_TTL_S = 30
 const QUOTA_TIMEOUT_MS = 15_000
@@ -138,6 +175,14 @@ export class ProviderCatalog {
 
   constructor(private readonly deps: CatalogDeps) {}
 
+  /** Python `models_cache` diagnostics: live-id groups held, ids across them, and the oldest snapshot's age. */
+  diagnosticSnapshot(): { groups: number; models: number; age_seconds: number | null } {
+    let models = 0
+    let oldest: number | null = null
+    for (const { at, ids } of this.liveIds.values()) { models += ids.length; oldest = oldest === null ? at : Math.min(oldest, at) }
+    return { groups: this.liveIds.size, models, age_seconds: oldest === null ? null : Math.max(0, Math.round(this.deps.now() - oldest)) }
+  }
+
   invalidate(profileHome?: string, provider?: string): void {
     for (const key of [...this.liveIds.keys()]) {
       if (profileHome && !key.startsWith(`${profileHome}\0`)) continue
@@ -167,7 +212,7 @@ export class ProviderCatalog {
     if (str(model.api_key).trim() && canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key)) return true
     const providers = dict(config.providers)
     for (const [key, value] of Object.entries(providers)) {
-      if (canonicaliseProviderId(key) !== canonicaliseProviderId(pid)) continue
+      if (providerIdentity(key) !== providerIdentity(pid)) continue
       if (isDict(value) && valueCountsAsApiKey(pid, value.api_key)) return true
     }
     for (const cp of customProviderEntries(config)) {
@@ -267,14 +312,23 @@ export class ProviderCatalog {
       if (pid === 'openai' && !probe.hasKey && looksLikeCodexOauthToken(str(envValues[providerEnvVar('openai') ?? ''] ?? this.deps.env.OPENAI_API_KEY))) continue
       let models: ModelEntry[] = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       let modelsTotal = models.length
-      if (probe.hasKey && (probe.isOauth || pid === 'lmstudio' || pid === 'nous')) {
+      // Python: the card prefers the live catalog for every keyed provider (exactly like the picker), keeping the
+      // static list as the cold/failed-probe fallback; Nous renders a featured subset with the full count.
+      if (probe.hasKey && (probe.isOauth || pid === 'lmstudio' || pid === 'nous' || !BESPOKE_CATALOG_PROVIDERS.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         if (live.length) {
           models = pid === 'nous' ? live.slice(0, 25).map((id) => ({ id: `@nous:${id}`, label: `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` })) : live.map((id) => ({ id, label: labelForModel(id, []) }))
           modelsTotal = live.length
         }
       }
-      const providerCfg = dict(providersCfg[pid] ?? providersCfg[Object.keys(providersCfg).find((k) => canonicaliseProviderId(k) === pid) ?? ''])
+      const providerCfg = dict(providersCfg[pid] ?? providersCfg[Object.keys(providersCfg).find((k) => providerIdentity(k) === providerIdentity(pid)) ?? ''])
+      // Python: `providers.<id>.models` from config.yaml reach the card (alias-aware), minus ids already published.
+      if ('models' in providerCfg) {
+        const seen = new Set(models.map((m) => unqualifiedModelId(m.id)))
+        const added = configuredModelIds(providerCfg.models).filter((id) => !seen.has(unqualifiedModelId(id))).map((id) => ({ id, label: id }))
+        models = [...models, ...added]
+        if (pid !== 'nous') modelsTotal += added.length
+      }
       const baseUrl = str(providerCfg.base_url).trim() || (active === pid ? str(modelSection(config).base_url).trim() : '') || null
       rows.push({
         id: pid,
@@ -298,12 +352,19 @@ export class ProviderCatalog {
       if (!name) continue
       const slug = customProviderSlug(name) || 'custom'
       const ids = [str(cp.model).trim(), ...configuredModelIds(cp.models)].filter((v, i, a) => v && a.indexOf(v) === i)
+      // Python: an `api_key: ${VAR}` reference counts when the variable resolves.
+      const cpKey = str(cp.api_key).trim()
+      const envRef = /^\$\{([^}]+)\}$/.exec(cpKey)?.[1] ?? ''
+      const hasKey = envRef ? Boolean((this.processEnv(envRef, profileHome) ?? '').trim()) : valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome))
       rows.push({
-        id: slug, display_name: name, has_key: valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome)),
+        id: slug, display_name: name, has_key: hasKey,
         configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: str(cp.api_key).trim() ? 'config_yaml' : 'none',
         base_url: str(cp.base_url).trim() || null, auth_error: null, env_var: null, models: ids.map((id) => ({ id, label: labelForModel(id, []) })), models_total: ids.length,
       })
     }
+    // Python `_provider_sort_key`: active first, then `custom:*`, then keyed providers, then the rest (alphabetical within).
+    const rank = (p: Dict): number => (str(p.id) === active ? 0 : str(p.id).startsWith('custom:') ? 1 : p.has_key ? 2 : 3)
+    rows.sort((a, b) => rank(a) - rank(b) || (str(a.id) < str(b.id) ? -1 : str(a.id) > str(b.id) ? 1 : 0))
     const payload = { providers: rows, active_provider: active }
     this.providersCache.set(profileHome, { at: this.deps.now(), key: cacheKey, payload })
     return structuredClone(payload)
@@ -407,6 +468,16 @@ export class ProviderCatalog {
       }
     }
     deduplicateModelIds(groups)
+    // Python: every group is split into visible rows plus `extra_models`; Nous decorates its label with "(15 of N)".
+    const selectedId = str(model.model).trim() || defaultModel
+    for (const g of groups) {
+      const [visible, extras] = splitPickerOverflow(g.models, selectedId, g.provider_id)
+      g.models = visible
+      if (extras.length) {
+        g.extra_models = extras
+        if (g.provider_id === 'nous') g.provider = `${g.provider} (${String(visible.length)} of ${String(visible.length + extras.length)})`
+      }
+    }
     const kept = groups.filter((g) => g.models.length || g.provider_id.startsWith('custom:'))
     const withKeys = new Set<string>()
     for (const [k, v] of Object.entries(providersCfg)) if (isDict(v) && (v.api_key || v.key_env || v.base_url)) { const c = canonicaliseProviderId(k); if (c) withKeys.add(c) }
@@ -465,7 +536,12 @@ export class ProviderCatalog {
       ids = fromConfig.length ? [...new Set(fromConfig)] : (PROVIDER_MODELS[provider] ?? []).map((m) => m.id)
       source = fromConfig.length ? 'config' : 'static'
     }
-    return { provider, source, models: ids.map((id) => ({ id, label: labelForModel(id, []) })) }
+    // Python: the dropdown-enrichment surface keeps the picker's visibility budget (15 rows past 25) and annotates
+    // OpenAI-family rows with `supports_fast_tier`; the answer carries `count`.
+    if (provider !== 'nous' && ids.length > MODEL_PICKER_OVERFLOW_THRESHOLD) ids = ids.slice(0, MODEL_PICKER_VISIBLE_TARGET)
+    const annotateFastTier = isOpenAiFamilyProvider(provider)
+    const models = ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []), ...(annotateFastTier ? { supports_fast_tier: mainModelSupportsServiceTier(id, provider) } : {}) }))
+    return { provider, source, models, count: models.length }
   }
 
   /**
@@ -520,7 +596,9 @@ export class ProviderCatalog {
   }
 
   /** Python `get_provider_quota`. */
-  async quota(profileHome: string, providerRaw: string | null): Promise<Dict> {
+  private readonly accountUsageCache = new Map<string, { at: number; limits: Dict | null }>()
+
+  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean } = {}): Promise<Dict> {
     const config = await this.deps.config.read(profileHome)
     const provider = (providerRaw ?? activeProviderFromConfig(config) ?? '').trim().toLowerCase()
     if (!provider) return { ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
@@ -528,13 +606,18 @@ export class ProviderCatalog {
     if (ACCOUNT_USAGE_PROVIDERS.has(provider)) {
       const sidecar = this.deps.sidecar()
       let limits: Dict | null = null
-      if (sidecar) {
+      // Python `_ACCOUNT_USAGE_CACHE_TTL_SECONDS`: a snapshot answers repeat polls for 45 s unless `refresh` is set.
+      const cacheKey = `${profileHome}\0${provider}`
+      const cached = this.accountUsageCache.get(cacheKey)
+      if (cached && !opts.refresh && this.deps.now() - cached.at <= ACCOUNT_USAGE_CACHE_TTL_S) limits = cached.limits
+      else if (sidecar) {
         try {
-          const snapshot = (await sidecar.call('usage.account', { profile_home: profileHome, provider }, { timeoutMs: 35_000 })).snapshot
+          const snapshot = (await sidecar.call('usage.account', { profile_home: profileHome, provider, ...(opts.refresh ? { refresh: true } : {}) }, { timeoutMs: 35_000 })).snapshot
           if (snapshot) limits = { ...snapshot, title: str(snapshot.title) || 'Account limits', available: snapshot.available && !str(snapshot.unavailable_reason) }
         } catch (error) {
           limits = { available: false, unavailable_reason: str((error as Error).message), windows: [], details: [] }
         }
+        this.accountUsageCache.set(cacheKey, { at: this.deps.now(), limits })
       }
       if (limits?.available) return { ok: true, provider, display_name: name, supported: true, status: limits.stale ? 'stale' : 'available', label: limits.title, quota: null, account_limits: limits, message: limits.stale ? `${name} refresh failed; showing last-known account limits.` : `${name} account limits loaded.` }
       const reason = str(limits?.unavailable_reason).trim()
@@ -548,7 +631,7 @@ export class ProviderCatalog {
       const status = info.kind === 'invalid_key' ? 'invalid_key' : 'unavailable'
       return { ok: false, provider, display_name: name, supported: true, status, quota: null, message: status === 'invalid_key' ? 'OpenRouter rejected the configured API key.' : 'OpenRouter quota status is temporarily unavailable.' }
     }
-    return { ok: false, provider, display_name: name, supported: false, status: 'unsupported', quota: null, message: `Quota status is not available for ${name}.` }
+    return { ok: false, provider, display_name: name, supported: false, status: 'unsupported', quota: null, message: `No verified server-side quota or balance endpoint is available for ${name}.` }
   }
 
   private async fetchOpenRouterKey(apiKey: string): Promise<{ kind: 'ok'; quota: Dict; label: string | null } | { kind: 'invalid_key' | 'unavailable' }> {
@@ -568,15 +651,44 @@ export class ProviderCatalog {
     }
   }
 
-  /** Python `get_provider_quotas`: one source per keyed provider. */
-  async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null } = {}): Promise<Dict> {
+  private quotaScopeCache: string | null = null
+
+  /** Python `_quota_server_scope_id`: a 32-hex id persisted at `<state>/.quota_scope_id` (created atomically once). */
+  private quotaServerScopeId(): string {
+    if (this.quotaScopeCache) return this.quotaScopeCache
+    const dir = this.deps.stateDir
+    if (!dir) { this.quotaScopeCache = randomUUID().replaceAll('-', ''); return this.quotaScopeCache }
+    const path = join(dir, '.quota_scope_id')
+    let stored = ''
+    try { stored = readFileSync(path, 'utf8').trim().toLowerCase() } catch { stored = '' }
+    if (!/^[0-9a-f]{32}$/.test(stored)) {
+      stored = randomUUID().replaceAll('-', '')
+      mkdirSync(dir, { recursive: true })
+      const temporary = `${path}.tmp.${String(process.pid)}`
+      writeFileSync(temporary, `${stored}\n`, 'utf8')
+      renameSync(temporary, path)
+    }
+    this.quotaScopeCache = stored
+    return stored
+  }
+
+  /** Python `_quota_profile_scope_id`. */
+  quotaProfileScopeId(profile: string): string {
+    return `qscope_${createHash('sha256').update(`${this.quotaServerScopeId()}\0${profile}`).digest('hex').slice(0, 32)}`
+  }
+
+  /** Python `get_provider_quotas`: one source per keyed provider, in the stable-identity envelope the iOS widget persists. */
+  async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}): Promise<Dict> {
     const status = await this.providers(profileHome)
     const active = status.active_provider
-    const sourceId = (pid: string): string => `qsrc_${createHash('sha256').update(`${profile}\0${pid}\0provider`).digest('hex').slice(0, 32)}`
+    const scopeId = this.quotaProfileScopeId(profile)
+    // Python `_quota_source_id(profile, provider, "provider")`: the single-credential descriptor per provider.
+    const sourceId = (pid: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0provider`).digest('hex').slice(0, 32)}`
     let descriptors = status.providers.filter((p) => p.has_key || p.is_custom).map((p) => ({ source_id: sourceId(str(p.id)), provider_id: str(p.id), provider_label: str(p.display_name) || str(p.id) }))
-    if (opts.sourceId) descriptors = descriptors.filter((d) => d.source_id === opts.sourceId)
+    const requested = str(opts.sourceId).trim() || null
+    if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
     const sources = await Promise.all(descriptors.map(async (d) => {
-      const q = await this.quota(profileHome, d.provider_id)
+      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false })
       const limits = dict(q.account_limits)
       return {
         source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.provider_label,
@@ -585,7 +697,7 @@ export class ProviderCatalog {
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }
     }))
-    return { sources, active_provider: active, version: 1 }
+    return { version: 1, scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length), sources }
   }
 
   /** Python `get_provider_cost_history` (OpenRouter only; daily snapshots under `<home>/cost-snapshots`). */
@@ -634,7 +746,7 @@ export class ProviderCatalog {
       snapshots.sort((a, b) => (a.date < b.date ? -1 : 1))
       if (snapshots.length > COST_SNAPSHOT_MAX_DAYS) snapshots = snapshots.slice(-COST_SNAPSHOT_MAX_DAYS)
       mkdirSync(join(profileHome, 'cost-snapshots'), { recursive: true })
-      atomicWriteText(file, JSON.stringify({ snapshots }, null, 2))
+      atomicWriteText(file, JSON.stringify({ provider, snapshots }, null, 2))
     } catch {
       snapshots = read()
     }

@@ -101,6 +101,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
+import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -111,6 +112,7 @@ import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug 
 import { splitProviderModel } from '../profiles/profiles.js'
 
 type Json = Record<string, unknown>
+const dictOf = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {})
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
@@ -458,10 +460,22 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     res = await s.get('/api/provider/quotas')
     const body = await json(res)
     expect(body.active_provider).toBe('anthropic')
-    const sources = body.sources as { provider_id: string; status: string; is_active_provider: boolean; windows: unknown[] }[]
+    const sources = body.sources as { source_id: string; provider_id: string; status: string; is_active_provider: boolean; windows: unknown[] }[]
     const anthropic = sources.find((q) => q.provider_id === 'anthropic')
     expect(anthropic).toMatchObject({ status: 'available', is_active_provider: true })
     expect(anthropic?.windows).toHaveLength(1)
+    // The stable-identity envelope the iOS widget persists: scope and profile ids, the requested source, and
+    // `missing_source` when a persisted source id no longer exists. The scope id is derived from `.quota_scope_id`.
+    const scopeFile = readFileSync(join(s.state, '.quota_scope_id'), 'utf8').trim()
+    expect(scopeFile).toMatch(/^[0-9a-f]{32}$/)
+    const expectedScope = `qscope_${createHash('sha256').update(`${scopeFile}\0default`).digest('hex').slice(0, 32)}`
+    expect(body).toMatchObject({ version: 1, scope_id: expectedScope, profile_id: 'default', requested_source_id: null, missing_source: false })
+    const anthropicId = `qsrc_${createHash('sha256').update(`${expectedScope}\0anthropic\0provider`).digest('hex').slice(0, 32)}`
+    expect(anthropic?.source_id).toBe(anthropicId)
+    const missing = await json(await s.get('/api/provider/quotas?source=qsrc_unknown'))
+    expect(missing).toMatchObject({ requested_source_id: 'qsrc_unknown', missing_source: true, sources: [] })
+    // The scope survives restarts: a second read answers the same id.
+    expect((await json(await s.get(`/api/provider/quotas?source=${anthropicId}`))).sources).toHaveLength(1)
   })
 
   it('default-model and model/set write config.yaml; auxiliary slots round-trip through /api/model/auxiliary', async () => {
@@ -483,6 +497,22 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.main).toMatchObject({ provider: 'openrouter', model: 'anthropic/claude-opus-4.7', api_key_set: false })
     res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
     expect(await json(res)).toEqual({ ok: true, model: 'claude-sonnet-4-6', provider: 'anthropic' })
+    // Python `_get_provider_base_url`: a `@provider:` pick carries `providers.<id>.base_url` into the model block.
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), providers: { ...(dictOf(configs.get(s.state)?.providers)), lmstudio: { base_url: 'http://localhost:1234/v1/' } } })
+    s.deps.agentConfig.invalidate()
+    res = await post(s, '/api/default-model', { model: '@lmstudio:qwen3' })
+    expect(await json(res)).toEqual({ ok: true, model: 'qwen3', provider: 'lmstudio' })
+    expect(configs.get(s.state)?.model).toMatchObject({ default: 'qwen3', provider: 'lmstudio', base_url: 'http://localhost:1234/v1' })
+    // A `vendor/model` id under a different configured provider routes through OpenRouter; a matching prefix is stripped.
+    res = await post(s, '/api/default-model', { model: 'anthropic/claude-opus-4.7' })
+    expect(await json(res)).toEqual({ ok: true, model: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
+    res = await post(s, '/api/default-model', { model: 'openrouter/free' })
+    expect(await json(res)).toEqual({ ok: true, model: 'openrouter/free', provider: 'openrouter' })
+    res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    res = await post(s, '/api/default-model', { model: 'anthropic/claude-opus-4.6' })
+    expect(await json(res)).toEqual({ ok: true, model: 'claude-opus-4.6', provider: 'anthropic' })
+    res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    expect(res.status).toBe(200)
     res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
     expect(res.status).toBe(200)
     expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
@@ -656,7 +686,12 @@ describe('catalog helpers', () => {
     expect(coerceReasoningEffort('max', ['low', 'medium', 'high'])).toBe('high')
     expect(coerceReasoningEffort('none', ['low'])).toBe('none')
     expect(coerceReasoningEffort('silly', ['low'])).toBe('')
-    expect(coerceReasoningEffort('max', [])).toBe('max')
+    // No resolved capability list: `max` degrades to `xhigh` for an unknown/custom provider, stays for a known one.
+    expect(coerceReasoningEffort('max', [], 'custom')).toBe('xhigh')
+    expect(coerceReasoningEffort('ultra', [], 'custom:proxy')).toBe('xhigh')
+    expect(coerceReasoningEffort('max', [], 'anthropic')).toBe('max')
+    expect(coerceReasoningEffort('high', [], 'custom')).toBe('high')
+    expect(coerceReasoningEffort('max', [])).toBe('xhigh')
     expect(splitProviderModel('@anthropic:claude-x', null)).toEqual(['claude-x', 'anthropic'])
   })
 })

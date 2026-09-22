@@ -10,7 +10,7 @@ import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
-import { PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, AUX_TASK_SLOTS, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
+import { PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, AUX_TASK_SLOTS, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
 
 export type Config = Record<string, unknown>
@@ -21,6 +21,9 @@ export const dict = (v: unknown): Dict => (isDict(v) ? v : {})
 
 export class ConfigUnavailable extends Error {}
 
+/** `profileFile`: address `<home>/config.yaml` itself, ignoring `HERMES_CONFIG_PATH` (Python `_active_profile_config_path` for skills). */
+export interface ConfigFileOptions { profileFile?: boolean }
+
 export class AgentConfig {
   private readonly cache = new Map<string, { key: string; config: Config }>()
   private readonly locks = new Map<string, Promise<unknown>>()
@@ -28,15 +31,15 @@ export class AgentConfig {
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; env: Record<string, string | undefined> }) {}
 
   /** The authoritative config file: the documented `HERMES_CONFIG_PATH` override, else `<home>/config.yaml`. Every read, write, and fingerprint uses this one path. */
-  path(profileHome: string): string {
-    const override = (this.deps.env.HERMES_CONFIG_PATH ?? '').trim()
+  path(profileHome: string, opts: ConfigFileOptions = {}): string {
+    const override = opts.profileFile ? '' : (this.deps.env.HERMES_CONFIG_PATH ?? '').trim()
     return override ? resolvePath(override.replace(/^~(?=$|\/)/, homedir())) : join(profileHome, 'config.yaml')
   }
 
   /** Fingerprint of the config file; `missing` only when it does not exist. Any other stat failure (EACCES, EIO, ...) is unreadable, never empty. */
-  private statKey(profileHome: string): string {
+  private statKey(profileHome: string, opts: ConfigFileOptions = {}): string {
     try {
-      const st = statSync(this.path(profileHome), { bigint: true })
+      const st = statSync(this.path(profileHome, opts), { bigint: true })
       return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}`
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
@@ -46,9 +49,9 @@ export class AgentConfig {
   }
 
   /** Parsed config.yaml (empty object when the file is missing). */
-  async read(profileHome: string): Promise<Config> {
-    const file = this.path(profileHome)
-    const key = this.statKey(profileHome)
+  async read(profileHome: string, opts: ConfigFileOptions = {}): Promise<Config> {
+    const file = this.path(profileHome, opts)
+    const key = this.statKey(profileHome, opts)
     const hit = this.cache.get(file)
     if (hit?.key === key) return structuredClone(hit.config)
     if (key === 'missing') return {}
@@ -57,10 +60,10 @@ export class AgentConfig {
     // The snapshot is keyed by the fingerprint observed before the read; a file replaced while the RPC was in flight
     // is re-read once and otherwise reported unavailable rather than cached under the new key.
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const before = this.statKey(profileHome)
-      const result = await sidecar.call('config.get', { profile_home: profileHome, config_path: this.path(profileHome) })
+      const before = this.statKey(profileHome, opts)
+      const result = await sidecar.call('config.get', { profile_home: profileHome, config_path: file })
       const config = isDict(result.config) ? result.config : {}
-      if (this.statKey(profileHome) === before) {
+      if (this.statKey(profileHome, opts) === before) {
         this.cache.set(file, { key: before, config })
         return structuredClone(config)
       }
@@ -81,11 +84,11 @@ export class AgentConfig {
   }
 
   /** Read-modify-write under a per-file lock (homes sharing an `HERMES_CONFIG_PATH` override serialise); `mutate` returns false to skip the write. */
-  async update(profileHome: string, mutate: (config: Config) => unknown): Promise<Config> {
-    const file = this.path(profileHome)
+  async update(profileHome: string, mutate: (config: Config) => unknown, opts: ConfigFileOptions = {}): Promise<Config> {
+    const file = this.path(profileHome, opts)
     const prev = this.locks.get(file) ?? Promise.resolve()
     const run = prev.catch(() => undefined).then(async () => {
-      const config = await this.read(profileHome)
+      const config = await this.read(profileHome, opts)
       if (mutate(config) === false) return config
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
@@ -118,6 +121,16 @@ export function resolveProviderAlias(name: unknown): string {
 }
 
 /** Python `_canonicalise_provider_id`: fold case/underscores, then aliases that land on a known id. */
+/**
+ * Python `_provider_identity`: one comparable identity for "do these names mean the same provider?" (`x-ai` and `xai`
+ * agree). Never used as a card id — `canonicaliseProviderId` keeps `x-ai` because cards are keyed by it.
+ */
+export function providerIdentity(name: unknown): string {
+  const slug = canonicaliseProviderId(name)
+  if (!slug) return ''
+  return resolveProviderAlias(slug) || slug
+}
+
 export function canonicaliseProviderId(name: unknown): string {
   const raw = str(name).trim().toLowerCase().replaceAll('_', '-')
   if (!raw) return ''
@@ -260,14 +273,27 @@ export interface ReasoningStatus { show_reasoning: boolean; reasoning_effort: st
 
 export type EffortsResolver = (model: string, provider: string, baseUrl: string) => Promise<string[]>
 
-/** Python `coerce_reasoning_effort_for_model` (ceiling ladder, `none` passthrough). */
-export function coerceReasoningEffort(effort: string, supported: string[]): string {
+/** Python `_KNOWN_REASONING_PROVIDERS`: providers whose models take supra-`xhigh` levels even when unresolved. */
+const KNOWN_REASONING_PROVIDERS = new Set(['anthropic', 'claude', 'anthropic-claude', 'openai', 'openai-api', 'openai-codex', 'azure', 'azure-openai', 'azure-foundry', 'bedrock', 'aws-bedrock', 'vertex', 'google-vertex', 'gemini', 'google', 'google-gemini', 'deepseek', 'x-ai', 'xai', 'grok', 'copilot', 'github-copilot', 'openrouter'])
+
+/**
+ * Python `coerce_reasoning_effort_for_model` (ceiling ladder, `none` passthrough). With no resolved capability list a
+ * `max`/`ultra` level degrades to `xhigh` unless the provider is known reasoning-capable, so an unknown or custom
+ * endpoint never receives a supra-ceiling level.
+ */
+export function coerceReasoningEffort(effort: string, supported: string[], provider = ''): string {
   const raw = effort.trim().toLowerCase()
   if (!raw) return ''
   if (raw === 'none') return 'none'
   if (!(VALID_REASONING_EFFORTS as readonly string[]).includes(raw)) return ''
   const levels = supported.filter((e) => e !== 'none')
-  if (!levels.length || levels.includes(raw)) return raw
+  if (!levels.length) {
+    const ladder = VALID_REASONING_EFFORTS as readonly string[]
+    const supra = ladder.slice(ladder.indexOf('xhigh') + 1)
+    if (supra.includes(raw) && !KNOWN_REASONING_PROVIDERS.has(resolveProviderAlias(provider))) return 'xhigh'
+    return raw
+  }
+  if (levels.includes(raw)) return raw
   const ladder = VALID_REASONING_EFFORTS as readonly string[]
   for (let i = ladder.indexOf(raw) - 1; i >= 0; i -= 1) {
     const level = ladder[i]
@@ -292,7 +318,7 @@ export async function reasoningStatus(config: Config, resolve: EffortsResolver, 
   const showRaw = display.show_reasoning
   return {
     show_reasoning: typeof showRaw === 'boolean' ? showRaw : true,
-    reasoning_effort: coerceReasoningEffort(str(agent.reasoning_effort), supported),
+    reasoning_effort: coerceReasoningEffort(str(agent.reasoning_effort), supported, provider),
     supported_efforts: supported,
     supports_reasoning_effort: supported.length > 0,
     supports_thinking_toggle: supported.length > 0,
@@ -498,18 +524,45 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
     let resolvedModel = selected
     let resolvedProvider = ''
     let resolvedBase: string | null = null
+    // Python `_get_provider_base_url`: `providers.<id>.base_url`, else the model block's base_url for the same provider.
+    const providerBaseUrl = (pid: string): string | null => {
+      const explicit = str(dict(dict(config.providers)[pid]).base_url).trim().replace(/\/+$/, '')
+      if (explicit) return explicit
+      if (previousProvider.toLowerCase() === pid.trim().toLowerCase()) return str(modelCfg.base_url).trim().replace(/\/+$/, '') || null
+      return null
+    }
     if (parsed) {
       resolvedModel = parsed[0]
       resolvedProvider = parsed[1]
       if (resolvedProvider.startsWith('custom:')) {
         const entry = customProviderEntries(config).find((e) => customProviderSlug(e.name) === resolvedProvider)
-        resolvedBase = entry ? str(entry.base_url).trim() || null : null
+        resolvedBase = entry ? str(entry.base_url).trim() || null : providerBaseUrl(resolvedProvider)
+      } else {
+        resolvedBase = providerBaseUrl(resolvedProvider)
       }
     } else {
       const entry = customProviderEntries(config).find((e) => str(e.model).trim() === selected || configuredModelIds(e.models).includes(selected))
       if (entry) {
         resolvedProvider = customProviderSlug(entry.name) || 'custom'
         resolvedBase = str(entry.base_url).trim() || null
+      } else if (selected.includes('/')) {
+        // Python `_resolve_model_provider` for a `vendor/model` id under a configured provider: OpenRouter keeps the
+        // full path, portals keep the namespaced id, a prefix equal to the provider is stripped, and a foreign known
+        // vendor prefix routes through OpenRouter (never for a custom proxy provider).
+        const prefix = selected.slice(0, selected.indexOf('/'))
+        const bare = selected.slice(selected.indexOf('/') + 1)
+        const canonPrev = canonicaliseProviderId(previousProvider)
+        const isCustomPrev = previousProvider.toLowerCase() === 'custom' || previousProvider.toLowerCase().startsWith('custom:')
+        if (previousProvider === 'openrouter') {
+          resolvedProvider = 'openrouter'
+        } else if (canonPrev && PORTAL_PROVIDERS.has(canonPrev)) {
+          resolvedProvider = previousProvider
+        } else if (previousProvider && prefix === previousProvider) {
+          resolvedModel = bare
+          resolvedProvider = previousProvider
+        } else if (canonicaliseProviderId(prefix) in PROVIDER_MODELS && canonicaliseProviderId(prefix) !== canonPrev && !isCustomPrev) {
+          resolvedProvider = 'openrouter'
+        }
       }
     }
     persistedModel = resolvedModel.trim() || selected

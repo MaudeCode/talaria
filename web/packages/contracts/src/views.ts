@@ -179,7 +179,7 @@ export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean
 export const ReasoningStatusSchema = z.looseObject({ show_reasoning: z.boolean().optional(), reasoning_effort: z.string().nullable().optional(), supported_efforts: z.array(z.string()).optional(), supports_reasoning_effort: z.boolean().optional(), supports_thinking_toggle: z.boolean().optional() })
 export type ReasoningStatus = z.infer<typeof ReasoningStatusSchema>
 export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string().optional(), provider: z.string().optional(), supports_fast_tier: z.boolean().optional() })
-export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema) })
+export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional() })
 export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
 export type Models = z.infer<typeof ModelsSchema>
 export const ProviderSchema = z.looseObject({
@@ -191,7 +191,8 @@ export const QuotaSourceSchema = z.looseObject({
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: Json.optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
 })
-export const ProviderQuotasSchema = z.looseObject({ sources: z.array(QuotaSourceSchema), active_provider: NullableString.optional(), version: z.number().optional() })
+/** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */
+export const ProviderQuotasSchema = z.looseObject({ version: z.number(), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString, missing_source: z.boolean(), sources: z.array(QuotaSourceSchema) })
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
 export const AuxiliaryTaskSchema = z.looseObject({ task: z.string(), label: z.string().optional(), description: z.string().optional(), model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() })
 export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() }).optional(), tasks: z.array(AuxiliaryTaskSchema).optional() })

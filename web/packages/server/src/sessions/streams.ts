@@ -59,14 +59,17 @@ export class StreamChannel {
     this.offline.length = 0
     this.offlineDropped = 0
     for (const sub of this.subscribers) {
-      if (sub.queue.length >= SUBSCRIBER_QUEUE_MAXSIZE) sub.queue.shift()
+      if (sub.queue.length >= SUBSCRIBER_QUEUE_MAXSIZE) { sub.queue.shift(); this.subscriberDropped += 1 }
       sub.queue.push(item)
       sub.wake?.()
     }
   }
 
+  /** Frames a slow subscriber lost to its bounded queue (Python `subscriber_dropped_events`). */
+  subscriberDropped = 0
+
   diagnosticSnapshot(): Record<string, number> {
-    return { subscriber_count: this.subscribers.size, offline_buffered_events: this.offline.length, offline_dropped_events: this.offlineDropped }
+    return { subscriber_count: this.subscribers.size, offline_buffered_events: this.offline.length, offline_dropped_events: this.offlineDropped, subscriber_dropped_events: this.subscriberDropped }
   }
 }
 

@@ -126,7 +126,19 @@ describe('TTS validation, limits, and engines', () => {
     expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('ID3eleven')
     expect(requests[0]?.url).toContain('/text-to-speech/voiceABC/')
     expect((requests[0]?.init?.headers as Record<string, string>)['xi-api-key']).toBe('el-key-1234')
-    expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ text: 'hello there', model_id: 'eleven_turbo' })
+    expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ text: 'hello there', model_id: 'eleven_turbo', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+    // Python read `tts.elevenlabs.model` before `model_id`, defaulted the voice to Adam, and defaulted the engine to
+    // Edge — which this release answers with the documented 503 rather than running OpenAI on the operator's key.
+    fresh()
+    setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
+    setConfig({ tts: { elevenlabs: { model: 'eleven_v3' } } })
+    await post(s, '/api/tts', { text: 'again', engine: 'elevenlabs' })
+    expect(requests[0]?.url).toContain('/text-to-speech/pNInz6obpgDQGcFmaJgB/')
+    expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ model_id: 'eleven_v3' })
+    fresh()
+    const defaulted = await post(s, '/api/tts', { text: 'no engine' })
+    expect(defaulted.status).toBe(503)
+    expect(requests).toEqual([])
   })
 
   it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_overlong_text_rejected_before_engine] the 5000-character cap applies to ElevenLabs before any request', async () => {

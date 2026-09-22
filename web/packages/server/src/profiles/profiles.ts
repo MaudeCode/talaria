@@ -8,7 +8,7 @@ import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
-import { dict, modelSection, parseProviderQualifiedModel } from '../config/agent-config.js'
+import { dict, modelSection, parseProviderQualifiedModel, providerIdentity } from '../config/agent-config.js'
 import { writeEnvFile } from '../providers/env-file.js'
 import { providerEnvVar, type ModelsCatalog } from '../providers/catalog.js'
 import { str } from '../util.js'
@@ -143,10 +143,7 @@ export class ProfileService {
     this.invalidate()
     const home = str(created.path) || this.deps.profileHome(opts.name)
     if (opts.base_url) await this.deps.config.update(home, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
-    if (opts.api_key) {
-      const envVar = (provider ? providerEnvVar(provider) : null) ?? 'HERMES_API_KEY'
-      writeEnvFile(join(home, '.env'), { [envVar]: opts.api_key })
-    }
+    if (opts.api_key) writeEnvFile(join(home, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
     if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
     const rows = await this.list('default')
     return rows.find((r) => str(r.name) === opts.name) ?? { ...created, is_active: false }
@@ -172,12 +169,32 @@ function isDir(path: string): boolean {
   try { return statSync(path).isDirectory() } catch { return false }
 }
 
+/** Python `_clean_profile_config_value`: a single line of at most 512 characters. */
 function cleanValue(value: unknown, field: string): string | null {
   if (value === null || value === undefined) return null
   const text = str(value).trim()
   if (!text) return null
-  if (/[\r\n\0]/.test(text)) throw new ProfileError(`${field} must not contain control characters`, 400)
+  if (/[\r\n\0]/.test(text)) throw new ProfileError(`${field} must be a single-line value`, 400)
+  if (text.length > 512) throw new ProfileError(`${field} is too long`, 400)
   return text
+}
+
+/** Python `_PROVIDER_ENV_MAP`: spellings this module owns; anything else falls through to the catalog's mapping. */
+const PROFILE_PROVIDER_ENV_MAP: Record<string, string> = {
+  'kimi-coding': 'KIMI_API_KEY', 'kimi-coding-cn': 'KIMI_CN_API_KEY', deepseek: 'DEEPSEEK_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY', google: 'GEMINI_API_KEY', gemini: 'GEMINI_API_KEY', xai: 'XAI_API_KEY', groq: 'GROQ_API_KEY', minimax: 'MINIMAX_API_KEY',
+  'minimax-cn': 'MINIMAX_CN_API_KEY', mistral: 'MISTRAL_API_KEY', zai: 'ZAI_API_KEY', dashscope: 'DASHSCOPE_API_KEY', kilocode: 'KILOCODE_API_KEY',
+  cerebras: 'CEREBRAS_API_KEY', 'github-copilot': 'COPILOT_GITHUB_TOKEN', nous: 'NOUS_API_KEY',
+}
+
+/** Python `_resolve_env_var_for_provider`: the module map, then the catalog mapping (alias-aware), else `HERMES_API_KEY`. */
+export function profileEnvVarFor(provider: string | null): string {
+  const slug = str(provider).trim().toLowerCase()
+  if (!slug) return 'HERMES_API_KEY'
+  const mapped = PROFILE_PROVIDER_ENV_MAP[slug]
+  if (mapped) return mapped
+  for (const candidate of [slug, providerIdentity(slug)]) { const resolved = candidate ? providerEnvVar(candidate) : null; if (resolved) return resolved }
+  return 'HERMES_API_KEY'
 }
 
 /** Python `_split_webui_provider_model_value`. */

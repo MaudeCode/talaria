@@ -393,7 +393,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     body = await json(res)
     expect(body.available).toBe(true)
     expect(typeof (body.memory as Json).percent).toBe('number')
-    expect((body.webui_runtime as Json).pid).toBe(process.pid)
+    // Python `_webui_runtime_payload` sections.
+    expect(body.webui_runtime).toMatchObject({ sessions: { available: true }, streams: { available: true, active: 0, subscriber_dropped_events: 0 }, session_list_cache: { available: false }, models_cache: { available: true } })
+    expect(typeof ((body.webui_runtime as Json).sessions as Json).cap).toBe('number')
     res = await s.get('/api/health/agent')
     body = await json(res)
     expect(body.alive).toBeNull()
@@ -481,7 +483,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(400)
     s.deps.ttsLimiter = new WindowLimiter(2, 1)
     res = await post(s, '/api/tts', { text: 'x', engine: 'edge' })
-    expect(res.status).toBe(400) // Edge TTS is a decided removal
+    expect(res.status).toBe(503) // Edge TTS is a decided removal; the matrix documents the 503
   })
 
   it('client events are sanitised and csp reports are accepted without auth', async () => {
@@ -489,6 +491,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(await json(res)).toEqual({ ok: true, event: 'sse_closed' })
     expect(sanitizeClientEvent({ event: 'e', url_path: 'https://evil/x?token=1', reason: 'r'.repeat(500), cookie: 'x' })).toEqual({ event: 'e', url_path: '/x', reason: 'r'.repeat(160) })
     expect(sanitizeClientEvent('nope')).toEqual({ event: 'unknown' })
+    expect(sanitizeClientEvent({ event: 'net', ready_state: 2, online: 'no' })).toEqual({ event: 'net', ready_state: 2, online: false })
+    expect(sanitizeClientEvent({ event: 'net', ready_state: true, online: 'maybe' })).toEqual({ event: 'net' })
     res = await s.get('/api/csp-report', { method: 'POST', body: JSON.stringify({ 'csp-report': { 'violated-directive': 'script-src' } }), headers: { 'content-type': 'application/csp-report' } })
     expect(res.status).toBe(204)
     expect(s.logs.some((l) => l.includes('[csp-report]') && l.includes('script-src'))).toBe(true)
@@ -511,7 +515,7 @@ describe('tools helpers', () => {
     expect(readProjectContext(null)).toMatchObject({ content: '', path: '' })
     const now = 1_760_000_000
     const insights = buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
-    expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 50 })
+    expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 33 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', sessions: 1, session_share: 100, cost_share: 100 })
   })
 })

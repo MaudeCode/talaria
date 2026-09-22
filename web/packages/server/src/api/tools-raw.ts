@@ -117,7 +117,8 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   const text = str(body.text).trim()
   const rate = prosody(body.rate, '%')
   const pitch = prosody(body.pitch, 'Hz')
-  const engine = (str(body.engine) || 'openai').trim().toLowerCase()
+  // Python defaulted the engine to `edge`; that engine is dropped, so a request that names none answers its 503.
+  const engine = (str(body.engine) || 'edge').trim().toLowerCase()
   if (rate === null) { ctx.json({ error: 'invalid rate' }, { status: 400 }); return }
   if (pitch === null) { ctx.json({ error: 'invalid pitch' }, { status: 400 }); return }
   if (!text) { ctx.json({ error: 'text is required' }, { status: 400 }); return }
@@ -143,10 +144,12 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
     if (!apiKey) { ctx.json({ error: 'ELEVENLABS_API_KEY not configured' }, { status: 503 }); return }
     const el = dict(tts.elevenlabs)
     // The voice comes from the operator's config only (Python parity): a caller may not pick voices on the operator's key.
-    const voiceId = str(el.voice_id ?? '21m00Tcm4TlvDq8ikWAM').trim()
+    // Python defaults: Adam, `tts.elevenlabs.model` before `model_id`, and fixed voice settings.
+    const voiceId = str(el.voice_id ?? 'pNInz6obpgDQGcFmaJgB').trim()
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(voiceId)) { ctx.json({ error: 'invalid voice_id in config' }, { status: 400 }); return }
+    const modelId = str(el.model).trim() || str(el.model_id).trim() || 'eleven_multilingual_v2'
     try {
-      const res = await f(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128`, { method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ text, model_id: str(el.model_id) || 'eleven_multilingual_v2' }), redirect: 'error', signal: AbortSignal.timeout(TTS_TIMEOUT_MS) })
+      const res = await f(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128`, { method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify({ text, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75 } }), redirect: 'error', signal: AbortSignal.timeout(TTS_TIMEOUT_MS) })
       if (!res.ok) { ctx.json({ error: 'ElevenLabs TTS generation failed' }, { status: 502 }); return }
       const audio = await bufferAudio(res)
       ctx.send({ status: 200, headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }, body: audio, security: true })
@@ -184,6 +187,8 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
     }
     return
   }
+  // The matrix drops Edge TTS with a 503 (the decision's documented outcome); other names stay a 400.
+  if (engine === 'edge') { ctx.json({ error: 'Edge TTS is not available in this release; use the browser, openai, or elevenlabs engine' }, { status: 503 }); return }
   ctx.json({ error: `unknown TTS engine ${engine}; Edge TTS was removed, use the browser, openai, or elevenlabs engine` }, { status: 400 })
 }
 

@@ -325,7 +325,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   // Services read `deps.fetch` lazily so tests can swap the outbound HTTP client after boot.
   const lazyFetch: typeof fetch = (input, init) => deps.fetch(input, init)
-  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget), fetch: lazyFetch, isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome) })
+  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget), fetch: lazyFetch, isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome), stateDir: config.stateDir })
   const agentStatus = () => {
     const describe = sidecar?.describe ?? null
     const found = Boolean(describe?.agent_dir)
@@ -473,9 +473,18 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }] }),
     mcpHealth,
     nowSeconds: now,
+    // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.
     runtimeDiagnostics: () => {
-      const mem = process.memoryUsage()
-      return { pid: process.pid, uptime_seconds: Math.round(process.uptime()), rss_bytes: mem.rss, heap_used_bytes: mem.heapUsed, sessions_cached: store.sessions.size, active_streams: activeStreamIds.size, active_runs: registry.activeRuns.size, sse_clients: streamSlots.active, sidecar_status: sidecar?.status ?? 'stopped' }
+      const channels = [...registry.streams.values()].map((c) => c.diagnosticSnapshot())
+      const sum = (key: string): number => channels.reduce((n, c) => n + (c[key] ?? 0), 0)
+      const catalogStats = catalog.diagnosticSnapshot()
+      return {
+        sessions: { available: true, resident: store.sessions.size, cap: cacheMax() },
+        streams: { available: true, active: activeStreamIds.size, agent_instances: registry.activeRuns.size, subscribers: sum('subscriber_count'), offline_buffered_events: sum('offline_buffered_events'), offline_dropped_events: sum('offline_dropped_events'), subscriber_dropped_events: sum('subscriber_dropped_events'), unavailable_channels: 0 },
+        // The list is projected per request (no resident cache), which Python reported as an unavailable owner.
+        session_list_cache: { available: false, entries: 0, inflight_rebuilds: 0, cap: 0 },
+        models_cache: { available: true, groups: catalogStats.groups, models: catalogStats.models, age_seconds: catalogStats.age_seconds },
+      }
     },
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
