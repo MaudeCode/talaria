@@ -39,7 +39,7 @@
  *   web/tests/test_issues_853_857.py
  * (issues #607, #1217, #1913, #2028, #2592, #2914, #3293, #3405, #3455, #3468, #3548, #3583, #3599, #3800, #3802, #3831, #3875, #3929, #4283, #4685, #4928, #5121, #5139, #5141, #5270, #5339, #5871, #6611, #6722, #6751, #6935, #7396, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -48,6 +48,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
+import { sanitizeMessagesForApi } from './merge.js'
 
 type ChatResult = SidecarResult<'chat.start'>
 
@@ -104,7 +105,11 @@ describe('chat turns through the sidecar', () => {
 
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
     const names = eventNames(frames)
-    expect(names.slice(0, 5)).toEqual(['reasoning', 'tool', 'tool_complete', 'token', 'token'])
+    // Python closed the reasoning segment with a stable `{text:'', titles:[...]}` snapshot before the first visible token.
+    // Python emits the prefill `context_status` frame before the agent runs; the recall hook is dropped, so it is always not_configured.
+    expect(names.slice(0, 7)).toEqual(['context_status', 'reasoning', 'tool', 'tool_complete', 'reasoning', 'token', 'token'])
+    expect(frames[0]?.data).toEqual({ session_id: sid, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
+    expect(frames[4]?.data).toEqual({ text: '', titles: ['thinking'] })
     expect(names).toContain('done')
     expect(names).toContain('title')
     expect(names[names.length - 1]).toBe('stream_end')
@@ -114,6 +119,12 @@ describe('chat turns through the sidecar', () => {
     const doneSession = done.session as Json
     expect((doneSession.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'hello there'], ['assistant', ''], ['tool', 'contents'], ['assistant', 'Hi back']])
     expect((done.usage as Json).input_tokens).toBe(120)
+    // Python usage payload: per-turn timing/cache-hit fields the iOS TPS label and the web meter read.
+    const usage = done.usage as Json
+    expect(usage).toMatchObject({ output_tokens: 30, used_model: 'test-model', cache_hit_percent: null, turn_cache_hit_percent: null })
+    expect(typeof usage.duration_seconds).toBe('number')
+    expect(typeof usage.tps).toBe('number')
+    expect(typeof usage.ttft_ms).toBe('number')
     expect((frames.find((f) => f.event === 'title')?.data as Json).title).toBe('Greeting exchange')
 
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
@@ -181,7 +192,8 @@ describe('chat turns through the sidecar', () => {
 
     const untilClarify = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'clarify')
     const clarify = untilClarify[untilClarify.length - 1]?.data as Json
-    expect(clarify).toMatchObject({ question: 'Which env?', choices_offered: ['dev', 'prod'], timeout_seconds: 120 })
+    // A frame without `timeout_seconds` (older sidecar) falls back to the Python default of 3600 s; a real sidecar stamps the resolved Agent timeout.
+    expect(clarify).toMatchObject({ question: 'Which env?', choices_offered: ['dev', 'prod'], timeout_seconds: 3600 })
     expect(String(clarify.clarify_id)).toMatch(/^[0-9a-f]{32}$/)
     const clarifyPending = await json(await s.get(`/api/clarify/pending?session_id=${sid}`))
     expect((clarifyPending.pending as Json).clarify_id).toBe(clarify.clarify_id)
@@ -192,7 +204,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(res)).toEqual({ ok: true, response: 'prod' })
     const rest = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(untilClarify.length)}`, (f) => f.event === 'stream_end')
     expect(eventNames(rest)).toContain('done')
-    expect((rest.find((f) => f.event === 'title_status')?.data as Json)).toMatchObject({ status: 'fallback', reason: 'local_summary' })
+    expect((rest.find((f) => f.event === 'title_status')?.data as Json)).toMatchObject({ status: 'fallback', reason: 'local_summary:llm_error_aux' })
     expect((rest.find((f) => f.event === 'title')?.data as Json).title).toBe('clean')
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     expect((detail.messages as Json[]).map((m) => m.content)).toEqual(['clean up', 'ran with once on prod'])
@@ -252,6 +264,46 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('a cancel that lands after done (title work still running) is reported as not cancelled and journals no cancel frame', async () => {
+    const sid = await newSession(s)
+    let releaseTitle: () => void = () => undefined
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'finished' }]))
+    sidecar.respond('aux.complete', () => new Promise((resolve) => { releaseTitle = () => { resolve({ model: 'aux', text: 'Late title', usage: null }) } }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'quick' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'done')
+    // Python `cancel_stream` returned False once the worker had popped the run, before the daemon title thread.
+    const cancel = await json(await s.get(`/api/chat/cancel?stream_id=${String(start.stream_id)}`))
+    expect(cancel).toMatchObject({ ok: true, cancelled: false })
+    releaseTitle()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    expect(frames.some((f) => f.event === 'cancel')).toBe(false)
+    expect(frames.some((f) => f.event === 'title')).toBe(true)
+    const status = await json(await s.get(`/api/chat/stream/status?stream_id=${String(start.stream_id)}`))
+    expect(status.terminal_state).not.toBe('interrupted-by-user')
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Greeting exchange"', usage: null }))
+  })
+
+  it('a compression-exhausted turn stamps recovery state so a bare "continue" is refused with 409 (Python compression_recovery)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', () => { throw new SidecarError('compression_exhausted: context length exceeded and cannot compress further', { condition: 'sidecar_error' }) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'huge task' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'apperror')
+    const err = frames.find((f) => f.event === 'apperror')?.data as Json
+    expect(err.type).toBe('compression_exhausted')
+    expect(err.compression_recovery).toMatchObject({ terminal_state: 'compression_exhausted', recommended_action: 'start_focused_continuation', source_session_id: sid, action_label: 'Start focused continuation' })
+    expect(err.recommended_recovery_action).toBe('start_focused_continuation')
+    const persisted = s.deps.sessionStore.get(sid)
+    expect(persisted.compression_recovery).toMatchObject({ terminal_state: 'compression_exhausted' })
+    expect(persisted.messages.at(-1)?._compressionRecovery).toMatchObject({ terminal_state: 'compression_exhausted' })
+    for (const prompt of ['continue', 'Carry on!', '继续', 'continue please']) {
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: prompt })
+      expect(res.status, prompt).toBe(409)
+      expect((await json(res)).type).toBe('compression_recovery_required')
+    }
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'narrow answer' }]))
+    expect((await post(s, '/api/chat/start', { session_id: sid, message: 'continue by summarizing file X' })).status).toBe(200)
+  })
+
   it('a run that has been cancelling past the unwind ceiling with no live channel no longer blocks the session', () => {
     const registry = s.deps.registry
     registry.registerActiveRun({ stream_id: 'stuck-run', session_id: 'stuck-session', phase: 'cancelling', cancelled_at: 1_000, started_at: 900 } as never)
@@ -291,9 +343,11 @@ describe('chat turns through the sidecar', () => {
     let steered: string | null = null
     sidecar.respond('chat.steer', (params) => { steered = params.text; return { accepted: true, fallback: null } })
     let release: () => void = () => undefined
+    let emitLive: ((frame: { event: 'steer_pending' | 'token'; data: { text: string } }) => void) | null = null
     sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
       emit({ event: 'token', data: { text: 'working' } })
-      release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'working done' }])) }
+      emitLive = emit
+      release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'working done' }], { pending_steer: 'second' })) }
     }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'task' }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'token')
@@ -301,9 +355,20 @@ describe('chat turns through the sidecar', () => {
     expect(await json(res)).toEqual({ accepted: true, fallback: null, stream_id: start.stream_id, steer_id: 'steer-1' })
     expect(steered).toBe('prefer tests')
     expect((await post(s, '/api/chat/steer', { session_id: sid, text: 'x', steer_id: 'bad id!' })).status).toBe(400)
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'second', steer_id: 'steer-2' })
+    // Python emitted `steer_consumed` live, before the next content frame, once the Agent had applied the first steer
+    // (its pending text shrank to the tail); the second steer stays pending and is reported as a leftover at `done`.
+    emitLive!({ event: 'steer_pending', data: { text: 'second' } })
+    emitLive!({ event: 'token', data: { text: ' more' } })
+    const live = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'steer_consumed')
+    const consumedIdx = live.findIndex((f) => f.event === 'steer_consumed')
+    expect(consumedIdx).toBeGreaterThan(-1)
+    expect(live[consumedIdx]?.data).toMatchObject({ steer_id: 'steer-1', text: 'Prefer tests', agent_text: 'prefer tests' })
+    expect(live.slice(consumedIdx + 1).some((f) => f.event === 'token' && String((f.data as Json).text) === ' more')).toBe(true)
     release()
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
-    expect((frames.find((f) => f.event === 'steer_consumed')?.data as Json)).toMatchObject({ steer_id: 'steer-1', text: 'Prefer tests' })
+    expect((frames.find((f) => f.event === 'pending_steer_leftover')?.data as Json)).toMatchObject({ steer_id: 'steer-2', text: 'second' })
+    expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
   })
 
   it('runs background tasks and side questions in hidden sessions', async () => {
@@ -316,13 +381,22 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     const status = await json(await s.get(`/api/background/status?session_id=${sid}`))
     expect(status.results).toEqual([{ task_id: bg.task_id, prompt: 'summarize repo', answer: 'answer to summarize repo', completed_at: expect.any(Number) as number }])
+    expect(String(bg.task_id)).toMatch(/^[0-9a-f]{8}$/)
     expect(await json(await s.get(`/api/background/status?session_id=${sid}`))).toEqual({ results: [] })
+    // The hidden bg session file is removed once the task completes; a failed run still completes the task.
+    expect(existsSync(s.deps.sessionStore.pathFor(String(bg.session_id)))).toBe(false)
+    sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
+    const failed = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
+    await new Promise((r) => setTimeout(r, 50))
+    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: failed.task_id, prompt: 'doomed', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${str(params.user_message).split('\n').pop() ?? ''}` }]))
 
     res = await post(s, '/api/btw', { session_id: sid, question: 'what time is it' })
     expect(res.status).toBe(200)
     const btw = await json(res)
     expect(btw.parent_session_id).toBe(sid)
-    const frames = await s.sse(`/api/chat/stream?stream_id=${String(btw.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(btw.stream_id)}&replay=1`, (f) => f.event === 'done')
     expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ ephemeral: true, answer: 'answer to what time is it' })
     expect((await s.get(`/api/session?session_id=${String(btw.session_id)}`)).status).toBe(404)
     expect(await json(await post(s, '/api/bg-task-complete-ack', { session_id: sid, task_id: 't1' }))).toEqual({ ok: true, session_id: sid, task_id: 't1', noop: true })
@@ -343,6 +417,13 @@ describe('chat turns through the sidecar', () => {
     expect(approvals[0]?.data).toEqual({ pending: null, pending_count: 0 })
     const clarifies = await s.sse(`/api/clarify/stream?session_id=${sid}`, (f) => f.event === 'initial')
     expect(clarifies[0]?.data).toEqual({ pending: null, pending_count: 0 })
+    // Python starts the pending-prompt streams with `Connection: close`; the long-lived session/chat streams do not (#3103).
+    for (const path of [`/api/approval/stream?session_id=${sid}`, `/api/clarify/stream?session_id=${sid}`]) {
+      const ac = new AbortController()
+      const res = await s.get(path, { signal: ac.signal })
+      expect(res.headers.get('connection')).toBe('close')
+      ac.abort()
+    }
     const perSession = await s.sse(`/api/sessions/${sid}/events`, () => false, { timeoutMs: 300 })
     expect(perSession).toEqual([])
     expect((await s.get('/api/session/stream')).status).toBe(400)
@@ -351,11 +432,77 @@ describe('chat turns through the sidecar', () => {
   it('answers the goal route through the sidecar goals namespace', async () => {
     const sid = await newSession(s)
     sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
-    sidecar.respond('goals.command', (params) => ({ ok: true, action: 'status', message: `goal for ${params.session_id}: ${params.args}`, goal: null }))
+    sidecar.respond('goals.command', (params) => ({ ok: true, action: 'status', message: `goal for ${params.session_id}: ${params.args} budget=${String(params.default_max_turns)}`, goal: null }))
     const res = await post(s, '/api/goal', { session_id: sid, args: 'status' })
     expect(res.status).toBe(200)
-    expect(await json(res)).toMatchObject({ ok: true, message: `goal for ${sid}: status` })
+    // Python `_default_max_turns`: 20 unless `goals.max_turns` is configured.
+    expect(await json(res)).toMatchObject({ ok: true, message: `goal for ${sid}: status budget=20` })
     expect((await post(s, '/api/goal', { session_id: sid, args: '[SILENT]' })).status).toBe(200)
+  })
+
+  it('carries the queue head on clarify/approval frames, re-emits the new head on resolution, and toasts persisted memory/skills', async () => {
+    const sid = await newSession(s)
+    let releaseAll: () => void = () => undefined
+    sidecar.respond('clarify.respond', (params) => ({ ok: true, clarify_id: String(params.clarify_id) }))
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'clarify', data: { clarify_id: 'c1', question: 'First?', session_id: sid } })
+      emit({ event: 'clarify', data: { clarify_id: 'c2', question: 'Second?', session_id: sid } })
+      await new Promise<void>((resolve) => { releaseAll = resolve })
+      // The agent wrote memory during the turn: the post-run scan toasts it.
+      mkdirSync(join(s.state, 'memories'), { recursive: true })
+      writeFileSync(join(s.state, 'memories', 'MEMORY.md'), '- remembered\n')
+      mkdirSync(join(s.state, 'skills', 'deploy'), { recursive: true })
+      writeFileSync(join(s.state, 'skills', 'deploy', 'SKILL.md'), '# deploy\n')
+      emit({ event: 'token', data: { text: 'ok' } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'ask me things' }))
+    const streamId = String(start.stream_id)
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'clarify' && (f.data as Json).pending_count === 2)
+    const clarifies = frames.filter((f) => f.event === 'clarify').map((f) => f.data as Json)
+    // Python `_callback_head_payload_locked`: the second arrival re-sends the head (c1) with the new depth, not c2.
+    expect(clarifies.map((c) => [c.clarify_id, c.pending_count])).toEqual([['c1', 1], ['c1', 2]])
+    // Resolving the head promotes c2 and re-emits it as the live head.
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'c1', response: 'a' })).status).toBe(200)
+    const promoted = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(frames.length)}`, (f) => f.event === 'clarify')
+    expect(promoted.filter((f) => f.event === 'clarify').map((f) => f.data as Json)).toMatchObject([{ clarify_id: 'c2', pending_count: 1 }])
+    // Resolving a non-head entry does not re-emit (nothing changed at the head).
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'c2', response: 'b' })).status).toBe(200)
+    releaseAll()
+    const rest = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(frames.length + promoted.length)}`, (f) => f.event === 'stream_end')
+    expect(rest.filter((f) => f.event === 'clarify')).toEqual([])
+    expect(rest.filter((f) => f.event === 'state_saved').map((f) => f.data)).toEqual([
+      { session_id: sid, kind: 'memory', action: 'saved' },
+      { session_id: sid, kind: 'skill', action: 'created', name: 'deploy' },
+    ])
+  })
+
+  it('refuses to commit YOLO from a stale approval card while another approval is parked', async () => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'approval', data: { request_id: 'live-1', command: 'rm -rf build', session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'approval')
+    const res = await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'stale-0', yolo: true })
+    expect(res.status).toBe(409)
+    expect(await json(res)).toEqual({ ok: false, choice: 'once', relayed: false, code: 'gateway_run_unavailable', error: expect.stringContaining('could not be relayed') as string, yolo_enabled: false })
+    expect(await json(await s.get(`/api/session/yolo?session_id=${sid}`))).toEqual({ yolo_enabled: false })
+    // The exact-owner relay fields are never satisfiable here either.
+    const relay = await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'live-1', run_id: 'r', mirror_token: 't' })
+    expect(relay.status).toBe(409)
+    expect(await json(relay)).toMatchObject({ ok: false, choice: 'once', relayed: false, code: 'gateway_run_unavailable' })
+    sidecar.respond('approval.respond', (params) => ({ ok: true, resolved: 1, choice: params.choice }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'live-1' }))).toEqual({ ok: true, choice: 'once' })
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end')
+  })
+
+  it('reports no_cached_agent for a steer against an unknown session', async () => {
+    expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })
 })
 
@@ -375,4 +522,61 @@ describe('chat without a sidecar', () => {
       await s.close()
     }
   })
+})
+
+describe('turn context from config.yaml (Python streaming worker)', () => {
+  it('sends the workspace system message, personality + surface + delivery ephemeral prompt, budgets, and reasoning config', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: { agent: { max_turns: 7, reasoning_effort: 'high', personalities: { pirate: { system_prompt: 'Talk like a pirate', tone: 'jolly' } } }, max_tokens: 4096, platforms: { telegram: { home_channel: { name: 'ops' } } } } }))
+      writeFileSync(join(s.state, 'config.yaml'), '# cfg\n')
+      s.deps.agentConfig.invalidate()
+      const sid = await newSession(s)
+      const session = s.deps.sessionStore.get(sid)
+      session.personality = 'pirate'
+      s.deps.sessionStore.save(session)
+      let seen: Record<string, unknown> = {}
+      sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'arr' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'arr' }]) })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hi' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+      expect(seen.system_message).toContain('Active workspace at session start: ')
+      expect(seen.system_message).toContain('[Workspace::v1: /absolute/path]')
+      const ephemeral = String(seen.ephemeral_system_prompt)
+      expect(ephemeral.startsWith('Talk like a pirate\nTone: jolly\n\nWebUI session context:')).toBe(true)
+      expect(ephemeral).toContain(`- Session ID: ${sid}`)
+      expect(ephemeral).toContain('WebUI progress guidance:')
+      expect(ephemeral).toContain('**Connected Platforms:** local (files on this machine)')
+      expect(ephemeral).toContain('  - telegram: ops')
+      expect(ephemeral).toContain('- `"telegram"` → Home channel (ops)')
+      expect(seen).toMatchObject({ max_iterations: 7, max_tokens: 4096, reasoning_config: { enabled: true, effort: 'high' } })
+    } finally {
+      await s.close()
+    }
+  })
+})
+
+describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
+  it('drops display-only rows, orphaned tool traffic and a stale cancelled prompt, keeps API-safe keys', () => {
+    const history = sanitizeMessagesForApi([
+      { role: 'user', content: 'A', timestamp: 1, _recovered: true },
+      { role: 'user', content: 'B', timestamp: 2, attachments: [{ path: '/x' }] },
+      { role: 'assistant', content: '', reasoning: 'thinking only', timestamp: 3 },
+      { role: 'assistant', content: 'partial', _partial: true, timestamp: 4 },
+      { role: 'assistant', content: '', _error: true, timestamp: 5 },
+      { role: 'tool', content: 'orphan', tool_call_id: 'nope', timestamp: 6 },
+      { role: 'assistant', content: 'calls', tool_calls: [{ id: 't1', function: { name: 'f' } }, { id: 't2', function: { name: 'g' } }], timestamp: 7 },
+      { role: 'tool', content: 'ok', tool_call_id: 't1', timestamp: 8 },
+      { role: 'assistant', content: 'one [OUT-OF-BAND USER MESSAGE - note]\nsecret[/OUT-OF-BAND USER MESSAGE] two', timestamp: 9 },
+      { role: 'user', content: 'C', timestamp: 10, _recovered: true },
+      { role: 'assistant', content: 'after C', timestamp: 11 },
+    ])
+    expect(history.map((m) => [m.role, m.content])).toEqual([
+      ['user', 'B'], ['assistant', 'partial'], ['assistant', 'calls'], ['tool', 'ok'], ['assistant', 'one  two'], ['user', 'C'], ['assistant', 'after C'],
+    ])
+    // The recovered prompt A had no assistant on both sides (stale), C separates two assistant turns and stays (marker gone).
+    expect(history.every((m) => !('_recovered' in m) && !('attachments' in m) && !('timestamp' in m))).toBe(true)
+    expect((history[2]?.tool_calls as { id: string }[]).map((t) => t.id)).toEqual(['t1'])
+  })
+
 })

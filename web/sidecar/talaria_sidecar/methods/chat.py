@@ -29,7 +29,8 @@ log = logging.getLogger("talaria_sidecar.chat")
 
 _AGENT_CACHE_MAX = 32
 _TOOL_RESULT_SNIPPET_MAX = 4000
-_TOOL_ARG_CONTENT_KEYS = frozenset({"content", "text", "body", "data", "code", "command", "input", "query", "message", "prompt"})
+# Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
+_TOOL_ARG_CONTENT_KEYS = frozenset({"command", "cmd", "script", "code", "patch", "diff", "old_string", "new_string", "content", "path", "file_path"})
 _CLARIFY_FALLBACK = "The user did not provide a response within the time limit. Use your best judgement to make the choice and proceed."
 
 
@@ -62,14 +63,46 @@ _AGENT_CACHE_LOCK = threading.Lock()
 
 
 def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
-    if isinstance(raw, (dict, list)):
-        try:
-            text = json.dumps(raw, ensure_ascii=False, default=str)
-        except Exception:  # noqa: BLE001
-            text = str(raw)
-    else:
-        text = str(raw or "")
-    return text if len(text) <= limit else text[:limit] + "..."
+    """Predecessor ``_tool_result_snippet``: the ``output``/``result``/``error`` of a dict (or JSON) result, hard-cut."""
+    if limit <= 0:
+        return ""
+    text = str(raw or "")
+    try:
+        data = raw if isinstance(raw, dict) else json.loads(text)
+        if isinstance(data, dict):
+            preview = data.get("output") or data.get("result") or data.get("error") or text
+            text = str(preview)
+    except Exception:  # noqa: BLE001
+        pass
+    return text[:limit]
+
+
+def _delegation_cost_usd(name: Any, raw: Any):
+    """Predecessor ``_delegation_cost_usd``: total spend a ``delegate_task`` result reports, or None."""
+    if str(name or "") != "delegate_task":
+        return None
+    try:
+        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    results = data.get("results")
+    if not isinstance(results, list):
+        return None
+    total = 0.0
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("cost_status") or "").strip().lower() == "unknown":
+            return None
+        value = entry.get("cost_usd")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if not (0 < value < 1e12):
+            continue
+        total += float(value)
+    return round(total, 6) if total > 0 else None
 
 
 def _args_snapshot(args: Any) -> dict:
@@ -107,6 +140,41 @@ def _context_length(agent: Any) -> dict:
         if isinstance(value, (int, float)):
             out[key] = int(value)
     return out
+
+
+def _clarify_timeout(params: dict) -> int:
+    """Predecessor ``_clarify_timeout_seconds``: an explicit request value wins, else the Agent's resolver over config."""
+    explicit = params.get("clarify_timeout_seconds")
+    if explicit is not None:
+        try:
+            return int(explicit)
+        except (TypeError, ValueError):
+            pass
+    try:
+        from tools.clarify_gateway import get_clarify_timeout
+
+        return int(get_clarify_timeout())
+    except Exception:  # noqa: BLE001 - older Agent without the resolver
+        pass
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        raw = (cfg.get("clarify") or {}).get("timeout")
+        if raw is None:
+            raw = (cfg.get("agent") or {}).get("clarify_timeout", 3600)
+        return int(raw)
+    except Exception:  # noqa: BLE001
+        return 3600
+
+
+def _agent_pending_steer_text(agent) -> str:
+    """Predecessor ``_agent_pending_steer_text``: the Agent's not-yet-applied steer text."""
+    lock = agent.__dict__.get("_pending_steer_lock") if hasattr(agent, "__dict__") else None
+    if lock is None:
+        return str(getattr(agent, "_pending_steer", "") or "")
+    with lock:
+        return str(agent.__dict__.get("_pending_steer") or "")
 
 
 def _resolve_runtime(provider: str | None, model: str) -> dict:
@@ -248,7 +316,18 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         session_busy = prior is not None and not prior.finished.is_set()
         _RUNS[stream_id] = run
         _RUNS_BY_SESSION[session_id] = stream_id
-    emit = ctx.emit
+    raw_emit = ctx.emit
+    steer_state = {"last": None}
+
+    def emit(event, data=None):
+        """Predecessor ``_webui_steer_events_before``: before content frames, report the Agent's pending steer text
+        whenever it changed so the server can mark consumed steers live rather than only after ``done``."""
+        if event in ("token", "reasoning", "interim_assistant", "tool", "tool_complete") and run.agent is not None:
+            pending = _agent_pending_steer_text(run.agent)
+            if pending != steer_state["last"]:
+                steer_state["last"] = pending
+                raw_emit("steer_pending", {"text": pending})
+        raw_emit(event, data)
     try:
         runtime = _resolve_runtime(provider, model)
         resolved_model = model or str(runtime.get("model") or "")
@@ -299,7 +378,15 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     call["done"] = True
                     call["snippet"] = snippet
                     break
-            emit("tool_complete", {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "is_error": False})
+            payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "is_error": False}
+            cost = _delegation_cost_usd(name, function_result)
+            if cost is not None:
+                payload["cost_usd"] = cost
+                for call in reversed(live_tool_calls):
+                    if call.get("tid") == tid:
+                        call["cost_usd"] = cost
+                        break
+            emit("tool_complete", payload)
 
         def on_tool(*cb_args, **cb_kwargs):
             # Structured callbacks carry tool cards; the progress callback only feeds reasoning text on older builds.
@@ -322,7 +409,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         def clarify_callback(question, choices, questions=None):
             choices_list = [str(c) for c in (choices or [])]
-            data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": session_id, "kind": "clarify", "requested_at": time.time()}
+            # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
+            # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
+            # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
+            timeout = _clarify_timeout(params)
+            data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
             if isinstance(questions, list) and questions:
                 data["questions"] = questions
             entry = _ClarifyEntry(data)
@@ -330,11 +421,13 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with run.lock:
                 run.clarify_entries[entry.clarify_id] = entry
             emit("clarify", dict(entry.data))
-            timeout = float(params.get("clarify_timeout_seconds") or 3600)
-            deadline = time.monotonic() + timeout
+            deadline = None if timeout <= 0 else time.monotonic() + float(timeout)
             while not entry.event.is_set():
                 if run.cancel.is_set() or run.finished.is_set():
                     break
+                if deadline is None:
+                    entry.event.wait(1.0)
+                    continue
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
@@ -390,6 +483,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             kwargs["max_iterations"] = params["max_iterations"]
         if isinstance(params.get("max_tokens"), int) and params["max_tokens"] > 0 and _supported(AIAgent, "max_tokens"):
             kwargs["max_tokens"] = params["max_tokens"]
+        # Predecessor: `agent.reasoning_effort` (already coerced for the model) → AIAgent ``reasoning_config``.
+        reasoning_config = params.get("reasoning_config")
+        if isinstance(reasoning_config, dict) and _supported(AIAgent, "reasoning_config"):
+            kwargs["reasoning_config"] = reasoning_config
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
         if not session_busy:
@@ -408,6 +505,14 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 _AGENT_CACHE[session_id] = (agent, signature)
                 _AGENT_CACHE.move_to_end(session_id)
                 _evict_idle_agents_locked()
+        # Predecessor ``agent.ephemeral_system_prompt``: personality, surface context, progress guidance, and delivery
+        # hints travel as runtime instructions that are never persisted to history.
+        ephemeral = params.get("ephemeral_system_prompt")
+        if isinstance(ephemeral, str) and ephemeral.strip():
+            try:
+                agent.ephemeral_system_prompt = ephemeral
+            except Exception:  # noqa: BLE001 - read-only stand-ins
+                pass
         if approval_cb is not None:
             register_gateway_notify(session_id, approval_cb)
         run.agent = agent
@@ -443,7 +548,6 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         watcher = threading.Thread(target=_watch_cancel, daemon=True, name=f"chat-cancel-{stream_id[:8]}")
         watcher.start()
-        emit("context_status", {"session_id": session_id, "model": resolved_model, "provider": resolved_provider, **_context_length(agent)})
         run_kwargs: dict = {"user_message": user_message, "conversation_history": history, "task_id": session_id}
         try:
             run_params = set(inspect.signature(agent.run_conversation).parameters)

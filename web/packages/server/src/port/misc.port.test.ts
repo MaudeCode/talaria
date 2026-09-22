@@ -231,6 +231,20 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(typeof message).toBe('string')
   })
 
+  it('an unknown vision capability forwards natively (Python carve-out), and BMP/SVG attachments are accepted', async () => {
+    // Canonical "text" with `supports_vision: null` and no explicit text signal → native (the Agent retries on rejection).
+    sidecar.respond('text.image_mode', () => ({ mode: 'text', reason: 'unknown model', supports_vision: null }))
+    writeFileSync(join(ws(), 'unknown.png'), png)
+    let message = await turn([{ path: join(ws(), 'unknown.png'), mime: 'image/png', name: 'unknown.png' }])
+    expect(Array.isArray(message)).toBe(true)
+    writeFileSync(join(ws(), 'pic.bmp'), Buffer.from('BM' + '\u0000'.repeat(40), 'latin1'))
+    writeFileSync(join(ws(), 'pic.svg'), '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>')
+    message = await turn([{ path: join(ws(), 'pic.bmp'), mime: 'image/bmp', name: 'pic.bmp' }, { path: join(ws(), 'pic.svg'), mime: 'image/svg+xml', name: 'pic.svg' }])
+    const urls = (message as { type: string; image_url?: { url: string } }[]).filter((p) => p.type === 'image_url').map((p) => p.image_url?.url.split(';')[0])
+    expect(urls).toEqual(['data:image/bmp', 'data:image/svg+xml'])
+    sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
+  })
+
   it('a cancel during a hung image-mode lookup releases the session promptly instead of waiting for the sidecar', async () => {
     mode = 'native'
     writeFileSync(join(ws(), 'slow.png'), png)

@@ -308,6 +308,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     events,
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
+    profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
+    env,
+    hermesHome: config.hermesHome,
+    // Python `display_hermes_home`: the home shown to the model, `~`-relative when it sits under $HOME.
+    homeDisplay: () => (config.hermesHome.startsWith(`${home}/`) ? `~${config.hermesHome.slice(home.length)}` : config.hermesHome),
     registry,
     channels,
     pending,

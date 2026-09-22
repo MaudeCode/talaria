@@ -323,3 +323,78 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   }
   return merged
 }
+
+function toolCallId(tc: unknown): string {
+  if (!isDict(tc)) return ''
+  return str(tc.id) || str(tc.call_id)
+}
+
+const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'refusal', 'reasoning_content'])
+const OOB_USER_MESSAGE_BLOCK_RE = /\[OUT-OF-BAND\s+USER\s+MESSAGE(?:\s*(?:—|-)\s*[\s\S]*?)?\]\s*?[\s\S]*?\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]/gi
+
+/** Python `_is_reasoning_only_assistant_message`: a display-only Thinking card with no visible reply. */
+function isReasoningOnlyAssistant(msg: Message): boolean {
+  if (msg.role !== 'assistant' || (Array.isArray(msg.tool_calls) && msg.tool_calls.length)) return false
+  if (messageText(msg.content).trim()) return false
+  if (str(msg.reasoning ?? msg.reasoning_content).trim()) return true
+  return Array.isArray(msg.content) && msg.content.length > 0 && msg.content.every((part) => part && typeof part === 'object' && ['reasoning', 'thinking'].includes(String((part as { type?: unknown }).type)))
+}
+
+function stripOobBlocks(content: unknown): unknown {
+  if (typeof content === 'string') return content.replaceAll(OOB_USER_MESSAGE_BLOCK_RE, '')
+  if (Array.isArray(content)) return content.map(stripOobBlocks)
+  if (content && typeof content === 'object') return Object.fromEntries(Object.entries(content as Record<string, unknown>).map(([k, v]) => [k, typeof v === 'string' || Array.isArray(v) || (v && typeof v === 'object') ? stripOobBlocks(v) : v]))
+  return content
+}
+
+/**
+ * Python `_sanitize_messages_for_api`: the model-facing history. Drops display-only rows (`_error`, empty `_partial`,
+ * reasoning-only assistants), orphaned tool rows and unanswered tool calls, keeps only API-safe keys, strips consumed
+ * out-of-band blocks, and keeps a cancelled (`_recovered`) user prompt only where it separates two assistant turns —
+ * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
+ */
+export function sanitizeMessagesForApi(messages: Message[]): Message[] {
+  const validToolCallIds = new Set<string>()
+  for (const msg of messages) {
+    if (msg.role !== 'assistant' || !Array.isArray(msg.tool_calls)) continue
+    for (const tc of msg.tool_calls) { const id = toolCallId(tc); if (id) validToolCallIds.add(id) }
+  }
+  const clean: Message[] = []
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    if (isReasoningOnlyAssistant(msg)) continue
+    if (msg._error) continue
+    if (msg._partial && !messageText(msg.content).trim()) continue
+    const recovered = Boolean(msg._recovered) && msg.role === 'user'
+    if (msg.role === 'tool') { const tid = str(msg.tool_call_id); if (!tid || !validToolCallIds.has(tid)) continue }
+    const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k)))
+    if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
+    if (recovered) sanitized._recovered = true
+    if ('content' in sanitized) sanitized.content = stripOobBlocks(sanitized.content)
+    if (sanitized.role) clean.push(sanitized)
+  }
+  const answered = new Set(clean.filter((m) => m.role === 'tool').map((m) => str(m.tool_call_id)).filter(Boolean))
+  const filtered: Message[] = []
+  for (let msg of clean) {
+    if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+      const kept = msg.tool_calls.filter((tc) => answered.has(toolCallId(tc)))
+      if (!kept.length) {
+        msg = Object.fromEntries(Object.entries(msg).filter(([k]) => k !== 'tool_calls'))
+        if (!messageText(msg.content).trim()) continue
+      } else msg = { ...msg, tool_calls: kept }
+    }
+    filtered.push(msg)
+  }
+  const final: Message[] = []
+  for (let i = 0; i < filtered.length; i += 1) {
+    let msg = filtered[i]!
+    if (msg._recovered && msg.role === 'user') {
+      const prevRole = final.length ? final[final.length - 1]!.role : null
+      const nextRole = filtered[i + 1]?.role ?? null
+      if (!(prevRole === 'assistant' && nextRole === 'assistant')) continue
+      msg = Object.fromEntries(Object.entries(msg).filter(([k]) => k !== '_recovered'))
+    }
+    final.push(msg)
+  }
+  return final
+}

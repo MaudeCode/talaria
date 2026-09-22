@@ -1,4 +1,6 @@
 /** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
+import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
+import { SidecarError } from '../sidecar/client.js'
 import { implement } from '@orpc/server'
 import { chatContract } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
@@ -103,12 +105,24 @@ function modelState(ctx: RequestContext, s: Session, body: Record<string, unknow
 
 export const chatRouter = os.router({
   chat: {
-    start: os.chat.start.handler(({ input, context: { ctx } }) => run(() => {
+    start: os.chat.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id')
       if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
       if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
       const sid = str(body.session_id)
+      // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
+      // session state is materialised, claimed, or mutated.
+      const sidecarNow = ctx.deps.sidecar()
+      if (sidecarNow) {
+        try {
+          await sidecarNow.call('runtime.ensure_current', {})
+        } catch (error) {
+          if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') {
+            throw new HttpError(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
+          }
+        }
+      }
       let s: Session
       try {
         s = ctx.deps.sessionStore.get(sid)
@@ -128,7 +142,10 @@ export const chatRouter = os.router({
       const msg = str(body.message).trim()
       if (!msg) throw new HttpError(400, 'message is required')
       const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
-      if (Object.keys(s.compression_recovery).length && !attachments.length && /^(continue|go on|next|proceed|keep going)\.?$/i.test(msg)) {
+      // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
+      const recovery = s.compression_recovery
+      const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
+      if (recoveryLive && !attachments.length && isGenericContinuationIntent(msg)) {
         throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
       }
       const workspace = resolveWorkspace(ctx, s, body.workspace)
@@ -178,8 +195,12 @@ export const chatRouter = os.router({
       if (!sid) throw new HttpError(400, 'session_id is required')
       const choice = str(input.choice) || 'deny'
       if (!['once', 'session', 'always', 'deny'].includes(choice)) throw new HttpError(400, `Invalid choice: ${choice}`)
-      if (str(input.run_id).trim() || str(input.mirror_token).trim()) throw new HttpError(409, 'Gateway approval could not be relayed because the active run is unavailable. Reopen the session or retry after it reconnects.', { code: 'gateway_run_unavailable' })
-      return ctx.deps.turns.respondApproval(sid, choice, str(input.approval_id), input.yolo === true) as Promise<{ ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }>
+      const enableYolo = input.yolo === true
+      // Python `_gateway_approval_failure` envelope; the TS backend has no run mirrors, so any exact-owner relay is unavailable.
+      if (str(input.run_id).trim() || str(input.mirror_token).trim()) throw new HttpError(409, GATEWAY_APPROVAL_RELAY_UNAVAILABLE, { ok: false, choice, relayed: false, code: 'gateway_run_unavailable', ...(enableYolo ? { yolo_enabled: ctx.deps.sessions.yolo(sid).yolo_enabled === true } : {}) })
+      const result = await ctx.deps.turns.respondApproval(sid, choice, str(input.approval_id), enableYolo)
+      if (typeof result._status === 'number' && result._status >= 400) { const { _status, error, ...rest } = result; throw new HttpError(_status, str(error), rest) }
+      return result as { ok: boolean; choice?: string; yolo_enabled?: boolean; stale_cleared?: boolean }
     })),
   },
   clarify: {
@@ -212,8 +233,11 @@ export const chatRouter = os.router({
     const sidecar = ctx.deps.sidecar()
     if (!sidecar) throw new HttpError(503, 'Goal controls need the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
     const profileHome = ctx.deps.sessions.deps.workspaces.deps.profileHome(s.profile ?? ctx.deps.activeProfile())
-    const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome })
-    const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning }) as Record<string, unknown>
+    // Python `_default_max_turns`: the profile's `goals.max_turns` (default 20) is the /goal turn budget.
+    let defaultMaxTurns = 20
+    try { const cfg = await ctx.deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
+    const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
+    const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns }) as Record<string, unknown>
     if (payload.ok === false) throw new HttpError(payload.error === 'agent_running' ? 409 : 400, str(payload.message || payload.error || 'goal command failed'), payload)
     const kickoff = str(payload.kickoff_prompt).trim()
     if (kickoff) {
@@ -238,9 +262,16 @@ export const chatRouter = os.router({
       const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, profile: parent.profile })
       bg.title = `bg: ${prompt.slice(0, 60)}`
       ctx.deps.sessionStore.save(bg)
-      const taskId = randomUUID().replace(/-/g, '').slice(0, 12)
+      // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/status` can report it,
+      // and the hidden bg session file is removed afterwards.
+      const taskId = randomUUID().replace(/-/g, '').slice(0, 8)
       ctx.deps.background.track(parent.session_id, { task_id: taskId, bg_session_id: bg.session_id, prompt })
-      const started = ctx.deps.turns.start(bg, { msg: prompt, attachments: [], workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, source: 'webui', onDone: (answer) => { ctx.deps.background.complete(parent.session_id, taskId, answer) } })
+      const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(bg.session_id, { tombstone: false }) } catch { /* best effort */ } }
+      const started = ctx.deps.turns.start(bg, {
+        msg: prompt, attachments: [], workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, source: 'webui',
+        onDone: (answer) => { ctx.deps.background.complete(parent.session_id, taskId, answer); cleanup() },
+        onFailed: () => { ctx.deps.background.complete(parent.session_id, taskId, '(background task failed)'); cleanup() },
+      })
       if (started._status !== undefined && started._status >= 400) throw new HttpError(started._status, started.error ?? 'background start failed')
       ctx.deps.background.setStream(parent.session_id, taskId, str(started.stream_id))
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }

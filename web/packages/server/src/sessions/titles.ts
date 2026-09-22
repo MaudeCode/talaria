@@ -129,3 +129,62 @@ export function fallbackTitleFromExchange(userText: string, assistantText: strin
 }
 
 export const isGenericFallbackTitle = (title: string): boolean => title.trim().toLowerCase() === 'conversation topic'
+
+// ── language drift (Python `_title_language_mismatch`) ───────────────────────
+
+const GERMAN_MARKERS = new Set(['warum', 'werden', 'wird', 'wurde', 'hier', 'nicht', 'mehr', 'alte', 'alten', 'bilder', 'angezeigt', 'prüfe', 'ich', 'und', 'oder', 'mit', 'für', 'von', 'zu', 'ist', 'sind', 'bitte', 'kannst'])
+const ENGLISH_MARKERS = new Set(['old', 'image', 'display', 'issue', 'problem', 'discussion', 'conversation', 'session', 'title', 'fix', 'bug', 'attachment', 'attachments', 'context'])
+
+function detectTitleLanguage(text: string): string {
+  const s = text.replace(/\s+/g, ' ').trim().toLowerCase()
+  if (!s) return ''
+  const hits = (s.match(/[A-Za-zÀ-ÖØ-öø-ÿ]+/g) ?? []).filter((tok) => GERMAN_MARKERS.has(tok)).length
+  return /[äöüß]/.test(s) || hits >= 3 ? 'de' : ''
+}
+
+function scriptCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const ch of text) {
+    if (!/\p{L}/u.test(ch)) continue
+    const o = ch.codePointAt(0) ?? 0
+    let bucket: string
+    if ((o >= 0x41 && o <= 0x24f) || (o >= 0x1e00 && o <= 0x1eff)) bucket = 'latin'
+    else if ((o >= 0x4e00 && o <= 0x9fff) || (o >= 0x3400 && o <= 0x4dbf) || (o >= 0x3040 && o <= 0x30ff) || (o >= 0xac00 && o <= 0xd7a3) || (o >= 0x1100 && o <= 0x11ff)) bucket = 'cjk'
+    else if (o >= 0x400 && o <= 0x4ff) bucket = 'cyrillic'
+    else if ((o >= 0x600 && o <= 0x6ff) || (o >= 0x750 && o <= 0x77f)) bucket = 'arabic'
+    else if (o >= 0x590 && o <= 0x5ff) bucket = 'hebrew'
+    else if (o >= 0x370 && o <= 0x3ff) bucket = 'greek'
+    else if (o >= 0x900 && o <= 0x97f) bucket = 'devanagari'
+    else continue
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1)
+  }
+  return counts
+}
+
+function dominantScript(text: string): string {
+  const counts = scriptCounts(text)
+  let total = 0
+  let top = ''
+  let topN = 0
+  for (const [script, n] of counts) { total += n; if (n > topN) { top = script; topN = n } }
+  if (total < 2) return ''
+  return topN / total >= 0.6 ? top : ''
+}
+
+/** Reject titles whose script or language clearly diverges from the conversation start. */
+export function titleLanguageMismatch(userText: string, title: string): boolean {
+  const candidate = title.trim()
+  if (!candidate) return false
+  const userScript = dominantScript(userText)
+  if (userScript) {
+    const counts = scriptCounts(candidate)
+    let total = 0
+    for (const n of counts.values()) total += n
+    if (total >= 2) for (const [script, n] of counts) if (script !== userScript && n >= 2 && n / total >= 0.35) return true
+  }
+  if (detectTitleLanguage(userText) !== 'de') return false
+  const lower = candidate.toLowerCase()
+  if (detectTitleLanguage(lower) === 'de') return false
+  const hits = (lower.match(/[a-z]+/g) ?? []).filter((tok) => ENGLISH_MARKERS.has(tok)).length
+  return hits >= 2
+}

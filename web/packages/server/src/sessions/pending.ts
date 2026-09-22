@@ -10,7 +10,7 @@ import { str } from '../util.js'
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
-export const CLARIFY_DEFAULT_TIMEOUT_SECONDS = 120
+export const CLARIFY_DEFAULT_TIMEOUT_SECONDS = 3600
 export const CLARIFY_MAX_QUESTIONS = 5
 export const CLARIFY_MAX_CHOICES = 4
 
@@ -52,6 +52,7 @@ function withTimeoutMetadata(data: Record<string, unknown>, now: number): Record
   const item = { ...data }
   const requestedAt = Number(item.requested_at) || now
   const timeoutRaw = item.timeout_seconds
+  // The sidecar stamps the resolved Agent timeout; only a frame without one falls back to the Python default (3600).
   const timeout = timeoutRaw === null || timeoutRaw === undefined ? CLARIFY_DEFAULT_TIMEOUT_SECONDS : Math.trunc(Number(timeoutRaw)) || 0
   item.requested_at = requestedAt
   item.timeout_seconds = timeout
@@ -137,6 +138,10 @@ export class PendingPrompts {
     return entries
   }
 
+  hasApprovalId(sid: string, approvalId: string): boolean {
+    return (this.approvals.get(sid)?.entries ?? []).some((e) => e.approval_id === approvalId)
+  }
+
   hasPendingApproval(sid: string): boolean {
     return (this.approvals.get(sid)?.entries.length ?? 0) > 0
   }
@@ -177,16 +182,26 @@ export class PendingPrompts {
     return { pending: q?.entries[0] ? { ...q.entries[0] } : null, pending_count: q?.entries.length ?? 0 }
   }
 
-  resolveClarify(sid: string, clarifyId: string): Record<string, unknown> | null {
+  /** Queue head plus depth: what the live chat stream carries on every head change (Python `_callback_head_payload_locked`). */
+  clarifyHeadFrame(sid: string): Record<string, unknown> | null {
+    const { pending, pending_count } = this.clarifyPending(sid)
+    return pending ? { ...pending, pending_count } : null
+  }
+
+  /**
+   * Pop a clarify by id (or the oldest). `head` is the new queue head frame when the
+   * resolved entry was the head and others remain — Python re-emits it on the chat stream.
+   */
+  resolveClarify(sid: string, clarifyId: string): { entry: Record<string, unknown> | null; head: Record<string, unknown> | null } {
     const q = this.clarifies.get(sid)
-    if (!q?.entries.length) return null
+    if (!q?.entries.length) return { entry: null, head: null }
     const index = clarifyId ? q.entries.findIndex((e) => e.clarify_id === clarifyId) : 0
-    if (index < 0) return null
+    if (index < 0) return { entry: null, head: null }
     const [entry] = q.entries.splice(index, 1)
     if (!q.entries.length) this.clarifies.delete(sid)
     this.notify(q)
     this.events.publish('attention_resolved')
-    return entry ?? null
+    return { entry: entry ?? null, head: index === 0 ? this.clarifyHeadFrame(sid) : null }
   }
 
   clearClarifies(sid: string): number {

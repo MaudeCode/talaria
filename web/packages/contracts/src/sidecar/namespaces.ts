@@ -211,6 +211,8 @@ const ToolFrame = z.object({ event_type: z.string(), name: z.string().nullable()
 export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('token'), data: Text }),
   z.object({ event: z.literal('reasoning'), data: Text }),
+  /** The Agent's pending steer text before a content frame (server-side steer consumption). */
+  z.object({ event: z.literal('steer_pending'), data: Text }),
   z.object({ event: z.literal('interim_assistant'), data: Text }),
   z.object({ event: z.literal('tool'), data: ToolFrame }),
   z.object({ event: z.literal('tool_complete'), data: ToolFrame }),
@@ -220,7 +222,6 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('compressing'), data: Loose }),
   z.object({ event: z.literal('warning'), data: Loose }),
   z.object({ event: z.literal('status'), data: Loose }),
-  z.object({ event: z.literal('context_status'), data: Loose }),
 ])
 export const CHAT_METHODS = {
   'chat.start': {
@@ -229,6 +230,8 @@ export const CHAT_METHODS = {
       user_message: z.union([z.string(), z.array(Loose)]), system_message: z.string().nullable().optional(), conversation_history: z.array(Loose),
       enabled_toolsets: z.array(z.string()).nullable().optional(), max_iterations: z.number().int().nullable().optional(), max_tokens: z.number().int().nullable().optional(),
       clarify_timeout_seconds: z.number().nullable().optional(),
+      /** Python `parse_reasoning_effort` output (`{enabled, effort}`) and the WebUI-only runtime instructions. */
+      reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(), ephemeral_system_prompt: z.string().nullable().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,

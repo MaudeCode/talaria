@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import threading
+import time
 
 from talaria_sidecar.methods import chat
 
@@ -197,3 +198,52 @@ def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> No
     gate.set()
     worker.join(5)
     assert first["status"] == "completed"
+
+
+def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
+    """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
+    _patch(monkeypatch)
+    import types, sys
+    gateway = types.ModuleType("tools.clarify_gateway")
+    gateway.get_clarify_timeout = lambda: 42
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.clarify_gateway = gateway
+    monkeypatch.setitem(sys.modules, "tools", tools_pkg)
+    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", gateway)
+    assert chat._clarify_timeout({}) == 42
+    assert chat._clarify_timeout({"clarify_timeout_seconds": 7}) == 7
+    assert chat._clarify_timeout({"clarify_timeout_seconds": 0}) == 0
+
+    class ClarifyingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            answer = self.kwargs["clarify_callback"]("Which env?", ["dev", "prod"])
+            return {"final_response": answer, "messages": []}
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: ClarifyingAgent)
+    ctx = Ctx()
+    threading.Thread(target=lambda: chat.start(ctx, _params("st-clarify")), daemon=True).start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not any(e == "clarify" for e, _ in ctx.frames):
+        time.sleep(0.02)
+    frame = next(data for e, data in ctx.frames if e == "clarify")
+    assert frame["timeout_seconds"] == 42
+    run = chat._run_for({"stream_id": "st-clarify"})
+    assert run is not None
+    with run.lock:
+        entry = run.clarify_entries[frame["clarify_id"]]
+    entry.result = "dev"
+    entry.event.set()
+
+
+def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypatch) -> None:
+    """Predecessor caps: content/diff args keep 4000 chars, incidental args 120; previews come from output/result/error."""
+    snap = chat._args_snapshot({"path": "/very/long/" + "x" * 300, "note": "n" * 300, "old_string": "o" * 5000})
+    assert len(snap["path"]) == 311 and not snap["path"].endswith("...")
+    assert snap["note"].endswith("...") and len(snap["note"]) == 123
+    assert len(snap["old_string"]) == 4003
+    assert chat._snippet('{"output": "hello", "extra": "x"}') == "hello"
+    assert chat._snippet({"error": "boom"}) == "boom"
+    assert chat._snippet("a" * 5000) == "a" * 4000
+    assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_usd": 0.25}]}) == 0.75
+    assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_status": "unknown"}]}) is None
+    assert chat._delegation_cost_usd("read_file", {"results": [{"cost_usd": 1}]}) is None

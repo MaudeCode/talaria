@@ -448,7 +448,7 @@ async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): 
   if (!sid) { ctx.json({ error: 'session_id is required' }, { status: 400 }); return }
   const [sub, initial] = kind === 'approval' ? ctx.deps.pending.subscribeApprovals(sid) : ctx.deps.pending.subscribeClarifies(sid)
   const release = (): void => { if (kind === 'approval') ctx.deps.pending.unsubscribeApprovals(sid, sub); else ctx.deps.pending.unsubscribeClarifies(sid, sub) }
-  const sse = claimOrReject(ctx, false)
+  const sse = claimOrReject(ctx, true)
   if (!sse) { release(); return }
   try {
     sse.start()
