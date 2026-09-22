@@ -466,11 +466,14 @@ else
         "$_agent_src"/ "$_stage_src"/ \
         || error_exit "Failed to stage hermes-agent source to writable build dir"
     else
-      cp -a "$_agent_src"/. "$_stage_src"/ \
+      # Same exclusions applied while copying: an unreadable excluded tree (`.playwright/`, `.venv/`, `.git/`)
+      # must never be traversed, so a post-copy cleanup is not enough.
+      ( cd "$_agent_src" && tar -cf - \
+          --exclude='*.egg-info' --exclude='./build' --exclude='./dist' \
+          --exclude='__pycache__' --exclude='./.git' \
+          --exclude='./.playwright' --exclude='./venv' --exclude='./.venv' \
+          . ) | ( cd "$_stage_src" && tar -xpf - ) \
         || error_exit "Failed to copy hermes-agent source to writable build dir"
-      rm -rf "$_stage_src"/*.egg-info "$_stage_src"/build "$_stage_src"/dist "$_stage_src"/venv "$_stage_src"/.venv 2>/dev/null || true
-      rm -rf "$_stage_src"/.playwright 2>/dev/null || true
-      find "$_stage_src" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
     fi
     chmod -R u+w "$_stage_src" \
       || error_exit "Failed to make staged hermes-agent source writable (rsync/cp preserved :ro mount perms)"

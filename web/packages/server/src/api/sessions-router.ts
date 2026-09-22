@@ -460,7 +460,7 @@ export const sessionsRouter = os.router({
       requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
-        if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Use /api/file/office-save for Office documents')
+        if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Office documents cannot be saved from the Web UI')
         const root = s.workspace
         const target = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')

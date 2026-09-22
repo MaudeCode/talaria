@@ -87,6 +87,20 @@ describe('launcher', () => {
     expect(logs.some((l) => l.includes(`127.0.0.1:${String(port)}`))).toBe(true)
   }, 20_000)
 
+  it('a wildcard IPv6 bind prints a connectable, bracket-correct ready URL', async () => {
+    const home = scratch()
+    mkdirSync(join(home, 'web'), { recursive: true })
+    const port = await freePort()
+    const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}))}).listen(port,'::');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),8000)`
+    const logs: string[] = []
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_SIDECAR_COMMAND: 'x', HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '::', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve())
+    expect(code).toBe(0)
+    const ready = logs.find((l) => l.includes('Web UI is ready'))
+    expect(ready).toContain(`http://localhost:${String(port)}`)
+    expect(logs.some((l) => l.includes(`http://:::${String(port)}`))).toBe(false)
+  }, 20_000)
+
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {
     expect(parseBootstrapArgs(['9000', '--host', '0.0.0.0', '--no-browser', '--foreground'], {})).toEqual({ port: 9000, host: '0.0.0.0', noBrowser: true, skipAgentInstall: false, foreground: true })
     expect(parseBootstrapArgs([], { HERMES_WEBUI_PORT: '8790', HERMES_WEBUI_HOST: '::' })).toMatchObject({ port: 8790, host: '::' })

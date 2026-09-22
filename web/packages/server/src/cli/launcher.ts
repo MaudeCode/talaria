@@ -67,10 +67,15 @@ function probeOnce(url: string, verify: boolean): Promise<boolean> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => { setTimeout(r, ms) })
 
 /** Python `wait_for_health`: HTTPS first when TLS is configured (self-signed accepted with a warning), HTTP fallback; answers the scheme that responded. */
+/** `host:port` with an IPv6 literal bracketed (URL authority form). */
+export function hostAuthority(host: string, port: number): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]:${String(port)}` : `${host}:${String(port)}`
+}
+
 export async function waitForHealth(host: string, port: number, opts: { tls: boolean; insecureOptIn: boolean; timeoutMs: number; log: (line: string) => void; now?: () => number }): Promise<'http' | 'https' | ''> {
   const now = opts.now ?? Date.now
   const deadline = now() + opts.timeoutMs
-  const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]:${String(port)}` : `${host}:${String(port)}`
+  const authority = hostAuthority(host, port)
   let warned = false
   while (now() < deadline) {
     if (!opts.tls) {
@@ -169,7 +174,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
     return 0
   }
   const logPath = join(stateDir, `bootstrap-${String(args.port)}.log`)
-  log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${args.host}:${String(args.port)}`)
+  log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${hostAuthority(args.host, args.port)}`)
   const fd = openSync(logPath, 'a')
   // The worker re-applies the checkout `.env` before serving; the resolved host/port travel as explicit serve
   // arguments so a `.env` HERMES_WEBUI_PORT cannot override what the user asked for on the command line.
@@ -178,8 +183,10 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   child.unref()
   closeSync(fd)
   const healthy = await waitForHealth(args.host, args.port, { tls, insecureOptIn: truthy(env.HERMES_WEBUI_TLS_INSECURE_PROBE), timeoutMs: 25_000, log })
-  if (!healthy) throw new Error(`Web UI did not become healthy at ${scheme}://${args.host}:${String(args.port)}/health. Check the log at ${logPath}. Server PID: ${String(child.pid ?? '?')}`)
-  const appUrl = ['127.0.0.1', 'localhost'].includes(args.host) ? `${healthy}://localhost:${String(args.port)}` : `${healthy}://${args.host}:${String(args.port)}`
+  if (!healthy) throw new Error(`Web UI did not become healthy at ${scheme}://${hostAuthority(args.host, args.port)}/health. Check the log at ${logPath}. Server PID: ${String(child.pid ?? '?')}`)
+  // Loopback and wildcard binds open as `localhost`; any other IPv6 literal is bracketed like the health probe.
+  const browserHost = ['127.0.0.1', 'localhost', '0.0.0.0', '::', '::1', '[::]', '[::1]'].includes(args.host) ? 'localhost' : args.host.includes(':') && !args.host.startsWith('[') ? `[${args.host}]` : args.host
+  const appUrl = `${healthy}://${browserHost}:${String(args.port)}`
   log(`[bootstrap] Web UI is ready: ${appUrl}`)
   log(`[bootstrap] Log file: ${logPath}`)
   if (!args.noBrowser) openBrowser(appUrl, log)

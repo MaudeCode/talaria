@@ -502,7 +502,8 @@ describe('projects, workspaces, and files over HTTP', () => {
     writeFileSync(join(ws, 'doc.docx'), 'PK\u0003\u0004binary')
     res = await post(s, '/api/file/save', { session_id: sid, path: 'doc.docx', content: 'x' })
     expect(res.status).toBe(400)
-    expect((await json(res)).error).toBe('Use /api/file/office-save for Office documents')
+    // `/api/file/office-save` was dropped with TAL-245: the refusal must not point clients at a 404.
+    expect((await json(res)).error).toBe('Office documents cannot be saved from the Web UI')
     expect(readFileSync(join(ws, 'doc.docx'), 'utf8')).toBe('PK\u0003\u0004binary')
     // Listing timestamps are decimal strings.
     const listing = await json(await s.get(`/api/list?session_id=${sid}`))
