@@ -44,8 +44,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MaudeCode/talaria.git",
+    "url": "git+https://github.com/MaudeCode/talaria.git",
     "directory": "web/packages/server"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "license": "MIT"
 }

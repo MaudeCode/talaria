@@ -91,9 +91,10 @@ def web(plan, build, directory, output):
         raise ValueError("Web build receipt does not match the plan")
     image = build["image"]
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
-    # The npm preflight (receipt identity, token, tarball pair, immutable-version bytes) runs before the image tag is
-    # published: a rejection here must not leave a public GHCR tag pointing at a release with no npm package.
+    # npm is the most failure-prone external publication. Publish it first, as Cove does; an identical retry accepts
+    # the immutable registry bytes and continues with GHCR without burning another version.
     preflight_npm(component, build, directory)
+    npm_identity = publish_npm(component, build, directory)
     with tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
         auth = str(Path(temporary) / "auth.json")
         subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
@@ -103,7 +104,6 @@ def web(plan, build, directory, output):
         raw = subprocess.check_output(["skopeo", "inspect", "--raw", "--authfile", auth, "docker://" + image])
         if "sha256:" + hashlib.sha256(raw).hexdigest() != image.split("@", 1)[1]:
             raise ValueError("published Web manifest digest differs from the build")
-    npm_identity = publish_npm(component, build, directory)
     write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
 
 
@@ -126,8 +126,8 @@ def preflight_npm(component, build, directory):
     expected = f"@maudecode/talaria-web@{component['version']}"
     if build.get("npm") != expected:
         raise ValueError("Web build receipt does not name the npm package")
-    if not os.environ.get("NODE_AUTH_TOKEN"):
-        raise ValueError("npm publication requires NODE_AUTH_TOKEN from the web-release environment")
+    if not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL") or not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN"):
+        raise ValueError("npm trusted publishing requires GitHub OIDC id-token permission")
     tarballs = {path.name: path for path in (directory / "npm").glob("*.tgz")}
     ordered = [name for name in sorted(tarballs) if "contracts" in name] + [name for name in sorted(tarballs) if "contracts" not in name]
     if len(ordered) != 2:
@@ -154,9 +154,7 @@ def publish_npm(component, build, directory):
     for name in ordered:
         spec = f"{packages[name]}@{component['version']}"
         if not published[name]:
-            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", "--tag", dist_tag], check=True)
-        # A retry (or an identical tarball already published) still has to carry this channel's dist-tag.
-        subprocess.run(["npm", "dist-tag", "add", spec, dist_tag], check=True)
+            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--tag", dist_tag], check=True)
     for name in ordered:
         spec = f"{packages[name]}@{component['version']}"
         if _npm_view(spec, "dist.integrity") != _npm_integrity(tarballs[name]):

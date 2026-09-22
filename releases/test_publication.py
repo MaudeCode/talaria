@@ -214,18 +214,27 @@ class PublicationTests(unittest.TestCase):
             ], text=True))
         document = workflow("release-set.yml")
         ios = workflow("ios-release-build.yml")
+        for package in ("contracts", "server"):
+            metadata = json.loads((root / "web/packages" / package / "package.json").read_text())
+            self.assertEqual(metadata["repository"]["url"], "git+https://github.com/MaudeCode/talaria.git")
+            self.assertEqual(metadata["publishConfig"], {"access": "public"})
         self.assertEqual(ios["jobs"]["build"]["environment"], "testflight")
         for release_workflow in (document, ios):
-            for job in release_workflow["jobs"].values():
+            for name, job in release_workflow["jobs"].items():
                 if "steps" in job:
-                    self.assertEqual(job["runs-on"], "maude-mac")
+                    self.assertEqual(job["runs-on"], "ubuntu-latest" if name == "web-publication" else "maude-mac")
                     for step in job["steps"]:
-                        self.assertNotIn("upload-artifact", step.get("uses", ""))
-                        self.assertNotIn("download-artifact", step.get("uses", ""))
+                        transfer = "artifact" in step.get("uses", "")
+                        self.assertEqual(transfer, (name, step.get("name")) in {
+                            ("web-build", "Upload the public Web publication artifact"),
+                            ("web-publication", "Download the verified Web publication artifact"),
+                            ("web-publication", "Upload the Web publication receipt"),
+                            ("web-publish", "Download the Web publication receipt"),
+                        })
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
-        environments = {"relay-publish": "relay-production", "web-publish": "web-release",
+        environments = {"relay-publish": "relay-production", "web-publication": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}
-        secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "web-publish": {"NPM_TOKEN"}, "app-publish": {
+        secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "app-publish": {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY"}}
         import re
         for name, job in document["jobs"].items():
@@ -234,7 +243,8 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(set(re.findall(r"secrets\.([A-Z_]+)", json.dumps(job))), secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
-            self.assertEqual(permissions.get("packages"), "write" if name == "web-publish" else None)
+            self.assertEqual(permissions.get("packages"), "write" if name == "web-publication" else None)
+            self.assertEqual(permissions.get("id-token"), "write" if name == "web-publication" else None)
         jobs = document["jobs"]
         # The alternate dry/signed App build is deliberately skipped. Publication
         # must follow the explicit build gate instead of implicit success().
@@ -245,7 +255,8 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("${GITHUB_WORKFLOW_SHA}:releases/publish.py", relay_step["run"])
         self.assertIn('PYTHONPATH="$PWD/releases"', relay_step["run"])
         self.assertIn("build-gate", jobs["relay-publish"]["needs"])
-        self.assertIn("relay-publish", jobs["web-publish"]["needs"])
+        self.assertIn("relay-publish", jobs["web-publication"]["needs"])
+        self.assertIn("web-publication", jobs["web-publish"]["needs"])
         self.assertIn("web-publish", jobs["app-publish"]["needs"])
         self.assertEqual(set(jobs["publish-set"]["needs"]), {
             "prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
@@ -253,6 +264,7 @@ class PublicationTests(unittest.TestCase):
                             for step in jobs["publish-set"]["steps"]))
         cutover = workflow("production-cutover.yml")
         self.assertEqual(cutover["jobs"]["release"]["secrets"], "inherit")
+        self.assertEqual(cutover["jobs"]["release"]["permissions"]["id-token"], "write")
         self.assertNotIn("environment", cutover["jobs"]["release"])
         self.assertEqual(cutover["jobs"]["release"]["needs"], "authorization")
         self.assertIs(cutover["jobs"]["release"]["with"]["dry_run"], False)
@@ -431,7 +443,8 @@ class PublicationTests(unittest.TestCase):
                     return SimpleNamespace(returncode=0, stdout=json.dumps("sha512-other"), stderr="")
                 self.fail("unexpected command " + " ".join(args))
 
-            with patch.dict(os.environ, {"NODE_AUTH_TOKEN": "synthetic", "GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), \
+            with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid", "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic",
+                                         "GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), \
                     patch("publish.subprocess.run", side_effect=run), patch("publish.write") as write:
                 with self.assertRaisesRegex(ValueError, "different contents"):
                     publish.web(plan, build, root, root / "out.json")
@@ -467,35 +480,33 @@ class PublicationTests(unittest.TestCase):
                         registry[f"{package}@1.0.0"] = {"integrity": "sha512-tampered" if tampered else publish._npm_integrity(path)}
                         tags.setdefault(package, {})[args[args.index("--tag") + 1]] = "1.0.0"
                         return SimpleNamespace(returncode=0, stdout="", stderr="")
-                    if args[:3] == ["npm", "dist-tag", "add"]:
-                        package, version = args[3].rsplit("@", 1)
-                        self.assertIn(args[3], registry)
-                        tags.setdefault(package, {})[args[4]] = version
-                        return SimpleNamespace(returncode=0, stdout="", stderr="")
                     self.fail("unexpected command " + " ".join(args))
 
                 def check_output(args, **kwargs):
                     self.assertEqual(args[:2], ["npm", "view"])
                     return json.dumps(tags.get(args[2], {}))
 
-                with patch.dict(os.environ, {"NODE_AUTH_TOKEN": "synthetic"}), patch("publish.subprocess.run", side_effect=run), \
+                with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid",
+                                              "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic"}), patch("publish.subprocess.run", side_effect=run), \
                         patch("publish.subprocess.check_output", side_effect=check_output):
                     self.assertEqual(publish.publish_npm(component, build, root), "@maudecode/talaria-web@1.0.0")
                     self.assertEqual([args[2] for args in commands if args[1] == "publish"], [str(contracts), str(server)])
                     self.assertEqual(tags["@maudecode/talaria-web"], {dist_tag: "1.0.0"})
-                    # A retry publishes nothing new but still asserts the dist-tag.
+                    # A retry accepts the same immutable bytes and existing channel tag.
                     before = len([args for args in commands if args[1] == "publish"])
-                    tags["@maudecode/talaria-web"].pop(dist_tag)
                     publish.publish_npm(component, build, root)
                     self.assertEqual(len([args for args in commands if args[1] == "publish"]), before)
-                    self.assertEqual(tags["@maudecode/talaria-web"][dist_tag], "1.0.0")
-                    # The other channel's bytes under the same version are refused before any publish or re-tag.
+                    # Trusted publishing authorizes npm publish, not dist-tag mutation. A damaged tag fails closed.
+                    tags["@maudecode/talaria-web"].pop(dist_tag)
+                    with self.assertRaisesRegex(ValueError, "dist-tag"):
+                        publish.publish_npm(component, build, root)
+                    tags["@maudecode/talaria-web"][dist_tag] = "1.0.0"
+                    # The other channel's bytes under the same version are refused before any publish.
                     server.write_bytes(b"server tarball other channel")
-                    mutations = len([args for args in commands if args[1] in ("publish", "dist-tag")])
+                    mutations = len([args for args in commands if args[1] == "publish"])
                     with self.assertRaisesRegex(ValueError, "different contents"):
                         publish.publish_npm(component, build, root)
-                    # The contracts tarball still matched, but nothing is re-tagged once any package mismatches.
-                    self.assertEqual(len([args for args in commands if args[1] in ("publish", "dist-tag")]), mutations)
+                    self.assertEqual(len([args for args in commands if args[1] == "publish"]), mutations)
                     server.write_bytes(b"server tarball " + channel.encode())
                     # A registry that serves different bytes right after publication fails the readback.
                     registry.clear()

@@ -52,13 +52,16 @@ manifest. Component notes and signed tags keep their own App/Web/Relay namespace
 See [Web update behavior](../web/docs/talaria-updates.md) for authentication and
 source-install safety boundaries.
 
-Release jobs run on the existing `maude-mac` self-hosted runner. Build handoffs
-stay under its `~/.local/share/talaria-release-runs/<run>/<attempt>/` directory;
-there are no GitHub Actions artifact uploads. Producer jobs record content
-digests in GitHub job outputs. Consumers verify those digests, the workflow
-source, run and runner identity before restoring files. Keep the `maude-mac`
-label assigned to this single runner; a different runner cannot consume its
-handoffs.
+Release builds run on the existing `maude-mac` self-hosted runner. Private and
+large handoffs stay under its
+`~/.local/share/talaria-release-runs/<run>/<attempt>/` directory. The public Web
+OCI archive and npm tarballs cross once through a one-day Actions artifact to a
+GitHub-hosted publication job, which npm trusted publishing requires. Its small
+publication receipt crosses back and joins the locally retained release set.
+Producer jobs record content digests in GitHub job outputs; local consumers
+verify those digests, the workflow source, run and runner identity before
+restoring files. Keep the `maude-mac` label assigned to this single runner; a
+different self-hosted runner cannot consume its handoffs.
 
 Successful final jobs retain the manifest and sanitized contract diagnostics,
 then remove large build handoffs from all attempts of that run. The manifest is
@@ -131,12 +134,22 @@ that order. Unchanged components skip their build/publication jobs. Required
 jobs that fail, cancel or unexpectedly skip block completion.
 
 Credentials are scoped to jobs: `relay-production` supplies the matching
-production deployment key, `web-release` uses the job's package-write token,
-`testflight` supplies Apple signing/upload credentials, and
+production deployment key, `web-release` authorizes the GitHub-hosted OIDC job
+that npm trusts and the job token writes the GHCR image, `testflight` supplies Apple signing/upload credentials, and
 `release-set-publication` grants the job's release-write token. Configure these
 environments to allow the trusted `main` workflow before the first cutover.
 There is no live Web host in this migration; Web publication is followed by
 isolated legacy-upgrade validation, not host provisioning.
+
+The two npm package names must exist before npm accepts a trusted-publisher
+configuration. Bootstrap `@maudecode/talaria-web-contracts@0.0.0` and
+`@maudecode/talaria-web@0.0.0` once through an interactive maintainer login with
+the non-default `bootstrap` tag. Then configure both packages to trust GitHub
+organization `MaudeCode`, repository `talaria`, workflow
+`production-cutover.yml`, environment `web-release`, with direct publishing
+allowed. Production releases use no long-lived npm token. The caller and
+reusable release jobs both grant `id-token: write`; npm publication stays on a
+GitHub-hosted runner because self-hosted OIDC publishing is unsupported.
 
 The root manifest is published last. Fresh dispatches require unused component
 release names. If only the final `publish-set` job fails, use **Re-run failed
