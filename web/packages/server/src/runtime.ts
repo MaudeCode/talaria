@@ -251,9 +251,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     hermesHome: config.hermesHome,
     home,
     // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.
-    syncTitle: (session) => {
+    syncTitle: async (session) => {
       if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
-      sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title }).catch((error: unknown) => { log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`) })
+      // Awaited by callers: the rename/regenerate response and the title stream's teardown follow the state.db write.
+      try {
+        await sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title })
+      } catch (error) {
+        log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`)
+      }
     },
     // Python `_resolve_model_context_length`: the sidecar's authoritative value per model/provider, cached; a sync miss
     // starts the lookup in the background so the next read (detail load, composer gauge) has it.
@@ -313,7 +318,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     profileDeleting: (profile) => profiles.isDeleting(profile),
-    syncTitle: (session) => { sessions.deps.syncTitle(session) },
+    syncTitle: (session) => sessions.deps.syncTitle(session),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,
     hermesHome: config.hermesHome,

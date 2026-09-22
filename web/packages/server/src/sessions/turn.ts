@@ -59,7 +59,7 @@ export interface TurnRunnerDeps {
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
   /** Insights title sync (Python `sync_session_title`), gated on `sync_to_insights` by the runtime. */
-  syncTitle?: (session: Session) => void
+  syncTitle?: (session: Session) => Promise<void>
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
   profileDeleting?: (profile: string | null) => boolean
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
@@ -913,7 +913,7 @@ export class TurnRunner {
           markSessionTitleGenerated(current)
           this.deps.store.save(current, { touchUpdatedAt: false })
           // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on.
-          this.deps.syncTitle?.(current)
+          await this.deps.syncTitle?.(current)
           this.deps.events.publish('title', { profile: current.profile, sessionId })
           effective = next
           wrote = true

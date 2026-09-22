@@ -159,8 +159,17 @@ describe('runtime seams from review round 10', () => {
     await post(s, '/api/session/rename', { session_id: sid, title: 'quiet' })
     expect(synced).toEqual([])
     await s.deps.settings.save({ sync_to_insights: true })
-    await post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
-    await new Promise((r) => setTimeout(r, 20))
+    // The rename response waits for the state.db acknowledgement, so an immediate insights read sees the new title.
+    let ackSync: () => void = () => undefined
+    sidecar.respond('state_db.sync_title', (params) => new Promise((resolve) => { ackSync = () => { synced.push(params); resolve({ ok: true as const }) } }))
+    const renaming = post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
+    let settled = false
+    void renaming.then(() => { settled = true })
+    await new Promise((r) => setTimeout(r, 60))
+    expect(settled).toBe(false)
+    ackSync()
+    expect((await renaming).status).toBe(200)
+    sidecar.respond('state_db.sync_title', (params) => { synced.push(params); return { ok: true as const } })
     expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state })
     // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
     // generated flag set) and syncs the new title the same way a rename does.

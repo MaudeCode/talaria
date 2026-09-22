@@ -61,7 +61,7 @@ export interface SessionServiceDeps {
   hermesHome: string
   home: string
   /** Sync title-only metadata to state.db when `sync_to_insights` is on. */
-  syncTitle: (session: Session) => void
+  syncTitle: (session: Session) => Promise<void>
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
   /** Authoritative lookup through the sidecar (`models.context_length`), cached; used where the caller can await. */
@@ -525,7 +525,7 @@ export class SessionService {
       markSessionTitleGenerated(current)
       this.store.save(current, { touchUpdatedAt: false })
     })
-    this.deps.syncTitle(current)
+    await this.deps.syncTitle(current)
     this.publish(eventReason, current.profile, current.session_id)
     return current
   }
@@ -536,7 +536,7 @@ export class SessionService {
       applySessionTitleRename(s, rawTitle)
       this.store.save(s)
     })
-    this.deps.syncTitle(s)
+    await this.deps.syncTitle(s)
     this.publish('session_rename', s.profile, s.session_id)
     return { session: s.compact() }
   }

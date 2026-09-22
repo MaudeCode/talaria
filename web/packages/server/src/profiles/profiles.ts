@@ -108,6 +108,8 @@ export class ProfileService {
     if (this.deps.isolatedProfileMode() && name !== this.deps.isolatedProfileName()) throw new ProfileError(`Profile switching is not allowed in isolated profile mode. Currently pinned to profile '${this.deps.isolatedProfileName()}'.`, 403)
     if (!this.rootAliasesLoaded && name !== 'default') await this.list('default').catch(() => undefined)
     const home = this.deps.profileHome(name)
+    // A target mid-deletion must not be handed out as a cookie: the client's next write would recreate its home.
+    if (this.deleting.has(name)) throw new ProfileError(`Profile '${name}' is being deleted.`, 409)
     if (!this.isRootProfile(name) && !isDir(home)) throw new ProfileError(`Profile '${name}' does not exist.`, 404)
     this.invalidate()
     let cfg: Dict = {}
