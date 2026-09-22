@@ -42,7 +42,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
@@ -78,6 +78,18 @@ describe('chat turns through the sidecar', () => {
     s = await bootTestServer({ sidecar })
   })
   afterAll(() => s.close())
+
+  it('refuses new chat admission during a Web update without recording a pending turn', async () => {
+    const sid = await newSession(s)
+    const guard = vi.spyOn(s.deps.updates, 'blocksNewWork').mockReturnValue(true)
+    try {
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: 'wait for update' })
+      expect(res.status).toBe(503)
+      const session = s.deps.sessionStore.get(sid)
+      expect(session.pending_user_message).toBeNull()
+      expect(session.active_stream_id).toBeNull()
+    } finally { guard.mockRestore() }
+  })
 
   it('streams a turn, settles the transcript, journals every frame, and replays it after the run', async () => {
     const sid = await newSession(s)

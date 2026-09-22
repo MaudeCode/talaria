@@ -9,16 +9,21 @@
  * and the Agent branches of `tests/test_updates*.py` onto synthetic repositories and manifests.
  */
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+// These tests own a synthetic host prefix even when CI itself runs in a container.
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return { ...fs, existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? false : fs.existsSync(path) }
+})
 import type { Dict } from '../config/agent-config.js'
 import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, publishedWebRelease, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, WEB_BUILD_STEPS, WEB_SERVER_ENTRY, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers,
 } from './updates.js'
 
@@ -67,7 +72,7 @@ function sourceInstall(): Install {
   // The production URL stays configured; only this fixture's transport is redirected to its own repository.
   git(client, 'remote', 'set-url', 'origin', 'https://github.com/MaudeCode/talaria.git')
   const runtime = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...PIN['x-talaria'], image: PIN.services['hermes-agent'].image } }
-  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}` }
+  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}` }
   const id = { release: DEV as Dict, stamped: DEV as Dict, running: null as string | null }
   const identity: ReleaseIdentity = { release: () => id.release, stamped: () => id.stamped, runningSourceRevision: () => id.running }
   const commands: string[][] = []
@@ -76,7 +81,7 @@ function sourceInstall(): Install {
   const getJson: GetJson = (path, { asset }) => {
     requests.push(path)
     const set = `release-set-${release.sourceRevision}`
-    if (asset) return Promise.resolve({ schemaVersion: 1, releaseSet: release.sourceRevision, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.runtime.compatibleAgent, components: { web: { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision, image: release.image } } })
+    if (asset) return Promise.resolve({ schemaVersion: 1, releaseSet: release.sourceRevision, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.runtime.compatibleAgent, components: { web: { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision, image: release.image, ...(release.npm ? { npm: release.npm } : {}) } } })
     return Promise.resolve([{ tag_name: set, published_at: '2026-09-19T00:00:00Z', assets: [{ name: 'release-set.json', id: 123 }] }])
   }
   const builds: string[][] = []
@@ -172,11 +177,13 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(s.commands.some((c) => c[0] === 'fetch')).toBe(false)
   })
 
-  function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; gateway?: () => Promise<Dict>; llm?: (system: string, user: string) => Promise<string> } = {}): { svc: UpdateService; restarts: number[] } {
+  function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; gateway?: () => Promise<Dict>; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun } = {}): { svc: UpdateService; restarts: number[] } {
     const restarts: number[] = []
     const svc = new UpdateService({
       webRoot: web(s.client), git: s.run, build: s.build, getJson: opts.getJson ?? s.getJson, identity: s.identity, webuiVersion: 'development',
       agentDir: () => opts.agentDir ?? null, channel: () => opts.channel ?? 'stable', includeAgent: () => true,
+      ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.npm ? { npm: opts.npm } : {}),
+      ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
       scheduleRestart: () => restarts.push(1), gatewayRestart: opts.gateway ?? (() => Promise.resolve({ status: 'completed' })), llm: opts.llm ?? null, sleep: () => Promise.resolve(), log: () => undefined,
     })
@@ -206,9 +213,133 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(((await svc.check(true)).webui as Dict).metadata_repair).toBe(true)
     expect((await svc.clearLock('webui')).restart_scheduled).toBe(true)
     s.id.running = latest
-    expect((await svc.apply('webui')).up_to_date).toBe(true)
-    expect(restarts).toHaveLength(2)
+    expect((await svc.apply('webui')).restart_scheduled).toBe(true)
+    expect(restarts).toHaveLength(1)
     expect(s.commands.some((c) => c[0] === 'fetch' && c.includes('--tags'))).toBe(false)
+  })
+
+  it('automatically applies relevant Experimental main changes and retries active-chat blockers', async () => {
+    const s = sourceInstall()
+    let enabled = false
+    let blocked = true
+    const { svc, restarts } = service(s, {
+      channel: 'experimental', getJson: noReleases, autoApply: () => enabled,
+      blockers: () => ({ active_streams: blocked ? 1 : 0, active_runs: 0, blocking_stream_ids: blocked ? ['s'] : [], blocking_run_ids: [], restart_blocked: blocked }),
+    })
+    expect(await svc.autoApplyOnce()).toBeNull()
+    enabled = true
+    expect(await svc.autoApplyOnce()).toMatchObject({ ok: false, restart_blocked: true })
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+    expect(restarts).toEqual([])
+    blocked = false
+    expect(await svc.autoApplyOnce()).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
+    expect(restarts).toEqual([1])
+  })
+
+  it('checks without applying until opted in, and stops checking when updates are disabled', async () => {
+    const s = sourceInstall()
+    let enabled = true
+    const { svc, restarts } = service(s, { channel: 'experimental', autoApply: () => false, checkEnabled: () => enabled })
+    const check = vi.spyOn(svc, 'check')
+    expect(await svc.autoApplyOnce()).toMatchObject({ behind: 1 })
+    expect(s.builds).toEqual([])
+    expect(restarts).toEqual([])
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+    enabled = false
+    expect(await svc.autoApplyOnce()).toBeNull()
+    expect(check).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the automatic loop immediately and periodically until stopped', async () => {
+    vi.useFakeTimers()
+    try {
+      const s = sourceInstall()
+      const { svc } = service(s, { autoApply: () => false })
+      const tick = vi.spyOn(svc, 'autoApplyOnce').mockResolvedValue(null)
+      svc.startAutoApply(1000)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(tick).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(tick).toHaveBeenCalledTimes(2)
+      svc.stopAutoApply()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(tick).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each(['disabled', 'channel', 'shutdown'])('cancels an automatic apply after %s changes during its check', async (change) => {
+    const s = sourceInstall()
+    let enabled = true
+    const opts = { channel: 'experimental' as 'stable' | 'experimental', autoApply: () => enabled }
+    const { svc, restarts } = service(s, opts)
+    let finish!: (result: Dict) => void
+    vi.spyOn(svc, 'check').mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const checking = svc.autoApplyOnce()
+    expect(await svc.autoApplyOnce()).toBeNull()
+    if (change === 'disabled') enabled = false
+    else if (change === 'channel') opts.channel = 'stable'
+    else svc.stopAutoApply()
+    finish({ webui: { behind: 1 } })
+    await checking
+    expect(s.builds).toEqual([])
+    expect(restarts).toEqual([])
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+  })
+
+  it('does not resurrect a timer when stopped during an in-flight tick', async () => {
+    vi.useFakeTimers()
+    try {
+      const { svc } = service(sourceInstall())
+      let finish!: (value: null) => void
+      const tick = vi.spyOn(svc, 'autoApplyOnce').mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+      svc.startAutoApply(1000)
+      await vi.advanceTimersByTimeAsync(0)
+      svc.stopAutoApply()
+      finish(null)
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(tick).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each(['disabled', 'checks-disabled', 'channel', 'shutdown'])('finishes a mutated source update when %s changes during its build', async (change) => {
+    const s = sourceInstall()
+    let enabled = true
+    let checks = true
+    const opts = { channel: 'experimental' as 'stable' | 'experimental', autoApply: () => enabled, checkEnabled: () => checks }
+    const build = s.build
+    s.build = async (...args) => {
+      expect(svc.blocksNewWork()).toBe(true)
+      if (change === 'disabled') enabled = false
+      else if (change === 'checks-disabled') checks = false
+      else if (change === 'channel') opts.channel = 'stable'
+      else svc.stopAutoApply()
+      return build(...args)
+    }
+    const { svc, restarts } = service(s, opts)
+    const result = await svc.autoApplyOnce()
+    expect(result?.ok).toBe(true)
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
+    expect(restarts).toEqual(change === 'shutdown' ? [] : [1])
+    expect(svc.blocksNewWork()).toBe(change !== 'shutdown')
+    if (change !== 'shutdown') expect(svc.cachedStatus().checked_at).toBe(0)
+  })
+
+  it('retries failed checks and builds, and stops after scheduling a restart', async () => {
+    const s = sourceInstall()
+    const { svc, restarts } = service(s, { channel: 'experimental', getJson: noReleases, autoApply: () => true })
+    const check = vi.spyOn(svc, 'check').mockRejectedValueOnce(new Error('synthetic fetch failure'))
+    expect(await svc.autoApplyOnce()).toMatchObject({ ok: false })
+    s.failBuild.step = 0
+    expect(await svc.autoApplyOnce()).toMatchObject({ build_failed: true })
+    expect(restarts).toEqual([])
+    s.failBuild.step = null
+    expect(await svc.autoApplyOnce()).toMatchObject({ restart_scheduled: true })
+    const checks = check.mock.calls.length
+    expect(await svc.autoApplyOnce()).toBeNull()
+    expect(check).toHaveBeenCalledTimes(checks)
+    expect(restarts).toEqual([1])
   })
 
   it.each(['dirty', 'untracked', 'diverged', 'ahead', 'operation', 'fetch_failed'])('main preserves unsafe checkout states (%s)', async (state) => {
@@ -375,6 +506,81 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(older.manual_update).toBe(true)
     expect(older.no_git).toBe(true)
     expect((await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)).behind).toBe(0)
+  })
+
+  function npmPackageInstall(s: Install, outcome: 'success' | 'failure' | 'bad-stamp' = 'success') {
+    const globalRoot = join(tmp(), 'lib/node_modules')
+    const packageRoot = join(globalRoot, '@maudecode/talaria-web')
+    write(join(packageRoot, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version: '1.0.0' }))
+    write(join(packageRoot, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
+    write(join(packageRoot, 'contract_versions.json'), JSON.stringify(VERSIONS))
+    s.release.npm = '@maudecode/talaria-web@2.0.0'
+    s.id.release = { ...s.release.runtime, tag: 'web-v1.0.0', version: '1.0.0', sourceRevision: s.old, releaseSet: s.old }
+    const calls: string[][] = []
+    const npm: BuildRun = (args) => {
+      calls.push(args)
+      if (args[0] === 'root') return Promise.resolve({ ok: true, out: globalRoot })
+      if (args[0] === 'install') {
+        if (outcome === 'failure') return Promise.resolve({ ok: false, out: 'synthetic npm failure' })
+        const candidate = join(args[args.indexOf('--prefix') + 1]!, 'lib/node_modules/@maudecode/talaria-web')
+        write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version: '2.0.0', bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
+        write(join(candidate, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
+        write(join(candidate, 'contract_versions.json'), JSON.stringify(VERSIONS))
+        write(join(candidate, 'dist/bin/talaria-web.js'), '// fixture')
+        write(join(candidate, 'dist/bin/talaria-web-mcp.js'), '// fixture')
+        if (outcome === 'success') writeFileSync(join(candidate, '_release.json'), JSON.stringify(s.release.runtime))
+        return Promise.resolve({ ok: true, out: '' })
+      }
+      return Promise.resolve({ ok: false, out: 'unexpected npm command' })
+    }
+    return { packageRoot, globalRoot, npm, calls }
+  }
+
+  it('automatically installs the exact completed Stable npm release and schedules restart', async () => {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s)
+    const restarts: number[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
+      agentDir: () => null, channel: () => 'stable', includeAgent: () => false, autoApply: () => true,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => restarts.push(1), gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+    })
+    const status = (await svc.check(true, false, 'stable')).webui as Dict
+    expect(status).toMatchObject({ behind: 1, install_kind: 'npm', manual_update: false, npm: '@maudecode/talaria-web@2.0.0' })
+    expect(await svc.autoApplyOnce()).toMatchObject({ ok: true, restart_scheduled: true, npm: '@maudecode/talaria-web@2.0.0' })
+    expect(n.calls.filter((c) => c[0] === 'install')).toEqual([['install', '--global', '--prefix', expect.stringContaining('.talaria-update-'), '--no-audit', '--no-fund', '@maudecode/talaria-web@2.0.0']])
+    expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version?: unknown }).version).toBe('2.0.0')
+    expect(restarts).toEqual([1])
+  })
+
+  it.each(['failure', 'bad-stamp'] as const)('fails closed when the npm replacement is %s', async (outcome) => {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s, outcome)
+    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, s.build, n.npm)
+    expect(result.ok).toBe(false)
+    expect(result[outcome === 'failure' ? 'install_failed' : 'verification_failed']).toBe(true)
+    expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
+  })
+
+  it('refuses Experimental npm updates and mismatched global package roots', async () => {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s)
+    expect(await npmInstallInfo(n.packageRoot, n.npm, true)).toBeNull()
+    const wrongRoot: BuildRun = (args) => Promise.resolve(args[0] === 'root' ? { ok: true, out: join(tmp(), 'other') } : { ok: false, out: 'must not install' })
+    expect((await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, s.build, wrongRoot)).manual_update).toBe(true)
+    expect((await applyWebUpdate(n.packageRoot, 'experimental', s.run, s.getJson, s.identity, s.build, n.npm)).manual_update).toBe(true)
+    expect(n.calls.some((c) => c[0] === 'install')).toBe(false)
+  })
+
+  it('refuses linked global packages', async () => {
+    const real = join(tmp(), 'real-package')
+    write(join(real, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version: '1.0.0' }))
+    const globalRoot = join(tmp(), 'lib/node_modules')
+    mkdirSync(join(globalRoot, '@maudecode'), { recursive: true })
+    symlinkSync(real, join(globalRoot, '@maudecode/talaria-web'))
+    const npm: BuildRun = () => Promise.resolve({ ok: true, out: globalRoot })
+    expect(await npmInstallInfo(real, npm)).toBeNull()
   })
 
   it('[py:test_issue4356_no_git_update_check.py::test_check_repo_returns_no_git_sentinel_when_dot_git_absent] a web root without .git reports the no_git sentinel', async () => {

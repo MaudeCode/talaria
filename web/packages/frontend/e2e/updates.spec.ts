@@ -3,6 +3,37 @@ import { expect, settle, test } from './fixtures'
 // Service-worker requests bypass page routing; these fixtures own every response.
 test.use({ serviceWorkers: 'block' })
 
+test('automatic updates retain the selected channel and can apply a Stable npm update', async ({ page }, testInfo) => {
+  let settings = { update_channel: 'stable', check_for_updates: true, auto_apply_updates: false }
+  let applied = false
+  await page.route('**/api/settings', (route) => {
+    if (route.request().method() === 'POST') settings = { ...settings, ...route.request().postDataJSON() as Partial<typeof settings> }
+    return route.fulfill({ json: settings })
+  })
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+    webui: { behind: applied ? 0 : 1, install_kind: 'npm', no_git: true, manual_update: false }, agent: { behind: 0 },
+  } }))
+  await page.route('**/api/updates/apply', (route) => {
+    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable' })
+    applied = true
+    return route.fulfill({ json: { ok: true, restart_scheduled: true } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  const toggle = page.getByRole('switch', { name: 'Automatically apply Web updates', exact: true })
+  await expect(toggle).not.toBeChecked()
+  await toggle.click()
+  await expect.poll(() => settings.auto_apply_updates).toBe(true)
+  await page.reload()
+  await expect(toggle).toBeChecked()
+  await expect(page.getByRole('combobox', { name: 'Update channel' })).toContainText('Stable')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('automatic-updates.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Update now', exact: true }).click()
+  await expect.poll(() => applied).toBe(true)
+  await expect(page.getByText('Up to date', { exact: true })).toBeVisible()
+})
+
 for (const initialWebBehind of [0, 1]) {
   test(`independent Agent updates: ${initialWebBehind ? 'combined' : 'Agent-only'}`, async ({ page }, testInfo) => {
     let webBehind = initialWebBehind

@@ -182,32 +182,45 @@ export class CronService {
   /** Python `_handle_cron_run`: answer once the sidecar emits `started`; the run itself continues in the background. */
   async runNow(home: string, jobId: string): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, 'job_id required')
-    const sidecar = this.sidecar()
-    let job: Dict | null
-    try { job = (await sidecar.call('cron.get', { profile_home: home, job_id: jobId })).job } catch { job = null }
-    if (!job) throw new HttpFailure(404, 'Job not found')
-    const status = await sidecar.call('cron.status', { job_id: jobId })
-    if ('job_id' in status && status.running) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.round(status.elapsed * 10) / 10 }
-    const profile = str(job.profile).trim()
-    const known = (await this.availableProfileNames()).has(profile)
-    const executionHome = profile && known ? this.deps.profileHome(profile) : null
-    // Python `_event_profile_for_cron_job`: browsers refresh the job's profile when it is a known one.
-    const eventProfile = profile && known ? profile : null
     const running = this.deps.runningJobs
-    const done = (): void => { running?.delete(jobId); this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
-    return new Promise((resolve, reject) => {
-      let answered = false
-      const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
+    const existing = running?.get(jobId)
+    if (existing !== undefined) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.max(0, Date.now() / 1000 - existing) }
+    // Own admission before any await so update/restart cannot race validation or dispatch.
+    running?.set(jobId, Date.now() / 1000)
+    try {
+      const sidecar = this.sidecar()
+      let job: Dict | null
+      try { job = (await sidecar.call('cron.get', { profile_home: home, job_id: jobId })).job } catch { job = null }
+      if (!job) throw new HttpFailure(404, 'Job not found')
+      const status = await sidecar.call('cron.status', { job_id: jobId })
+      if ('job_id' in status && status.running) {
+        running?.delete(jobId)
+        return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.round(status.elapsed * 10) / 10 }
+      }
+      const profile = str(job.profile).trim()
+      const known = (await this.availableProfileNames()).has(profile)
+      const executionHome = profile && known ? this.deps.profileHome(profile) : null
+      // Python `_event_profile_for_cron_job`: browsers refresh the job's profile when it is a known one.
+      const eventProfile = profile && known ? profile : null
       let started = false
-      sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
-        .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); if (started) done() })
-        .catch((error: unknown) => {
-          this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`)
-          if (started) { done(); return }
-          // Python only ever answered 200 for `running`/`already_running`; a run that never started is the error it was.
-          if (!answered) { answered = true; reject(error instanceof HttpFailure ? error : new HttpFailure(error instanceof SidecarError && error.condition === 'sidecar_unavailable' ? 503 : 500, str((error as Error).message))) }
-        })
-    })
+      const done = (): void => { running?.delete(jobId); if (started) this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
+      return await new Promise((resolve, reject) => {
+        let answered = false
+        const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
+        sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
+          .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); done() })
+          .catch((error: unknown) => {
+            this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`)
+            done()
+            if (started) return
+            // Python only ever answered 200 for `running`/`already_running`; a run that never started is the error it was.
+            if (!answered) { answered = true; reject(error instanceof HttpFailure ? error : new HttpFailure(error instanceof SidecarError && error.condition === 'sidecar_unavailable' ? 503 : 500, str((error as Error).message))) }
+          })
+      })
+    } catch (error) {
+      running?.delete(jobId)
+      throw error
+    }
   }
 
   async status(jobId: string): Promise<Dict> {

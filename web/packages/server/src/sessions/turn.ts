@@ -62,6 +62,7 @@ export interface TurnRunnerDeps {
   syncTitle?: (session: Session) => Promise<void>
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
   profileDeleting?: (profile: string | null) => boolean
+  updateInProgress?: () => boolean
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
   onTurnEnd?: (sessionId: string) => void
   /** The profile's config.yaml (turn budgets, reasoning effort, personality, delivery context); null when unavailable. */
@@ -218,6 +219,7 @@ export class TurnRunner {
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
   start(session: Session, opts: StartTurnOptions): StartTurnResponse & { _status?: number; error?: string; active_stream_id?: string | null } {
     const s = session
+    if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
     const locked = s.active_stream_id
     if (locked) {

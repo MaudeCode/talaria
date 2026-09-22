@@ -31,7 +31,7 @@ function renderSystem() {
 }
 
 describe('SystemSection "Check now"', () => {
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
+  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, auto_apply_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.saveSettings).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
 
   it('does not call unavailable private release metadata up to date', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: null, current_sha: null, manual_update: true, error: 'Private release access unavailable' } }))
@@ -155,6 +155,25 @@ describe('SystemSection "Check now"', () => {
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental'))
     await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+  })
+
+  it('persists the opt-in automatic Web update switch', async () => {
+    settingsState.check_for_updates = true
+    vi.mocked(api.saveSettings).mockResolvedValue({ ...settingsState, auto_apply_updates: true })
+    renderSystem()
+    const toggle = await screen.findByRole('switch', { name: /automatically apply web updates/i })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ auto_apply_updates: true }))
+  })
+
+  it('offers the normal apply action for a direct global npm Stable update', async () => {
+    settingsState.update_channel = 'stable'
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1, no_git: true, install_kind: 'npm', manual_update: false }, agent: { behind: 0 } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true, restart_scheduled: true })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'stable', 'webui'))
   })
 
   it('keeps Experimental up to date when newer repository commits do not affect Web', async () => {

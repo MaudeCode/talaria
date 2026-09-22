@@ -331,6 +331,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     profileDeleting: (profile) => profiles.isDeleting(profile),
+    updateInProgress: () => deps.updates.blocksNewWork(),
     syncTitle: (session) => sessions.deps.syncTitle(session),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,
@@ -569,7 +570,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const restartBlockers = (): RestartBlockers => {
     const streams = [...activeStreamIds].map(String)
     const runs = [...registry.activeRuns.keys()].map(String)
-    return { active_streams: streams.length, active_runs: runs.length, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 }
+    const terminals = [...deps.terminals.terminals.values()].filter((term) => term.isAlive).length
+    const crons = runningCronJobs.size
+    return { active_streams: streams.length, active_runs: runs.length, active_terminals: terminals, active_cron_jobs: crons, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 || terminals > 0 || crons > 0 }
   }
   const purgeAgentPycache = (): void => { const dir = sidecar?.describe?.agent_dir; if (dir) purgePycache(dir) }
   deps.updates = new UpdateService({
@@ -580,8 +583,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
     channel: () => normalizeChannel(settings.load().update_channel),
     includeAgent: () => !pyBool(settings.load().ignore_agent_updates),
+    autoApply: () => settings.load().check_for_updates !== false && settings.load().auto_apply_updates === true,
+    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.load().check_for_updates !== false,
     blockers: restartBlockers,
-    scheduleRestart: () => { setTimeout(() => { deps.requestRestart() }, 2000).unref() },
+    scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
     gatewayRestart: async () => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })

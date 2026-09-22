@@ -111,6 +111,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const deps = ctx.deps
   const auth = deps.auth
   const body: Dict = { ...input }
+  if (['auto_apply_updates', 'update_channel', 'check_for_updates'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage Web updates')
   if ('bot_name' in body) body.bot_name = str(body.bot_name).trim() || 'Hermes'
   const authEnabledBefore = await auth.isAuthEnabled()
   const passwordAuthBefore = authEnabledBefore && (await auth.getPasswordHash()) !== null
