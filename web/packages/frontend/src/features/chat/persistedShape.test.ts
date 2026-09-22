@@ -1,3 +1,4 @@
+import canonicalScene from './__fixtures__/activity-scene.json'
 import { describe, expect, it } from 'vitest'
 import { SessionSchema } from '../../contracts/session'
 import { projectMessages } from './useTranscript'
@@ -88,5 +89,36 @@ describe('persisted terminal outcomes', () => {
     expect(grouped).toHaveLength(2)
     expect(persistedActivity(grouped[1]!).status).toBe(label === 'Cancellation details' ? 'cancelled' : label === 'Interruption details' ? 'interrupted' : 'error')
     expect(persistedActivity(grouped[1]!).items.map((item) => item.kind)).toEqual(['text', 'tool'])
+  })
+})
+
+
+// Exact payload from App's testSessionDecodesActivitySceneInOrder; only the required Web title is added.
+describe('canonical cross-client activity scene', () => {
+  it('orders the unsorted persisted rows before separating the final answer', async () => {
+    const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
+    const session = SessionSchema.parse(canonicalScene.session)
+    const row = groupAssistantTurns(projectMessages(session.messages ?? []))[0]!
+    const activity = persistedActivity(row)
+    expect(activity.items.map((item) => item.key)).toEqual(['prose-1', 'thinking-1', 'tool:call-1'])
+    expect(activity.finalAnswer).toBe('After tool.')
+  })
+
+  it('decodes the nested thinking text and titles', async () => {
+    const { sceneItems } = await import('./turnActivity')
+    const items = sceneItems(canonicalScene.session.messages[0]!._anchor_activity_scene.activity_rows)
+    expect(items.find((item) => item.kind === 'reasoning')).toMatchObject({ text: 'I should inspect now.', titles: ['Planning implementation'] })
+  })
+
+  it('uses stable source-index fallbacks and retains legacy top-level reasoning', async () => {
+    const { sceneItems } = await import('./turnActivity')
+    const items = sceneItems([
+      { row_id: 'a', order_index: 2, role: 'prose', text: 'A' },
+      { row_id: 'b', role: 'thinking', text: 'Legacy reasoning', titles: ['Legacy title'] },
+      { row_id: 'c', order_index: 2, role: 'prose', text: 'C' },
+      { row_id: 'd', order_index: 'invalid', role: 'prose', text: 'D' },
+    ])
+    expect(items.map((item) => item.key)).toEqual(['b', 'a', 'c', 'd'])
+    expect(items[0]).toMatchObject({ text: 'Legacy reasoning', titles: ['Legacy title'] })
   })
 })

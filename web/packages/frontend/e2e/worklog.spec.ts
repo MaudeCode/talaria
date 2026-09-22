@@ -1,3 +1,4 @@
+import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.json' with { type: 'json' }
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
 
@@ -149,4 +150,24 @@ for (const mode of ['transparent_stream', 'hide_all_activity']) {
     if (mode === 'hide_all_activity') await expect(page.locator('[data-tool-id]')).toHaveCount(0)
     else await expect(page.locator('[data-tool-id="limited-tool"] > button')).toBeVisible()
   })
+}
+
+
+for (const paginated of [false, true]) {
+test(`canonical recovered scene preserves ordering and nested reasoning: ${paginated ? 'paginated' : 'complete'}`, async ({ page }) => {
+  const message = canonicalScene.session.messages[0]!
+  const scene = message._anchor_activity_scene
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { ...canonicalScene.session, messages: [{ ...message, _anchor_activity_scene: { ...scene, activity_rows_offset: paginated ? 2 : 0, activity_scene_ref: 'canonical-scene', activity_rows: paginated ? scene.activity_rows.slice(2) : scene.activity_rows } }] } } }))
+  await page.route('**/api/session/anchor-scene?**', (route) => route.fulfill({ json: { scene_ref: 'canonical-scene', start: 0, end: 2, total: 4, complete: true, rows: scene.activity_rows.slice(0, 2) } }))
+  await page.goto('/session/abc123')
+  await page.locator('.tool-worklog-summary').first().click()
+  if (paginated) await page.getByRole('button', { name: 'Show 2 earlier steps' }).click()
+  await page.locator('[data-activity-sequence-group] > button').click()
+  await page.getByRole('button', { name: 'Planning implementation' }).click()
+  await expect(page.getByText('I should inspect now.', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-tool-id="call-1"] > button')).toBeVisible()
+  const order = await page.locator('.assistant-turn .msg-body, .assistant-turn .thinking-card, .assistant-turn [data-tool-id]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tool-id') ?? (node.classList.contains('thinking-card') ? 'thinking' : node.textContent)))
+  expect(order).toEqual(['Before tool.', 'thinking', 'call-1', 'After tool.'])
+  await expect(page.getByText('After tool.', { exact: true })).toHaveCount(1)
+})
 }

@@ -15,6 +15,7 @@ export interface TurnActivity {
   items: ActivityItem[]
   finalAnswer: string
   status: string
+  sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
 }
 
@@ -77,7 +78,7 @@ function appendProse(items: ActivityItem[], key: string, raw: string) {
 }
 
 /** Decode the existing opaque scene at the rendering boundary, ignoring malformed rows. */
-export function sceneItems(value: unknown): ActivityItem[] {
+export function sceneItems(value: unknown, sourceOffset = 0): ActivityItem[] {
   if (!Array.isArray(value)) return []
   const items: ActivityItem[] = []
   const positions = new Map<string, number>()
@@ -86,8 +87,12 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (index === undefined) { positions.set(item.key, items.length); items.push(item) }
     else items[index] = item
   }
-  for (const [i, raw] of value.entries()) {
+  const ordered = value.map((raw, index) => {
     const row = record(raw)
+    const order = typeof row.order_index === 'number' && Number.isFinite(row.order_index) ? row.order_index : sourceOffset + index
+    return { row, index: sourceOffset + index, order }
+  }).sort((a, b) => a.order - b.order || a.index - b.index)
+  for (const { row, index: i } of ordered) {
     const tool = record(row.tool)
     const id = text(row.tool_call_id) || text(tool.id)
     const key = row.role === 'tool' && id ? `tool:${id}` : text(row.row_id) || `scene:${i}`
@@ -96,7 +101,11 @@ export function sceneItems(value: unknown): ActivityItem[] {
       appendProse(prose, key, text(row.text))
       prose.forEach(put)
     }
-    else if (row.role === 'reasoning' || row.role === 'thinking') put({ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.filter((t): t is string => typeof t === 'string') : [] })
+    else if (row.role === 'reasoning' || row.role === 'thinking') {
+      const thinking = record(row.thinking)
+      const titles = Array.isArray(thinking.titles) ? thinking.titles : row.titles
+      put({ key, kind: 'reasoning', text: text(thinking.text) || text(row.text), titles: Array.isArray(titles) ? titles.filter((t): t is string => typeof t === 'string') : [] })
+    }
     else if (row.role === 'tool') put({ key, kind: 'tool', call: {
       id: id || key, name: text(tool.name) || 'tool', args: tool.args,
       preview: text(tool.snippet) || null, result: tool.result ?? tool.output ?? tool.snippet ?? null,
@@ -104,6 +113,14 @@ export function sceneItems(value: unknown): ActivityItem[] {
       duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
     } })
   }
+  return items
+}
+
+/** A scene can include its final prose row; render that answer only outside the Worklog. */
+export function sceneWorkItems(rows: unknown, finalAnswer: string, sourceOffset = 0): ActivityItem[] {
+  const items = sceneItems(rows, sourceOffset)
+  const tail = items.at(-1)
+  if (tail?.kind === 'text' && tail.text.trim() === finalAnswer.trim()) items.pop()
   return items
 }
 
@@ -130,10 +147,7 @@ export function persistedActivity(row: VisibleMessage, terminalState?: string): 
   const finalAnswer = scene.version === 'activity_scene_v1' && text(scene.final_answer).trim() ? text(scene.final_answer) : !last.message.tool_calls?.length && last.message._interim !== true && last.message._partial !== true
     ? extractInlineThinking(messageText(last.message.content)).content : ''
   if (scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows)) {
-    items.push(...sceneItems(scene.activity_rows))
-    // The scene may include its final prose row; it is rendered once, outside the Worklog.
-    const tail = items.at(-1)
-    if (tail?.kind === 'text' && tail.text.trim() === finalAnswer.trim()) items.pop()
+    items.push(...sceneWorkItems(scene.activity_rows, finalAnswer, typeof scene.activity_rows_offset === 'number' ? scene.activity_rows_offset : 0))
   } else {
     const seenTools = new Set<string>()
     for (const part of parts) {
@@ -153,6 +167,7 @@ export function persistedActivity(row: VisibleMessage, terminalState?: string): 
     }
   }
   return { key: row.turnKey ?? messageOwner(last.message) ?? row.key, items, finalAnswer, status: status || (finalAnswer.trim() ? 'completed' : 'no_response'),
+    ...(scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows) ? { sceneRows: scene.activity_rows } : {}),
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }
 }

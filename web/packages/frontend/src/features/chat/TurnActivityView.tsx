@@ -3,7 +3,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
 import { Button } from '../../ui/Button'
-import { sceneItems } from './turnActivity'
+import { sceneWorkItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard } from './blocks/ToolCard'
@@ -24,8 +24,8 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
     getNextPageParam: (page) => page.start > 0 && page.rows.length > 0 ? page.start : undefined,
     enabled: false,
   })
-  const earlier = sceneItems(query.data?.pages.slice().reverse().flatMap((page) => page.rows))
-  const items = [...new Map([...earlier, ...activity.items].map((item) => [item.key, item])).values()]
+  const pages = query.data?.pages.slice().reverse() ?? []
+  const items = pages.length ? sceneWorkItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])], activity.finalAnswer, pages[0]?.start ?? history.before) : activity.items
   const remaining = query.data?.pages.at(-1)?.start ?? history.before
   const control = remaining > 0 ? <Button variant="ghost" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</Button> : null
   return <ActivityBody activity={{ ...activity, items }} mode={mode} earlier={control} />
