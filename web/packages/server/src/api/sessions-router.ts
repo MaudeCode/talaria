@@ -226,14 +226,8 @@ export const sessionsRouter = os.router({
       if (session.read_only) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
       const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
-      const title = generated.title.trim().slice(0, 80) || 'Untitled'
-      let current: Session
-      try { current = ctx.deps.sessionStore.get(sid) } catch { throw new HttpError(404, 'Session not found') }
-      current.title = title
-      current.llm_title_generated = true
-      ctx.deps.sessionStore.save(current, { touchUpdatedAt: false })
-      ctx.deps.events.publish('session_title_regenerate', { profile: current.profile, sessionId: sid })
-      return { session: current.compact({ includeRuntime: true, activeStreamIds: ctx.deps.sessions.deps.runtime.activeStreamIds }), title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
+      const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
+      return { session: current.compact({ includeRuntime: true, activeStreamIds: ctx.deps.sessions.deps.runtime.activeStreamIds }), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
     })),
     // Manual compression runs the Agent's context compressor in-process in Python; the sidecar has no such method yet.
     compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(() => {

@@ -13,7 +13,7 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
 import type { SessionService } from './service.js'
-import { HttpFailure } from './service.js'
+import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { PendingPrompts } from './pending.js'
@@ -58,6 +58,8 @@ export interface TurnRunnerDeps {
   titleGenerationEnabled: () => boolean
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
+  /** Insights title sync (Python `sync_session_title`), gated on `sync_to_insights` by the runtime. */
+  syncTitle?: (session: Session) => void
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
   profileDeleting?: (profile: string | null) => boolean
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
@@ -908,8 +910,10 @@ export class TurnRunner {
         if (current.manual_title || !stillAuto) { status('skipped', 'manual_title', effective); return }
         if (next !== effective) {
           current.title = next
-          current.llm_title_generated = true
+          markSessionTitleGenerated(current)
           this.deps.store.save(current, { touchUpdatedAt: false })
+          // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on.
+          this.deps.syncTitle?.(current)
           this.deps.events.publish('title', { profile: current.profile, sessionId })
           effective = next
           wrote = true

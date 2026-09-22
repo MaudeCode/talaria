@@ -588,6 +588,21 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     if (originalSet) sidecar.respond('config.set', originalSet)
   })
 
+  it('a client can delete its own active named profile without waiting on its own write lease', async () => {
+    mkdirSync(join(s.state, 'profiles', 'selfie'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'selfie', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'selfie' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=selfie/)
+    sidecar.respond('profiles.delete', () => ({ ok: true }))
+    const started = Date.now()
+    const res = await post(s, '/api/profile/delete', { name: 'selfie' }, { cookie })
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect(Date.now() - started).toBeLessThan(5000)
+    expect(s.deps.profiles.isDeleting('selfie')).toBe(false)
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

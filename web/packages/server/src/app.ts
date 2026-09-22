@@ -356,7 +356,8 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       // A profile-scoped write racing that profile's deletion RPC could resurrect a partially populated home
       // (`config.set` recreates the parent): every unsafe request under a profile holds a write lease for its
       // lifetime — deletion waits for leases to drain, and a request arriving during deletion is refused (409).
-      if (unsafe && path.startsWith('/api/')) {
+      // The delete route is the lifecycle owner (mark + drain), so it must not lease the profile it is deleting.
+      if (unsafe && path.startsWith('/api/') && path !== '/api/profile/delete') {
         releaseWrite = deps.profiles.beginWrite(activeProfileName(ctx))
         if (!releaseWrite) {
           ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })

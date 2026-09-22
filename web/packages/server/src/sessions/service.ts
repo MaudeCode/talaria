@@ -514,6 +514,22 @@ export class SessionService {
 
   // ── simple metadata mutations ────────────────────────────────────────────
 
+  /** Python `_persist_generated_session_title`: title + generated/manual flags under the session lock, then insights sync. */
+  async persistGeneratedTitle(sid: string, nextTitle: string, eventReason: string): Promise<Session> {
+    const title = nextTitle.trim().slice(0, 80) || 'Untitled'
+    let current: Session
+    try { current = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
+    if (current.read_only) throw new HttpFailure(403, `Session ${sid} is read-only`)
+    await this.store.withLock(sid, () => {
+      current.title = title
+      markSessionTitleGenerated(current)
+      this.store.save(current, { touchUpdatedAt: false })
+    })
+    this.deps.syncTitle(current)
+    this.publish(eventReason, current.profile, current.session_id)
+    return current
+  }
+
   async rename(sid: string, rawTitle: unknown): Promise<Record<string, unknown>> {
     const s = this.mutationTarget(sid, 'renamed')
     await this.store.withLock(sid, () => {

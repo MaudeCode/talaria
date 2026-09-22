@@ -162,6 +162,21 @@ describe('runtime seams from review round 10', () => {
     await post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
     await new Promise((r) => setTimeout(r, 20))
     expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state })
+    // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
+    // generated flag set) and syncs the new title the same way a rename does.
+    const manual = s.deps.sessionStore.get(sid)
+    manual.messages = [{ role: 'user', content: 'How do I rotate the deploy key on the staging cluster safely?' }, { role: 'assistant', content: 'Rotate it in two steps: add the new key, then remove the old one once every node picked it up.' }]
+    s.deps.sessionStore.save(manual)
+    expect(s.deps.sessionStore.get(sid).manual_title).toBe(true)
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Rotate staging deploy key', usage: null }))
+    const regenerated = await post(s, '/api/session/title/regenerate', { session_id: sid })
+    expect(regenerated.status, await regenerated.clone().text()).toBe(200)
+    expect((await json(regenerated)).title).toBe('Rotate staging deploy key')
+    const after = s.deps.sessionStore.get(sid)
+    expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Rotate staging deploy key', false, true])
+    await new Promise((r) => setTimeout(r, 20))
+    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key' })
+    await s.deps.settings.save({ sync_to_insights: false })
   })
 
   it('the bootstrap feature flags come from runtime state', async () => {
