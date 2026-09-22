@@ -57,6 +57,10 @@ class _ClarifyEntry:
 
 _RUNS: dict[str, _Run] = {}
 _RUNS_BY_SESSION: dict[str, str] = {}
+# Which run owns the Agent's gateway approval callback per session; register/unregister happen under one lock so a
+# stale run can never remove a successor's callback, and a successor can never leak a predecessor's.
+_APPROVAL_CB_OWNER: dict[str, str] = {}
+_APPROVAL_CB_LOCK = threading.Lock()
 _RUNS_LOCK = threading.Lock()
 _AGENT_CACHE: "OrderedDict[str, tuple[Any, str]]" = OrderedDict()
 _AGENT_CACHE_LOCK = threading.Lock()
@@ -518,7 +522,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             except Exception:  # noqa: BLE001 - read-only stand-ins
                 pass
         if approval_cb is not None:
-            register_gateway_notify(session_id, approval_cb)
+            with _APPROVAL_CB_LOCK:
+                register_gateway_notify(session_id, approval_cb)
+                _APPROVAL_CB_OWNER[session_id] = stream_id
         run.agent = agent
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 
@@ -573,14 +579,15 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             run.finished.set()
             watcher.join(timeout=2)
             # A successor turn for the same session (admitted past the cancel-unwind ceiling) may have registered
-            # its own callback meanwhile: only the run that still owns the session registration unregisters.
-            with _RUNS_LOCK:
-                owns_registration = _RUNS_BY_SESSION.get(session_id) == stream_id
-            if unregister_gateway_notify is not None and owns_registration:
-                try:
-                    unregister_gateway_notify(session_id)
-                except Exception:  # noqa: BLE001
-                    pass
+            # its own callback meanwhile: compare-and-unregister under the same lock registration takes.
+            if unregister_gateway_notify is not None:
+                with _APPROVAL_CB_LOCK:
+                    if _APPROVAL_CB_OWNER.get(session_id) == stream_id:
+                        _APPROVAL_CB_OWNER.pop(session_id, None)
+                        try:
+                            unregister_gateway_notify(session_id)
+                        except Exception:  # noqa: BLE001
+                            pass
         cancelled = ctx.cancelled or run.cancel.is_set() or (bool(getattr(agent, "_interrupt_requested", False)) and error is None and not result.get("final_response"))
         compressions_after = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
         last_error = getattr(agent, "_last_error", None)
