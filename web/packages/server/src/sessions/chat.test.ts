@@ -677,6 +677,50 @@ describe('chat turns through the sidecar', () => {
     expect(pushes).toEqual([true, false, false])
   })
 
+  it('opposing YOLO toggles are serialized per session so the sidecar and the local flag agree', async () => {
+    const sid = await newSession(s)
+    const pushes: boolean[] = []
+    const gates: (() => void)[] = []
+    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { gates.push(() => { pushes.push(params.enabled); resolve({ yolo_enabled: params.enabled, released: 0 }) }) }))
+    const enable = post(s, '/api/session/yolo', { session_id: sid, enabled: true })
+    const disable = post(s, '/api/session/yolo', { session_id: sid, enabled: false })
+    const until = Date.now() + 5000
+    while (gates.length < 1 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 50))
+    // The disable's RPC waits for the enable's mutation + commit to settle.
+    expect(gates).toHaveLength(1)
+    gates[0]!()
+    expect(await json(await enable)).toEqual({ ok: true, yolo_enabled: true })
+    while (gates.length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    gates[1]!()
+    expect(await json(await disable)).toEqual({ ok: true, yolo_enabled: false })
+    expect(pushes).toEqual([true, false])
+    expect(await json(await s.get(`/api/session/yolo?session_id=${sid}`))).toEqual({ yolo_enabled: false })
+    sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 0 }))
+  })
+
+  it('a cancel that lands while the YOLO state syncs never starts the Agent turn', async () => {
+    const sid = await newSession(s)
+    let starts = 0
+    sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }]) })
+    let releaseSync: () => void = () => undefined
+    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { releaseSync = () => { resolve({ yolo_enabled: params.enabled, released: 0 }) } }))
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'slow sync' }))
+      const streamId = String(start.stream_id)
+      const until = Date.now() + 5000
+      while (!(s.deps.registry.activeRuns.get(streamId)?.phase === 'running') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+      await new Promise((r) => setTimeout(r, 30))
+      expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
+      releaseSync()
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(starts).toBe(0)
+    } finally {
+      sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 0 }))
+    }
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

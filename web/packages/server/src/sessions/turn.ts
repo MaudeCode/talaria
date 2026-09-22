@@ -200,6 +200,8 @@ export const GATEWAY_APPROVAL_RELAY_UNAVAILABLE = 'Gateway approval could not be
 export class TurnRunner {
   readonly writers = new Map<string, RunJournalWriter>()
   private readonly sessionPuts = new Map<string, (event: string, data: Record<string, unknown>) => void>()
+  /** Per-session chain for sidecar YOLO mutation + local commit, so opposing toggles cannot interleave. */
+  private readonly yoloChains = new Map<string, Promise<unknown>>()
   private readonly abortControllers = new Map<string, AbortController>()
   private readonly steers = new Map<string, SteerRecord[]>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
@@ -339,8 +341,11 @@ export class TurnRunner {
       // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
       // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt.
       const cfg = (await deps.profileConfig?.(s.profile ?? null)) ?? {}
-      // Last yield before `chat.start`: a cancel that landed during the attachment or config awaits must not start
-      // an Agent turn whose abort listener was installed after the signal already fired.
+      // The sidecar's per-session YOLO state does not survive its restarts: push the local flag (either way) before
+      // the turn so a stale sidecar-side enable cannot auto-approve a session the UI reports as guarded.
+      await this.withYoloLock(sessionId, async () => { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: deps.service().yolo(sessionId).yolo_enabled === true }) } catch { /* the approval path re-asserts it */ } })
+      // Last yield before `chat.start`: a cancel that landed during the attachment, config or YOLO awaits must not
+      // start an Agent turn (the client also refuses an already-aborted signal outright).
       if (this.registry.cancelled.has(streamId)) {
         this.finalizeCancelled(s, streamId, 'Task cancelled before start.', opts.ephemeral)
         put('cancel', this.cancelPayload('Cancelled before start'))
@@ -356,9 +361,6 @@ export class TurnRunner {
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
-      // The sidecar's per-session YOLO state does not survive its restarts: push the local flag (either way) before
-      // the turn so a stale sidecar-side enable cannot auto-approve a session the UI reports as guarded.
-      try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: deps.service().yolo(sessionId).yolo_enabled === true }) } catch { /* the approval path re-asserts it */ }
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
@@ -1088,8 +1090,12 @@ export class TurnRunner {
     if (enableYolo) {
       // The local flag is authoritative (it is re-pushed to the sidecar at every turn start); a running sidecar must
       // still confirm now so parked Agent waiters are released before YOLO is reported as on.
-      if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch (error) { return relayFailure(str((error as Error).message)) } }
-      this.deps.service().setYolo(sessionId, true)
+      const failure = await this.withYoloLock(sessionId, async (): Promise<Record<string, unknown> | null> => {
+        if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch (error) { return relayFailure(str((error as Error).message)) } }
+        this.deps.service().setYolo(sessionId, true)
+        return null
+      })
+      if (failure) return failure
       yoloEnabled = true
       this.deps.pending.clearApprovals(sessionId)
     }
@@ -1097,15 +1103,24 @@ export class TurnRunner {
     return { ok: resolved || !approvalId, choice, ...(enableYolo && (resolved || !approvalId) ? { yolo_enabled: yoloEnabled } : {}) }
   }
 
+  private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.yoloChains.get(sessionId) ?? Promise.resolve()).then(fn)
+    const settled = run.catch(() => undefined).then(() => { if (this.yoloChains.get(sessionId) === settled) this.yoloChains.delete(sessionId) })
+    this.yoloChains.set(sessionId, settled)
+    return run
+  }
+
   /** Python `set_session_yolo_enabled(False)`: the sidecar must drop its per-session YOLO state before the local flag clears. */
-  async disableYolo(sessionId: string): Promise<Record<string, unknown>> {
-    const sidecar = this.deps.sidecar()
-    if (sidecar) {
-      try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: false }) } catch (error) {
-        return { ok: false, error: `The Agent sidecar did not disable YOLO (${str((error as Error).message)}); retry in a moment.`, yolo_enabled: this.deps.service().yolo(sessionId).yolo_enabled === true, _status: 503 }
+  disableYolo(sessionId: string): Promise<Record<string, unknown>> {
+    return this.withYoloLock(sessionId, async () => {
+      const sidecar = this.deps.sidecar()
+      if (sidecar) {
+        try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: false }) } catch (error) {
+          return { ok: false, error: `The Agent sidecar did not disable YOLO (${str((error as Error).message)}); retry in a moment.`, yolo_enabled: this.deps.service().yolo(sessionId).yolo_enabled === true, _status: 503 }
+        }
       }
-    }
-    return this.deps.service().setYolo(sessionId, false)
+      return this.deps.service().setYolo(sessionId, false)
+    })
   }
 
   /** `stale` when no such prompt is queued; `ok:false` without `stale` when the sidecar did not acknowledge (prompt retained). */

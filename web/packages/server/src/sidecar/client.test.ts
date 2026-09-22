@@ -53,6 +53,21 @@ describe('SidecarClient version mismatch', () => {
     expect(logs.filter((l) => l.includes('exited')).length).toBeLessThanOrEqual(1)
   })
 
+  it('an already-aborted signal is refused before anything is written to the sidecar', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-abort-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    // Answers the handshake from the fixture and echoes every request method on stderr so the test can prove nothing was sent.
+    const script = `const fs=require('fs');const fixture=process.argv[1];require('readline').createInterface({input:process.stdin}).on('line',(line)=>{const req=JSON.parse(line);process.stderr.write('seen '+req.method+'\\n');if(req.method==='runtime.handshake'){const result=JSON.parse(fs.readFileSync(fixture,'utf8'))['runtime.handshake'][0].result;process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n')}})`
+    const logs: string[] = []
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: (l) => logs.push(l), backoffMs: [20], handshakeTimeoutMs: 5_000 })
+    await client.start()
+    const controller = new AbortController()
+    controller.abort()
+    await expect(client.call('runtime.ensure_current', {}, { signal: controller.signal })).rejects.toMatchObject({ condition: 'cancelled' })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(logs.filter((l) => l.includes('seen runtime.ensure_current'))).toEqual([])
+  })
+
   it('a spawn failure schedules the same backoff restart as a crash instead of parking the client', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-spawn-'))
     const logs: string[] = []

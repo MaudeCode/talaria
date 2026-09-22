@@ -229,6 +229,9 @@ export class SidecarClient implements SidecarLike {
   }
 
   private async rawCall<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
+    // A signal that already fired never reaches the sidecar: the abort listener below would otherwise be installed
+    // after the fact and the call (e.g. a `chat.start` behind an earlier await) would run to completion uncancelled.
+    if (opts.signal?.aborted) throw new SidecarError(`sidecar call ${method} cancelled before it was sent`, { condition: 'cancelled' })
     const stdin = this.child?.stdin
     if (!stdin?.writable) throw new SidecarError('sidecar process is not running', { condition: 'sidecar_unavailable' })
     const schema = SIDECAR_METHODS[method]
