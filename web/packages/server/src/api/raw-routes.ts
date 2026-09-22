@@ -177,7 +177,8 @@ function handleMedia(ctx: RequestContext): void {
         ctx.json({ error: 'snapshot unavailable' }, { status: 410 })
         return
       }
-      serveFileBytes(ctx, snapshotFile, { mime, disposition, cacheControl: 'private, max-age=31536000, immutable', csp, downloadName: basename(target), anchorRoot: snapDir })
+      // Same inode rule as live media: a `.snap` replaced by a hard link to a state file must not be served as the snapshot.
+      serveFileBytes(ctx, snapshotFile, { mime, disposition, cacheControl: 'private, max-age=31536000, immutable', csp, downloadName: basename(target), anchorRoot: snapDir, denyHardLinks: true })
       return
     }
   }
