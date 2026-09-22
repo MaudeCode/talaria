@@ -134,6 +134,23 @@ describe('session lifecycle over HTTP', () => {
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Up to 1 sessions can be pinned. Unpin one before pinning another.')
     expect((await post(s, '/api/session/pin', { session_id: sid, pinned: false })).status).toBe(200)
+    // Two concurrent pins racing for the last slot: the quota check and save run as one serialized transaction, so
+    // exactly one wins even when the first is parked on its session lock past the other's check.
+    let releaseA: () => void = () => undefined
+    const holdA = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { releaseA = resolve }))
+    await new Promise((r) => setTimeout(r, 20))
+    const pinA = post(s, '/api/session/pin', { session_id: sid, pinned: true })
+    await new Promise((r) => setTimeout(r, 50))
+    const pinB = post(s, '/api/session/pin', { session_id: b.session_id, pinned: true })
+    await new Promise((r) => setTimeout(r, 50))
+    releaseA()
+    await holdA
+    const [resA, resB] = await Promise.all([pinA, pinB])
+    expect([resA.status, resB.status].sort()).toEqual([200, 400])
+    const pinnedNow = ((await json(await s.get('/api/sessions'))).sessions as Json[]).filter((r) => r.pinned === true)
+    expect(pinnedNow).toHaveLength(1)
+    await post(s, '/api/session/pin', { session_id: sid, pinned: false })
+    await post(s, '/api/session/pin', { session_id: b.session_id, pinned: false })
 
     res = await post(s, '/api/projects/create', { name: 'Proj', color: '#abc' })
     expect(res.status).toBe(200)

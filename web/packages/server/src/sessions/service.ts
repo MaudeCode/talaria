@@ -522,7 +522,17 @@ export class SessionService {
     return { session: s.compact() }
   }
 
-  async pin(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
+  // The pin quota is counted across sessions, so the count-and-save transaction runs on one process-wide chain;
+  // per-session locks alone would let two pins of different sessions both see the last free slot.
+  private pinChain: Promise<unknown> = Promise.resolve()
+
+  pin(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
+    const run = this.pinChain.then(() => this.pinUnserialized(sid, pinRequested))
+    this.pinChain = run.catch(() => undefined)
+    return run
+  }
+
+  private async pinUnserialized(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
