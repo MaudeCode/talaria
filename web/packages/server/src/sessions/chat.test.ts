@@ -656,6 +656,27 @@ describe('chat turns through the sidecar', () => {
     expect(frames.find((f) => f.event === 'steer_consumed')?.data).toMatchObject({ steer_id: 'late-1', text: 'late steer' })
   })
 
+  it('YOLO toggles reach the sidecar both ways and the local flag follows its acknowledgement', async () => {
+    const sid = await newSession(s)
+    const pushes: boolean[] = []
+    sidecar.respond('approval.set_yolo', (params) => { pushes.push(params.enabled); return { yolo_enabled: params.enabled, released: 0 } })
+    expect(await json(await post(s, '/api/session/yolo', { session_id: sid, enabled: true }))).toEqual({ ok: true, yolo_enabled: true })
+    expect(pushes).toEqual([true])
+    // A sidecar that cannot drop its state keeps the UI honest: the flag stays on and the toggle reports 503.
+    sidecar.respond('approval.set_yolo', () => { throw new SidecarError('sidecar busy', { condition: 'sidecar_unavailable' }) })
+    const failed = await post(s, '/api/session/yolo', { session_id: sid, enabled: false })
+    expect(failed.status).toBe(503)
+    expect(await json(await s.get(`/api/session/yolo?session_id=${sid}`))).toEqual({ yolo_enabled: true })
+    sidecar.respond('approval.set_yolo', (params) => { pushes.push(params.enabled); return { yolo_enabled: params.enabled, released: 0 } })
+    expect(await json(await post(s, '/api/session/yolo', { session_id: sid, enabled: false }))).toEqual({ ok: true, yolo_enabled: false })
+    expect(pushes).toEqual([true, false])
+    // Every turn start re-pushes the local flag, so a restarted sidecar never keeps a stale enable.
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }]))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect(pushes).toEqual([true, false, false])
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

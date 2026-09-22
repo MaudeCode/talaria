@@ -356,8 +356,9 @@ export class TurnRunner {
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
-      // The sidecar's per-session YOLO state does not survive its restarts: re-push the local flag before the turn.
-      if (deps.service().yolo(sessionId).yolo_enabled === true) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch { /* the approval path re-asserts it */ } }
+      // The sidecar's per-session YOLO state does not survive its restarts: push the local flag (either way) before
+      // the turn so a stale sidecar-side enable cannot auto-approve a session the UI reports as guarded.
+      try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: deps.service().yolo(sessionId).yolo_enabled === true }) } catch { /* the approval path re-asserts it */ }
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
@@ -1094,6 +1095,17 @@ export class TurnRunner {
     }
     if (!found && !this.deps.pending.hasPendingApproval(sessionId)) return { ok: true, choice, stale_cleared: true, ...(enableYolo ? { yolo_enabled: yoloEnabled } : {}) }
     return { ok: resolved || !approvalId, choice, ...(enableYolo && (resolved || !approvalId) ? { yolo_enabled: yoloEnabled } : {}) }
+  }
+
+  /** Python `set_session_yolo_enabled(False)`: the sidecar must drop its per-session YOLO state before the local flag clears. */
+  async disableYolo(sessionId: string): Promise<Record<string, unknown>> {
+    const sidecar = this.deps.sidecar()
+    if (sidecar) {
+      try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: false }) } catch (error) {
+        return { ok: false, error: `The Agent sidecar did not disable YOLO (${str((error as Error).message)}); retry in a moment.`, yolo_enabled: this.deps.service().yolo(sessionId).yolo_enabled === true, _status: 503 }
+      }
+    }
+    return this.deps.service().setYolo(sessionId, false)
   }
 
   /** `stale` when no such prompt is queued; `ok:false` without `stale` when the sidecar did not acknowledge (prompt retained). */

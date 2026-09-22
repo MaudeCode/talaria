@@ -208,8 +208,12 @@ export const sessionsRouter = os.router({
       const sid = input.session_id.trim()
       // Python `_enable_session_yolo_and_release_pending`: turning YOLO on releases every parked approval (`once`)
       // before the flag is committed, so a turn blocked on an approval card resumes; turning it off only flips the flag.
-      if (input.enabled !== undefined && !input.enabled) return ctx.deps.sessions.setYolo(sid, false) as { ok: true; yolo_enabled: boolean }
       if (!sid) throw new HttpError(400, 'Missing required field(s): session_id')
+      if (input.enabled !== undefined && !input.enabled) {
+        const disabled = await ctx.deps.turns.disableYolo(sid)
+        if (typeof disabled._status === 'number' && disabled._status >= 400) { const { _status, error, ...rest } = disabled; throw new HttpError(_status, str(error), rest) }
+        return disabled as { ok: true; yolo_enabled: boolean }
+      }
       const released = await ctx.deps.turns.respondApproval(sid, 'once', '', true)
       return { ok: true as const, yolo_enabled: Boolean(released.yolo_enabled ?? ctx.deps.sessions.yolo(sid).yolo_enabled), ...(released.stale_cleared ? { stale_cleared: true } : {}) }
     })),
