@@ -1495,6 +1495,105 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testColdReplayLoadsMissingTurnPrefixWithoutExpandingVisibleWindow() async throws {
+        try await assertPagedColdReplay()
+    }
+
+    @MainActor
+    func testColdReplayInfersLegacyHistoryOffsetsFromRequestedCursor() async throws {
+        try await assertPagedColdReplay(omitOffsets: true)
+    }
+
+    @MainActor
+    func testColdReplayWaitsWhenMissingPrefixRequestFails() async throws {
+        try await assertPagedColdReplay(failHistory: true)
+    }
+
+    @MainActor
+    func testColdReplayRejectsHistoryPageThatDoesNotAdvance() async throws {
+        try await assertPagedColdReplay(stallHistory: true)
+    }
+
+    @MainActor
+    private func assertPagedColdReplay(
+        failHistory: Bool = false,
+        stallHistory: Bool = false,
+        omitOffsets: Bool = false
+    ) async throws {
+        let streamClient = SpySSEStreamingClient()
+        var allMessages: [[String: Any]] = [
+            ["role": "user", "content": "Previous prompt", "message_id": "previous-user"],
+            ["role": "assistant", "content": "Previous answer", "message_id": "previous-assistant"],
+            ["role": "user", "content": "Long active turn", "message_id": "current-user"]
+        ]
+        allMessages += (1...101).map { index in
+            ["role": "assistant", "content": "Part \(index).", "message_id": "part-\(index)"]
+        }
+        var historyRequests: [Int] = []
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/session":
+                let query = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+                XCTAssertEqual(query.first { $0.name == "msg_limit" }?.value, "50")
+                let before = query.first { $0.name == "msg_before" }?.value.flatMap(Int.init)
+                if let before {
+                    historyRequests.append(before)
+                    if failHistory { throw URLError(.timedOut) }
+                }
+                let end = before ?? allMessages.count
+                let offset = max(0, end - 50)
+                var session: [String: Any] = [
+                    "session_id": "session-abc", "active_stream_id": "stream-123",
+                    "messages": Array(allMessages[offset..<end]),
+                    "message_count": allMessages.count,
+                    "_messages_truncated": offset > 0
+                ]
+                if !omitOffsets {
+                    session["_messages_offset"] = stallHistory && before != nil ? end : offset
+                }
+                let data = try JSONSerialization.data(withJSONObject: ["session": session])
+                return apiTestJSONResponse(try XCTUnwrap(String(data: data, encoding: .utf8)), for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(
+                    #"{"active":true,"stream_id":"stream-123","replay_available":true}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let visible = viewModel.messages.compactMap(\.content)
+        XCTAssertEqual(viewModel.messagesOffset, 54)
+        await viewModel.reconnectStreamIfNeeded()
+
+        if failHistory || stallHistory {
+            XCTAssertEqual(historyRequests, [54])
+            XCTAssertTrue(streamClient.startedURLs.isEmpty)
+            XCTAssertTrue(viewModel.isActiveStreamConnectionSuspended)
+            XCTAssertNotNil(viewModel.lastError)
+            XCTAssertEqual(viewModel.messages.compactMap(\.content), visible)
+            return
+        }
+
+        XCTAssertEqual(historyRequests, [54, 4])
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        for index in 1...101 {
+            streamClient.emit(.token("Part "))
+            streamClient.emit(.token("\(index)."))
+        }
+        XCTAssertEqual(viewModel.messagesOffset, 54)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), visible)
+        XCTAssertEqual(liveProse(viewModel).joined(), visible.joined())
+
+        streamClient.emit(.token("New suffix."))
+        XCTAssertEqual(viewModel.messages.last?.content, "Part 101.New suffix.")
+        XCTAssertEqual(liveProse(viewModel).joined(), visible.joined() + "New suffix.")
+    }
+
+    @MainActor
     private func liveProse(_ viewModel: ChatViewModel) -> [String] {
         viewModel.liveActivityRows.compactMap { row in
             guard case .prose(let text) = row.content else { return nil }
@@ -1614,11 +1713,34 @@ extension ChatViewModelSendTests {
     // replayed tool events must land on the seeded rows instead of after them.
     @MainActor
     func testColdRelaunchReplaySeedsEveryAssistantSegmentOfTheTurn() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: false)
+    }
+
+    @MainActor
+    func testColdRelaunchReplayDeduplicatesInterimAcrossEveryAssistantSegment() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: true)
+    }
+
+    @MainActor
+    func testColdRelaunchReplayDeduplicatesInterimThenTokens() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: true, switchChannelAfterTool: true)
+    }
+
+    @MainActor
+    func testColdRelaunchReplayDeduplicatesTokensThenInterim() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: false, switchChannelAfterTool: true)
+    }
+
+    @MainActor
+    private func assertColdReplayDeduplicatesEveryAssistantSegment(
+        useInterim: Bool,
+        switchChannelAfterTool: Bool = false
+    ) async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, turnMessagesJSON: """
         {
           "role": "assistant",
-          "content": "",
+          "content": "Reading jungle notes.",
           "timestamp": 1770000101,
           "message_id": "assistant-tool",
           "tool_calls": [
@@ -1668,27 +1790,55 @@ extension ChatViewModelSendTests {
         await viewModel.reconnectStreamIfNeeded()
 
         XCTAssertEqual(viewModel.streamingAssistantMessageID, "assistant-final")
-        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose", "prose"])
         XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. "])
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
+
+        var replayUsesInterim = useInterim
+        func replayProse(_ text: String) {
+            if replayUsesInterim {
+                streamClient.emit(.interimAssistant(InterimAssistantStreamEvent(text: text)))
+            } else {
+                streamClient.emit(.token(text))
+            }
+        }
+        if useInterim {
+            replayProse("Reading jungle notes.")
+        } else {
+            replayProse("Reading ")
+            replayProse("jungle notes.")
+        }
+        XCTAssertEqual(viewModel.messages.last?.content, "Once Raj reached the river. ")
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
 
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
 
-        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose", "prose"])
         XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
         XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. "])
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
 
-        streamClient.emit(.token("Once Raj reached the river. "))
-        streamClient.emit(.token("The snare broke."))
+        if switchChannelAfterTool {
+            replayUsesInterim.toggle()
+        }
+        if replayUsesInterim {
+            replayProse("Once Raj reached the river. The snare broke.")
+        } else {
+            replayProse("Once Raj")
+            replayProse(" reached the river. The snare broke.")
+        }
 
-        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. The snare broke."])
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose", "prose"])
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. The snare broke."])
         XCTAssertEqual(
             viewModel.messages.compactMap(\.content),
-            ["Tell me a tiger story", "", "Jungle notes", "Once Raj reached the river. The snare broke."]
+            ["Tell me a tiger story", "Reading jungle notes.", "Jungle notes", "Once Raj reached the river. The snare broke."]
         )
+        viewModel.streamCoordinatorDidStartConnection(isReplay: true)
+        streamClient.emit(.token("Once Raj"))
+        streamClient.emit(.token(" reached the river. The snare broke."))
+        XCTAssertEqual(viewModel.messages.last?.content, "Once Raj reached the river. The snare broke.")
     }
 
     @MainActor
