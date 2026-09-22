@@ -325,6 +325,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     const { req, res } = ctx
     deps.stats.requestsTotal += 1
     deps.stats.lastRequestAt = Date.now() / 1000
+    let releaseWrite: (() => void) | null = null
     try {
       if (ctx.method === 'OPTIONS') {
         preflight(ctx)
@@ -353,10 +354,14 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
       // A profile-scoped write racing that profile's deletion RPC could resurrect a partially populated home
-      // (`config.set` recreates the parent): every unsafe request under a deleting profile waits out the RPC as 409.
-      if (unsafe && path.startsWith('/api/') && deps.profiles.isDeleting(activeProfileName(ctx))) {
-        ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })
-        return
+      // (`config.set` recreates the parent): every unsafe request under a profile holds a write lease for its
+      // lifetime — deletion waits for leases to drain, and a request arriving during deletion is refused (409).
+      if (unsafe && path.startsWith('/api/')) {
+        releaseWrite = deps.profiles.beginWrite(activeProfileName(ctx))
+        if (!releaseWrite) {
+          ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })
+          return
+        }
       }
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
@@ -424,6 +429,8 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       } catch {
         /* client gone */
       }
+    } finally {
+      releaseWrite?.()
     }
   }
   return { deps, handler }

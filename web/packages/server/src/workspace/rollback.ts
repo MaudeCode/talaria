@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, fchmodSync, fstatSync, lstatSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, safeResolveWs } from './fs.js'
 import { unifiedDiff } from '../text/diff.js'
@@ -165,7 +165,7 @@ export class RollbackStore {
     } catch {
       return null
     }
-    const name = ckptPath.split('/').pop() ?? ckptPath
+    const name = basename(ckptPath)
     const result = git(['-C', ckptPath, 'log', '--format=%H%n%s%n%aI', '-1'], 5_000)
     const text = result.stdout.toString('utf8').trim()
     if (result.status !== 0 || !text) return null

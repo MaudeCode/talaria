@@ -173,6 +173,35 @@ export class ProfileService {
     return name !== null && this.deleting.has(name)
   }
 
+  /** In-flight profile-scoped mutations per name; deletion waits until they drain and refuses new ones meanwhile. */
+  private readonly writeLeases = new Map<string, { count: number; drained: (() => void)[] }>()
+
+  /** Lease a profile-scoped write for a request's lifetime; `null` when the profile is being deleted (answer 409). */
+  beginWrite(name: string): (() => void) | null {
+    if (this.deleting.has(name)) return null
+    const lease = this.writeLeases.get(name) ?? { count: 0, drained: [] }
+    lease.count += 1
+    this.writeLeases.set(name, lease)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      lease.count -= 1
+      if (lease.count > 0) return
+      this.writeLeases.delete(name)
+      for (const resolve of lease.drained.splice(0)) resolve()
+    }
+  }
+
+  private awaitWritesDrained(name: string, timeoutMs: number): Promise<void> {
+    const lease = this.writeLeases.get(name)
+    if (!lease || lease.count <= 0) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { reject(new ProfileError(`Profile '${name}' still has requests in flight. Retry in a moment.`, 503)) }, timeoutMs)
+      lease.drained.push(() => { clearTimeout(timer); resolve() })
+    })
+  }
+
   async delete(name: string, active: string): Promise<{ ok: true; name: string }> {
     if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile deletion is not allowed in isolated profile mode.', 403)
     if (this.isRootProfile(name)) throw new ProfileError('Cannot delete the default profile.', 400)
@@ -187,6 +216,8 @@ export class ProfileService {
       // Behind any in-flight creation of the same name, so its configuration writes finish before the home goes.
       await this.withLifecycle(name, async () => {
         if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
+        // Mutations admitted before the mark finish before the home goes; new ones are refused by the mark.
+        await this.awaitWritesDrained(name, 30_000)
         try {
           await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
         } catch (error) {

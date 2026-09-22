@@ -559,6 +559,35 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(s.deps.profiles.isDeleting('doomed')).toBe(false)
   })
 
+  it('a profile-scoped write already in flight finishes before that profile is deleted', async () => {
+    mkdirSync(join(s.state, 'profiles', 'fleeting'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'fleeting', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'fleeting' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=fleeting/)
+    const order: string[] = []
+    let finishWrite: () => void = () => undefined
+    const originalSet = sidecar.responderFor('config.set')
+    sidecar.respond('config.set', (params, emit, opts) => new Promise((resolve, reject) => {
+      finishWrite = () => { order.push('config.set'); if (originalSet) Promise.resolve(originalSet(params, emit, opts)).then(resolve, reject); else resolve({ ok: true, path: join(params.profile_home, 'config.yaml') }) }
+    }))
+    sidecar.respond('profiles.delete', () => { order.push('profiles.delete'); return { ok: true } })
+    const write = post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie })
+    const until = Date.now() + 5000
+    while (!sidecar.calls.some((c) => c.method === 'config.set' && str((c.params as Json).profile_home).endsWith('fleeting')) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    // The write is parked inside the sidecar; the delete must wait for it instead of removing the home underneath.
+    const deletion = post(s, '/api/profile/delete', { name: 'fleeting' }, asWork())
+    await new Promise((r) => setTimeout(r, 100))
+    expect(order).toEqual([])
+    expect(s.deps.profiles.isDeleting('fleeting')).toBe(true)
+    finishWrite()
+    expect((await write).status, await (await write).clone().text()).toBe(200)
+    expect(await json(await deletion)).toEqual({ ok: true, name: 'fleeting' })
+    expect(order).toEqual(['config.set', 'profiles.delete'])
+    if (originalSet) sidecar.respond('config.set', originalSet)
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

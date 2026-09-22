@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { closeSync, fstatSync, readFileSync, rmSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
-import { resolvePathLikePython } from '../workspace/paths.js'
+import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
@@ -664,7 +664,7 @@ export class TurnRunner {
     const roots = [workspace, this.deps.attachmentDir(sessionId)].map((r) => resolvePathLikePython(r))
     for (const att of candidates) {
       const target = resolvePathLikePython(str(att.path).trim())
-      const root = roots.find((r) => target === r || target.startsWith(`${r}/`))
+      const root = roots.find((r) => isWithin(target, r))
       if (!root) continue
       let fd: number
       try { fd = openAnchoredFd(root, target, { wantDir: false }) } catch { continue }
