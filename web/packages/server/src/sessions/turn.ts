@@ -356,6 +356,8 @@ export class TurnRunner {
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
+      // The sidecar's per-session YOLO state does not survive its restarts: re-push the local flag before the turn.
+      if (deps.service().yolo(sessionId).yolo_enabled === true) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch { /* the approval path re-asserts it */ } }
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
@@ -975,17 +977,28 @@ export class TurnRunner {
     if (!this.registry.liveIds.has(activeStreamId)) return { accepted: false, fallback: 'stream_dead', stream_id: null }
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { accepted: false, fallback: 'no_cached_agent', stream_id: null }
+    // Register provisionally before the RPC: the Agent may apply the steer and finish the turn before the steer
+    // reply arrives, and the turn's finalisation must then already see the record. A rejection removes it again.
+    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: displayText || text, created_at: this.deps.now() }
+    const records = this.steers.get(activeStreamId) ?? []
+    records.push(record)
+    this.steers.set(activeStreamId, records)
+    const withdraw = (): void => {
+      const current = this.steers.get(activeStreamId)
+      if (!current) return
+      const index = current.indexOf(record)
+      if (index >= 0) current.splice(index, 1)
+      if (!current.length) this.steers.delete(activeStreamId)
+    }
     let result: { accepted: boolean; fallback?: string | null | undefined }
     try {
       result = await sidecar.call('chat.steer', { stream_id: activeStreamId, text })
     } catch {
+      withdraw()
       return { accepted: false, fallback: 'steer_error', stream_id: activeStreamId }
     }
-    if (result.accepted) {
-      const records = this.steers.get(activeStreamId) ?? []
-      records.push({ steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: displayText || text, created_at: this.deps.now() })
-      this.steers.set(activeStreamId, records)
-    }
+    // An accepted steer whose turn finalised while the reply was in flight was already reported by that finalisation.
+    if (!result.accepted) withdraw()
     return { accepted: result.accepted, fallback: result.accepted ? null : (result.fallback ?? 'not_running'), stream_id: activeStreamId, steer_id: steerId }
   }
 
@@ -1050,43 +1063,55 @@ export class TurnRunner {
     if (enableYolo && approvalId && !this.deps.pending.hasApprovalId(sessionId, approvalId) && this.deps.pending.hasPendingApproval(sessionId)) {
       return { ok: false, choice, relayed: false, code: 'gateway_run_unavailable', error: GATEWAY_APPROVAL_RELAY_UNAVAILABLE, yolo_enabled: this.deps.service().yolo(sessionId).yolo_enabled === true, _status: 409 }
     }
-    const { entry, found } = this.deps.pending.resolveApproval(sessionId, approvalId)
+    // The mirrored prompt stays queued until the sidecar acknowledges the answer: a relay failure leaves it
+    // answerable (503) instead of hiding a prompt the Agent is still blocked on.
+    const { entry, found } = this.deps.pending.peekApproval(sessionId, approvalId)
     const sidecar = this.deps.sidecar()
+    const relayFailure = (message: string): Record<string, unknown> => ({ ok: false, choice, error: `The Agent sidecar did not accept the approval (${message}); retry in a moment.`, _status: 503 })
     let s: Session | null = null
     try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
     const profileHome = this.deps.profileHome(s?.profile ?? null)
-    let resolved = Boolean(entry)
-    if (sidecar && (entry || !approvalId)) {
+    let resolved = false
+    if (entry) {
+      if (!sidecar) return relayFailure('not running')
       try {
         const result = await sidecar.call('approval.respond', { profile_home: profileHome, session_id: sessionId, choice: choice as 'once' | 'session' | 'always' | 'deny', request_id: entry ? str(entry.request_id) || null : null })
-        resolved = resolved || result.ok
+        resolved = result.ok
       } catch (error) {
         this.deps.log(`[webui] approval relay failed for ${sessionId}: ${(error as Error).message}`)
+        return relayFailure(str((error as Error).message))
       }
+      if (resolved && entry) this.deps.pending.resolveApproval(sessionId, str(entry.approval_id))
     }
     let yoloEnabled: boolean | undefined
     if (enableYolo) {
+      // The local flag is authoritative (it is re-pushed to the sidecar at every turn start); a running sidecar must
+      // still confirm now so parked Agent waiters are released before YOLO is reported as on.
+      if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch (error) { return relayFailure(str((error as Error).message)) } }
       this.deps.service().setYolo(sessionId, true)
       yoloEnabled = true
-      if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch { /* best effort */ } }
       this.deps.pending.clearApprovals(sessionId)
     }
     if (!found && !this.deps.pending.hasPendingApproval(sessionId)) return { ok: true, choice, stale_cleared: true, ...(enableYolo ? { yolo_enabled: yoloEnabled } : {}) }
     return { ok: resolved || !approvalId, choice, ...(enableYolo && (resolved || !approvalId) ? { yolo_enabled: yoloEnabled } : {}) }
   }
 
-  async respondClarify(sessionId: string, clarifyId: string, response: string): Promise<boolean> {
-    const { entry, head } = this.deps.pending.resolveClarify(sessionId, clarifyId)
-    if (!entry) return false
-    if (head) this.emitToSession(sessionId, 'clarify', head)
+  /** `stale` when no such prompt is queued; `ok:false` without `stale` when the sidecar did not acknowledge (prompt retained). */
+  async respondClarify(sessionId: string, clarifyId: string, response: string): Promise<{ ok: boolean; stale?: boolean; error?: string }> {
+    const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
+    if (!entry) return { ok: false, stale: true }
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return false
+    if (!sidecar) return { ok: false, error: 'The Agent sidecar is not running; retry in a moment.' }
+    let ok = false
     try {
-      const result = await sidecar.call('clarify.respond', { session_id: sessionId, clarify_id: str(entry.clarify_id), response })
-      return result.ok
-    } catch {
-      return false
+      ok = (await sidecar.call('clarify.respond', { session_id: sessionId, clarify_id: str(entry.clarify_id), response })).ok
+    } catch (error) {
+      return { ok: false, error: `The Agent sidecar did not accept the answer (${str((error as Error).message)}); retry in a moment.` }
     }
+    if (!ok) return { ok: false, stale: true }
+    const { head } = this.deps.pending.resolveClarify(sessionId, str(entry.clarify_id))
+    if (head) this.emitToSession(sessionId, 'clarify', head)
+    return { ok: true }
   }
 }
 

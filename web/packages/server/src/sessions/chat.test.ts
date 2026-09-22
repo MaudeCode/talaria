@@ -600,6 +600,62 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('aux.complete', () => { throw new SidecarError('no aux model', { condition: 'aux_unconfigured' }) })
   })
 
+  it('keeps a prompt queued until the sidecar acknowledges the answer', async () => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'approval', data: { request_id: 'ack-1', command: 'rm -rf build', session_id: sid } })
+      emit({ event: 'clarify', data: { clarify_id: 'ack-c1', question: 'Sure?', session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'clarify')
+    // The relay fails: the card must stay answerable rather than vanish while the Agent is still blocked on it.
+    sidecar.respond('approval.respond', () => { throw new SidecarError('sidecar busy', { condition: 'sidecar_unavailable' }) })
+    sidecar.respond('clarify.respond', () => { throw new SidecarError('sidecar busy', { condition: 'sidecar_unavailable' }) })
+    let res = await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'ack-1' })
+    expect(res.status).toBe(503)
+    expect(await json(res)).toMatchObject({ ok: false, choice: 'once' })
+    expect((await json(await s.get(`/api/approval/pending?session_id=${sid}`))).pending_count).toBe(1)
+    res = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'ack-c1', response: 'yes' })
+    expect(res.status).toBe(503)
+    expect((await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).pending_count).toBe(1)
+    // A rejected (not thrown) approval answer keeps the mirror as well.
+    sidecar.respond('approval.respond', () => ({ ok: false, resolved: 0, choice: 'once' }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'ack-1' }))).toEqual({ ok: false, choice: 'once' })
+    expect((await json(await s.get(`/api/approval/pending?session_id=${sid}`))).pending_count).toBe(1)
+    // Once the sidecar acknowledges, the prompts are removed.
+    sidecar.respond('approval.respond', (params) => ({ ok: true, resolved: 1, choice: params.choice }))
+    sidecar.respond('clarify.respond', (params) => ({ ok: true, clarify_id: String(params.clarify_id) }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'ack-1' }))).toEqual({ ok: true, choice: 'once' })
+    expect((await json(await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'ack-c1', response: 'yes' }))).ok).toBe(true)
+    expect((await json(await s.get(`/api/approval/pending?session_id=${sid}`))).pending_count).toBe(0)
+    expect((await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).pending_count).toBe(0)
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end')
+  })
+
+  it('a steer accepted as the turn completes is still reported by that turn', async () => {
+    const sid = await newSession(s)
+    let finishTurn: () => void = () => undefined
+    let replySteer: () => void = () => undefined
+    sidecar.respond('chat.start', (params) => new Promise((resolve) => { finishTurn = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }], { pending_steer: '' })) } }))
+    // The steer reply is held until after the turn result: the Agent applied it, then finished, then replied.
+    sidecar.respond('chat.steer', () => new Promise((resolve) => { replySteer = () => { resolve({ accepted: true, fallback: null }) } }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
+    const streamId = String(start.stream_id)
+    const until = Date.now() + 5000
+    while (s.deps.registry.activeRuns.get(streamId)?.phase !== 'running' && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    const steer = post(s, '/api/chat/steer', { session_id: sid, text: 'late steer', steer_id: 'late-1' })
+    await new Promise((r) => setTimeout(r, 30))
+    finishTurn()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    replySteer()
+    expect((await json(await steer)).accepted).toBe(true)
+    expect(frames.find((f) => f.event === 'steer_consumed')?.data).toMatchObject({ steer_id: 'late-1', text: 'late steer' })
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

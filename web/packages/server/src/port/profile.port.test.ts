@@ -548,6 +548,12 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(String((await json(overlapping)).error)).toContain('already being deleted')
     expect(s.deps.profiles.isDeleting('doomed')).toBe(true)
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'still refused' }, { cookie })).status).toBe(409)
+    // Every profile-scoped write is held off too, so `config.set` cannot resurrect the home mid-deletion; the same
+    // request from another profile is unaffected.
+    const write = await post(s, '/api/model/set', { model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie })
+    expect(write.status).toBe(409)
+    expect(String((await json(write)).error)).toContain('being deleted')
+    expect((await s.get('/api/profiles', { headers: { cookie } })).status).toBe(200)
     releaseDelete()
     expect(await json(await deletion)).toEqual({ ok: true, name: 'doomed' })
     expect(s.deps.profiles.isDeleting('doomed')).toBe(false)

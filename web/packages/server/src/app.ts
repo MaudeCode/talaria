@@ -20,7 +20,7 @@ import { automationRouter } from './api/automation-router.js'
 import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { BodyError, RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
-import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
+import { activeProfileName, checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
 import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
@@ -352,6 +352,12 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         return
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
+      // A profile-scoped write racing that profile's deletion RPC could resurrect a partially populated home
+      // (`config.set` recreates the parent): every unsafe request under a deleting profile waits out the RPC as 409.
+      if (unsafe && path.startsWith('/api/') && deps.profiles.isDeleting(activeProfileName(ctx))) {
+        ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })
+        return
+      }
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
       if (path.startsWith('/api/')) await deps.agentConfig.read(deps.profileHome(deps.activeProfile())).catch(() => undefined)

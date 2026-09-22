@@ -112,6 +112,19 @@ export class PendingPrompts {
     return { pending: q?.entries[0] ? { ...q.entries[0] } : null, pending_count: q?.entries.length ?? 0 }
   }
 
+  /** The targeted (or oldest) approval without removing it; `found` is false only for a stale id. */
+  peekApproval(sid: string, approvalId: string): { entry: Record<string, unknown> | null; found: boolean } {
+    const entries = this.approvals.get(sid)?.entries ?? []
+    if (!entries.length) return { entry: null, found: !approvalId }
+    const entry = approvalId ? entries.find((e) => e.approval_id === approvalId) : entries[0]
+    return { entry: entry ?? null, found: Boolean(entry) }
+  }
+
+  peekClarify(sid: string, clarifyId: string): Record<string, unknown> | null {
+    const entries = this.clarifies.get(sid)?.entries ?? []
+    return (clarifyId ? entries.find((e) => e.clarify_id === clarifyId) : entries[0]) ?? null
+  }
+
   /** Pop the targeted (or oldest) approval; returns it or null when a stale id was given. */
   resolveApproval(sid: string, approvalId: string): { entry: Record<string, unknown> | null; found: boolean } {
     const q = this.approvals.get(sid)

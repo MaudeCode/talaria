@@ -210,8 +210,9 @@ export const chatRouter = os.router({
       if (!sid) throw new HttpError(400, 'session_id is required')
       const response = str(input.response ?? input.answer ?? input.choice).trim()
       if (!response) throw new HttpError(400, 'response is required')
-      const ok = await ctx.deps.turns.respondClarify(sid, str(input.clarify_id), response)
-      if (!ok) throw new HttpError(409, 'Clarification prompt expired or not found. The agent may have already proceeded.', { ok: false, stale: true })
+      const result = await ctx.deps.turns.respondClarify(sid, str(input.clarify_id), response)
+      if (result.stale) throw new HttpError(409, 'Clarification prompt expired or not found. The agent may have already proceeded.', { ok: false, stale: true })
+      if (!result.ok) throw new HttpError(503, result.error ?? 'clarify relay failed', { ok: false })
       return { ok: true, response }
     })),
   },
