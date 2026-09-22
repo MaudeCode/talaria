@@ -57,14 +57,23 @@ export async function prepareRuntimeCredentialEdit(deps: RuntimeEnvDeps, rootPro
   }
 }
 
+// Overlapping edits must not interleave: the sidecar may reply out of apply order, and every caller rewrites the
+// same `.env`. One process-wide chain keeps sidecar apply → file write → process commit a single transaction.
+// ponytail: global chain; per-credential locks only if credential edits ever contend for throughput.
+let credentialEdits: Promise<unknown> = Promise.resolve()
+
 /** Write one root-profile credential to `.env` with the sidecar and process kept in step (`write` performs the file edit). */
-export async function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, envVar: string, apiKey: string | null, write: () => void): Promise<void> {
-  const edit = await prepareRuntimeCredentialEdit(deps, rootProfile, envVar, apiKey)
-  try {
-    write()
-  } catch (error) {
-    await edit.rollback()
-    throw error
-  }
-  edit.commit()
+export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, envVar: string, apiKey: string | null, write: () => void): Promise<void> {
+  const run = credentialEdits.then(async () => {
+    const edit = await prepareRuntimeCredentialEdit(deps, rootProfile, envVar, apiKey)
+    try {
+      write()
+    } catch (error) {
+      await edit.rollback()
+      throw error
+    }
+    edit.commit()
+  })
+  credentialEdits = run.catch(() => undefined)
+  return run
 }

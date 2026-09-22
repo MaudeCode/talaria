@@ -374,14 +374,20 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
         sidecar.status = 'ready'
         sidecar.respond('runtime.env', () => ({ ok: true as const }))
       }
-      // Two overlapping root-profile edits both keep their ownership: commits merge into the live set.
+      // Two overlapping root-profile edits run as one transaction each: the second sidecar apply waits for the first
+      // edit to commit (out-of-order sidecar replies can no longer commit the wrong value), and both keep ownership.
       const gates: (() => void)[] = []
       sidecar.respond('runtime.env', () => new Promise((resolve) => { gates.push(() => { resolve({ ok: true as const }) }) }))
       const a = post(s, '/api/providers', { provider: 'anthropic', api_key: 'sk-ant-overlap-1234' })
       const b = post(s, '/api/providers', { provider: 'openrouter', api_key: 'sk-or-overlap-1234' })
-      const until = Date.now() + 5000
-      while (gates.length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
-      for (const release of gates) release()
+      const waitForGates = async (n: number): Promise<void> => { const until = Date.now() + 5000; while (gates.length < n && Date.now() < until) await new Promise((r) => setTimeout(r, 10)) }
+      await waitForGates(1)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(gates).toHaveLength(1)
+      gates[0]!()
+      await waitForGates(2)
+      expect(gates).toHaveLength(2)
+      gates[1]!()
       sidecar.respond('runtime.env', () => ({ ok: true as const }))
       expect((await a).status).toBe(200)
       expect((await b).status).toBe(200)

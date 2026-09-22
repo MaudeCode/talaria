@@ -253,6 +253,18 @@ describe('save', () => {
     expect(onDisk()).not.toHaveProperty('_set_password')
   })
 
+  it('does not let a slow password hash revert a save that landed meanwhile', async () => {
+    const s = store()
+    let finishHash: (hash: string) => void = () => undefined
+    s.hooks = { hashPassword: () => new Promise((resolve) => { finishHash = resolve }) }
+    const pw = s.save({ _set_password: 'hunter2' })
+    // The hash is still pending; this save must not be overwritten by the password save's stale snapshot.
+    expect((await s.save({ theme: 'dark' })).theme).toBe('dark')
+    finishHash('hashed:hunter2')
+    expect((await pw).password_hash).toBe('hashed:hunter2')
+    expect(onDisk()).toMatchObject({ theme: 'dark', password_hash: 'hashed:hunter2' })
+  })
+
   it('rewrites an unusable default_workspace to the first usable fallback', async () => {
     const saved = await store().save({ default_workspace: '/dev/null/not-usable' })
     expect(saved.default_workspace).not.toBe('/dev/null/not-usable')

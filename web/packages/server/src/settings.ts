@@ -304,6 +304,15 @@ export class SettingsStore {
   /** Save a patch, ignoring unknown keys and invalid values. Returns the merged settings. */
   async save(input: Settings): Promise<Settings> {
     const settings: Settings = { ...input }
+    // Hash before snapshotting the file: the PBKDF2 await is the only yield in this method, so once `readRaw()`
+    // runs the read/merge/write below is atomic with respect to concurrent saves.
+    const rawPw = settings._set_password
+    delete settings._set_password
+    let newPasswordHash: string | null = null
+    if (typeof rawPw === 'string' && rawPw.trim()) {
+      if (!this.hooks.hashPassword) throw new Error('password hashing is not wired')
+      newPasswordHash = await this.hooks.hashPassword(rawPw.trim())
+    }
     const raw = this.readRaw()
     const persistedSpeechKeys = this.persistedSpeechKeys(raw)
     const current = this.load()
@@ -325,11 +334,8 @@ export class SettingsStore {
     let themeExplicit = false
     let skinExplicit = false
     let passwordChanged = false
-    const rawPw = settings._set_password
-    delete settings._set_password
-    if (typeof rawPw === 'string' && rawPw.trim()) {
-      if (!this.hooks.hashPassword) throw new Error('password hashing is not wired')
-      current.password_hash = await this.hooks.hashPassword(rawPw.trim())
+    if (newPasswordHash !== null) {
+      current.password_hash = newPasswordHash
       passwordChanged = true
     }
     const clearPw = settings._clear_password
