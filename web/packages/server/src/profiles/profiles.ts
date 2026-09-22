@@ -160,11 +160,19 @@ export class ProfileService {
       const lease = this.beginWrite(opts.clone_from)
       if (lease === 'deleting') throw new ProfileError(`Profile '${opts.clone_from}' is being deleted.`, 409)
       if (lease === 'missing') throw new ProfileError(`Profile '${opts.clone_from}' does not exist.`, 404)
+      if (lease === 'unreadable') throw new ProfileError('Profile deletion records are unreadable; retry in a moment.', 503)
       releaseSource = lease
     }
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
     const created = await this.withLifecycle(opts.name, async () => {
+      // A recreation whose tombstone clearing failed left a home behind: retrying the create only has to clear the
+      // record durably, not re-run the sidecar (which would refuse the existing directory).
+      if (this.deleted.has(opts.name) && isDir(this.deps.profileHome(opts.name))) {
+        this.clearTombstoneDurably(opts.name)
+        this.invalidate()
+        return { name: opts.name, path: this.deps.profileHome(opts.name) }
+      }
       let row: Dict
       try {
         row = (await this.sidecar().call('profiles.create', params)).profile
@@ -179,15 +187,7 @@ export class ProfileService {
       // The deletion tombstone lifts only once the recreation fully succeeded, and only durably: if the removal cannot
       // be persisted the in-memory mark is kept too, so the response and a restart agree (the profile stays refused
       // until the record can be written), instead of a working profile turning unusable on the next start.
-      if (this.deleted.has(opts.name)) {
-        this.deleted.delete(opts.name)
-        try {
-          this.saveTombstones()
-        } catch (error) {
-          this.deleted.add(opts.name)
-          throw new ProfileError(`Profile '${opts.name}' was created but its deletion record could not be cleared (${str((error as Error).message)}); writes stay refused until it can be`, 503)
-        }
-      }
+      if (this.deleted.has(opts.name)) this.clearTombstoneDurably(opts.name)
       return row
     }).finally(() => { releaseSource?.() })
     const rows = await this.list('default')
@@ -196,6 +196,16 @@ export class ProfileService {
 
   /** Per-profile lifecycle chain: creation (+ its configuration) and deletion of one name never overlap. */
   private readonly lifecycles = new Map<string, Promise<unknown>>()
+
+  private clearTombstoneDurably(name: string): void {
+    this.deleted.delete(name)
+    try {
+      this.saveTombstones()
+    } catch (error) {
+      this.deleted.add(name)
+      throw new ProfileError(`Profile '${name}' exists but its deletion record could not be cleared (${str((error as Error).message)}); writes stay refused until a retried create can clear it`, 503)
+    }
+  }
 
   private withLifecycle<T>(name: string, fn: () => Promise<T>): Promise<T> {
     const run = (this.lifecycles.get(name) ?? Promise.resolve()).then(fn)
@@ -209,12 +219,28 @@ export class ProfileService {
   /** Deleted profiles (persisted): a client still carrying their cookie must not write them back into existence. */
   private readonly deleted = new Set<string>()
 
+  /** Set when the tombstone file exists but cannot be read or parsed: named-profile writes fail closed until it can. */
+  private tombstoneLoadError: string | null = null
+
   private loadTombstones(): string[] {
     if (!this.deps.tombstoneFile) return []
+    let raw: string
     try {
-      const parsed: unknown = JSON.parse(readFileSync(this.deps.tombstoneFile, 'utf8'))
-      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string' && PROFILE_ID_RE.test(v)) : []
-    } catch { return [] }
+      raw = readFileSync(this.deps.tombstoneFile, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') { this.tombstoneLoadError = null; return [] }
+      this.tombstoneLoadError = str((error as Error).message)
+      return []
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (!Array.isArray(parsed)) throw new Error('not a list')
+      this.tombstoneLoadError = null
+      return parsed.filter((v): v is string => typeof v === 'string' && PROFILE_ID_RE.test(v))
+    } catch (error) {
+      this.tombstoneLoadError = `malformed: ${str((error as Error).message)}`
+      return []
+    }
   }
 
   /** Persist the tombstones; throws when the state directory cannot be written (callers decide whether to fail closed). */
@@ -236,8 +262,14 @@ export class ProfileService {
    * never recreate it, not even while `profiles.create` is mid-flight. Profiles that merely never existed keep lazy
    * creation (group-mapped trusted identities).
    */
-  beginWrite(name: string): (() => void) | 'deleting' | 'missing' {
+  beginWrite(name: string): (() => void) | 'deleting' | 'missing' | 'unreadable' {
     if (this.deleting.has(name)) return 'deleting'
+    // An unreadable tombstone record cannot vouch for any named profile: retry the load, else fail closed (the root
+    // profile can never be deleted, so it stays writable).
+    if (this.tombstoneLoadError !== null && !this.isRootProfile(name)) {
+      for (const stale of this.loadTombstones()) this.deleted.add(stale)
+      if (this.tombstoneLoadError !== null) return 'unreadable'
+    }
     if (this.deleted.has(name)) return 'missing'
     const lease = this.writeLeases.get(name) ?? { count: 0, drained: [] }
     lease.count += 1

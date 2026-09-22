@@ -786,16 +786,40 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     rmSync(file, { force: true })
     mkdirSync(file)
     sidecar.respond('profiles.create', (params) => { mkdirSync(join(s.state, 'profiles', params.name), { recursive: true }); return { profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never } })
+    let creates = 0
+    sidecar.respond('profiles.create', (params) => { creates += 1; mkdirSync(join(s.state, 'profiles', params.name), { recursive: true }); return { profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never } })
     try {
       const res = await post(s, '/api/profile/create', { name: 'phoenix' })
       expect(res.status).toBe(503)
       expect(String((await json(res)).error)).toContain('deletion record could not be cleared')
       // The in-memory mark and the durable record agree: writes stay refused.
       expect(s.deps.profiles.beginWrite('phoenix')).toBe('missing')
+      expect(creates).toBe(1)
     } finally {
       rmSync(file, { recursive: true, force: true })
       writeFileSync(file, previous)
     }
+    // Once the state directory is writable again, retrying the create clears the record without re-running the
+    // sidecar against the existing home, and the profile becomes writable.
+    const retry = await post(s, '/api/profile/create', { name: 'phoenix' })
+    expect(retry.status, await retry.clone().text()).toBe(200)
+    expect(creates).toBe(1)
+    expect(typeof s.deps.profiles.beginWrite('phoenix')).toBe('function')
+    expect(JSON.parse(readFileSync(file, 'utf8')) as string[]).not.toContain('phoenix')
+  })
+
+  it('an unreadable tombstone record fails named-profile writes closed until it can be read again', () => {
+    const file = join(s.deps.config.stateDir, 'deleted-profiles.json')
+    const previous = existsSync(file) ? readFileSync(file, 'utf8') : null
+    writeFileSync(file, '{not json')
+    const broken = new ProfileService({ ...(s.deps.profiles as unknown as { deps: ConstructorParameters<typeof ProfileService>[0] }).deps })
+    expect(broken.beginWrite('work')).toBe('unreadable')
+    expect(typeof broken.beginWrite('default')).toBe('function')
+    // Repaired record: the next lease attempt re-reads it and honours its contents.
+    writeFileSync(file, JSON.stringify(['gone-profile']))
+    expect(typeof broken.beginWrite('work')).toBe('function')
+    expect(broken.beginWrite('gone-profile')).toBe('missing')
+    if (previous === null) rmSync(file, { force: true }); else writeFileSync(file, previous)
   })
 
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {

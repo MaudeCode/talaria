@@ -367,6 +367,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           ctx.json({ error: `Profile '${activeProfileName(ctx)}' does not exist.` }, { status: 404 })
           return
         }
+        if (lease === 'unreadable') {
+          ctx.json({ error: 'Profile deletion records are unreadable; retry in a moment.' }, { status: 503 })
+          return
+        }
         releaseWrite = lease
       }
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it

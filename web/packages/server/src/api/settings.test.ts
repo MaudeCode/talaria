@@ -593,7 +593,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const order: string[] = []
     let finishCreate: () => void = () => undefined
     sidecar.respond('profiles.create', (params) => new Promise((resolve) => { finishCreate = () => { order.push('created'); resolve({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }) } }))
-    sidecar.respond('profiles.delete', () => { order.push('deleted'); return { ok: true } })
+    sidecar.respond('profiles.delete', (params) => { order.push('deleted'); rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     const creating = post(s, '/api/profile/create', { name: 'delta', api_key: 'sk-delta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
     await new Promise((r) => setTimeout(r, 50))
     const deleting = post(s, '/api/profile/delete', { name: 'delta' })
