@@ -1614,11 +1614,21 @@ extension ChatViewModelSendTests {
     // replayed tool events must land on the seeded rows instead of after them.
     @MainActor
     func testColdRelaunchReplaySeedsEveryAssistantSegmentOfTheTurn() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: false)
+    }
+
+    @MainActor
+    func testColdRelaunchReplayDeduplicatesInterimAcrossEveryAssistantSegment() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: true)
+    }
+
+    @MainActor
+    private func assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: Bool) async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, turnMessagesJSON: """
         {
           "role": "assistant",
-          "content": "",
+          "content": "Reading jungle notes.",
           "timestamp": 1770000101,
           "message_id": "assistant-tool",
           "tool_calls": [
@@ -1668,27 +1678,51 @@ extension ChatViewModelSendTests {
         await viewModel.reconnectStreamIfNeeded()
 
         XCTAssertEqual(viewModel.streamingAssistantMessageID, "assistant-final")
-        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose", "prose"])
         XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. "])
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
+
+        func replayProse(_ text: String) {
+            if useInterim {
+                streamClient.emit(.interimAssistant(InterimAssistantStreamEvent(text: text)))
+            } else {
+                streamClient.emit(.token(text))
+            }
+        }
+        if useInterim {
+            replayProse("Reading jungle notes.")
+        } else {
+            replayProse("Reading ")
+            replayProse("jungle notes.")
+        }
+        XCTAssertEqual(viewModel.messages.last?.content, "Once Raj reached the river. ")
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
 
         streamClient.emit(.toolStarted(startedTool))
         streamClient.emit(.toolCompleted(completedTool))
 
-        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose", "prose"])
         XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
         XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. "])
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
 
-        streamClient.emit(.token("Once Raj reached the river. "))
-        streamClient.emit(.token("The snare broke."))
+        if useInterim {
+            replayProse("Once Raj reached the river. The snare broke.")
+        } else {
+            replayProse("Once Raj")
+            replayProse(" reached the river. The snare broke.")
+        }
 
-        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose"])
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. The snare broke."])
+        XCTAssertEqual(viewModel.liveActivityRows.map(\.kind), ["tools", "prose", "prose"])
+        XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. The snare broke."])
         XCTAssertEqual(
             viewModel.messages.compactMap(\.content),
-            ["Tell me a tiger story", "", "Jungle notes", "Once Raj reached the river. The snare broke."]
+            ["Tell me a tiger story", "Reading jungle notes.", "Jungle notes", "Once Raj reached the river. The snare broke."]
         )
+        viewModel.streamCoordinatorDidStartConnection(isReplay: true)
+        streamClient.emit(.token("Once Raj"))
+        streamClient.emit(.token(" reached the river. The snare broke."))
+        XCTAssertEqual(viewModel.messages.last?.content, "Once Raj reached the river. The snare broke.")
     }
 
     @MainActor

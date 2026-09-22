@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Prevent repeated answer text when reopening a chat that is still working through tool calls.",
+      "highlight": false
+    }
+  ]
+}

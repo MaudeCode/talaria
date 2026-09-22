@@ -307,6 +307,8 @@ final class ChatViewModel {
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
     private var activeStreamReplayChannels = ActiveStreamReplayChannels()
+    private var pendingColdReplayProsePrefix: String?
+    private var activeColdReplayProsePrefix: String?
     private var activeStreamReplayMatchedPrefixLength = 0
     /// Unmatched tail of the assistant text already received, cached while an armed
     /// replay keeps matching in order (TAL-75). While every replayed token dedups to
@@ -4602,7 +4604,7 @@ final class ChatViewModel {
             let currentContent = existing.content ?? ""
             let textToAppend = deduplicatedReplayText(
                 text,
-                existingContent: currentContent,
+                existingContent: activeColdReplayProsePrefix ?? currentContent,
                 isArmed: activeStreamReplayChannels.interim,
                 matchedPrefixLength: &activeStreamReplayMatchedInterimLength
             )
@@ -5054,7 +5056,8 @@ final class ChatViewModel {
         let remainder: String
         if activeStreamReplayChannels.token {
             let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
-            let receivedUTF8Count = flushedContent.utf8.count + pendingAssistantTokenText.utf8.count
+            let receivedUTF8Count = activeColdReplayProsePrefix?.utf8.count
+                ?? (flushedContent.utf8.count + pendingAssistantTokenText.utf8.count)
             if let cached = activeStreamReplayTokenRemainder,
                cached.receivedUTF8Count == receivedUTF8Count,
                cached.unmatched.hasPrefix(token) {
@@ -5069,7 +5072,7 @@ final class ChatViewModel {
             activeStreamReplayTokenRemainder = nil
             remainder = deduplicatedReplayToken(
                 token,
-                existingContent: flushedContent + pendingAssistantTokenText
+                existingContent: activeColdReplayProsePrefix ?? (flushedContent + pendingAssistantTokenText)
             )
         } else {
             remainder = token
@@ -5760,6 +5763,10 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
               })
         else { return }
 
+        // A replay from sequence zero includes prose before tool calls, not just
+        // the final message. Capture once, without transcript display separators.
+        pendingColdReplayProsePrefix = turn.assistantSegments.compactMap(\.message.content).joined()
+
         let timeline = AssistantActivityTimeline.persisted(
             assistantSegments: turn.assistantSegments,
             reasoningGroups: displayedReasoningGroups,
@@ -5841,6 +5848,8 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorDidStartConnection(isReplay: Bool) {
+        activeColdReplayProsePrefix = isReplay ? pendingColdReplayProsePrefix : nil
+        pendingColdReplayProsePrefix = nil
         activeStreamReplayChannels.arm(isReplay)
         activeStreamReplayMatchedPrefixLength = 0
         activeStreamReplayTokenRemainder = nil
@@ -5851,6 +5860,8 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorDidResetRecoveryState() {
+        pendingColdReplayProsePrefix = nil
+        activeColdReplayProsePrefix = nil
         activeStreamReplayChannels.arm(false)
         activeStreamReplayMatchedPrefixLength = 0
         activeStreamReplayTokenRemainder = nil
