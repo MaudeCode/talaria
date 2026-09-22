@@ -91,6 +91,9 @@ def web(plan, build, directory, output):
         raise ValueError("Web build receipt does not match the plan")
     image = build["image"]
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
+    # The npm preflight (receipt identity, token, tarball pair, immutable-version bytes) runs before the image tag is
+    # published: a rejection here must not leave a public GHCR tag pointing at a release with no npm package.
+    preflight_npm(component, build, directory)
     with tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
         auth = str(Path(temporary) / "auth.json")
         subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
@@ -118,8 +121,8 @@ def _npm_view(spec, field):
     raise ValueError(f"npm registry lookup failed for {spec}: {view.stderr.strip()}")
 
 
-def publish_npm(component, build, directory):
-    """Publish the packed tarballs (contracts first) and verify the registry readback."""
+def preflight_npm(component, build, directory):
+    """Validate everything npm publication depends on without mutating the registry; returns the publication plan."""
     expected = f"@maudecode/talaria-web@{component['version']}"
     if build.get("npm") != expected:
         raise ValueError("Web build receipt does not name the npm package")
@@ -140,6 +143,14 @@ def publish_npm(component, build, directory):
             # Versions are immutable: a different tarball under this version came from another channel or build.
             raise ValueError(f"{spec} is already published with different contents; the version must be unique across channels")
         published[name] = existing is not None
+    return {"expected": expected, "tarballs": tarballs, "ordered": ordered, "dist_tag": dist_tag, "packages": packages, "published": published}
+
+
+def publish_npm(component, build, directory):
+    """Publish the packed tarballs (contracts first) and verify the registry readback."""
+    plan = preflight_npm(component, build, directory)
+    expected, tarballs, ordered = plan["expected"], plan["tarballs"], plan["ordered"]
+    dist_tag, packages, published = plan["dist_tag"], plan["packages"], plan["published"]
     for name in ordered:
         spec = f"{packages[name]}@{component['version']}"
         if not published[name]:

@@ -524,6 +524,29 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel', { headers: { cookie: researchCookie } })
   })
 
+  it('no turn is admitted under a profile while its deletion RPC is in flight', async () => {
+    mkdirSync(join(s.state, 'profiles', 'doomed'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'doomed', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'doomed' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=doomed/)
+    const created = await post(s, '/api/session/new', { profile: 'doomed' }, { cookie })
+    const sid = String(((await json(created)).session as Json).session_id)
+    let releaseDelete: () => void = () => undefined
+    sidecar.respond('profiles.delete', () => new Promise((resolve) => { releaseDelete = () => { resolve({ ok: true }) } }))
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }], final_response: 'late', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const deletion = post(s, '/api/profile/delete', { name: 'doomed' }, asWork())
+    const until = Date.now() + 5000
+    while (!s.deps.profiles.isDeleting('doomed') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    const refused = await post(s, '/api/chat/start', { session_id: sid, message: 'sneak in' }, { cookie })
+    expect(refused.status).toBe(409)
+    expect(String((await json(refused)).error)).toContain('being deleted')
+    releaseDelete()
+    expect(await json(await deletion)).toEqual({ ok: true, name: 'doomed' })
+    expect(s.deps.profiles.isDeleting('doomed')).toBe(false)
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

@@ -308,6 +308,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     events,
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
+    profileDeleting: (profile) => profiles.isDeleting(profile),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,
     hermesHome: config.hermesHome,

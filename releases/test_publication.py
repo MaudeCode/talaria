@@ -412,6 +412,32 @@ class PublicationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 collect(root / "artifacts", root / "other")
 
+    def test_web_publication_preflights_npm_before_the_image_tag_is_pushed(self):
+        """An npm rejection must surface before `skopeo copy` publishes the GHCR tag."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "npm").mkdir()
+            (root / "npm/maudecode-talaria-web-1.0.0.tgz").write_bytes(b"server tarball")
+            (root / "npm/maudecode-talaria-web-contracts-1.0.0.tgz").write_bytes(b"contracts tarball")
+            plan = {"releaseSet": "a" * 40, "components": {"web": {"version": "1.0.0", "tag": "web-v1.0.0"}}}
+            build = {"result": "success", "gate": "buildWeb", "sourceRevision": "a" * 40, "tag": "web-v1.0.0",
+                     "image": "ghcr.io/maudecode/talaria-web@sha256:" + "b" * 64, "npm": "@maudecode/talaria-web@1.0.0"}
+            commands = []
+
+            def run(args, **kwargs):
+                commands.append(args)
+                if args[:2] == ["npm", "view"]:
+                    # The version already exists with other bytes: immutable, so publication must be refused.
+                    return SimpleNamespace(returncode=0, stdout=json.dumps("sha512-other"), stderr="")
+                self.fail("unexpected command " + " ".join(args))
+
+            with patch.dict(os.environ, {"NODE_AUTH_TOKEN": "synthetic", "GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), \
+                    patch("publish.subprocess.run", side_effect=run), patch("publish.write") as write:
+                with self.assertRaisesRegex(ValueError, "different contents"):
+                    publish.web(plan, build, root, root / "out.json")
+            self.assertFalse([args for args in commands if args[0] == "skopeo"])
+            write.assert_not_called()
+
     def test_npm_publication_verifies_existing_versions_and_applies_the_channel_tag(self):
         """An already-published version is accepted only with identical bytes, and the channel dist-tag is always applied."""
         for channel, tag in (("stable", "web-v1.0.0"), ("experimental", "web-exp-v1.0.0")):

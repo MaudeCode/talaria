@@ -151,18 +151,31 @@ export class ProfileService {
     return rows.find((r) => str(r.name) === opts.name) ?? { ...created, is_active: false }
   }
 
+  /** Profiles whose deletion RPC is in flight: turn admission refuses them so no run enters the check-to-use window. */
+  private readonly deleting = new Set<string>()
+
+  isDeleting(name: string | null): boolean {
+    return name !== null && this.deleting.has(name)
+  }
+
   async delete(name: string, active: string): Promise<{ ok: true; name: string }> {
     if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile deletion is not allowed in isolated profile mode.', 403)
     if (this.isRootProfile(name)) throw new ProfileError('Cannot delete the default profile.', 400)
     validateProfileName(name)
     // Python guarded only the process-wide active profile; per-request profiles mean another client may be running a
-    // turn under the target profile, so any live run owned by it blocks the delete as well.
-    if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
+    // turn under the target profile, so any live run owned by it blocks the delete as well. The mark goes on before
+    // the check: a turn admitted in between is caught by the check, one arriving after is refused by the mark.
+    this.deleting.add(name)
     try {
-      await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
-    } catch (error) {
-      const message = str((error as Error).message)
-      throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
+      if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
+      try {
+        await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
+      } catch (error) {
+        const message = str((error as Error).message)
+        throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
+      }
+    } finally {
+      this.deleting.delete(name)
     }
     this.invalidate()
     return { ok: true, name }
