@@ -165,6 +165,8 @@ export class ProfileService {
     // Python guarded only the process-wide active profile; per-request profiles mean another client may be running a
     // turn under the target profile, so any live run owned by it blocks the delete as well. The mark goes on before
     // the check: a turn admitted in between is caught by the check, one arriving after is refused by the mark.
+    // One deletion per profile at a time: a second overlapping request must not share (and then clear) the mark.
+    if (this.deleting.has(name)) throw new ProfileError(`Profile '${name}' is already being deleted.`, 409)
     this.deleting.add(name)
     try {
       if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
