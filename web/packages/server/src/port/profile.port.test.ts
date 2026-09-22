@@ -800,10 +800,11 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       writeFileSync(file, previous)
     }
     // Once the state directory is writable again, retrying the create clears the record without re-running the
-    // sidecar against the existing home, and the profile becomes writable.
-    const retry = await post(s, '/api/profile/create', { name: 'phoenix' })
+    // sidecar against the existing home, re-applies the requested configuration, and the profile becomes writable.
+    const retry = await post(s, '/api/profile/create', { name: 'phoenix', base_url: 'https://llm.example/v1' })
     expect(retry.status, await retry.clone().text()).toBe(200)
     expect(creates).toBe(1)
+    expect(sidecar.calls.some((c) => c.method === 'config.set' && str((c.params as Json).profile_home).endsWith('phoenix') && JSON.stringify((c.params as Json).config).includes('https://llm.example/v1'))).toBe(true)
     expect(typeof s.deps.profiles.beginWrite('phoenix')).toBe('function')
     expect(JSON.parse(readFileSync(file, 'utf8')) as string[]).not.toContain('phoenix')
   })

@@ -166,18 +166,18 @@ export class ProfileService {
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
     const created = await this.withLifecycle(opts.name, async () => {
-      // A recreation whose tombstone clearing failed left a home behind: retrying the create only has to clear the
-      // record durably, not re-run the sidecar (which would refuse the existing directory).
-      if (this.deleted.has(opts.name) && isDir(this.deps.profileHome(opts.name))) {
-        this.clearTombstoneDurably(opts.name)
-        this.invalidate()
-        return { name: opts.name, path: this.deps.profileHome(opts.name) }
-      }
+      // A recreation whose tombstone clearing (or follow-up configuration) failed left a home behind: retrying the
+      // create skips the sidecar (which would refuse the existing directory) but re-applies the requested settings
+      // before clearing the record, so a partially configured home never becomes the final state.
       let row: Dict
-      try {
-        row = (await this.sidecar().call('profiles.create', params)).profile
-      } catch (error) {
-        throw new ProfileError(str((error as Error).message), 400)
+      if (this.deleted.has(opts.name) && isDir(this.deps.profileHome(opts.name))) {
+        row = { name: opts.name, path: this.deps.profileHome(opts.name) }
+      } else {
+        try {
+          row = (await this.sidecar().call('profiles.create', params)).profile
+        } catch (error) {
+          throw new ProfileError(str((error as Error).message), 400)
+        }
       }
       this.invalidate()
       const home = str(row.path) || this.deps.profileHome(opts.name)

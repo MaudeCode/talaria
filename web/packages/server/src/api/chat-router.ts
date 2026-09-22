@@ -137,7 +137,7 @@ export const chatRouter = os.router({
       }
       // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
       // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
-      if (s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+      if (s.read_only || s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const requestedProfile = str(body.profile).trim()
       if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
       visibleOrRetag(ctx, s, requestedProfile)

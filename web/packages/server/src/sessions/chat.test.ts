@@ -810,6 +810,21 @@ describe('chat turns through the sidecar', () => {
     expect(history.map((m) => m.content)).toEqual(['from web', 'web reply', 'asked in the CLI', 'answered in the CLI'])
   })
 
+  it('a persisted read-only session (an inherited messaging/Claude Code import) is never continued', async () => {
+    const sid = await newSession(s)
+    const imported = s.deps.sessionStore.get(sid)
+    imported.read_only = true
+    imported.messages = [{ role: 'user', content: 'imported' }, { role: 'assistant', content: 'from elsewhere' }]
+    s.deps.sessionStore.save(imported)
+    let starts = 0
+    sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'nope' }]) })
+    const res = await post(s, '/api/chat/start', { session_id: sid, message: 'continue' })
+    expect(res.status).toBe(403)
+    expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
+    expect(starts).toBe(0)
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })
