@@ -558,7 +558,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const created = await post(s, '/api/session/new', { profile: 'doomed' }, { cookie })
     const sid = String(((await json(created)).session as Json).session_id)
     let releaseDelete: () => void = () => undefined
-    sidecar.respond('profiles.delete', () => new Promise((resolve) => { releaseDelete = () => { resolve({ ok: true }) } }))
+    sidecar.respond('profiles.delete', (params) => new Promise((resolve) => { releaseDelete = () => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); resolve({ ok: true }) } }))
     sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }], final_response: 'late', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const deletion = post(s, '/api/profile/delete', { name: 'doomed' }, asWork())
     const until = Date.now() + 5000
@@ -585,6 +585,41 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     releaseDelete()
     expect(await json(await deletion)).toEqual({ ok: true, name: 'doomed' })
     expect(s.deps.profiles.isDeleting('doomed')).toBe(false)
+    // The home is gone: a client still carrying the old cookie cannot write (and so cannot recreate it), but can
+    // still switch away.
+    const stale = await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie })
+    expect(stale.status).toBe(404)
+    expect(String((await json(stale)).error)).toContain('does not exist')
+    expect((await post(s, '/api/profile/switch', { name: 'work' }, { cookie })).status).toBe(200)
+  })
+
+  it('a switch into a profile runs on its lifecycle chain, so a concurrent delete waits and the switched client cannot resurrect the home', async () => {
+    mkdirSync(join(s.state, 'profiles', 'wobbly'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'wobbly', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const originalGet = sidecar.responderFor('config.get')
+    let releaseRead: () => void = () => undefined
+    sidecar.respond('config.get', (params, emit, opts) => {
+      if (!str(params.profile_home).endsWith('wobbly') || !originalGet) return originalGet ? originalGet(params, emit, opts) : { path: join(params.profile_home, 'config.yaml'), exists: false, config: {} }
+      return new Promise((resolve, reject) => { releaseRead = () => { Promise.resolve(originalGet(params, emit, opts)).then(resolve, reject) } })
+    })
+    const order: string[] = []
+    sidecar.respond('profiles.delete', () => { order.push('delete'); return { ok: true } })
+    const switching = post(s, '/api/profile/switch', { name: 'wobbly' })
+    const until = Date.now() + 5000
+    while (!sidecar.calls.some((c) => c.method === 'config.get' && str((c.params as Json).profile_home).endsWith('wobbly')) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    const deleting = post(s, '/api/profile/delete', { name: 'wobbly' }, asWork())
+    await new Promise((r) => setTimeout(r, 80))
+    expect(order).toEqual([])
+    releaseRead()
+    // The delete was queued behind the switch and marked the target meanwhile: the switch re-validates before handing
+    // out a cookie and refuses, so no client ends up scoped to the profile that is about to disappear.
+    const switched = await switching
+    expect(switched.status, await switched.clone().text()).toBe(409)
+    expect(switched.headers.get('set-cookie')).toBeNull()
+    expect(await json(await deleting)).toEqual({ ok: true, name: 'wobbly' })
+    expect(order).toEqual(['delete'])
+    if (originalGet) sidecar.respond('config.get', originalGet)
   })
 
   it('a profile-scoped write already in flight finishes before that profile is deleted', async () => {

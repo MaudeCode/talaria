@@ -357,12 +357,17 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       // (`config.set` recreates the parent): every unsafe request under a profile holds a write lease for its
       // lifetime — deletion waits for leases to drain, and a request arriving during deletion is refused (409).
       // The delete route is the lifecycle owner (mark + drain), so it must not lease the profile it is deleting.
-      if (unsafe && path.startsWith('/api/') && path !== '/api/profile/delete') {
-        releaseWrite = deps.profiles.beginWrite(activeProfileName(ctx))
-        if (!releaseWrite) {
+      if (unsafe && path.startsWith('/api/') && path !== '/api/profile/delete' && path !== '/api/profile/switch') {
+        const lease = deps.profiles.beginWrite(activeProfileName(ctx))
+        if (lease === 'deleting') {
           ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })
           return
         }
+        if (lease === 'missing') {
+          ctx.json({ error: `Profile '${activeProfileName(ctx)}' does not exist.` }, { status: 404 })
+          return
+        }
+        releaseWrite = lease
       }
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.

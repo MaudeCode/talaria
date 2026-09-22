@@ -109,19 +109,29 @@ export class ProfileService {
     if (!this.rootAliasesLoaded && name !== 'default') await this.list('default').catch(() => undefined)
     const home = this.deps.profileHome(name)
     // A target mid-deletion must not be handed out as a cookie: the client's next write would recreate its home.
-    if (this.deleting.has(name)) throw new ProfileError(`Profile '${name}' is being deleted.`, 409)
-    if (!this.isRootProfile(name) && !isDir(home)) throw new ProfileError(`Profile '${name}' does not exist.`, 404)
-    this.invalidate()
-    let cfg: Dict = {}
-    try { cfg = await this.deps.config.read(home) } catch { cfg = {} }
-    const model = cfg.model
-    let defaultModel: unknown = null
-    let defaultProvider: unknown = null
-    if (typeof model === 'string') defaultModel = model
-    else if (model && typeof model === 'object') { defaultModel = (model as Dict).default ?? null; defaultProvider = (model as Dict).provider ?? null }
-    let workspace: string | null = null
-    try { workspace = this.deps.defaultWorkspace(name) } catch { workspace = null }
-    return { profiles: await this.list(name), active: name, is_default: this.isRootProfile(name), default_model: defaultModel, default_model_provider: defaultProvider, default_workspace: workspace }
+    // The whole switch runs on the target's lifecycle chain, so a deletion cannot start underneath it, and the
+    // marker/directory are re-validated at the end for a deletion that completed before the chain was entered.
+    const ensureTarget = (): void => {
+      if (this.deleting.has(name)) throw new ProfileError(`Profile '${name}' is being deleted.`, 409)
+      if (!this.isRootProfile(name) && !isDir(home)) throw new ProfileError(`Profile '${name}' does not exist.`, 404)
+    }
+    ensureTarget()
+    return this.withLifecycle(name, async () => {
+      ensureTarget()
+      this.invalidate()
+      let cfg: Dict = {}
+      try { cfg = await this.deps.config.read(home) } catch { cfg = {} }
+      const model = cfg.model
+      let defaultModel: unknown = null
+      let defaultProvider: unknown = null
+      if (typeof model === 'string') defaultModel = model
+      else if (model && typeof model === 'object') { defaultModel = (model as Dict).default ?? null; defaultProvider = (model as Dict).provider ?? null }
+      let workspace: string | null = null
+      try { workspace = this.deps.defaultWorkspace(name) } catch { workspace = null }
+      const profiles = await this.list(name)
+      ensureTarget()
+      return { profiles, active: name, is_default: this.isRootProfile(name), default_model: defaultModel, default_model_provider: defaultProvider, default_workspace: workspace }
+    })
   }
 
   async create(opts: { name: string; clone_from?: string | null; clone_config?: boolean; base_url?: string | null; api_key?: string | null; default_model?: string | null; model_provider?: string | null }): Promise<Dict> {
@@ -141,6 +151,7 @@ export class ProfileService {
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
     const created = await this.withLifecycle(opts.name, async () => {
+      this.deleted.delete(opts.name)
       let row: Dict
       try {
         row = (await this.sidecar().call('profiles.create', params)).profile
@@ -170,6 +181,8 @@ export class ProfileService {
 
   /** Profiles whose deletion RPC is in flight: turn admission refuses them so no run enters the check-to-use window. */
   private readonly deleting = new Set<string>()
+  /** Profiles this process deleted: a client still carrying their cookie must not write them back into existence. */
+  private readonly deleted = new Set<string>()
 
   isDeleting(name: string | null): boolean {
     return name !== null && this.deleting.has(name)
@@ -178,9 +191,14 @@ export class ProfileService {
   /** In-flight profile-scoped mutations per name; deletion waits until they drain and refuses new ones meanwhile. */
   private readonly writeLeases = new Map<string, { count: number; drained: (() => void)[] }>()
 
-  /** Lease a profile-scoped write for a request's lifetime; `null` when the profile is being deleted (answer 409). */
-  beginWrite(name: string): (() => void) | null {
-    if (this.deleting.has(name)) return null
+  /**
+   * Lease a profile-scoped write for a request's lifetime. `'deleting'` while the profile's deletion RPC runs (409);
+   * `'missing'` for a profile this process deleted whose home is still gone (404) — a stale cookie must never
+   * recreate it. Profiles that merely never existed keep lazy creation (group-mapped trusted identities).
+   */
+  beginWrite(name: string): (() => void) | 'deleting' | 'missing' {
+    if (this.deleting.has(name)) return 'deleting'
+    if (this.deleted.has(name) && !isDir(this.deps.profileHome(name))) return 'missing'
     const lease = this.writeLeases.get(name) ?? { count: 0, drained: [] }
     lease.count += 1
     this.writeLeases.set(name, lease)
@@ -230,6 +248,7 @@ export class ProfileService {
     } finally {
       this.deleting.delete(name)
     }
+    this.deleted.add(name)
     this.invalidate()
     return { ok: true, name }
   }
