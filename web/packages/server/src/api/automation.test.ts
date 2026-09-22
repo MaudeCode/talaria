@@ -608,9 +608,19 @@ describe('query parameters on non-GET routes (parity)', () => {
     expect(res.headers.get('content-encoding')).toBe('gzip')
     const plain = await s.get(`/api/session?session_id=${sid}`, { headers: { 'accept-encoding': 'identity' } })
     expect(plain.headers.get('content-encoding')).toBeNull()
-    expect(await res.json()).toEqual(await plain.json())
+    const plainBody = await plain.json()
+    expect(await res.json()).toEqual(plainBody)
     // Small bodies stay uncompressed, like Python's 1 KiB threshold.
     expect((await s.get('/api/kanban/boards', { headers: { 'accept-encoding': 'gzip' } })).headers.get('content-encoding')).toBeNull()
+    // RFC 9110 qualities: an explicit `gzip;q=0` (or `*;q=0` with gzip unlisted) declares gzip unacceptable.
+    for (const header of ['gzip;q=0', 'br, gzip;q=0.0', 'identity, *;q=0']) {
+      const refused = await s.get(`/api/session?session_id=${sid}`, { headers: { 'accept-encoding': header } })
+      expect(refused.headers.get('content-encoding'), header).toBeNull()
+      expect(await refused.json()).toEqual(plainBody)
+    }
+    for (const header of ['br, gzip;q=0.5', '*', 'GZIP']) {
+      expect((await s.get(`/api/session?session_id=${sid}`, { headers: { 'accept-encoding': header } })).headers.get('content-encoding'), header).toBe('gzip')
+    }
   })
 
   it('missing required fields are named the way Python require() named them', async () => {

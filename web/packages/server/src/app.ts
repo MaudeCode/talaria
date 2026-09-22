@@ -19,7 +19,7 @@ import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
 import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
-import { BodyError, RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
+import { BodyError, RequestContext, acceptsEncoding, type AppDeps, type HeaderMap } from './http/context.js'
 import { activeProfileName, checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -204,7 +204,7 @@ function boundRequestBody(req: IncomingMessage, maxBytes: number): () => void {
 /** Buffer a JSON response written by oRPC and gzip it when the client accepts gzip and the body exceeds 1 KiB. */
 function gzipJsonResponse(req: { headers: IncomingHttpHeaders }, res: ServerResponse): void {
   const accept = req.headers['accept-encoding']
-  if (!(Array.isArray(accept) ? accept.join(',') : accept ?? '').includes('gzip')) return
+  if (!acceptsEncoding(Array.isArray(accept) ? accept.join(',') : accept, 'gzip')) return
   const writeHead = res.writeHead.bind(res)
   const end = res.end.bind(res)
   let pending: [number, OutgoingHttpHeaders | undefined] | null = null

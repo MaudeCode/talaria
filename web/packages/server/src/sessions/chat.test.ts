@@ -682,10 +682,11 @@ describe('chat turns through the sidecar', () => {
     const pushes: boolean[] = []
     const gates: (() => void)[] = []
     sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { gates.push(() => { pushes.push(params.enabled); resolve({ yolo_enabled: params.enabled, released: 0 }) }) }))
-    const enable = post(s, '/api/session/yolo', { session_id: sid, enabled: true })
-    const disable = post(s, '/api/session/yolo', { session_id: sid, enabled: false })
     const until = Date.now() + 5000
+    const enable = post(s, '/api/session/yolo', { session_id: sid, enabled: true })
     while (gates.length < 1 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    // The enable's sidecar mutation is in flight; an opposing toggle arrives now.
+    const disable = post(s, '/api/session/yolo', { session_id: sid, enabled: false })
     await new Promise((r) => setTimeout(r, 50))
     // The disable's RPC waits for the enable's mutation + commit to settle.
     expect(gates).toHaveLength(1)

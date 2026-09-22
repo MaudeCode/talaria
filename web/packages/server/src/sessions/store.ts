@@ -11,7 +11,8 @@ import { str } from '../util.js'
  * reconciliation) is not part of this store; it layers on in the sidebar
  * builder once the read-only SQLite projection lands.
  */
-import { closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
 import type { DraftStore } from './drafts.js'
 import type { SessionEventBus } from './events.js'
@@ -51,7 +52,7 @@ function writeAtomic(path: string, text: string): void {
   const tmp = tmpName(path)
   const fd = openSync(tmp, 'w')
   try {
-    writeSync(fd, text)
+    writeFully(fd, text)
     fsyncSync(fd)
     closeSync(fd)
     renameSync(tmp, path)

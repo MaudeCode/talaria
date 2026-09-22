@@ -266,7 +266,7 @@ export class RequestContext {
   }
 
   acceptsGzip(): boolean {
-    return (this.header('accept-encoding') ?? '').includes('gzip')
+    return acceptsEncoding(this.header('accept-encoding'), 'gzip')
   }
 
   /** Python `_is_secure_context`: env override, direct TLS, opt-in forwarded proto. */
@@ -465,4 +465,26 @@ export function ifNoneMatchMatches(headerValue: string, etag: string): boolean {
   const strip = (v: string) => (v.startsWith('W/') ? v.slice(2) : v)
   const current = strip(etag)
   return headerValue.split(',').map((c) => c.trim()).filter(Boolean).some((c) => strip(c) === current)
+}
+
+/**
+ * RFC 9110 `Accept-Encoding` negotiation for one coding: a listed coding with `q=0` (or `*;q=0` with the coding
+ * unlisted) is unacceptable; a plain listing or a positive quality accepts it.
+ */
+export function acceptsEncoding(header: string | undefined, coding: string): boolean {
+  if (!header) return false
+  let wildcard: number | null = null
+  for (const part of header.split(',')) {
+    const [rawName = '', ...params] = part.trim().split(';')
+    const name = rawName.trim().toLowerCase()
+    if (!name) continue
+    let q = 1
+    for (const param of params) {
+      const [key = '', value = ''] = param.split('=')
+      if (key.trim().toLowerCase() === 'q') { const parsed = Number.parseFloat(value.trim()); q = Number.isFinite(parsed) ? parsed : 0 }
+    }
+    if (name === coding) return q > 0
+    if (name === '*') wildcard = q
+  }
+  return wildcard !== null && wildcard > 0
 }

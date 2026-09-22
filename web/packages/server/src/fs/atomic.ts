@@ -10,6 +10,17 @@ import { basename, dirname, join } from 'node:path'
 
 let counter = 0
 
+/** Write every byte: `writeSync` may return a short count (disk pressure, signals), and a rename must never publish a prefix. */
+export function writeFully(fd: number, text: string, write: (fd: number, buffer: Buffer, offset: number, length: number) => number = writeSync): void {
+  const buffer = Buffer.from(text, 'utf8')
+  let offset = 0
+  while (offset < buffer.length) {
+    const written = write(fd, buffer, offset, buffer.length - offset)
+    if (written <= 0) throw new Error(`short write: ${String(offset)} of ${String(buffer.length)} bytes`)
+    offset += written
+  }
+}
+
 export function atomicWriteText(path: string, text: string, opts: { mode?: number } = {}): void {
   let writePath = path
   try {
@@ -26,7 +37,7 @@ export function atomicWriteText(path: string, text: string, opts: { mode?: numbe
   // applies the process umask exactly as an ordinary create would (0o600 under umask 077); no umask read needed.
   const fd = openSync(tmp, 'w', mode === undefined ? 0o666 : 0o600)
   try {
-    writeSync(fd, text)
+    writeFully(fd, text)
     fsyncSync(fd)
     closeSync(fd)
     if (mode !== undefined) chmodSync(tmp, mode)

@@ -71,11 +71,11 @@
  *   web/tests/test_issues_907_908_909_model_dropdown.py
  * (issues #570, #644, #1013, #1094, #1105, #1106, #1189, #1217, #1228, #1240, #1384, #1420, #1426, #1499, #1500, #1527, #1538, #1567, #1568, #1699, #1807, #1881, #1894, #1909, #2025, #2177, #2232, #2245, #2399, #2545, #2720, #2840, #2914, #2929, #3172, #3260, #3510, #3691, #3717, #3820, #3928, #3929, #3988, #4324, #4325, #4770, #4836, #4982, #5121, #5139, #5270, #5339, #5532, #5572, #6335, #6498, #6722, #6751, #7168, #7182, #7333, #7404, #7514, #7540) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs'
+import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { atomicWriteText } from './fs/atomic.js'
+import { atomicWriteText, writeFully } from './fs/atomic.js'
 import { normalizeAppearance, SettingsStore } from './settings.js'
 
 let dir: string
@@ -91,6 +91,22 @@ const write = (value: unknown) => { writeFileSync(join(dir, 'settings.json'), JS
 const onDisk = () => JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as Record<string, unknown>
 
 describe('atomicWriteText', () => {
+  it('loops over short writes so a rename never publishes a truncated file', () => {
+    // A writer that accepts at most 5 bytes per call (disk pressure, interrupted syscalls) still yields the full text.
+    const target = join(dir, 'short.json')
+    const text = JSON.stringify({ payload: 'x'.repeat(1000), done: true })
+    const fd = openSync(target, 'w')
+    const calls: number[] = []
+    writeFully(fd, text, (f, buffer, offset, length) => { const n = Math.min(5, length); calls.push(n); return writeSync(f, buffer, offset, n) })
+    closeSync(fd)
+    expect(readFileSync(target, 'utf8')).toBe(text)
+    expect(calls.length).toBeGreaterThan(200)
+    // A writer that makes no progress is an error, never a silent prefix.
+    const stuck = openSync(join(dir, 'stuck.json'), 'w')
+    expect(() => { writeFully(stuck, text, () => 0) }).toThrow(/short write/)
+    closeSync(stuck)
+  })
+
   it('replaces contents without temp debris and creates new files', () => {
     const target = join(dir, 'settings.json')
     writeFileSync(target, '{"theme": "old"}')
