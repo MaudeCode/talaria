@@ -140,7 +140,7 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 
 ### Tool/thinking activity group
 
-Collapsed by default in settled history and during live runs unless the user has explicitly opened that Activity row before. Persist open/closed disclosure state per chat and per turn, so switching away from a chat and coming back preserves the mode the user left it in. Summary line uses one disclosure for internals and stays intentionally terse, e.g. `Activity: 4 tools`. It should not repeat the always-present thinking area, list individual tool names, or add a second trailing count badge. Expanding reveals thinking and individual tool cards together. Thinking and tools should not create separate transcript rows unless there is an error or approval state that needs attention.
+Compact Worklog opens live work by default and folds normal completed work above the final answer. Explicit disclosure choices persist per profile, chat, and turn. Consecutive tool/reasoning rows share a nested activity summary; a single supporting row needs no extra group. Prose separates those groups and stays in order. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
 
 ### Tool card
 

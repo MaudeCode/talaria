@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon, toolKind, toolTarget } from '../toolKind'
@@ -31,7 +31,7 @@ function pretty(value: unknown): string {
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
 export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: string | undefined }) {
   const locale = useLocale()
-  const [open, setOpen] = useState(false)
+  const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
   const kind = toolKind(call.name)
   const target = toolTarget(call.name, call.args)
   const label = toolText(locale).actionLabel(kind, call.done ? 'done' : 'running', target, call.name, call.isError)
@@ -39,7 +39,7 @@ export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: 
   const result = call.result !== null && call.result !== undefined ? pretty(call.result) : call.preview ?? ''
   return (
     <div className={cn('tool-card-row my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'}>
-      <button type="button" className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>
         <ChevronRight size={14} className={cn('shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
         <ToolKindIcon kind={kind} />
         <span className="min-w-0 flex-1 truncate">{label}</span>

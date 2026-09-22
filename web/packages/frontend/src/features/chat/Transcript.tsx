@@ -7,7 +7,8 @@ import { isTerminal } from '../../stream/reducer'
 import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageRow'
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
-import type { ActivityMode } from './blocks/Worklog'
+import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
+import { groupAssistantTurns, messageOwner, settledTerminalState } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 
@@ -15,6 +16,7 @@ const VIRTUALIZE_AT = 200
 
 export interface TranscriptProps {
   rows: VisibleMessage[]
+  disclosureScope?: string
   live: LiveTurn | null
   assistantName: string
   mode: ActivityMode
@@ -39,14 +41,22 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, actions, tts, truncated, onLoadOlder, loadingOlder, emptyState, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, actions, tts, truncated, onLoadOlder, loadingOlder, emptyState, showJumpButtons, virtualizeLongTranscripts } = props
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
+  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null || live.status === 'error' || live.status === 'cancelled')
+  const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
+  const rows = useMemo(() => {
+    if (!showLive || !live) return grouped
+    return grouped.filter((row) => row.message.role !== 'assistant' || !(
+      (row.assistantRows ?? [row]).some((part) => messageOwner(part.message) === live.streamId || (!!live.turnId && messageOwner(part.message) === live.turnId))
+      || (live.userMessageId && row.turnKey === `user:${live.userMessageId}`)
+    ))
+  }, [grouped, live, showLive])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user'
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
   const liveUserText = live?.userText ?? ''
-  const showLive = !!live && (!isTerminal(live.status) || (live.doneSession === null && live.status !== 'done') || live.status === 'error' || live.status === 'cancelled')
   const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant') return i; return -1 }, [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
@@ -88,11 +98,12 @@ export function Transcript(props: TranscriptProps) {
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
+      : <AssistantMessageRow terminalState={settledTerminalState(row, live)} sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
   )
 
   const empty = rows.length === 0 && !showLive && !showLiveUser
   return (
+    <WorklogDisclosureProvider key={props.disclosureScope ?? sessionId} scope={props.disclosureScope ?? sessionId ?? ""}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
@@ -135,5 +146,6 @@ export function Transcript(props: TranscriptProps) {
         </button>
       )}
     </div>
+    </WorklogDisclosureProvider>
   )
 }

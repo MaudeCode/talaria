@@ -20,6 +20,8 @@ export interface VisibleMessage {
   index: number
   message: Message
   key: string
+  assistantRows?: VisibleMessage[]
+  turnKey?: string
   toolResults: Record<string, Message>
 }
 

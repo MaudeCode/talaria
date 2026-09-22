@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats show readable tool activity in order, with one completed work summary above each final answer.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

@@ -1,13 +1,14 @@
-import { memo, useMemo } from 'react'
+import { memo } from 'react'
 import { ArrowUp, Copy, GitBranch, Pencil, RotateCcw, Volume2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { Message } from '../../contracts'
 import { Markdown } from './render/Markdown'
-import { extractInlineThinking, messageText } from './render/text'
-import { ReasoningBlock } from './blocks/ReasoningBlock'
-import { ToolCard, type ToolCardData } from './blocks/ToolCard'
-import { Worklog, type ActivityMode } from './blocks/Worklog'
-import { toolCallId, messageKey, toolCallName, toolCallArgs, type VisibleMessage } from './useTranscript'
+import { messageText } from './render/text'
+import type { ActivityMode } from './blocks/Worklog'
+import { persistedActivity } from './turnActivity'
+import { TurnActivityView } from './TurnActivityView'
+import type { VisibleMessage } from './useTranscript'
+export { toolCardsFor } from './turnActivity'
 import { IconButton } from '../../ui/Button'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
@@ -40,14 +41,6 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
   )
 }
 
-export function toolCardsFor(message: Message, toolResults: Record<string, Message>): ToolCardData[] {
-  return (message.tool_calls ?? []).map((tc, i) => {
-    const id = toolCallId(tc, `${messageKey(message) ?? 'm'}-${i}`)
-    const result = toolResults[id]
-    return { id, name: toolCallName(tc) ?? 'tool', args: toolCallArgs(tc), preview: tc.preview ?? null, done: tc.done ?? true, isError: !!tc.is_error, duration: tc.duration ?? null, costUsd: tc.cost_usd ?? null, result: result ? messageText(result.content) : tc.result ?? tc.output ?? null }
-  })
-}
-
 export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions }) {
   const text = messageText(row.message.content)
   return (
@@ -64,32 +57,24 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   )
 })
 
-export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean }) {
-  const raw = messageText(row.message.content)
-  const split = useMemo(() => extractInlineThinking(raw), [raw])
-  const reasoning = [row.message.reasoning_content, typeof row.message.reasoning === 'string' ? row.message.reasoning : '', row.message.thinking, split.reasoning].filter((x): x is string => !!x && x.trim() !== '').join('\n')
-  const calls = useMemo(() => toolCardsFor(row.message, row.toolResults), [row])
+export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope, terminalState }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined; terminalState?: string | undefined }) {
+  const activity = persistedActivity(row, terminalState)
+  const content = activity.finalAnswer || activity.items.flatMap((item) => item.kind === 'text' ? [item.text] : []).join('\n\n')
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
   return (
     <div className="msg-row assistant-turn" data-role="assistant" data-msg-idx={row.index} data-message-key={row.key} data-latest={isLast ? '1' : undefined}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span>{row.message.badge && <span className="msg-badge">{row.message.badge}</span>}</div>
       <div className="assistant-turn-blocks">
-        {calls.length > 0 ? (
-          <Worklog mode={mode} calls={calls} live={false} hasReasoning={!!reasoning}>
-            {reasoning && <ReasoningBlock text={reasoning} />}
-            {calls.map((c) => <ToolCard key={c.id} call={c} />)}
-          </Worklog>
-        ) : reasoning ? <ReasoningBlock text={reasoning} /> : null}
-        {split.content.trim() && <div className="msg-body"><Markdown text={split.content} /></div>}
-        <AttachmentList message={row.message} sessionId={undefined} />
+        <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />
+        {(row.assistantRows ?? [row]).map((part) => <AttachmentList key={part.key} message={part.message} sessionId={undefined} />)}
       </div>
       <div className={cn('msg-foot', isLast && 'msg-foot-latest')}>
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
         <span className="ml-auto" aria-hidden="true" />
-        <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(split.content).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
-        {tts && split.content.trim() && <IconButton label={m.speak_message()} className="h-6 w-6" onClick={() => { void speak(split.content) }}><Volume2 size={12} aria-hidden="true" /></IconButton>}
+        <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(content).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
+        {tts && content.trim() && <IconButton label={m.speak_message()} className="h-6 w-6" onClick={() => { void speak(content) }}><Volume2 size={12} aria-hidden="true" /></IconButton>}
         {actions.onRegenerate && isLast && <IconButton label={m.regenerate_response()} className="h-6 w-6" onClick={() => actions.onRegenerate?.(row)}><RotateCcw size={12} aria-hidden="true" /></IconButton>}
         <IconButton label={m.jump_to_question_label()} className="msg-question-jump-btn h-6 w-6" onClick={(e) => { const rowEl = (e.currentTarget as HTMLElement).closest('.msg-row'); let prev = rowEl?.previousElementSibling; while (prev && !(prev instanceof HTMLElement && prev.dataset.role === 'user')) prev = prev.previousElementSibling; prev?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}><ArrowUp size={12} aria-hidden="true" /></IconButton>
       </div>

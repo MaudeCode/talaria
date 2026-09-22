@@ -246,6 +246,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         {query.isError && !notFound && !otherProfile && <div className="p-4"><ErrorState error={query.error} onRetry={() => { void refresh() }} /></div>}
         {!query.isError && (
           <Transcript
+            disclosureScope={JSON.stringify([bootstrap.profile?.name ?? 'default', sessionId])}
             rows={rows}
             live={live}
             assistantName={assistantName}

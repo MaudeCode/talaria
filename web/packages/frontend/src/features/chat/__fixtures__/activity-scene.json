@@ -1,0 +1,57 @@
+{
+  "session": {
+    "session_id": "abc123",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "After tool.",
+        "message_id": "assistant-1",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "tool-1",
+              "order_index": 2,
+              "role": "tool",
+              "status": "completed",
+              "tool_call_id": "call-1",
+              "tool": {
+                "id": "call-1",
+                "name": "read_file",
+                "args": {
+                  "path": "notes.md"
+                },
+                "snippet": "contents",
+                "done": true
+              }
+            },
+            {
+              "row_id": "prose-1",
+              "order_index": 0,
+              "role": "prose",
+              "text": "Before tool."
+            },
+            {
+              "row_id": "prose-2",
+              "order_index": 3,
+              "role": "prose",
+              "text": "After tool."
+            },
+            {
+              "row_id": "thinking-1",
+              "order_index": 1,
+              "role": "thinking",
+              "thinking": {
+                "text": "I should inspect now.",
+                "titles": [
+                  "Planning implementation"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "title": "Restored activity"
+  }
+}
