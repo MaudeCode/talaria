@@ -501,6 +501,59 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end')
   })
 
+  it('a cancel that lands while the profile config loads never starts the Agent turn', async () => {
+    const sid = await newSession(s)
+    let starts = 0
+    sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }]) })
+    const turns = s.deps.turns as unknown as { deps: { profileConfig: ((profile: string | null) => Promise<Record<string, unknown> | null>) | undefined } }
+    const original = turns.deps.profileConfig
+    let releaseConfig: () => void = () => undefined
+    turns.deps.profileConfig = () => new Promise((resolve) => { releaseConfig = () => { resolve({}); } })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'slow config' }))
+      const streamId = String(start.stream_id)
+      const until = Date.now() + 5000
+      while (!(s.deps.registry.activeRuns.get(streamId)?.phase === 'running') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+      expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
+      releaseConfig()
+      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel' && (f.data as Json).message === 'Cancelled before start')
+      expect(frames.filter((f) => f.event === 'cancel').map((f) => (f.data as Json).message)).toEqual(['Cancelled by user', 'Cancelled before start'])
+      expect(starts).toBe(0)
+    } finally {
+      turns.deps.profileConfig = original
+    }
+  })
+
+  it('an old turn finishing its title work does not clear the successor turn\'s pending prompts', async () => {
+    const sid = await newSession(s)
+    let releaseTitle: () => void = () => undefined
+    sidecar.respond('aux.complete', () => new Promise((resolve) => { releaseTitle = () => { resolve({ model: 'aux', text: 'Titled', usage: null }); } }))
+    let releaseSecond: () => void = () => undefined
+    let turn = 0
+    sidecar.respond('chat.start', async (params, emit) => {
+      turn += 1
+      if (turn === 1) return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'first done' }])
+      emit({ event: 'approval', data: { request_id: 'succ-1', command: 'deploy', session_id: sid } })
+      await new Promise<void>((resolve) => { releaseSecond = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'second done' }])
+    })
+    const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'one' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'done')
+    // Admission was released at `done`; the title prompt is still parked on the aux call. Start the successor.
+    const second = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'two' }))
+    expect(second.stream_id).toBeDefined()
+    await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}`, (f) => f.event === 'approval')
+    releaseTitle()
+    await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}&after_event_id=${String(first.stream_id)}:0`, (f) => f.event === 'stream_end')
+    // The old turn tore down after its title work, but the successor's approval is still answerable.
+    expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'succ-1' }, pending_count: 1 })
+    sidecar.respond('approval.respond', (params) => ({ ok: true, resolved: 1, choice: params.choice }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'succ-1' }))).toEqual({ ok: true, choice: 'once' })
+    releaseSecond()
+    await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}&after_event_id=${String(second.stream_id)}:0`, (f) => f.event === 'stream_end')
+    sidecar.respond('aux.complete', () => { throw new SidecarError('no aux model', { condition: 'aux_unconfigured' }) })
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

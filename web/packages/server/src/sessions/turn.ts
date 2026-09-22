@@ -327,14 +327,16 @@ export class TurnRunner {
     const settledAt = { value: false }
     try {
       if (!sidecar) throw new SidecarError('The Agent sidecar is not running; chat is unavailable until it starts.', { condition: 'sidecar_unavailable' })
+      // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
+      // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt.
+      const cfg = (await deps.profileConfig?.(s.profile ?? null)) ?? {}
+      // Last yield before `chat.start`: a cancel that landed during the attachment or config awaits must not start
+      // an Agent turn whose abort listener was installed after the signal already fired.
       if (this.registry.cancelled.has(streamId)) {
         this.finalizeCancelled(s, streamId, 'Task cancelled before start.', opts.ephemeral)
         put('cancel', this.cancelPayload('Cancelled before start'))
         return
       }
-      // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
-      // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt.
-      const cfg = (await deps.profileConfig?.(s.profile ?? null)) ?? {}
       const frozenWorkspace = str(s.created_workspace) || str(s.workspace)
       const turnContext = {
         system_message: workspaceSystemMessage(frozenWorkspace),
@@ -798,8 +800,13 @@ export class TurnRunner {
     this.registry.retire(streamId, this.deps.now())
     this.registry.forgetOwner(streamId)
     this.registry.clearWritebackOwnerIfOwned(sessionId, streamId)
-    this.deps.pending.clearApprovals(sessionId)
-    this.deps.pending.clearClarifies(sessionId)
+    // Admission was released before the title work, so a successor turn may already own the session and have parked
+    // its own prompts: only the stream that still owns the session clears them.
+    const successor = this.registry.activeRunStreamForSession(sessionId)
+    if (!successor || successor === streamId) {
+      this.deps.pending.clearApprovals(sessionId)
+      this.deps.pending.clearClarifies(sessionId)
+    }
     try { this.deps.onTurnEnd?.(sessionId) } catch { /* best effort */ }
   }
 

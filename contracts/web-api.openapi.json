@@ -8266,9 +8266,7 @@
                   "session_id": {
                     "type": "string"
                   },
-                  "enabled": {
-                    "type": "boolean"
-                  }
+                  "enabled": {}
                 },
                 "required": [
                   "session_id"
@@ -8289,6 +8287,9 @@
                       "const": true
                     },
                     "yolo_enabled": {
+                      "type": "boolean"
+                    },
+                    "stale_cleared": {
                       "type": "boolean"
                     }
                   },
@@ -10929,9 +10930,7 @@
                   "name": {
                     "type": "string"
                   },
-                  "create": {
-                    "type": "boolean"
-                  }
+                  "create": {}
                 },
                 "required": [
                   "path"
@@ -11589,9 +11588,7 @@
                   "path": {
                     "type": "string"
                   },
-                  "recursive": {
-                    "type": "boolean"
-                  }
+                  "recursive": {}
                 },
                 "required": [
                   "session_id",
@@ -14317,9 +14314,7 @@
                       }
                     ]
                   },
-                  "track": {
-                    "type": "boolean"
-                  },
+                  "track": {},
                   "dirty_mode": {
                     "type": "string"
                   }
@@ -14701,9 +14696,7 @@
                       }
                     ]
                   },
-                  "track": {
-                    "type": "boolean"
-                  }
+                  "track": {}
                 },
                 "required": [
                   "session_id",
@@ -18324,6 +18317,30 @@
                               ],
                               "additionalProperties": {}
                             }
+                          },
+                          "extra_models": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "type": "string"
+                                },
+                                "supports_fast_tier": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id"
+                              ],
+                              "additionalProperties": {}
+                            }
                           }
                         },
                         "required": [
@@ -18465,6 +18482,30 @@
                                 "type": "string"
                               },
                               "models": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "provider": {
+                                      "type": "string"
+                                    },
+                                    "supports_fast_tier": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "extra_models": {
                                 "type": "array",
                                 "items": {
                                   "type": "object",
@@ -19137,6 +19178,38 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "version": {
+                      "type": "number"
+                    },
+                    "scope_id": {
+                      "type": "string"
+                    },
+                    "profile_id": {
+                      "type": "string"
+                    },
+                    "active_provider": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "requested_source_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "missing_source": {
+                      "type": "boolean"
+                    },
                     "sources": {
                       "type": "array",
                       "items": {
@@ -19187,22 +19260,15 @@
                         ],
                         "additionalProperties": {}
                       }
-                    },
-                    "active_provider": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "version": {
-                      "type": "number"
                     }
                   },
                   "required": [
+                    "version",
+                    "scope_id",
+                    "profile_id",
+                    "active_provider",
+                    "requested_source_id",
+                    "missing_source",
                     "sources"
                   ],
                   "additionalProperties": {}
@@ -19820,6 +19886,30 @@
                                   ],
                                   "additionalProperties": {}
                                 }
+                              },
+                              "extra_models": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "provider": {
+                                      "type": "string"
+                                    },
+                                    "supports_fast_tier": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "additionalProperties": {}
+                                }
                               }
                             },
                             "required": [
@@ -20166,6 +20256,30 @@
                                 "type": "string"
                               },
                               "models": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "provider": {
+                                      "type": "string"
+                                    },
+                                    "supports_fast_tier": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "extra_models": {
                                 "type": "array",
                                 "items": {
                                   "type": "object",
