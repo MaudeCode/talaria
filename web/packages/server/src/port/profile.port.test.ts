@@ -724,6 +724,57 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(await json(await post(s, '/api/profile/delete', { name: 'memo' }, asWork()))).toEqual({ ok: true, name: 'memo' })
   })
 
+  it('deletion re-checks profile activity after draining writers, so a commit started by a draining request still blocks it', async () => {
+    mkdirSync(join(s.state, 'profiles', 'memo2'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'memo2', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'memo2' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    const first = String(((await json(await post(s, '/api/session/new', { profile: 'memo2' }, { cookie }))).session as Json).session_id)
+    // An admitted request holds its write lease...
+    const release = s.deps.profiles.beginWrite('memo2')
+    expect(typeof release).toBe('function')
+    sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const deleting = post(s, '/api/profile/delete', { name: 'memo2' }, asWork())
+    await new Promise((r) => setTimeout(r, 60))
+    expect(s.deps.profiles.isDeleting('memo2')).toBe(true)
+    // ...starts a detached memory commit on its way out, then releases the lease.
+    let finishCommit: () => void = () => undefined
+    sidecar.respond('chat.commit_memory', () => new Promise((resolve) => { finishCommit = () => { resolve({ committed: true }) } }))
+    s.deps.sessions.deps.commitSessionMemory?.(first)
+    if (typeof release === 'function') release()
+    const refused = await deleting
+    expect(refused.status).toBe(409)
+    expect(existsSync(join(s.state, 'profiles', 'memo2'))).toBe(true)
+    finishCommit()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(await json(await post(s, '/api/profile/delete', { name: 'memo2' }, asWork()))).toEqual({ ok: true, name: 'memo2' })
+  })
+
+  it('a profile is not deleted when its tombstone cannot be persisted', async () => {
+    mkdirSync(join(s.state, 'profiles', 'sticky'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'sticky', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const file = join(s.deps.config.stateDir, 'deleted-profiles.json')
+    const previous = existsSync(file) ? readFileSync(file, 'utf8') : null
+    rmSync(file, { force: true })
+    mkdirSync(file) // a directory in the file's place makes the atomic rename fail
+    let rpcs = 0
+    sidecar.respond('profiles.delete', () => { rpcs += 1; return { ok: true } })
+    try {
+      const res = await post(s, '/api/profile/delete', { name: 'sticky' }, asWork())
+      expect(res.status).toBe(503)
+      expect(String((await json(res)).error)).toContain('deletion record could not be written')
+      expect(rpcs).toBe(0)
+      expect(existsSync(join(s.state, 'profiles', 'sticky'))).toBe(true)
+      expect(s.deps.profiles.isDeleting('sticky')).toBe(false)
+      expect(typeof s.deps.profiles.beginWrite('sticky')).toBe('function')
+    } finally {
+      rmSync(file, { recursive: true, force: true })
+      if (previous !== null) writeFileSync(file, previous)
+    }
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

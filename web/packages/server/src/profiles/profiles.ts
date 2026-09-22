@@ -178,7 +178,9 @@ export class ProfileService {
       if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
       // The deletion tombstone lifts only once the recreation fully succeeded: a stale cookie stays refused while the
       // RPC is pending or after it failed.
-      if (this.deleted.delete(opts.name)) this.saveTombstones()
+      if (this.deleted.delete(opts.name)) {
+        try { this.saveTombstones() } catch (error) { this.deps.log(`[webui] WARNING: could not persist profile tombstones: ${(error as Error).message}`) }
+      }
       return row
     }).finally(() => { releaseSource?.() })
     const rows = await this.list('default')
@@ -208,9 +210,10 @@ export class ProfileService {
     } catch { return [] }
   }
 
+  /** Persist the tombstones; throws when the state directory cannot be written (callers decide whether to fail closed). */
   private saveTombstones(): void {
     if (!this.deps.tombstoneFile) return
-    try { atomicWriteText(this.deps.tombstoneFile, JSON.stringify([...this.deleted].sort())) } catch (error) { this.deps.log(`[webui] WARNING: could not persist profile tombstones: ${(error as Error).message}`) }
+    atomicWriteText(this.deps.tombstoneFile, JSON.stringify([...this.deleted].sort()))
   }
 
   isDeleting(name: string | null): boolean {
@@ -266,11 +269,24 @@ export class ProfileService {
       // Behind any in-flight creation of the same name, so its configuration writes finish before the home goes.
       await this.withLifecycle(name, async () => {
         if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
-        // Mutations admitted before the mark finish before the home goes; new ones are refused by the mark.
+        // Mutations admitted before the mark finish before the home goes; new ones are refused by the mark. A request
+        // that drained may have started detached profile work (a memory commit) on its way out: check again.
         await this.awaitWritesDrained(name, 30_000)
+        if (this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
+        // The tombstone is durable before anything is removed: if it cannot be persisted, nothing is deleted, so a
+        // restart can never lose the guard for a home that is already gone.
+        this.deleted.add(name)
+        try {
+          this.saveTombstones()
+        } catch (error) {
+          this.deleted.delete(name)
+          throw new ProfileError(`Profile '${name}' was not deleted: the deletion record could not be written (${str((error as Error).message)})`, 503)
+        }
         try {
           await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
         } catch (error) {
+          this.deleted.delete(name)
+          try { this.saveTombstones() } catch { /* the stale tombstone only over-refuses; the next successful create lifts it */ }
           const message = str((error as Error).message)
           throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
         }
@@ -278,8 +294,6 @@ export class ProfileService {
     } finally {
       this.deleting.delete(name)
     }
-    this.deleted.add(name)
-    this.saveTombstones()
     this.invalidate()
     return { ok: true, name }
   }
