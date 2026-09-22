@@ -28,3 +28,65 @@ describe('persisted session shape', () => {
     expect(cards[0]!.result).toContain('boot.ts')
   })
 })
+
+// TAL-233: presentation grouping retains the raw index used by branch/edit actions.
+describe('assistant turn projection', () => {
+  it('groups a multi-step turn once while preserving the final raw message index', async () => {
+    const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
+    const messages = [...persisted.messages.slice(0, 3),
+      { role: 'assistant', id: 11, content: 'Checking another file.', tool_calls: [{ id: 'call_b', name: 'read_file', args: { path: 'b' } }] },
+      { role: 'tool', id: 12, tool_call_id: 'call_b', content: 'b contents' },
+      persisted.messages[3]!,
+      { role: 'user', id: 13, content: 'Again' },
+      { role: 'assistant', id: 14, content: 'Done again.' },
+    ]
+    const rows = groupAssistantTurns(projectMessages(SessionSchema.parse({ ...persisted, messages }).messages!, 120))
+    expect(rows.map((r) => r.message.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(rows[1]!.index).toBe(125)
+    expect(persistedActivity(rows[1]!).items.map((i) => i.kind)).toEqual(['reasoning', 'text', 'tool', 'text', 'tool'])
+    expect(persistedActivity(rows[1]!).finalAnswer).toBe('Done.')
+    expect(groupAssistantTurns(projectMessages(messages.slice(1), 121))[0]!.index).toBe(125)
+  })
+
+  it('keeps explicit different owners and adjacent completed replies separate', async () => {
+    const { groupAssistantTurns } = await import('./turnActivity')
+    const rows = projectMessages([
+      { role: 'assistant', id: 'a', content: 'First', _anchor_stream_id: 'one', tool_calls: [{ id: 'x' }] },
+      { role: 'assistant', id: 'b', content: 'Second', _anchor_stream_id: 'two' },
+      { role: 'assistant', id: 'c', content: 'Third' },
+    ])
+    expect(groupAssistantTurns(rows)).toHaveLength(3)
+  })
+
+  it('uses recovered scene order and stable tool ids without duplicating its final answer', async () => {
+    const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
+    const rows = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 4, content: 'Answer', _anchor_stream_id: 'run', _anchor_activity_scene: {
+      version: 'activity_scene_v1', activity_rows: [
+        { row_id: 'p', role: 'prose', text: 'Progress' },
+        { row_id: 'a', role: 'tool', tool_call_id: 'a', tool: { name: 'read_file', done: false } },
+        { row_id: 'a-replayed', role: 'tool', tool_call_id: 'a', tool: { name: 'read_file', snippet: 'contents', done: true } },
+        { row_id: 'b', role: 'tool', tool_call_id: 'b', tool: { name: 'read_file', done: true } },
+        { row_id: 'answer', role: 'prose', text: 'Answer' },
+      ],
+    } }]))
+    const activity = persistedActivity(rows[0]!)
+    expect(activity.items.map((item) => item.key)).toEqual(['p', 'tool:a', 'tool:b'])
+    expect(activity.items[1]).toMatchObject({ kind: 'tool', call: { done: true, result: 'contents' } })
+    expect(activity.finalAnswer).toBe('Answer')
+  })
+})
+
+
+describe('persisted terminal outcomes', () => {
+  it.each(['Cancellation details', 'Interruption details', 'Provider details'])('retains partial work before %s without reporting Worked', async (label) => {
+    const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
+    const grouped = groupAssistantTurns(projectMessages([
+      { role: 'user', id: 1, content: 'Inspect' },
+      { role: 'assistant', id: 2, content: 'Partial output', _partial: true, tool_calls: [{ id: 'a', name: 'read_file' }] },
+      { role: 'assistant', id: 3, content: 'Terminal explanation', _error: true, provider_details_label: label },
+    ]))
+    expect(grouped).toHaveLength(2)
+    expect(persistedActivity(grouped[1]!).status).toBe(label === 'Cancellation details' ? 'cancelled' : label === 'Interruption details' ? 'interrupted' : 'error')
+    expect(persistedActivity(grouped[1]!).items.map((item) => item.kind)).toEqual(['text', 'tool'])
+  })
+})

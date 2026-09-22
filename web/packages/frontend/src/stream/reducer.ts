@@ -32,7 +32,7 @@ export interface LiveToolCall {
 }
 
 export type Segment =
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; interim?: boolean }
   | { kind: 'reasoning'; text: string; titles: string[] }
   | { kind: 'tool'; toolId: string }
 
@@ -64,6 +64,7 @@ export interface LiveTurn {
   compression: { state: 'compressing' | 'compressed'; newSessionId: string | null } | null
   title: string | null
   doneSession: Session | null
+  terminalState?: string
   doneAt: number | null
   streamEnded: boolean
   goal: unknown
@@ -114,7 +115,7 @@ export function parseSeq(lastEventId: string, streamId: string): number | null {
 function appendText(segments: Segment[], text: string): Segment[] {
   if (!text) return segments
   const last = segments[segments.length - 1]
-  if (last?.kind === 'text') return [...segments.slice(0, -1), { kind: 'text', text: last.text + text }]
+  if (last?.kind === 'text' && !last.interim) return [...segments.slice(0, -1), { kind: 'text', text: last.text + text }]
   return [...segments, { kind: 'text', text }]
 }
 
@@ -165,7 +166,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const text = (event.data.text ?? '').trim()
       if (!text || event.data.already_streamed || event.data.reasoning_echo) return t
       // Interim prose becomes its own sealed text segment before the next tool.
-      const sealed: Segment = { kind: 'text', text }
+      const sealed: Segment = { kind: 'text', text, interim: true }
       return { ...t, segments: [...t.segments, sealed] }
     }
     case 'reasoning': {
@@ -233,7 +234,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     case 'done': {
       if (terminal) return stamped
       const session = event.data.session
-      return { ...stamped, status: 'done', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null }
+      return { ...stamped, status: 'done', terminalState: typeof event.data.terminal_state === 'string' ? event.data.terminal_state : 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null }
     }
     case 'apperror':
     case 'error': {
@@ -243,6 +244,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       return {
         ...stamped,
         status: cancelled ? 'cancelled' : 'error',
+        terminalState: type,
         doneAt: now,
         error: cancelled ? null : { type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,

@@ -248,6 +248,17 @@ today. The legacy renderer corpus is ported to
 `frontend/src/features/chat/__fixtures__/markdown/` with differential
 expectations.
 
+### Turn activity projection
+
+`packages/frontend/src/features/chat/turnActivity.ts` projects live reducer segments
+and persisted assistant rows into the same ordered worklog. Explicit run/turn IDs
+and user boundaries keep turns separate; grouping retains the final raw message
+index for transcript actions. Existing `_anchor_activity_scene` rows are used when
+present, with omitted history loaded from the existing anchor-scene endpoint.
+`TurnActivityView` renders consecutive support rows as nested groups and keeps the
+final answer outside the completed-turn disclosure. Disclosure preferences are
+renderer-only, scoped by profile/session/turn, and bounded to 200 choices per chat.
+
 ## 12. Extensions
 
 The unified sandboxed extension platform is specified in

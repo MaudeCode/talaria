@@ -58,6 +58,7 @@ export const searchSessions = (q: string, depth = 5) => orpc().sessions.search({
 export interface SessionGetParams { messages?: boolean; msg_limit?: number; msg_before?: number; resolve_model?: boolean }
 export const fetchSession = (id: SessionId, params: SessionGetParams = {}) =>
   orpc().session.get({ session_id: id, messages: params.messages === false ? '0' : undefined, msg_limit: num(params.msg_limit), msg_before: num(params.msg_before), resolve_model: params.resolve_model === false ? '0' : undefined }, { signal: timeout(60_000) })
+export const fetchAnchorScene = (session_id: string, message_ref: string, message_index: number, before: number, signal: AbortSignal) => orpc().session.anchorSceneGet({ session_id, message_ref, message_index: String(message_index), before: String(before), limit: '80' }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const newSession = (body: z.infer<typeof SessionNewRequestSchema>) => orpc().session.new(body)
