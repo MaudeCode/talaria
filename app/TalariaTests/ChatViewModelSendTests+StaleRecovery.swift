@@ -1623,7 +1623,20 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    private func assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: Bool) async throws {
+    func testColdRelaunchReplayDeduplicatesInterimThenTokens() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: true, switchChannelAfterTool: true)
+    }
+
+    @MainActor
+    func testColdRelaunchReplayDeduplicatesTokensThenInterim() async throws {
+        try await assertColdReplayDeduplicatesEveryAssistantSegment(useInterim: false, switchChannelAfterTool: true)
+    }
+
+    @MainActor
+    private func assertColdReplayDeduplicatesEveryAssistantSegment(
+        useInterim: Bool,
+        switchChannelAfterTool: Bool = false
+    ) async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, turnMessagesJSON: """
         {
@@ -1682,8 +1695,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-1"])
         XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
 
+        var replayUsesInterim = useInterim
         func replayProse(_ text: String) {
-            if useInterim {
+            if replayUsesInterim {
                 streamClient.emit(.interimAssistant(InterimAssistantStreamEvent(text: text)))
             } else {
                 streamClient.emit(.token(text))
@@ -1706,7 +1720,10 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.liveToolCalls.first?.isCompleted, true)
         XCTAssertEqual(liveProse(viewModel), ["Reading jungle notes.", "Once Raj reached the river. "])
 
-        if useInterim {
+        if switchChannelAfterTool {
+            replayUsesInterim.toggle()
+        }
+        if replayUsesInterim {
             replayProse("Once Raj reached the river. The snare broke.")
         } else {
             replayProse("Once Raj")

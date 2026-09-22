@@ -308,7 +308,7 @@ final class ChatViewModel {
     private var isRefreshingCompletedResponseTitle = false
     private var activeStreamReplayChannels = ActiveStreamReplayChannels()
     private var pendingColdReplayProsePrefix: String?
-    private var activeColdReplayProsePrefix: String?
+    private var activeColdReplayProseRemainder: Substring?
     private var activeStreamReplayMatchedPrefixLength = 0
     /// Unmatched tail of the assistant text already received, cached while an armed
     /// replay keeps matching in order (TAL-75). While every replayed token dedups to
@@ -4602,9 +4602,10 @@ final class ChatViewModel {
            let index = messages.firstIndex(where: { $0.messageId == streamingAssistantMessageID }) {
             let existing = messages[index]
             let currentContent = existing.content ?? ""
-            let textToAppend = deduplicatedReplayText(
+            let coldReplayText = activeStreamReplayChannels.interim ? deduplicatedColdReplayProse(text) : nil
+            let textToAppend = coldReplayText ?? deduplicatedReplayText(
                 text,
-                existingContent: activeColdReplayProsePrefix ?? currentContent,
+                existingContent: currentContent,
                 isArmed: activeStreamReplayChannels.interim,
                 matchedPrefixLength: &activeStreamReplayMatchedInterimLength
             )
@@ -5054,10 +5055,11 @@ final class ChatViewModel {
         // Ordinary streaming skips both and appends directly.
         let messageID = ensureStreamingAssistantMessage()
         let remainder: String
-        if activeStreamReplayChannels.token {
+        if activeStreamReplayChannels.token, let coldReplayText = deduplicatedColdReplayProse(token) {
+            remainder = coldReplayText
+        } else if activeStreamReplayChannels.token {
             let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
-            let receivedUTF8Count = activeColdReplayProsePrefix?.utf8.count
-                ?? (flushedContent.utf8.count + pendingAssistantTokenText.utf8.count)
+            let receivedUTF8Count = flushedContent.utf8.count + pendingAssistantTokenText.utf8.count
             if let cached = activeStreamReplayTokenRemainder,
                cached.receivedUTF8Count == receivedUTF8Count,
                cached.unmatched.hasPrefix(token) {
@@ -5072,7 +5074,7 @@ final class ChatViewModel {
             activeStreamReplayTokenRemainder = nil
             remainder = deduplicatedReplayToken(
                 token,
-                existingContent: activeColdReplayProsePrefix ?? (flushedContent + pendingAssistantTokenText)
+                existingContent: flushedContent + pendingAssistantTokenText
             )
         } else {
             remainder = token
@@ -5179,6 +5181,25 @@ final class ChatViewModel {
             assistantSegments: updatedSegments,
             endsBeforeSteeringHint: existingTranscriptMessage.endsBeforeSteeringHint
         )
+    }
+
+    private func deduplicatedColdReplayProse(_ text: String) -> String? {
+        guard let remaining = activeColdReplayProseRemainder else { return nil }
+
+        // Token and interim events share journal order, even when each segment
+        // uses a different channel. Consume the persisted prefix only once.
+        if remaining.hasPrefix(text) {
+            activeColdReplayProseRemainder = remaining.dropFirst(text.count)
+            return ""
+        }
+        if text.hasPrefix(remaining) {
+            activeColdReplayProseRemainder = remaining.dropFirst(remaining.count)
+            return String(text.dropFirst(remaining.count))
+        }
+
+        // A non-prefix replay still gets the existing overlap matching behavior.
+        activeColdReplayProseRemainder = nil
+        return nil
     }
 
     private func deduplicatedReplayToken(_ token: String, existingContent: String) -> String {
@@ -5848,7 +5869,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorDidStartConnection(isReplay: Bool) {
-        activeColdReplayProsePrefix = isReplay ? pendingColdReplayProsePrefix : nil
+        activeColdReplayProseRemainder = isReplay ? pendingColdReplayProsePrefix.map { $0[...] } : nil
         pendingColdReplayProsePrefix = nil
         activeStreamReplayChannels.arm(isReplay)
         activeStreamReplayMatchedPrefixLength = 0
@@ -5861,7 +5882,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorDidResetRecoveryState() {
         pendingColdReplayProsePrefix = nil
-        activeColdReplayProsePrefix = nil
+        activeColdReplayProseRemainder = nil
         activeStreamReplayChannels.arm(false)
         activeStreamReplayMatchedPrefixLength = 0
         activeStreamReplayTokenRemainder = nil
