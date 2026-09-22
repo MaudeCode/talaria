@@ -3,14 +3,14 @@
  * env allowlist, resize clamp 8..80 × 20..240, 2000-line backlog with seq
  * replay, 32-terminal cap, SIGHUP→SIGKILL teardown, 900 s idle reap.
  */
-import { existsSync, statSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
+import { basename, delimiter, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { str } from '../util.js'
 
 export interface TerminalItem { seq: number; event: 'output' | 'terminal_closed' | 'terminal_error'; data: Record<string, unknown> }
 
-export interface PtyProcessLike { pid: number; write: (data: string) => void; resize: (cols: number, rows: number) => void; kill: (signal?: string) => void; onData: (cb: (data: string) => void) => void; onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => void }
+export interface PtyProcessLike { pid: number; write: (data: string) => void; resize: (cols: number, rows: number) => void; kill: (signal?: string) => void; onData: (cb: (data: string) => void) => void; onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => void; /** node-pty `UnixTerminal.destroy`: closes the pty master. */ destroy?: () => void; /** Signal the shell's whole process group (Python `os.killpg`); absent on test doubles, which get `kill`. */ killGroup?: (signal: NodeJS.Signals) => void }
 export interface PtyModuleLike { spawn: (file: string, args: string[], opts: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> }) => PtyProcessLike }
 
 const BACKLOG_MAX = 2000
@@ -22,17 +22,39 @@ const SAFE_ENV_KEYS = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG
 
 export function loadPty(): PtyModuleLike | null {
   try {
-    return createRequire(import.meta.url)('node-pty') as PtyModuleLike
+    const pty = createRequire(import.meta.url)('node-pty') as PtyModuleLike
+    // node-pty's `kill` signals the shell pid only; Python `killpg`'d the group so background jobs got the HUP too.
+    return { spawn: (file, args, opts) => { const proc = pty.spawn(file, args, opts); proc.killGroup = (signal) => { try { process.kill(-proc.pid, signal) } catch { proc.kill(signal) } }; return proc } }
   } catch {
     return null
   }
 }
 
+/** `shutil.which`: the first PATH entry holding an executable regular file of that name. */
+function which(name: string, env: Record<string, string | undefined>): string | null {
+  for (const dir of (env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue
+    const candidate = join(dir, name)
+    try { accessSync(candidate, fsConstants.X_OK); if (statSync(candidate).isFile()) return candidate } catch { /* next */ }
+  }
+  return null
+}
+
+/** Python `_shell_path`: `$SHELL` when it exists, else `which("zsh") or which("bash") or which("sh")`, else `/bin/sh`. */
 export function shellPath(env: Record<string, string | undefined>): string {
   const shell = env.SHELL ?? ''
   if (shell && existsSync(shell)) return shell
-  for (const dir of (env.PATH ?? '').split(':')) for (const name of ['zsh', 'bash', 'sh']) if (dir && existsSync(`${dir}/${name}`)) return `${dir}/${name}`
-  return '/bin/sh'
+  return which('zsh', env) ?? which('bash', env) ?? which('sh', env) ?? '/bin/sh'
+}
+
+/** Python `int(value or default)`: numbers truncate, booleans are 1/0, strings must be integer literals. */
+export function pyIntOr(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === '' || value === false || value === 0) return fallback
+  if (typeof value === 'boolean') return 1
+  if (typeof value === 'number') { if (!Number.isFinite(value)) throw new Error(`cannot convert float ${String(value)} to integer`); return Math.trunc(value) }
+  const text = str(value).trim()
+  if (typeof value !== 'string' || !/^[+-]?\d+$/.test(text)) throw new Error(`invalid literal for int() with base 10: '${str(value)}'`)
+  return Number.parseInt(text, 10)
 }
 
 export function shellArgv(shell: string): string[] {
@@ -46,6 +68,8 @@ export class TerminalSession {
   /** When the shell exited or was torn down (`now()` clock); null while alive. */
   closedAt: number | null = null
   exitCode: number | null = null
+  /** Set once the pty reported the shell's exit; the teardown escalation only SIGKILLs a shell still running. */
+  exited = false
   lastActivity: number
   unwatchedSince: number | null
   private nextSeq = 1
@@ -79,8 +103,8 @@ export class TerminalSession {
   }
 
   setSize(rows: unknown, cols: unknown): void {
-    this.rows = Math.max(8, Math.min(Number.parseInt(str(rows ?? this.rows), 10) || this.rows || 24, 80))
-    this.cols = Math.max(20, Math.min(Number.parseInt(str(cols ?? this.cols), 10) || this.cols || 80, 240))
+    this.rows = Math.max(8, Math.min(pyIntOr(rows, this.rows) || this.rows || 24, 80))
+    this.cols = Math.max(20, Math.min(pyIntOr(cols, this.cols) || this.cols || 80, 240))
     if (!this.closed) { try { this.proc.resize(this.cols, this.rows) } catch { /* pty gone */ } }
   }
 }
@@ -130,24 +154,30 @@ export class TerminalRegistry {
     if (current?.isAlive && !opts.restart && current.workspace === cwd) { current.setSize(opts.rows, opts.cols); return current }
     if (current) { this.terminals.delete(sid); this.teardown(current) }
     this.enforceCap(sid)
-    const rows = Math.max(8, Math.min(Number.parseInt(str(opts.rows ?? 24), 10) || 24, 80))
-    const cols = Math.max(20, Math.min(Number.parseInt(str(opts.cols ?? 80), 10) || 80, 240))
+    // Python exported the requested (unclamped) size into the shell's environment and clamped only the winsize.
+    const requestedRows = pyIntOr(opts.rows, 24)
+    const requestedCols = pyIntOr(opts.cols, 80)
+    const rows = Math.max(8, Math.min(requestedRows || 24, 80))
+    const cols = Math.max(20, Math.min(requestedCols || 80, 240))
     const env: Record<string, string> = {}
     for (const [k, v] of Object.entries(this.deps.env)) if (SAFE_ENV_KEYS.has(k) && v !== undefined) env[k] = v
-    Object.assign(env, { TERM: 'xterm-256color', COLORTERM: 'truecolor', COLUMNS: String(cols), LINES: String(rows), PWD: cwd, HERMES_WEBUI_TERMINAL: '1' })
+    Object.assign(env, { TERM: 'xterm-256color', COLORTERM: 'truecolor', COLUMNS: String(requestedCols), LINES: String(requestedRows), PWD: cwd, HERMES_WEBUI_TERMINAL: '1' })
     const shell = shellPath(this.deps.env)
     const proc = pty.spawn(shell, shellArgv(shell), { name: 'xterm-256color', cols, rows, cwd, env })
     const term = new TerminalSession(sid, cwd, proc, this.deps.now)
     term.rows = rows
     term.cols = cols
     proc.onData((data) => { term.put('output', { text: data }) })
-    proc.onExit(({ exitCode }) => {
+    proc.onExit(({ exitCode, signal }) => {
+      term.exited = true
       if (term.closed) return
       term.closed = true
       term.closedAt = this.deps.now()
-      term.exitCode = exitCode
+      // Python reported `proc.poll()`: a negative signal number for a shell killed by a signal.
+      term.exitCode = signal ? -signal : exitCode
+      try { proc.destroy?.() } catch { /* master already closed */ }
       // The entry stays attachable (backlog + exit code) until a viewer closes it or the reaper retires it.
-      term.put('terminal_closed', { exit_code: exitCode })
+      term.put('terminal_closed', { exit_code: term.exitCode })
     })
     this.terminals.set(sid, term)
     this.ensureReaper()
@@ -179,24 +209,44 @@ export class TerminalRegistry {
     return true
   }
 
-  /** Close every terminal; `immediate` also SIGKILLs the process groups now (the process is exiting and no timer will run). */
+  /**
+   * Close every terminal. `immediate` runs the Python `atexit` escalation synchronously (the process is exiting and
+   * no timer will run): SIGHUP to each process group, up to 1.5 s for the shells to exit, then SIGKILL the survivors.
+   */
   closeAll(opts: { immediate?: boolean } = {}): void {
-    for (const [sid, term] of this.terminals) { this.terminals.delete(sid); this.teardown(term, opts.immediate ?? false) }
+    const terms = [...this.terminals.values()]
+    this.terminals.clear()
     if (this.reaper) { clearInterval(this.reaper); this.reaper = null }
+    if (!opts.immediate) { for (const term of terms) this.teardown(term); return }
+    const live = terms.filter((t) => !t.closed)
+    for (const term of live) { term.closed = true; term.closedAt = this.deps.now(); signalGroup(term.proc, 'SIGHUP') }
+    const deadline = Date.now() + 1_500
+    const sleeper = new Int32Array(new SharedArrayBuffer(4))
+    // The exit callback cannot run while this loop blocks the event loop, so a real shell is probed directly.
+    const alive = (t: TerminalSession): boolean => !t.exited && (t.proc.killGroup ? pidAlive(t.proc.pid) : true)
+    while (Date.now() < deadline && live.some(alive)) Atomics.wait(sleeper, 0, 0, 50)
+    for (const term of live) { if (alive(term)) signalGroup(term.proc, 'SIGKILL'); try { term.proc.destroy?.() } catch { /* closed */ } term.put('terminal_closed', { exit_code: term.exitCode }) }
   }
 
-  private teardown(term: TerminalSession, immediate = false): void {
+  /** Python `_teardown_terminal`: SIGHUP the group, wait 1.5 s, SIGKILL only if still alive, then close the master. */
+  private teardown(term: TerminalSession): void {
     if (term.closed) return
     term.closed = true
     term.closedAt = this.deps.now()
-    try { term.proc.kill('SIGHUP') } catch { /* gone */ }
-    const pid = term.proc.pid
-    const killGroup = (): void => { try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } } }
-    if (immediate) { killGroup(); term.put('terminal_closed', { exit_code: term.exitCode }); return }
-    const killer = setTimeout(killGroup, 1_500)
+    signalGroup(term.proc, 'SIGHUP')
+    const escalate = (): void => { if (!term.exited) signalGroup(term.proc, 'SIGKILL'); try { term.proc.destroy?.() } catch { /* closed */ } }
+    const killer = setTimeout(escalate, 1_500)
     killer.unref()
     term.put('terminal_closed', { exit_code: term.exitCode })
   }
+}
+
+function signalGroup(proc: PtyProcessLike, signal: NodeJS.Signals): void {
+  try { if (proc.killGroup) proc.killGroup(signal); else proc.kill(signal) } catch { /* gone */ }
+}
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
 }
 
 export class TerminalNotRunning extends Error {

@@ -66,6 +66,11 @@ function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts:
 }
 
 function notFound(ctx: RequestContext): void {
+  // Python `handle_kanban_*`: an unknown Kanban path names itself and points at a stale cached bundle.
+  if (ctx.path.startsWith('/api/kanban/') || ctx.path === '/api/kanban') {
+    ctx.json({ error: `unknown Kanban endpoint: ${ctx.method} ${ctx.path}. If this appeared after a WebUI update, your browser may be running a stale cached bundle; use Hard refresh now, then reopen Kanban.` }, { status: 404 })
+    return
+  }
   ctx.json({ error: 'not found' }, { status: 404 })
 }
 

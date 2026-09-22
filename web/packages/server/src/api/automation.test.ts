@@ -28,15 +28,15 @@ class FakePtyProcess implements PtyProcessLike {
   written: string[] = []
   size = { cols: 0, rows: 0 }
   private dataCb: ((data: string) => void) | null = null
-  private exitCb: ((e: { exitCode: number }) => void) | null = null
+  private exitCb: ((e: { exitCode: number; signal?: number }) => void) | null = null
   killed: string[] = []
   write(data: string): void { this.written.push(data); this.dataCb?.(`echo:${data}`) }
   resize(cols: number, rows: number): void { this.size = { cols, rows } }
   kill(signal?: string): void { this.killed.push(signal ?? 'SIGTERM') }
   onData(cb: (data: string) => void): void { this.dataCb = cb }
-  onExit(cb: (e: { exitCode: number }) => void): void { this.exitCb = cb }
+  onExit(cb: (e: { exitCode: number; signal?: number }) => void): void { this.exitCb = cb }
   emit(text: string): void { this.dataCb?.(text) }
-  exit(code: number): void { this.exitCb?.({ exitCode: code }) }
+  exit(code: number, signal?: number): void { this.exitCb?.(signal === undefined ? { exitCode: code } : { exitCode: code, signal }) }
 }
 
 function fakePty(): PtyModuleLike & { spawned: FakePtyProcess[]; opts: Json[] } {
@@ -88,7 +88,10 @@ describe('crons, kanban, extensions, terminal', () => {
       if (url === 'http://127.0.0.1:4567/redirect-out') return Promise.resolve(new Response(null, { status: 302, headers: { location: 'http://127.0.0.1:9999/ping' } }))
       if (url === 'http://127.0.0.1:4567/loop') return Promise.resolve(new Response(null, { status: 302, headers: { location: '/loop' } }))
       if (url === 'http://127.0.0.1:4567/big') return Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/octet-stream' } }))
-      if (url.startsWith('http://127.0.0.1:4567/')) return Promise.resolve(new Response(`proxied ${init?.method ?? 'GET'} ${url.slice('http://127.0.0.1:4567'.length)}`, { status: 200, headers: { 'content-type': 'text/plain', 'set-cookie': 'leak=1', 'x-hermes-secret': 'x' } }))
+      if (url.startsWith('http://127.0.0.1:4567/')) {
+        const sent = new Headers(init?.headers ?? {})
+        return Promise.resolve(new Response(`proxied ${init?.method ?? 'GET'} ${url.slice('http://127.0.0.1:4567'.length)}${sent.has('x-client-hop') ? ` hop=${sent.get('x-client-hop') ?? ''}` : ''}`, { status: 200, headers: { 'content-type': 'text/plain', 'set-cookie': 'leak=1', 'x-hermes-secret': 'x' } }))
+      }
       return Promise.resolve(new Response('nope', { status: 404 }))
     }
     s = await bootTestServer({ sidecar, deps: (deps) => { (deps as { fetch: typeof fetch }).fetch = fakeFetch } })
@@ -194,6 +197,18 @@ describe('crons, kanban, extensions, terminal', () => {
     })
     const frames = await s.sse('/api/kanban/events/stream?since=3', (f: SseFrame) => f.event === 'events', { timeoutMs: 5_000 })
     expect(frames[0]).toMatchObject({ event: 'hello', data: { cursor: 3, board: null } })
+    // `hello` reports the normalised slug (Python `_resolve_board`), not the raw query text.
+    const normalised = await s.sse('/api/kanban/events/stream?board=Default', (f: SseFrame) => f.event === 'hello', { timeoutMs: 5_000 })
+    expect(normalised[0]).toMatchObject({ event: 'hello', data: { board: 'default' } })
+    // Path parameters win over same-named body keys; `reason` falls back to `block_reason` when empty.
+    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: 'blocked', priority: 1, block_reason: params.reason }, read_only: false }))
+    const blocked = await json(await post(s, '/api/kanban/tasks/t_1/block', { task_id: 't_other', reason: '', block_reason: 'x' }))
+    expect(blocked.task).toMatchObject({ id: 't_1', block_reason: 'x' })
+    expect((await json(await s.get('/api/kanban/nope'))).error).toContain('unknown Kanban endpoint: GET /api/kanban/nope')
+    sidecar.respond('kanban.board', () => { throw new SidecarError('OperationalError: database is locked', { condition: 'sidecar_error' }) })
+    const locked = await s.get('/api/kanban/board')
+    expect(locked.status).toBe(500)
+    expect(await json(locked)).toEqual({ error: 'Internal server error' })
     const eventsFrame = frames.find((f) => f.event === 'events')
     expect(eventsFrame?.id).toBe('7')
     expect((eventsFrame?.data as Json).cursor).toBe(7)
@@ -263,12 +278,31 @@ describe('crons, kanban, extensions, terminal', () => {
     res = await post(s, '/api/extensions/ext-one/sidecar/redirect', { a: 1 }, 'POST', browserHeaders)
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('proxied GET /ping?via=redirect')
+    // Python's opener raised on a cross-origin hop or the hop limit; both surfaced as the generic reach failure.
     res = await s.get('/api/extensions/ext-one/sidecar/redirect-out', { headers: browserHeaders })
     expect(res.status).toBe(502)
-    expect(await json(res)).toEqual({ error: 'Extension sidecar redirect crossed declared origin' })
+    expect(await json(res)).toEqual({ error: 'Failed to reach extension sidecar' })
     res = await s.get('/api/extensions/ext-one/sidecar/loop', { headers: browserHeaders })
     expect(res.status).toBe(502)
-    expect(await json(res)).toEqual({ error: 'Extension sidecar redirect limit exceeded' })
+    expect(await json(res)).toEqual({ error: 'Failed to reach extension sidecar' })
+    // A percent-malformed id is invalid input; an encoded spelling of a valid id is not accepted either (raw match).
+    expect((await s.get('/api/extensions/%zz/sidecar/ping', { headers: browserHeaders })).status).toBe(400)
+    expect((await s.get('/api/extensions/ext%2Done/sidecar/ping', { headers: browserHeaders })).status).toBe(400)
+    // Request headers named in `Connection:` never reach the sidecar (fetch forbids that header, so raw HTTP).
+    const hop = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port: s.running.port, path: '/api/extensions/ext-one/sidecar/ping', method: 'GET', headers: { ...browserHeaders, connection: 'close, x-client-hop', 'x-client-hop': 'secret' } }, (r) => {
+        let text = ''
+        r.on('data', (c: Buffer) => { text += c.toString('utf8') })
+        r.on('end', () => { resolve({ status: r.statusCode ?? 0, text }) })
+      })
+      req.on('error', reject)
+      req.end()
+    })
+    expect(hop.status).toBe(200)
+    expect(hop.text).toBe('proxied GET /ping')
+    res = await s.get('/api/extensions/ext-one/sidecar/ping', { headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' } })
+    expect(res.status).toBe(403)
+    expect((await json(res)).error).toBe('Cross-origin mismatch - check reverse proxy headers')
     res = await s.get('/api/extensions/ext-one/sidecar/big', { headers: browserHeaders })
     expect(res.status).toBe(502)
     expect(await json(res)).toEqual({ error: 'Extension sidecar response too large' })
@@ -338,8 +372,9 @@ describe('crons, kanban, extensions, terminal', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(proc.killed).toContain('SIGHUP')
-    expect(killed).toEqual([[-proc.pid, 'SIGKILL']])
+    // Python's atexit path: SIGHUP, up to 1.5 s of grace, then SIGKILL for a shell that is still running.
+    expect(proc.killed).toEqual(['SIGHUP', 'SIGKILL'])
+    expect(killed).toEqual([])
     expect(s.deps.terminals.get(sid)).toBeNull()
     expect((await s.get(`/api/terminal/output?session_id=${sid}`)).status).toBe(404)
   })
@@ -353,7 +388,8 @@ describe('crons, kanban, extensions, terminal', () => {
     let body = await json(res)
     expect(body).toMatchObject({ ok: true, session_id: sid, running: true })
     const proc = pty.spawned.at(-1)!
-    expect(pty.opts.at(-1)).toMatchObject({ rows: 80, cols: 20, env: { TERM: 'xterm-256color', HERMES_WEBUI_TERMINAL: '1' } })
+    // Winsize is clamped; the shell's environment carries the requested size, as in Python.
+    expect(pty.opts.at(-1)).toMatchObject({ rows: 80, cols: 20, env: { TERM: 'xterm-256color', HERMES_WEBUI_TERMINAL: '1', LINES: '500', COLUMNS: '10' } })
     expect((pty.opts.at(-1)?.env as Json).SECRET).toBeUndefined()
     res = await post(s, '/api/terminal/input', { session_id: sid, data: 'ls\n' })
     expect(await json(res)).toEqual({ ok: true })
@@ -368,16 +404,50 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(tail[1]?.data).toEqual({ exit_code: 0 })
     res = await post(s, '/api/terminal/input', { session_id: sid, data: 'x' })
     expect(res.status).toBe(404)
+    expect((await json(res)).error).toBe("'terminal not running'")
     res = await post(s, '/api/terminal/close', { session_id: sid })
     expect((await json(res)).ok).toBe(true)
     res = await post(s, '/api/terminal/start', { session_id: 'ghost' })
     expect(res.status).toBe(404)
+    expect((await json(res)).error).toBe("'Session not found'")
+    // Python `int()` on the size fields, `require()` on the body, `str(KeyError)` quoting for a closed terminal.
+    res = await post(s, '/api/terminal/start', { session_id: sid, rows: 'abc' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe("invalid literal for int() with base 10: 'abc'")
+    res = await post(s, '/api/terminal/resize', { session_id: '', rows: 1 })
+    expect((await json(res)).error).toBe('Missing required field(s): session_id')
     res = await post(s, '/api/terminal/start', { session_id: sid }, 'POST', { 'x-forwarded-for': '203.0.113.9' })
     expect(res.status).toBe(200)
     body = await json(res)
     expect(body.running).toBe(true)
     expect(pty.spawned).toHaveLength(spawnedBefore + 2)
   })
+  it('a remote terminal backend answers the code and the message, and a signal death reports a negative exit code', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
+    const proc = pty.spawned.at(-1)!
+    setTimeout(() => { proc.exit(0, 1) }, 20)
+    const frames = await s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 5_000 })
+    expect(frames.at(-1)?.data).toEqual({ exit_code: -1 })
+    await post(s, '/api/terminal/close', { session_id: sid })
+    const original = sidecar.responderFor('config.get')
+    const previousYaml = existsSync(join(s.state, 'config.yaml')) ? readFileSync(join(s.state, 'config.yaml'), 'utf8') : null
+    sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: { terminal: { backend: 'ssh' } } }))
+    writeFileSync(join(s.state, 'config.yaml'), 'terminal:\n  backend: ssh\n')
+    s.deps.agentConfig.invalidate()
+    await s.deps.agentConfig.read(s.state)
+    try {
+      const res = await post(s, '/api/terminal/start', { session_id: sid })
+      expect(res.status).toBe(400)
+      expect(await json(res)).toEqual({ error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' })
+    } finally {
+      if (previousYaml === null) rmSync(join(s.state, 'config.yaml'), { force: true }); else writeFileSync(join(s.state, 'config.yaml'), previousYaml)
+      if (original) sidecar.respond('config.get', original); else sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: existsSync(params.config_path), config: {} }))
+      s.deps.agentConfig.invalidate()
+    }
+  })
+
   it('a live terminal locks its worktree, and deleting the session closes the terminal [py:test_issue2057_worktree_status.py::test_worktree_status_reports_live_terminal_lock]', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const worktree = join(s.state, 'workspace', 'wt-locked')
@@ -524,6 +594,34 @@ describe('query parameters on non-GET routes (parity)', () => {
     const res = await post(s, '/api/session/rename', {})
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Missing required field(s): session_id, title')
+  })
+})
+
+describe('extension state file limits (parity)', () => {
+  it('reads at most 512 disabled ids and consents, warning `extension_state_truncated`, and a bare root counts as enabled', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    const root = join(stateDir, 'ext-root')
+    mkdirSync(root)
+    const ids = Array.from({ length: 520 }, (_, i) => `ext-${String(i)}`)
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: ids.map((id) => ({ id, name: id, scripts: [`${id}.js`] })) }))
+    writeFileSync(join(stateDir, 'extension-overrides.json'), JSON.stringify({ version: 1, disabled_extensions: ids, sidecar_proxy_consents: Object.fromEntries(ids.map((id) => [id, 'http://127.0.0.1:4567'])) }))
+    const service = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+    try {
+      const status = await service.status()
+      expect((status.counts as Json).user_disabled).toBe(512)
+      expect((status.extensions as Json[]).find((e) => e.id === 'ext-512')).toMatchObject({ user_disabled: false })
+      expect(status.warnings).toEqual(expect.arrayContaining([{ code: 'extension_state_truncated', source: 'extension_state' }]))
+      expect(service.enabledSync()).toBe(true)
+      const bare = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+      expect(bare.enabledSync()).toBe(true)
+      // `urlsplit` semantics for loopback origins: no path (not even `/`), verbatim port, literal hosts only.
+      expect(normalizeLoopbackOrigin('http://127.0.0.1:8080/')).toBeNull()
+      expect(normalizeLoopbackOrigin('http://localhost:80')).toBe('http://localhost:80')
+      expect(normalizeLoopbackOrigin('http://127.1:8080')).toBeNull()
+      expect(normalizeLoopbackOrigin('http://[::1]:9')).toBe('http://[::1]:9')
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
   })
 })
 

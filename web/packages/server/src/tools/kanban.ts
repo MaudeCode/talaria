@@ -24,11 +24,17 @@ export function kanbanFailure(error: unknown): never {
   if (error instanceof HttpFailure) throw error
   if (error instanceof SidecarError) {
     if (error.condition === 'sidecar_unavailable') throw new HttpFailure(503, `kanban unavailable: ${error.message}`)
+    // Python: `ImportError` (hermes_cli missing) → 503 with the text.
+    if (error.condition === 'kanban_unavailable') throw new HttpFailure(503, error.message)
     if (error.condition === 'not_found') throw new HttpFailure(404, error.message)
     if (error.condition === 'invalid_params' || error.code === -32602) throw new HttpFailure(400, error.message)
     if (error.condition === 'refused' || error.condition === 'conflict') throw new HttpFailure(409, error.message)
-    throw new HttpFailure(400, error.message)
+    if (error.condition === 'kanban_error') throw new HttpFailure(400, error.message)
+    // Anything else (sqlite errors, sidecar timeouts) escaped the Python handlers to the dispatcher's opaque 500.
+    throw new HttpFailure(500, 'Internal server error')
   }
+  // `resolveTrusted` and friends raise plain errors Python reported as 400 `ValueError`s.
+  if (error instanceof Error) throw new HttpFailure(400, error.message)
   throw error
 }
 

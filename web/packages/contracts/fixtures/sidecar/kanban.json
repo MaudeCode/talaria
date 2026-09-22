@@ -937,5 +937,16 @@
         "read_only": false
       }
     }
+  ],
+  "kanban.normalize_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "board": "Default"
+      },
+      "result": {
+        "board": "default"
+      }
+    }
   ]
 }

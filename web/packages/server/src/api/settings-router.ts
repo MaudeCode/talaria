@@ -7,8 +7,9 @@ import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, buildProfileCookie, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
-import { forwardedClientIp, ipInNetworks, isLoopback, rawPeerIsTrustedProxy } from '../http/origin.js'
-import { BlockList, isIP } from 'node:net'
+import { forwardedClientIp, isLoopback, rawPeerIsTrustedProxy } from '../http/origin.js'
+import { isNonGlobalAddress } from '../http/addresses.js'
+import { isIP } from 'node:net'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
@@ -43,18 +44,11 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 
-const PRIVATE = new BlockList()
-PRIVATE.addSubnet('10.0.0.0', 8, 'ipv4')
-PRIVATE.addSubnet('172.16.0.0', 12, 'ipv4')
-PRIVATE.addSubnet('192.168.0.0', 16, 'ipv4')
-PRIVATE.addSubnet('169.254.0.0', 16, 'ipv4')
-PRIVATE.addSubnet('fc00::', 7, 'ipv6')
-PRIVATE.addSubnet('fe80::', 10, 'ipv6')
-
+/** Python `addr.is_loopback or addr.is_private` (`ipaddress` treats every non-global range as private). */
 function ipIsLoopbackOrPrivate(addr: string): boolean {
   const ip = addr.trim()
   if (!isIP(ip)) return false
-  return isLoopback(ip) || ipInNetworks(ip, PRIVATE)
+  return isLoopback(ip) || isNonGlobalAddress(ip)
 }
 
 /** Python `_onboarding_request_is_local`: forwarded headers count only behind a trusted proxy with the opt-in. */
@@ -68,8 +62,8 @@ export function onboardingRequestIsLocal(ctx: RequestContext): boolean {
   }
   if (!ipIsLoopbackOrPrivate(ctx.peer)) return false
   if (isLoopback(ctx.peer)) return true
-  // A forwarded header on a non-loopback peer means an untrusted relay: fail closed.
-  return !(ctx.headerAll('x-forwarded-for').length || ctx.header('x-real-ip'))
+  // A (non-empty) forwarded header on a non-loopback peer means an untrusted relay: fail closed.
+  return !(ctx.headerAll('x-forwarded-for').some((v) => v.trim()) || (ctx.header('x-real-ip') ?? '').trim())
 }
 
 /** Python `_onboarding_gate_allows`. */

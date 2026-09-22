@@ -57,6 +57,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("kanban.config", {"profile_home": "{home}"}),
     ("kanban.stats", {"profile_home": "{home}"}),
     ("kanban.assignees", {"profile_home": "{home}"}),
+    ("kanban.normalize_board", {"profile_home": "{home}", "board": "default"}),
     ("kanban.events", {"profile_home": "{home}", "since": 0, "limit": 50}),
     ("kanban.dispatch", {"profile_home": "{home}", "dry_run": True}),
     # state_db

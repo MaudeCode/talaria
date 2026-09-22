@@ -19,6 +19,7 @@ export const EXTENSION_PANEL_SANDBOX_CSP = "sandbox allow-scripts allow-forms al
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const SETTINGS_KEY_RE = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
 const SETTING_TYPES = new Set(['boolean', 'string', 'number', 'integer', 'enum'])
+const MAX_STATE_ENTRIES = 512
 const MAX_URL_LIST = 32
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_STATE_BYTES = 32 * 1024
@@ -64,29 +65,43 @@ function isSafeArchiveMember(rel: string): boolean {
   return !leaf.startsWith('.') || ALLOWED_DOTFILES.has(leaf)
 }
 
+/** Python `_is_safe_asset_url`: `urlsplit` semantics — the raw path (no dot-segment resolution) must start with an allowed prefix. */
 function isSafeAssetUrl(value: string): boolean {
   if (!value || /[\0\r\n"'<>\\]/.test(value)) return false
-  let u: URL
-  try { u = new URL(value, 'http://placeholder') } catch { return false }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('//') || u.hash) return false
-  const decoded = fullyUnquote(u.pathname)
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('//') || value.includes('#')) return false
+  const path = value.split('?')[0] ?? ''
+  const decoded = fullyUnquote(path)
   for (const prefix of ALLOWED_ASSET_PREFIXES) if (decoded.startsWith(prefix)) return isSafeRelativePath(decoded.slice(prefix.length))
   return false
 }
 
+/**
+ * Python `_normalize_loopback_sidecar_origin` (`urlsplit`, not WHATWG): scheme + literal loopback host + optional
+ * numeric port, nothing else — no path (not even `/`), no query, no fragment, no userinfo, no host aliases.
+ */
 export function normalizeLoopbackOrigin(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const origin = value.trim()
   if (!origin || /[\0\r\n"'<>\\]/.test(origin)) return null
-  let u: URL
-  try { u = new URL(origin) } catch { return null }
-  if (!['http:', 'https:'].includes(u.protocol) || !u.host || u.username || u.password) return null
-  if ((u.pathname !== '/' && u.pathname !== '') || u.search || u.hash || origin.endsWith('/') && u.pathname !== '/') return null
-  if (origin.replace(/^https?:\/\/[^/]+/, '') !== '' && origin.replace(/^https?:\/\/[^/]+/, '') !== '/') return null
-  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  const m = /^(https?):\/\/([^/?#]*)$/i.exec(origin)
+  if (!m) return null
+  const scheme = (m[1] ?? '').toLowerCase()
+  const netloc = m[2] ?? ''
+  if (!netloc || netloc.includes('@')) return null
+  const hostPort = /^(\[[^\]]*\]|[^:]*)(?::(.*))?$/.exec(netloc)
+  if (!hostPort) return null
+  const host = (hostPort[1] ?? '').replace(/^\[|\]$/g, '').toLowerCase()
   if (!LOOPBACK_HOSTS.has(host)) return null
+  const portRaw = hostPort[2]
+  let port: string | null = null
+  if (portRaw !== undefined && portRaw !== '') {
+    if (!/^\d+$/.test(portRaw)) return null
+    const n = Number.parseInt(portRaw, 10)
+    if (n < 0 || n > 65535) return null
+    port = String(n)
+  }
   const display = host.includes(':') ? `[${host}]` : host
-  return `${u.protocol}//${display}${u.port ? `:${u.port}` : ''}`
+  return `${scheme}://${display}${port !== null ? `:${port}` : ''}`
 }
 
 function normalizeHealthPath(value: unknown): string | null {
@@ -110,7 +125,7 @@ export function normalizeProxyPath(value: unknown): string | null {
   return segments.length && segments.every((s) => s && s !== '.' && s !== '..') ? candidate : null
 }
 
-const text = (v: unknown, max = 160): string => (typeof v === 'string' ? v.trim().slice(0, max) : '')
+const text = (v: unknown, max = 160): string => (typeof v === 'string' ? v.replaceAll(/[\x00-\x1f\x7f]/g, '').trim().slice(0, max) : '')
 const entryText = (e: Dict, k: string): string => (typeof e[k] === 'string' ? e[k].trim() : '')
 const storageOwned = (e: Dict): boolean => isDict(e.permissions) && isDict(e.permissions.storage) && e.permissions.storage.owned === true
 
@@ -220,7 +235,13 @@ export class ExtensionService {
     if (!Array.isArray(disabledRaw)) { warn(d, 'extension_state_invalid', src); return empty }
     let invalid = false
     const disabled: string[] = []
-    for (const v of disabledRaw) { if (!validId(v)) { invalid = true; continue } if (!disabled.includes(v.trim())) disabled.push(v.trim()) }
+    // Python `_MAX_DISABLED_EXTENSION_IDS` / `_MAX_SIDECAR_PROXY_CONSENTS`: the state file is read up to 512 entries each.
+    for (const v of disabledRaw) {
+      if (!validId(v)) { invalid = true; continue }
+      if (disabled.includes(v.trim())) continue
+      disabled.push(v.trim())
+      if (disabled.length >= MAX_STATE_ENTRIES) { warn(d, 'extension_state_truncated', src); break }
+    }
     let consents: Record<string, string> = {}
     const rawConsents = parsed.sidecar_proxy_consents ?? {}
     let consentsInvalid = false
@@ -229,7 +250,9 @@ export class ExtensionService {
         for (const [id, origin] of Object.entries(rawConsents)) {
           const norm = validId(id) ? normalizeLoopbackOrigin(origin) : null
           if (!norm) { invalid = true; consentsInvalid = true; continue }
-          consents[id.trim()] ??= norm
+          if (id.trim() in consents) continue
+          consents[id.trim()] = norm
+          if (Object.keys(consents).length >= MAX_STATE_ENTRIES) { warn(d, 'extension_state_truncated', src); break }
         }
       }
     }
@@ -274,6 +297,10 @@ export class ExtensionService {
     if (!isSafeRelativePath(rel)) return [null, 'invalid_path']
     const manifest = resolve(root, rel)
     if (!manifest.startsWith(root + sep)) return [null, 'invalid_path']
+    // Python `(root / rel).resolve().relative_to(root)`: a symlinked manifest that leaves the root is rejected too.
+    const real = resolvePathLikePython(manifest)
+    const rootReal = resolvePathLikePython(root)
+    if (real !== rootReal && !real.startsWith(rootReal + sep)) return [null, 'invalid_path']
     return [manifest, 'configured']
   }
 
@@ -429,12 +456,9 @@ export class ExtensionService {
 
   /** Python `get_extension_status`. */
   /** Python `get_extension_config()["enabled"]` for the bootstrap feature flag: a valid root with a loadable manifest. */
+  /** Python `get_extension_config()["enabled"]`: true whenever the extension root directory exists (a manifest is optional). */
   enabledSync(): boolean {
-    const d: Diagnostics = { warnings: [] }
-    const root = this.root()
-    if (!root) return false
-    const [manifest] = this.loadManifest(root, d)
-    return manifest !== null
+    return this.root() !== null
   }
 
   async status(): Promise<Dict> {
@@ -544,12 +568,27 @@ export class ExtensionService {
     return { origin, upstream_url: `${origin}${normalized}${query ? `?${query}` : ''}` }
   }
 
+  /** Python `_build_gallery_opener` (`_AllowlistRedirectHandler`): redirects are followed only onto https gallery hosts. */
+  private async galleryFetch(url: string, timeoutMs: number): Promise<Response> {
+    let current = url
+    let res = await this.deps.fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
+    for (let hop = 0; res.status >= 300 && res.status < 400 && hop < 3; hop += 1) {
+      const location = res.headers.get('location') ?? ''
+      let next: URL | null = null
+      try { next = new URL(location, current) } catch { next = null }
+      if (next?.protocol !== 'https:' || !ALLOWED_DOWNLOAD_HOSTS.has(next.hostname)) throw new ExtensionError('Download redirected to disallowed host')
+      current = next.href
+      res = await this.deps.fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
+    }
+    return res
+  }
+
   async registry(): Promise<{ entries: unknown[]; error?: string }> {
     const now = Date.now()
     if (this.registryCache && now - this.registryCache.at < REGISTRY_TTL_MS) return { entries: this.registryCache.entries }
     if (this.registryInflight) return this.registryCache ? { entries: this.registryCache.entries } : { entries: [], error: 'registry_unavailable' }
     this.registryInflight = (async () => {
-      const res = await this.deps.fetch(REGISTRY_URL, { redirect: 'follow', signal: AbortSignal.timeout(10_000) })
+      const res = await this.galleryFetch(REGISTRY_URL, 10_000)
       if (!res.ok) throw new Error(`registry ${String(res.status)}`)
       const raw = await readCapped(res, 2 * 1024 * 1024)
       if (!raw) throw new Error('registry too large')
@@ -579,17 +618,7 @@ export class ExtensionService {
     if (!root) throw new ExtensionError('Extensions not configured', 404)
     let raw: Buffer
     try {
-      // Python `_safe_download`: redirects are followed only while they stay on an allowed gallery host.
-      let url = downloadUrl
-      let res = await this.deps.fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
-      for (let hop = 0; res.status >= 300 && res.status < 400 && hop < 3; hop += 1) {
-        const location = res.headers.get('location') ?? ''
-        let next: URL | null = null
-        try { next = new URL(location, url) } catch { next = null }
-        if (next?.protocol !== 'https:' || !ALLOWED_DOWNLOAD_HOSTS.has(next.hostname)) throw new ExtensionError('Download redirected to a disallowed host')
-        url = next.href
-        res = await this.deps.fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
-      }
+      const res = await this.galleryFetch(downloadUrl, 30_000)
       if (!res.ok) throw new Error(`download ${String(res.status)}`)
       const capped = await readCapped(res, MAX_ZIP_BYTES)
       if (!capped) throw new ExtensionError('Download too large')
@@ -686,8 +715,11 @@ export class ExtensionService {
     if (!root || !isSafeRelativePath(rel)) return null
     // Python `serve_extension_static`: an anchored, symlink-free open so a link inside the extension dir cannot expose its target.
     const anchor = resolvePathLikePython(root)
-    const file = resolve(anchor, rel)
+    let file = resolve(anchor, rel)
     if (!file.startsWith(anchor + sep)) return null
+    // Python `(root / rel).resolve()`: a symlinked asset is served when its target stays inside the root, never otherwise.
+    const real = resolvePathLikePython(file)
+    if (real !== file) { if (!real.startsWith(anchor + sep)) return null; file = real }
     let fd: number
     try { fd = openAnchoredFd(anchor, file, { wantDir: false }) } catch { return null }
     try {

@@ -3,11 +3,11 @@ import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { activeProfileName } from '../auth/gate.js'
 import { claimOrReject, SSE_HEARTBEAT_INTERVAL_MS } from './sse-routes.js'
-import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, fullyUnquote } from '../tools/extensions.js'
+import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, normalizeProxyPath, validId } from '../tools/extensions.js'
 import { kanbanFailure } from '../tools/kanban.js'
 import { HttpFailure } from '../sessions/service.js'
 import { terminalGate } from './automation-router.js'
-import { checkSameOriginBrowserRequest } from '../http/origin.js'
+import { checkSameOriginBrowserRequest, csrfRejectionError } from '../http/origin.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
 import { stripPublicInternalFields } from '../redact.js'
@@ -34,8 +34,10 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   let cursor = sinceRaw === null ? 0 : Number.parseInt(sinceRaw, 10)
   if (!Number.isFinite(cursor) || cursor < 0) cursor = 0
   const home = ctx.deps.profileHome(activeProfileName(ctx))
+  // Python `_resolve_board` normalised the slug before the `hello` frame carried it.
+  let helloBoard = board
   if (board) {
-    try { await ctx.deps.kanban.events(home, board, 0, 1) } catch (error) {
+    try { helloBoard = (await ctx.deps.kanban.sidecar().call('kanban.normalize_board', { profile_home: home, board })).board } catch (error) {
       try { kanbanFailure(error) } catch (mapped) { if (mapped instanceof HttpFailure) { ctx.json({ error: mapped.message }, { status: mapped.status }); return } }
       throw error
     }
@@ -46,7 +48,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   ctx.res.on('close', () => { abort.abort() })
   try {
     sse.start()
-    sse.event('hello', { cursor, board })
+    sse.event('hello', { cursor, board: helloBoard })
     let lastWrite = Date.now()
     while (!sse.isClosed && !abort.signal.aborted) {
       let events: unknown[] = []
@@ -120,11 +122,18 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
 
 /** `/extensions/*`: always 200 or a bare 404 (Python `serve_extension_static`). */
 export function handleExtensionStatic(ctx: RequestContext): void {
-  const rel = fullyUnquote(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length))
+  // Python `unquote` runs once on the request path.
+  let rel: string
+  try { rel = decodeURIComponent(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length)) } catch { ctx.json({ error: 'not found' }, { status: 404 }); return }
   const file = ctx.deps.extensions.staticFile(rel)
   if (!file) { ctx.json({ error: 'not found' }, { status: 404 }); return }
-  const headers: Record<string, string> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
-  if (file.html) { headers['Content-Security-Policy'] = EXTENSION_PANEL_SANDBOX_CSP; headers['X-Frame-Options'] = 'SAMEORIGIN' }
+  const headers: Record<string, string | string[]> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
+  if (file.html) {
+    // HWEB-100: the page policy stays and a second CSP header adds the sandbox, so a panel opened directly is isolated.
+    const page = ctx.securityHeaders()['Content-Security-Policy']
+    headers['Content-Security-Policy'] = [...(typeof page === 'string' ? [page] : Array.isArray(page) ? page : []), EXTENSION_PANEL_SANDBOX_CSP]
+    headers['X-Frame-Options'] = 'SAMEORIGIN'
+  }
   ctx.send({ status: 200, headers, body: file.body, security: true })
 }
 
@@ -152,22 +161,32 @@ export function matchSidecarProxy(path: string): [string, string] | null {
 export async function handleExtensionSidecarProxy(ctx: RequestContext, extensionId: string, proxyPath: string): Promise<void> {
   const env = ctx.deps.config.env
   const provenance = checkSameOriginBrowserRequest({ origin: ctx.header('origin'), referer: ctx.header('referer'), secFetchSite: ctx.header('sec-fetch-site'), host: ctx.header('host'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host') }, env, { requireProvenance: true })
-  if (provenance !== null) { ctx.json({ error: 'Cross-origin request rejected' }, { status: 403 }); return }
+  if (provenance !== null) { ctx.json({ error: csrfRejectionError(provenance) }, { status: 403 }); return }
+  // Python matched the id raw (`[^/]+`) and validated it as-is: a percent-malformed id is invalid, and an encoded
+  // spelling of a valid id is not accepted either. The sub-path keeps its raw shape (`//`, trailing `/` are invalid).
+  const rawTarget = (ctx.req.url ?? '').split('?')[0] ?? ''
+  const rawMatch = /^\/api\/extensions\/([^/]+)\/sidecar\/(.*)$/.exec(rawTarget)
+  const rawId = rawMatch?.[1] ?? extensionId
+  const rawProxyPath = rawMatch?.[2] ?? proxyPath
+  if (!validId(rawId)) { ctx.json({ error: 'Invalid extension id' }, { status: 400 }); return }
+  if (rawProxyPath !== proxyPath && normalizeProxyPath(rawProxyPath) === null) { ctx.json({ error: 'Invalid sidecar proxy path' }, { status: 400 }); return }
   let body: Buffer | null = null
   if (ctx.method !== 'GET' && ctx.method !== 'HEAD') {
     try { body = await ctx.readRawBody(20 * 1024 * 1024) } catch (error) { ctx.json({ error: str((error as Error).message) }, { status: /too large/i.test(str((error as Error).message)) ? 413 : 400 }); return }
   }
   let target: { origin: string; upstream_url: string }
   try {
-    target = await ctx.deps.extensions.proxyTarget(decodeURIComponent(extensionId), proxyPath, ctx.search.replace(/^\?/, ''))
+    target = await ctx.deps.extensions.proxyTarget(rawId, rawProxyPath, ctx.search.replace(/^\?/, ''))
   } catch (error) {
     if (error instanceof ExtensionError) { ctx.json({ error: error.message }, { status: error.status }); return }
     throw error
   }
   const headers: Record<string, string> = {}
+  // Python `_connection_bound_header_names`: every token the request's `Connection:` names is hop-by-hop too.
+  const requestBound = connectionBoundNames(ctx.req.headers.connection)
   for (const [name, value] of Object.entries(ctx.req.headers)) {
     const lower = name.toLowerCase()
-    if (HOP_BY_HOP.has(lower) || ['authorization', 'cookie', 'content-length', 'host', 'origin', 'referer'].includes(lower) || lower.startsWith('x-csrf') || lower.startsWith('x-hermes-')) continue
+    if (HOP_BY_HOP.has(lower) || requestBound.has(lower) || ['authorization', 'cookie', 'content-length', 'host', 'origin', 'referer'].includes(lower) || lower.startsWith('x-csrf') || lower.startsWith('x-hermes-')) continue
     if (typeof value === 'string') headers[name] = value
   }
   try {
@@ -183,8 +202,8 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
       if (res.status < 300 || res.status >= 400 || !res.headers.has('location')) break
       let resolved: URL | null = null
       try { resolved = new URL(res.headers.get('location') ?? '', url) } catch { resolved = null }
-      if (resolved?.origin !== allowedOrigin) { ctx.json({ error: 'Extension sidecar redirect crossed declared origin' }, { status: 502 }); return }
-      if (hop >= PROXY_MAX_REDIRECTS) { ctx.json({ error: 'Extension sidecar redirect limit exceeded' }, { status: 502 }); return }
+      // Python's opener raised on a cross-origin hop or the hop limit, which surfaced as the generic reach failure.
+      if (resolved?.origin !== allowedOrigin || hop >= PROXY_MAX_REDIRECTS) { ctx.json({ error: 'Failed to reach extension sidecar' }, { status: 502 }); return }
       await res.body?.cancel()
       url = resolved.href
       if ((res.status === 301 || res.status === 302 || res.status === 303) && method !== 'GET' && method !== 'HEAD') { method = 'GET'; requestBody = null; delete headers['content-type']; delete headers['Content-Type'] }
@@ -193,9 +212,10 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
     if (raw === null) { ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 }); return }
     const out: Record<string, string> = {}
     let contentType = false
+    const responseBound = connectionBoundNames(res.headers.get('connection'))
     res.headers.forEach((value, name) => {
       const lower = name.toLowerCase()
-      if (HOP_BY_HOP.has(lower) || lower === 'content-length' || lower === 'set-cookie' || lower === 'content-encoding' || lower.startsWith('x-hermes-')) return
+      if (HOP_BY_HOP.has(lower) || responseBound.has(lower) || lower === 'content-length' || lower === 'set-cookie' || lower === 'content-encoding' || lower.startsWith('x-hermes-')) return
       if (lower === 'content-type') contentType = true
       out[name] = value
     })
@@ -203,6 +223,14 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
     out['Cache-Control'] = 'no-store'
     ctx.send({ status: res.status, headers: out, body: raw, security: true, gzip: false })
   } catch (error) {
-    ctx.json({ error: `Extension sidecar request failed: ${str((error as Error).message)}` }, { status: 502 })
+    ctx.deps.log(`[webui] extension sidecar proxy failed: ${str((error as Error).message)}`)
+    ctx.json({ error: 'Failed to reach extension sidecar' }, { status: 502 })
   }
+}
+
+/** Python `_connection_bound_header_names`: the header names listed in `Connection:` (plus `proxy-connection`). */
+function connectionBoundNames(value: string | string[] | null | undefined): Set<string> {
+  const names = new Set<string>(['proxy-connection'])
+  for (const raw of Array.isArray(value) ? value : value ? [value] : []) for (const token of raw.split(',')) { const t = token.trim().toLowerCase(); if (t) names.add(t) }
+  return names
 }

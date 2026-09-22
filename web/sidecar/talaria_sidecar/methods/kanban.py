@@ -672,7 +672,14 @@ def poll_events(params: dict) -> dict:
     return events_payload(params)
 
 
+def normalize_board_payload(params: dict) -> dict:
+    """The slug a ``board`` query resolves to (predecessor ``_resolve_board``), for the events stream's ``hello``."""
+    resolved = _board(params)
+    return {"board": resolved if resolved is not None else str(params.get("board") or "")}
+
+
 METHODS = {
+    "kanban.normalize_board": normalize_board_payload,
     "kanban.board": board_payload,
     "kanban.boards": list_boards_payload,
     "kanban.create_board": create_board_payload,
@@ -699,7 +706,18 @@ METHODS = {
 def register(registry) -> None:
     for name, func in METHODS.items():
         def handler(ctx: CallContext, params: dict, _func=func):
+            # Predecessor ``handle_kanban_*`` mapping of the store's exceptions: LookupError → 404, ValueError → 400,
+            # RuntimeError → 409; anything else stays an internal error (Python's opaque 500).
             with scoped_home(profile_home_param(params)):
-                return _func(params)
+                try:
+                    return _func(params)
+                except RpcError:
+                    raise
+                except LookupError as exc:
+                    raise RpcError(str(exc), condition="not_found") from exc
+                except ValueError as exc:
+                    raise InvalidParams(str(exc)) from exc
+                except RuntimeError as exc:
+                    raise RpcError(str(exc), condition="refused") from exc
 
         registry.method(name)(handler)

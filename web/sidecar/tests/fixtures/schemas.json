@@ -1437,6 +1437,19 @@
     ],
     "additionalProperties": false
   },
+  "kanban.normalize_board": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "board": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "board"
+    ],
+    "additionalProperties": false
+  },
   "kanban.events": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

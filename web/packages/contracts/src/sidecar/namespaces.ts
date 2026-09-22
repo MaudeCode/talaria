@@ -73,6 +73,7 @@ export const KANBAN_METHODS = {
   'kanban.comment': { params: Board.extend({ task_id: z.string(), body: z.string(), author: z.string().optional() }), result: z.object({ ok: z.literal(true), comment_id: z.union([z.number().int(), z.string()]), read_only: z.boolean() }) },
   'kanban.link': { params: Board.extend({ parent_id: z.string(), child_id: z.string() }), result: z.object({ ok: z.literal(true), parent_id: z.string(), child_id: z.string(), read_only: z.boolean() }) },
   'kanban.unlink': { params: Board.extend({ parent_id: z.string(), child_id: z.string() }), result: z.object({ ok: z.literal(true), changed: z.boolean(), parent_id: z.string(), child_id: z.string(), read_only: z.boolean() }) },
+  'kanban.normalize_board': { params: Board, result: z.object({ board: z.string() }) },
   'kanban.events': { params: Board.extend({ since: z.number().int().optional(), limit: z.number().int().optional() }), result: z.object({ events: z.array(KanbanEventSchema), cursor: z.number().int(), latest_event_id: z.number().int(), read_only: z.boolean() }) },
   'kanban.config': { params: Board, result: z.object({ columns: z.array(z.string()), assignees: z.array(KanbanAssigneeSchema), default_tenant: z.string(), lane_by_profile: z.boolean(), include_archived_by_default: z.boolean(), render_markdown: z.boolean(), read_only: z.boolean() }) },
   'kanban.stats': { params: Board, result: Loose },
