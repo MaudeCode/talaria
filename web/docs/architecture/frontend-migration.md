@@ -2,11 +2,11 @@
 
 Status: implemented by HWEB-100. This document is the authoritative description
 of the browser application after the migration. `ARCHITECTURE.md` links here
-for the frontend half of the system; the Python half is unchanged in ownership.
+for the frontend half of the system; the server half is described there.
 
 ## 1. Runtime and server ownership
 
-- Python (`server.py`, `api/`) is the only application server. It owns
+- The TypeScript server (`packages/server`) is the only application server. It owns
   authentication, CSRF, profiles, sessions, filesystem access, processes, agent
   execution, every `/api/*` route, SSE relays, extension sidecar consent and
   proxying, and persistence.
@@ -15,9 +15,8 @@ for the frontend half of the system; the Python half is unchanged in ownership.
   Query, TanStack Form, TanStack Virtual, Zod 4, Base UI, Tailwind CSS,
   Paraglide JS, Streamdown, `vite-plugin-pwa`.
 - The Start plugin runs in SPA mode to produce the prerendered shell and the
-  client bundle. No Node process runs in production, so server functions and
-  server routes are not used today; the ticket owner lifted the ban on them, so
-  a future Node runtime may adopt them.
+  client bundle. The frontend build stays a static artifact served by the
+  TypeScript server; Start server functions and server routes are not used.
 - Same-origin REST and SSE contracts are preserved. Zod schemas under
   `frontend/src/contracts/` describe them so a future TypeScript handler can
   implement an endpoint without changing React callers.
@@ -25,13 +24,13 @@ for the frontend half of the system; the Python half is unchanged in ownership.
 ## 2. Repository layout
 
 ```
-frontend/                       editable source (npm package "hermes-webui-frontend")
+packages/frontend/              editable source (npm workspace "@maudecode/talaria-web-frontend")
   package.json, package-lock.json
   vite.config.ts                Start SPA plugin, React, Tailwind, Paraglide, PWA injectManifest
   tsconfig.json                 strict, noUncheckedIndexedAccess, verbatimModuleSyntax
   eslint.config.js              typescript-eslint, react-hooks, custom no-raw-fetch / no-innerHTML rules
   vitest.config.ts              jsdom environment, setup with jest-dom
-  playwright.config.ts          Node Playwright against the built assets + Python server
+  playwright.config.ts          Node Playwright against the built assets + the TypeScript server
   project.inlang/settings.json  Paraglide project (base locale en, all locales)
   messages/<locale>.json        one message catalogue per locale (inlang message format)
   scripts/                      build-time gates (i18n parity, generated-output diff)
@@ -50,15 +49,15 @@ frontend/                       editable source (npm package "hermes-webui-front
     lib/                        small utilities (persisted JSON, safeNextPath, base url)
     sw.ts                       custom service worker (injectManifest)
   e2e/                          Playwright functional specs
-static/dist/                    committed production output served by Python
+static/dist/                    committed production output served by the TypeScript server
   index.html                    prerendered SPA shell with token placeholders
   assets/*.[hash].js|css        hashed chunks
   sw.js, manifest.webmanifest, workbox-*.js
 static/brand/                   brand artwork (SVG/PNG favicons, apple touch icon)
 ```
 
-`static/dist/` is generated. It is committed so `git clone && python3 bootstrap.py`,
-`pip install`, and the container image work without Node. CI rebuilds from a
+`static/dist/` is generated. It is committed so a source checkout, the npm
+package, and the container image serve the UI without a frontend build. CI rebuilds from a
 clean `npm ci`; `frontend/scripts/check-dist.mjs` verifies the committed output
 against a clean build on demand (the CI diff gate was removed by the ticket
 owner's scope amendment).
@@ -72,7 +71,7 @@ owner's scope amendment).
 - Determinism: Vite's content hashes are stable for identical inputs; the build
   strips timestamps and sorts precache entries. `check-dist.mjs` rebuilds to a
   temporary directory and diffs byte-for-byte.
-- Python serves the shell from `static/dist/index.html` for the SPA allowlist
+- The server serves the shell from `static/dist/index.html` for the SPA allowlist
   (section 4). It substitutes three placeholders at request time:
   `__WEBUI_VERSION__`, `__BASE_HREF__` (a relative depth prefix such as `./`
   or `../`, computed from the request path so subpath mounts need no
@@ -94,13 +93,13 @@ owner's scope amendment).
 
 `HERMES_WEBUI_DEV_PROXY=http://127.0.0.1:8797 npm run dev -- --host 0.0.0.0 --port 8798` (from `frontend/`) serves
 the app from source with hot module replacement. The Vite dev server forwards `api/`, `static/`, `extensions/`,
-`plugins/`, and `dashboard-plugins/` requests at any mount depth to the Python server named in the variable, which
-keeps state, sessions and auth; everything else is served by Vite. The dev document has no Python-injected `<base>`,
+`plugins/`, and `dashboard-plugins/` requests at any mount depth to the server named in the variable, which
+keeps state, sessions and auth; everything else is served by Vite. The dev document has no server-injected `<base>`,
 so `freezeAppRoot` treats the origin root as the mount in development (`import.meta.env.DEV`). Without the variable,
 `npm run dev` runs the bare Start dev server. Passkey-only authentication is not supported through a loopback dev
 origin because WebAuthn credentials remain bound to the deployed hostname; password authentication remains usable.
 
-From the repository root, `./ctl.sh start --remote` is the attached wrapper for
+From `web/`, `talaria-web ctl start --remote` is the attached wrapper for
 this mode. It reads `HERMES_WEBUI_DEV_PROXY` from the ignored `.env`, binds the
 local frontend to loopback, and forwards any remaining arguments to Vite.
 
@@ -130,13 +129,13 @@ file-based under `frontend/src/routes/`:
 | `/share/$token` | Public read-only share | none |
 | `*` | Client not-found for allowlisted prefixes only | |
 
-Python serves the shell for exactly these prefixes: `/`, `/index.html`,
+The server serves the shell for exactly these prefixes: `/`, `/index.html`,
 `/session/`, `/tasks`, `/kanban`, `/skills`, `/memory`, `/workspaces`,
 `/profiles`, `/todos`, `/insights`, `/logs`, `/settings`, `/ext/`, `/onboarding`,
 `/login`, `/share`. Everything else keeps its server owner (`/api/*`, `/health`,
 `/static/*`, `/sw.js`, `/manifest.*`, `/extensions/*`, `/plugins/*`,
 `/dashboard-plugins/*`, `/favicon.ico`, `/search`) or returns 404. The
-allowlist lives in `api/spa_routes.py` and is tested in
+allowlist lives in `packages/server/src/spa.ts` and is tested in
 `tests/test_hweb100_spa_shell_routes.py`.
 
 Unauthenticated requests to protected shell routes still receive the server's
@@ -170,7 +169,7 @@ only renders what the server allows.
   build on any other `fetch`/`EventSource` use.
 - Fixtures under `frontend/src/contracts/__fixtures__/` are consumed by Vitest
   schema tests and by `tests/test_hweb100_contract_fixtures.py`, which asserts
-  the live Python handlers still produce payloads that satisfy the same
+  the live server handlers still produce payloads that satisfy the same
   fixtures' shapes.
 - `frontend/src/contracts/adapters/` proves the seam: an in-memory adapter
   implements the session read endpoint and the session rename mutation from the
@@ -260,7 +259,7 @@ every extension UI runs in a sandboxed iframe served from `/extensions/` or
 validated with Zod, bound to the owning iframe and extension id, checked against
 declared capabilities, and bounded in size; skins are validated theme-token
 maps; TTS and lifecycle hooks are opt-in capabilities; sidecar access goes
-through the Python-owned consented proxy. Legacy injection and globals are gone.
+through the server-owned consented proxy. Legacy injection and globals are gone.
 
 ## 13. PWA, assets, security
 
@@ -331,8 +330,8 @@ the parity matrix. Mechanisms worth knowing:
 | Unit | `npm run test` (Vitest) | contracts, reducer, router search schemas, Query invalidation, forms, extension protocol, PWA helpers, rendering adapter, hostile corpus |
 | Behaviour | Vitest + RTL | focus, keyboard, live regions, forms, dialogs, menus, comboboxes, error states, reduced motion |
 | End to end | `npm run e2e` (Node Playwright) | navigation, hard refresh, chat lifecycle with the deterministic gateway, reconnect, auth, onboarding, extensions, PWA update, subpath mount at desktop and mobile viewports |
-| Python | `./scripts/test.sh` | SPA allowlist, bootstrap, auth/CSRF/profile boundaries, share, extension assets/sidecars, 404s, contract fixtures |
-| Packaging | `tests/test_hweb100_packaging.py`, Docker smoke | wheel and container include `static/dist/` and run without Node |
+| Server | `npm test -w packages/server` | SPA allowlist, bootstrap, auth/CSRF/profile boundaries, share, extension assets/sidecars, 404s, contract fixtures |
+| Packaging | `npm run check-dist`, Docker smoke | the npm package and container include `static/dist/` |
 
 Tests pin clocks, locale (`en`), data, and viewport for deterministic browser
 checks.

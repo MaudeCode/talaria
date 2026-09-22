@@ -91,14 +91,10 @@ def resolve(root, request, previous=None):
                 # App Store Connect build number from the successful build job.
                 component["buildNumber"] = (prior["buildNumber"] + 1) if prior else 1
             elif name == "web":
-                versions = read_at(root, source, "web/api/contract_versions.json")
+                versions = read_at(root, source, "web/contract_versions.json")
                 capabilities = {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]}
-                pin = read_at(root, source, "web/api/agent_dependency.json")
+                pin = read_at(root, source, "web/sidecar/agent_dependency.json")
                 plan["agent"] = {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]}
-                component["upstreamBase"] = git(root, "show", f"{source}:web/UPSTREAM_BASE_SHA")
-                if not SHA.fullmatch(component["upstreamBase"]):
-                    raise ValueError("Web upstream base must be immutable")
-                git(root, "merge-base", "--is-ancestor", component["upstreamBase"], source)
             else:
                 capabilities = read_at(root, source, "relay/convex/releaseInfo.json")["contracts"]
                 component.update(deploymentId=deployment, deployedRevision=None)
@@ -134,6 +130,8 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
                 raise ValueError("build receipt must identify a changed component tag")
             if name == "web":
                 document["components"][name]["image"] = receipt["image"]
+                if receipt.get("npm"):
+                    document["components"][name]["npm"] = receipt["npm"]
             elif name == "app":
                 document["components"][name]["buildNumber"] = receipt["buildNumber"]
                 app_digest = receipt.get("ipaSha256")
@@ -146,8 +144,8 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
             relay["deployedRevision"] = receipt["deployedRevision"]
         if gate == "publishWeb":
             web = document["components"]["web"]
-            if receipt.get("image") != web.get("image") or receipt.get("tag") != web["tag"]:
-                raise ValueError("published Web image differs from its build")
+            if receipt.get("image") != web.get("image") or receipt.get("tag") != web["tag"] or receipt.get("npm") != web.get("npm"):
+                raise ValueError("published Web image or npm package differs from its build")
         if gate == "uploadApp":
             app = document["components"]["app"]
             if receipt.get("buildNumber") != app["buildNumber"] or receipt.get("tag") != app["tag"]:

@@ -7,16 +7,100 @@ import os
 import re
 import shlex
 import subprocess
-import sys
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "web"))
-from api.talaria_releases import (
-    REPOSITORY_URL,
-    published_web_release,
-    verify_release_source,
-)
+REPOSITORY = "MaudeCode/talaria"
+REPOSITORY_URL = f"https://github.com/{REPOSITORY}"
+API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
+_SHA = re.compile(r"[a-f0-9]{40}")
+_VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+
+
+class ReleaseUnavailable(ValueError):
+    """No trustworthy published release could be resolved."""
+
+
+class _AssetRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urlsplit(newurl)
+        if target.scheme != "https" or target.hostname != "release-assets.githubusercontent.com":
+            raise ReleaseUnavailable("Unexpected release download redirect")
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None:
+            redirected.remove_header("Authorization")
+        return redirected
+
+
+def _get_json(path, *, asset=False):
+    headers = {"Accept": "application/octet-stream" if asset else "application/vnd.github+json",
+               "User-Agent": "Talaria-Web", "X-GitHub-Api-Version": "2026-03-10"}
+    token = os.environ.get("TALARIA_RELEASE_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(API_ROOT + path, headers=headers)
+    with urllib.request.build_opener(_AssetRedirect()).open(request, timeout=5) as response:
+        data = response.read(2_000_001)
+    if len(data) > 2_000_000:
+        raise ReleaseUnavailable("Release metadata exceeds the download limit")
+    return json.loads(data)
+
+
+def published_web_release(channel="stable"):
+    """The newest completed `release-set-<sha>` whose Web component matches the channel (Web `tools/updates.ts`)."""
+    tag_pattern = re.compile(("web-exp-v" if channel == "experimental" else "web-v") + _VERSION)
+    published = []
+    for page in range(1, 6):
+        releases = _get_json(f"/releases?per_page=100&page={page}")
+        if not isinstance(releases, list):
+            raise ReleaseUnavailable("Invalid published release list")
+        published.extend(item for item in releases if isinstance(item, dict) and not item.get("draft") and isinstance(item.get("published_at"), str))
+        if len(releases) < 100:
+            break
+    else:
+        raise ReleaseUnavailable("Release history exceeds automatic lookup; update manually")
+    for release in sorted(published, key=lambda item: item["published_at"], reverse=True):
+        tag = release.get("tag_name", "")
+        if not isinstance(tag, str) or not re.fullmatch(r"release-set-[a-f0-9]{40}", tag):
+            continue
+        assets = [item for item in release.get("assets", []) if isinstance(item, dict) and item.get("name") == "release-set.json"]
+        if len(assets) != 1 or type(assets[0].get("id")) is not int or assets[0]["id"] < 1:
+            raise ReleaseUnavailable("Published release set lacks its immutable manifest")
+        manifest = _get_json(f"/releases/assets/{assets[0]['id']}", asset=True)
+        if (not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1
+                or manifest.get("status") != "complete" or manifest.get("releaseSet") != tag.removeprefix("release-set-")):
+            raise ReleaseUnavailable("Release set is incomplete or has inconsistent provenance")
+        component = (manifest.get("components") or {}).get("web", {})
+        component_tag = component.get("tag", "") if isinstance(component, dict) else ""
+        if not isinstance(component_tag, str) or not tag_pattern.fullmatch(component_tag):
+            continue
+        source = component.get("sourceRevision", "")
+        if not isinstance(source, str) or not _SHA.fullmatch(source) or component.get("releaseSet") != source:
+            raise ReleaseUnavailable("Web release references are mutable or inconsistent")
+        contracts = manifest.get("contracts", {})
+        supported = {name: contracts[name]["web"] for name in ("appWeb", "webRelay")}
+        return {**component, "runtime": {"tag": component_tag, "version": component["version"], "sourceRevision": source,
+                                          "releaseSet": source, "contracts": supported, "compatibleAgent": manifest["agent"]}}
+    raise ReleaseUnavailable("No completed Talaria Web release is available on this channel")
+
+
+def verify_release_source(root, release, run_git):
+    """Check published metadata against immutable source blobs without importing code."""
+    files = {}
+    for name in ("sidecar/agent_dependency.json", "contract_versions.json"):
+        contents, exists = run_git(["show", f"{release['sourceRevision']}:web/{name}"], root)
+        if not exists:
+            raise ValueError("missing release metadata")
+        files[name] = json.loads(contents)
+    pin, versions = files["sidecar/agent_dependency.json"], files["contract_versions.json"]
+    expected = {"tag": release["tag"], "version": release["version"], "sourceRevision": release["sourceRevision"], "releaseSet": release["sourceRevision"],
+                "compatibleAgent": {**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
+                "contracts": {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]}}
+    if expected != release["runtime"]:
+        raise ValueError("release metadata differs from source")
+    return expected
 
 
 def run_git(args, cwd, timeout=60):
@@ -99,12 +183,14 @@ def prepare(legacy, destination, release, *, channel="stable"):
             os.chmod(config, 0o600)
             stream.write(environment)
     if metadata is not None:
-        with (destination / "web/api/_release.json").open("x") as stream:
+        with (destination / "web/_release.json").open("x") as stream:
             stream.write(json.dumps(metadata, indent=2) + "\n")
     return {"prepared": True, "legacyRevision": old, "sourceRevision": source,
             "tag": release["tag"] if release else None, "updateChannel": channel,
             "workingDirectory": str(destination / "web"), "environmentCopied": environment is not None,
-            "launch": ["python3", str(destination / "web/bootstrap.py"), "--foreground", "--no-browser", "--skip-agent-install"]}
+            "install": ["npm", "ci", "--prefix", str(destination / "web"), "--workspace", "packages/contracts", "--workspace", "packages/server", "--include=dev"],
+            "build": ["npm", "run", "build", "--prefix", str(destination / "web"), "--workspace", "packages/contracts", "--workspace", "packages/server"],
+            "launch": ["node", str(destination / "web/packages/server/dist/bin/talaria-web.js"), "--foreground", "--no-browser", "--skip-agent-install"]}
 
 
 def main():

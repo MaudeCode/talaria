@@ -5,7 +5,8 @@
 #   2. docker compose up -d
 #   3. Open http://localhost:8787
 #
-# This is the simplest setup: one WebUI container that runs the agent in-process.
+# This is the simplest setup: one WebUI container whose Python sidecar runs the
+# agent from the checkout under the mounted ~/.hermes/hermes-agent.
 # The WebUI auto-detects host UID/GID from the mounted .hermes volume.
 #
 # For multi-container setups (separate agent + webui or agent+webui+dashboard),
@@ -54,7 +55,7 @@ services:
       #   your host file modes (e.g. 0640 group-readable .env files).
       #   Set HERMES_SKIP_CHMOD=1 to bypass the fixer entirely, OR set
       #   HERMES_HOME_MODE=0640 to allow group bits while still stripping
-      #   world-readable. Both are documented in api/startup.py.
+      #   world-readable. Both are documented in docs/docker.md.
       # - HERMES_SKIP_CHMOD=1
       # - HERMES_HOME_MODE=0640
     restart: unless-stopped

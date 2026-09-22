@@ -1,0 +1,86 @@
+import { oc } from '@orpc/contract'
+import { z } from 'zod'
+import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema } from '../views.js'
+
+/** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
+
+const Json = z.unknown()
+
+export const OkSchema = z.object({ ok: z.literal(true) }).catchall(Json)
+const SessionBody = z.object({ session_id: SessionIdSchema })
+const SessionQuery = z.object({ session_id: z.string() })
+
+
+export const SessionsListQuerySchema = z.object({
+  include_archived: z.string().optional(), all_profiles: z.string().optional(), exclude_hidden: z.string().optional(), sidebar_source: z.string().optional(),
+  archived_limit: z.string().optional(), archived_offset: z.string().optional(),
+  show_cli_sessions: z.string().optional(), show_claude_code_sessions: z.string().optional(), show_cron_sessions: z.string().optional(),
+  show_webhook_sessions: z.string().optional(), show_kanban_sessions: z.string().optional(),
+})
+
+export const SessionDetailQuerySchema = z.object({ session_id: z.string(), messages: z.string().optional(), msg_limit: z.string().optional(), msg_before: z.string().optional(), resolve_model: z.string().optional(), expand_renderable: z.string().optional() })
+
+
+
+
+
+const tags = ['sessions']
+/** Manual compression job state: `running` while the worker runs, `done` with the (possibly rotated) session, `error`, or `idle` when no job exists. */
+export const CompressionStatusSchema = z.looseObject({ status: z.enum(['running', 'done', 'error', 'idle']), session_id: z.string().nullable().optional(), session: SessionRowSchema.optional(), error: z.string().optional(), started_at: z.number().optional(), updated_at: z.number().optional() })
+
+export const sessionsContract = {
+  sessions: {
+    list: oc.route({ method: 'GET', path: '/api/sessions', tags, summary: 'Sidebar rows for the active profile.' }).input(SessionsListQuerySchema).output(SessionsListSchema),
+    search: oc.route({ method: 'GET', path: '/api/sessions/search', tags }).input(z.object({ q: z.string().optional(), content: z.string().optional(), depth: z.string().optional(), all_profiles: z.string().optional() })).output(z.looseObject({ sessions: z.array(SessionRowSchema), query: z.string().optional(), count: z.number().int().optional(), all_profiles: z.boolean(), active_profile: z.string() })),
+    cleanupZeroMessage: oc.route({ method: 'POST', path: '/api/sessions/cleanup_zero_message', tags }).input(z.object({}).catchall(Json)).output(z.object({ ok: z.literal(true), cleaned: z.number().int() })),
+  },
+  session: {
+    get: oc.route({ method: 'GET', path: '/api/session', tags, summary: 'One session with a bounded message window.' }).input(SessionDetailQuerySchema).output(SessionEnvelopeSchema),
+    status: oc.route({ method: 'GET', path: '/api/session/status', tags }).input(SessionQuery).output(SessionStatusSchema),
+    usage: oc.route({ method: 'GET', path: '/api/session/usage', tags }).input(SessionQuery).output(SessionUsageSchema),
+    new: oc.route({ method: 'POST', path: '/api/session/new', tags }).input(SessionNewRequestSchema).output(SessionEnvelopeSchema.extend({ worktree_skipped: z.string().optional() })),
+    rename: oc.route({ method: 'POST', path: '/api/session/rename', tags }).input(SessionBody.extend({ title: z.string() })).output(SessionEnvelopeSchema),
+    delete: oc.route({ method: 'POST', path: '/api/session/delete', tags }).input(z.object({ session_id: z.string() })).output(SessionDeleteResultSchema),
+    pin: oc.route({ method: 'POST', path: '/api/session/pin', tags }).input(SessionBody.extend({ pinned: z.boolean().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
+    archive: oc.route({ method: 'POST', path: '/api/session/archive', tags }).input(SessionBody.extend({ archived: z.boolean().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
+    move: oc.route({ method: 'POST', path: '/api/session/move', tags }).input(SessionBody.extend({ project_id: z.string().nullable().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
+    duplicate: oc.route({ method: 'POST', path: '/api/session/duplicate', tags }).input(z.object({ session_id: z.string() })).output(SessionEnvelopeSchema),
+    branch: oc.route({ method: 'POST', path: '/api/session/branch', tags }).input(SessionBody.extend({ keep_count: z.number().int().nullable().optional(), title: z.string().nullable().optional() })).output(z.object({ session_id: z.string(), title: z.string(), parent_session_id: z.string() })),
+    truncate: oc.route({ method: 'POST', path: '/api/session/truncate', tags }).input(SessionBody.extend({ keep_count: Json.optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
+    clear: oc.route({ method: 'POST', path: '/api/session/clear', tags }).input(SessionBody).output(OkSchema.extend({ session: SessionRowSchema })),
+    retry: oc.route({ method: 'POST', path: '/api/session/retry', tags }).input(SessionBody).output(z.object({ ok: z.literal(true), last_user_text: z.string(), removed_count: z.number().int() }).or(z.object({ error: z.string() }))),
+    undo: oc.route({ method: 'POST', path: '/api/session/undo', tags }).input(SessionBody).output(z.object({ ok: z.literal(true), removed_count: z.number().int(), removed_preview: z.string() }).or(z.object({ error: z.string() }))),
+    update: oc.route({ method: 'POST', path: '/api/session/update', tags }).input(SessionBody.extend({ workspace: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional() })).output(SessionEnvelopeSchema),
+    toolsets: oc.route({ method: 'POST', path: '/api/session/toolsets', tags }).input(SessionBody.extend({ toolsets: z.array(z.string()).nullable().optional() })).output(z.object({ ok: z.literal(true), enabled_toolsets: z.array(z.string()).nullable() })),
+    yoloGet: oc.route({ method: 'GET', path: '/api/session/yolo', tags }).input(SessionQuery).output(z.object({ yolo_enabled: z.boolean() })),
+    // Python: `enabled` is truthy-checked; enabling reports `stale_cleared` when a parked approval was released.
+    yoloSet: oc.route({ method: 'POST', path: '/api/session/yolo', tags }).input(z.object({ session_id: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), yolo_enabled: z.boolean(), stale_cleared: z.boolean().optional() })),
+    import: oc.route({ method: 'POST', path: '/api/session/import', tags }).input(z.object({ messages: Json.optional(), tool_calls: Json.optional(), title: z.string().optional(), workspace: z.string().optional(), model: z.string().optional(), pinned: z.boolean().optional() }).catchall(Json)).output(OkSchema.extend({ session: SessionRowSchema })),
+    regenerateTitle: oc.route({ method: 'POST', path: '/api/session/title/regenerate', tags, summary: 'Generate a title from the first (or latest) complete exchange through the auxiliary model and persist it.' }).input(SessionBody.extend({ prefer_latest: z.boolean().optional() })).output(z.looseObject({ session: SessionRowSchema, title: z.string(), status: z.string(), raw_preview: z.string() })),
+    compressStart: oc.route({ method: 'POST', path: '/api/session/compress/start', tags, summary: 'Manual compression is not available in this release (501 `manual_compression_unavailable`).' }).input(SessionBody.extend({ focus_topic: z.string().optional(), topic: z.string().optional() })).output(CompressionStatusSchema),
+    compressStatus: oc.route({ method: 'GET', path: '/api/session/compress/status', tags }).input(SessionQuery).output(CompressionStatusSchema),
+    draftGet: oc.route({ method: 'GET', path: '/api/session/draft', tags }).input(SessionQuery).output(z.object({ draft: DraftSchema, draft_version: z.string().nullable() })),
+    draftSave: oc.route({ method: 'POST', path: '/api/session/draft', tags }).input(z.object({ session_id: z.string(), text: Json.optional(), files: Json.optional(), draft_version: Json.optional() })).output(DraftResponseSchema),
+    anchorSceneGet: oc.route({ method: 'GET', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), message_ref: z.string().optional(), message_index: z.string().optional(), before: z.string().optional(), limit: z.string().optional() })).output(z.object({ scene_ref: z.string(), rows: z.array(Json), start: z.number().int(), end: z.number().int(), total: z.number().int(), complete: z.boolean() })),
+    anchorSceneSave: oc.route({ method: 'POST', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), scene: Json.optional(), message_ref: z.string().optional(), message_index: Json.optional(), message_offset: Json.optional(), message_window_index: Json.optional(), stream_id: z.string().optional() })).output(z.object({ ok: z.literal(true), message_index: z.number().int(), message_ref: z.string() })),
+  },
+  projects: {
+    list: oc.route({ method: 'GET', path: '/api/projects', tags: ['projects'] }).input(z.object({ all_profiles: z.string().optional() })).output(ProjectsSchema),
+    create: oc.route({ method: 'POST', path: '/api/projects/create', tags: ['projects'] }).input(z.object({ name: z.string(), color: z.string().nullable().optional(), profile: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), project: ProjectSchema })),
+    rename: oc.route({ method: 'POST', path: '/api/projects/rename', tags: ['projects'] }).input(z.object({ project_id: z.string(), name: z.string(), color: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), project: ProjectSchema })),
+    delete: oc.route({ method: 'POST', path: '/api/projects/delete', tags: ['projects'] }).input(z.object({ project_id: z.string() })).output(z.object({ ok: z.literal(true) })),
+  },
+  share: {
+    create: oc.route({ method: 'POST', path: '/api/share/create', tags: ['shares'] }).input(z.object({ session_id: z.string() })).output(ShareCreateResponseSchema),
+    revoke: oc.route({ method: 'POST', path: '/api/share/revoke', tags: ['shares'] }).input(z.object({ session_id: z.string() })).output(OkSchema.extend({ session: SessionRowSchema })),
+    read: oc.route({ method: 'GET', path: '/api/share/{token}', tags: ['shares'], summary: 'Public read of a shared conversation snapshot.' }).input(z.object({ token: z.string() })).output(ShareReadSchema),
+  },
+  talaria: {
+    pair: oc.route({ method: 'POST', path: '/api/talaria/relay/pair', tags: ['talaria'], summary: 'Register this server with Talaria Relay (owner) or enroll the active profile (any session).' })
+      .input(z.object({ relay_url: z.string(), publisher_id: z.string(), publisher_invitation: z.string(), label: z.string().optional() }))
+      .output(z.object({ ok: z.literal(true), publisher_id: z.string() })),
+    presence: oc.route({ method: 'POST', path: '/api/talaria/presence', tags: ['talaria'], summary: 'Renew or revoke one browser tab\'s activity lease; a fresh lease mutes relay alerts for the profile.' })
+      .input(z.object({ tab_id: z.string(), active: z.boolean(), seq: z.number().int() }))
+      .output(z.object({ ok: z.literal(true), lease_seconds: z.number().int() })),
+  },
+}

@@ -70,12 +70,12 @@ GET /api/sessions/events?gateway=1
 - Without `?gateway=1` the endpoint behaves exactly as before, so existing
   subscribers are unaffected.
 
-Clients that prefer two connections can keep using
-`/api/sessions/gateway/stream`; it is unchanged.
+The standalone `/api/sessions/gateway/stream` endpoint was removed with the
+TypeScript backend; `?gateway=1` on `/api/sessions/events` is the only gateway feed.
 
 ## Gateway watcher change detection
 
-The gateway watcher (`api/gateway_watcher.py`) is what turns writes to the
+The gateway watcher (`packages/server/src/sessions/gateway-watcher.ts`) is what turns writes to the
 agent's `state.db` into `sessions_changed` events on the streams above. It polls
 on a `POLL_INTERVAL` of 5s per profile, and the cost of a tick is fixed — it does
 not grow with the number of sessions or messages in the store.

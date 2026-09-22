@@ -18,8 +18,8 @@ Status vocabulary:
 
 Verification vocabulary: `vitest` (unit / reducer / contract / React Testing
 Library component test under `frontend/src/**/*.test.ts(x)`), `pw` (Playwright
-end-to-end against the built frontend and the Python server, `frontend/e2e/`),
-`py` (pytest route / contract test), `manual` (checked in a browser during the
+end-to-end against the built frontend and the TypeScript server, `packages/frontend/e2e/`),
+`py` (historical pytest route / contract test, since ported to the server Vitest suite), `manual` (checked in a browser during the
 HWEB-100 validation pass; no automated test yet).
 
 Status at the end of checkpoint 8 (this revision is the truthful inventory
@@ -75,7 +75,7 @@ Deferred rows need the product decision recorded in the PR before merge.
 | C13 | Handoff summary and compression-recovery cards | `messages.js`, `sessions.js` | `features/chat/ChatView.tsx` | chat | manual | partial | Compression and handoff state are surfaced inline in the chat view, not as dedicated cards. |
 | C14 | Worktree status/remove for worktree sessions | `sessions.js` | `features/sessions/SessionContextMenu.tsx`, `useNewChat.ts` | sidebar | manual | pass | |
 | C15 | Session search (`/api/sessions/search`) | `sessions.js` | `features/chat/useSessionSearch.ts`, `SessionListPanel.tsx` | sidebar | manual | pass | |
-| C16 | Unknown paths return HTTP 404 from Python; unknown nested client paths render the not-found route | `routes.py` catch-all | `api/spa_shell.py` allowlist; `routes/__root.tsx` `notFoundComponent` | any | py (`test_hweb100_spa_shell_routes.py`), pw | pass | SPA shell never shadows `/api/*`, `/assets/*`, `/extensions/*`, `/plugins/*`, `/static/*`, `/sw.js`, `/manifest.json`, `/health`. |
+| C16 | Unknown paths return HTTP 404 from the server; unknown nested client paths render the not-found route | `routes.py` catch-all | `packages/server/src/spa.ts` allowlist; `routes/__root.tsx` `notFoundComponent` | any | py (`test_hweb100_spa_shell_routes.py`), pw | pass | SPA shell never shadows `/api/*`, `/assets/*`, `/extensions/*`, `/plugins/*`, `/static/*`, `/sw.js`, `/manifest.json`, `/health`. |
 | C17 | Subpath mount support for shell, assets, manifest, service worker, API, sessions, extension panels | `<base href>` inline script, `/session/static/` alias | Server-emitted `<base href>` depth prefix; router `basepath` from `document.baseURI`; relative asset URLs | all | py (`base_href_for`), pw (`deep links`), vitest (`appRoot.test.ts`) | partial | Depth-relative base is verified for `/session/<id>`; a reverse-proxied `/mount/` prefix has not been exercised end to end. |
 
 ## 4. Chat transcript and streaming
@@ -102,7 +102,7 @@ Deferred rows need the product decision recorded in the PR before merge.
 | D18 | Edit, regenerate, fork from message, copy, select-text reply/refine | `messages.js` | `features/chat/MessageRow.tsx` | chat | manual | partial | Edit, regenerate, fork and copy are implemented; select-text reply/refine is not. |
 | D19 | Attachments: click, drag/drop, paste image and text, tray, upload rollback, size limit from bootstrap | `boot.js`, `messages.js`, `/api/upload` | `features/composer/Attachments.tsx`, `Composer.tsx`, `api/client.ts` upload | composer | manual | pass | |
 | D20 | Media snapshots and image lightbox, Mermaid lightbox, export | `ui.js` | `features/chat/MessageRow.tsx` (inline images) | chat | manual | deferred | Images render inline; no lightbox dialog. |
-| D21 | Voice: dictation (SpeechRecognition), voice mode, TTS (browser, Edge TTS via `/api/tts`, extension TTS capability) | `boot.js`, `ui.js` | `features/voice/dictation.ts`, `features/voice/tts.ts` | composer | manual | pass | Browser speech APIs need a real browser and microphone. |
+| D21 | Voice: dictation (SpeechRecognition), voice mode, TTS (browser, `/api/tts` engines, extension TTS capability) | `boot.js`, `ui.js` | `features/voice/dictation.ts`, `features/voice/tts.ts` | composer | manual | pass | Browser speech APIs need a real browser and microphone. Edge TTS was dropped with the TypeScript backend. |
 | D22 | Workspace terminal panel (xterm, fit, web links, resize, dock, restart) | `terminal.js`, CDN xterm | `features/terminal/TerminalPanel.tsx` with bundled `@xterm/xterm` | composer | manual | partial | No dock toggle. CDN dependency removed. |
 | D23 | Runtime notice stack (offline, reconnect, agent unavailable, provider failure, thread error) with live regions | `ui.js` HWEB-11 | `features/notices/RuntimeNoticeStack.tsx` | chat | manual | pass | Same priority order and single-slot rules. |
 | D24 | Server-stopped overlay and cross-tab shutdown broadcast | `boot.js` | `settings/SystemSection.tsx` (shutdown/restart actions) | app shell | manual | deferred | No full-screen stopped overlay or cross-tab broadcast. |

@@ -1,0 +1,41 @@
+{
+  "text.redact": [
+    {
+      "params": {
+        "text": "token sk-abcdef1234567890abcdef1234567890 and AKIAIOSFODNN7EXAMPLE"
+      },
+      "result": {
+        "text": "token sk-abc...7890 and AKIAIO...MPLE"
+      }
+    }
+  ],
+  "text.portal_tags": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "client_tag": "client=hermes-client-v0.21.3",
+        "conversation_tag": null,
+        "tags": [
+          "product=hermes-agent",
+          "client=hermes-client-v0.21.3"
+        ]
+      }
+    }
+  ],
+  "text.image_mode": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5"
+      },
+      "result": {
+        "mode": "native",
+        "reason": "",
+        "supports_vision": true
+      }
+    }
+  ]
+}

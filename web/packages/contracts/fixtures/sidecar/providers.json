@@ -1,0 +1,1201 @@
+{
+  "providers.registry": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "providers": {
+          "nous": {
+            "id": "nous",
+            "name": "Nous Portal",
+            "auth_type": "oauth_device_code",
+            "portal_base_url": "https://portal.nousresearch.com",
+            "inference_base_url": "https://inference-api.nousresearch.com/v1",
+            "client_id": "hermes-cli",
+            "scope": "inference:invoke",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "openai-codex": {
+            "id": "openai-codex",
+            "name": "OpenAI Codex",
+            "auth_type": "oauth_external",
+            "portal_base_url": "",
+            "inference_base_url": "https://chatgpt.com/backend-api/codex",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "openai-api": {
+            "id": "openai-api",
+            "name": "OpenAI API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.openai.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "OPENAI_API_KEY"
+            ],
+            "base_url_env_var": "OPENAI_BASE_URL"
+          },
+          "xai-oauth": {
+            "id": "xai-oauth",
+            "name": "xAI Grok OAuth (SuperGrok / Premium+)",
+            "auth_type": "oauth_external",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.x.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "qwen-oauth": {
+            "id": "qwen-oauth",
+            "name": "Qwen OAuth",
+            "auth_type": "oauth_external",
+            "portal_base_url": "",
+            "inference_base_url": "https://portal.qwen.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "lmstudio": {
+            "id": "lmstudio",
+            "name": "LM Studio",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "http://127.0.0.1:1234/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "LM_API_KEY"
+            ],
+            "base_url_env_var": "LM_BASE_URL"
+          },
+          "copilot": {
+            "id": "copilot",
+            "name": "GitHub Copilot",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.githubcopilot.com",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "COPILOT_GITHUB_TOKEN",
+              "GH_TOKEN",
+              "GITHUB_TOKEN"
+            ],
+            "base_url_env_var": "COPILOT_API_BASE_URL"
+          },
+          "copilot-acp": {
+            "id": "copilot-acp",
+            "name": "GitHub Copilot ACP",
+            "auth_type": "external_process",
+            "portal_base_url": "",
+            "inference_base_url": "acp://copilot",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": "COPILOT_ACP_BASE_URL"
+          },
+          "gemini": {
+            "id": "gemini",
+            "name": "Google AI Studio",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://generativelanguage.googleapis.com/v1beta",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "GOOGLE_API_KEY",
+              "GEMINI_API_KEY"
+            ],
+            "base_url_env_var": "GEMINI_BASE_URL"
+          },
+          "zai": {
+            "id": "zai",
+            "name": "Z.AI / GLM",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.z.ai/api/paas/v4",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "GLM_API_KEY",
+              "ZAI_API_KEY",
+              "Z_AI_API_KEY"
+            ],
+            "base_url_env_var": "GLM_BASE_URL"
+          },
+          "kimi-coding": {
+            "id": "kimi-coding",
+            "name": "Kimi / Moonshot",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.moonshot.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "KIMI_API_KEY",
+              "KIMI_CODING_API_KEY"
+            ],
+            "base_url_env_var": "KIMI_BASE_URL"
+          },
+          "kimi-coding-cn": {
+            "id": "kimi-coding-cn",
+            "name": "Kimi / Moonshot (China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.moonshot.cn/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "KIMI_CN_API_KEY"
+            ],
+            "base_url_env_var": ""
+          },
+          "stepfun": {
+            "id": "stepfun",
+            "name": "StepFun Step Plan",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.stepfun.ai/step_plan/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "STEPFUN_API_KEY"
+            ],
+            "base_url_env_var": "STEPFUN_BASE_URL"
+          },
+          "arcee": {
+            "id": "arcee",
+            "name": "Arcee AI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.arcee.ai/api/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ARCEEAI_API_KEY"
+            ],
+            "base_url_env_var": "ARCEE_BASE_URL"
+          },
+          "gmi": {
+            "id": "gmi",
+            "name": "GMI Cloud",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.gmi-serving.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "GMI_API_KEY"
+            ],
+            "base_url_env_var": "GMI_BASE_URL"
+          },
+          "actual": {
+            "id": "actual",
+            "name": "Actual Computer",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.actual.inc/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ACTUAL_API_KEY"
+            ],
+            "base_url_env_var": "ACTUAL_BASE_URL"
+          },
+          "minimax": {
+            "id": "minimax",
+            "name": "MiniMax",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.minimax.io/anthropic",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MINIMAX_API_KEY"
+            ],
+            "base_url_env_var": "MINIMAX_BASE_URL"
+          },
+          "minimax-oauth": {
+            "id": "minimax-oauth",
+            "name": "MiniMax (OAuth · minimax.io)",
+            "auth_type": "oauth_minimax",
+            "portal_base_url": "https://api.minimax.io",
+            "inference_base_url": "https://api.minimax.io/anthropic",
+            "client_id": "78257093-7e40-4613-99e0-527b14b39113",
+            "scope": "group_id profile model.completion",
+            "extra": {
+              "region": "global",
+              "cn_portal_base_url": "https://api.minimaxi.com",
+              "cn_inference_base_url": "https://api.minimaxi.com/anthropic"
+            },
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "anthropic": {
+            "id": "anthropic",
+            "name": "Anthropic",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.anthropic.com",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ANTHROPIC_API_KEY",
+              "ANTHROPIC_TOKEN",
+              "CLAUDE_CODE_OAUTH_TOKEN"
+            ],
+            "base_url_env_var": "ANTHROPIC_BASE_URL"
+          },
+          "alibaba": {
+            "id": "alibaba",
+            "name": "Qwen Cloud",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "DASHSCOPE_BASE_URL"
+          },
+          "alibaba-coding-plan": {
+            "id": "alibaba-coding-plan",
+            "name": "Alibaba Cloud (Coding Plan)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://coding-intl.dashscope.aliyuncs.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_CODING_PLAN_API_KEY",
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_CODING_PLAN_BASE_URL"
+          },
+          "minimax-cn": {
+            "id": "minimax-cn",
+            "name": "MiniMax (China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.minimaxi.com/anthropic",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MINIMAX_CN_API_KEY"
+            ],
+            "base_url_env_var": "MINIMAX_CN_BASE_URL"
+          },
+          "deepseek": {
+            "id": "deepseek",
+            "name": "DeepSeek",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.deepseek.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DEEPSEEK_API_KEY"
+            ],
+            "base_url_env_var": "DEEPSEEK_BASE_URL"
+          },
+          "xai": {
+            "id": "xai",
+            "name": "xAI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.x.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "XAI_API_KEY"
+            ],
+            "base_url_env_var": "XAI_BASE_URL"
+          },
+          "nvidia": {
+            "id": "nvidia",
+            "name": "NVIDIA NIM",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://integrate.api.nvidia.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NVIDIA_API_KEY"
+            ],
+            "base_url_env_var": "NVIDIA_BASE_URL"
+          },
+          "ai-gateway": {
+            "id": "ai-gateway",
+            "name": "Vercel AI Gateway",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://ai-gateway.vercel.sh/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "AI_GATEWAY_API_KEY"
+            ],
+            "base_url_env_var": "AI_GATEWAY_BASE_URL"
+          },
+          "opencode-zen": {
+            "id": "opencode-zen",
+            "name": "OpenCode Zen",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://opencode.ai/zen/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "OPENCODE_ZEN_API_KEY"
+            ],
+            "base_url_env_var": "OPENCODE_ZEN_BASE_URL"
+          },
+          "opencode-go": {
+            "id": "opencode-go",
+            "name": "OpenCode Go",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://opencode.ai/zen/go/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "OPENCODE_GO_API_KEY"
+            ],
+            "base_url_env_var": "OPENCODE_GO_BASE_URL"
+          },
+          "opencode-free": {
+            "id": "opencode-free",
+            "name": "OpenCode Free",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://opencode.ai/zen/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "kilocode": {
+            "id": "kilocode",
+            "name": "Kilo Code",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.kilo.ai/api/gateway",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "KILOCODE_API_KEY"
+            ],
+            "base_url_env_var": "KILOCODE_BASE_URL"
+          },
+          "huggingface": {
+            "id": "huggingface",
+            "name": "Hugging Face",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://router.huggingface.co/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "HF_TOKEN"
+            ],
+            "base_url_env_var": "HF_BASE_URL"
+          },
+          "xiaomi": {
+            "id": "xiaomi",
+            "name": "Xiaomi MiMo",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.xiaomimimo.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "XIAOMI_API_KEY"
+            ],
+            "base_url_env_var": "XIAOMI_BASE_URL"
+          },
+          "tencent-tokenhub": {
+            "id": "tencent-tokenhub",
+            "name": "Tencent TokenHub",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://tokenhub.tencentmaas.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "TOKENHUB_API_KEY"
+            ],
+            "base_url_env_var": "TOKENHUB_BASE_URL"
+          },
+          "tencent-tokenplan": {
+            "id": "tencent-tokenplan",
+            "name": "Tencent TokenPlan",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.lkeap.cloud.tencent.com/plan/anthropic",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "TOKENPLAN_API_KEY"
+            ],
+            "base_url_env_var": "TOKENPLAN_BASE_URL"
+          },
+          "ollama-cloud": {
+            "id": "ollama-cloud",
+            "name": "Ollama Cloud",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://ollama.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "OLLAMA_API_KEY"
+            ],
+            "base_url_env_var": "OLLAMA_BASE_URL"
+          },
+          "bedrock": {
+            "id": "bedrock",
+            "name": "AWS Bedrock",
+            "auth_type": "aws_sdk",
+            "portal_base_url": "",
+            "inference_base_url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": "BEDROCK_BASE_URL"
+          },
+          "vertex": {
+            "id": "vertex",
+            "name": "Google Vertex AI",
+            "auth_type": "vertex",
+            "portal_base_url": "",
+            "inference_base_url": "",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "azure-foundry": {
+            "id": "azure-foundry",
+            "name": "Azure Foundry",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "AZURE_FOUNDRY_API_KEY"
+            ],
+            "base_url_env_var": "AZURE_FOUNDRY_BASE_URL"
+          },
+          "alibaba-cn": {
+            "id": "alibaba-cn",
+            "name": "Alibaba Cloud DashScope (China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "DASHSCOPE_CN_BASE_URL"
+          },
+          "dashscope-cn": {
+            "id": "alibaba-cn",
+            "name": "Alibaba Cloud DashScope (China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "DASHSCOPE_CN_BASE_URL"
+          },
+          "alibaba-cloud-cn": {
+            "id": "alibaba-cn",
+            "name": "Alibaba Cloud DashScope (China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "DASHSCOPE_CN_BASE_URL"
+          },
+          "alibaba-token-plan": {
+            "id": "alibaba-token-plan",
+            "name": "Alibaba Cloud (Token Plan)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_TOKEN_PLAN_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_TOKEN_PLAN_BASE_URL"
+          },
+          "dashscope-token-plan": {
+            "id": "alibaba-token-plan",
+            "name": "Alibaba Cloud (Token Plan)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_TOKEN_PLAN_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_TOKEN_PLAN_BASE_URL"
+          },
+          "alibaba-token-plan-cn": {
+            "id": "alibaba-token-plan-cn",
+            "name": "Alibaba Cloud (Token Plan, China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_TOKEN_PLAN_CN_API_KEY",
+              "ALIBABA_TOKEN_PLAN_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_TOKEN_PLAN_CN_BASE_URL"
+          },
+          "dashscope-token-plan-cn": {
+            "id": "alibaba-token-plan-cn",
+            "name": "Alibaba Cloud (Token Plan, China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_TOKEN_PLAN_CN_API_KEY",
+              "ALIBABA_TOKEN_PLAN_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_TOKEN_PLAN_CN_BASE_URL"
+          },
+          "alibaba-coding-plan-cn": {
+            "id": "alibaba-coding-plan-cn",
+            "name": "Alibaba Cloud (Coding Plan, China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://coding.dashscope.aliyuncs.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_CODING_PLAN_CN_API_KEY",
+              "ALIBABA_CODING_PLAN_API_KEY",
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_CODING_PLAN_CN_BASE_URL"
+          },
+          "alibaba-coding-cn": {
+            "id": "alibaba-coding-plan-cn",
+            "name": "Alibaba Cloud (Coding Plan, China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://coding.dashscope.aliyuncs.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_CODING_PLAN_CN_API_KEY",
+              "ALIBABA_CODING_PLAN_API_KEY",
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_CODING_PLAN_CN_BASE_URL"
+          },
+          "dashscope-coding-cn": {
+            "id": "alibaba-coding-plan-cn",
+            "name": "Alibaba Cloud (Coding Plan, China)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://coding.dashscope.aliyuncs.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "ALIBABA_CODING_PLAN_CN_API_KEY",
+              "ALIBABA_CODING_PLAN_API_KEY",
+              "DASHSCOPE_API_KEY"
+            ],
+            "base_url_env_var": "ALIBABA_CODING_PLAN_CN_BASE_URL"
+          },
+          "commandcode": {
+            "id": "commandcode",
+            "name": "CommandCode",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.commandcode.ai/provider/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "COMMANDCODE_API_KEY"
+            ],
+            "base_url_env_var": "COMMANDCODE_BASE_URL"
+          },
+          "commandcode-chat": {
+            "id": "commandcode",
+            "name": "CommandCode",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.commandcode.ai/provider/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "COMMANDCODE_API_KEY"
+            ],
+            "base_url_env_var": "COMMANDCODE_BASE_URL"
+          },
+          "commandcode-anthropic": {
+            "id": "commandcode-anthropic",
+            "name": "CommandCode (Anthropic)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.commandcode.ai/provider/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "COMMANDCODE_API_KEY"
+            ],
+            "base_url_env_var": "COMMANDCODE_ANTHROPIC_BASE_URL"
+          },
+          "commandcode-claude": {
+            "id": "commandcode-anthropic",
+            "name": "CommandCode (Anthropic)",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.commandcode.ai/provider/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "COMMANDCODE_API_KEY"
+            ],
+            "base_url_env_var": "COMMANDCODE_ANTHROPIC_BASE_URL"
+          },
+          "deepinfra": {
+            "id": "deepinfra",
+            "name": "DeepInfra",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.deepinfra.com/v1/openai",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DEEPINFRA_API_KEY"
+            ],
+            "base_url_env_var": "DEEPINFRA_BASE_URL"
+          },
+          "deep-infra": {
+            "id": "deepinfra",
+            "name": "DeepInfra",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.deepinfra.com/v1/openai",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DEEPINFRA_API_KEY"
+            ],
+            "base_url_env_var": "DEEPINFRA_BASE_URL"
+          },
+          "deepinfra-ai": {
+            "id": "deepinfra",
+            "name": "DeepInfra",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.deepinfra.com/v1/openai",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "DEEPINFRA_API_KEY"
+            ],
+            "base_url_env_var": "DEEPINFRA_BASE_URL"
+          },
+          "fireworks": {
+            "id": "fireworks",
+            "name": "Fireworks AI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.fireworks.ai/inference/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "FIREWORKS_API_KEY"
+            ],
+            "base_url_env_var": ""
+          },
+          "fireworks-ai": {
+            "id": "fireworks",
+            "name": "Fireworks AI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.fireworks.ai/inference/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "FIREWORKS_API_KEY"
+            ],
+            "base_url_env_var": ""
+          },
+          "fw": {
+            "id": "fireworks",
+            "name": "Fireworks AI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.fireworks.ai/inference/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "FIREWORKS_API_KEY"
+            ],
+            "base_url_env_var": ""
+          },
+          "meta-ai": {
+            "id": "meta-ai",
+            "name": "Meta Model API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.meta.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MODEL_API_KEY",
+              "META_API_KEY",
+              "META_MODEL_API_KEY"
+            ],
+            "base_url_env_var": "META_BASE_URL"
+          },
+          "meta": {
+            "id": "meta-ai",
+            "name": "Meta Model API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.meta.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MODEL_API_KEY",
+              "META_API_KEY",
+              "META_MODEL_API_KEY"
+            ],
+            "base_url_env_var": "META_BASE_URL"
+          },
+          "muse": {
+            "id": "meta-ai",
+            "name": "Meta Model API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.meta.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MODEL_API_KEY",
+              "META_API_KEY",
+              "META_MODEL_API_KEY"
+            ],
+            "base_url_env_var": "META_BASE_URL"
+          },
+          "muse-spark": {
+            "id": "meta-ai",
+            "name": "Meta Model API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.meta.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MODEL_API_KEY",
+              "META_API_KEY",
+              "META_MODEL_API_KEY"
+            ],
+            "base_url_env_var": "META_BASE_URL"
+          },
+          "model-api": {
+            "id": "meta-ai",
+            "name": "Meta Model API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.meta.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MODEL_API_KEY",
+              "META_API_KEY",
+              "META_MODEL_API_KEY"
+            ],
+            "base_url_env_var": "META_BASE_URL"
+          },
+          "msl": {
+            "id": "meta-ai",
+            "name": "Meta Model API",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.meta.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "MODEL_API_KEY",
+              "META_API_KEY",
+              "META_MODEL_API_KEY"
+            ],
+            "base_url_env_var": "META_BASE_URL"
+          },
+          "nebius-token-factory": {
+            "id": "nebius-token-factory",
+            "name": "Nebius Token Factory",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.tokenfactory.nebius.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NEBIUS_API_KEY",
+              "NEBIUS_TOKEN_FACTORY_API_KEY"
+            ],
+            "base_url_env_var": "NEBIUS_BASE_URL"
+          },
+          "nebius": {
+            "id": "nebius-token-factory",
+            "name": "Nebius Token Factory",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.tokenfactory.nebius.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NEBIUS_API_KEY",
+              "NEBIUS_TOKEN_FACTORY_API_KEY"
+            ],
+            "base_url_env_var": "NEBIUS_BASE_URL"
+          },
+          "nebius-tokenfactory": {
+            "id": "nebius-token-factory",
+            "name": "Nebius Token Factory",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.tokenfactory.nebius.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NEBIUS_API_KEY",
+              "NEBIUS_TOKEN_FACTORY_API_KEY"
+            ],
+            "base_url_env_var": "NEBIUS_BASE_URL"
+          },
+          "nebius-tf": {
+            "id": "nebius-token-factory",
+            "name": "Nebius Token Factory",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.tokenfactory.nebius.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NEBIUS_API_KEY",
+              "NEBIUS_TOKEN_FACTORY_API_KEY"
+            ],
+            "base_url_env_var": "NEBIUS_BASE_URL"
+          },
+          "token-factory": {
+            "id": "nebius-token-factory",
+            "name": "Nebius Token Factory",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.tokenfactory.nebius.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NEBIUS_API_KEY",
+              "NEBIUS_TOKEN_FACTORY_API_KEY"
+            ],
+            "base_url_env_var": "NEBIUS_BASE_URL"
+          },
+          "tokenfactory": {
+            "id": "nebius-token-factory",
+            "name": "Nebius Token Factory",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.tokenfactory.nebius.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NEBIUS_API_KEY",
+              "NEBIUS_TOKEN_FACTORY_API_KEY"
+            ],
+            "base_url_env_var": "NEBIUS_BASE_URL"
+          },
+          "novita": {
+            "id": "novita",
+            "name": "NovitaAI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.novita.ai/openai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NOVITA_API_KEY"
+            ],
+            "base_url_env_var": "NOVITA_BASE_URL"
+          },
+          "novita-ai": {
+            "id": "novita",
+            "name": "NovitaAI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.novita.ai/openai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NOVITA_API_KEY"
+            ],
+            "base_url_env_var": "NOVITA_BASE_URL"
+          },
+          "novitaai": {
+            "id": "novita",
+            "name": "NovitaAI",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.novita.ai/openai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "NOVITA_API_KEY"
+            ],
+            "base_url_env_var": "NOVITA_BASE_URL"
+          },
+          "router": {
+            "id": "router",
+            "name": "Ramp Router",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.router.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "RAMP_ROUTER_API_KEY",
+              "ROUTER_API_KEY"
+            ],
+            "base_url_env_var": "RAMP_ROUTER_BASE_URL"
+          },
+          "ramp-router": {
+            "id": "router",
+            "name": "Ramp Router",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.router.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "RAMP_ROUTER_API_KEY",
+              "ROUTER_API_KEY"
+            ],
+            "base_url_env_var": "RAMP_ROUTER_BASE_URL"
+          },
+          "ramp": {
+            "id": "router",
+            "name": "Ramp Router",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.router.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "RAMP_ROUTER_API_KEY",
+              "ROUTER_API_KEY"
+            ],
+            "base_url_env_var": "RAMP_ROUTER_BASE_URL"
+          },
+          "router.com": {
+            "id": "router",
+            "name": "Ramp Router",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.router.com/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "RAMP_ROUTER_API_KEY",
+              "ROUTER_API_KEY"
+            ],
+            "base_url_env_var": "RAMP_ROUTER_BASE_URL"
+          },
+          "upstage": {
+            "id": "upstage",
+            "name": "Upstage Solar",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.upstage.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "UPSTAGE_API_KEY"
+            ],
+            "base_url_env_var": "UPSTAGE_BASE_URL"
+          },
+          "solar": {
+            "id": "upstage",
+            "name": "Upstage Solar",
+            "auth_type": "api_key",
+            "portal_base_url": "",
+            "inference_base_url": "https://api.upstage.ai/v1",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [
+              "UPSTAGE_API_KEY"
+            ],
+            "base_url_env_var": "UPSTAGE_BASE_URL"
+          }
+        }
+      }
+    }
+  ],
+  "providers.auth_status": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "anthropic"
+      },
+      "result": {
+        "status": {
+          "configured": false,
+          "provider": "anthropic",
+          "name": "Anthropic",
+          "key_source": "",
+          "base_url": "https://api.anthropic.com",
+          "logged_in": false
+        }
+      }
+    }
+  ],
+  "providers.model_ids": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "anthropic"
+      },
+      "result": {
+        "provider": "anthropic",
+        "model_ids": [
+          "claude-fable-5.1",
+          "claude-fable-5",
+          "claude-opus-5",
+          "claude-sonnet-5",
+          "claude-opus-4-8",
+          "claude-opus-4-7",
+          "claude-opus-4-6",
+          "claude-sonnet-4-6",
+          "claude-opus-4-5-20251101",
+          "claude-sonnet-4-5-20250929",
+          "claude-opus-4-20250514",
+          "claude-sonnet-4-20250514",
+          "claude-haiku-4-5-20251001"
+        ]
+      }
+    }
+  ],
+  "providers.credential_pool": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "anthropic"
+      },
+      "result": {
+        "available": true,
+        "strategy": "",
+        "entries": []
+      }
+    }
+  ]
+}

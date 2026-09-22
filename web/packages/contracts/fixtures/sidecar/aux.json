@@ -1,0 +1,14 @@
+{
+  "aux.resolve": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task": "title_generation"
+      },
+      "result": {
+        "configured": false,
+        "model": null
+      }
+    }
+  ]
+}

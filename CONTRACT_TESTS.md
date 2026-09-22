@@ -82,7 +82,7 @@ The adopted Web source explicitly exempts pre-login requests from CSRF checks.
 The monorepo probe instead requires rejection at `POST /api/session/new` after
 login, and still verifies native mutations without an Origin header succeed.
 
-`SharedContractTests`, `web/tests/test_monorepo_contracts.py`, the frontend
+`SharedContractTests`, the contracts package Vitest suite (`web/packages/contracts`), the frontend
 contract suite, and `relay/tests/sharedContracts.test.ts` consume the same root
 fixtures. They exercise Web publication, signed Relay HTTP ingestion, native
 registration, aggregate responses, and Activity Scene decoding.
@@ -107,12 +107,10 @@ and the answer map received through the HTTP fixture.
 
 `app/UPSTREAM_TESTED_SHA` remains historical metadata. Current contract changes
 ship as one monorepo diff with fixtures and checks for every affected consumer.
-Use `scripts/import-web-upstream` from the root for public Hermes WebUI imports;
+Public Hermes WebUI imports were retired with the TypeScript backend;
 read `docs/monorepo-migration.md` before resolving conflicts or committing.
 
 ## Drift watch
 
-The weekly root workflow compares the current shared upstream ancestry with
-`nesquena/hermes-webui`. It produces a maintainer report without applying changes.
 The old app `scripts/upstream-watch` remains available for historical standalone
 comparisons using the recorded `UPSTREAM_*` files.

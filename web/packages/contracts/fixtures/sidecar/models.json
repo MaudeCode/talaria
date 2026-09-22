@@ -1,0 +1,63 @@
+{
+  "models.reasoning_efforts": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "model": "claude-sonnet-4-6",
+        "provider": "anthropic"
+      },
+      "result": {
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "supports_reasoning": null
+      }
+    }
+  ],
+  "models.context_length": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "model": "claude-sonnet-4-5",
+        "provider": "anthropic"
+      },
+      "result": {
+        "model": "claude-sonnet-4-5",
+        "context_length": 200000
+      }
+    }
+  ],
+  "models.estimate_tokens": [
+    {
+      "params": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello world"
+          }
+        ]
+      },
+      "result": {
+        "tokens": 11
+      }
+    }
+  ],
+  "models.capabilities": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5"
+      },
+      "result": {
+        "capabilities": null
+      }
+    }
+  ]
+}

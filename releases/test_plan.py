@@ -24,12 +24,11 @@ class PlanTests(unittest.TestCase):
         self.git("commit", "-m", "synthetic base")
         base = self.git("rev-parse", "HEAD")
         repository = Path(__file__).resolve().parents[1]
-        for name in ("app/Talaria/Resources/Info.plist", "web/api/agent_dependency.json",
-                     "web/api/contract_versions.json", "relay/convex/releaseInfo.json"):
+        for name in ("app/Talaria/Resources/Info.plist", "web/sidecar/agent_dependency.json",
+                     "web/contract_versions.json", "relay/convex/releaseInfo.json"):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repository / name, target)
-        (self.root / "web/UPSTREAM_BASE_SHA").write_text(base + "\n")
         self.git("add", ".")
         self.git("commit", "-m", "synthetic release source")
         self.source = self.git("rev-parse", "HEAD")
@@ -128,7 +127,7 @@ class PlanTests(unittest.TestCase):
     def test_relay_upgrade_preserves_previous_web_capability(self):
         first = resolve(self.root, self.request)
         previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
-        web = self.root / "web/api/contract_versions.json"
+        web = self.root / "web/contract_versions.json"
         relay = self.root / "relay/convex/releaseInfo.json"
         versions, info = json.loads(web.read_text()), json.loads(relay.read_text())
         old = versions["webRelay"]["protocolVersion"]

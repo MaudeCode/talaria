@@ -75,7 +75,7 @@ color scheme. Install and notification icons use a fixed dark tile; install
 icons include maskable safe-area padding.
 
 After editing the source SVG, regenerate the derived SVG, PNG and ICO assets
-with `uv run --no-project --with playwright python scripts/generate-brand-icons.py`.
+with `uv run --no-project --with playwright python ../scripts/generate-brand-icons.py` (from `web/`; the script lives in the repository `scripts/`).
 This uses an installed Playwright Chromium for rendering and is only an asset
 maintenance command, not an application build step.
 

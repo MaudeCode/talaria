@@ -1,0 +1,763 @@
+/*
+ * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
+ *   web/tests/test_issue1013_handoff_dock.py
+ *   web/tests/test_issue1094_provider_bugs.py
+ *   web/tests/test_issue1105_ssrf_custom_providers.py
+ *   web/tests/test_issue1106_custom_providers_models.py
+ *   web/tests/test_issue1189_openai_codex_detection.py
+ *   web/tests/test_issue1195_session_profile_routing.py
+ *   web/tests/test_issue1202_oauth_provider_status.py
+ *   web/tests/test_issue1217_transcript_compaction.py
+ *   web/tests/test_issue1228_model_picker_duplicate_ids.py
+ *   web/tests/test_issue1240_generic_cli_catalog_sync.py
+ *   web/tests/test_issue1384_local_provider.py
+ *   web/tests/test_issue1420_lmstudio_provider_env_var.py
+ *   web/tests/test_issue1426_openrouter_free_tier_live_fetch.py
+ *   web/tests/test_issue1494_state_db_fd_leak.py
+ *   web/tests/test_issue1499_keyless_onboarding.py
+ *   web/tests/test_issue1500_lmstudio_env_var_alignment.py
+ *   web/tests/test_issue1527_lmstudio_base_url_classification.py
+ *   web/tests/test_issue1538_nous_live_catalog.py
+ *   web/tests/test_issue1567_nous_picker_capacity_and_symmetry.py
+ *   web/tests/test_issue1568_duplicate_provider_groups.py
+ *   web/tests/test_issue1612_renamed_root_profile.py
+ *   web/tests/test_issue1699_model_cache_source_fingerprint.py
+ *   web/tests/test_issue1807_codex_provider_card_live_models.py
+ *   web/tests/test_issue1881_phantom_custom_groups.py
+ *   web/tests/test_issue1894_provider_overlap.py
+ *   web/tests/test_issue1909_csrf_token.py
+ *   web/tests/test_issue2025_xiaomi_env_key.py
+ *   web/tests/test_issue2157_sessions_list_stale_stream_state.py
+ *   web/tests/test_issue2177_nvidia_prefix_preservation.py
+ *   web/tests/test_issue2232_legacy_toolsets.py
+ *   web/tests/test_issue2245_mixed_case_provider_models.py
+ *   web/tests/test_issue2305_profile_create_seeds_skills.py
+ *   web/tests/test_issue2399_provider_config_flags.py
+ *   web/tests/test_issue2545_xai_oauth_provider.py
+ *   web/tests/test_issue2698_isolated_hermes_home.py
+ *   web/tests/test_issue2720_bedrock_model_picker.py
+ *   web/tests/test_issue2840_windows_hermes_home_defaults.py
+ *   web/tests/test_issue2914_truncation_watermark.py
+ *   web/tests/test_issue2929_settings_max_tokens.py
+ *   web/tests/test_issue3145_opencode_shared_runtime_key.py
+ *   web/tests/test_issue3172_cron_session_limit.py
+ *   web/tests/test_issue3260_self_hosted_providers_settings.py
+ *   web/tests/test_issue3510_elevenlabs_tts.py
+ *   web/tests/test_issue3623_profile_visibility.py
+ *   web/tests/test_issue3691_model_picker_show_all.py
+ *   web/tests/test_issue3717_context_length_provider_overrides.py
+ *   web/tests/test_issue3820_chat_activity_display_mode.py
+ *   web/tests/test_issue3825_oidc_auth.py
+ *   web/tests/test_issue3875_recovery_anchor_dedup.py
+ *   web/tests/test_issue3928_models_budget_fallback.py
+ *   web/tests/test_issue3929_error_preserves_partial.py
+ *   web/tests/test_issue3947_tasks_cross_profile_visibility.py
+ *   web/tests/test_issue3988_show_cli_sessions_default.py
+ *   web/tests/test_issue4324_photon_phantom_providers.py
+ *   web/tests/test_issue4325_virtualization_toggle.py
+ *   web/tests/test_issue4360_generic_pool_quota.py
+ *   web/tests/test_issue4586_named_profile_not_isolated.py
+ *   web/tests/test_issue4714_claude_code_visibility_toggle.py
+ *   web/tests/test_issue4766_sidebar_source_pushdown.py
+ *   web/tests/test_issue4770_anthropic_oauth_detection.py
+ *   web/tests/test_issue4775_sidebar_hidden_zero_message_pushdown.py
+ *   web/tests/test_issue4836_manual_compression_recovery.py
+ *   web/tests/test_issue4982_openai_tts.py
+ *   web/tests/test_issue5121_provider_auth_terminal_error.py
+ *   web/tests/test_issue5130_cron_profile_snapshot.py
+ *   web/tests/test_issue5139_gateway_approval_offline_notice.py
+ *   web/tests/test_issue5270_cli_webui_continuity.py
+ *   web/tests/test_issue5339_restart_stale_user_dedup.py
+ *   web/tests/test_issue5532_session_clear_state_db_replay.py
+ *   web/tests/test_issue5572_messaging_clear_semantics.py
+ *   web/tests/test_issue570_permission.py
+ *   web/tests/test_issue572.py
+ *   web/tests/test_issue6022_worktree_config_default.py
+ *   web/tests/test_issue603_provider_categories.py
+ *   web/tests/test_issue604_all_providers_model_picker.py
+ *   web/tests/test_issue617_cron_profile_selector.py
+ *   web/tests/test_issue6335_catalog_admission_regression.py
+ *   web/tests/test_issue644.py
+ *   web/tests/test_issue6498_memory_config_gates.py
+ *   web/tests/test_issue6626_402_ttl_parity.py
+ *   web/tests/test_issue6722_provider_qualified_model_leak.py
+ *   web/tests/test_issue6751_api_content_agent_replay.py
+ *   web/tests/test_issue7168_round6_default_isolated_clamp.py
+ *   web/tests/test_issue7182_profile_model_tag_truncation.py
+ *   web/tests/test_issue7333_slash_id_provider_hint.py
+ *   web/tests/test_issue7404_models_discovered_not_allowlist.py
+ *   web/tests/test_issue749_profile_create_model_picker.py
+ *   web/tests/test_issue7514_openrouter_zai_namespace.py
+ *   web/tests/test_issue7540_codex_catalog_fingerprint.py
+ *   web/tests/test_issue7543_title_first_exchange.py
+ *   web/tests/test_issue_1932_goal_hook_unrelated_turns.py
+ *   web/tests/test_issue_neuralwatt_env_key.py
+ *   web/tests/test_issue_t16551f61_auth_token_churn_fingerprint.py
+ *   web/tests/test_issues_373_374_375.py
+ *   web/tests/test_issues_907_908_909_model_dropdown.py
+ * (issues #570, #572, #603, #604, #617, #644, #749, #1013, #1094, #1105, #1106, #1189, #1195, #1202, #1217, #1228, #1240, #1384, #1420, #1426, #1494, #1499, #1500, #1527, #1538, #1567, #1568, #1612, #1699, #1807, #1881, #1894, #1909, #2025, #2157, #2177, #2232, #2245, #2305, #2399, #2545, #2698, #2720, #2840, #2914, #2929, #3145, #3172, #3260, #3510, #3623, #3691, #3717, #3820, #3825, #3875, #3928, #3929, #3947, #3988, #4324, #4325, #4360, #4586, #4714, #4766, #4770, #4775, #4836, #4982, #5121, #5130, #5139, #5270, #5339, #5532, #5572, #6022, #6335, #6498, #6626, #6722, #6751, #7168, #7182, #7333, #7404, #7514, #7540, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
+ */
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { createServer } from 'node:net'
+import { createHash } from 'node:crypto'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
+import { bootTestServer, type TestServer } from '../test/harness.js'
+import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
+import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel } from '../providers/catalog.js'
+import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug } from '../config/agent-config.js'
+import { splitProviderModel } from '../profiles/profiles.js'
+
+type Json = Record<string, unknown>
+const dictOf = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {})
+const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+
+/** An in-memory config.yaml the fake sidecar serves and stores, keyed by profile home. */
+function fakeConfigStore(sidecar: FakeSidecar, initial: Record<string, Json> = {}): Map<string, Json> {
+  const store = new Map<string, Json>(Object.entries(initial))
+  sidecar.respond('config.get', (params) => {
+    const path = join(params.profile_home, 'config.yaml')
+    if (existsSync(path)) {
+      // The server only calls config.get when a file exists; the fake serves the in-memory copy written by config.set.
+      return { path, exists: true, config: store.get(params.profile_home) ?? {} }
+    }
+    return { path, exists: false, config: {} }
+  })
+  sidecar.respond('config.set', (params) => {
+    store.set(params.profile_home, params.config)
+    const path = join(params.profile_home, 'config.yaml')
+    mkdirSync(params.profile_home, { recursive: true })
+    writeFileSync(path, `# fake yaml ${String(Date.now())} ${String(Math.random())}\n`)
+    return { ok: true as const, path }
+  })
+  return store
+}
+
+describe('settings, profiles, models, providers, reasoning, onboarding', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let configs: Map<string, Json>
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    configs = fakeConfigStore(sidecar)
+    // Seed config.yaml so config.get answers with the seeded model section.
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, agent: { reasoning_effort: 'high', personalities: { pirate: 'Talk like a pirate', calm: { description: 'Calm helper', system_prompt: 'Be calm', tone: 'gentle' } } }, display: { show_reasoning: false } })
+    sidecar.respond('models.reasoning_efforts', (params) => ({ efforts: params.model.startsWith('claude') ? ['low', 'medium', 'high'] : [], supports_reasoning: params.model.startsWith('claude') }))
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : [] }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
+  })
+  afterAll(() => s.close())
+
+  it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash [py:test_issue1560_password_env_var_lock.py::test_get_settings_returns_password_env_var_false_when_unset]', async () => {
+    const res = await s.get('/api/settings')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body).not.toHaveProperty('password_hash')
+    expect(body.auth_enabled).toBe(false)
+    expect(body.password_auth_enabled).toBe(false)
+    expect(body.password_env_var).toBe(false)
+    expect(body.passkeys_enabled).toBe(false)
+    expect(body.webui_version).toBe('web-v0.0.0-test')
+    expect(typeof body.agent_version).toBe('string')
+    expect(body.max_tokens).toBeNull()
+    expect(body.max_tokens_effective).toBeNull()
+    expect(body.persisted_speech_keys).toEqual([])
+    expect(body.default_model).toBe('claude-sonnet-4-6')
+    expect(body.default_model_provider).toBe('anthropic')
+  })
+
+  it('POST /api/settings persists allowed keys, writes max_tokens to config.yaml, and clears it on blank', async () => {
+    let res = await post(s, '/api/settings', { bot_name: '  ', send_key: 'ctrl+enter', max_tokens: '4096', not_a_setting: true })
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body.bot_name).toBe('Hermes')
+    expect(body.send_key).toBe('ctrl+enter')
+    expect(body.max_tokens).toBe(4096)
+    expect(body.max_tokens_effective).toBe(4096)
+    expect(body.logged_in).toBe(false)
+    expect(body.auth_just_enabled).toBe(false)
+    expect(configs.get(s.state)?.max_tokens).toBe(4096)
+    expect(body).not.toHaveProperty('not_a_setting')
+    res = await post(s, '/api/settings', { max_tokens: '' })
+    body = await json(res)
+    expect(body.max_tokens).toBeNull()
+    expect(configs.get(s.state)).not.toHaveProperty('max_tokens')
+  })
+
+  it('first password setup from loopback enables auth and logs the caller in with a session cookie', async () => {
+    const res = await post(s, '/api/settings', { _set_password: 'correct horse battery' })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.auth_enabled).toBe(true)
+    expect(body.password_auth_enabled).toBe(true)
+    expect(body.auth_just_enabled).toBe(true)
+    expect(body.logged_in).toBe(true)
+    const cookie = res.headers.get('set-cookie') ?? ''
+    expect(cookie).toContain('hermes_session=')
+    const sessionCookie = cookie.split(';')[0] ?? ''
+    // Changing it again needs the current password; wrong → 403, right → 200.
+    let again = await post(s, '/api/settings', { _set_password: 'new one here', _current_password: 'nope' }, { cookie: sessionCookie, 'x-hermes-csrf-token': await csrfFor(s, sessionCookie) })
+    expect(again.status).toBe(403)
+    expect((await json(again)).error).toBe('Current password is incorrect.')
+    again = await post(s, '/api/settings', { _clear_password: true, _current_password: 'correct horse battery' }, { cookie: sessionCookie, 'x-hermes-csrf-token': await csrfFor(s, sessionCookie) })
+    expect(again.status).toBe(200)
+    expect((await json(again)).password_auth_enabled).toBe(false)
+  })
+
+  it('GET/POST /api/reasoning reads and writes config.yaml keys and coerces the stored effort', async () => {
+    let res = await s.get('/api/reasoning')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body).toEqual({ show_reasoning: false, reasoning_effort: 'high', supported_efforts: ['low', 'medium', 'high'], supports_reasoning_effort: true, supports_thinking_toggle: true })
+    res = await post(s, '/api/reasoning', { effort: 'xhigh' })
+    body = await json(res)
+    expect(body.reasoning_effort).toBe('high')
+    expect(configs.get(s.state)?.agent).toMatchObject({ reasoning_effort: 'xhigh' })
+    res = await post(s, '/api/reasoning', { display: 'show' })
+    expect((await json(res)).show_reasoning).toBe(true)
+    res = await post(s, '/api/reasoning', { effort: 'bogus' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/reasoning', {})
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/reasoning', { effort: '' })
+    expect((await json(res)).reasoning_effort).toBe('')
+    expect(configs.get(s.state)?.agent).not.toHaveProperty('reasoning_effort')
+    res = await s.get('/api/reasoning?model=gpt-4o&provider=openai')
+    body = await json(res)
+    expect(body.supported_efforts).toEqual([])
+    expect(body.supports_thinking_toggle).toBe(false)
+  })
+
+  it('personalities list from config.yaml and personality/set resolves the prompt onto the session', async () => {
+    let res = await s.get('/api/personalities')
+    expect(await json(res)).toEqual({ personalities: [{ name: 'pirate', description: 'Talk like a pirate' }, { name: 'calm', description: 'Calm helper' }] })
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    res = await post(s, '/api/personality/set', { session_id: sid, name: 'calm' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, personality: 'calm', prompt: 'Be calm\nTone: gentle' })
+    res = await post(s, '/api/personality/set', { session_id: sid, name: 'missing' })
+    expect(res.status).toBe(404)
+    res = await post(s, '/api/personality/set', { session_id: sid, name: '' })
+    expect(await json(res)).toEqual({ ok: true, personality: null, prompt: '' })
+    res = await post(s, '/api/personality/set', { session_id: 'nope', name: 'calm' })
+    expect(res.status).toBe(404)
+  })
+
+  it('GET /api/models composes the catalog: active provider first, live ids for keyed providers, prefixes for others', async () => {
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-test-1234', OPENROUTER_API_KEY: 'sk-or-test-1234' })
+    const res = await s.get('/api/models')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.active_provider).toBe('anthropic')
+    expect(body.default_model).toBe('claude-sonnet-4-6')
+    const groups = body.groups as { provider: string; provider_id: string; models: { id: string; label: string }[] }[]
+    expect(groups[0]?.provider_id).toBe('anthropic')
+    expect(groups[0]?.models.map((m) => m.id)).toEqual(['claude-opus-4-7', 'claude-sonnet-4-6'])
+    const openrouter = groups.find((g) => g.provider_id === 'openrouter')
+    expect(openrouter).toBeDefined()
+    expect(openrouter?.models.every((m) => m.id.startsWith('@openrouter:') || m.id.includes('/'))).toBe(true)
+    expect(body.configured_model_badges).toMatchObject({ 'claude-sonnet-4-6': { role: 'main', label: 'Main', provider: 'anthropic' } })
+    const bad = await s.get('/api/models?freshness=nope')
+    expect(bad.status).toBe(400)
+  })
+
+  it('POST /api/models/refresh evicts the live cache and re-asks the sidecar', async () => {
+    const before = sidecar.calls.filter((c) => c.method === 'providers.model_ids').length
+    const res = await post(s, '/api/models/refresh', { provider: 'anthropic' })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.ok).toBe(true)
+    expect(body.provider).toBe('anthropic')
+    expect(sidecar.calls.filter((c) => c.method === 'providers.model_ids').length).toBeGreaterThan(before)
+  })
+
+  it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env [py:test_issue1202_oauth_provider_status.py::test_not_configured_when_no_key_and_not_logged_in] [py:test_issue1202_oauth_provider_status.py::test_auth_error_preserved_when_not_logged_in_and_no_config_key]', async () => {
+    let res = await s.get('/api/providers')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    const providers = body.providers as { id: string; has_key: boolean; key_source: string; configurable: boolean; is_oauth: boolean; models_total: number }[]
+    const anthropic = providers.find((p) => p.id === 'anthropic')
+    expect(anthropic).toMatchObject({ has_key: true, key_source: 'env_file', configurable: true, is_oauth: false })
+    expect(providers.find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
+    expect(providers.find((p) => p.id === 'openai-codex')).toMatchObject({ is_oauth: true, configurable: false, has_key: false, auth_error: 'not logged in' })
+    expect(body.active_provider).toBe('anthropic')
+    res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-12345' })
+    expect(await json(res)).toEqual({ ok: true, provider: 'deepseek', display_name: 'DeepSeek', action: 'updated' })
+    expect(loadEnvFile(join(s.state, '.env')).DEEPSEEK_API_KEY).toBe('sk-deepseek-12345')
+    expect(statSync(join(s.state, '.env')).mode & 0o777).toBe(0o600)
+    res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'short' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/providers', { provider: 'openai-codex', api_key: 'sk-whatever-1234' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/providers/delete', { provider: 'deepseek' })
+    expect((await json(res)).action).toBe('removed')
+    expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
+    res = await s.get('/api/providers')
+    body = await json(res)
+    expect((body.providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'deepseek')?.has_key).toBe(false)
+  })
+
+  it('a credential copied from the default profile .env at startup never counts for a named profile, and removing it retires the runtime copy', async () => {
+    // Simulates `loadStartupEnv`: the default profile's .env put OPENAI_API_KEY into the process environment.
+    const env = s.deps.config.env
+    env.OPENAI_API_KEY = 'sk-from-home-dotenv-1234'
+    env.HERMES_WEBUI_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
+    writeEnvFile(join(s.state, '.env'), { OPENAI_API_KEY: 'sk-from-home-dotenv-1234' })
+    mkdirSync(join(s.state, 'profiles', 'nokey'), { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'nokey', path: join(s.state, 'profiles', 'nokey'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+    s.deps.catalog.invalidate()
+    try {
+      const rows = async (cookie?: string): Promise<{ id: string; has_key: boolean; key_source: string }[]> => ((await json(await s.get('/api/providers', cookie ? { headers: { cookie } } : {}))).providers as { id: string; has_key: boolean; key_source: string }[])
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true })
+      const switched = await post(s, '/api/profile/switch', { name: 'nokey' })
+      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      expect((await rows(cookie)).find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
+      // A key supplied by the process environment itself still applies everywhere.
+      env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+      s.deps.catalog.invalidate()
+      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var' })
+      // Removing the dotenv-owned key on the default profile clears the runtime copy and tells the sidecar.
+      const before = sidecar.calls.length
+      expect((await json(await post(s, '/api/providers/delete', { provider: 'openai' }))).action).toBe('removed')
+      expect(env.OPENAI_API_KEY).toBeUndefined()
+      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('')
+      expect(sidecar.calls.slice(before).find((c) => c.method === 'runtime.env')?.params).toEqual({ unset: ['OPENAI_API_KEY'] })
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: false })
+      // A process-environment key is not touched by a delete.
+      await post(s, '/api/providers/delete', { provider: 'deepseek' })
+      expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
+      // A key the default profile did not have at startup becomes dotenv-owned and reaches the runtime and sidecar.
+      const added = sidecar.calls.length
+      expect((await json(await post(s, '/api/providers', { provider: 'openai', api_key: 'sk-added-later-1234' }))).action).toBe('updated')
+      expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS).toBe('OPENAI_API_KEY')
+      expect(sidecar.calls.slice(added).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENAI_API_KEY: 'sk-added-later-1234' } })
+      // The sidecar must confirm the change: a refused refresh fails the edit and leaves the file and runtime as they were.
+      sidecar.respond('runtime.env', () => { throw new Error('sidecar busy') })
+      const refused = await post(s, '/api/providers/delete', { provider: 'openai' })
+      expect(refused.status).toBe(503)
+      expect(String((await json(refused)).error)).toContain('did not apply')
+      expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      expect(loadEnvFile(join(s.state, '.env')).OPENAI_API_KEY).toBe('sk-added-later-1234')
+      sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      // A write failure after the sidecar accepted the change rolls the sidecar back to the previous value.
+      chmodSync(s.state, 0o500)
+      try {
+        const envCalls = sidecar.calls.length
+        const failed = await post(s, '/api/providers/delete', { provider: 'openai' })
+        expect(failed.status).toBe(400)
+        const runtimeEnv = sidecar.calls.slice(envCalls).filter((c) => c.method === 'runtime.env').map((c) => c.params)
+        expect(runtimeEnv).toEqual([{ unset: ['OPENAI_API_KEY'] }, { set: { OPENAI_API_KEY: 'sk-added-later-1234' } }])
+        expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      } finally {
+        chmodSync(s.state, 0o700)
+      }
+      // If the compensating call fails too, the divergent child is recycled so its replacement starts from the unchanged environment.
+      let envCalls2 = 0
+      sidecar.respond('runtime.env', () => { envCalls2 += 1; if (envCalls2 === 2) throw new Error('sidecar restarting'); return { ok: true as const } })
+      chmodSync(s.state, 0o500)
+      try {
+        const recycledBefore = sidecar.recycled.length
+        expect((await post(s, '/api/providers/delete', { provider: 'openai' })).status).toBe(400)
+        expect(sidecar.recycled.length).toBe(recycledBefore + 1)
+        expect(sidecar.recycled.at(-1)).toContain('OPENAI_API_KEY')
+        expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
+      } finally {
+        chmodSync(s.state, 0o700)
+        sidecar.status = 'ready'
+        sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      }
+      // Two overlapping root-profile edits run as one transaction each: the second sidecar apply waits for the first
+      // edit to commit (out-of-order sidecar replies can no longer commit the wrong value), and both keep ownership.
+      const gates: (() => void)[] = []
+      sidecar.respond('runtime.env', () => new Promise((resolve) => { gates.push(() => { resolve({ ok: true as const }) }) }))
+      const a = post(s, '/api/providers', { provider: 'anthropic', api_key: 'sk-ant-overlap-1234' })
+      const b = post(s, '/api/providers', { provider: 'openrouter', api_key: 'sk-or-overlap-1234' })
+      const waitForGates = async (n: number): Promise<void> => { const until = Date.now() + 5000; while (gates.length < n && Date.now() < until) await new Promise((r) => setTimeout(r, 10)) }
+      await waitForGates(1)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(gates).toHaveLength(1)
+      gates[0]!()
+      await waitForGates(2)
+      expect(gates).toHaveLength(2)
+      gates[1]!()
+      sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      expect((await a).status).toBe(200)
+      expect((await b).status).toBe(200)
+      expect(env.HERMES_WEBUI_HOME_DOTENV_KEYS?.split(',').sort()).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
+      delete env.ANTHROPIC_API_KEY
+      delete env.OPENROUTER_API_KEY
+      // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
+      expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
+      expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
+    } finally {
+      delete env.OPENAI_API_KEY
+      delete env.DEEPSEEK_API_KEY
+      delete env.HERMES_WEBUI_HOME_DOTENV_KEYS
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+      s.deps.catalog.invalidate()
+    }
+  })
+
+  it('deleting a provider credential removes YAML blocks stored under any alias of the provider', async () => {
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), providers: { ramp: { api_key: 'sk-router-legacy-1234' }, 'ramp-router': { base_url: 'https://router.example' } } })
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    expect(((await json(await s.get('/api/providers'))).providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'router')).toMatchObject({ has_key: true })
+    expect((await json(await post(s, '/api/providers/delete', { provider: 'router' }))).action).toBe('removed')
+    expect(configs.get(s.state)?.providers).toEqual({ ramp: {}, 'ramp-router': { base_url: 'https://router.example' } })
+    expect(((await json(await s.get('/api/providers'))).providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'router')).toMatchObject({ has_key: false })
+  })
+
+  it('a failed YAML credential removal is the response, and the dotenv credential stays until every source is clear', async () => {
+    writeEnvFile(join(s.state, '.env'), { ...loadEnvFile(join(s.state, '.env')), DEEPSEEK_API_KEY: 'sk-deepseek-keep-1234' })
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), providers: { deepseek: { api_key: 'sk-deepseek-yaml-1234' } } })
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    const original = sidecar.responderFor('config.set')
+    sidecar.respond('config.set', () => { throw new SidecarError('config.yaml is not valid YAML', { condition: 'config_invalid' }) })
+    try {
+      const res = await post(s, '/api/providers/delete', { provider: 'deepseek' })
+      expect(res.status).toBeGreaterThanOrEqual(500)
+      expect(loadEnvFile(join(s.state, '.env')).DEEPSEEK_API_KEY).toBe('sk-deepseek-keep-1234')
+      expect((configs.get(s.state)?.providers as Json).deepseek).toEqual({ api_key: 'sk-deepseek-yaml-1234' })
+    } finally {
+      if (original) sidecar.respond('config.set', original)
+    }
+    expect((await json(await post(s, '/api/providers/delete', { provider: 'deepseek' }))).action).toBe('removed')
+    expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
+    expect((configs.get(s.state)?.providers as Json).deepseek).toEqual({})
+  })
+
+  it('the VS Code launcher honours vscode.command and the Docker path prefixes from config.yaml', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const sid = String(((await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json).session_id)
+    writeFileSync(join(ws, 'note.txt'), 'x')
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), vscode: { command: '/nonexistent/code-cli', container_path_prefix: '/app/workspace', host_path_prefix: '/Users/me/proj' } })
+    s.deps.agentConfig.invalidate()
+    await s.deps.agentConfig.read(s.state)
+    const res = await post(s, '/api/file/open-vscode', { session_id: sid, path: 'note.txt' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe("VS Code command not found: '/nonexistent/code-cli'. Install VS Code and ensure the 'code' CLI is on PATH, or set vscode.command in config.yaml to the full path.")
+    expect(s.deps.vscode().translate('/app/workspace/a.txt')).toBe('/Users/me/proj/a.txt')
+    expect(s.deps.vscode().translate('/elsewhere/a.txt')).toBe('/elsewhere/a.txt')
+    const cfg = configs.get(s.state) ?? {}
+    Reflect.deleteProperty(cfg, 'vscode')
+    configs.set(s.state, cfg)
+    s.deps.agentConfig.invalidate()
+  })
+
+  it('quota endpoints answer per-provider status without network for unsupported providers', async () => {
+    let res = await s.get('/api/provider/quota?provider=zai')
+    expect(await json(res)).toMatchObject({ ok: false, provider: 'zai', supported: false, status: 'unsupported' })
+    res = await s.get('/api/provider/cost-history?provider=zai&days=3')
+    expect(await json(res)).toMatchObject({ ok: false, supported: false, status: 'unsupported' })
+    res = await s.get('/api/provider/cost-history')
+    expect(await json(res)).toMatchObject({ ok: false, status: 'missing_provider' })
+    sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', windows: [{ label: '5h', used_percent: 12 }], details: [] } }))
+    res = await s.get('/api/provider/quotas')
+    const body = await json(res)
+    expect(body.active_provider).toBe('anthropic')
+    const sources = body.sources as { source_id: string; provider_id: string; status: string; is_active_provider: boolean; windows: unknown[] }[]
+    const anthropic = sources.find((q) => q.provider_id === 'anthropic')
+    expect(anthropic).toMatchObject({ status: 'available', is_active_provider: true })
+    expect(anthropic?.windows).toHaveLength(1)
+    // The stable-identity envelope the iOS widget persists: scope and profile ids, the requested source, and
+    // `missing_source` when a persisted source id no longer exists. The scope id is derived from `.quota_scope_id`.
+    const scopeFile = readFileSync(join(s.state, '.quota_scope_id'), 'utf8').trim()
+    expect(scopeFile).toMatch(/^[0-9a-f]{32}$/)
+    const expectedScope = `qscope_${createHash('sha256').update(`${scopeFile}\0default`).digest('hex').slice(0, 32)}`
+    expect(body).toMatchObject({ version: 1, scope_id: expectedScope, profile_id: 'default', requested_source_id: null, missing_source: false })
+    const anthropicId = `qsrc_${createHash('sha256').update(`${expectedScope}\0anthropic\0provider`).digest('hex').slice(0, 32)}`
+    expect(anthropic?.source_id).toBe(anthropicId)
+    const missing = await json(await s.get('/api/provider/quotas?source=qsrc_unknown'))
+    expect(missing).toMatchObject({ requested_source_id: 'qsrc_unknown', missing_source: true, sources: [] })
+    // The scope survives restarts: a second read answers the same id.
+    expect((await json(await s.get(`/api/provider/quotas?source=${anthropicId}`))).sources).toHaveLength(1)
+  })
+
+  it('default-model and model/set write config.yaml; auxiliary slots round-trip through /api/model/auxiliary', async () => {
+    let res = await post(s, '/api/default-model', { model: '@openrouter:anthropic/claude-opus-4.7', provider: 'auto' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, model: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
+    expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
+    res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'openai', model: '@openai:gpt-4o' })
+    expect(await json(res)).toEqual({ ok: true, task: 'vision', provider: 'openai', model: 'gpt-4o' })
+    res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'nope', provider: 'auto', model: '' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/model/set', { scope: 'weird' })
+    expect(res.status).toBe(400)
+    res = await s.get('/api/model/auxiliary')
+    const body = await json(res)
+    const tasks = body.tasks as { task: string; provider: string; model: string }[]
+    expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openai', model: 'gpt-4o' })
+    expect(tasks).toHaveLength(11)
+    expect(body.main).toMatchObject({ provider: 'openrouter', model: 'anthropic/claude-opus-4.7', api_key_set: false })
+    res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    expect(await json(res)).toEqual({ ok: true, model: 'claude-sonnet-4-6', provider: 'anthropic' })
+    // Python `_get_provider_base_url`: a `@provider:` pick carries `providers.<id>.base_url` into the model block.
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), providers: { ...(dictOf(configs.get(s.state)?.providers)), lmstudio: { base_url: 'http://localhost:1234/v1/' } } })
+    s.deps.agentConfig.invalidate()
+    res = await post(s, '/api/default-model', { model: '@lmstudio:qwen3' })
+    expect(await json(res)).toEqual({ ok: true, model: 'qwen3', provider: 'lmstudio' })
+    expect(configs.get(s.state)?.model).toMatchObject({ default: 'qwen3', provider: 'lmstudio', base_url: 'http://localhost:1234/v1' })
+    // A `vendor/model` id under a different configured provider routes through OpenRouter; a matching prefix is stripped.
+    res = await post(s, '/api/default-model', { model: 'anthropic/claude-opus-4.7' })
+    expect(await json(res)).toEqual({ ok: true, model: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
+    res = await post(s, '/api/default-model', { model: 'openrouter/free' })
+    expect(await json(res)).toEqual({ ok: true, model: 'openrouter/free', provider: 'openrouter' })
+    res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    res = await post(s, '/api/default-model', { model: 'anthropic/claude-opus-4.6' })
+    expect(await json(res)).toEqual({ ok: true, model: 'claude-opus-4.6', provider: 'anthropic' })
+    res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    expect(res.status).toBe(200)
+    res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
+    expect(res.status).toBe(200)
+    expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
+  })
+
+  it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility [py:test_issue1195_session_profile_routing.py::test_default_string_returns_default] [py:test_issue1611_session_profile_filtering.py::test_profiles_match_default_alias_treated_as_root] [py:test_issue1612_renamed_root_profile.py::test_is_root_profile_renamed_root_via_list_profiles_api] [py:test_issue1612_renamed_root_profile.py::test_get_active_hermes_home_returns_default_for_renamed_root] [py:test_issue1612_renamed_root_profile.py::test_switch_profile_resolution_renamed_root_picks_default_home]', async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'kinni', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    let res = await post(s, '/api/profile/switch', { name: 'kinni' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ active: 'kinni', is_default: true })
+    expect(s.deps.isRootProfile('kinni')).toBe(true)
+    expect(s.deps.profileHome('kinni')).toBe(s.state)
+    const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=kinni/)
+    res = await s.get('/api/profile/active', { headers: { cookie } })
+    expect(await json(res)).toMatchObject({ name: 'kinni', is_default: true, path: s.state })
+    // Rows tagged `default` stay visible under the alias.
+    res = await s.get(`/api/session?session_id=${sid}`, { headers: { cookie } })
+    expect(res.status).toBe(200)
+    expect(((await json(await s.get('/api/sessions', { headers: { cookie } }))).active_profile)).toBe('kinni')
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s.deps.profiles.invalidate()
+  })
+
+  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie [py:test_issue2698_isolated_hermes_home.py::test_normal_mode_when_hermes_home_is_base] [py:test_issue2698_isolated_hermes_home.py::test_normal_mode_profile_operations_work] [py:test_issue749_profile_create_model_picker.py::test_profile_model_config_writer_persists_default_and_provider] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_accepts_catalog_model_with_provider] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_accepts_provider_qualified_picker_value] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_rejects_unknown_model_provider_pair] [py:test_issue749_profile_create_model_picker.py::test_profile_create_rejects_unknown_model_before_creating_profile]', async () => {
+    let res = await s.get('/api/profiles')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(body.active).toBe('default')
+    expect(body.single_profile_mode).toBe(false)
+    expect((body.profiles as Json[])[0]).toMatchObject({ name: 'default', is_active: true, is_default: true })
+    res = await s.get('/api/profile/active')
+    body = await json(res)
+    expect(body).toMatchObject({ name: 'default', is_default: true, path: s.state })
+    expect(typeof body.default_workspace).toBe('string')
+    res = await post(s, '/api/profile/switch', {})
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/profile/switch', { name: 'ghost' })
+    expect(res.status).toBe(404)
+    mkdirSync(join(s.state, 'profiles', 'alpha'), { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'alpha', path: join(s.state, 'profiles', 'alpha'), is_default: false, gateway_running: false, model: 'm', provider: 'p', has_env: false, visible: true, skill_count: 1, enabled_skills: 1, total_skills: 2 }] }))
+    res = await post(s, '/api/profile/switch', { profile: 'alpha' })
+    expect(res.status).toBe(200)
+    body = await json(res)
+    expect(body.active).toBe('alpha')
+    expect(body.is_default).toBe(false)
+    expect((body.profiles as Json[]).find((p) => p.name === 'alpha')).toMatchObject({ is_active: true })
+    expect(res.headers.get('set-cookie')).toContain('hermes_profile=')
+    res = await post(s, '/api/profile/create', { name: 'Bad Name' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/profile/create', { name: 'beta', base_url: 'ftp://x' })
+    expect(res.status).toBe(400)
+    sidecar.respond('profiles.create', (params) => ({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }))
+    res = await post(s, '/api/profile/create', { name: 'beta', api_key: 'sk-beta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
+    expect(res.status).toBe(200)
+    body = await json(res)
+    expect(body.ok).toBe(true)
+    expect(loadEnvFile(join(s.state, 'profiles', 'beta', '.env')).ANTHROPIC_API_KEY).toBe('sk-beta-12345')
+    expect(configs.get(join(s.state, 'profiles', 'beta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+    res = await post(s, '/api/profile/create', { name: 'gamma', default_model: 'not-a-model', model_provider: 'anthropic' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toContain('not available for provider')
+    res = await post(s, '/api/profile/delete', { name: 'default' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/profile/delete', { name: 'beta' })
+    expect(await json(res)).toEqual({ ok: true, name: 'beta' })
+    expect(sidecar.calls.some((c) => c.method === 'profiles.delete' && (c.params as Json).name === 'beta')).toBe(true)
+    // A delete issued while the same profile is still being created waits for the creation (sidecar create and the
+    // follow-up config/env writes) to finish, so it removes a fully configured home rather than a half-built one.
+    const order: string[] = []
+    let finishCreate: () => void = () => undefined
+    sidecar.respond('profiles.create', (params) => new Promise((resolve) => { finishCreate = () => { order.push('created'); resolve({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }) } }))
+    sidecar.respond('profiles.delete', (params) => { order.push('deleted'); rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const creating = post(s, '/api/profile/create', { name: 'delta', api_key: 'sk-delta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
+    await new Promise((r) => setTimeout(r, 50))
+    const deleting = post(s, '/api/profile/delete', { name: 'delta' })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(order).toEqual([])
+    finishCreate()
+    expect((await creating).status).toBe(200)
+    expect(configs.get(join(s.state, 'profiles', 'delta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+    expect(await json(await deleting)).toEqual({ ok: true, name: 'delta' })
+    expect(order).toEqual(['created', 'deleted'])
+    // The deletion tombstone survives a failed recreation: a stale-cookie write is still refused afterwards, and only
+    // a fully successful recreation lifts it.
+    const deltaCookie = 'hermes_profile=delta'
+    sidecar.respond('profiles.create', () => { throw new Error('disk full') })
+    expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(400)
+    const staleWrite = await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })
+    expect(staleWrite.status).toBe(404)
+    sidecar.respond('profiles.create', (params) => ({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }))
+    mkdirSync(join(s.state, 'profiles', 'delta'), { recursive: true })
+    expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(200)
+    expect((await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })).status).toBe(200)
+  })
+
+  it('onboarding status reflects config.yaml and the local-origin gate protects setup/complete/probe', async () => {
+    let res = await s.get('/api/onboarding/status')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.completed).toBe(true)
+    expect(body.settings).toMatchObject({ bot_name: 'Hermes', password_enabled: false })
+    expect((body.setup as Json).current).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-4-6' })
+    expect((body.system as Json).provider_configured).toBe(true)
+    expect((body.system as Json).provider_ready).toBe(true)
+    expect(((body.setup as Json).providers as Json[]).map((p) => p.id)).toContain('openrouter')
+    expect((body.models as Json).active_provider).toBe('anthropic')
+    res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', api_key: 'sk-or-12345' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ error: 'config_exists', requires_confirm: true })
+    const envCalls = sidecar.calls.length
+    res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', api_key: 'sk-or-12345', confirm_overwrite: true })
+    expect(res.status).toBe(200)
+    expect((await json(res)).completed).toBe(true)
+    // A root-profile key written by setup reaches the running process and the sidecar like a settings-panel edit.
+    expect(sidecar.calls.slice(envCalls).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENROUTER_API_KEY: 'sk-or-12345' } })
+    expect(s.deps.config.env.OPENROUTER_API_KEY).toBe('sk-or-12345')
+    delete s.deps.config.env.OPENROUTER_API_KEY
+    delete s.deps.config.env.HERMES_WEBUI_HOME_DOTENV_KEYS
+    expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' })
+    res = await post(s, '/api/onboarding/setup', { provider: 'custom', model: 'x' })
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/onboarding/setup', { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6', confirm_overwrite: true }, { 'x-forwarded-for': '203.0.113.9' })
+    // Loopback peer with an (ignored) forwarded header stays local.
+    expect(res.status).toBe(200)
+    res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'notaurl' })
+    expect(await json(res)).toMatchObject({ ok: false, error: 'invalid_url' })
+    res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: `http://127.0.0.1:${String(await closedPort())}/v1` })
+    expect(await json(res)).toMatchObject({ ok: false, error: 'connect_refused' })
+    res = await post(s, '/api/onboarding/complete', {})
+    expect((await json(res)).completed).toBe(true)
+    res = await post(s, '/api/onboarding/oauth/start', { provider: 'anthropic' })
+    expect(res.status).toBe(501)
+  })
+
+  it('providers/self-hosted writes the provider block and activates the model [py:test_issue1500_lmstudio_env_var_alignment.py::test_onboarding_writes_canonical_name_only]', async () => {
+    const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: 'http://localhost:1234/v1/', api_key: 'lm-key-12345' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: 'http://localhost:1234/v1', model: 'qwen3' })
+    expect((configs.get(s.state)?.providers as Json).lmstudio).toEqual({ base_url: 'http://localhost:1234/v1' })
+    expect(configs.get(s.state)?.model).toMatchObject({ provider: 'lmstudio', default: 'qwen3', base_url: 'http://localhost:1234/v1' })
+    expect(loadEnvFile(join(s.state, '.env')).LM_API_KEY).toBe('lm-key-12345')
+    const bad = await post(s, '/api/providers/self-hosted', { provider: 'openai', model: 'x' })
+    expect(bad.status).toBe(400)
+  })
+})
+
+async function closedPort(): Promise<number> {
+  const server = createServer()
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const port = (server.address() as { port: number }).port
+  await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  return port
+}
+
+async function csrfFor(s: TestServer, cookie: string): Promise<string> {
+  const res = await s.get('/api/bootstrap', { headers: { cookie } })
+  const token = ((await res.json()) as Json).csrf_token
+  return typeof token === 'string' ? token : ''
+}
+
+describe('env file writer', () => {
+  it('preserves comments and order, removes keys, appends new ones, and refuses newlines [py:test_issue1164_env_file_corruption.py::test_comments_preserved_on_update] [py:test_issue1164_env_file_corruption.py::test_blank_lines_preserved] [py:test_issue1164_env_file_corruption.py::test_key_order_preserved] [py:test_issue1164_env_file_corruption.py::test_new_key_appended_with_separator] [py:test_issue1164_env_file_corruption.py::test_key_removal_preserves_others]', () => {
+    const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, '.env')
+    writeFileSync(path, '# keep me\nA=1\n\nB=2\n')
+    chmodSync(path, 0o644)
+    writeEnvFile(path, { B: null, C: 'three', A: '"one"' })
+    expect(readFileSync(path, 'utf8')).toBe('# keep me\nA="one"\n\nC=three\n')
+    expect(loadEnvFile(path)).toEqual({ A: 'one', C: 'three' })
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    expect(() => { writeEnvFile(path, { D: 'x\ny' }) }).toThrow(/newline/)
+  })
+})
+
+describe('catalog helpers', () => {
+  it('labels, prefixes, and dedupe follow the Python rules', () => {
+    expect(formatOllamaLabel('qwen3-vl:235b-instruct')).toBe('Qwen3 VL (235B Instruct)')
+    expect(labelForModel('@nous:openai/gpt-5.4-mini', [])).toBe('GPT 5.4 Mini')
+    expect(labelForModel('claude-opus-4.7', [{ provider: 'Anthropic', provider_id: 'anthropic', models: [{ id: 'anthropic/claude-opus-4.7', label: 'Claude Opus 4.7' }] }])).toBe('Claude Opus 4.7')
+    expect(applyProviderPrefix([{ id: 'x', label: 'x' }, { id: 'a/b', label: 'ab' }], 'zai', 'anthropic').map((m) => m.id)).toEqual(['@zai:x', 'a/b'])
+    expect(applyProviderPrefix([{ id: 'a/b', label: 'ab' }], 'nous', null).map((m) => m.id)).toEqual(['@nous:a/b'])
+    expect(applyProviderPrefix([{ id: 'x', label: 'x' }], 'zai', null).map((m) => m.id)).toEqual(['x'])
+    const groups = [{ provider: 'B', provider_id: 'b', models: [{ id: 'gpt', label: 'g' }] }, { provider: 'A', provider_id: 'a', models: [{ id: 'gpt', label: 'g' }] }]
+    deduplicateModelIds(groups)
+    expect(groups.map((g) => g.models[0]?.id)).toEqual(['@b:gpt', 'gpt'])
+  })
+
+  it('parses provider-qualified ids and coerces efforts down the ladder [py:test_issue7182_profile_model_tag_truncation.py::test_split_preserves_ollama_tag] [py:test_issue7182_profile_model_tag_truncation.py::test_strip_preserves_ollama_tag] [py:test_issue7182_profile_model_tag_truncation.py::test_split_preserves_multi_segment_custom_provider] [py:test_issue7182_profile_model_tag_truncation.py::test_split_matches_shared_parser] [py:test_issue7182_profile_model_tag_truncation.py::test_strip_matches_shared_parser] [py:test_issue7182_profile_model_tag_truncation.py::test_no_last_colon_split_remains]', () => {
+    expect(parseProviderQualifiedModel('@custom:backup:model-a:free')).toEqual(['model-a:free', 'custom:backup'])
+    expect(parseProviderQualifiedModel('@custom:127.0.0.1:1234:llama')).toEqual(['llama', 'custom:127.0.0.1:1234'])
+    expect(parseProviderQualifiedModel('@ollama:qwen3.8:27b')).toEqual(['qwen3.8:27b', 'ollama'])
+    expect(parseProviderQualifiedModel('plain')).toBeNull()
+    expect(customProviderSlug('Local (127.0.0.1:15721)')).toBe('custom:local-127.0.0.1-15721')
+    expect(coerceReasoningEffort('max', ['low', 'medium', 'high'])).toBe('high')
+    expect(coerceReasoningEffort('none', ['low'])).toBe('none')
+    expect(coerceReasoningEffort('silly', ['low'])).toBe('')
+    // No resolved capability list: `max` degrades to `xhigh` for an unknown/custom provider, stays for a known one.
+    expect(coerceReasoningEffort('max', [], 'custom')).toBe('xhigh')
+    expect(coerceReasoningEffort('ultra', [], 'custom:proxy')).toBe('xhigh')
+    expect(coerceReasoningEffort('max', [], 'anthropic')).toBe('max')
+    expect(coerceReasoningEffort('high', [], 'custom')).toBe('high')
+    expect(coerceReasoningEffort('max', [])).toBe('xhigh')
+    expect(splitProviderModel('@anthropic:claude-x', null)).toEqual(['claude-x', 'anthropic'])
+  })
+})
+
+describe('isolated profile mode', () => {
+  let s: TestServer
+  let home = ''
+  beforeAll(async () => {
+    const base = mkdtempSync(join(tmpdir(), 'talaria-isolated-'))
+    home = join(base, 'profiles', 'tenant')
+    mkdirSync(home, { recursive: true })
+    const sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: base, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'other', path: join(base, 'profiles', 'other'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home } })
+  })
+  afterAll(async () => { await s.close(); rmSync(join(home, '..', '..'), { recursive: true, force: true }) })
+
+  it('pins the process to the HERMES_HOME profile and refuses every cross-profile surface [py:test_issue1611_session_profile_filtering.py::test_all_profiles_disabled_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_isolated_mode_when_hermes_home_is_profile_subdir] [py:test_issue2698_isolated_hermes_home.py::test_list_returns_only_isolated_profile_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_list_includes_single_profile_mode_flag] [py:test_issue2698_isolated_hermes_home.py::test_get_active_profile_name_ignores_tls_and_global_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_init_profile_state_pins_runtime_home_to_isolated_profile] [py:test_issue2698_isolated_hermes_home.py::test_create_profile_rejected_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_delete_profile_rejected_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_switch_to_different_profile_rejected] [py:test_issue3947_tasks_cross_profile_visibility.py::test_crons_route_ignores_all_profiles_toggle_in_isolated_mode]', async () => {
+    expect(s.deps.isolatedProfileMode()).toBe(true)
+    expect(s.deps.activeProfile()).toBe('tenant')
+    expect(s.deps.profileHome('tenant')).toBe(home)
+    let body = await json(await s.get('/api/profiles'))
+    expect((body.profiles as Json[]).map((p) => p.name)).toEqual(['tenant'])
+    expect(body.single_profile_mode).toBe(true)
+    let res = await post(s, '/api/profile/switch', { name: 'other' })
+    expect(res.status).toBe(403)
+    res = await post(s, '/api/profile/create', { name: 'other2' })
+    expect(res.status).toBe(403)
+    res = await post(s, '/api/profile/delete', { name: 'other' })
+    expect(res.status).toBe(403)
+    body = await json(await s.get('/api/sessions?all_profiles=1'))
+    expect(body).toMatchObject({ active_profile: 'tenant', all_profiles: false })
+    body = await json(await s.get('/api/crons?all_profiles=1'))
+    expect(body.all_profiles).toBe(false)
+  })
+})

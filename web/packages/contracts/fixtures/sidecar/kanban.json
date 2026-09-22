@@ -1,0 +1,952 @@
+{
+  "kanban.boards": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "boards": [
+          {
+            "slug": "default",
+            "name": "Default",
+            "description": "",
+            "icon": "",
+            "color": "",
+            "default_workdir": null,
+            "project_id": null,
+            "created_at": null,
+            "archived": false,
+            "db_path": "<home>/kanban.db",
+            "is_current": true,
+            "counts": {},
+            "total": 0
+          }
+        ],
+        "current": "default",
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.create_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "board_spec": {
+          "slug": "experiments",
+          "name": "Experiments"
+        }
+      },
+      "result": {
+        "board": {
+          "slug": "experiments",
+          "name": "Experiments",
+          "description": "",
+          "icon": "",
+          "color": "",
+          "default_workdir": null,
+          "project_id": null,
+          "created_at": 1789936415,
+          "archived": false,
+          "db_path": "<home>/kanban/boards/experiments/kanban.db"
+        },
+        "current": "default",
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.update_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "slug": "experiments",
+        "board_spec": {
+          "description": "scratch"
+        }
+      },
+      "result": {
+        "board": {
+          "slug": "experiments",
+          "name": "Experiments",
+          "description": "scratch",
+          "icon": "",
+          "color": "",
+          "default_workdir": null,
+          "project_id": null,
+          "created_at": 1789936415,
+          "archived": false,
+          "db_path": "<home>/kanban/boards/experiments/kanban.db"
+        },
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.switch_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "slug": "experiments"
+      },
+      "result": {
+        "current": "experiments",
+        "read_only": false
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "slug": "default"
+      },
+      "result": {
+        "current": "default",
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.delete_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "slug": "experiments"
+      },
+      "result": {
+        "result": {
+          "slug": "experiments",
+          "action": "archived",
+          "new_path": "<home>/kanban/boards/_archived/experiments-1789936416"
+        },
+        "current": "default",
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.create_task": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task": {
+          "title": "first task",
+          "body": "details",
+          "priority": 2
+        }
+      },
+      "result": {
+        "task": {
+          "id": "t_b8db09c1",
+          "title": "first task",
+          "body": "details",
+          "assignee": null,
+          "status": "ready",
+          "priority": 2,
+          "created_by": "webui",
+          "created_at": 1789936416,
+          "started_at": null,
+          "completed_at": null,
+          "workspace_kind": "scratch",
+          "workspace_path": null,
+          "claim_lock": null,
+          "claim_expires": null,
+          "tenant": null,
+          "branch_name": null,
+          "project_id": null,
+          "result": null,
+          "idempotency_key": null,
+          "consecutive_failures": 0,
+          "worker_pid": null,
+          "last_failure_error": null,
+          "max_runtime_seconds": null,
+          "last_heartbeat_at": null,
+          "current_run_id": null,
+          "workflow_template_id": null,
+          "current_step_key": null,
+          "skills": null,
+          "model_override": null,
+          "provider_override": null,
+          "reasoning_effort": null,
+          "max_retries": null,
+          "goal_mode": false,
+          "goal_max_turns": null,
+          "session_id": null,
+          "block_kind": null,
+          "block_recurrences": 0,
+          "completion_contract": "local-only",
+          "age_seconds": {
+            "created_age_seconds": 0,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "age": {
+            "created_age_seconds": 0,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "progress": null
+        },
+        "read_only": false
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task": {
+          "title": "second task"
+        }
+      },
+      "result": {
+        "task": {
+          "id": "t_974ed3b5",
+          "title": "second task",
+          "body": null,
+          "assignee": null,
+          "status": "ready",
+          "priority": 0,
+          "created_by": "webui",
+          "created_at": 1789936416,
+          "started_at": null,
+          "completed_at": null,
+          "workspace_kind": "scratch",
+          "workspace_path": null,
+          "claim_lock": null,
+          "claim_expires": null,
+          "tenant": null,
+          "branch_name": null,
+          "project_id": null,
+          "result": null,
+          "idempotency_key": null,
+          "consecutive_failures": 0,
+          "worker_pid": null,
+          "last_failure_error": null,
+          "max_runtime_seconds": null,
+          "last_heartbeat_at": null,
+          "current_run_id": null,
+          "workflow_template_id": null,
+          "current_step_key": null,
+          "skills": null,
+          "model_override": null,
+          "provider_override": null,
+          "reasoning_effort": null,
+          "max_retries": null,
+          "goal_mode": false,
+          "goal_max_turns": null,
+          "session_id": null,
+          "block_kind": null,
+          "block_recurrences": 0,
+          "completion_contract": "local-only",
+          "age_seconds": {
+            "created_age_seconds": 0,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "age": {
+            "created_age_seconds": 0,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "progress": null
+        },
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.board": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "columns": [
+          {
+            "name": "triage",
+            "tasks": []
+          },
+          {
+            "name": "todo",
+            "tasks": []
+          },
+          {
+            "name": "ready",
+            "tasks": [
+              {
+                "id": "t_b8db09c1",
+                "title": "first task",
+                "body": "details",
+                "assignee": null,
+                "status": "ready",
+                "priority": 2,
+                "created_by": "webui",
+                "created_at": 1789936416,
+                "started_at": null,
+                "completed_at": null,
+                "workspace_kind": "scratch",
+                "workspace_path": null,
+                "claim_lock": null,
+                "claim_expires": null,
+                "tenant": null,
+                "branch_name": null,
+                "project_id": null,
+                "result": null,
+                "idempotency_key": null,
+                "consecutive_failures": 0,
+                "worker_pid": null,
+                "last_failure_error": null,
+                "max_runtime_seconds": null,
+                "last_heartbeat_at": null,
+                "current_run_id": null,
+                "workflow_template_id": null,
+                "current_step_key": null,
+                "skills": null,
+                "model_override": null,
+                "provider_override": null,
+                "reasoning_effort": null,
+                "max_retries": null,
+                "goal_mode": false,
+                "goal_max_turns": null,
+                "session_id": null,
+                "block_kind": null,
+                "block_recurrences": 0,
+                "completion_contract": "local-only",
+                "age_seconds": {
+                  "created_age_seconds": 0,
+                  "started_age_seconds": null,
+                  "time_to_complete_seconds": null
+                },
+                "age": {
+                  "created_age_seconds": 0,
+                  "started_age_seconds": null,
+                  "time_to_complete_seconds": null
+                },
+                "progress": null,
+                "link_counts": {
+                  "parents": 0,
+                  "children": 0
+                },
+                "comment_count": 0
+              },
+              {
+                "id": "t_974ed3b5",
+                "title": "second task",
+                "body": null,
+                "assignee": null,
+                "status": "ready",
+                "priority": 0,
+                "created_by": "webui",
+                "created_at": 1789936416,
+                "started_at": null,
+                "completed_at": null,
+                "workspace_kind": "scratch",
+                "workspace_path": null,
+                "claim_lock": null,
+                "claim_expires": null,
+                "tenant": null,
+                "branch_name": null,
+                "project_id": null,
+                "result": null,
+                "idempotency_key": null,
+                "consecutive_failures": 0,
+                "worker_pid": null,
+                "last_failure_error": null,
+                "max_runtime_seconds": null,
+                "last_heartbeat_at": null,
+                "current_run_id": null,
+                "workflow_template_id": null,
+                "current_step_key": null,
+                "skills": null,
+                "model_override": null,
+                "provider_override": null,
+                "reasoning_effort": null,
+                "max_retries": null,
+                "goal_mode": false,
+                "goal_max_turns": null,
+                "session_id": null,
+                "block_kind": null,
+                "block_recurrences": 0,
+                "completion_contract": "local-only",
+                "age_seconds": {
+                  "created_age_seconds": 0,
+                  "started_age_seconds": null,
+                  "time_to_complete_seconds": null
+                },
+                "age": {
+                  "created_age_seconds": 0,
+                  "started_age_seconds": null,
+                  "time_to_complete_seconds": null
+                },
+                "progress": null,
+                "link_counts": {
+                  "parents": 0,
+                  "children": 0
+                },
+                "comment_count": 0
+              }
+            ]
+          },
+          {
+            "name": "running",
+            "tasks": []
+          },
+          {
+            "name": "blocked",
+            "tasks": []
+          },
+          {
+            "name": "done",
+            "tasks": []
+          }
+        ],
+        "tenants": [],
+        "assignees": [],
+        "latest_event_id": 2,
+        "changed": true,
+        "read_only": false,
+        "filters": {
+          "tenant": null,
+          "assignee": null,
+          "include_archived": false,
+          "only_mine": false,
+          "profile": null
+        }
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "since": 10000
+      },
+      "result": {
+        "changed": false,
+        "latest_event_id": 2,
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.config": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "columns": [
+          "triage",
+          "todo",
+          "ready",
+          "running",
+          "blocked",
+          "done"
+        ],
+        "assignees": [
+          {
+            "name": "default",
+            "on_disk": true,
+            "counts": {}
+          }
+        ],
+        "default_tenant": "",
+        "lane_by_profile": true,
+        "include_archived_by_default": false,
+        "render_markdown": true,
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.stats": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "by_status": {
+          "ready": 2
+        },
+        "by_assignee": {},
+        "oldest_ready_age_seconds": 0,
+        "now": 1789936416
+      }
+    }
+  ],
+  "kanban.assignees": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "assignees": [
+          {
+            "name": "default",
+            "on_disk": true,
+            "counts": {}
+          }
+        ]
+      }
+    }
+  ],
+  "kanban.events": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "since": 0,
+        "limit": 50
+      },
+      "result": {
+        "events": [
+          {
+            "id": 1,
+            "task_id": "t_b8db09c1",
+            "run_id": null,
+            "kind": "created",
+            "payload": {
+              "assignee": null,
+              "status": "ready",
+              "parents": [],
+              "creator_task_id": null,
+              "tenant": null,
+              "workspace_kind": "scratch",
+              "workspace_path": null,
+              "branch_name": null,
+              "project_id": null,
+              "skills": null,
+              "goal_mode": null,
+              "model_override": null,
+              "provider_override": null
+            },
+            "created_at": 1789936416
+          },
+          {
+            "id": 2,
+            "task_id": "t_974ed3b5",
+            "run_id": null,
+            "kind": "created",
+            "payload": {
+              "assignee": null,
+              "status": "ready",
+              "parents": [],
+              "creator_task_id": null,
+              "tenant": null,
+              "workspace_kind": "scratch",
+              "workspace_path": null,
+              "branch_name": null,
+              "project_id": null,
+              "skills": null,
+              "goal_mode": null,
+              "model_override": null,
+              "provider_override": null
+            },
+            "created_at": 1789936416
+          }
+        ],
+        "cursor": 2,
+        "latest_event_id": 2,
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.dispatch": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "dry_run": true
+      },
+      "result": {
+        "reclaimed": 0,
+        "promoted": 0,
+        "reconciled_orphans": [],
+        "spawned": [],
+        "skipped_unassigned": [
+          "t_b8db09c1",
+          "t_974ed3b5"
+        ],
+        "auto_assigned_default": [],
+        "skipped_nonspawnable": [],
+        "skipped_per_profile_capped": [],
+        "crashed": [],
+        "auto_blocked": [],
+        "timed_out": [],
+        "stale": [],
+        "respawn_guarded": [],
+        "rate_limited": [],
+        "skipped_locked": false,
+        "memory_pressure": null
+      }
+    }
+  ],
+  "kanban.task": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task_id": "t_b8db09c1"
+      },
+      "result": {
+        "task": {
+          "id": "t_b8db09c1",
+          "title": "first task",
+          "body": "details",
+          "assignee": null,
+          "status": "ready",
+          "priority": 2,
+          "created_by": "webui",
+          "created_at": 1789936416,
+          "started_at": null,
+          "completed_at": null,
+          "workspace_kind": "scratch",
+          "workspace_path": null,
+          "claim_lock": null,
+          "claim_expires": null,
+          "tenant": null,
+          "branch_name": null,
+          "project_id": null,
+          "result": null,
+          "idempotency_key": null,
+          "consecutive_failures": 0,
+          "worker_pid": null,
+          "last_failure_error": null,
+          "max_runtime_seconds": null,
+          "last_heartbeat_at": null,
+          "current_run_id": null,
+          "workflow_template_id": null,
+          "current_step_key": null,
+          "skills": null,
+          "model_override": null,
+          "provider_override": null,
+          "reasoning_effort": null,
+          "max_retries": null,
+          "goal_mode": false,
+          "goal_max_turns": null,
+          "session_id": null,
+          "block_kind": null,
+          "block_recurrences": 0,
+          "completion_contract": "local-only",
+          "age_seconds": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "age": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "progress": null
+        },
+        "comments": [],
+        "events": [
+          {
+            "id": 1,
+            "task_id": "t_b8db09c1",
+            "kind": "created",
+            "payload": {
+              "assignee": null,
+              "status": "ready",
+              "parents": [],
+              "creator_task_id": null,
+              "tenant": null,
+              "workspace_kind": "scratch",
+              "workspace_path": null,
+              "branch_name": null,
+              "project_id": null,
+              "skills": null,
+              "goal_mode": null,
+              "model_override": null,
+              "provider_override": null
+            },
+            "created_at": 1789936416,
+            "run_id": null
+          }
+        ],
+        "links": {
+          "parents": [],
+          "children": []
+        },
+        "runs": [],
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.task_action": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task_id": "t_b8db09c1",
+        "action": "block",
+        "reason": "waiting"
+      },
+      "result": {
+        "task": {
+          "id": "t_b8db09c1",
+          "title": "first task",
+          "body": "details",
+          "assignee": null,
+          "status": "blocked",
+          "priority": 2,
+          "created_by": "webui",
+          "created_at": 1789936416,
+          "started_at": null,
+          "completed_at": null,
+          "workspace_kind": "scratch",
+          "workspace_path": null,
+          "claim_lock": null,
+          "claim_expires": null,
+          "tenant": null,
+          "branch_name": null,
+          "project_id": null,
+          "result": null,
+          "idempotency_key": null,
+          "consecutive_failures": 0,
+          "worker_pid": null,
+          "last_failure_error": null,
+          "max_runtime_seconds": null,
+          "last_heartbeat_at": null,
+          "current_run_id": null,
+          "workflow_template_id": null,
+          "current_step_key": null,
+          "skills": null,
+          "model_override": null,
+          "provider_override": null,
+          "reasoning_effort": null,
+          "max_retries": null,
+          "goal_mode": false,
+          "goal_max_turns": null,
+          "session_id": null,
+          "block_kind": null,
+          "block_recurrences": 1,
+          "completion_contract": "local-only",
+          "age_seconds": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "age": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "progress": null
+        },
+        "read_only": false
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task_id": "t_b8db09c1",
+        "action": "unblock"
+      },
+      "result": {
+        "task": {
+          "id": "t_b8db09c1",
+          "title": "first task",
+          "body": "details",
+          "assignee": null,
+          "status": "ready",
+          "priority": 2,
+          "created_by": "webui",
+          "created_at": 1789936416,
+          "started_at": null,
+          "completed_at": null,
+          "workspace_kind": "scratch",
+          "workspace_path": null,
+          "claim_lock": null,
+          "claim_expires": null,
+          "tenant": null,
+          "branch_name": null,
+          "project_id": null,
+          "result": null,
+          "idempotency_key": null,
+          "consecutive_failures": 0,
+          "worker_pid": null,
+          "last_failure_error": null,
+          "max_runtime_seconds": null,
+          "last_heartbeat_at": null,
+          "current_run_id": null,
+          "workflow_template_id": null,
+          "current_step_key": null,
+          "skills": null,
+          "model_override": null,
+          "provider_override": null,
+          "reasoning_effort": null,
+          "max_retries": null,
+          "goal_mode": false,
+          "goal_max_turns": null,
+          "session_id": null,
+          "block_kind": null,
+          "block_recurrences": 1,
+          "completion_contract": "local-only",
+          "age_seconds": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "age": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "progress": null
+        },
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.patch_task": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task_id": "t_b8db09c1",
+        "patch": {
+          "title": "renamed task",
+          "status": "todo"
+        }
+      },
+      "result": {
+        "task": {
+          "id": "t_b8db09c1",
+          "title": "renamed task",
+          "body": "details",
+          "assignee": null,
+          "status": "todo",
+          "priority": 2,
+          "created_by": "webui",
+          "created_at": 1789936416,
+          "started_at": null,
+          "completed_at": null,
+          "workspace_kind": "scratch",
+          "workspace_path": null,
+          "claim_lock": null,
+          "claim_expires": null,
+          "tenant": null,
+          "branch_name": null,
+          "project_id": null,
+          "result": null,
+          "idempotency_key": null,
+          "consecutive_failures": 0,
+          "worker_pid": null,
+          "last_failure_error": null,
+          "max_runtime_seconds": null,
+          "last_heartbeat_at": null,
+          "current_run_id": null,
+          "workflow_template_id": null,
+          "current_step_key": null,
+          "skills": null,
+          "model_override": null,
+          "provider_override": null,
+          "reasoning_effort": null,
+          "max_retries": null,
+          "goal_mode": false,
+          "goal_max_turns": null,
+          "session_id": null,
+          "block_kind": null,
+          "block_recurrences": 1,
+          "completion_contract": "local-only",
+          "age_seconds": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "age": {
+            "created_age_seconds": 7,
+            "started_age_seconds": null,
+            "time_to_complete_seconds": null
+          },
+          "progress": null
+        },
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.comment": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task_id": "t_b8db09c1",
+        "body": "note"
+      },
+      "result": {
+        "ok": true,
+        "comment_id": 1,
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.link": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "parent_id": "t_b8db09c1",
+        "child_id": "t_974ed3b5"
+      },
+      "result": {
+        "ok": true,
+        "parent_id": "t_b8db09c1",
+        "child_id": "t_974ed3b5",
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.unlink": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "parent_id": "t_b8db09c1",
+        "child_id": "t_974ed3b5"
+      },
+      "result": {
+        "ok": true,
+        "changed": true,
+        "parent_id": "t_b8db09c1",
+        "child_id": "t_974ed3b5",
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.task_log": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "task_id": "t_b8db09c1"
+      },
+      "result": {
+        "task_id": "t_b8db09c1",
+        "path": "<home>/kanban/logs/t_b8db09c1.log",
+        "exists": false,
+        "size_bytes": 0,
+        "content": "",
+        "truncated": false
+      }
+    }
+  ],
+  "kanban.bulk": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "bulk": {
+          "ids": [
+            "t_b8db09c1",
+            "t_974ed3b5"
+          ],
+          "priority": 5
+        }
+      },
+      "result": {
+        "results": [
+          {
+            "id": "t_b8db09c1",
+            "ok": true
+          },
+          {
+            "id": "t_974ed3b5",
+            "ok": true
+          }
+        ],
+        "read_only": false
+      }
+    }
+  ],
+  "kanban.normalize_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "board": "Default"
+      },
+      "result": {
+        "board": "default"
+      }
+    }
+  ]
+}

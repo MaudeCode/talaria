@@ -2,6 +2,7 @@
 """Production operations authorized only by the main-branch cutover workflow."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -90,6 +91,9 @@ def web(plan, build, directory, output):
         raise ValueError("Web build receipt does not match the plan")
     image = build["image"]
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
+    # The npm preflight (receipt identity, token, tarball pair, immutable-version bytes) runs before the image tag is
+    # published: a rejection here must not leave a public GHCR tag pointing at a release with no npm package.
+    preflight_npm(component, build, directory)
     with tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
         auth = str(Path(temporary) / "auth.json")
         subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
@@ -99,7 +103,68 @@ def web(plan, build, directory, output):
         raw = subprocess.check_output(["skopeo", "inspect", "--raw", "--authfile", auth, "docker://" + image])
         if "sha256:" + hashlib.sha256(raw).hexdigest() != image.split("@", 1)[1]:
             raise ValueError("published Web manifest digest differs from the build")
-    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image))
+    npm_identity = publish_npm(component, build, directory)
+    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
+
+
+def _npm_integrity(path):
+    return "sha512-" + base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode()
+
+
+def _npm_view(spec, field):
+    """The registry's value for ``field`` of ``spec``, or None when that version is not published."""
+    view = subprocess.run(["npm", "view", spec, field, "--json"], capture_output=True, text=True)
+    if view.returncode == 0:
+        return json.loads(view.stdout) if view.stdout.strip() else None
+    if "E404" in view.stderr:
+        return None
+    raise ValueError(f"npm registry lookup failed for {spec}: {view.stderr.strip()}")
+
+
+def preflight_npm(component, build, directory):
+    """Validate everything npm publication depends on without mutating the registry; returns the publication plan."""
+    expected = f"@maudecode/talaria-web@{component['version']}"
+    if build.get("npm") != expected:
+        raise ValueError("Web build receipt does not name the npm package")
+    if not os.environ.get("NODE_AUTH_TOKEN"):
+        raise ValueError("npm publication requires NODE_AUTH_TOKEN from the web-release environment")
+    tarballs = {path.name: path for path in (directory / "npm").glob("*.tgz")}
+    ordered = [name for name in sorted(tarballs) if "contracts" in name] + [name for name in sorted(tarballs) if "contracts" not in name]
+    if len(ordered) != 2:
+        raise ValueError("Web publication requires the contracts and server tarballs")
+    dist_tag = "experimental" if component["tag"].startswith("web-exp-") else "latest"
+    packages = {name: "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web" for name in ordered}
+    # Preflight every package before any mutation so a mismatch on one never leaves the other re-tagged.
+    published = {}
+    for name in ordered:
+        spec = f"{packages[name]}@{component['version']}"
+        existing = _npm_view(spec, "dist.integrity")
+        if existing is not None and existing != _npm_integrity(tarballs[name]):
+            # Versions are immutable: a different tarball under this version came from another channel or build.
+            raise ValueError(f"{spec} is already published with different contents; the version must be unique across channels")
+        published[name] = existing is not None
+    return {"expected": expected, "tarballs": tarballs, "ordered": ordered, "dist_tag": dist_tag, "packages": packages, "published": published}
+
+
+def publish_npm(component, build, directory):
+    """Publish the packed tarballs (contracts first) and verify the registry readback."""
+    plan = preflight_npm(component, build, directory)
+    expected, tarballs, ordered = plan["expected"], plan["tarballs"], plan["ordered"]
+    dist_tag, packages, published = plan["dist_tag"], plan["packages"], plan["published"]
+    for name in ordered:
+        spec = f"{packages[name]}@{component['version']}"
+        if not published[name]:
+            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--provenance=false", "--tag", dist_tag], check=True)
+        # A retry (or an identical tarball already published) still has to carry this channel's dist-tag.
+        subprocess.run(["npm", "dist-tag", "add", spec, dist_tag], check=True)
+    for name in ordered:
+        spec = f"{packages[name]}@{component['version']}"
+        if _npm_view(spec, "dist.integrity") != _npm_integrity(tarballs[name]):
+            raise ValueError("npm registry readback differs from the published tarball")
+        tags = json.loads(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json"], text=True))
+        if tags.get(dist_tag) != component["version"]:
+            raise ValueError(f"npm dist-tag {dist_tag} does not point at the published version")
+    return expected
 
 
 def _release_info(tag):
@@ -178,14 +243,14 @@ def finalize(plan, manifest, previous, artifacts):
     if manifest["contracts"] != plan["contracts"] or manifest["agent"] != plan["agent"]:
         raise ValueError("completed compatibility metadata differs from the plan")
     for name, component in plan["components"].items():
-        for key in ("tag", "version", "sourceRevision", "releaseSet", "deploymentId", "upstreamBase"):
+        for key in ("tag", "version", "sourceRevision", "releaseSet", "deploymentId"):
             if key in component and manifest["components"][name].get(key) != component[key]:
                 raise ValueError("completed component identity differs from the plan")
     root_tag = "release-set-" + plan["releaseSet"]
     require_current_predecessor(plan, previous)
-    wheels = sorted((artifacts / "web-build/wheel").glob("*.whl"))
-    if plan["changed"]["web"] and (len(wheels) != 1 or wheels[0].stat().st_size == 0):
-        raise ValueError("Web publication requires the built wheel")
+    tarballs = sorted((artifacts / "web-build/npm").glob("*.tgz"))
+    if plan["changed"]["web"] and (len(tarballs) != 2 or any(path.stat().st_size == 0 for path in tarballs)):
+        raise ValueError("Web publication requires the built npm tarballs")
     identity = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
     # Component releases are prepared first. The updater consumes only the root
     # completed manifest, which is published as the final operation.
@@ -193,7 +258,7 @@ def finalize(plan, manifest, previous, artifacts):
         if not changed:
             continue
         tag = plan["components"][name]["tag"]
-        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], wheels if name == "web" else [], identity)
+        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], tarballs if name == "web" else [], identity)
     with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
         directory = Path(temporary)
         write(directory / "release-set.json", manifest)

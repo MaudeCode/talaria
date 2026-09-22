@@ -39,10 +39,22 @@ def main():
         values["deploymentId"] = component["deploymentId"]
     elif name == "web":
         subprocess.run([*stamp, "--tag", component["tag"]], cwd=ROOT, check=True)
-        provenance = load(ROOT / "web/api/_release.json")
-        subprocess.run(["python3", "-m", "pip", "wheel", ".", "--no-deps", "--wheel-dir", str(output / "wheel")],
-                       cwd=ROOT / "web", check=True,
-                       env={**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_TALARIA_WEB": component["version"]})
+        provenance = load(ROOT / "web/_release.json")
+        # npm distribution: build the workspace and pack @maudecode/talaria-web at the
+        # release version (the stamped _release.json ships inside the tarball).
+        subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=ROOT / "web", check=True)
+        subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=ROOT / "web", check=True)
+        subprocess.run(["npm", "run", "build", "-w", "packages/server"], cwd=ROOT / "web", check=True)
+        for package in ("packages/contracts", "packages/server"):
+            subprocess.run(["npm", "version", component["version"], "--no-git-tag-version", "--allow-same-version", "-w", package], cwd=ROOT / "web", check=True)
+        # A published server must resolve the contracts package it was built and tested with, never a newer release.
+        subprocess.run(["npm", "pkg", "set", f"dependencies.@maudecode/talaria-web-contracts={component['version']}", "-w", "packages/server"], cwd=ROOT / "web", check=True)
+        (output / "npm").mkdir()
+        subprocess.run(["npm", "pack", "--pack-destination", str(output / "npm"), "-w", "packages/contracts", "-w", "packages/server"], cwd=ROOT / "web", check=True)
+        tarballs = sorted((output / "npm").glob("*.tgz"))
+        if len(tarballs) != 2 or any(path.stat().st_size == 0 for path in tarballs):
+            raise ValueError("npm pack must produce the contracts and server tarballs")
+        values["npm"] = f"@maudecode/talaria-web@{component['version']}"
         metadata = output / "image-metadata.json"
         subprocess.run([
             "docker", "buildx", "build", "--platform", "linux/amd64,linux/arm64",

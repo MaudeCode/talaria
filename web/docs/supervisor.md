@@ -1,4 +1,4 @@
-# Running Hermes Web UI under a process supervisor
+# Running Talaria Web under a process supervisor
 
 Use a process supervisor (launchd, systemd, supervisord, runit, s6) when you
 want the Web UI to start at boot, restart on crash, or be managed alongside
@@ -6,37 +6,39 @@ other services.
 
 ## TL;DR
 
-Pass ``--foreground`` to ``bootstrap.py`` (or ``bash start.sh``):
+Pass ``--foreground`` to ``talaria-web``:
 
 ```bash
-bash start.sh --foreground
+talaria-web --foreground --no-browser
 ```
 
 Or set ``HERMES_WEBUI_FOREGROUND=1`` in the environment. The Web UI will
 auto-detect launchd / systemd / supervisord even without the flag, but being
 explicit is safer.
 
-**Important (launchd on macOS):** if the ``com.parantoux.hermes-webui`` LaunchAgent is enabled, treat launchd as the single source of truth for WebUI lifecycle. Do **not** also run ``./ctl.sh start``, ``bash start.sh``, ``python bootstrap.py``, or ``python server.py`` against the same state dir/port, or you can create a second WebUI instance and trigger port-8787 restart churn.
+**Important (launchd on macOS):** if the ``com.parantoux.hermes-webui`` LaunchAgent is enabled, treat launchd as the single source of truth for WebUI lifecycle. Do **not** also run ``talaria-web ctl start`` or ``talaria-web`` against the same state dir/port, or you can create a second WebUI instance and trigger port-8787 restart churn.
 
 ## Why ``--foreground`` matters
 
-Without it, ``bootstrap.py`` does this:
+Without it, ``talaria-web`` does this:
 
-1. Spawn ``server.py`` as a detached subprocess (``start_new_session=True``)
+1. Spawn ``talaria-web serve`` as a detached process
 2. Probe ``/health`` until the server is up
 3. Exit 0
 
-That works for an interactive shell run (``./start.sh`` returns to your
+That works for an interactive shell run (``talaria-web`` returns to your
 prompt with the server alive in the background). It is **broken** under any
 process supervisor: the supervisor sees its tracked PID exit, marks the job
-as completed, and respawns ``bootstrap.py``. The respawn fails to bind port
+as completed, and respawns ``talaria-web``. The respawn fails to bind port
 8787 (the orphaned server still has it), exits non-zero, supervisor
 respawns again — loop.
 
-In foreground mode, ``bootstrap.py`` does its setup work and then calls
-``os.execv`` to replace its own process with ``server.py``. The supervisor
-sees the long-lived server as the original child. ``KeepAlive=true`` /
-``Restart=always`` work correctly.
+In foreground mode, ``talaria-web`` does its setup work and then runs the
+server in the same process tree: the launcher stays attached as a small
+supervisor and the HTTP server runs in one worker child. The supervisor
+sees the long-lived process as the original child, ``KeepAlive=true`` /
+``Restart=always`` work correctly, and a self-update restarts only the
+worker (exit code 75) so the tracked PID never changes.
 
 ## launchd (macOS)
 
@@ -52,13 +54,13 @@ sees the long-lived server as the original child. ``KeepAlive=true`` /
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/yourname/hermes-webui/start.sh</string>
+        <string>/usr/local/bin/talaria-web</string>
         <string>--foreground</string>
+        <string>--no-browser</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/yourname/hermes-webui</string>
+    <string>/Users/yourname</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -81,7 +83,7 @@ sees the long-lived server as the original child. ``KeepAlive=true`` /
         <key>HOME</key>
         <string>/Users/yourname</string>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>
@@ -116,8 +118,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/hermes-webui
-ExecStart=/bin/bash %h/hermes-webui/start.sh --foreground
+WorkingDirectory=%h
+ExecStart=/usr/local/bin/talaria-web --foreground --no-browser
 Restart=on-failure
 RestartSec=5
 
@@ -146,8 +148,8 @@ the journal), both of which auto-promote to foreground mode.
 
 ```ini
 [program:hermes-webui]
-command=/bin/bash /home/youruser/hermes-webui/start.sh --foreground
-directory=/home/youruser/hermes-webui
+command=/usr/local/bin/talaria-web --foreground --no-browser
+directory=/home/youruser
 user=youruser
 autostart=true
 autorestart=true
@@ -193,7 +195,7 @@ not just real services. Typical noise values:
 - ``application.com.microsoft.VSCode`` — VSCode integrated terminal
 
 A bare existence check on this var would auto-promote interactive
-``./start.sh`` runs to foreground mode on every Mac dev machine, breaking
+``talaria-web`` runs to foreground mode on every Mac dev machine, breaking
 the most common installation path. We narrow detection to launchd
 **Label-style** names (typically reverse-DNS like ``com.example.foo``).
 Real launchd plists always use this form. If you ever see
@@ -208,7 +210,7 @@ The following set no env var that we can reliably detect. Pass
 
 - **runit** (without sd_notify) — pure runit chains
 - **daemontools** / ``svc``
-- **PM2** (Node.js process manager occasionally repurposed for Python)
+- **PM2**
 - **Foreman** / **Honcho** (Procfile-style)
 - **Docker** with a custom CMD entrypoint that doesn't already use ``exec``
 - **Custom shell-script supervisors** that fork-and-wait
@@ -234,8 +236,9 @@ A healthy foreground-mode setup looks like:
 
 ```
 PID    PPID  CMD
-12345  6789  /path/to/python /path/to/server.py
-6789   1     /sbin/launchd        # or /usr/lib/systemd/systemd, etc.
+12346  12345 node .../talaria-web.js serve        # the HTTP server worker
+12345  6789  node .../talaria-web.js --foreground # the attached launcher/supervisor
+6789   1     /sbin/launchd                         # or /usr/lib/systemd/systemd, etc.
 ```
 
 If PPID is ``1`` (init) when it should be the supervisor, the orphan-server
@@ -255,11 +258,6 @@ Hermes Web UI exposes two health levels:
 - ``/health?deep=1`` — readiness probe that briefly acquires the stream lock,
   reads the sidebar/session path, reads projects state, and touches Hermes
   ``state.db`` if it exists. Use this for watchdogs.
-
-At startup the server also tries to raise its file-descriptor soft limit to
-4096 on platforms that support ``RLIMIT_NOFILE``. That is defense in depth for
-persistent hosts: leaks should still be fixed, but a higher soft limit gives
-you more diagnostic headroom before request handling falls over.
 
 Minimal macOS launchd watchdog script:
 

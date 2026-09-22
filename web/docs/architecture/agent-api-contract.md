@@ -1,242 +1,62 @@
-# WebUI to hermes-agent source dependency contract
+# Web to Hermes Agent dependency contract
 
-This document records the current WebUI dependency on the hermes-agent source
-tree for issue #2491. It is an audit and replacement contract only; it does not
-change runtime behavior or Docker wiring.
+Talaria Web depends on Hermes Agent through exactly one boundary: the Python
+sidecar (`sidecar/talaria_sidecar`, [sidecar-rpc.md](sidecar-rpc.md)). The
+TypeScript server imports no Agent code and reads Agent-owned files only as file
+formats (`config.yaml`, `.env`, profiles, skills, memories, `state.db` read-only
+projection). Every Agent module import lives in the sidecar's `methods/`
+package, on the Agent's own venv interpreter.
 
-Run the deterministic audit with:
+## Tested identity
 
-```powershell
-python scripts/audit_agent_source_dependencies.py
-python scripts/audit_agent_source_dependencies.py --format markdown
-```
+`sidecar/agent_dependency.json` records the tested external Agent: an exact
+package version, source commit, and image digest. The launcher fetches the
+installer from that commit when it installs an Agent; existing installations are
+discovered and retained, never downgraded. Both multi-container Compose variants
+inherit their Agent image from the same file through Compose `extends`.
 
-The JSON output is repo-relative and grouped by stable dependency class IDs so
-follow-up PRs can remove one class at a time without relying on exact line
-fixtures.
-
-## Current boundary
-
-Talaria's tested external Agent identity is recorded in
-`api/agent_dependency.json`: an exact package version, source commit and image
-digest. Bootstrap fetches the installer from that commit and passes its commit
-pin. Existing Agent installations are discovered and retained; the Web launcher
-does not force a downgrade. Both multi-container Compose variants inherit their
-Agent image from the same JSON file using Compose `extends`. The file is also
-included in Python wheels.
+At handshake the sidecar compares the loaded Agent revision with the pin and
+reports `{agent_revision, agent_version, pinned_revision, pinned_version,
+compatible, stale, update_state}`. The server trusts that report and answers
+Agent-backed routes with `503 agent_incompatible` (a different revision) or
+`503 agent_runtime_stale` (the checkout changed while running) until the sidecar
+restarts on a healthy checkout. `/health` exposes the same `compatibleAgent`
+identity in its `release` block (`tag, version, sourceRevision, releaseSet,
+contracts, compatibleAgent`); it names the tested dependency, not whichever Agent
+an operator installed.
 
 Run `python3 scripts/check-agent-compatibility.py` from the monorepo root when
-changing the pin or preparing a release. The gate fetches only the pinned source,
-installs its locked dependencies, exercises real Agent imports and SessionDB
-projection, runs Web's native tests with that Agent, and repeats the projection
-against the digest-pinned container with networking disabled. It uses disposable
-homes and databases, never production credentials or provider requests. Optional
-test paths restrict the Web suite for local development; release runs use the
-full default suite. A passing identity is a tested combination, not a requirement
-that independently installed Agent or peer component versions be equal.
-
-`/health` includes a `release` object with Web version, source revision,
-release-set identifier, upstream base, supported contracts and `compatibleAgent`.
-The Agent field identifies the tested dependency, not whichever Agent an operator
-may currently run. Unstamped development builds explicitly report `development`
-and null source/release identifiers. Release builds stamp `api/_release.json`
-from a clean exact checkout using root `scripts/stamp-release.py`; malformed
-or inconsistent stamped metadata fails startup instead of claiming provenance.
-The packaged `api/contract_versions.json` is checked against root
-`contracts/versions.json`. Extra health fields do not change readiness or require
-clients to use identical semantic versions.
-
-The multi-container setup still shares the agent source tree with the WebUI:
-
-- `docker-compose.two-container.yml` mounts `hermes-agent-src` at `/opt/hermes`
-  in the agent service and read-only at
-  `/home/hermeswebui/.hermes/hermes-agent` in the WebUI service.
-- `docker-compose.three-container.yml` uses the same source volume pattern.
-- `docker_init.bash` documents that the WebUI-side mount is read-only and uses
-  a staged copy when installing from the source checkout.
-- `docs/docker.md` explicitly documents that this is not a filesystem trust
-  boundary: the WebUI cannot write the mount, but it still installs and imports
-  code from it.
-
-The durable target is that multi-container WebUI should not need a direct
-`hermes-agent-src` mount. The WebUI should communicate with hermes-agent through
-HTTP endpoints and a small versioned client/shared-schema package where pure
-helpers are genuinely shared code.
+changing the pin or preparing a release. The gate fetches only the pinned
+source, installs its locked dependencies, exercises real Agent imports and the
+sidecar's `SessionDB` write path, runs the sidecar pytest suite on that
+interpreter, and (unless `--skip-docker`) repeats the probe against the
+digest-pinned container with networking disabled. It uses disposable homes and
+databases and never production credentials or provider requests. A passing
+identity is a tested combination, not a requirement that independently installed
+Agent or peer component versions be equal.
 
 ## Dependency classes
 
-| Audit class | Current surface | Replacement classification |
-| --- | --- | --- |
-| `docker_agent_source_volume` | Compose files and Docker docs expose `hermes-agent-src` and `/opt/hermes` to make the agent checkout visible to WebUI. | Remove the WebUI source mount only after startup install and runtime imports have migrated. This needs Docker/compose follow-up work, not a runtime behavior change in this audit PR. |
-| `startup_dependency_install` | `api/startup.py` discovers `HERMES_WEBUI_AGENT_DIR` or `$HERMES_HOME/hermes-agent`; `server.py` calls `auto_install_agent_deps()` after import verification fails; `docker_init.bash` installs from the staged agent source. | Replace source-tree pip installs with a packaged hermes-agent WebUI client plus an agent health/version capability contract. Keep `HERMES_WEBUI_AGENT_DIR` during migration as an override/debug path, but it should stop being required in normal multi-container startup. |
-| `runtime_auxiliary_model_metadata` | `api/streaming.py`, `api/routes.py`, `api/config.py`, and `api/providers.py` import `agent.auxiliary_client`, `agent.model_metadata`, `agent.models_dev`, `hermes_cli.models`, and `agent.account_usage`. | Existing provider/model WebUI endpoints can keep serving UI data where they already wrap agent helpers. Missing surfaces need hermes-agent endpoints or a client package for auxiliary task config, text auxiliary calls, context length, token estimate, provider catalog, and account usage. |
-| `runtime_session_state` | `api/streaming.py`, `api/goals.py`, and `api/state_sync.py` import `hermes_state.SessionDB` directly. `api/models.py` also reads the `messages` table directly (see [state.db message content encoding](#statedb-message-content-encoding) for the storage-format coupling that creates) and opens the active profile's canonical `state.db` for scoped session deletion because the current canonical helper does not preserve branch/compression evidence ahead of inherited delegate metadata or expose retryable artifact-cleanup semantics. | Move cross-container state reads and writes, including destructive session deletion, behind hermes-agent session/state endpoints once the agent API provides equivalent lineage precedence, transaction, and retry-manifest guarantees. WebUI-only presentation state can remain local, but agent session storage should not be opened from the WebUI container. |
-| `runtime_gateway_provider` | `api/streaming.py` and `api/routes.py` import `hermes_cli.runtime_provider`; adapter helpers such as `agent.anthropic_adapter` are also imported for gateway normalization. | Provider resolution, runtime routing, and gateway invocation should be hermes-agent API calls. WebUI can keep request validation and display formatting, but it should not import runtime provider internals from the agent checkout. |
-| `webui_local_or_client_package` | WebUI imports `hermes_cli.auth`, `hermes_cli.config`, `hermes_cli.plugins`, `hermes_cli.profiles`, `hermes_cli.goals`, `agent.skill_utils`, `agent.credential_pool`, and `hermes_constants`. | Pure schemas, constants, and parsing helpers can move into a small versioned client/shared package. Privileged data such as credential pools, auth status, profile mutation, plugin discovery, and goal persistence need hermes-agent endpoints. UI-only formatting can remain in WebUI. |
+| Class | Sidecar namespace | Agent modules |
+|---|---|---|
+| Chat execution | `chat.*`, `approval.*`, `goals.*` | `run_agent.AIAgent`, `tools.approval`, `hermes_cli.goals` |
+| Profiles and configuration | `profiles.*`, `config.*` | `hermes_cli.profiles`, `hermes_cli.config` |
+| Commands and plugins | `commands.*`, `plugins.*`, `skills.*` | `hermes_cli.commands`, `hermes_cli.plugins`, `agent.skill_utils` |
+| Providers and models | `providers.*`, `models.*`, `aux.*` | `hermes_cli.models`, `hermes_cli.auth`, `agent.credential_pool`, `agent.auxiliary_client`, `agent.model_metadata` |
+| Scheduling | `cron.*`, `kanban.*`, `process.*` | `cron.jobs`, `cron.scheduler`, `hermes_cli.kanban_db`, the process registry |
+| Session state | `state_db.*` | `hermes_state.SessionDB` |
+| Text and media | `text.*`, `stt.*`, `mcp.*` | `agent.redact`, STT helpers, MCP discovery |
+| Gateway lifecycle | `gateway.*`, `worktree.*` | the `hermes` CLI |
+
+Adding a dependency means adding a sidecar method with its Zod schema in
+`packages/contracts/src/sidecar/namespaces.ts`, a recorded fixture, and a
+pytest case; the server side consumes the typed result only.
 
 ## state.db message content encoding
 
-`api/models.py` reads the agent's `messages` table with its own SQL, so it also
-depends on how hermes-agent *encodes* that table, not only on its schema. This
-is a storage-format coupling and belongs with the `runtime_session_state`
-dependency class above.
-
-`hermes_state` stores list/dict message content (multimodal parts) as a
-sentinel-prefixed JSON string, because sqlite3 binds only scalars:
-
-```
-_CONTENT_JSON_PREFIX = "\x00json:"        # hermes_state.py
-```
-
-It provides `_decode_content()` to reverse this. Any WebUI read path that
-projects that column must apply an equivalent decode; a raw read hands the
-frontend an encoded string that no reader recognises, and an image part's
-base64 data URI then renders as literal transcript text.
-
-### WebUI decoding contract
-
-`_decode_state_db_content()` in `api/models.py` is the single decode point. It
-is deliberately narrower than the agent's own decoder, because the WebUI can
-only accept shapes the rest of its pipeline already renders:
-
-| Input | Result | Why |
-| --- | --- | --- |
-| Sentinel + list with non-whitespace text and only valid image parts | decoded `list` | `msgContent()` joins the text parts, so the row renders its text |
-| Sentinel + image-only list, or text that is empty/whitespace | unchanged string | `msgContent()` discards image parts, so `_messageIsRenderable()` would hide the row with no error |
-| Sentinel + list containing a malformed image part | unchanged string | a part must carry a valid per-type payload, not just a matching `type` |
-| Sentinel + dict or scalar root | unchanged string | a dict reaches `_getCachedRender()`, and `_renderCacheKey()` calls `text.slice()` on it, blanking the turn |
-| Sentinel + `NaN`/`Infinity`/overflowed float | unchanged string | Python emits them, browser `JSON.parse()` rejects the whole `/api/session` payload |
-| Sentinel + unsupported part shapes | unchanged string | `input_text`, `output_text`, scalar and unknown parts are dropped by the JS readers, so decoding them would silently lose content that is visible today |
-| Anything without the sentinel | unchanged | non-sentinel content is not this contract's concern |
-
-Supported parts are `{"type": "text", "text": <str>}` plus image parts whose
-payload validates for their type: `image_url` with a non-empty URL (string or
-`{"url": ...}`), `input_image` with a URL or `file_id`, and `image` with a
-`base64` source carrying `data` and `media_type` or a `url` source. At least one
-text part must contain non-whitespace text.
-
-**Image parts do not render from this projection.** The shared JS readers drop
-them, and the state.db projection supplies no `attachments`. Decoding a
-text-and-image row shows its text and keeps the base64 payload out of the DOM;
-it does not display the image. Rendering images from state.db rows would need a
-shared inline-image projection first, at which point image-only lists could be
-accepted too.
-
-Widening the accepted schema requires teaching every shared content reader
-through one extractor first; until then unsupported shapes must keep falling
-back to the raw string.
-
-### Consequences for identity and bounded reads
-
-Decoding changes the runtime type of `content`, so every consumer that derives
-an identity from it must agree on one representation:
-
-- Every key -- merge, dedup, content, visible and the fuzzy fallback -- derives
-  content identity through `_content_identity_for_key()`. Non-list values key
-  exactly as on master, `str(content or "")`. Non-empty lists get an
-  **out-of-band** tuple identity, so no message body can compare equal to one:
-  an in-band string marker would be forgeable by a scalar that contains it.
-  Two rich turns sharing visible text and timestamp stay distinct when their
-  images differ.
-- Fuzzy duplicate matching is text-only. Structured identities match by exact
-  identity or not at all, so a rich row can never fuzzy-match a scalar.
-- The merge key cache never writes a key component back into message content.
-  To avoid re-serialising large payloads for every key it instead memoises the
-  canonical serialisation per content object, scoped to one
-  `merge_session_messages_append_only()` call.
-- The multimodal mirror bridge pairs one rich image-bearing row with one scalar
-  mirror only. `require_image_parts` and `require_scalar_mirror` are mutually
-  exclusive so rich-to-rich pairing cannot occur.
-- Every read path that projects the `content` column applies the decoder, so
-  keys derived on one path cannot disagree with keys derived on another. There
-  are exactly three such call sites:
-
-  | Call site | Role |
-  | --- | --- |
-  | `_project_state_db_message()` | canonical row projection, shared by the transcript read and the regeneration tail |
-  | `get_state_db_session_message_keys_before_timestamp()` | bounded prefix keys |
-  | `get_state_db_regeneration_tail_snapshot()` | regeneration prefix keys |
-
-  If prefix keys stayed encoded while the projected tail was decoded, the
-  prefix/tail collision proof could miss a genuine repeated recovered turn and
-  `_bounded_tail_snapshot_if_safe` would reject the bounded path, reading the
-  entire transcript during regeneration.
-
-  Two nearby paths deliberately need no decode.
-  `get_state_db_session_message_prefix_summary()` projects only timestamp
-  counts and never selects `content`. State-db sidecar reconstruction
-  (`_sync_sidecar_from_state_db_if_newer()`) sources its rows through
-  `get_state_db_session_messages()`, so it inherits the canonical decoded
-  projection rather than reading the column itself.
-
-When session state moves behind hermes-agent endpoints, this decode should move
-with it: the agent should return structured content over the API and the WebUI
-should stop depending on the sentinel format at all.
-
-## Replacement contract
-
-### Existing endpoint candidates
-
-The WebUI already exposes provider, model, profile, route, and streaming
-handlers that callers use today. Those handlers can remain as WebUI HTTP routes
-when they only format UI responses, but their implementations should stop
-loading agent modules directly. Good candidates for reusing the current WebUI
-route shape while changing its backend dependency are:
-
-- Provider/model catalog routes currently backed by `hermes_cli.models`.
-- Auxiliary title/compression paths currently backed by `agent.auxiliary_client`.
-- Context-window and token-estimate paths currently backed by
-  `agent.model_metadata`.
-- Runtime-provider choices currently backed by `hermes_cli.runtime_provider`.
-
-### New hermes-agent endpoints needed
-
-These surfaces require an agent-owned endpoint because they read agent state,
-perform provider/runtime decisions, or expose privileged data:
-
-- SessionDB/session state read and write operations now using
-  `hermes_state.SessionDB`, plus the scoped direct-SQL session deletion in
-  `api/models.py`. The replacement endpoint must preserve branch/compression
-  precedence and expose retryable post-commit artifact cleanup before that
-  compatibility path can be removed.
-- Runtime provider resolution and gateway normalization now using
-  `hermes_cli.runtime_provider` and `agent.anthropic_adapter`.
-- Auxiliary task execution and configuration now using `agent.auxiliary_client`.
-- Credential/auth/account usage access now using `agent.credential_pool`,
-  `hermes_cli.auth`, and `agent.account_usage`.
-- Profile, plugin, goal, and skill operations that mutate or discover
-  agent-owned resources.
-
-### Client/shared package candidates
-
-These items can be kept out of the live agent API if they are pure, versioned,
-and safe to import without the agent source tree:
-
-- Shared constants currently imported from `hermes_constants`.
-- Provider/model schema names and non-privileged catalog shape definitions.
-- Pure skill/profile parsing helpers that do not touch agent-owned state.
-- Typed response/request models for the new hermes-agent endpoints.
-
-### WebUI-local items
-
-The WebUI can keep code that is only presentation, validation, or routing glue:
-
-- User-facing diagnostics that display whether `HERMES_WEBUI_AGENT_DIR` is set.
-- Route-level request validation and response formatting.
-- WebUI-only caches and client-facing state that do not open agent SessionDB.
-- Docker documentation describing the transition while both paths are supported.
-
-## Audit expectations
-
-`tests/test_agent_source_dependency_audit.py` pins the contract shape:
-
-- Docker/compose source sharing is reported.
-- Startup dependency installation and `HERMES_WEBUI_AGENT_DIR` are reported.
-- Runtime auxiliary/model metadata imports are reported.
-- Runtime SessionDB/state imports are reported.
-- Runtime provider/gateway imports are reported.
-- The catch-all class for local/client-package candidates remains populated.
-
-The tests intentionally check stable class IDs and representative anchors, not
-exact full fixtures. Follow-up migration PRs should update this document and the
-audit expectations when a dependency class is intentionally reduced or removed.
+The server projects `state.db` read-only (`packages/server/src/sessions/state-db.ts`)
+and must decode the Agent's `\x00json:`-prefixed message content the same way
+the Agent writes it. The decode rules and the sentinel handling for `NaN` /
+`Infinity` floats are covered by the state-db tests; writes (session start,
+usage, titles, deletion) go through the sidecar so the storage format stays
+Agent-owned.

@@ -21,7 +21,7 @@ def candidate(sha="a" * 40):
         for index, name in enumerate(COMPONENTS, 1)
     }
     components["app"]["buildNumber"] = 1
-    components["web"].update(image="ghcr.io/maudecode/talaria-web@sha256:" + "b" * 64, upstreamBase="c" * 40)
+    components["web"].update(image="ghcr.io/maudecode/talaria-web@sha256:" + "b" * 64, npm="@maudecode/talaria-web@2.0.0")
     components["relay"].update(deploymentId="synthetic-relay", deployedRevision=None)
     notes = {name: f"{name} release notes" for name in COMPONENTS}
     notes["combined"] = "\n\n".join(f"## {name.title()}\n\n{notes[name]}" for name in COMPONENTS)

@@ -5,13 +5,13 @@ relay. Components share source history and contracts, with independent builds
 and releases.
 
 - [Apple app](app/README.md): SwiftUI, Xcode, widgets, share extension, and XCTest.
-- [Talaria Web](web/README.md): Talaria Web, the Hermes-compatible Python server and React frontend.
+- [Talaria Web](web/README.md): Talaria Web, the TypeScript server, React frontend, and Python sidecar for Hermes Agent.
 - [Relay](relay/README.md): the Convex relay.
 - `contracts/`: shared interface versions and synthetic fixtures.
 
 Run `scripts/check app`, `scripts/check web`, `scripts/check relay`, or
 `scripts/check docker` for component validation. `scripts/check all` runs the
-complete local path. Python 3.13, Node 22+, pnpm, Xcode, and Docker are required
+complete local path. Node 24, Python 3.13 (sidecar tests and release tooling), pnpm, Xcode, and Docker are required
 for their owning checks. Browser and server tests use synthetic isolated state.
 
 Start app validation directly with `app/scripts/test-ios`. Open
@@ -19,7 +19,7 @@ Start app validation directly with `app/scripts/test-ios`. Open
 See [app development](app/DEVELOPMENT.md) and [contribution policy](CONTRIBUTING.md).
 
 See [source migration and rehearsal](docs/monorepo-migration.md) for history,
-root ownership, tag preservation, and public upstream imports.
+root ownership, and tag preservation.
 
 Source consolidation, release integration, and the production cutover are
 complete. See [cutover evidence](docs/monorepo-cutover.md) for the published

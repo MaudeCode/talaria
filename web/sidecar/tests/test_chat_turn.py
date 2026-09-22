@@ -1,0 +1,300 @@
+"""``chat.start`` turn lifecycle with a stand-in Agent: no interrupt on a normal finish, interrupt on cancel, stale interrupts cleared."""
+
+from __future__ import annotations
+
+import contextlib
+import threading
+import time
+
+from talaria_sidecar.methods import chat
+
+
+class FakeAgent:
+    instances: list["FakeAgent"] = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.interrupts: list[tuple] = []
+        self.cleared = 0
+        self.block: threading.Event | None = None
+        FakeAgent.instances.append(self)
+
+    def clear_interrupt(self):
+        self.cleared += 1
+
+    def interrupt(self, message, hard_cancel=False):
+        self.interrupts.append((message, hard_cancel))
+        if self.block is not None:
+            self.block.set()
+
+    def run_conversation(self, **kwargs):
+        if self.block is not None:
+            self.block.wait(5)
+        return {"final_response": "ok", "messages": [{"role": "assistant", "content": "ok"}]}
+
+
+class Ctx:
+    cancelled = False
+
+    def __init__(self):
+        self.frames: list[tuple[str, dict]] = []
+
+    def emit(self, event, data=None):
+        self.frames.append((event, data or {}))
+
+
+def _params(stream_id: str, session_id: str = "s1") -> dict:
+    return {"profile_home": "/tmp/unused", "session_id": session_id, "stream_id": stream_id, "user_message": "hi", "conversation_history": [], "model": "m", "model_provider": "p"}
+
+
+def _patch(monkeypatch):
+    FakeAgent.instances.clear()
+    chat._AGENT_CACHE.clear()
+    monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": "p"})
+    monkeypatch.setattr(chat, "_agent_class", lambda: FakeAgent)
+    monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
+
+
+def test_a_finished_turn_never_interrupts_the_cached_agent(monkeypatch) -> None:
+    _patch(monkeypatch)
+    first = chat.start(Ctx(), _params("st-1"))
+    assert first["status"] == "completed", first
+    agent = FakeAgent.instances[0]
+    assert agent.interrupts == []
+    # The second turn reuses the cached agent and is not aborted by anything the first turn left behind.
+    second = chat.start(Ctx(), _params("st-2"))
+    assert second["status"] == "completed", second
+    assert FakeAgent.instances == [agent]
+    assert agent.interrupts == []
+    assert agent.cleared == 2
+
+
+def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monkeypatch) -> None:
+    _patch(monkeypatch)
+    ctx = Ctx()
+    result: dict = {}
+    gate = threading.Event()
+    original = chat._agent_class
+
+    def blocking_agent_class():
+        cls = original()
+        instance_hook = cls
+        return instance_hook
+
+    monkeypatch.setattr(chat, "_agent_class", blocking_agent_class)
+    started = threading.Event()
+
+    def run():
+        # Block the fake turn until it is interrupted.
+        FakeAgent.instances.clear()
+        orig_init = FakeAgent.__init__
+
+        def init(self, **kwargs):
+            orig_init(self, **kwargs)
+            self.block = gate
+            started.set()
+
+        monkeypatch.setattr(FakeAgent, "__init__", init)
+        result.update(chat.start(ctx, _params("st-3", "s2")))
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert started.wait(5)
+    assert chat.register.__module__  # module import sanity
+    run_obj = chat._run_for({"stream_id": "st-3"})
+    assert run_obj is not None
+    # `chat.interrupt` drains the Agent's unapplied steer text (predecessor `_finalize_webui_steers`) so the server can
+    # settle queued steers before its terminal cancel row.
+    run_obj.agent._pending_steer = "prefer tests"
+    run_obj.agent._drain_pending_steer = lambda: run_obj.agent.__dict__.pop("_pending_steer", "")
+    from talaria_sidecar.methods import Registry
+
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    reply = registry.methods["chat.interrupt"](Ctx(), {"stream_id": "st-3"})
+    assert reply == {"ok": True, "pending_steer": "prefer tests"}
+    assert getattr(run_obj.agent, "_pending_steer", "") == ""
+    worker.join(5)
+    assert not worker.is_alive()
+    agent = FakeAgent.instances[0]
+    assert agent.interrupts == [("Cancelled by user", True)]
+    assert result["status"] == "cancelled", result
+    # The next turn on the same session clears the interrupt the cancel left on the cached agent.
+    agent.block = None
+    follow = chat.start(Ctx(), _params("st-4", "s2"))
+    assert follow["status"] == "completed", follow
+    assert agent.cleared >= 2
+
+
+def test_a_rotated_credential_never_reuses_the_cached_agent(monkeypatch) -> None:
+    _patch(monkeypatch)
+    runtime = {"model": "m", "provider": "p", "api_key": "sk-old"}
+    monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: dict(runtime))
+    assert chat.start(Ctx(), _params("st-5", "s3"))["status"] == "completed"
+    assert chat.start(Ctx(), _params("st-6", "s3"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 1
+    runtime["api_key"] = "sk-rotated"
+    assert chat.start(Ctx(), _params("st-7", "s3"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 2
+    assert FakeAgent.instances[-1].kwargs["api_key"] == "sk-rotated"
+    # runtime.env drops every cached agent as well.
+    assert chat.evict_all_agents() == 1
+    assert chat.start(Ctx(), _params("st-8", "s3"))["status"] == "completed"
+    assert len(FakeAgent.instances) == 3
+    # A reasoning-effort change from the composer is bound at construction: it never reuses the cached agent.
+    assert chat.start(Ctx(), {**_params("st-9", "s3"), "reasoning_config": {"effort": "high"}})["status"] == "completed"
+    assert len(FakeAgent.instances) == 4
+    assert FakeAgent.instances[-1].kwargs["reasoning_config"] == {"effort": "high"}
+    assert chat.start(Ctx(), {**_params("st-10", "s3"), "reasoning_config": {"effort": "high"}})["status"] == "completed"
+    assert len(FakeAgent.instances) == 4
+    assert chat.start(Ctx(), {**_params("st-11", "s3"), "reasoning_config": {"effort": "low"}})["status"] == "completed"
+    assert len(FakeAgent.instances) == 5
+
+
+def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path) -> None:
+    """The approval key, gateway session vars, and session cwd are bound for the turn and reset afterwards."""
+    import contextvars
+    import sys
+    import types
+
+    seen: dict = {}
+    approval_ctx = types.ModuleType("tools.approval_context")
+    key_var: contextvars.ContextVar = contextvars.ContextVar("key", default="default")
+    approval_ctx.set_current_session_key = lambda k: key_var.set(k)
+    approval_ctx.reset_current_session_key = lambda t: key_var.reset(t)
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.approval_context = approval_ctx
+    sc = types.ModuleType("gateway.session_context")
+    for name in ("_SESSION_KEY", "_SESSION_UI_SESSION_ID", "_SESSION_PLATFORM", "_SESSION_CHAT_ID", "_SESSION_ID"):
+        setattr(sc, name, contextvars.ContextVar(name, default=""))
+    gateway_pkg = types.ModuleType("gateway")
+    gateway_pkg.session_context = sc
+    cwd_mod = types.ModuleType("agent.runtime_cwd")
+    cwd_mod._SESSION_CWD = contextvars.ContextVar("cwd", default="")
+    agent_pkg = types.ModuleType("agent")
+    agent_pkg.runtime_cwd = cwd_mod
+    for name, mod in {"tools": tools_pkg, "tools.approval_context": approval_ctx, "gateway": gateway_pkg, "gateway.session_context": sc, "agent": agent_pkg, "agent.runtime_cwd": cwd_mod}.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    class ObservingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            seen.update(key=key_var.get(), platform=sc._SESSION_PLATFORM.get(), chat_id=sc._SESSION_CHAT_ID.get(), ui=sc._SESSION_UI_SESSION_ID.get(), cwd=cwd_mod._SESSION_CWD.get())
+            return super().run_conversation(**kwargs)
+
+    _patch(monkeypatch)
+    monkeypatch.setattr(chat, "_agent_class", lambda: ObservingAgent)
+    workspace = str(tmp_path / "ws")
+    with chat._turn_identity("s-ident", workspace):
+        assert chat.start(Ctx(), {**_params("st-9", "s-ident"), "workspace": workspace})["status"] == "completed"
+    assert seen == {"key": "s-ident", "platform": "webui", "chat_id": "s-ident", "ui": "s-ident", "cwd": workspace}
+    # Everything is reset once the turn is over.
+    assert key_var.get() == "default" and sc._SESSION_PLATFORM.get() == "" and cwd_mod._SESSION_CWD.get() == ""
+
+
+def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> None:
+    _patch(monkeypatch)
+    gate = threading.Event()
+    started = threading.Event()
+    orig_init = FakeAgent.__init__
+
+    def init(self, **kwargs):
+        orig_init(self, **kwargs)
+        if len(FakeAgent.instances) == 1:
+            self.block = gate
+            started.set()
+
+    monkeypatch.setattr(FakeAgent, "__init__", init)
+    # A stand-in for the Agent's gateway approval registry: the successor's callback must survive the old run's unwind.
+    import sys, types
+    registry: dict[str, object] = {}
+    approval_mod = types.ModuleType("tools.approval")
+    approval_mod.register_gateway_notify = lambda key, cb: registry.__setitem__(key, cb)
+    approval_mod.unregister_gateway_notify = lambda key: registry.pop(key, None)
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.approval = approval_mod
+    monkeypatch.setitem(sys.modules, "tools", tools_pkg)
+    monkeypatch.setitem(sys.modules, "tools.approval", approval_mod)
+    first: dict = {}
+    worker = threading.Thread(target=lambda: first.update(chat.start(Ctx(), _params("st-10", "s-busy"))))
+    worker.start()
+    assert started.wait(5)
+    first_cb = registry.get("s-busy")
+    assert first_cb is not None
+    # The first turn is still inside run_conversation; the second gets its own agent and does not clear its interrupt.
+    second_ctx = Ctx()
+    blocker = threading.Event()
+    second_started = threading.Event()
+
+    class SuccessorAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            second_started.set()
+            blocker.wait(5)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: SuccessorAgent)
+    second: dict = {}
+    successor = threading.Thread(target=lambda: second.update(chat.start(second_ctx, _params("st-11", "s-busy"))))
+    successor.start()
+    assert second_started.wait(5)
+    assert registry.get("s-busy") is not first_cb
+    successor_cb = registry.get("s-busy")
+    # The stale first run unwinds now: it no longer owns the session registration, so it leaves it alone.
+    gate.set()
+    worker.join(5)
+    assert first["status"] == "completed"
+    assert registry.get("s-busy") is successor_cb
+    blocker.set()
+    successor.join(5)
+    assert second["status"] == "completed"
+    assert "s-busy" not in registry
+    assert len(FakeAgent.instances) == 2
+    assert FakeAgent.instances[0].cleared == 1  # only its own start cleared it
+
+
+def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
+    """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
+    _patch(monkeypatch)
+    import types, sys
+    gateway = types.ModuleType("tools.clarify_gateway")
+    gateway.get_clarify_timeout = lambda: 42
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.clarify_gateway = gateway
+    monkeypatch.setitem(sys.modules, "tools", tools_pkg)
+    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", gateway)
+    assert chat._clarify_timeout({}) == 42
+    assert chat._clarify_timeout({"clarify_timeout_seconds": 7}) == 7
+    assert chat._clarify_timeout({"clarify_timeout_seconds": 0}) == 0
+
+    class ClarifyingAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            answer = self.kwargs["clarify_callback"]("Which env?", ["dev", "prod"])
+            return {"final_response": answer, "messages": []}
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: ClarifyingAgent)
+    ctx = Ctx()
+    threading.Thread(target=lambda: chat.start(ctx, _params("st-clarify")), daemon=True).start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not any(e == "clarify" for e, _ in ctx.frames):
+        time.sleep(0.02)
+    frame = next(data for e, data in ctx.frames if e == "clarify")
+    assert frame["timeout_seconds"] == 42
+    run = chat._run_for({"stream_id": "st-clarify"})
+    assert run is not None
+    with run.lock:
+        entry = run.clarify_entries[frame["clarify_id"]]
+    entry.result = "dev"
+    entry.event.set()
+
+
+def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypatch) -> None:
+    """Predecessor caps: content/diff args keep 4000 chars, incidental args 120; previews come from output/result/error."""
+    snap = chat._args_snapshot({"path": "/very/long/" + "x" * 300, "note": "n" * 300, "old_string": "o" * 5000})
+    assert len(snap["path"]) == 311 and not snap["path"].endswith("...")
+    assert snap["note"].endswith("...") and len(snap["note"]) == 123
+    assert len(snap["old_string"]) == 4003
+    assert chat._snippet('{"output": "hello", "extra": "x"}') == "hello"
+    assert chat._snippet({"error": "boom"}) == "boom"
+    assert chat._snippet("a" * 5000) == "a" * 4000
+    assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_usd": 0.25}]}) == 0.75
+    assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_status": "unknown"}]}) is None
+    assert chat._delegation_cost_usd("read_file", {"results": [{"cost_usd": 1}]}) is None

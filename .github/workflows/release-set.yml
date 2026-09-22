@@ -195,6 +195,10 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
     - uses: ./.github/actions/release-python
+    - name: Set up Node for the npm package build
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: web/.nvmrc
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"'
@@ -355,9 +359,15 @@ jobs:
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" web-build'
     - name: Install OCI transfer tool on the self-hosted Mac
       run: command -v skopeo >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install skopeo
-    - name: Publish the built OCI bytes and verify the registry digest
+    - name: Set up Node for npm publication
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: web/.nvmrc
+        registry-url: https://registry.npmjs.org
+    - name: Publish the built OCI bytes and npm package, then verify both readbacks
       env:
         GH_TOKEN: ${{ github.token }}
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
         "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \

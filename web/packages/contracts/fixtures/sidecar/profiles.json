@@ -1,0 +1,82 @@
+{
+  "profiles.list": [
+    {
+      "params": {
+        "base_home": "<home>"
+      },
+      "result": {
+        "profiles": [
+          {
+            "name": "default",
+            "path": "<home>",
+            "is_default": true,
+            "gateway_running": false,
+            "model": null,
+            "provider": null,
+            "has_env": false,
+            "visible": true,
+            "skill_count": 0,
+            "enabled_skills": 0,
+            "total_skills": 0
+          }
+        ]
+      }
+    }
+  ],
+  "profiles.create": [
+    {
+      "params": {
+        "base_home": "<home>",
+        "name": "alpha"
+      },
+      "result": {
+        "profile": {
+          "name": "alpha",
+          "path": "<profile>",
+          "is_default": false,
+          "gateway_running": false,
+          "model": null,
+          "provider": null,
+          "has_env": true,
+          "visible": true,
+          "skill_count": 58,
+          "enabled_skills": 58,
+          "total_skills": 58
+        }
+      }
+    }
+  ],
+  "profiles.runtime_env": [
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "protected_keys": []
+      },
+      "result": {
+        "env": {}
+      }
+    }
+  ],
+  "profiles.skills_stats": [
+    {
+      "params": {
+        "profile_home": "<profile>"
+      },
+      "result": {
+        "enabled": 58,
+        "total": 58
+      }
+    }
+  ],
+  "profiles.delete": [
+    {
+      "params": {
+        "base_home": "<home>",
+        "name": "alpha"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ]
+}

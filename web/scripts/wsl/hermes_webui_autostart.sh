@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# WSL-friendly autostart launcher for Hermes WebUI.
+# WSL-friendly autostart launcher for Talaria Web.
 #
 # Safe defaults:
 # - derives the repo from this script location, override with HERMES_WEBUI_REPO
@@ -44,12 +44,11 @@ case "${WEBUI_LOG}" in
   *) WEBUI_LOG="${PWD}/${WEBUI_LOG}" ;;
 esac
 
-# Make the WSL launcher knobs visible to start.sh/bootstrap.py.
+# Make the WSL launcher knobs visible to talaria-web.
 export HERMES_WEBUI_HOST HERMES_WEBUI_PORT
-# Hand the server the sink its stdout/stderr actually lands in. start.sh runs
-# --foreground, so bootstrap never creates its own bootstrap-<port>.log and the
-# running server would otherwise have no way to size-bound this file. See
-# rotate_webui_log in api/logging_hygiene.py.
+# Hand the server the sink its stdout/stderr actually lands in. The launcher runs
+# --foreground, so it never creates its own bootstrap-<port>.log and the running
+# server would otherwise have no way to size-bound this file (tools/hygiene.ts).
 export HERMES_WEBUI_LOG_FILE="${WEBUI_LOG}"
 
 mkdir -p "${HERMES_WEBUI_LOG_DIR}"
@@ -85,13 +84,25 @@ pid_is_alive() {
   kill -0 "${pid}" >/dev/null 2>&1
 }
 
-validate_repo() {
-  if [[ ! -d "${HERMES_WEBUI_REPO}" ]]; then
-    log "Hermes WebUI repo not found: ${HERMES_WEBUI_REPO}"
+resolve_launcher() {
+  # A global npm install wins; otherwise run the built bin from the checkout.
+  if [[ -n "${HERMES_WEBUI_BIN:-}" ]]; then
+    return 0
+  fi
+  if command -v talaria-web >/dev/null 2>&1; then
+    HERMES_WEBUI_BIN="$(command -v talaria-web)"
+  elif [[ -f "${HERMES_WEBUI_REPO}/packages/server/dist/bin/talaria-web.js" ]]; then
+    HERMES_WEBUI_BIN="node ${HERMES_WEBUI_REPO}/packages/server/dist/bin/talaria-web.js"
+  else
+    log "talaria-web not found on PATH and no built server under HERMES_WEBUI_REPO=${HERMES_WEBUI_REPO}"
     exit 1
   fi
-  if [[ ! -f "${HERMES_WEBUI_REPO}/start.sh" ]]; then
-    log "start.sh not found under HERMES_WEBUI_REPO=${HERMES_WEBUI_REPO}"
+}
+
+validate_repo() {
+  resolve_launcher
+  if [[ ! -d "${HERMES_WEBUI_REPO}" ]]; then
+    log "Talaria Web directory not found: ${HERMES_WEBUI_REPO}"
     exit 1
   fi
 }
@@ -136,11 +147,12 @@ start_webui() {
   fi
 
   rm -f "${HERMES_WEBUI_PID_FILE}"
-  log "Starting Hermes WebUI from ${HERMES_WEBUI_REPO} on ${HERMES_WEBUI_HOST}:${HERMES_WEBUI_PORT}"
+  log "Starting Talaria Web (${HERMES_WEBUI_BIN}) on ${HERMES_WEBUI_HOST}:${HERMES_WEBUI_PORT}"
 
   (
     cd "${HERMES_WEBUI_REPO}"
-    nohup bash "${HERMES_WEBUI_REPO}/start.sh" --foreground >>"${WEBUI_LOG}" 2>&1 &
+    # shellcheck disable=SC2086 # HERMES_WEBUI_BIN may be "node <path>"
+    nohup ${HERMES_WEBUI_BIN} --foreground --no-browser >>"${WEBUI_LOG}" 2>&1 &
     printf '%s\n' "$!" >"${HERMES_WEBUI_PID_FILE}"
   )
 

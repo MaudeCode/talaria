@@ -18,14 +18,8 @@ below.
 Hermes WebUI is only the browser interface. The actual agent runtime, memory,
 skills, config, cron jobs, and provider credentials belong to Hermes Agent.
 
-The bootstrap supports Linux, macOS, and WSL2. Native Windows is not supported
-by the bootstrap yet. A community native Windows setup is being tracked in
-[#1952](https://github.com/nesquena/hermes-webui/issues/1952), including:
-
-- [Native Windows guide](https://github.com/markwang2658/hermes-windows-native-guide)
-- [Native Windows setup scripts](https://github.com/markwang2658/hermes-windows-native)
-
-For Windows users who want the supported path today, use WSL2 and see
+The launcher supports Linux, macOS, and WSL2. Native Windows is not supported;
+Windows users run Talaria Web inside WSL2, see
 [Windows / WSL auto-start](wsl-autostart.md).
 
 ## Install path choices
@@ -36,7 +30,6 @@ For Windows users who want the supported path today, use WSL2 and see
 | Docker single-container | You want the simplest container setup | Recommended first Docker path. WebUI runs the agent in-process. |
 | Docker two-container | You already run the agent gateway separately | More isolated, but tools launched from WebUI run in the WebUI container. |
 | Docker three-container | You want agent gateway plus dashboard plus WebUI | Same caveats as two-container, plus the dashboard service. |
-| Native Windows community path | You are intentionally testing unsupported native Windows | Community-maintained for now, not the official bootstrap path. |
 
 If a Docker install gets confusing, start again with the single-container setup.
 It avoids most UID/GID, source-volume, and tool-location surprises. See
@@ -55,7 +48,7 @@ mkdir -p ~/hermes-onboarding-test
 HERMES_HOME=~/hermes-onboarding-test/.hermes \
 HERMES_WEBUI_STATE_DIR=~/hermes-onboarding-test/webui \
 HERMES_WEBUI_PORT=8789 \
-python3 bootstrap.py
+talaria-web
 ```
 
 Then open `http://127.0.0.1:8789`.
@@ -197,7 +190,7 @@ File an issue when the diagnostics point to WebUI rather than local
 configuration. Include:
 
 1. Install path: local bootstrap, Docker single-container, Docker
-   two-container, Docker three-container, WSL2, or community native Windows.
+   two-container, Docker three-container, or WSL2.
 2. Output from `/health`, or the startup banner if the server never starts.
 3. The provider selected in onboarding and the Base URL shape, with secrets
    redacted.

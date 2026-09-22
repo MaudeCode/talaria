@@ -36,8 +36,6 @@ full-UI.png
 final-check.png
 
 # Version file written by Docker/CI build — generated, never committed
-api/_version.py
-api/_scm_version.py
 
 # OS files
 .DS_Store
@@ -75,19 +73,16 @@ graphify-out/
 
 .venv/
 
-# Node tooling. The frontend lockfile is authoritative and committed (HWEB-100).
+# Node tooling. The workspace lockfile web/package-lock.json is authoritative and committed (TAL-245).
 node_modules/
-package-lock.json
-!frontend/package-lock.json
-frontend/dist/
-frontend/src/paraglide/
-frontend/playwright-report/
-frontend/test-results/
-frontend/.tanstack/
+packages/frontend/dist/
+packages/frontend/src/paraglide/
+packages/frontend/playwright-report/
+packages/frontend/test-results/
+packages/frontend/.tanstack/
 docs/ui-ux/review-shots/
 
 # Python build metadata (never commit generated egg-info)
-*.egg-info/
 
 # Local WebUI runtime data and credentials
 .webui_password
@@ -98,4 +93,8 @@ build/
 dist/
 
 # Immutable release provenance is stamped into artifacts, never source commits.
-api/_release.json
+_release.json
+packages/server/static/
+packages/server/sidecar/
+packages/server/contract_versions.json
+packages/server/_release.json

@@ -1,0 +1,51 @@
+{
+  "name": "@maudecode/talaria-web",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Talaria Web server: Node 24 HTTP server for the Hermes Agent browser workbench, with the talaria-web launcher, daemon control, self-update, and MCP bins.",
+  "bin": {
+    "talaria-web": "./dist/bin/talaria-web.js",
+    "talaria-web-mcp": "./dist/bin/talaria-web-mcp.js"
+  },
+  "files": [
+    "dist",
+    "static/dist",
+    "static/brand",
+    "sidecar",
+    "contract_versions.json",
+    "_release.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "prepack": "node scripts/prepack.mjs",
+    "postpack": "node scripts/prepack.mjs --clean"
+  },
+  "dependencies": {
+    "@maudecode/talaria-web-contracts": "*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@orpc/contract": "1.15.2",
+    "@orpc/openapi": "1.15.2",
+    "@orpc/server": "1.15.2",
+    "node-pty": "1.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "eslint": "10.10.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaudeCode/talaria.git",
+    "directory": "web/packages/server"
+  },
+  "license": "MIT"
+}

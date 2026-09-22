@@ -1,0 +1,164 @@
+{
+  "goals.get": [
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>"
+      },
+      "result": {
+        "goal": null,
+        "active": false,
+        "message": "No active goal. Set one with /goal <text>.",
+        "message_key": "goal_status_none"
+      }
+    }
+  ],
+  "goals.command": [
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>",
+        "args": "ship the sidecar"
+      },
+      "result": {
+        "ok": true,
+        "action": "set",
+        "message": "⊙ Goal set (20-turn budget): ship the sidecar\nI'll keep working until the goal is done, you pause/clear it, or the budget is exhausted.\nControls: /goal status · /goal pause · /goal resume · /goal clear",
+        "goal": {
+          "goal": "ship the sidecar",
+          "status": "active",
+          "turns_used": 0,
+          "max_turns": 20,
+          "last_verdict": null,
+          "last_reason": null,
+          "paused_reason": null
+        },
+        "kickoff_prompt": "ship the sidecar",
+        "message_key": "goal_set",
+        "message_args": [
+          20,
+          "ship the sidecar"
+        ]
+      }
+    },
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>",
+        "args": "pause"
+      },
+      "result": {
+        "ok": true,
+        "action": "pause",
+        "message": "⏸ Goal paused: ship the sidecar",
+        "goal": {
+          "goal": "ship the sidecar",
+          "status": "paused",
+          "turns_used": 1,
+          "max_turns": 20,
+          "last_verdict": "continue",
+          "last_reason": "judge error: RuntimeError",
+          "paused_reason": "user-paused"
+        },
+        "message_key": "goal_paused",
+        "message_args": [
+          "ship the sidecar"
+        ]
+      }
+    },
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>",
+        "args": "resume"
+      },
+      "result": {
+        "ok": true,
+        "action": "resume",
+        "message": "▶ Goal resumed: ship the sidecar\nSend a new message, or type continue, to kick it off.",
+        "goal": {
+          "goal": "ship the sidecar",
+          "status": "active",
+          "turns_used": 0,
+          "max_turns": 20,
+          "last_verdict": "continue",
+          "last_reason": "judge error: RuntimeError",
+          "paused_reason": null
+        },
+        "message_key": "goal_resumed",
+        "message_args": [
+          "ship the sidecar"
+        ]
+      }
+    },
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>",
+        "args": "clear"
+      },
+      "result": {
+        "ok": true,
+        "action": "clear",
+        "message": "No active goal.",
+        "goal": null,
+        "message_key": "goal_no_goal"
+      }
+    }
+  ],
+  "goals.snapshot": [
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>"
+      },
+      "result": {
+        "goal": {
+          "goal": "ship the sidecar",
+          "status": "active",
+          "turns_used": 0,
+          "max_turns": 20,
+          "last_verdict": null,
+          "last_reason": null,
+          "paused_reason": null
+        },
+        "snapshot": "{\"goal\": \"ship the sidecar\", \"status\": \"active\", \"turns_used\": 0, \"max_turns\": 20, \"created_at\": 1789936414.356941, \"last_turn_at\": 0.0, \"last_verdict\": null, \"last_reason\": null, \"paused_reason\": null, \"consecutive_parse_failures\": 0, \"consecutive_transport_failures\": 0, \"subgoals\": [], \"waiting_on_pid\": null, \"waiting_on_session\": null, \"waiting_until\": 0.0, \"waiting_on_delegations\": 0, \"waiting_reason\": null, \"waiting_since\": 0.0, \"contract\": {\"outcome\": \"\", \"verification\": \"\", \"constraints\": \"\", \"boundaries\": \"\", \"stop_when\": \"\"}, \"gates\": []}"
+      }
+    }
+  ],
+  "goals.evaluate": [
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>",
+        "last_response": "Done: the sidecar shipped."
+      },
+      "result": {
+        "status": "active",
+        "should_continue": true,
+        "continuation_prompt": "[Continuing toward your standing goal]\nGoal: ship the sidecar\n\nContinue working toward this goal. Take the next concrete step. If you believe the goal is complete, state so explicitly and stop. If you are blocked and need input from the user, say so clearly and stop.",
+        "verdict": "continue",
+        "reason": "judge error: RuntimeError",
+        "message": "↻ Continuing toward goal (1/20): judge error: RuntimeError",
+        "message_key": "goal_continuing",
+        "message_args": [
+          1,
+          20,
+          "judge error: RuntimeError"
+        ]
+      }
+    }
+  ],
+  "goals.restore": [
+    {
+      "params": {
+        "session_id": "sess-1",
+        "profile_home": "<home>",
+        "snapshot": null
+      },
+      "result": {
+        "goal": null
+      }
+    }
+  ]
+}

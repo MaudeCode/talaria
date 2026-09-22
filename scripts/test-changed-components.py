@@ -14,8 +14,8 @@ SCRIPT = Path(__file__).with_name("changed-components.py")
 spec = importlib.util.spec_from_file_location("routing", SCRIPT)
 routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
-ALL = {"app", "app_tooling", "web_python", "web_frontend", "docker", "relay", "contracts", "tooling"}
-CONSUMERS = {"app", "web_python", "web_frontend", "relay", "contracts"}
+ALL = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
+CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
@@ -43,22 +43,22 @@ class RoutingTests(unittest.TestCase):
             (["changelog.d/TAL-123.json"], set()),
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
-            (["web/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
-            (["web/frontend/package-lock.json"], {"web_frontend"}),
-            (["web/static/brand/favicon.ico", "web/static/__init__.py"], {"web_frontend", "web_python"}),
-            (["web/UPSTREAM_BASE_SHA"], {"tooling"}),
-            (["web/mcp_server.py", "web/tests/test_config.py"], {"web_python"}),
-            (["web/api/providers.py"], {"web_python", "web_frontend", "contracts"}),
-            (["web/api/profiles.py"], {"web_python", "web_frontend", "contracts"}),
-            (["web/api/config.py"], {"web_python", "web_frontend", "contracts"}),
-            (["web/api/routes.py"], {"web_python", "web_frontend", "contracts"}),
-            (["web/server.py"], {"web_python", "web_frontend", "contracts"}),
-            (["web/tests/fixtures/readme.md"], {"web_python"}),
-            (["web/skills/runtime/SKILL.md"], {"web_python"}),
-            (["web/frontend/src/guide.md"], {"web_frontend"}),
-            (["web/Dockerfile", "web/docker-compose.yml"], {"docker", "web_python"}),
-            (["web/requirements.txt"], {"web_python", "web_frontend", "docker", "contracts"}),
-            (["web/pyproject.toml"], {"web_python", "web_frontend", "docker", "contracts"}),
+            (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
+            (["web/packages/contracts/src/router.ts"], {"web_server", "web_frontend", "contracts"}),
+            (["web/packages/server/src/index.ts", "web/sidecar/talaria_sidecar/__main__.py"], {"web_server", "web_frontend", "contracts"}),
+            (["web/packages/frontend/package.json"], {"web_frontend"}),
+            (["web/static/brand/favicon.ico"], {"web_frontend", "web_server"}),
+            (["web/sidecar/tests/test_runtime.py", "web/sidecar/scripts/replay_sidecar.py"], {"web_server", "web_frontend", "contracts"}),
+            (["web/sidecar/agent_dependency.json"], {"web_server", "contracts", "docker"}),
+            (["web/sidecar/talaria_sidecar/rpc.py"], {"web_server", "web_frontend", "contracts"}),
+            (["web/packages/server/src/api/auth.ts"], {"web_server", "web_frontend", "contracts"}),
+            (["web/docs/architecture/regression-port-cases.tsv"], {"web_server", "contracts", "tooling"}),
+            (["web/packages/server/src/port/auth.port.test.ts"], {"web_server", "contracts", "tooling"}),
+            (["web/package-lock.json"], {"web_server", "web_frontend", "docker", "contracts"}),
+            (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "docker", "contracts"}),
+            (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
+            (["web/Dockerfile", "web/docker-compose.yml", "web/scripts/lib/health_probe.sh"], {"docker", "web_server"}),
+            (["web/scripts/wsl/hermes_webui_autostart.sh", "web/.env.example"], {"web_server"}),
             (["app/Talaria/Features/Chat/ChatView.swift"], {"app"}),
             (["app/Talaria/Resources/Guide.md"], {"app"}),
             (["app/Talaria/Networking/APIClient.swift"], {"app", "contracts"}),
@@ -66,22 +66,23 @@ class RoutingTests(unittest.TestCase):
             (["app/scripts/test-ios"], {"app_tooling", "tooling"}),
             (["app/scripts/validate-upstream-contract"], {"contracts", "tooling"}),
             (["relay/convex/cleanup.ts", "relay/tests/crypto.test.ts"], {"relay"}),
-            (["relay/convex/http.ts"], {"relay", "app", "web_python", "contracts"}),
-            (["relay/convex/completions.ts"], {"relay", "app", "web_python", "contracts"}),
-            (["relay/convex/subscriptions.ts"], {"relay", "app", "web_python", "contracts"}),
-            (["relay/convex/new-response.ts"], {"relay", "app", "web_python", "contracts"}),
+            (["relay/convex/http.ts"], {"relay", "app", "web_server", "contracts"}),
+            (["relay/convex/completions.ts"], {"relay", "app", "web_server", "contracts"}),
+            (["relay/convex/subscriptions.ts"], {"relay", "app", "web_server", "contracts"}),
+            (["relay/convex/new-response.ts"], {"relay", "app", "web_server", "contracts"}),
             (["relay/package.json", "relay/pnpm-lock.yaml"], {"relay"}),
             (["contracts/versions.json"], CONSUMERS),
-            (["web/api/contract_versions.json"], CONSUMERS),
-            (["web/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
-            (["scripts/check-web-python"], {"web_python", "tooling"}),
+            (["web/contract_versions.json"], CONSUMERS),
+            (["web/packages/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
+            (["scripts/check-web-server"], {"web_server", "tooling"}),
             (["scripts/check-web-browser"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
-            (["scripts/stamp-release.py"], {"web_python", "tooling"}),
+            (["scripts/stamp-release.py"], {"tooling"}),
+            (["scripts/check-agent-compatibility.py"], {"web_server", "docker", "tooling"}),
             (["scripts/check-release-agent.py"], {"tooling"}),
             (["releases/publish.py"], {"tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
-            ([".github/workflows/web-verify.yml"], {"web_python", "web_frontend", "tooling"}),
+            ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
             ([".github/workflows/pr-ci.yml"], {"tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
@@ -89,9 +90,9 @@ class RoutingTests(unittest.TestCase):
             (["new-component/runtime.rs"], ALL),
             (["changelog.d/README.md", "changelog.d/malformed.json"], set()),
             ([], ALL),
-            (["../web/frontend/main.tsx"], ALL),
+            (["../web/packages/frontend/main.tsx"], ALL),
             ([None], ALL),
-            (["web/frontend/file\napp=false\n.tsx"], {"web_frontend"}),
+            (["web/packages/frontend/file\napp=false\n.tsx"], {"web_frontend"}),
         ]
         for paths, expected in cases:
             with self.subTest(paths=paths):
@@ -124,18 +125,18 @@ class RoutingTests(unittest.TestCase):
                 return {key for key, value in flags.items() if value == "true"}
 
             git("init", "-b", "main")
-            (root / "web/tests").mkdir(parents=True)
-            (root / "web/tests/server.py").write_text("print('synthetic')\n")
+            (root / "web/sidecar/tests").mkdir(parents=True)
+            (root / "web/sidecar/tests/test_synthetic.py").write_text("print('synthetic')\n")
             base = commit("base")
-            (root / "web/frontend").mkdir()
-            git("mv", "web/tests/server.py", "web/frontend/moved.py")
+            (root / "web/packages/frontend").mkdir(parents=True)
+            git("mv", "web/sidecar/tests/test_synthetic.py", "web/packages/frontend/moved.py")
             moved = commit("move backend file into frontend")
-            self.assertEqual(classify(base, moved), {"web_python", "web_frontend"})
-            odd = root / "web/frontend/name\napp=false\n.tsx"
+            self.assertEqual(classify(base, moved), {"web_server", "web_frontend"})
+            odd = root / "web/packages/frontend/name\napp=false\n.tsx"
             odd.write_text("synthetic")
             head = commit("frontend change")
             self.assertEqual(classify(moved, head, expected_ui=False), {"web_frontend"})
-            self.assertEqual(classify(base, head), {"web_python", "web_frontend"})
+            self.assertEqual(classify(base, head), {"web_server", "web_frontend"})
             git("update-ref", "refs/remotes/origin/main", moved)
             # A parent change merged since the event's base SHA must not make
             # the child PR rerun the parent's component checks.
@@ -144,7 +145,7 @@ class RoutingTests(unittest.TestCase):
             (root / "app").mkdir()
             (root / "app/README.md").write_text("docs")
             other = commit("base branch advanced")
-            self.assertEqual(classify(other, head, "--merge-base"), {"web_python", "web_frontend"})
+            self.assertEqual(classify(other, head, "--merge-base"), {"web_server", "web_frontend"})
             self.assertEqual(classify(head, head, expected_ui=True), ALL)
             self.assertEqual(classify("0" * 40, head, expected_ui=True), ALL)
             self.assertEqual(classify("--output=should-not-exist", head), ALL)
@@ -175,9 +176,9 @@ class RoutingTests(unittest.TestCase):
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"test": {"app"}, "app-tooling": {"app_tooling"},
-                      "web": {"web_python", "web_frontend"}, "web-docker": {"docker"},
+                      "web": {"web_server", "web_frontend"}, "web-docker": {"docker"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
-        for selected in (set(), {"web_frontend"}, {"web_python"}, {"app"}, {"tooling"}, ALL):
+        for selected in (set(), {"web_frontend"}, {"web_server"}, {"app"}, {"tooling"}, ALL):
             needs = {"changes": {"result": "success", "outputs": {key: str(key in selected).lower() for key in ALL}},
                      "tooling": {"result": "success"}}
             needs.update({job: {"result": "success" if suites & selected else "skipped"} for job, suites in job_suites.items()})

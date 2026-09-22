@@ -1,0 +1,69 @@
+import { oc } from '@orpc/contract'
+import { z } from 'zod'
+import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, NotesSourcesSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
+
+/** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
+
+const Json = z.unknown()
+const Loose = z.record(z.string(), z.unknown())
+const tags = ['tools']
+const Ok = z.object({ ok: z.literal(true) })
+
+
+const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional() })
+
+export const toolsContract = {
+  skills: {
+    list: oc.route({ method: 'GET', path: '/api/skills', tags }).input(z.object({ category: z.string().optional() })).output(SkillsSchema),
+    usage: oc.route({ method: 'GET', path: '/api/skills/usage', tags }).output(SkillsUsageSchema),
+    content: oc.route({ method: 'GET', path: '/api/skills/content', tags, summary: 'Skill view, or one linked file when `file` is given.' }).input(z.object({ name: z.string().optional(), file: z.string().optional() })).output(SkillContentSchema),
+    save: oc.route({ method: 'POST', path: '/api/skills/save', tags }).input(z.object({ name: z.string().optional(), content: z.string().optional(), category: z.string().optional() })).output(z.object({ ok: z.literal(true), name: z.string(), path: z.string() })),
+    delete: oc.route({ method: 'POST', path: '/api/skills/delete', tags }).input(z.object({ name: z.string().optional() })).output(z.object({ ok: z.literal(true), name: z.string() })),
+    toggle: oc.route({ method: 'POST', path: '/api/skills/toggle', tags, summary: 'Writes `skills.disabled` (and `skills.platform_disabled.webui` when present) in config.yaml.' }).input(z.object({ name: z.string().optional(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), name: z.string(), enabled: z.boolean() })),
+  },
+  memory: {
+    get: oc.route({ method: 'GET', path: '/api/memory', tags }).input(z.object({ session_id: z.string().optional(), workspace: z.string().optional() })).output(MemorySchema),
+    write: oc.route({ method: 'POST', path: '/api/memory/write', tags, summary: '`section` names the file (memory, user, soul); the legacy `target` alias is accepted.' }).input(z.object({ section: z.string().optional(), target: z.string().optional(), content: z.string().optional() })).output(z.object({ ok: z.literal(true), section: z.string(), path: z.string() })),
+  },
+  prompts: {
+    list: oc.route({ method: 'GET', path: '/api/prompts', tags }).output(PromptsSchema),
+    create: oc.route({ method: 'POST', path: '/api/prompts', tags }).input(z.object({ text: z.string().optional(), label: z.string().optional() })).output(z.object({ ok: z.literal(true), prompt: PromptSchema })),
+    delete: oc.route({ method: 'DELETE', path: '/api/prompts', tags }).input(z.object({ id: z.string().optional() })).output(Ok),
+  },
+  commands: {
+    list: oc.route({ method: 'GET', path: '/api/commands', tags }).output(CommandsSchema),
+    exec: oc.route({ method: 'POST', path: '/api/commands/exec', tags }).input(z.object({ command: z.string().optional(), session_id: z.string().optional() })).output(z.object({ output: z.string() })),
+  },
+  notes: {
+    sources: oc.route({ method: 'GET', path: '/api/notes/sources', tags }).output(NotesSourcesSchema),
+    search: oc.route({ method: 'GET', path: '/api/notes/search', tags }).input(z.object({ source: z.string().optional(), q: z.string().optional(), limit: z.string().optional() })).output(z.looseObject({ results: z.array(Json).optional() })),
+  },
+  insights: oc.route({ method: 'GET', path: '/api/insights', tags }).input(z.object({ days: z.string().optional() })).output(InsightsSchema),
+  logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional() })).output(LogsSchema),
+  ops: {
+    agent: oc.route({ method: 'GET', path: '/api/health/agent', tags }).output(AgentHealthSchema),
+    system: oc.route({ method: 'GET', path: '/api/system/health', tags }).output(SystemHealthSchema),
+    restart: oc.route({ method: 'POST', path: '/api/health/restart', tags, summary: 'Restart the Hermes gateway for the active profile (operator only).' }).input(Loose.optional()).output(z.object({ ok: z.literal(true), message: z.string() })),
+    dashboard: oc.route({ method: 'GET', path: '/api/dashboard/status', tags }).output(DashboardStatusSchema),
+    shutdown: oc.route({ method: 'POST', path: '/api/shutdown', tags, summary: 'Stop the server process (operator only).' }).input(Loose.optional()).output(z.object({ status: z.literal('shutting_down') })),
+  },
+  mcp: {
+    servers: oc.route({ method: 'GET', path: '/api/mcp/servers', tags }).output(McpServersSchema),
+    tools: oc.route({ method: 'GET', path: '/api/mcp/tools', tags }).output(McpToolsSchema),
+    action: oc.route({ method: 'POST', path: '/api/mcp/servers/{name}', tags, summary: '`{enabled}` toggles, `{delete: true}` removes, `{url|command, ...}` adds or updates the server in config.yaml.' }).input(z.object({ name: z.string() }).catchall(Json)).output(Loose),
+    toggle: oc.route({ method: 'PATCH', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), name: z.string(), enabled: z.boolean() })),
+    update: oc.route({ method: 'PUT', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string() }).catchall(Json)).output(z.object({ ok: z.literal(true), server: McpServerSchema })),
+    delete: oc.route({ method: 'DELETE', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string() })).output(z.object({ ok: z.literal(true), deleted: z.string() })),
+  },
+  plugins: oc.route({ method: 'GET', path: '/api/plugins', tags }).output(PluginsSchema),
+  updates: {
+    check: oc.route({ method: 'GET', path: '/api/updates/check', tags, summary: 'Cached status; `POST` runs the check. A Talaria git checkout fast-forwards to the newest completed release set (stable) or origin/main (experimental); npm builds report `manual_update`.' }).output(UpdatesCheckSchema),
+    checkNow: oc.route({ method: 'POST', path: '/api/updates/check', tags }).input(z.object({ force: Json.optional(), channel: z.string().nullable().optional() })).output(UpdatesCheckSchema),
+    apply: oc.route({ method: 'POST', path: '/api/updates/apply', tags }).input(Target).output(UpdateApplySchema),
+    force: oc.route({ method: 'POST', path: '/api/updates/force', tags }).input(Target).output(UpdateApplySchema),
+    clearLock: oc.route({ method: 'POST', path: '/api/updates/clear_lock', tags }).input(Target).output(UpdateApplySchema),
+    summary: oc.route({ method: 'POST', path: '/api/updates/summary', tags }).input(z.object({ updates: Loose.optional(), target: z.string().nullable().optional() })).output(UpdatesSummarySchema),
+  },
+  transcribeCapability: oc.route({ method: 'GET', path: '/api/transcribe/capability', tags }).output(TranscribeCapabilitySchema),
+  clientEvents: oc.route({ method: 'POST', path: '/api/client-events/log', tags, summary: 'Bounded browser diagnostics; only whitelisted scalar fields are logged.' }).input(Loose).output(z.object({ ok: z.literal(true), event: z.string().nullable() })),
+}

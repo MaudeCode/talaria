@@ -3,10 +3,10 @@ name: Talaria Web verification
 on:
   workflow_call:
     inputs:
-      python:
+      frontend:
         type: boolean
         default: true
-      frontend:
+      server:
         type: boolean
         default: true
 
@@ -18,52 +18,92 @@ defaults:
     working-directory: web
 
 jobs:
-  lint:
-    if: inputs.python
+  server:
+    if: inputs.server
     runs-on: ["ghar-set-maudecode"]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Ensure origin/main ref is available for the diff gate
-        run: git fetch --no-tags --depth=1 origin main || true
-
-      - name: Python syntax gate (whole tree — fails fast on any unparseable .py)
-        run: python3 -m compileall -q api server.py bootstrap.py mcp_server.py tests scripts
-
-      - name: Ruff forward gate (new/changed lines only)
-        run: python3 scripts/ruff_lint.py --diff origin/main
-
-      - name: Ruff whole-tree report (informational — never blocks)
-        run: python3 scripts/ruff_lint.py --all
-
-  frontend:
-    if: inputs.frontend
-    runs-on: ["ghar-set-maudecode"]
-    defaults:
-      run:
-        working-directory: web/frontend
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: web/.nvmrc
           cache: npm
-          cache-dependency-path: web/frontend/package-lock.json
+          cache-dependency-path: web/package-lock.json
 
-      - name: Clean install (lockfile is authoritative)
+      - name: Native module toolchain (node-pty)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
+
+      - name: Clean install (workspace lockfile is authoritative)
         run: npm ci --no-audit --no-fund
+
+      - name: Build contracts
+        run: npm run build -w packages/contracts
+
+      - name: Contracts and server lint
+        run: npm run lint -w packages/contracts && npm run lint -w packages/server
+
+      - name: Contracts and server strict TypeScript
+        run: npm run typecheck -w packages/contracts && npm run typecheck -w packages/server
+
+      - name: Contracts and server Vitest
+        run: npm test -w packages/contracts -- --maxWorkers=2 && npm test -w packages/server -- --maxWorkers=2
+
+      - name: Generated OpenAPI document is committed
+        run: |
+          npm run openapi
+          git diff --exit-code -- ../contracts/web-api.openapi.json
+
+  sidecar:
+    if: inputs.server
+    name: Sidecar pytest against the pinned Agent
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv (the Agent's locked dependency resolver)
+        run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
+
+      - name: Provision the pinned Agent and run the sidecar suite
+        working-directory: .
+        env:
+          HERMES_WEBUI_TEST_PYTHON: python3.13
+        run: python3 scripts/check-agent-compatibility.py --skip-docker
+
+  frontend:
+    if: inputs.frontend
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web/packages/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Native module toolchain (node-pty)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
+
+      - name: Clean install (workspace lockfile is authoritative)
+        run: npm ci --no-audit --no-fund
+        working-directory: web
+
+      - name: Build contracts and server
+        run: npm run build -w packages/contracts && npm run build -w packages/server
+        working-directory: web
 
       - name: Locale parity gate
         run: npm run i18n:gate
@@ -82,71 +122,11 @@ jobs:
 
       - name: Verify committed frontend assets
         run: |
-          git diff --exit-code -- ../static/dist
-          test -z "$(git status --porcelain --untracked-files=all -- ../static/dist)"
+          git diff --exit-code -- ../../static/dist
+          test -z "$(git status --porcelain --untracked-files=all -- ../../static/dist)"
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Set up Python for the end-to-end server
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install server dependencies
-        run: pip install -r ../requirements.txt
-
-      - name: Playwright end-to-end (desktop + mobile)
-        run: HERMES_E2E_PYTHON="$(command -v python)" ../../scripts/check-web-browser
-
-  test:
-    if: inputs.python
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/web/.codex-tmp/playwright
-    runs-on: ["ghar-set-maudecode"]
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.13']
-        shard: [0, 1, 2, 3, 4]
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: |
-            **/setup.cfg
-            **/requirements*.txt
-            **/pyproject.toml
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install "pyyaml>=6.0" "cryptography>=42.0" pytest pytest-timeout pytest-asyncio pytest-shard python-docx openpyxl python-pptx playwright
-          pip install ruff || echo "ruff install failed — test_ruff_forward_lint.py will skip"
-          pip install "mcp>=1.28,<2" || echo "mcp install failed — test_mcp_server.py will importorskip"
-
-      - name: Get Playwright version
-        id: pw-version
-        run: echo "version=$(pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.version }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
-      - name: Install Playwright browsers
-        run: python -m playwright install --with-deps chromium
-
-      - name: Run tests (shard ${{ matrix.shard }} of 5)
-        run: ../scripts/check-web-python tests/ -v --timeout=60 --shard-id=${{ matrix.shard }} --num-shards=5
+      - name: Playwright end-to-end on the Node server with the fixture replay sidecar (desktop + mobile)
+        run: ../../../scripts/check-web-browser

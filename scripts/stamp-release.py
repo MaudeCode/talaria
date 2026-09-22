@@ -6,16 +6,39 @@ import json
 import plistlib
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "web"))
-from api.release_info import (
-    COMPATIBLE_AGENT,
-    SUPPORTED_CONTRACTS,
-    validate_release_info,
-)
+_SHA = r"[a-f0-9]{40}"
+_VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+
+
+def web_identity():
+    """The packaged Agent pin and supported contract versions (Web `release.ts` reads the same files)."""
+    pin = json.loads((ROOT / "web/sidecar/agent_dependency.json").read_text())
+    versions = json.loads((ROOT / "web/contract_versions.json").read_text())
+    return ({**pin["x-talaria"], "image": pin["services"]["hermes-agent"]["image"]},
+            {"appWeb": [versions["appWeb"]["fixtureVersion"]], "webRelay": [versions["webRelay"]["protocolVersion"]]})
+
+
+def validate_release_info(metadata):
+    """Mirror of Web `validateReleaseInfo` so a stamp the server would reject never ships."""
+    compatible_agent, supported_contracts = web_identity()
+    fields = {"tag", "version", "sourceRevision", "releaseSet", "contracts", "compatibleAgent"}
+    if set(metadata) != fields:
+        raise ValueError("Invalid Web release metadata fields")
+    for key in ("sourceRevision", "releaseSet"):
+        if not re.fullmatch(_SHA, str(metadata[key])):
+            raise ValueError(f"Web {key} must be an immutable commit")
+    if metadata["sourceRevision"] != metadata["releaseSet"]:
+        raise ValueError("Web release-set identity must match its source")
+    if not re.fullmatch(_VERSION, str(metadata["version"])):
+        raise ValueError("Web release version must be X.Y.Z")
+    if metadata["tag"] not in (f"web-v{metadata['version']}", f"web-exp-v{metadata['version']}"):
+        raise ValueError("Web release tag must match its namespaced version")
+    if metadata["contracts"] != supported_contracts or metadata["compatibleAgent"] != compatible_agent:
+        raise ValueError("Web release metadata disagrees with its packaged contracts or Agent pin")
+    return metadata
 
 
 def main():
@@ -37,12 +60,10 @@ def main():
     metadata = {"version": args.version, "sourceRevision": head, "releaseSet": head}
     if args.component == "web":
         metadata["tag"] = args.tag or f"web-v{args.version}"
-        metadata.update(upstreamBase=(ROOT / "web/UPSTREAM_BASE_SHA").read_text().strip(),
-                        contracts=SUPPORTED_CONTRACTS, compatibleAgent=COMPATIBLE_AGENT)
+        compatible_agent, supported_contracts = web_identity()
+        metadata.update(contracts=supported_contracts, compatibleAgent=compatible_agent)
         validate_release_info(metadata)
-        if subprocess.run(["git", "merge-base", "--is-ancestor", metadata["upstreamBase"], head], cwd=ROOT, check=False).returncode:
-            parser.error("upstream base must be reachable from this checkout")
-        destination, mode = ROOT / "web/api/_release.json", "x"
+        destination, mode = ROOT / "web/_release.json", "x"
     elif args.component == "relay":
         if not args.deployment_id or not re.fullmatch(r"[a-z][a-z0-9-]+", args.deployment_id):
             parser.error("Relay requires a deployment ID")

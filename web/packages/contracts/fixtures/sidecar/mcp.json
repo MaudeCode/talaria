@@ -1,0 +1,22 @@
+{
+  "mcp.status": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "servers": []
+      }
+    }
+  ],
+  "mcp.registry_tools": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "tools": []
+      }
+    }
+  ]
+}

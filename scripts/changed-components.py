@@ -11,20 +11,18 @@ import subprocess
 import sys
 
 
-SUITES = {"app", "app_tooling", "web_python", "web_frontend", "docker", "relay", "contracts", "tooling"}
-CONSUMERS = {"app", "web_python", "web_frontend", "relay", "contracts"}
-WEB_BUILD = {"web_python", "web_frontend", "docker", "contracts"}
-JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_python", "web_frontend"},
+SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
+CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
+WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
+JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     "pr-ci.yml": {"tooling"},
-    "web-verify.yml": {"web_python", "web_frontend", "tooling"},
+    "web-verify.yml": {"web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
     "repository-tooling.yml": {"tooling"},
     "web-docs.yml": {"tooling"},
-    "web-native-windows-startup.yml": {"web_python", "tooling"},
-    "upstream-watch.yml": {"tooling"},
     "fuzz-soak.yml": {"app", "tooling"},
     "release.yml": {"tooling"},
     "release-set.yml": {"tooling"},
@@ -36,20 +34,20 @@ WORKFLOWS = {
 SCRIPTS = {
     "changed-components.py": {"tooling"},
     "test-changed-components.py": {"tooling"},
-    "check-web-python": {"web_python", "tooling"},
+    "check-web-server": {"web_server", "tooling"},
     "check-web-browser": {"web_frontend", "tooling"},
     "check-docker.py": {"docker", "tooling"},
     "check-relay-local.py": {"relay", "tooling"},
-    "stamp-release.py": {"web_python", "tooling"},
-    "prepare-web-migration.py": {"web_python", "tooling"},
-    "check-agent-compatibility.py": {"web_python", "docker", "tooling"},
+    "stamp-release.py": {"tooling"},
+    "prepare-web-migration.py": {"tooling"},
+    "check-agent-compatibility.py": {"web_server", "docker", "tooling"},
+    "critical-markdown-check.py": {"tooling"},
+    "test-critical-markdown-check.py": {"tooling"},
     "check-previous-app.py": {"contracts", "tooling"},
     "check-selected-contracts.py": CONSUMERS | {"tooling"},
     "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
     "rehearse-monorepo.py": {"tooling"},
-    "test-monorepo-import.py": {"tooling"},
-    "import-web-upstream": {"tooling"},
 }
 
 
@@ -98,15 +96,15 @@ def path_suites(path):
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
         return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/")) else {"app"}
-    if path.startswith("web/tests/"):
-        return {"web_python"}
+    if path.startswith("web/sidecar/tests/"):
+        return {"web_server"}
     if path.startswith("relay/tests/"):
         return {"relay"}
     documentation = (path.count("/") <= 1 or path.startswith((
         "docs/", "app/docs/", "web/docs/", "relay/docs/", ".agents/skills/", ".github/ISSUE_TEMPLATE/")))
     if (documentation and path.endswith((".md", ".markdown", ".rst"))) or path in ("LICENSE", "web/NOTICE"):
         return set()
-    if path.startswith("contracts/") or path in ("web/api/contract_versions.json", "relay/convex/releaseInfo.json"):
+    if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
@@ -124,32 +122,36 @@ def path_suites(path):
             return {"app_tooling", "tooling"}
         return {"app"}
     if component == "web":
-        if local.startswith(("frontend/", "static/dist/")):
+        if local.startswith(("packages/frontend/", "static/dist/")):
             return {"web_frontend"}
-        if local.startswith("static/"):
-            return {"web_frontend", "web_python"}
-        if local == "UPSTREAM_BASE_SHA":
-            return {"tooling"}
-        if local.startswith(("Dockerfile", "docker", ".docker", ".env.docker")):
-            return {"docker", "web_python"}
-        if local in ("pyproject.toml", "setup.cfg", "setup.py", "uv.lock", "flake.nix", "flake.lock", ".env.example") or local.startswith("requirements"):
+        if local.startswith("packages/contracts/"):
+            return {"web_server", "web_frontend", "contracts"}
+        # The Agent pin is baked into the container images and extended by the Compose files: it needs the smoke too.
+        if local == "sidecar/agent_dependency.json":
+            return {"web_server", "contracts", "docker"}
+        # The regression-port ledger and its port suites are verified by the tooling checker as well.
+        if local.startswith("docs/architecture/regression-port-") or local.startswith("packages/server/src/port/"):
+            return {"web_server", "contracts", "tooling"}
+        # The sidecar RPC surface and the server are one consumer of the shared contracts; the Playwright suite drives
+        # the real Node server from the frontend job, so server changes run it too.
+        if local.startswith(("packages/server/", "sidecar/")):
+            return {"web_server", "web_frontend", "contracts"}
+        # The lockfile and Node version feed both the workspace builds and the container image.
+        if local in ("package.json", "package-lock.json", ".nvmrc"):
             return WEB_BUILD
-        if local == "api/agent_dependency.json":
-            return {"web_python", "docker", "contracts"}
-        # Response producers are spread across api/, not only routes.py. Validate
-        # both browser consumers and the focused native App/Web contract suite.
-        if local == "server.py" or local.startswith("api/"):
-            return {"web_python", "web_frontend", "contracts"}
-        if local.startswith(("scripts/", "skills/")) or local in (
-                "bootstrap.py", "mcp_server.py", "pytest.ini", "start.sh", "start.ps1", "ctl.sh"):
-            return {"web_python"}
+        if local.startswith("static/"):
+            return {"web_frontend", "web_server"}
+        if local.startswith(("Dockerfile", "docker", ".docker", ".env.docker", "scripts/lib/")):
+            return {"docker", "web_server"}
+        if local == ".env.example" or local.startswith("scripts/"):
+            return {"web_server"}
         return WEB_BUILD
     if component == "relay":
         # HTTP handlers forward results from many Convex modules. Default new
         # modules to consumer coverage; only known maintenance code stays local.
         internal = {"convex/cleanup.ts", "convex/crons.ts", "convex/workpool.ts", "convex/convex.config.ts"}
         if local.startswith("convex/") and local not in internal:
-            return {"relay", "app", "web_python", "contracts"}
+            return {"relay", "app", "web_server", "contracts"}
         return {"relay"}
     return SUITES
 

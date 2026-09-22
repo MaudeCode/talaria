@@ -1,0 +1,61 @@
+{
+  "state_db.sync_start": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "webui-1",
+        "model": "test-model"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
+  "state_db.sync_usage": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "webui-1",
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "title": "Hello",
+        "message_count": 2
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
+  "state_db.sync_title": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "webui-1",
+        "title": "Hello again"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
+  "state_db.delete_cli_session": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "cli-1"
+      },
+      "result": {
+        "ok": true
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "missing"
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ]
+}

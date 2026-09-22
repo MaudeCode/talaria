@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Talaria Web server gate: contracts + server lint, strict TypeScript, Vitest,
+# the committed OpenAPI document, and the sidecar pytest suite against the
+# pinned Hermes Agent when one is available (HERMES_WEBUI_AGENT_DIR or the
+# discovery rules in web/sidecar/tests/conftest.py; otherwise those tests skip).
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+state=$(mktemp -d "${TMPDIR:-/tmp}/talaria-web-server.XXXXXX")
+trap 'rm -rf -- "$state"' EXIT
+mkdir -p "$state/home" "$state/tmp"
+cd "$root/web"
+npm ci --no-audit --no-fund
+npm run build -w packages/contracts
+npm run lint -w packages/contracts
+npm run lint -w packages/server
+npm run typecheck -w packages/contracts
+npm run typecheck -w packages/server
+# Test-owned HOME prevents Agent and credential discovery outside this run.
+env HOME="$state/home" TMPDIR="$state/tmp" npm test -w packages/contracts -- --maxWorkers=2
+env HOME="$state/home" TMPDIR="$state/tmp" npm test -w packages/server -- --maxWorkers=2
+npm run openapi
+git diff --exit-code -- "$root/contracts/web-api.openapi.json"
+sidecar/scripts/test.sh "$@"
