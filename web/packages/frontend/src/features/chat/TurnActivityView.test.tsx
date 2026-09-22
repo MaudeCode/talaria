@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { AssistantMessageRow } from './MessageRow'
 import { TurnActivityView } from './TurnActivityView'
 import { WorklogDisclosureProvider } from './blocks/Worklog'
 import { groupAssistantTurns, liveActivity, persistedActivity, type TurnActivity } from './turnActivity'
@@ -113,6 +114,15 @@ describe('turn worklog presentation', () => {
     interrupted.emit(tool('a'))
     interrupted.emit({ event: 'apperror', data: { type: 'interrupted', message: 'Connection lost' } })
     expect(liveActivity(interrupted.turn).status).toBe('interrupted')
+  })
+
+  it('copies a partial reply when there is no final answer', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Partial output', _partial: true }]))[0]!
+    render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    expect(writeText).toHaveBeenCalledWith('Partial output')
   })
 
   it('shows prose-only answers without empty worklogs', () => {
