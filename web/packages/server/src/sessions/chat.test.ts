@@ -756,6 +756,11 @@ describe('chat turns through the sidecar', () => {
     res = await post(s, '/api/btw', { session_id: sid, question: 'what did you do?' })
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Subagent sessions are view-only and cannot be used for /btw from WebUI')
+    // Python `_get_or_materialize_session` refused the child with PermissionError, which chat start answered as 403.
+    res = await post(s, '/api/chat/start', { session_id: sid, message: 'keep going' })
+    expect(res.status).toBe(403)
+    expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
     expect(starts).toBe(0)
   })
 
