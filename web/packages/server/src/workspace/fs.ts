@@ -37,6 +37,7 @@ export function safeResolveWs(root: string, requested: string): string {
 
 /** Python `helpers.safe_resolve`: same rule, different error text. */
 export function safeResolve(root: string, requested: string): string {
+  if (requested.includes('\0')) throw new PathTraversalError('embedded null byte')
   const rootResolved = resolvePathLikePython(root)
   const resolved = resolvePathLikePython(resolve(root, requested))
   if (!isWithin(resolved, rootResolved)) throw new PathTraversalError(`path escapes root: ${requested}`)
@@ -418,21 +419,26 @@ function listAnchored(target: string, rel: string, wsResolved: string, child: (n
   return entries
 }
 
-/** Serialize bigint timestamps for JSON (Python emits ints; JS numbers lose precision above 2^53, so use strings there). */
+/** Python `_browser_timestamp_ns`: nanosecond timestamps are always decimal strings on the wire. */
 export function serializeEntriesForBrowser(entries: DirEntry[]): Record<string, unknown>[] {
   return entries.map((e) => {
     const out: Record<string, unknown> = { ...e }
-    out.mtime_ns = e.mtime_ns === null || e.mtime_ns === undefined ? null : e.mtime_ns <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(e.mtime_ns) : e.mtime_ns.toString()
-    out.birthtime_ns = e.birthtime_ns === null || e.birthtime_ns === undefined ? null : e.birthtime_ns <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(e.birthtime_ns) : e.birthtime_ns.toString()
+    out.mtime_ns = e.mtime_ns === null || e.mtime_ns === undefined ? null : e.mtime_ns.toString()
+    out.birthtime_ns = e.birthtime_ns === null || e.birthtime_ns === undefined ? null : e.birthtime_ns.toString()
     return out
   })
 }
 
-/** Python `dir_signature`: sha256 of the bounded listing metadata. */
+/**
+ * Python `dir_signature`: sha256 of `json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)`
+ * with `mtime_ns` as a bare integer, so a listing hashes identically across the Python and TypeScript servers.
+ */
 export function dirSignature(workspace: string, rel = '.', entries?: DirEntry[]): string {
   const list = entries ?? listDir(workspace, rel)
-  const payload = list.map((e) => ({ name: e.name, path: e.path, type: e.type, is_dir: e.is_dir ?? null, size: e.size ?? null, mtime_ns: e.mtime_ns === undefined || e.mtime_ns === null ? null : e.mtime_ns.toString(), target: e.target ?? null, target_outside_workspace: e.target_outside_workspace ?? null }))
-  return createHash('sha256').update(JSON.stringify(payload.map(sortKeysDeep)), 'utf8').digest('hex')
+  const payload = list.map((e) => ({ name: e.name, path: e.path, type: e.type, is_dir: e.is_dir ?? null, size: e.size ?? null, mtime_ns: e.mtime_ns === undefined || e.mtime_ns === null ? null : `\u0000int:${e.mtime_ns.toString()}\u0000`, target: e.target ?? null, target_outside_workspace: e.target_outside_workspace ?? null }))
+  // A NUL sentinel cannot survive JSON.stringify unescaped in a real name, so only the integer placeholders are unquoted.
+  const raw = JSON.stringify(payload.map(sortKeysDeep)).replaceAll(/"\\u0000int:(\d+)\\u0000"/g, '$1')
+  return createHash('sha256').update(raw, 'utf8').digest('hex')
 }
 
 function sortKeysDeep(value: unknown): unknown {

@@ -29,6 +29,12 @@ export class HttpError extends ORPCError<string, Record<string, unknown>> {
   }
 }
 
+/** Python `require()`: every named field must be present and truthy (`0` counts as present); all misses are named at once. */
+export function requireFields(input: Record<string, unknown>, ...fields: string[]): void {
+  const missing = fields.filter((f) => { const v = input[f]; return v === undefined || v === null || v === '' || v === false })
+  if (missing.length) throw new HttpError(400, `Missing required field(s): ${missing.join(', ')}`)
+}
+
 /** A non-2xx response whose body is the payload itself (no `error` key), e.g. degraded `/health`. */
 export class RawResponse extends ORPCError<string, Record<string, unknown>> {
   constructor(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {

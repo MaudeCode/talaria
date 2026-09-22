@@ -1,5 +1,9 @@
 /** The streaming ZIP writer: a client that disconnects mid-entry fails the entry cleanly instead of crashing or hanging. */
 import { Readable, Writable } from 'node:stream'
+import { createWriteStream, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { ZipWriter } from './zip.js'
 
@@ -28,6 +32,37 @@ describe('ZipWriter', () => {
       expect(unhandled).toEqual([])
     } finally {
       process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('writes ZIP64 records for an entry declared over 4 GiB and for more than 65 535 entries, readable by Python zipfile', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'talaria-zip64-'))
+    try {
+      // Entry declared with a 4 GiB stat size (the writer trusts the stat like `zipfile.write`), but streamed short.
+      const wide = join(dir, 'wide.zip')
+      const wideOut = createWriteStream(wide)
+      const zip = new ZipWriter(wideOut)
+      await zip.addFile('wide.bin', Readable.from([Buffer.from('payload')]), 0x1_0000_0000)
+      await zip.addFile('small.txt', Readable.from([Buffer.from('hello')]), 5)
+      await zip.finish()
+      await new Promise<void>((resolve, reject) => { wideOut.end(); wideOut.on('finish', resolve); wideOut.on('error', reject) })
+      // 65 536 empty entries force the ZIP64 end-of-central-directory record.
+      const many = join(dir, 'many.zip')
+      const manyOut = createWriteStream(many)
+      const zip2 = new ZipWriter(manyOut)
+      for (let i = 0; i < 65_536; i += 1) await zip2.addFile(`e${String(i)}`, Readable.from([]), 0)
+      await zip2.finish()
+      await new Promise<void>((resolve, reject) => { manyOut.end(); manyOut.on('finish', resolve); manyOut.on('error', reject) })
+      const check = spawnSync('python3', ['-c', `
+import sys, zipfile
+w = zipfile.ZipFile(sys.argv[1]); assert w.testzip() is None; assert w.read('wide.bin') == b'payload' and w.read('small.txt') == b'hello'
+assert w.getinfo('wide.bin').extract_version >= 45, w.getinfo('wide.bin').extract_version
+m = zipfile.ZipFile(sys.argv[2]); assert len(m.namelist()) == 65536, len(m.namelist()); assert m.testzip() is None
+print('ok')`, wide, many], { encoding: 'utf8' })
+      expect(check.stdout.trim()).toBe('ok')
+      expect(check.status).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

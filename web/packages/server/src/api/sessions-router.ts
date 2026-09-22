@@ -4,11 +4,11 @@ import { stateDbHasSession } from '../sessions/state-db.js'
 import { sessionsContract, workspacesContract } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync, writeSync } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, extname, join, relative } from 'node:path'
 import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
 import type { RequestContext } from '../http/context.js'
-import { HttpError, type ApiContext } from './router.js'
+import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -17,7 +17,7 @@ import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPAC
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, readFileContent, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
-import { str } from '../util.js'
+import { pyOsError, pyRepr, str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 
@@ -420,7 +420,9 @@ export const sessionsRouter = os.router({
     list: os.files.list.handler(({ input, context: { ctx } }) => run(() => {
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
       guardVisibility(ctx, input.session_id)
-      const s = fileOpsSession(ctx, input.session_id)
+      // Python `_handle_list` resolved the workspace directly and answered 404 with the trust error; the POST file ops
+      // keep `get_session_for_file_ops`' lenient fallback.
+      const s = fileOpsSession(ctx, input.session_id, { strictWorkspace: true })
       const rel = input.path ?? '.'
       try {
         const entries = listDir(s.workspace, rel)
@@ -441,8 +443,10 @@ export const sessionsRouter = os.router({
       }
     })),
     save: os.files.save.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
+        if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Use /api/file/office-save for Office documents')
         const root = s.workspace
         const target = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
@@ -457,6 +461,7 @@ export const sessionsRouter = os.router({
       }
     })),
     create: os.files.create.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
@@ -472,6 +477,7 @@ export const sessionsRouter = os.router({
       }
     })),
     createDir: os.files.createDir.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
@@ -484,6 +490,7 @@ export const sessionsRouter = os.router({
       }
     })),
     delete: os.files.delete.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
@@ -500,6 +507,7 @@ export const sessionsRouter = os.router({
       }
     })),
     rename: os.files.rename.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id', 'path', 'new_name')
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
@@ -519,6 +527,7 @@ export const sessionsRouter = os.router({
       }
     })),
     move: os.files.move.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields({ ...input, dest_dir: input.dest_dir ?? input.destination }, 'session_id', 'path', 'dest_dir')
       const destDirRaw = (input.dest_dir ?? input.destination ?? '.').trim() || '.'
       const s = fileOpsSession(ctx, input.session_id)
       try {
@@ -541,30 +550,32 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    reveal: os.files.reveal.handler(({ input, context: { ctx } }) => run(() => {
+    reveal: os.files.reveal.handler(({ input, context: { ctx } }) => run(async () => {
+      requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const target = safeResolve(s.workspace, input.path)
         if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
         const targetStr = ctx.deps.vscode().translate(target)
         const system = platform()
-        if (system === 'darwin') spawnDetached(['open', '-R', targetStr])
-        else if (system === 'win32') spawnDetached(['explorer.exe', `/select,${targetStr}`])
-        else spawnDetached(['xdg-open', dirname(targetStr)])
+        if (system === 'darwin') await spawnDetached(['open', '-R', targetStr])
+        else if (system === 'win32') await spawnDetached(['explorer.exe', `/select,${targetStr}`])
+        else await spawnDetached(['xdg-open', dirname(targetStr)])
         return { ok: true as const, path: input.path }
       } catch (error) {
         throw fileError(error)
       }
     })),
-    openVsCode: os.files.openVsCode.handler(({ input, context: { ctx } }) => run(() => {
+    openVsCode: os.files.openVsCode.handler(({ input, context: { ctx } }) => run(async () => {
+      requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const target = safeResolve(s.workspace, input.path)
         if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
         const vscode = ctx.deps.vscode()
         const cmd = vscode.command()
-        if (!cmd) throw new HttpError(400, `VS Code command not found: ${JSON.stringify(vscode.configuredCommand)}. Install VS Code and ensure the 'code' CLI is on PATH, or set vscode.command in config.yaml to the full path.`)
-        spawnDetached([cmd, vscode.translate(target)])
+        if (!cmd) throw new HttpError(400, `VS Code command not found: ${pyRepr(vscode.configuredCommand)}. Install VS Code and ensure the 'code' CLI is on PATH, or set vscode.command in config.yaml to the full path.`)
+        await spawnDetached([cmd, vscode.translate(target)])
         return { ok: true as const, path: input.path }
       } catch (error) {
         throw fileError(error)
@@ -592,7 +603,7 @@ export interface FileOpsSession { workspace: string; profile: string | null; rec
  * `state.db` but that has no `sessions/<sid>.json` (CLI, messaging) is served as an external view bound to the active
  * workspace, as the sidebar already lists it (issue #3280).
  */
-export function fileOpsSession(ctx: RequestContext, sid: string): FileOpsSession {
+export function fileOpsSession(ctx: RequestContext, sid: string, opts: { strictWorkspace?: boolean } = {}): FileOpsSession {
   let session: Session
   try {
     session = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
@@ -608,7 +619,8 @@ export function fileOpsSession(ctx: RequestContext, sid: string): FileOpsSession
   let recovered = false
   try {
     ;[workspace, recovered] = ctx.deps.workspaces.resolveImplicitWithRecovery(session.workspace, (p) => ctx.deps.workspaces.lastWorkspace(p), session.profile)
-  } catch {
+  } catch (error) {
+    if (opts.strictWorkspace) throw new HttpError(404, error instanceof Error ? error.message : 'Workspace is not trusted')
     workspace = session.workspace
   }
   if (recovered) {
@@ -623,12 +635,18 @@ export function fileOpsSession(ctx: RequestContext, sid: string): FileOpsSession
   return { workspace, profile: session.profile, recovered, session }
 }
 
-function spawnDetached(cmd: string[]): void {
+/**
+ * Python `spawn_detached_app`: `Popen` raised synchronously when the launcher binary was missing, so the route answered
+ * 400 instead of `{ok:true}`; Node reports that on the `error` event, awaited here before the handler answers.
+ */
+function spawnDetached(cmd: string[]): Promise<void> {
   const [file, ...args] = cmd
-  if (!file) return
-  const child = spawn(file, args, { detached: true, stdio: 'ignore' })
-  child.on('error', () => undefined)
-  child.unref()
+  if (!file) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { detached: true, stdio: 'ignore' })
+    child.once('error', (error: NodeJS.ErrnoException) => { reject(new HttpError(400, error.code ? pyOsError(error, file) : sanitizeError(error))) })
+    child.once('spawn', () => { child.unref(); resolve() })
+  })
 }
 
 async function relayCall<T>(fn: () => Promise<T>): Promise<T> {

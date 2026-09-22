@@ -1,4 +1,4 @@
-import { str } from '../util.js'
+import { pyOsError, str } from '../util.js'
 /**
  * Workspace registry and trust boundary (Python `api/workspace.py`): per-profile
  * `workspaces.json` / `last_workspace.txt`, blocked system roots, trusted
@@ -202,9 +202,11 @@ export class WorkspaceRegistry {
     }
   }
 
-  /** Profile config.yaml `workspace` / `default_workspace` / `terminal.cwd`, else the live default. */
+  /**
+   * Python `get_profile_default_workspace` (`GET /api/profile/active`): a named profile's own last workspace first,
+   * never the global one (#5169), then the profile's configured default.
+   */
   profileDefaultWorkspace(profile: string | null = null): string {
-    // Python `get_profile_default_workspace`: a named profile's own last workspace first, never the global one (#5169).
     if (profile?.trim() && !this.deps.isRootProfileHome(this.profileHomeParam(profile))) {
       const file = this.lastWorkspaceFile(profile)
       if (file !== null && existsSync(file)) {
@@ -214,6 +216,11 @@ export class WorkspaceRegistry {
         } catch { /* fall through */ }
       }
     }
+    return this.profileConfigDefaultWorkspace(profile)
+  }
+
+  /** Python `_profile_default_workspace`: config.yaml `workspace` / `default_workspace` / `terminal.cwd`, else the live default — never `last_workspace.txt`. */
+  profileConfigDefaultWorkspace(profile: string | null = null): string {
     try {
       const cfg = this.deps.profileConfig(profile)
       if (cfg) {
@@ -281,7 +288,7 @@ export class WorkspaceRegistry {
         if (Array.isArray(raw) && cleaned.length !== raw.length) {
           try { writeFileSync(file, JSON.stringify(cleaned, null, 2), 'utf8') } catch { /* best effort */ }
         }
-        return cleaned.length ? cleaned : [{ path: this.profileDefaultWorkspace(profile), name: 'Home' }]
+        return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
       } catch {
         /* fall through */
       }
@@ -296,7 +303,7 @@ export class WorkspaceRegistry {
       const migrated = this.migrateGlobalWorkspaces()
       if (migrated.length) return migrated
     }
-    return [{ path: this.profileDefaultWorkspace(profile), name: 'Home' }]
+    return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
   }
 
   private migrateGlobalWorkspaces(): WorkspaceEntry[] {
@@ -334,7 +341,7 @@ export class WorkspaceRegistry {
         if (p) return p
       } catch { /* ignore */ }
     }
-    return this.profileDefaultWorkspace(profile)
+    return this.profileConfigDefaultWorkspace(profile)
   }
 
   lastWorkspace(profile: string | null = null): string {
@@ -358,7 +365,7 @@ export class WorkspaceRegistry {
         if (p) return p
       } catch { /* ignore */ }
     }
-    return this.profileDefaultWorkspace(profile)
+    return this.profileConfigDefaultWorkspace(profile)
   }
 
   setLastWorkspace(path: string, profile: string | null = null): void {
@@ -379,11 +386,11 @@ export class WorkspaceRegistry {
       st = statSync(candidate)
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
-      if (code === 'ENOENT' || code === 'ENOTDIR') return `${missingLabel}: ${candidate}`
+      if (code === 'ENOENT') return `${missingLabel}: ${candidate}`
       if (code === 'EACCES' || code === 'EPERM') {
-        return `Cannot access path: ${candidate}. The server process could not inspect this directory (${(error as Error).message}). On macOS, grant Full Disk Access or Files and Folders permission to the Hermes/WebUI app or server process, then try again.`
+        return `Cannot access path: ${candidate}. The server process could not inspect this directory (${pyOsError(error, candidate)}). On macOS, grant Full Disk Access or Files and Folders permission to the Hermes/WebUI app or server process, then try again.`
       }
-      return `Cannot access path: ${candidate}. The server process could not inspect this path (${(error as Error).message}).`
+      return `Cannot access path: ${candidate}. The server process could not inspect this path (${pyOsError(error, candidate)}).`
     }
     if (!st.isDirectory()) return `Path is not a directory: ${candidate}`
     return null
@@ -461,7 +468,7 @@ export class WorkspaceRegistry {
   resolveTrusted(path: string | null | undefined, profile: string | null = null): string {
     if (!path) {
       if (!this.profileSupportsLocalIo(profile)) {
-        const remote = this.remoteTerminalWorkspaceCandidate(this.profileDefaultWorkspace(profile), profile)
+        const remote = this.remoteTerminalWorkspaceCandidate(this.profileConfigDefaultWorkspace(profile), profile)
         if (remote === null) throw new Error('Remote terminal workspace is not configured')
         return remote
       }

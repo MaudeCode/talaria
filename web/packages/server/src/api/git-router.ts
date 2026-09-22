@@ -9,6 +9,7 @@ import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { sanitizeError } from '../workspace/media.js'
+import { RollbackInternalError } from '../workspace/rollback.js'
 import { str } from '../util.js'
 
 const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -66,6 +67,12 @@ async function generateCommitMessage(ctx: RequestContext, session: Session, prom
 }
 
 const asStatus = (s: GitStatus): GitStatus => s
+
+/** Python rollback handlers: `ValueError` → 400 with the message, anything else → 500 with the sanitised text. */
+function rollbackError(error: unknown): HttpError {
+  if (error instanceof RollbackInternalError) return new HttpError(500, sanitizeError(error))
+  return new HttpError(400, (error as Error).message)
+}
 
 export const gitRouter = os.router({
   gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(() => {
@@ -155,7 +162,7 @@ export const gitRouter = os.router({
       try {
         return ctx.deps.rollback.list(input.workspace) as { checkpoints: Record<string, unknown>[]; workspace: string; checkpoint_dir: string }
       } catch (error) {
-        throw new HttpError(400, (error as Error).message)
+        throw rollbackError(error)
       }
     }),
     diff: os.rollback.diff.handler(({ input, context: { ctx } }) => {
@@ -164,7 +171,7 @@ export const gitRouter = os.router({
       try {
         return ctx.deps.rollback.diff(input.workspace, checkpoint) as never
       } catch (error) {
-        throw new HttpError(400, (error as Error).message)
+        throw rollbackError(error)
       }
     }),
     restore: os.rollback.restore.handler(({ input, context: { ctx } }) => {
@@ -174,7 +181,7 @@ export const gitRouter = os.router({
       try {
         return ctx.deps.rollback.restore(input.workspace, checkpoint) as never
       } catch (error) {
-        throw new HttpError(400, (error as Error).message)
+        throw rollbackError(error)
       }
     }),
   },

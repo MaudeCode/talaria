@@ -34,8 +34,16 @@ export function workspaceHash(workspace: string): string {
   return createHash('sha256').update(canonical).digest('hex').slice(0, 12)
 }
 
+/** A git invocation that did not run to completion (timeout, missing binary): Python let these escape as 500s. */
+export class RollbackInternalError extends Error {}
+
 function git(args: string[], timeoutMs = 10_000): { status: number; stdout: Buffer } {
   const r = spawnSync('git', args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true })
+  if (r.error) {
+    const code = (r.error as NodeJS.ErrnoException).code
+    if (code === 'ETIMEDOUT') throw new RollbackInternalError(`Command '${JSON.stringify(['git', ...args]).replaceAll('"', "'").replaceAll(',', ', ')}' timed out after ${String(timeoutMs / 1000)} seconds`)
+    throw new RollbackInternalError(r.error.message)
+  }
   return { status: r.status ?? 1, stdout: r.stdout }
 }
 
@@ -237,9 +245,10 @@ export class RollbackStore {
   }
 }
 
-/** Python `str.splitlines()`. */
+/** Python `str.splitlines()`: also breaks on \v, \f, \x1c-\x1e, \x85, \u2028 and \u2029. */
+export const PY_LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/
 export function splitLinesPy(text: string): string[] {
-  const lines = text.split(/\r\n|\r|\n/)
+  const lines = text.split(PY_LINE_BREAK)
   if (lines.length && lines[lines.length - 1] === '') lines.pop()
   return lines
 }
@@ -247,7 +256,7 @@ export function splitLinesPy(text: string): string[] {
 /** Python `str.splitlines(keepends=True)`. */
 export function splitKeepEnds(text: string): string[] {
   const out: string[] = []
-  const re = /[^\r\n]*(?:\r\n|\r|\n|$)/g
+  const re = /[^\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]*(?:\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]|$)/g
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     if (m[0] === '') break

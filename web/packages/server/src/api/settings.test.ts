@@ -97,7 +97,7 @@
  *   web/tests/test_issues_907_908_909_model_dropdown.py
  * (issues #570, #572, #603, #604, #617, #644, #749, #1013, #1094, #1105, #1106, #1189, #1195, #1202, #1217, #1228, #1240, #1384, #1420, #1426, #1494, #1499, #1500, #1527, #1538, #1567, #1568, #1612, #1699, #1807, #1881, #1894, #1909, #2025, #2157, #2177, #2232, #2245, #2305, #2399, #2545, #2698, #2720, #2840, #2914, #2929, #3145, #3172, #3260, #3510, #3623, #3691, #3717, #3820, #3825, #3875, #3928, #3929, #3947, #3988, #4324, #4325, #4360, #4586, #4714, #4766, #4770, #4775, #4836, #4982, #5121, #5130, #5139, #5270, #5339, #5532, #5572, #6022, #6335, #6498, #6626, #6722, #6751, #7168, #7182, #7333, #7404, #7514, #7540, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
@@ -427,6 +427,24 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await json(await post(s, '/api/providers/delete', { provider: 'deepseek' }))).action).toBe('removed')
     expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
     expect((configs.get(s.state)?.providers as Json).deepseek).toEqual({})
+  })
+
+  it('the VS Code launcher honours vscode.command and the Docker path prefixes from config.yaml', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const sid = String(((await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json).session_id)
+    writeFileSync(join(ws, 'note.txt'), 'x')
+    configs.set(s.state, { ...(configs.get(s.state) ?? {}), vscode: { command: '/nonexistent/code-cli', container_path_prefix: '/app/workspace', host_path_prefix: '/Users/me/proj' } })
+    s.deps.agentConfig.invalidate()
+    await s.deps.agentConfig.read(s.state)
+    const res = await post(s, '/api/file/open-vscode', { session_id: sid, path: 'note.txt' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe("VS Code command not found: '/nonexistent/code-cli'. Install VS Code and ensure the 'code' CLI is on PATH, or set vscode.command in config.yaml to the full path.")
+    expect(s.deps.vscode().translate('/app/workspace/a.txt')).toBe('/Users/me/proj/a.txt')
+    expect(s.deps.vscode().translate('/elsewhere/a.txt')).toBe('/elsewhere/a.txt')
+    const cfg = configs.get(s.state) ?? {}
+    Reflect.deleteProperty(cfg, 'vscode')
+    configs.set(s.state, cfg)
+    s.deps.agentConfig.invalidate()
   })
 
   it('quota endpoints answer per-provider status without network for unsupported providers', async () => {

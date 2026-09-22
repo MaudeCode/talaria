@@ -51,7 +51,8 @@
  *   web/tests/test_issue_branch_context_at_fork.py
  * (issues #789, #1013, #1217, #1494, #1955, #2419, #2592, #2841, #2863, #2914, #3019, #3023, #3346, #3585, #3586, #3831, #3875, #3929, #3987, #4385, #4490, #4638, #4685, #4714, #4718, #4836, #4842, #4985, #5121, #5132, #5270, #5339, #5532, #5570, #5572, #5854, #6022, #6068, #6611, #6672, #6722, #6751, #6911, #7168) is covered here; see docs/architecture/regression-port-ledger.md.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -462,5 +463,44 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect((await post(s, '/api/file/delete', { session_id: sid, path: 'sub', recursive: true })).status).toBe(200)
     expect(readdirSync(ws)).not.toContain('sub')
     expect((await s.get('/api/list?session_id=deadbeef0000')).status).toBe(404)
+  })
+
+  it('file operations keep the Python validation contract: require(), Office guard, listing timestamps, launcher errors', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const sid = String((await newSession(s, { workspace: ws })).session_id)
+    // `require()` rejects empty strings and names every missing field.
+    let res = await post(s, '/api/file/create', { session_id: sid, path: '' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Missing required field(s): path')
+    res = await post(s, '/api/file/rename', { session_id: '', path: 'x', new_name: '' })
+    expect((await json(res)).error).toBe('Missing required field(s): session_id, new_name')
+    res = await post(s, '/api/file/move', { session_id: sid, path: 'x' })
+    expect((await json(res)).error).toBe('Missing required field(s): dest_dir')
+    // `recursive` is truthy-checked like `body.get("recursive")`.
+    mkdirSync(join(ws, 'rdir'))
+    expect((await post(s, '/api/file/delete', { session_id: sid, path: 'rdir', recursive: 1 })).status).toBe(200)
+    // Office documents are refused by the text save.
+    writeFileSync(join(ws, 'doc.docx'), 'PK\u0003\u0004binary')
+    res = await post(s, '/api/file/save', { session_id: sid, path: 'doc.docx', content: 'x' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Use /api/file/office-save for Office documents')
+    expect(readFileSync(join(ws, 'doc.docx'), 'utf8')).toBe('PK\u0003\u0004binary')
+    // Listing timestamps are decimal strings.
+    const listing = await json(await s.get(`/api/list?session_id=${sid}`))
+    const doc = (listing.entries as Json[]).find((e) => e.name === 'doc.docx')
+    expect(typeof doc?.mtime_ns).toBe('string')
+    // A NUL byte in a path is invalid input, not a lookup miss.
+    expect((await post(s, '/api/file/create', { session_id: sid, path: 'a\u0000b' })).status).toBe(400)
+    // A workspace the trust policy rejects makes the listing a 404 with the policy text (Python `_handle_list`).
+    const stray = mkdtempSync(join(tmpdir(), 'talaria-stray-'))
+    const strayed = s.deps.sessionStore.get(sid)
+    strayed.workspace = stray
+    s.deps.sessionStore.save(strayed)
+    res = await s.get(`/api/list?session_id=${sid}`)
+    expect(res.status).toBe(404)
+    expect(String((await json(res)).error)).toContain(stray)
+    rmSync(stray, { recursive: true, force: true })
+    strayed.workspace = ws
+    s.deps.sessionStore.save(strayed)
   })
 })

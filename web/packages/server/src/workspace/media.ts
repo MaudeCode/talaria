@@ -367,8 +367,9 @@ export function snapshotPathForDigest(snapshotDir: string, digest: string): stri
 
 export function snapshotServableForPath(snapshotDir: string, digest: string, target: string): boolean {
   if (!isValidDigest(digest)) return false
-  let want: string
-  try { want = realpathSync(target) } catch { return false }
+  // Python `Path.resolve()` (non-strict): a source that was deleted since capture still binds to its recorded path —
+  // surviving deletion is the snapshot's purpose.
+  const want = resolvePathLikePython(target)
   try {
     const data = JSON.parse(readFileSync(join(snapshotDir, `${digest}.src.json`), 'utf8')) as { sources?: unknown }
     return Array.isArray(data.sources) && data.sources.includes(want)

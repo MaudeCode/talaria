@@ -1,6 +1,6 @@
 /** Chat attachment uploads: multipart parsing, the per-session inbox, and rollback receipts (Python `api/upload.py`). */
-import { closeSync, lstatSync, mkdirSync, realpathSync, writeSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { closeSync, existsSync, lstatSync, mkdirSync, realpathSync, writeSync } from 'node:fs'
+import { basename, extname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { openAnchoredCreateFd, rmtreeAnchored, unlinkAnchored, FileExistsError } from './fs.js'
@@ -128,7 +128,9 @@ export class UploadInbox {
     const safeName = sanitizeUploadName(filename)
     const destDir = this.sessionDir(sessionId)
     mkdirSync(destDir, { recursive: true })
-    const dest = join(destDir, safeName)
+    // Python `_upload_destination`: a name already in the inbox gets `-1`, `-2`, ... (every clipboard paste is
+    // `image.png`); the 409 below is reserved for a duplicate that raced past this check.
+    const dest = uploadDestination(destDir, safeName)
     let fd: number
     try {
       fd = openAnchoredCreateFd(destDir, dest)
@@ -148,12 +150,27 @@ export class UploadInbox {
       try { unlinkAnchored(destDir, dest) } catch { /* ignore */ }
       throw error
     }
-    const mime = guessMime(safeName)
-    return { filename: safeName, path: dest, size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token }
+    // The response reports the name actually stored (Python `test_duplicate_upload_response_reports_actual_stored_filename`).
+    const stored = basename(dest)
+    const mime = guessMime(stored)
+    return { filename: stored, path: dest, size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token }
   }
 }
 
 export class UploadConflict extends Error {}
+
+export function uploadDestination(destDir: string, safeName: string): string {
+  const dest = join(destDir, safeName)
+  if (!existsSync(dest)) return dest
+  const ext = extname(safeName)
+  const stem = safeName.slice(0, safeName.length - ext.length)
+  for (let idx = 1; idx < 1000; idx += 1) {
+    const candidate = join(destDir, `${stem}-${String(idx)}${ext}`)
+    if (!existsSync(candidate)) return candidate
+  }
+  throw new UploadRejected('Too many uploads with the same filename')
+}
+
 export class UploadRejected extends Error {}
 
 /** Python `mimetypes.guess_type` for the common cases plus the media map. */

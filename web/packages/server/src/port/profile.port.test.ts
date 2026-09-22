@@ -407,6 +407,19 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(join(workHome, 'ws-config')))
   })
 
+  it('an empty workspace list falls back to the configured Home, never the profile last workspace (Python `_profile_default_workspace`)', async () => {
+    const last = join(workHome, 'ws-last-again')
+    mkdirSync(last, { recursive: true })
+    writeFileSync(join(workHome, 'webui_state', 'last_workspace.txt'), last)
+    writeFileSync(join(workHome, 'webui_state', 'workspaces.json'), '[]')
+    const body = await json(await s.get('/api/workspaces', { headers: asWork() }))
+    expect((body.workspaces as { path: string; name: string }[]).map((w) => ({ ...w, path: realpathSync(w.path) }))).toEqual([{ path: realpathSync(join(workHome, 'ws-config')), name: 'Home' }])
+    // `/api/profile/active` keeps preferring the profile's own last workspace.
+    expect(realpathSync(String((await json(await s.get('/api/profile/active', { headers: asWork() }))).default_workspace))).toBe(realpathSync(last))
+    rmSync(join(workHome, 'webui_state', 'workspaces.json'), { force: true })
+    rmSync(join(workHome, 'webui_state', 'last_workspace.txt'), { force: true })
+  })
+
   it('[py:test_issue1880_profile_scoped_skills.py::test_api_skills_list_and_content_respect_profile_cookie] skills list and content read the cookie profile home', async () => {
     skillRows.set(s.state, [{ name: 'root-skill', description: '', category: null, disabled: false }])
     skillRows.set(workHome, [{ name: 'work-skill', description: '', category: null, disabled: false }])

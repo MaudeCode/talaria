@@ -4,7 +4,7 @@ import { closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, unlinkAnchored } from './fs.js'
+import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored } from './fs.js'
 
 describe('anchored walk', () => {
   let root = ''
@@ -167,5 +167,29 @@ describe('anchored walk', () => {
     try { expect(fstatSync(fd).isFile()).toBe(false) } finally { closeSync(fd) }
     // Writes: refused before any truncation.
     expect(() => openAnchoredWriteFd(root, fifo)).toThrow(NotFoundError)
+  })
+})
+
+describe('dir_signature parity', () => {
+  it('hashes a listing exactly as the Python `dir_signature` did (bare integer mtime_ns, sorted compact JSON)', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'talaria-sig-'))
+    try {
+      writeFileSync(join(ws, 'é name.txt'), 'x')
+      mkdirSync(join(ws, 'sub'))
+      const entries = listDir(ws, '.')
+      const ours = dirSignature(ws, '.', entries)
+      const py = spawnSync('python3', ['-c', `
+import json, sys, hashlib
+entries = json.loads(sys.stdin.read())
+payload = [{'name': e.get('name'), 'path': e.get('path'), 'type': e.get('type'), 'is_dir': e.get('is_dir'), 'size': e.get('size'), 'mtime_ns': e.get('mtime_ns'), 'target': e.get('target'), 'target_outside_workspace': e.get('target_outside_workspace')} for e in entries]
+raw = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+print(hashlib.sha256(raw.encode('utf-8')).hexdigest())`], { encoding: 'utf8', input: JSON.stringify(entries.map((e) => ({ ...e, mtime_ns: e.mtime_ns === null || e.mtime_ns === undefined ? null : `\u0000${e.mtime_ns.toString()}\u0000`, birthtime_ns: undefined }))).replaceAll(/"\\u0000(\d+)\\u0000"/g, '$1') })
+      expect(py.status).toBe(0)
+      expect(ours).toBe(py.stdout.trim())
+      // The browser payload carries the timestamps as decimal strings, as Python did.
+      expect(typeof serializeEntriesForBrowser(entries)[0]?.mtime_ns).toBe('string')
+    } finally {
+      rmSync(ws, { recursive: true, force: true })
+    }
   })
 })

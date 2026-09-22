@@ -66,7 +66,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { readZip } from '../workspace/unzip.js'
-import { FOLDER_ZIP_MAX_FILES_CEILING, FOLDER_ZIP_MAX_MB_CEILING, folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
+import { folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
 import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { appendFileSync, closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -216,10 +216,10 @@ describe('raw byte routes', () => {
     }
   })
 
-  it('clamps the folder download limits to what ZIP32 records can describe', () => {
-    expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '999999' })).toBe(FOLDER_ZIP_MAX_MB_CEILING * 1024 * 1024)
+  it('honours the configured folder download limits as given, like Python', () => {
+    expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '999999' })).toBe(999999 * 1024 * 1024)
     expect(folderZipMaxBytes({ HERMES_WEBUI_FOLDER_ZIP_MAX_MB: '512' })).toBe(512 * 1024 * 1024)
-    expect(folderZipMaxFiles({ HERMES_WEBUI_FOLDER_ZIP_MAX_FILES: '1000000' })).toBe(FOLDER_ZIP_MAX_FILES_CEILING)
+    expect(folderZipMaxFiles({ HERMES_WEBUI_FOLDER_ZIP_MAX_FILES: '1000000' })).toBe(1000000)
     expect(folderZipMaxFiles({})).toBe(50000)
   })
 
@@ -258,8 +258,14 @@ describe('raw byte routes', () => {
     expect(upload.is_image).toBe(false)
     expect(String(upload.path)).toBe(join(realpathSync(s.state), 'attachments', sid, 'evil_name.txt'))
     expect(readFileSync(String(upload.path), 'utf8')).toBe('payload')
+    // A second upload with the same name is stored as `name-1.ext` and the response reports the stored name.
     res = await s.get('/api/upload', { method: 'POST', body, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
-    expect(res.status).toBe(409)
+    expect(res.status).toBe(200)
+    const second = await json(res)
+    expect(second.filename).toBe('evil_name-1.txt')
+    expect(String(second.path)).toBe(join(realpathSync(s.state), 'attachments', sid, 'evil_name-1.txt'))
+    expect(readFileSync(String(upload.path), 'utf8')).toBe('payload')
+    expect(readFileSync(String(second.path), 'utf8')).toBe('payload')
     // The inbox also backs /api/file/raw for the session.
     res = await s.get(`/api/file/raw?session_id=${sid}&path=evil_name.txt`)
     expect(res.status).toBe(200)
@@ -372,6 +378,17 @@ describe('raw byte routes', () => {
     expect(await res.text()).toBe('frozen')
     expect((await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'page.html'))}&snap=${digest}`)).status).toBe(410)
     expect((await s.get(`/api/media?path=${encodeURIComponent(join(snapDir, `${digest}.snap`))}`)).status).toBe(403)
+    // The snapshot outlives its source: a deleted live file still replays its frozen bytes (Python non-strict resolve).
+    writeFileSync(join(ws, 'gone.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]))
+    const goneDigest = 'b'.repeat(64)
+    writeFileSync(join(snapDir, `${goneDigest}.snap`), 'frozen-gone')
+    writeFileSync(join(snapDir, `${goneDigest}.src.json`), JSON.stringify({ digest: goneDigest, sources: [realpathSync(join(ws, 'gone.png'))] }))
+    rmSync(join(ws, 'gone.png'))
+    res = await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'gone.png'))}&snap=${goneDigest}`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('frozen-gone')
+    // A leading tilde is not expanded (Python `Path(raw).resolve()`), so it never reaches an allowed root.
+    expect((await s.get(`/api/media?path=${encodeURIComponent('~/photo.png')}`)).status).not.toBe(200)
     // A snapshot file replaced by a hard link to a state file is refused on the opened inode, like live media.
     writeFileSync(join(s.state, 'settings.json'), '{"secret":true}')
     rmSync(join(snapDir, `${digest}.snap`))

@@ -31,8 +31,8 @@ import { SessionService } from './sessions/service.js'
 import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
 import { resolvePathLikePython } from './workspace/paths.js'
-import { existsSync, statSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
+import { basename, delimiter, dirname, join } from 'node:path'
 import type { Session } from './sessions/session.js'
 import { GitRunner, GitWorkspaceError } from './workspace/git.js'
 import { RollbackStore } from './workspace/rollback.js'
@@ -364,15 +364,33 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   settings.hooks.defaultModel = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); if (!cfg) return ''; if (typeof cfg.model === 'string') return cfg.model.trim(); const d = asDict(cfg.model).default; return typeof d === 'string' ? d.trim() : '' }
   settings.hooks.defaultModelProvider = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); const p = asDict(cfg?.model).provider; return typeof p === 'string' && p ? p : undefined }
   const terminals = new TerminalRegistry({ env, now: () => Date.now(), log, ...(opts.pty !== undefined ? { pty: opts.pty } : {}) })
-  const vscode = () => ({
-    configuredCommand: 'code',
-    command: (): string | null => {
-      for (const dir of (env.PATH ?? '').split(':')) if (dir && existsSync(join(dir, 'code'))) return join(dir, 'code')
-      for (const fb of ['/usr/local/bin/code', '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code', '/usr/bin/code', '/snap/bin/code']) if (existsSync(fb)) return fb
-      return null
-    },
-    translate: (path: string) => path,
-  })
+  // Python `_handle_file_open_vscode` / `_handle_file_reveal`: `vscode.command`, `vscode.container_path_prefix` and
+  // `vscode.host_path_prefix` from the active profile's config.yaml (Docker host/container path translation).
+  const vscode = () => {
+    const cfg = asDict(agentConfig.peek(profileHome(activeProfile()))?.vscode)
+    const configuredCommand = (typeof cfg.command === 'string' && cfg.command.trim()) || 'code'
+    const containerPrefix = typeof cfg.container_path_prefix === 'string' ? cfg.container_path_prefix : ''
+    const hostPrefix = typeof cfg.host_path_prefix === 'string' ? cfg.host_path_prefix : ''
+    const executable = (p: string): boolean => { try { accessSync(p, fsConstants.X_OK); return statSync(p).isFile() } catch { return false } }
+    return {
+      configuredCommand,
+      command: (): string | null => {
+        // `shutil.which`: an absolute or relative command is checked as-is, a bare name is searched on PATH.
+        if (configuredCommand.includes('/')) return executable(configuredCommand) ? configuredCommand : null
+        for (const dir of (env.PATH ?? '').split(delimiter)) if (dir && executable(join(dir, configuredCommand))) return join(dir, configuredCommand)
+        const local = env.LOCALAPPDATA ?? ''
+        const fallbacks = ['/usr/local/bin/code', '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code', '/usr/bin/code', '/snap/bin/code',
+          local ? join(local, 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd') : '', join(env.PROGRAMFILES ?? 'C:\\Program Files', 'Microsoft VS Code', 'bin', 'code.cmd'), join(env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Microsoft VS Code', 'bin', 'code.cmd')]
+        for (const fb of fallbacks) if (fb && existsSync(fb)) return fb
+        return null
+      },
+      translate: (path: string): string => {
+        if (!containerPrefix || !hostPrefix) return path
+        const norm = `${containerPrefix.replace(/\/+$/, '')}/`
+        return path.startsWith(norm) || path === containerPrefix.replace(/\/+$/, '') ? hostPrefix + path.slice(containerPrefix.length) : path
+      },
+    }
+  }
   completions = new CompletionDrain({ sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
   const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
   // Dashboard reachability is probed in the background (Python `dashboard_probe.get_dashboard_status`), never per request.

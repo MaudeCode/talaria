@@ -5,7 +5,7 @@
  */
 import { closeSync, createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { Readable } from 'node:stream'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { fileOpsSession } from './sessions-router.js'
@@ -83,6 +83,7 @@ function handleFileRaw(ctx: RequestContext): void {
   if (!sid) throw new HttpError(400, 'session_id is required')
   const s = fileOpsSession(ctx, sid)
   const rel = ctx.query.get('path') ?? ''
+  if (rel.includes('\0')) throw new HttpError(400, 'invalid path')
   const forceDownload = ctx.query.get('download') === '1'
   const resolved = fileRawTarget(ctx, s.workspace, sid, rel)
   if (!resolved) {
@@ -123,7 +124,9 @@ function handleMedia(ctx: RequestContext): void {
   }
   let target: string
   try {
-    target = resolvePathLikePython(rawPath)
+    // Python `Path(raw).resolve()`: no `~` expansion (a leading tilde is a plain relative segment) and no NUL bytes.
+    if (rawPath.includes('\0')) throw new Error('embedded null byte')
+    target = resolvePathLikePython(rawPath.startsWith('~') ? resolve(process.cwd(), rawPath) : rawPath)
     try { target = realpathSync(target) } catch { /* keep the lexical resolution for missing paths */ }
   } catch {
     throw new HttpError(400, 'Invalid path')
@@ -186,21 +189,15 @@ function handleMedia(ctx: RequestContext): void {
   serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot, denyHardLinks: true })
 }
 
-/**
- * The writer emits plain ZIP32 records (no ZIP64), so the configurable limits are clamped to what those fields can
- * describe: 65 535 entries, and an archive under 4 GiB even after per-entry headers and deflate's worst-case growth.
- */
-export const FOLDER_ZIP_MAX_MB_CEILING = 4000
-export const FOLDER_ZIP_MAX_FILES_CEILING = 65_535
-
+/** Python `_folder_zip_limits`: `HERMES_WEBUI_FOLDER_ZIP_MAX_MB` / `_MAX_FILES` are honoured as given (ZIP64 covers large archives). */
 export function folderZipMaxBytes(env: Record<string, string | undefined>): number {
   const mb = Number.parseInt((env.HERMES_WEBUI_FOLDER_ZIP_MAX_MB ?? '1024').trim(), 10)
-  return Math.min(FOLDER_ZIP_MAX_MB_CEILING, Math.max(1, Number.isFinite(mb) ? mb : 1024)) * 1024 * 1024
+  return Math.max(1, Number.isFinite(mb) ? mb : 1024) * 1024 * 1024
 }
 
 export function folderZipMaxFiles(env: Record<string, string | undefined>): number {
   const n = Number.parseInt((env.HERMES_WEBUI_FOLDER_ZIP_MAX_FILES ?? '50000').trim(), 10)
-  return Math.min(FOLDER_ZIP_MAX_FILES_CEILING, Math.max(1, Number.isFinite(n) ? n : 50000))
+  return Math.max(1, Number.isFinite(n) ? n : 50000)
 }
 
 function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): { files: [string, string, number][]; total: number; limit: 'max_files' | 'max_bytes' | null } {
@@ -229,11 +226,10 @@ function collectFolder(target: string, workspaceRoot: string, maxBytes: number, 
       try { size = statSync(fp).size } catch { continue }
       if (files.length >= maxFiles) return { files, total, limit: 'max_files' }
       const arcname = relative(target, fp)
-      // Budget the ZIP32 record overhead (local header + descriptor + central entry, name twice) with the bytes.
-      const cost = size + 76 + 2 * Buffer.byteLength(arcname, 'utf8')
-      if (total + cost > maxBytes) return { files, total, limit: 'max_bytes' }
+      // Python compares the raw file bytes against the cap; record overhead is not charged.
+      if (total + size > maxBytes) return { files, total, limit: 'max_bytes' }
       files.push([fp, arcname, size])
-      total += cost
+      total += size
     }
     for (const sub of subdirs.reverse()) stack.push(sub)
   }
@@ -286,7 +282,7 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
       // had then, so the streamed total never exceeds the admitted limit (an empty file streams nothing).
       const body = size > 0 ? createReadStream('', { fd, autoClose: true, start: 0, end: size - 1 }) : (closeSync(fd), Readable.from([]))
       // Skip (not abort) an entry that fails mid-read, as Python did; the archive stays valid.
-      try { await zip.addFile(arcname, body) } catch (error) { if (ctx.res.destroyed) return; ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`) }
+      try { await zip.addFile(arcname, body, size) } catch (error) { if (ctx.res.destroyed) return; ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`) }
     }
     await zip.finish()
   } finally {
@@ -342,6 +338,7 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
   try {
     raw = await ctx.readRawBody(maxBytes)
   } catch {
+    // Node's parser already answers a garbage or negative Content-Length with 400 before this handler runs.
     ctx.json({ error: `Upload too large (max ${String(maxBytes)} bytes)` }, { status: 400 })
     return
   }
