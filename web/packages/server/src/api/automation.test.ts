@@ -575,6 +575,29 @@ describe('query parameters on non-GET routes (parity)', () => {
     expect(JSON.parse(body.text)).toEqual({ error: `Request body too large (${String(declared)} bytes, max 20971520)` })
   })
 
+  it('a chunked body is cut off at 20 MiB while it streams, with the Python message', async () => {
+    const chunk = Buffer.alloc(1024 * 1024, 0x20)
+    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port: s.running.port, path: '/api/session/rename', method: 'POST', headers: { 'content-type': 'application/json', 'transfer-encoding': 'chunked' } }, (res) => {
+        let text = ''
+        res.on('data', (c: Buffer) => { text += c.toString('utf8') })
+        res.on('end', () => { resolve({ status: res.statusCode ?? 0, text }); req.destroy() })
+      })
+      req.on('error', (error: NodeJS.ErrnoException) => { if (error.code !== 'EPIPE' && error.code !== 'ECONNRESET') reject(error) })
+      let sent = 0
+      const pump = (): void => {
+        while (sent < 22) {
+          sent += 1
+          if (!req.write(chunk)) { req.once('drain', pump); return }
+        }
+        req.end()
+      }
+      pump()
+    })
+    expect(body.status).toBe(413)
+    expect(body.text).toMatch(/^\{"error":"Request body too large \(\d+ bytes, max 20971520\)"\}$/)
+  })
+
   it('JSON responses over 1 KiB are gzipped for clients that accept gzip', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)

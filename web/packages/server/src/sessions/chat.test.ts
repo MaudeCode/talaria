@@ -534,6 +534,8 @@ describe('chat turns through the sidecar', () => {
       turn += 1
       if (turn === 1) return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'first done' }])
       emit({ event: 'approval', data: { request_id: 'succ-1', command: 'deploy', session_id: sid } })
+      emit({ event: 'clarify', data: { clarify_id: 'succ-c1', question: 'A?', session_id: sid } })
+      emit({ event: 'clarify', data: { clarify_id: 'succ-c2', question: 'B?', session_id: sid } })
       await new Promise<void>((resolve) => { releaseSecond = resolve })
       return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'second done' }])
     })
@@ -549,6 +551,13 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'succ-1' }, pending_count: 1 })
     sidecar.respond('approval.respond', (params) => ({ ok: true, resolved: 1, choice: params.choice }))
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'succ-1' }))).toEqual({ ok: true, choice: 'once' })
+    // ...and the successor's live emitter survived too: resolving the clarify head re-emits the next head on its stream.
+    sidecar.respond('clarify.respond', (params) => ({ ok: true, clarify_id: String(params.clarify_id) }))
+    const seen = await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}&after_event_id=${String(second.stream_id)}:0`, (f) => f.event === 'clarify' && (f.data as Json).pending_count === 2)
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'succ-c1', response: 'a' })).status).toBe(200)
+    const promoted = await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}&after_event_id=${String(second.stream_id)}:${String(seen.length)}`, (f) => f.event === 'clarify')
+    expect(promoted.filter((f) => f.event === 'clarify').map((f) => f.data)).toMatchObject([{ clarify_id: 'succ-c2', pending_count: 1 }])
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'succ-c2', response: 'b' })).status).toBe(200)
     releaseSecond()
     await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}&after_event_id=${String(second.stream_id)}:0`, (f) => f.event === 'stream_end')
     sidecar.respond('aux.complete', () => { throw new SidecarError('no aux model', { condition: 'aux_unconfigured' }) })

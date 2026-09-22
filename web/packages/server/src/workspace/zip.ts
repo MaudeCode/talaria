@@ -45,7 +45,9 @@ export class ZipWriter {
     const nameBuf = Buffer.from(name.split('\\').join('/'), 'utf8')
     const [time, date] = dosTime(this.now)
     const offset = this.offset
-    const zip64 = expectedSize >= ZIP64_LIMIT || offset >= ZIP64_LIMIT
+    // Python `zipfile.write`: `st_size * 1.05 > ZIP64_LIMIT` — the 5 % headroom covers deflate's worst-case growth on
+    // incompressible data, so the header format is settled before the compressed size could overflow it.
+    const zip64 = expectedSize * 1.05 > ZIP64_LIMIT || offset >= ZIP64_LIMIT
     const extra = zip64 ? Buffer.alloc(20) : Buffer.alloc(0)
     if (zip64) { extra.writeUInt16LE(0x0001, 0); extra.writeUInt16LE(16, 2) } // sizes follow in the descriptor
     const header = Buffer.alloc(30)

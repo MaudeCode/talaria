@@ -19,11 +19,11 @@ import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
 import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
-import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
+import { BodyError, RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
 import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
-import { coreRouter, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
+import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
 import { isSpaPath } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
 import { STARTUP_IMMEDIATE_PATHS } from './startup.js'
@@ -177,6 +177,30 @@ export interface CreateAppOptions {
 const ORPC_MAX_BODY_BYTES = 20 * 1024 * 1024
 const GZIP_MIN_BYTES = 1024
 
+/**
+ * Cap the bytes oRPC may buffer from a request body: a chunked body carries no `Content-Length`, so the declared-size
+ * check cannot bound it. Counting in `emit` keeps the stream in whatever mode oRPC's reader puts it; once over the
+ * limit the reader sees a `BodyError` (mapped to 413 by the root interceptor) and the rest of the body is dropped.
+ */
+function boundRequestBody(req: IncomingMessage, maxBytes: number): () => void {
+  if (req.method === 'GET' || req.method === 'HEAD') return () => undefined
+  const originalEmit = req.emit.bind(req)
+  let total = 0
+  let tripped = false
+  req.emit = ((event: string, ...args: unknown[]): boolean => {
+    if (event === 'data' && !tripped) {
+      total += (args[0] as Buffer).length
+      if (total > maxBytes) {
+        tripped = true
+        return originalEmit('error', new BodyError(`Request body too large (${String(total)} bytes, max ${String(maxBytes)})`))
+      }
+    }
+    if (tripped && (event === 'data' || event === 'end')) return false
+    return originalEmit(event, ...args)
+  }) as typeof req.emit
+  return () => { req.emit = originalEmit }
+}
+
 /** Buffer a JSON response written by oRPC and gzip it when the client accepts gzip and the body exceeds 1 KiB. */
 function gzipJsonResponse(req: { headers: IncomingHttpHeaders }, res: ServerResponse): void {
   const accept = req.headers['accept-encoding']
@@ -220,8 +244,13 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     // handler, so the node response is wrapped here.
     adapterInterceptors: [
       async (options) => {
+        const unbind = boundRequestBody(options.request as IncomingMessage, ORPC_MAX_BODY_BYTES)
         gzipJsonResponse(options.request, options.response as ServerResponse)
-        return options.next()
+        try {
+          return await options.next()
+        } finally {
+          unbind()
+        }
       },
     ],
     // Root level: oRPC converts thrown errors into responses below `interceptors`, so only here do error responses get the shared headers.
@@ -231,6 +260,16 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         // kanban arguments only as query items); oRPC's compact decode reads the body alone for non-GET, so the query
         // is merged in as the fallback for keys the body does not carry.
         const request = options.request
+        const readBody = request.body
+        // A body the byte cap tripped surfaces as the Python 413, not oRPC's generic 500.
+        request.body = async () => {
+          try {
+            return await readBody()
+          } catch (error) {
+            if (error instanceof BodyError) throw new HttpError(413, error.message)
+            throw error
+          }
+        }
         if (request.method !== 'GET' && request.url.searchParams.size > 0) {
           const query = Object.fromEntries(request.url.searchParams)
           const original = request.body

@@ -43,6 +43,9 @@ describe('ZipWriter', () => {
       const wideOut = createWriteStream(wide)
       const zip = new ZipWriter(wideOut)
       await zip.addFile('wide.bin', Readable.from([Buffer.from('payload')]), 0x1_0000_0000)
+      // Python `zipfile.write` picks ZIP64 from `st_size * 1.05`: a stat just under 4 GiB still gets ZIP64 records so
+      // an incompressible body cannot outgrow a ZIP32 header mid-stream.
+      await zip.addFile('near.bin', Readable.from([Buffer.from('payload')]), 0xffff_ffff - 1024)
       await zip.addFile('small.txt', Readable.from([Buffer.from('hello')]), 5)
       await zip.finish()
       await new Promise<void>((resolve, reject) => { wideOut.end(); wideOut.on('finish', resolve); wideOut.on('error', reject) })
@@ -56,7 +59,7 @@ describe('ZipWriter', () => {
       const check = spawnSync('python3', ['-c', `
 import sys, zipfile
 w = zipfile.ZipFile(sys.argv[1]); assert w.testzip() is None; assert w.read('wide.bin') == b'payload' and w.read('small.txt') == b'hello'
-assert w.getinfo('wide.bin').extract_version >= 45, w.getinfo('wide.bin').extract_version
+assert w.getinfo('wide.bin').extract_version >= 45, w.getinfo('wide.bin').extract_version; assert w.getinfo('near.bin').extract_version >= 45 and w.read('near.bin') == b'payload'; assert w.getinfo('small.txt').extract_version < 45
 m = zipfile.ZipFile(sys.argv[2]); assert len(m.namelist()) == 65536, len(m.namelist()); assert m.testzip() is None
 print('ok')`, wide, many], { encoding: 'utf8' })
       expect(check.stdout.trim()).toBe('ok')

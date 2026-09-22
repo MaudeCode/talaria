@@ -791,7 +791,6 @@ export class TurnRunner {
   }
 
   private teardown(sessionId: string, streamId: string): void {
-    this.sessionPuts.delete(sessionId)
     const writer = this.writers.get(streamId)
     if (writer) { try { writer.close() } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)
@@ -804,6 +803,7 @@ export class TurnRunner {
     // its own prompts: only the stream that still owns the session clears them.
     const successor = this.registry.activeRunStreamForSession(sessionId)
     if (!successor || successor === streamId) {
+      this.sessionPuts.delete(sessionId)
       this.deps.pending.clearApprovals(sessionId)
       this.deps.pending.clearClarifies(sessionId)
     }
