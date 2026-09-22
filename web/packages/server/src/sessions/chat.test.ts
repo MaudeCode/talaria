@@ -390,6 +390,16 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
     await new Promise((r) => setTimeout(r, 50))
     expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: failed.task_id, prompt: 'doomed', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    // The failure cleanup runs after the error writeback, so the hidden session does not get re-saved into the sidebar.
+    expect(existsSync(s.deps.sessionStore.pathFor(String(failed.session_id)))).toBe(false)
+    expect((await json(await s.get('/api/sessions'))).sessions as Json[]).not.toContainEqual(expect.objectContaining({ session_id: failed.session_id }))
+    // An Agent-reported error (no throw) completes and cleans up the same way.
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }], { status: 'error', error: 'model refused', final_response: '', token_sent: false }))
+    const inBand = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed too' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(inBand.stream_id)}&replay=1`, (f) => f.event === 'apperror')
+    await new Promise((r) => setTimeout(r, 50))
+    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: inBand.task_id, prompt: 'doomed too', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    expect(existsSync(s.deps.sessionStore.pathFor(String(inBand.session_id)))).toBe(false)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${str(params.user_message).split('\n').pop() ?? ''}` }]))
 
     res = await post(s, '/api/btw', { session_id: sid, question: 'what time is it' })

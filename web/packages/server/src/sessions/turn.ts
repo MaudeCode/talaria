@@ -325,6 +325,7 @@ export class TurnRunner {
     const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts, controller.signal)
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
+    let failed = false
     try {
       if (!sidecar) throw new SidecarError('The Agent sidecar is not running; chat is unavailable until it starts.', { condition: 'sidecar_unavailable' })
       // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
@@ -457,6 +458,7 @@ export class TurnRunner {
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
         put('apperror', payload)
+        failed = true
         return
       }
       // ── settle the transcript ──
@@ -582,7 +584,7 @@ export class TurnRunner {
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }
-      opts.onFailed?.()
+      failed = true
       if (this.registry.cancelled.has(streamId)) {
         this.finalizeCancelled(s, streamId, 'Task cancelled.', opts.ephemeral)
         put('cancel', this.cancelFrame(sessionId))
@@ -611,6 +613,9 @@ export class TurnRunner {
       put('apperror', payload)
     } finally {
       this.teardown(sessionId, streamId)
+      // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
+      // not race the error writeback above (a re-saved session would resurface in the sidebar).
+      if (failed) opts.onFailed?.()
     }
   }
 
