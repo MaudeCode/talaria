@@ -1,3 +1,4 @@
+import sceneCases from './__fixtures__/activity-scene-boundaries.json'
 import canonicalScene from './__fixtures__/activity-scene.json'
 import { describe, expect, it } from 'vitest'
 import { SessionSchema } from '../../contracts/session'
@@ -117,8 +118,38 @@ describe('canonical cross-client activity scene', () => {
       { row_id: 'b', role: 'thinking', text: 'Legacy reasoning', titles: ['Legacy title'] },
       { row_id: 'c', order_index: 2, role: 'prose', text: 'C' },
       { row_id: 'd', order_index: 'invalid', role: 'prose', text: 'D' },
+      { row_id: 'e', order_index: '0', role: 'prose', text: 'E' },
     ])
-    expect(items.map((item) => item.key)).toEqual(['b', 'a', 'c', 'd'])
-    expect(items[0]).toMatchObject({ text: 'Legacy reasoning', titles: ['Legacy title'] })
+    expect(items.map((item) => item.key)).toEqual(['e', 'b', 'a', 'c', 'd'])
+    expect(items[1]).toMatchObject({ text: 'Legacy reasoning', titles: ['Legacy title'] })
+  })
+})
+
+
+// Verbatim scene-bearing message fixtures from APIClientSessionDetailActivitySceneTests.swift.
+describe('canonical scene boundaries', () => {
+  it.each([
+    { name: 'explicitFinal', kinds: ['tool'], final: 'Done.' },
+    { name: 'steering', kinds: ['text', 'tool', 'steering', 'tool'], final: 'Done.' },
+    { name: 'activeSteering', kinds: ['text', 'steering'], final: '' },
+    { name: 'flattenedContent', kinds: ['text', 'tool'], final: 'Finished.' },
+    { name: 'malformedRows', kinds: ['reasoning', 'tool'], final: 'Finished.' },
+    { name: 'emptyRows', kinds: ['tool'], final: 'Done.' },
+  ])('preserves $name', async ({ name, kinds, final }) => {
+    const { persistedActivity } = await import('./turnActivity')
+    const session = SessionSchema.parse({ session_id: 'fixture', title: 'Scene', messages: [sceneCases[name as keyof typeof sceneCases]] })
+    const activity = persistedActivity(projectMessages(session.messages ?? [])[0]!)
+    expect(activity.items.map((item) => item.kind)).toEqual(kinds)
+    expect(activity.finalAnswer).toBe(final)
+    if (!final) expect(activity.status).not.toBe('completed')
+  })
+
+  it('removes only the last matching final prose, preserving earlier repeated progress', async () => {
+    const { sceneWorkItems } = await import('./turnActivity')
+    expect(sceneWorkItems([
+      { row_id: 'progress', role: 'prose', text: 'Done.' },
+      { row_id: 'final', role: 'prose', text: ' Done. ' },
+      { row_id: 'tool', role: 'tool', tool: { id: 't', name: 'terminal' } },
+    ], 'Done.').map((item) => item.key)).toEqual(['progress', 'tool:t'])
   })
 })

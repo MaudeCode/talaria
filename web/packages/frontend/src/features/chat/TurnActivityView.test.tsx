@@ -1,3 +1,4 @@
+import sceneCases from './__fixtures__/activity-scene-boundaries.json'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Transcript } from './Transcript'
@@ -154,6 +155,15 @@ describe('turn worklog presentation', () => {
       if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
       else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
     }
+  })
+
+  it.each(['compact_worklog', 'transparent_stream', 'hide_all_activity'] as const)('preserves recovered steering boundaries in %s', (mode) => {
+    const activity = persistedActivity(projectMessages([sceneCases.steering])[0]!)
+    const view = render(<View activity={activity} mode={mode} />)
+    if (mode === 'compact_worklog') fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    expect(view.container.querySelector('[data-activity-steering]')).toHaveTextContent('Stop after the next sleep')
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
+    if (mode === 'hide_all_activity') expect(view.container.querySelectorAll('[data-tool-id]')).toHaveLength(0)
   })
 
   it('copies a partial reply when there is no final answer', () => {

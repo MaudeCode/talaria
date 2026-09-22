@@ -39,6 +39,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.text} streaming={running && last} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={running && last} />
+      case 'steering': return <div key={item.key} className="anchor-steering-message mt-1 text-[12px] text-muted" data-activity-steering="1">{item.consumed ? m.live_steer_consumed({ text: item.text }) : item.text}</div>
       case 'tool': return <ToolCard key={item.key} call={item.call} />
     }
   }
@@ -46,9 +47,9 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
   for (let i = 0; i < items.length;) {
     const item = items[i]
     if (!item) break
-    if (item.kind === 'text' || mode !== 'compact_worklog') { blocks.push(render(item, i === items.length - 1)); i++; continue }
+    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog') { blocks.push(render(item, i === items.length - 1)); i++; continue }
     const start = i
-    while (i < items.length && items[i]?.kind !== 'text') i++
+    while (i < items.length && items[i]?.kind !== 'text' && items[i]?.kind !== 'steering') i++
     const run = items.slice(start, i)
     const contents = run.map((entry, j) => render(entry, start + j === items.length - 1))
     blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status}>{contents}</Worklog>)
@@ -60,6 +61,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork
         ? <Worklog calls={calls} status={status}>{earlier}{blocks}</Worklog>
         : <>{earlier}{blocks}</>)}
+      {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}
       {finalAnswer.trim() && <div className="msg-body" data-final-answer="1"><Markdown text={finalAnswer} /></div>}
     </DisclosureTurnContext>

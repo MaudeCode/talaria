@@ -1,3 +1,4 @@
+import sceneCases from '../src/features/chat/__fixtures__/activity-scene-boundaries.json' with { type: 'json' }
 import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.json' with { type: 'json' }
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
@@ -171,3 +172,39 @@ test(`canonical recovered scene preserves ordering and nested reasoning: ${pagin
   await expect(page.getByText('After tool.', { exact: true })).toHaveCount(1)
 })
 }
+
+
+for (const name of ['explicitFinal', 'steering', 'activeSteering'] as const) {
+  test(`restored scene boundary: ${name}`, async ({ page }) => {
+    const sid = `scene-${name}`
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Scene boundary', messages: [sceneCases[name]] } } }))
+    await page.goto(`/session/${sid}`)
+    const summary = page.locator('.tool-worklog-summary').first()
+    await expect(summary).toBeVisible()
+    if (await summary.getAttribute('aria-expanded') === 'false') await summary.click()
+    if (name === 'explicitFinal') {
+      await expect(page.locator('.activity-body').getByText('Done.', { exact: true })).toHaveCount(0)
+      await expect(page.getByText('Done.', { exact: true })).toHaveCount(1)
+      await expect(page.locator('[data-tool-id="call-1"] > button')).toBeVisible()
+    } else {
+      await expect(page.locator('[data-activity-steering]')).toContainText(name === 'steering' ? 'Stop after the next sleep' : 'Stop now')
+      await expect(page.locator('[data-activity-sequence-group]')).toHaveCount(0)
+      const kinds = await page.locator('.assistant-turn .msg-body, .assistant-turn [data-tool-id], .assistant-turn [data-activity-steering]').evaluateAll((nodes) => nodes.map((node) => node.hasAttribute('data-activity-steering') ? 'steering' : node.hasAttribute('data-tool-id') ? 'tool' : 'prose'))
+      expect(kinds).toEqual(name === 'steering' ? ['prose', 'tool', 'steering', 'tool', 'prose'] : ['prose', 'steering'])
+      if (name === 'activeSteering') {
+        await expect(page.locator('[data-final-answer]')).toHaveCount(0)
+        await expect(summary).not.toContainText('Worked')
+        await expect(page.getByText('First phase.', { exact: true })).toBeVisible()
+      }
+    }
+  })
+}
+
+test('final-only mode retains recovered user steering', async ({ page }) => {
+  await page.route('**/api/settings', (route) => route.fulfill({ json: { chat_activity_display_mode: 'hide_all_activity' } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'steer-hidden', title: 'Steering', messages: [sceneCases.steering] } } }))
+  await page.goto('/session/steer-hidden')
+  await expect(page.locator('[data-activity-steering]')).toContainText('Stop after the next sleep')
+  await expect(page.locator('[data-tool-id]')).toHaveCount(0)
+  await expect(page.getByText('Done.', { exact: true })).toBeVisible()
+})
