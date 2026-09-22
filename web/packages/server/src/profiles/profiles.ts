@@ -33,6 +33,8 @@ export interface ProfileDeps {
   models: (profileHome: string) => Promise<ModelsCatalog>
   /** True while any agent stream runs (blocks deleting the process-active profile). */
   streamsActive: () => boolean
+  /** Whether any live run's session belongs to the named profile (its home must not be removed underneath it). */
+  profileRunsActive: (name: string) => boolean
   log: (line: string) => void
 }
 
@@ -153,7 +155,9 @@ export class ProfileService {
     if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile deletion is not allowed in isolated profile mode.', 403)
     if (this.isRootProfile(name)) throw new ProfileError('Cannot delete the default profile.', 400)
     validateProfileName(name)
-    if (active === name && this.deps.streamsActive()) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
+    // Python guarded only the process-wide active profile; per-request profiles mean another client may be running a
+    // turn under the target profile, so any live run owned by it blocks the delete as well.
+    if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
     try {
       await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
     } catch (error) {

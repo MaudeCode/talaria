@@ -282,6 +282,11 @@ export class TurnRunner {
     const put = (event: string, data: Record<string, unknown>): void => {
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'pending_steer_leftover'].includes(event)) return
+      // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
+      if (event === 'cancel' && !this.registry.streams.has(streamId)) {
+        try { deps.onTerminal?.(streamId, 'cancelled') } catch { /* best effort */ }
+        return
+      }
       let eventId: string | null = null
       if (writer) {
         try {
@@ -914,7 +919,7 @@ export class TurnRunner {
   // ── cancel / steer ───────────────────────────────────────────────────────
 
   /** Python `cancel_stream`: persist the partial, mark cancelled, interrupt the Agent, release admission. */
-  cancel(streamId: string): boolean {
+  async cancel(streamId: string): Promise<boolean> {
     const channel = this.registry.peek(streamId)
     const run = this.registry.activeRuns.get(streamId)
     if (!channel && !run) return false
@@ -924,9 +929,13 @@ export class TurnRunner {
     const sessionId = this.registry.ownerSessionId(streamId) ?? run?.session_id ?? null
     this.registry.cancelled.add(streamId)
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
+    // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
+    // carries it so queued steers settle as consumed / leftover before the terminal row.
+    let leftover = ''
     const sidecar = this.deps.sidecar()
-    if (sidecar) sidecar.call('chat.interrupt', { stream_id: streamId }).catch(() => undefined)
-    this.abortControllers.get(streamId)?.abort()
+    if (sidecar) {
+      try { leftover = str((await sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 })).pending_steer) } catch { leftover = '' }
+    }
     if (sessionId) {
       let current: Session | null = null
       try { current = this.deps.store.get(sessionId) } catch { current = null }
@@ -934,15 +943,21 @@ export class TurnRunner {
         this.finalizeCancelled(current, streamId, 'Task cancelled.', run?.ephemeral)
       }
     }
-    if (channel) {
-      const payload = sessionId ? this.cancelFrame(sessionId) : this.cancelPayload()
-      let eventId: string | null = null
-      const writer = this.writers.get(streamId)
-      if (writer) { try { eventId = writer.appendSseEvent('cancel', payload).event_id } catch { eventId = null } }
-      channel.put(['cancel', payload, eventId])
+    // The worker may already have written its terminal row while the interrupt was in flight; the stream is then
+    // gone from the registry and this path must not add a second one.
+    if (channel && this.registry.streams.has(streamId)) {
+      const writer = this.writers.get(streamId) ?? null
+      const emit = (event: string, data: Record<string, unknown>): void => {
+        let eventId: string | null = null
+        if (writer) { try { eventId = writer.appendSseEvent(event, data).event_id } catch { eventId = null } }
+        channel.put([event, data, eventId])
+      }
+      if ((this.steers.get(streamId) ?? []).length) for (const [event, data] of this.finalizeSteerEvents(streamId, leftover)) emit(event, data)
+      emit('cancel', sessionId ? this.cancelFrame(sessionId) : this.cancelPayload())
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
     }
+    this.abortControllers.get(streamId)?.abort()
     return true
   }
 

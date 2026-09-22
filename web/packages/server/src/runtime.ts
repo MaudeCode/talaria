@@ -348,6 +348,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     defaultWorkspace: (profile) => workspaces.profileDefaultWorkspace(profile),
     models: (h) => catalog.models(h),
     streamsActive: () => activeStreamIds.size > 0,
+    profileRunsActive: (name) => {
+      for (const run of registry.activeRuns.values()) {
+        let profile: string | null = null
+        try { profile = store.get(run.session_id, { metadataOnly: true }).profile ?? null } catch { continue }
+        if (profiles.isRootProfile(profile ?? 'default') ? profiles.isRootProfile(name) : profile === name) return true
+      }
+      return false
+    },
     log,
   }, now)
   rootAlias = (name) => profiles.isRootProfile(name)

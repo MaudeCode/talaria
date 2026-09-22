@@ -371,6 +371,30 @@ describe('chat turns through the sidecar', () => {
     expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
   })
 
+  it('a Stop with a queued steer settles the steer as a leftover before the single cancel row', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    // The sidecar drains the Agent's unapplied steer text on interrupt (Python `_finalize_webui_steers`).
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'never applied' }))
+    sidecar.respond('chat.start', (params, _emit, opts) => new Promise((resolve) => {
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))
+    const streamId = String(start.stream_id)
+    expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', steer_id: 'steer-x' }))).accepted).toBe(true)
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
+    const names = frames.map((f) => f.event)
+    expect(names.indexOf('pending_steer_leftover')).toBeGreaterThan(-1)
+    expect(names.indexOf('pending_steer_leftover')).toBeLessThan(names.indexOf('cancel'))
+    expect(frames.find((f) => f.event === 'pending_steer_leftover')?.data).toMatchObject({ steer_id: 'steer-x', text: 'never applied' })
+    // The worker's unwind adds nothing after the terminal row: replay from the start still ends on that one cancel.
+    await new Promise((r) => setTimeout(r, 100))
+    const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
+    expect(replay.filter((f) => f.event === 'cancel')).toHaveLength(1)
+    expect(replay.filter((f) => f.event === 'pending_steer_leftover')).toHaveLength(1)
+  })
+
   it('runs background tasks and side questions in hidden sessions', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${str(params.user_message).split('\n').pop() ?? ''}` }]))
@@ -526,8 +550,11 @@ describe('chat turns through the sidecar', () => {
       while (!(s.deps.registry.activeRuns.get(streamId)?.phase === 'running') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
       expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
       releaseConfig()
-      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel' && (f.data as Json).message === 'Cancelled before start')
-      expect(frames.filter((f) => f.event === 'cancel').map((f) => (f.data as Json).message)).toEqual(['Cancelled by user', 'Cancelled before start'])
+      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
+      // Exactly one terminal row: the cancel route wrote it, the worker's "before start" unwind adds no second one.
+      await new Promise((r) => setTimeout(r, 50))
+      const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
+      expect([...frames, ...replay].filter((f) => f.event === 'cancel').map((f) => (f.data as Json).message)).toEqual(['Cancelled by user', 'Cancelled by user'])
       expect(starts).toBe(0)
     } finally {
       turns.deps.profileConfig = original

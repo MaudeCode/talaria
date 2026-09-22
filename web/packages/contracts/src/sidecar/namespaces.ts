@@ -236,7 +236,7 @@ export const CHAT_METHODS = {
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,
   },
-  'chat.interrupt': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }), result: z.object({ ok: z.boolean(), reason: z.string().optional() }) },
+  'chat.interrupt': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }), result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional() }) },
   'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional() }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },

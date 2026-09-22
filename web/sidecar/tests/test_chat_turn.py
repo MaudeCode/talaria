@@ -103,7 +103,17 @@ def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monke
     assert chat.register.__module__  # module import sanity
     run_obj = chat._run_for({"stream_id": "st-3"})
     assert run_obj is not None
-    run_obj.cancel.set()
+    # `chat.interrupt` drains the Agent's unapplied steer text (predecessor `_finalize_webui_steers`) so the server can
+    # settle queued steers before its terminal cancel row.
+    run_obj.agent._pending_steer = "prefer tests"
+    run_obj.agent._drain_pending_steer = lambda: run_obj.agent.__dict__.pop("_pending_steer", "")
+    from talaria_sidecar.methods import Registry
+
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    reply = registry.methods["chat.interrupt"](Ctx(), {"stream_id": "st-3"})
+    assert reply == {"ok": True, "pending_steer": "prefer tests"}
+    assert getattr(run_obj.agent, "_pending_steer", "") == ""
     worker.join(5)
     assert not worker.is_alive()
     agent = FakeAgent.instances[0]

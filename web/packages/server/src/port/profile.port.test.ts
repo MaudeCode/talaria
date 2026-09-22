@@ -497,6 +497,33 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
   })
 
+  it('deleting a profile is refused while any client runs a turn under it, even from another profile', async () => {
+    // The turn runs under `research` (cookie), the delete is issued from `work`: Python's active-profile check alone
+    // would let the sidecar remove `research`'s home while its Agent still uses it.
+    const switched = await post(s, '/api/profile/switch', { name: 'research' })
+    const researchCookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(researchCookie).toMatch(/^hermes_profile=research/)
+    const created = await post(s, '/api/session/new', { profile: 'research' }, { cookie: researchCookie })
+    expect(created.status, await created.clone().text()).toBe(200)
+    const sid = String(((await json(created)).session as Json).session_id)
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'working' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ status: 'cancelled', messages: [{ role: 'user', content: str(params.user_message) }], final_response: '', error: null, result_status: 'cancelled', tool_limit_reached: false, usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }) })
+    }))
+    const startRes = await post(s, '/api/chat/start', { session_id: sid, message: 'busy' }, { cookie: researchCookie })
+    expect(startRes.status, await startRes.clone().text()).toBe(200)
+    const streamId = String((await json(startRes)).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token', { headers: { cookie: researchCookie } })
+    const deletes = sidecar.calls.filter((c) => c.method === 'profiles.delete').length
+    const res = await post(s, '/api/profile/delete', { name: 'research' }, asWork())
+    expect(res.status).toBe(409)
+    expect(String((await json(res)).error)).toContain('while an agent is running')
+    expect(sidecar.calls.filter((c) => c.method === 'profiles.delete')).toHaveLength(deletes)
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`, { headers: { cookie: researchCookie } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel', { headers: { cookie: researchCookie } })
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

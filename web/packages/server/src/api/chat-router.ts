@@ -167,11 +167,11 @@ export const chatRouter = os.router({
       if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
       return ctx.deps.turns.steer(sid, text, display, steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
     })),
-    cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(() => {
+    cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')
       if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
-      const cancelled = ctx.deps.turns.cancel(streamId)
+      const cancelled = await ctx.deps.turns.cancel(streamId)
       return { ok: true, cancelled, stream_id: streamId }
     })),
     streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(() => {

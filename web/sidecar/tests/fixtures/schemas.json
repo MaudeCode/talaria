@@ -3662,6 +3662,9 @@
       },
       "reason": {
         "type": "string"
+      },
+      "pending_steer": {
+        "type": "string"
       }
     },
     "required": [

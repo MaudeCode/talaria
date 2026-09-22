@@ -635,7 +635,17 @@ def register(registry) -> None:
         if run is None:
             return {"ok": False, "reason": "not_running"}
         run.cancel.set()
-        return {"ok": True}
+        # Predecessor ``_finalize_webui_steers``: drain the Agent's not-yet-applied steer text so the server can
+        # settle queued steers (consumed vs leftover) before it writes the terminal cancel row.
+        pending = ""
+        agent = run.agent
+        if agent is not None:
+            drain = getattr(agent, "_drain_pending_steer", None)
+            try:
+                pending = str(drain() or "") if callable(drain) else _agent_pending_steer_text(agent)
+            except Exception:  # noqa: BLE001
+                pending = _agent_pending_steer_text(agent)
+        return {"ok": True, "pending_steer": pending}
 
     @registry.method("chat.steer", requires_agent=False)
     def steer_(ctx: CallContext, params: dict) -> dict:
