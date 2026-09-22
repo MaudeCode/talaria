@@ -153,10 +153,26 @@ describe('crons, kanban, extensions, terminal', () => {
     const pending = post(s, '/api/crons/run', { job_id: 'job1' })
     await dispatch
     // The RPC owns work before its started event, too; a failed start releases it.
-    expect(s.deps.updates.blockedResponse('webui')).toMatchObject({ restart_blocked: true, active_cron_jobs: 1 })
-    expect(await json(await post(s, '/api/crons/run', { job_id: 'job1' }))).toMatchObject({ status: 'already_running' })
-    rejectRun(new Error('synthetic start failure'))
-    expect((await pending).status).toBe(500)
+    try {
+      expect(s.deps.updates.blockedResponse('webui')).toMatchObject({ restart_blocked: true, active_cron_jobs: 1 })
+      expect(await json(await post(s, '/api/crons/run', { job_id: 'job1' }))).toMatchObject({ status: 'already_running' })
+    } finally {
+      rejectRun(new Error('synthetic start failure'))
+      expect((await pending).status).toBe(500)
+    }
+    expect(s.deps.updates.blockedResponse('webui')).toBeNull()
+    let validating!: () => void
+    const validation = new Promise<void>((resolve) => { validating = resolve })
+    let rejectValidation!: (error: Error) => void
+    sidecar.respond('cron.get', () => { validating(); return new Promise((_resolve, reject) => { rejectValidation = reject }) })
+    const pendingValidation = post(s, '/api/crons/run', { job_id: 'job1' })
+    await validation
+    try {
+      expect(s.deps.updates.blockedResponse('webui')).toMatchObject({ restart_blocked: true, active_cron_jobs: 1 })
+    } finally {
+      rejectValidation(new Error('synthetic validation failure'))
+      expect((await pendingValidation).status).toBe(404)
+    }
     expect(s.deps.updates.blockedResponse('webui')).toBeNull()
     res = await s.get('/api/crons/history?job_id=../x')
     expect(res.status).toBe(400)
