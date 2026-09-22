@@ -4,7 +4,8 @@
  * `delete_profile_api`). Rows come from the sidecar (`profiles.*`, the Agent's
  * own per-profile readers); the per-request active profile stays a cookie.
  */
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { atomicWriteText } from '../fs/atomic.js'
 import { join, resolve } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
@@ -35,6 +36,8 @@ export interface ProfileDeps {
   streamsActive: () => boolean
   /** Whether any live run's session belongs to the named profile (its home must not be removed underneath it). */
   profileRunsActive: (name: string) => boolean
+  /** Deletion tombstones survive restarts here, so a still-valid cookie cannot recreate a deleted profile later. */
+  tombstoneFile?: string
   log: (line: string) => void
 }
 
@@ -46,7 +49,9 @@ export function validateProfileName(name: string): void {
 export class ProfileService {
   private cache: { at: number; rows: Dict[] } | null = null
 
-  constructor(private readonly deps: ProfileDeps, private readonly now: () => number = () => Date.now() / 1000) {}
+  constructor(private readonly deps: ProfileDeps, private readonly now: () => number = () => Date.now() / 1000) {
+    for (const name of this.loadTombstones()) this.deleted.add(name)
+  }
 
   /** Also forgets the root-alias snapshot (Python `_invalidate_root_profile_cache`); the next lookup reloads it. */
   invalidate(): void {
@@ -148,6 +153,15 @@ export class ProfileService {
       }
     }
     const params = { base_home: this.deps.baseHome, name: opts.name, ...(opts.clone_from ? { clone_from: opts.clone_from } : {}), clone_config: Boolean(opts.clone_config) }
+    // The clone source is read by the sidecar during creation: hold a write lease on it so its deletion waits (and
+    // a source already being deleted / deleted is refused before anything is created).
+    let releaseSource: (() => void) | null = null
+    if (opts.clone_from && !this.isRootProfile(opts.clone_from)) {
+      const lease = this.beginWrite(opts.clone_from)
+      if (lease === 'deleting') throw new ProfileError(`Profile '${opts.clone_from}' is being deleted.`, 409)
+      if (lease === 'missing') throw new ProfileError(`Profile '${opts.clone_from}' does not exist.`, 404)
+      releaseSource = lease
+    }
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
     const created = await this.withLifecycle(opts.name, async () => {
@@ -164,9 +178,9 @@ export class ProfileService {
       if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
       // The deletion tombstone lifts only once the recreation fully succeeded: a stale cookie stays refused while the
       // RPC is pending or after it failed.
-      this.deleted.delete(opts.name)
+      if (this.deleted.delete(opts.name)) this.saveTombstones()
       return row
-    })
+    }).finally(() => { releaseSource?.() })
     const rows = await this.list('default')
     return rows.find((r) => str(r.name) === opts.name) ?? { ...created, is_active: false }
   }
@@ -183,8 +197,21 @@ export class ProfileService {
 
   /** Profiles whose deletion RPC is in flight: turn admission refuses them so no run enters the check-to-use window. */
   private readonly deleting = new Set<string>()
-  /** Profiles this process deleted: a client still carrying their cookie must not write them back into existence. */
+  /** Deleted profiles (persisted): a client still carrying their cookie must not write them back into existence. */
   private readonly deleted = new Set<string>()
+
+  private loadTombstones(): string[] {
+    if (!this.deps.tombstoneFile) return []
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(this.deps.tombstoneFile, 'utf8'))
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string' && PROFILE_ID_RE.test(v)) : []
+    } catch { return [] }
+  }
+
+  private saveTombstones(): void {
+    if (!this.deps.tombstoneFile) return
+    try { atomicWriteText(this.deps.tombstoneFile, JSON.stringify([...this.deleted].sort())) } catch (error) { this.deps.log(`[webui] WARNING: could not persist profile tombstones: ${(error as Error).message}`) }
+  }
 
   isDeleting(name: string | null): boolean {
     return name !== null && this.deleting.has(name)
@@ -252,6 +279,7 @@ export class ProfileService {
       this.deleting.delete(name)
     }
     this.deleted.add(name)
+    this.saveTombstones()
     this.invalidate()
     return { ok: true, name }
   }

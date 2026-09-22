@@ -208,12 +208,25 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     contextInflight.set(key, run)
     return run
   }
+  /** Detached sidecar work per profile (memory commits) that deletion has to wait out like a live run. */
+  const profileOps = new Map<string, number>()
   const sessions = new SessionService({
     journal,
     store,
     cliSessions: (profile, o) => cliSessions.load(profile, o),
     profileHome,
-    commitSessionMemory: (sid) => { if (sidecar) void sidecar.call('chat.commit_memory', { session_id: sid }).catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) }) },
+    // The commit runs detached from the request, so it is registered as profile activity until it settles: profile
+    // deletion must not remove the memory files the cached Agent is still writing.
+    commitSessionMemory: (sid) => {
+      if (!sidecar) return
+      let profile: string | null = null
+      try { profile = store.get(sid, { metadataOnly: true }).profile ?? null } catch { profile = null }
+      const key = profile ?? 'default'
+      profileOps.set(key, (profileOps.get(key) ?? 0) + 1)
+      void sidecar.call('chat.commit_memory', { session_id: sid })
+        .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
+        .finally(() => { const n = (profileOps.get(key) ?? 1) - 1; if (n > 0) profileOps.set(key, n); else profileOps.delete(key) })
+    },
     drafts,
     events,
     workspaces,
@@ -370,8 +383,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
         try { profile = store.get(sessionId, { metadataOnly: true }).profile ?? null } catch { continue }
         if (profiles.isRootProfile(profile ?? 'default') ? profiles.isRootProfile(name) : profile === name) return true
       }
+      for (const [profile, count] of profileOps) if (count > 0 && (profiles.isRootProfile(profile) ? profiles.isRootProfile(name) : profile === name)) return true
       return false
     },
+    tombstoneFile: join(config.stateDir, 'deleted-profiles.json'),
     log,
   }, now)
   rootAlias = (name) => profiles.isRootProfile(name)

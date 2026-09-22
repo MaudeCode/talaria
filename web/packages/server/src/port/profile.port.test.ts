@@ -13,7 +13,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadStartupEnv } from '../cli/dotenv.js'
 import { ProjectStore } from '../projects.js'
-import { splitProviderModel } from '../profiles/profiles.js'
+import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
 import { jobForApi } from '../tools/crons.js'
 import { str } from '../util.js'
 import { writeEnvFile } from '../providers/env-file.js'
@@ -668,6 +668,60 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=default/)
     const unrelated = await post(s, '/api/profile/delete', { name: 'nonexistent-zz' }, asWork())
     expect(unrelated.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('deletion tombstones are persisted and honoured by a fresh service instance', async () => {
+    mkdirSync(join(s.state, 'profiles', 'ephemeral'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'ephemeral', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    expect(await json(await post(s, '/api/profile/delete', { name: 'ephemeral' }, asWork()))).toEqual({ ok: true, name: 'ephemeral' })
+    const file = join(s.deps.config.stateDir, 'deleted-profiles.json')
+    expect(JSON.parse(readFileSync(file, 'utf8')) as string[]).toContain('ephemeral')
+    // A restarted server reads the tombstones back: the stale cookie is still refused.
+    const restarted = new ProfileService({ ...(s.deps.profiles as unknown as { deps: ConstructorParameters<typeof ProfileService>[0] }).deps })
+    expect(restarted.beginWrite('ephemeral')).toBe('missing')
+    expect(typeof restarted.beginWrite('work')).toBe('function')
+  })
+
+  it('a profile being cloned from cannot be deleted until the clone finishes', async () => {
+    mkdirSync(join(s.state, 'profiles', 'source'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'source', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const order: string[] = []
+    let finishCreate: () => void = () => undefined
+    sidecar.respond('profiles.create', (params) => new Promise((resolve) => { finishCreate = () => { order.push('create'); mkdirSync(join(s.state, 'profiles', params.name), { recursive: true }); resolve({ profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never }) } }))
+    sidecar.respond('profiles.delete', (params) => { order.push('delete'); rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const creating = post(s, '/api/profile/create', { name: 'copy', clone_from: 'source', clone_config: true })
+    const until = Date.now() + 5000
+    while (!sidecar.calls.some((c) => c.method === 'profiles.create' && (c.params as Json).name === 'copy') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    const deleting = post(s, '/api/profile/delete', { name: 'source' }, asWork())
+    await new Promise((r) => setTimeout(r, 80))
+    expect(order).toEqual([])
+    finishCreate()
+    expect((await creating).status, await (await creating).clone().text()).toBe(200)
+    expect(await json(await deleting)).toEqual({ ok: true, name: 'source' })
+    expect(order).toEqual(['create', 'delete'])
+    // Cloning from a profile that is gone is refused up front.
+    expect((await post(s, '/api/profile/create', { name: 'copy2', clone_from: 'source' })).status).toBe(404)
+  })
+
+  it('a detached memory commit counts as profile activity, so the profile cannot be deleted underneath it', async () => {
+    mkdirSync(join(s.state, 'profiles', 'memo'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'memo', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'memo' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    const first = String(((await json(await post(s, '/api/session/new', { profile: 'memo' }, { cookie }))).session as Json).session_id)
+    let finishCommit: () => void = () => undefined
+    sidecar.respond('chat.commit_memory', () => new Promise((resolve) => { finishCommit = () => { resolve({ committed: true }) } }))
+    expect((await post(s, '/api/session/new', { profile: 'memo', prev_session_id: first }, { cookie })).status).toBe(200)
+    sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const refused = await post(s, '/api/profile/delete', { name: 'memo' }, asWork())
+    expect(refused.status).toBe(409)
+    finishCommit()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(await json(await post(s, '/api/profile/delete', { name: 'memo' }, asWork()))).toEqual({ ok: true, name: 'memo' })
   })
 
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
