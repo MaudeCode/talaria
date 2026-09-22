@@ -303,6 +303,29 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it.each(['disabled', 'checks-disabled', 'channel', 'shutdown'])('finishes a mutated source update when %s changes during its build', async (change) => {
+    const s = sourceInstall()
+    let enabled = true
+    let checks = true
+    const opts = { channel: 'experimental' as 'stable' | 'experimental', autoApply: () => enabled, checkEnabled: () => checks }
+    const build = s.build
+    s.build = async (...args) => {
+      expect(svc.blocksNewWork()).toBe(true)
+      if (change === 'disabled') enabled = false
+      else if (change === 'checks-disabled') checks = false
+      else if (change === 'channel') opts.channel = 'stable'
+      else svc.stopAutoApply()
+      return build(...args)
+    }
+    const { svc, restarts } = service(s, opts)
+    const result = await svc.autoApplyOnce()
+    expect(result?.ok).toBe(true)
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
+    expect(restarts).toEqual(change === 'shutdown' ? [] : [1])
+    expect(svc.blocksNewWork()).toBe(change !== 'shutdown')
+    if (change !== 'shutdown') expect(svc.cachedStatus().checked_at).toBe(0)
+  })
+
   it('retries failed checks and builds, and stops after scheduling a restart', async () => {
     const s = sourceInstall()
     const { svc, restarts } = service(s, { channel: 'experimental', getJson: noReleases, autoApply: () => true })

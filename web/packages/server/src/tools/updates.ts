@@ -79,7 +79,7 @@ const runNpmCommand = (args: string[], cwd: string, timeoutMs: number, env: Node
     // Prefer the npm beside the running node so a supervisor started with an absolute node path still finds it.
     const beside = join(dirname(process.execPath), 'npm')
     const cli = resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js')
-    execFile(existsSync(cli) ? process.execPath : beside, existsSync(cli) ? [cli, ...args] : args, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: { ...env, PATH: `${dirname(process.execPath)}${delimiter}${env.PATH ?? ''}` } }, (error, stdout, stderr) => {
+    execFile(existsSync(cli) ? process.execPath : existsSync(beside) ? beside : 'npm', existsSync(cli) ? [cli, ...args] : args, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: { ...env, PATH: `${dirname(process.execPath)}${delimiter}${env.PATH ?? ''}` } }, (error, stdout, stderr) => {
       if (!error) { done({ out: stdout.trim(), ok: true }); return }
       const e = error as NodeJS.ErrnoException & { killed?: boolean; code?: number | string }
       if (e.code === 'ENOENT') { done({ out: 'npm executable not found', ok: false }); return }
@@ -1045,8 +1045,10 @@ export class UpdateService {
 
   private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true): Promise<Dict> {
     if (target === 'webui') {
+      const lifecycle = this.lifecycle
       const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.build ?? runNpm, this.deps.npm ?? runPackageNpm, canApply)
-      if (result.ok && !result.up_to_date && canApply()) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
+      // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
+      if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
