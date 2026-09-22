@@ -52,8 +52,20 @@ describe('talaria-web-mcp', () => {
     expect(await call(client, 'rename_project', { project_id: 'missing000000', name: 'x' })).toEqual({ error: 'Project not found' })
     expect(await call(client, 'delete_project', { project_id: 'missing000000' })).toEqual({ error: 'Project not found' })
     const deleted = (await call(client, 'delete_project', { project_id: created.project_id })) as Json
-    expect(deleted).toMatchObject({ ok: true, deleted: 'Beta', unassigned_sessions: 0 })
-    expect(String(deleted.warning)).toContain('HERMES_WEBUI_PASSWORD')
+    expect(deleted).toEqual({ ok: true, deleted: 'Beta', unassigned_sessions: 0 })
+  })
+
+  it('reports the sessions the delete route unassigned even when auth is off', async () => {
+    // The TS MCP always mutates through the HTTP API (the Python one edited the projects file directly without auth),
+    // so the delete route's own unassignment is what the count reflects.
+    const res = await s.get('/api/session/new', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })
+    const sid = String((((await res.json()) as Json).session as Json).session_id)
+    const project = (await call(client, 'create_project', { name: 'Epsilon' })) as Json
+    expect(await call(client, 'rename_session', { session_id: sid, title: 'Counted' })).toMatchObject({ ok: true })
+    expect(await call(client, 'move_session', { session_id: sid, project_id: project.project_id })).toMatchObject({ ok: true })
+    const deleted = (await call(client, 'delete_project', { project_id: project.project_id })) as Json
+    expect(deleted).toEqual({ ok: true, deleted: 'Epsilon', unassigned_sessions: 1 })
+    expect(((await call(client, 'list_sessions', { unassigned: true })) as Json[]).map((r) => r.session_id)).toContain(sid)
   })
 
   it('renames and moves sessions, then counts them under projects', async () => {

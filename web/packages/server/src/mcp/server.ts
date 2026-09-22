@@ -154,21 +154,15 @@ export function createTalariaMcpServer(opts: McpClientOptions): McpServer {
     if (typeof projects.error === 'string') return errorText(projects.error)
     const proj = (Array.isArray(projects.projects) ? (projects.projects as Json[]) : []).find((p) => p.project_id === project_id)
     if (!proj) return errorText('Project not found')
-    // Unassign first so the count reflects what the server had; the delete route also clears the assignment.
-    let unassigned = 0
-    if (api.hasAuth()) {
-      const sessions = await allSessions(api)
-      if (Array.isArray(sessions)) {
-        for (const s of sessions.filter((row) => row.project_id === project_id)) {
-          const moved = await api.post('/api/session/move', { session_id: s.session_id, project_id: null })
-          if (moved.ok === true || moved.session) unassigned += 1
-        }
-      }
-    }
+    // The delete route unassigns every session of the project itself (cache-safe, whether or not auth is on), so the
+    // count is what the server listed under the project right before the delete — the Python MCP only ever had to
+    // move sessions by hand because it edited the projects file directly.
+    const sessions = await allSessions(api)
+    const unassigned = Array.isArray(sessions) ? sessions.filter((row) => row.project_id === project_id).length : null
     const deleted = await api.post('/api/projects/delete', { project_id })
     if (typeof deleted.error === 'string') return errorText(deleted.error.replace(/^API 404: /, ''))
-    const result: Json = { ok: true, deleted: proj.name, unassigned_sessions: unassigned }
-    if (!api.hasAuth()) result.warning = 'Set HERMES_WEBUI_PASSWORD to unassign sessions; without auth the session index cannot be safely updated and direct filesystem writes would cause index drift in a running WebUI.'
+    const result: Json = { ok: true, deleted: proj.name, unassigned_sessions: unassigned ?? 0 }
+    if (unassigned === null) result.warning = 'The session list could not be read before the delete; the project was deleted and its sessions unassigned, but the count is unknown.'
     return text(result)
   })
 
