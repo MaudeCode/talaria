@@ -205,10 +205,28 @@ jobs:
     - name: Store web-build on the release runner
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build"'
+    - name: Stage the public Web publication artifact
+      if: ${{ !inputs.dry_run }}
+      id: publication
+      run: |
+        set -euo pipefail
+        mkdir "$RUNNER_TEMP/web-publication"
+        cp "$RUNNER_TEMP/release-plan/plan.json" "$RUNNER_TEMP/web-publication/plan.json"
+        cp -R "$RUNNER_TEMP/web-build" "$RUNNER_TEMP/web-publication/web-build"
+        echo "artifact=web-publication-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+    - name: Upload the public Web publication artifact
+      if: ${{ !inputs.dry_run }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.publication.outputs.artifact }}
+        path: ${{ runner.temp }}/web-publication
+        retention-days: 1
+        compression-level: 0
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
+      publication: ${{ steps.publication.outputs.artifact }}
   app-dry-build:
     needs:
     - prepare
@@ -331,19 +349,21 @@ jobs:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
-  web-publish:
+  web-publication:
     needs:
     - prepare
     - build-gate
     - relay-publish
+    - web-build
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
       == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) }}
-    runs-on: maude-mac
+    runs-on: ubuntu-latest
     environment: web-release
     permissions:
       contents: read
       actions: read
       packages: write
+      id-token: write
     concurrency:
       group: talaria-web-publication
       cancel-in-progress: false
@@ -353,25 +373,59 @@ jobs:
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
-    - name: Restore release-plan
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Restore web-build
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" web-build'
-    - name: Install OCI transfer tool on the self-hosted Mac
-      run: command -v skopeo >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install skopeo
-    - name: Set up Node for npm publication
+    - name: Download the verified Web publication artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: ${{ needs.web-build.outputs.publication }}
+        path: ${{ runner.temp }}/web-publication
+    - name: Install OCI transfer tool
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes skopeo
+    - name: Set up Node for npm trusted publishing
       uses: actions/setup-node@v4
       with:
         node-version-file: web/.nvmrc
         registry-url: https://registry.npmjs.org
-    - name: Publish the built OCI bytes and npm package, then verify both readbacks
+    - name: Require an npm CLI with trusted-publishing support
+      run: npm install --global npm@latest
+    - name: Publish the built npm packages and OCI bytes, then verify both readbacks
       env:
         GH_TOKEN: ${{ github.token }}
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
-        "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/release-plan/plan.json" \
-          --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \
+        "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/web-publication/plan.json" \
+          --build "$RUNNER_TEMP/web-publication/web-build/receipt.json" --directory "$RUNNER_TEMP/web-publication/web-build" \
           --output "$RUNNER_TEMP/web-publish/receipt.json"
+    - name: Name the Web publication receipt
+      id: receipt
+      run: echo "artifact=web-publication-receipt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+    - name: Upload the Web publication receipt
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.receipt.outputs.artifact }}
+        path: ${{ runner.temp }}/web-publish
+        retention-days: 1
+    outputs:
+      receipt: ${{ steps.receipt.outputs.artifact }}
+  web-publish:
+    needs:
+    - prepare
+    - build-gate
+    - web-publication
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && needs.web-publication.result
+      == 'success' }}
+    runs-on: maude-mac
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+    - uses: ./.github/actions/release-python
+    - name: Download the Web publication receipt
+      uses: actions/download-artifact@v7
+      with:
+        name: ${{ needs.web-publication.outputs.receipt }}
+        path: ${{ runner.temp }}/web-publish
     - name: Store web-publish on the release runner
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'

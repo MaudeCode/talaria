@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web npm releases use GitHub trusted publishing instead of a long-lived npm token.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
