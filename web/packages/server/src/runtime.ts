@@ -355,9 +355,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     models: (h) => catalog.models(h),
     streamsActive: () => activeStreamIds.size > 0,
     profileRunsActive: (name) => {
-      for (const run of registry.activeRuns.values()) {
+      // Admission (`activeRuns`) is released before the post-turn title work, but the stream stays live until
+      // teardown: both count, so a profile is never deleted while its sidecar work is still in flight.
+      const sessionIds = new Set<string>()
+      for (const run of registry.activeRuns.values()) sessionIds.add(run.session_id)
+      for (const streamId of registry.liveIds) { const owner = registry.ownerSessionId(streamId); if (owner) sessionIds.add(owner) }
+      for (const sessionId of sessionIds) {
         let profile: string | null = null
-        try { profile = store.get(run.session_id, { metadataOnly: true }).profile ?? null } catch { continue }
+        try { profile = store.get(sessionId, { metadataOnly: true }).profile ?? null } catch { continue }
         if (profiles.isRootProfile(profile ?? 'default') ? profiles.isRootProfile(name) : profile === name) return true
       }
       return false

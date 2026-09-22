@@ -524,6 +524,30 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel', { headers: { cookie: researchCookie } })
   })
 
+  it('a profile stays undeletable while a finished turn is still generating its title', async () => {
+    mkdirSync(join(s.state, 'profiles', 'titling'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'titling', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'titling' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    const sid = String(((await json(await post(s, '/api/session/new', { profile: 'titling' }, { cookie }))).session as Json).session_id)
+    let releaseTitle: () => void = () => undefined
+    sidecar.respond('aux.complete', () => new Promise((resolve) => { releaseTitle = () => { resolve({ model: 'aux', text: 'Titled', usage: null }) } }))
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }], final_response: 'done', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello there' }, { cookie }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'done', { headers: { cookie } })
+    // Admission is released at `done`, but the title prompt is still parked on the profile's aux route.
+    sidecar.respond('profiles.delete', () => ({ ok: true }))
+    const refused = await post(s, '/api/profile/delete', { name: 'titling' }, asWork())
+    expect(refused.status).toBe(409)
+    expect(String((await json(refused)).error)).toContain('while an agent is running')
+    releaseTitle()
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end', { headers: { cookie } })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(await json(await post(s, '/api/profile/delete', { name: 'titling' }, asWork()))).toEqual({ ok: true, name: 'titling' })
+    sidecar.respond('aux.complete', () => { throw new Error('no aux model') })
+  })
+
   it('no turn is admitted under a profile while its deletion RPC is in flight', async () => {
     mkdirSync(join(s.state, 'profiles', 'doomed'), { recursive: true })
     writeFileSync(join(s.state, 'profiles', 'doomed', 'config.yaml'), '# seed\n')
