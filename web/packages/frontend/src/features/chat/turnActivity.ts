@@ -107,13 +107,26 @@ export function sceneItems(value: unknown): ActivityItem[] {
   return items
 }
 
-export function persistedActivity(row: VisibleMessage): TurnActivity {
+/** Bind a terminal event to its completed snapshot, never to the currently last reply. */
+export function settledTerminalState(row: VisibleMessage, turn: LiveTurn | null): string | undefined {
+  if (turn?.status !== 'done' || !turn.doneSession || !turn.terminalState || turn.terminalState === 'completed') return undefined
+  const messages = turn.doneSession.messages ?? []
+  const index = messages.findLastIndex((message) => message.role === 'assistant')
+  const saved = messages[index]
+  if (!saved) return undefined
+  const id = messageKey(saved)
+  const matches = id !== undefined ? messageKey(row.message) === id
+    : row.index === (turn.doneSession._messages_offset ?? 0) + index && JSON.stringify(row.message) === JSON.stringify(saved)
+  return matches ? turn.terminalState : undefined
+}
+
+export function persistedActivity(row: VisibleMessage, terminalState?: string): TurnActivity {
   const parts = row.assistantRows ?? [row]
   const items: ActivityItem[] = []
   const last = parts.at(-1) ?? row
   const scene = record(last.message._anchor_activity_scene)
   const errorStatus = last.message._error === true ? (last.message.provider_details_label === 'Cancellation details' ? 'cancelled' : last.message.provider_details_label === 'Interruption details' ? 'interrupted' : 'error') : ''
-  const status = text(scene.terminal_state) || text(last.message.terminal_state) || text(last.message._terminal_state) || errorStatus
+  const status = terminalState || text(scene.terminal_state) || text(last.message.terminal_state) || text(last.message._terminal_state) || errorStatus
   const finalAnswer = scene.version === 'activity_scene_v1' && text(scene.final_answer).trim() ? text(scene.final_answer) : !last.message.tool_calls?.length && last.message._interim !== true && last.message._partial !== true
     ? extractInlineThinking(messageText(last.message.content)).content : ''
   if (scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows)) {

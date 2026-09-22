@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { Transcript } from './Transcript'
 import { AssistantMessageRow } from './MessageRow'
 import { TurnActivityView } from './TurnActivityView'
 import { WorklogDisclosureProvider } from './blocks/Worklog'
 import { groupAssistantTurns, liveActivity, persistedActivity, type TurnActivity } from './turnActivity'
 import { projectMessages } from './useTranscript'
 import { initialStreamState, streamReducer } from '../../stream/reducer'
+import type { Message, Session } from '../../contracts'
 import type { ChatEvent } from '../../contracts/sse'
 
 afterEach(() => { cleanup(); localStorage.clear() })
@@ -126,6 +128,31 @@ describe('turn worklog presentation', () => {
         view.rerender(<View activity={{ ...base, status: status!, items }} mode={mode} />)
         expect(screen.getByRole('status')).toHaveTextContent(label!)
       }
+    }
+  })
+
+  it.each([null, 'u'])('settles tool-limit snapshots once with user identity %s', (userMessageId) => {
+    const session: Session = { session_id: 's', title: 'Limited turn', _messages_offset: 40, messages: [
+      { role: 'user', id: 'u', content: 'Inspect' },
+      { role: 'assistant', id: 'a', content: 'Working', tool_calls: [{ id: 'a', name: 'read_file' }] },
+      { role: 'assistant', id: 'closing', content: 'Tool budget exhausted; here is the saved explanation.' },
+    ] }
+    if (userMessageId === null) session.messages = session.messages?.map((message) => { const copy: Message = { ...message }; delete copy.id; return copy })
+    const run = liveRun()
+    run.emit(tool('a'))
+    run.emit({ event: 'done', data: { session, terminal_state: 'tool_limit_reached' } })
+    const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    try {
+      const view = render(<Transcript rows={projectMessages(session.messages ?? [], 40)} live={{ ...run.turn, userMessageId }} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+      expect(view.container.querySelectorAll('.assistant-turn')).toHaveLength(1)
+      expect(view.container.querySelector('.live-turn')).toBeNull()
+      expect(screen.getByText('Tool budget exhausted; here is the saved explanation.')).toBeVisible()
+      expect(screen.getByRole('status')).toHaveTextContent('Tool limit reached')
+      view.unmount()
+    } finally {
+      if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
     }
   })
 

@@ -8,7 +8,7 @@ import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageR
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
-import { groupAssistantTurns, messageOwner } from './turnActivity'
+import { groupAssistantTurns, messageOwner, settledTerminalState } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 
@@ -45,7 +45,7 @@ export function Transcript(props: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
-  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null || live.status === 'error' || live.status === 'cancelled' || (!!live.terminalState && live.terminalState !== 'completed'))
+  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null || live.status === 'error' || live.status === 'cancelled')
   const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
   const rows = useMemo(() => {
     if (!showLive || !live) return grouped
@@ -98,7 +98,7 @@ export function Transcript(props: TranscriptProps) {
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
+      : <AssistantMessageRow terminalState={settledTerminalState(row, live)} sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
   )
 
   const empty = rows.length === 0 && !showLive && !showLiveUser

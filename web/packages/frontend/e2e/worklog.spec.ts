@@ -35,8 +35,10 @@ test('expanded worklog and tool details are visually readable', async ({ page },
   await page.screenshot({ path: testInfo.outputPath('tool-details.png'), fullPage: true })
 })
 
-test('live tool batches retain order and converge to one settled worklog', async ({ page }) => {
+for (const limited of [false, true]) {
+test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, async ({ page }) => {
   const sid = 'worklog-live'
+  const closing = limited ? 'Tool budget exhausted; saved closing explanation.' : 'All files checked.'
   let finished = false
   const messages = [
     { role: 'user', id: 1, content: 'Inspect the files' },
@@ -45,7 +47,7 @@ test('live tool batches retain order and converge to one settled worklog', async
       { id: 'b', name: 'read_file', args: { path: 'b.txt' }, result: 'B contents' },
     ] },
     { role: 'assistant', id: 3, content: 'Second pass', tool_calls: [{ id: 'c', name: 'read_file', args: { path: 'c.txt' } }] },
-    { role: 'assistant', id: 4, content: 'All files checked.' },
+    { role: 'assistant', id: 4, content: closing },
   ]
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Inspect the files', messages: finished ? messages : messages.slice(0, 1), active_stream_id: finished ? null : 'worklog-run' } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'worklog-run', replay_available: true } }))
@@ -88,12 +90,13 @@ test('live tool batches retain order and converge to one settled worklog', async
   // Explicit collapse survives reload and is scoped to this turn.
   await outer.locator(':scope > button').click()
   finished = true
-  stream?.write(`id: worklog-run:10\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Inspect the files', messages } })}\n\n`)
+  stream?.write(`id: worklog-run:10\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Inspect the files', messages }, terminal_state: limited ? 'tool_limit_reached' : 'completed' })}\n\n`)
   await expect(page.locator('.live-turn')).toHaveCount(0)
   await expect(page.locator('.assistant-turn')).toHaveCount(1)
-  await expect(page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')).toContainText('Worked')
+  if (limited) await expect(page.getByRole('status').filter({ hasText: 'Tool limit reached' })).toBeVisible()
+  else await expect(page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')).toContainText('Worked')
   await expect(page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByText('All files checked.', { exact: true })).toBeVisible()
+  await expect(page.getByText(closing, { exact: true })).toBeVisible()
   await page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button').click()
   await expect(page.getByText('First pass', { exact: true })).toBeVisible()
   await expect(page.getByText('Second pass', { exact: true })).toBeVisible()
@@ -105,6 +108,8 @@ test('live tool batches retain order and converge to one settled worklog', async
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+}
 
 test('recovered worklog can fetch its omitted history', async ({ page }) => {
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
