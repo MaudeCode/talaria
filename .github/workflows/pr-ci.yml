@@ -365,8 +365,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: web/.nvmrc
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Prepare the contract simulator pool
         env:
           IOS_SIMULATOR_POOL_SIZE: "1"
