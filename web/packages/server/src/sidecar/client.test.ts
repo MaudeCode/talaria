@@ -52,6 +52,18 @@ describe('SidecarClient version mismatch', () => {
     expect(logs.filter((l) => l.includes('restarting'))).toEqual([])
     expect(logs.filter((l) => l.includes('exited')).length).toBeLessThanOrEqual(1)
   })
+
+  it('a spawn failure schedules the same backoff restart as a crash instead of parking the client', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-spawn-'))
+    const logs: string[] = []
+    client = new SidecarClient({ python: resolve(dir, 'missing-interpreter'), agentDir: '', sidecarDir: dir, hermesHome: dir, log: (l) => logs.push(l), backoffMs: [20], handshakeTimeoutMs: 2_000 })
+    await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
+    expect(client.status).toBe('restarting')
+    await new Promise((r) => setTimeout(r, 150))
+    // Each attempt fails the same way and re-arms the timer; exactly one restart is scheduled per failure.
+    expect(logs.filter((l) => l.includes('spawn error')).length).toBeGreaterThanOrEqual(2)
+    expect(client.status).toBe('restarting')
+  })
 })
 
 describe('FakeSidecar', () => {

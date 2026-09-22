@@ -129,7 +129,9 @@ export class SidecarClient implements SidecarLike {
     const stderr = createInterface({ input: child.stderr, crlfDelay: Infinity })
     stderr.on('line', (line) => { this.log(`[sidecar] ${line}`) })
     child.on('exit', (code, signal) => { this.onExit(child, code, signal) })
-    child.on('error', (error) => { this.log(`[sidecar] spawn error: ${error.message}`) })
+    // A spawn failure (missing executable, interpreter mid-replacement) emits `error` and `close` but no `exit`:
+    // recover through the same path so a restart is scheduled; `onExit` ignores a child it already retired.
+    child.on('error', (error) => { this.log(`[sidecar] spawn error: ${error.message}`); this.onExit(child, null, null) })
     // A request or cancel written to a child that just died surfaces as EPIPE on stdin; the exit handler owns recovery.
     child.stdin?.on('error', (error: Error) => { this.log(`[sidecar] stdin write failed: ${error.message}`) })
 
