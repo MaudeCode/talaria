@@ -823,6 +823,11 @@ describe('chat turns through the sidecar', () => {
     expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
     expect(starts).toBe(0)
     expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    // ...nor deleted: its owner's transcript is not the WebUI's to erase.
+    const deleted = await post(s, '/api/session/delete', { session_id: sid })
+    expect(deleted.status).toBe(400)
+    expect((await json(deleted)).error).toBe('Read-only imported sessions cannot be deleted from WebUI')
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
   })
 
   it('reports no_cached_agent for a steer against an unknown session', async () => {

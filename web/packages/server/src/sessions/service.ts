@@ -109,6 +109,20 @@ export class SessionService {
     return this.visibleToActiveProfile(session.profile)
   }
 
+  /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
+  private isReadOnlyImport(sid: string): boolean {
+    try {
+      const s = this.store.get(sid, { metadataOnly: true })
+      if (s.read_only) return true
+    } catch {
+      // No sidecar: a foreign state.db transcript whose owner refuses claiming is read-only too.
+      const { session, reason } = this.claimOrSynthesizeCliSession(sid)
+      if (session && reason === 'not_claimable') return true
+    }
+    const meta = this.lookupCliMeta(sid)
+    return meta !== null && Boolean(meta.read_only)
+  }
+
   /** Python `_session_is_subagent_view_only`: a delegated child by any signal — the persisted sidecar or the state.db row. */
   isSubagentViewOnly(sid: string): boolean {
     try {
@@ -817,6 +831,9 @@ export class SessionService {
   async delete(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     if (!isSafeSessionId(sid)) throw new HttpFailure(400, 'Invalid session_id')
+    // Python: a read-only import (persisted sidecar flag, sidebar metadata, or a foreign state.db owner such as a
+    // Claude Code session) is never deleted — that would erase the owner's authoritative transcript.
+    if (this.isReadOnlyImport(sid)) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
     const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
     let eventProfile: string | null = null

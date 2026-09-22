@@ -226,6 +226,15 @@ describe('state.db projection', () => {
     res = await post('/api/session/rename', { session_id: 'tg-owned', title: 'nope' })
     expect(res.status).toBe(403)
     expect(s.deps.sessionStore.loadMetadataOnly('tg-owned')).toBeNull()
+    // Deleting a foreign owner's transcript is refused as well (a Claude Code import is the same case): the state.db
+    // rows must survive a direct delete request.
+    insertSession(db, { id: 'cc-owned', source: 'claude_code', started_at: 2100, title: 'From Claude Code', messages: [['user', 2101], ['assistant', 2102]] })
+    for (const foreign of ['tg-owned', 'cc-owned']) {
+      res = await post('/api/session/delete', { session_id: foreign })
+      expect(res.status, foreign).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toBe('Read-only imported sessions cannot be deleted from WebUI')
+      expect((await s.get(`/api/session?session_id=${foreign}`)).status).toBe(200)
+    }
     // An id with no sidecar and no state.db rows stays a 404.
     expect((await s.get('/api/session?session_id=ghost-no-rows')).status).toBe(404)
     // A WebUI session continued from the CLI: state.db rows past the sidecar tail are appended to the transcript.
