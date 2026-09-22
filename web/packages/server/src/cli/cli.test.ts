@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
+import { execFileSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
@@ -227,5 +228,17 @@ describe('ctl', () => {
     expect(existsSync(ctlPaths(ctx).pidFile)).toBe(false)
     expect(await runCtl(ctx, ['bogus'])).toBe(2)
     expect(await runCtl(ctx, ['logs', '--lines', 'x'])).toBe(2)
+  })
+})
+
+describe('npm package contents', () => {
+  it('ships every tree the installed server resolves through the Web root, including the brand assets', () => {
+    // `npm pack --dry-run` runs prepack/postpack, so this checks both the copy set and the `files` allowlist.
+    const pkg = join(import.meta.dirname, '..', '..')
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: pkg, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    const files = new Set((JSON.parse(out) as { files: { path: string }[] }[])[0]!.files.map((f) => f.path))
+    for (const required of ['static/dist/index.html', 'static/brand/favicon.ico', 'static/brand/brandmark.svg', 'static/brand/favicon-192.png', 'sidecar/agent_dependency.json', 'sidecar/talaria_sidecar/__main__.py', 'contract_versions.json']) {
+      expect(files.has(required), required).toBe(true)
+    }
   })
 })

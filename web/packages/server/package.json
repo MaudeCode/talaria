@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "static/dist",
+    "static/brand",
     "sidecar",
     "contract_versions.json",
     "_release.json"

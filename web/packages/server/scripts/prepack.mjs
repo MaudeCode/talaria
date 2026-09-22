@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 
 const pkg = resolve(import.meta.dirname, '..')
 const web = resolve(pkg, '..', '..')
-const copies = ['static/dist', 'sidecar/talaria_sidecar', 'sidecar/scripts', 'sidecar/agent_dependency.json', 'contract_versions.json', '_release.json']
+const copies = ['static/dist', 'static/brand', 'sidecar/talaria_sidecar', 'sidecar/scripts', 'sidecar/agent_dependency.json', 'contract_versions.json', '_release.json']
 const clean = process.argv.includes('--clean')
 for (const relative of copies) {
   const target = resolve(pkg, relative)
