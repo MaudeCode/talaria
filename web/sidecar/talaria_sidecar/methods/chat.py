@@ -251,6 +251,8 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "api_mode": runtime.get("api_mode"), "acp_command": runtime.get("acp_command"), "acp_args": runtime.get("acp_args"),
         "credential_pool": pool_identity, "toolsets": toolsets, "home": home,
         "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
+        # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
+        "reasoning_config": kwargs.get("reasoning_config"),
     }
     return json.dumps(bundle, sort_keys=True, default=str)
 
@@ -285,10 +287,12 @@ def _agent_class():
 
 
 def _supported(cls, name: str) -> bool:
+    """Whether ``cls.__init__`` accepts ``name`` (named, or through ``**kwargs``)."""
     try:
-        return name in inspect.signature(cls.__init__).parameters
+        parameters = inspect.signature(cls.__init__).parameters
     except (TypeError, ValueError):
         return False
+    return name in parameters or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
 def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, one function

@@ -141,6 +141,14 @@ def test_a_rotated_credential_never_reuses_the_cached_agent(monkeypatch) -> None
     assert chat.evict_all_agents() == 1
     assert chat.start(Ctx(), _params("st-8", "s3"))["status"] == "completed"
     assert len(FakeAgent.instances) == 3
+    # A reasoning-effort change from the composer is bound at construction: it never reuses the cached agent.
+    assert chat.start(Ctx(), {**_params("st-9", "s3"), "reasoning_config": {"effort": "high"}})["status"] == "completed"
+    assert len(FakeAgent.instances) == 4
+    assert FakeAgent.instances[-1].kwargs["reasoning_config"] == {"effort": "high"}
+    assert chat.start(Ctx(), {**_params("st-10", "s3"), "reasoning_config": {"effort": "high"}})["status"] == "completed"
+    assert len(FakeAgent.instances) == 4
+    assert chat.start(Ctx(), {**_params("st-11", "s3"), "reasoning_config": {"effort": "low"}})["status"] == "completed"
+    assert len(FakeAgent.instances) == 5
 
 
 def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path) -> None:
