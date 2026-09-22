@@ -4,7 +4,8 @@ Talaria Web keeps the **Stable** and **Experimental** update-channel choices
 and the existing Update button. **Check for updates** polls at startup and every
 five minutes while the server is running. **Automatically apply Web updates** is
 opt-in and requires update checks to be enabled. It applies only Web updates and
-retries blocked or failed attempts on the next check. Existing chats finish first;
+retries blocked or failed attempts on the next check. Existing chats and manual cron
+jobs finish first, and open embedded terminals must be closed before an update;
 new chats receive a retry response while files are changing or restart is pending.
 For Git source installations, Experimental follows `origin/main` through a clean Git fast-forward and needs only Git
 read access. It does not query release manifests or require a release API token.
@@ -59,8 +60,8 @@ completed release identity. Switching back to Stable does not rewind a checkout
 that is ahead of the published release.
 
 Source updates advance the monorepo checkout; deployment remains component-specific.
-The operation updates Web provenance and schedules a Web restart: once active chat
-work drains the server worker exits with code 75 and the
+The operation updates Web provenance and schedules a Web restart: once active work
+drains and embedded terminals are closed, the server worker exits with code 75 and the
 `talaria-web serve` supervisor respawns it, so the PID tracked by `ctl`, launchd,
 or systemd never changes. Existing
 active-run guards still apply. The compatibility `force` and `clear_lock` endpoints

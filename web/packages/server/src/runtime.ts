@@ -570,7 +570,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const restartBlockers = (): RestartBlockers => {
     const streams = [...activeStreamIds].map(String)
     const runs = [...registry.activeRuns.keys()].map(String)
-    return { active_streams: streams.length, active_runs: runs.length, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 }
+    const terminals = [...deps.terminals.terminals.values()].filter((term) => term.isAlive).length
+    const crons = runningCronJobs.size
+    return { active_streams: streams.length, active_runs: runs.length, active_terminals: terminals, active_cron_jobs: crons, blocking_stream_ids: streams.slice(0, 10), blocking_run_ids: runs.slice(0, 10), restart_blocked: streams.length > 0 || runs.length > 0 || terminals > 0 || crons > 0 }
   }
   const purgeAgentPycache = (): void => { const dir = sidecar?.describe?.agent_dir; if (dir) purgePycache(dir) }
   deps.updates = new UpdateService({

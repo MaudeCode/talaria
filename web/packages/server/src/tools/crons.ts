@@ -194,16 +194,21 @@ export class CronService {
     // Python `_event_profile_for_cron_job`: browsers refresh the job's profile when it is a known one.
     const eventProfile = profile && known ? profile : null
     const running = this.deps.runningJobs
-    const done = (): void => { running?.delete(jobId); this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
+    const existing = running?.get(jobId)
+    if (existing !== undefined) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.max(0, Date.now() / 1000 - existing) }
+    // Own the run before dispatch, including the interval before the sidecar acknowledges startup.
+    running?.set(jobId, Date.now() / 1000)
+    let started = false
+    const done = (): void => { running?.delete(jobId); if (started) this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
     return new Promise((resolve, reject) => {
       let answered = false
       const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
-      let started = false
       sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
-        .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); if (started) done() })
+        .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); done() })
         .catch((error: unknown) => {
           this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`)
-          if (started) { done(); return }
+          done()
+          if (started) return
           // Python only ever answered 200 for `running`/`already_running`; a run that never started is the error it was.
           if (!answered) { answered = true; reject(error instanceof HttpFailure ? error : new HttpFailure(error instanceof SidecarError && error.condition === 'sidecar_unavailable' ? 503 : 500, str((error as Error).message))) }
         })

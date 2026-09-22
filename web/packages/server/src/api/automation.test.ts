@@ -132,10 +132,12 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(await json(res)).toEqual({ ok: true, job_id: 'job1', status: 'running' })
     // While the run is live the session list stamps `cron_running`; completion publishes `cron_complete`.
     expect(s.deps.sessions.deps.runtime.runningCronJobs.has('job1')).toBe(true)
+    expect(s.deps.updates.blockedResponse('webui')).toMatchObject({ restart_blocked: true, active_cron_jobs: 1 })
     const event = await feed.next(AbortSignal.timeout(2000))
     feed.close()
     expect(event?.reason).toBe('cron_complete')
     expect(s.deps.sessions.deps.runtime.runningCronJobs.has('job1')).toBe(false)
+    expect(s.deps.updates.blockedResponse('webui')).toBeNull()
     res = await post(s, '/api/crons/run', { job_id: 'nope' })
     expect(res.status).toBe(404)
     // A run that never starts is an error response, not `{ok:false,status:"error"}` behind a 200.
@@ -143,12 +145,36 @@ describe('crons, kanban, extensions, terminal', () => {
     res = await post(s, '/api/crons/run', { job_id: 'job1' })
     expect(res.status).toBe(500)
     expect((await json(res)).error).toBe('sidecar busy')
+    expect(s.deps.updates.blockedResponse('webui')).toBeNull()
+    let dispatched!: () => void
+    const dispatch = new Promise<void>((resolve) => { dispatched = resolve })
+    let rejectRun!: (error: Error) => void
+    sidecar.respond('cron.run', () => { dispatched(); return new Promise((_resolve, reject) => { rejectRun = reject }) })
+    const pending = post(s, '/api/crons/run', { job_id: 'job1' })
+    await dispatch
+    // The RPC owns work before its started event, too; a failed start releases it.
+    expect(s.deps.updates.blockedResponse('webui')).toMatchObject({ restart_blocked: true, active_cron_jobs: 1 })
+    expect(await json(await post(s, '/api/crons/run', { job_id: 'job1' }))).toMatchObject({ status: 'already_running' })
+    rejectRun(new Error('synthetic start failure'))
+    expect((await pending).status).toBe(500)
+    expect(s.deps.updates.blockedResponse('webui')).toBeNull()
     res = await s.get('/api/crons/history?job_id=../x')
     expect(res.status).toBe(400)
     res = await s.get('/api/crons/delivery-options')
     expect(((await json(res)).platforms as Json[]).map((p) => p.value)).toContain('local')
     expect(jobForApi({ id: 'a', monitor_script: 'run.sh', context_from: ['other', 'SELF'] })).toMatchObject({ profile: null, monitor: 'run.sh', continuity: true })
     expect(jobFieldUpdates({ monitor: '', continuity: true }, ['x'])).toEqual({ monitor_script: '', monitor_url: '', context_from: ['x', 'self'] })
+  })
+
+  it('blocks Web updates while an embedded terminal is alive and releases the blocker on exit', () => {
+    const term = s.deps.terminals.start('update-blocker', s.state)
+    const process = pty.spawned.at(-1)!
+    expect(s.deps.updates.blockedResponse('webui')).toMatchObject({ restart_blocked: true, active_terminals: 1 })
+    expect(process.killed).toEqual([])
+    process.exit(0)
+    expect(term.isAlive).toBe(false)
+    expect(s.deps.updates.blockedResponse('webui')).toBeNull()
+    s.deps.terminals.close('update-blocker')
   })
 
   it('kanban routes map to the sidecar, including path-parameter actions and the event stream', async () => {

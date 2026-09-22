@@ -881,7 +881,7 @@ function summaryPrompt(details: Dict[]): [string, string] {
 
 // ── service ──────────────────────────────────────────────────────────────────
 
-export interface RestartBlockers { active_streams: number; active_runs: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
+export interface RestartBlockers { active_streams: number; active_runs: number; active_terminals?: number; active_cron_jobs?: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
 
 export interface UpdateServiceDeps {
   /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
@@ -1023,7 +1023,9 @@ export class UpdateService {
     const parts: string[] = []
     if (b.active_streams) parts.push(`${String(b.active_streams)} active chat stream${b.active_streams === 1 ? '' : 's'}`)
     if (b.active_runs) parts.push(`${String(b.active_runs)} active agent run${b.active_runs === 1 ? '' : 's'}`)
-    return { ok: false, message: `Cannot update ${target} while ${parts.join(' and ') || 'active chat work'} is running. Wait for the response to finish, then retry the update.`, target, restart_blocked: true, active_streams: b.active_streams, active_runs: b.active_runs, blocking_stream_ids: b.blocking_stream_ids, blocking_run_ids: b.blocking_run_ids }
+    if (b.active_terminals) parts.push(`${String(b.active_terminals)} open terminal${b.active_terminals === 1 ? '' : 's'}`)
+    if (b.active_cron_jobs) parts.push(`${String(b.active_cron_jobs)} active cron job${b.active_cron_jobs === 1 ? '' : 's'}`)
+    return { ok: false, message: `Cannot update ${target} while ${parts.join(' and ') || 'active work'} is running. Wait for work to finish and close open terminals, then retry the update.`, target, ...b }
   }
 
   private async locked(fn: () => Promise<Dict>): Promise<Dict> {
