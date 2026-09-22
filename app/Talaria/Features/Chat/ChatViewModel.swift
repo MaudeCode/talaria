@@ -5810,7 +5810,8 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
                   page.sessionId == nil || page.sessionId == sessionID,
                   let older = page.messages, !older.isEmpty
             else { throw URLError(.badServerResponse) }
-            let offset = Self.resolvedMessagesOffset(from: page, loadedMessageCount: older.count)
+            // This history page ends at the requested cursor, not the session's total count.
+            let offset = max(0, page.messagesOffset ?? (before - older.count))
             guard offset < before else { throw URLError(.badServerResponse) }
             olderPages.append(older)
             before = offset

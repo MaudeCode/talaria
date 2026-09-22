@@ -1500,6 +1500,11 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testColdReplayInfersLegacyHistoryOffsetsFromRequestedCursor() async throws {
+        try await assertPagedColdReplay(omitOffsets: true)
+    }
+
+    @MainActor
     func testColdReplayWaitsWhenMissingPrefixRequestFails() async throws {
         try await assertPagedColdReplay(failHistory: true)
     }
@@ -1510,7 +1515,11 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    private func assertPagedColdReplay(failHistory: Bool = false, stallHistory: Bool = false) async throws {
+    private func assertPagedColdReplay(
+        failHistory: Bool = false,
+        stallHistory: Bool = false,
+        omitOffsets: Bool = false
+    ) async throws {
         let streamClient = SpySSEStreamingClient()
         var allMessages: [[String: Any]] = [
             ["role": "user", "content": "Previous prompt", "message_id": "previous-user"],
@@ -1533,14 +1542,16 @@ extension ChatViewModelSendTests {
                 }
                 let end = before ?? allMessages.count
                 let offset = max(0, end - 50)
-                let payload: [String: Any] = ["session": [
+                var session: [String: Any] = [
                     "session_id": "session-abc", "active_stream_id": "stream-123",
                     "messages": Array(allMessages[offset..<end]),
                     "message_count": allMessages.count,
-                    "_messages_offset": stallHistory && before != nil ? end : offset,
                     "_messages_truncated": offset > 0
-                ]]
-                let data = try JSONSerialization.data(withJSONObject: payload)
+                ]
+                if !omitOffsets {
+                    session["_messages_offset"] = stallHistory && before != nil ? end : offset
+                }
+                let data = try JSONSerialization.data(withJSONObject: ["session": session])
                 return apiTestJSONResponse(try XCTUnwrap(String(data: data, encoding: .utf8)), for: request)
             case "/api/chat/stream/status":
                 return apiTestJSONResponse(
