@@ -601,6 +601,10 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(res.status, await res.clone().text()).toBe(200)
     expect(Date.now() - started).toBeLessThan(5000)
     expect(s.deps.profiles.isDeleting('selfie')).toBe(false)
+    // ...and the client is moved back to `default`, so its next write cannot resurrect the deleted home.
+    expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=default/)
+    const unrelated = await post(s, '/api/profile/delete', { name: 'nonexistent-zz' }, asWork())
+    expect(unrelated.headers.get('set-cookie')).toBeNull()
   })
 
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {

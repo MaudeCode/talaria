@@ -222,7 +222,12 @@ export const settingsRouter = os.router({
       if (!(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage profiles')
       const name = str(input.name ?? input.profile).trim()
       if (!name) throw new HttpError(400, 'name is required')
-      return ctx.deps.profiles.delete(name, activeProfileName(ctx))
+      const active = activeProfileName(ctx)
+      const result = await ctx.deps.profiles.delete(name, active)
+      // A client scoped to the profile it just deleted goes back to `default`; a later write under the stale cookie
+      // would otherwise recreate `profiles/<name>` through the config writer.
+      if (active === name) ctx.queueCookie(await buildProfileCookie(ctx, 'default', ctx.trusted.cookieValue ?? null))
+      return result
     })),
   },
   models: {
