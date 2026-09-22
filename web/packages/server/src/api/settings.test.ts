@@ -604,6 +604,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(configs.get(join(s.state, 'profiles', 'delta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
     expect(await json(await deleting)).toEqual({ ok: true, name: 'delta' })
     expect(order).toEqual(['created', 'deleted'])
+    // The deletion tombstone survives a failed recreation: a stale-cookie write is still refused afterwards, and only
+    // a fully successful recreation lifts it.
+    const deltaCookie = 'hermes_profile=delta'
+    sidecar.respond('profiles.create', () => { throw new Error('disk full') })
+    expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(400)
+    const staleWrite = await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })
+    expect(staleWrite.status).toBe(404)
+    sidecar.respond('profiles.create', (params) => ({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }))
+    mkdirSync(join(s.state, 'profiles', 'delta'), { recursive: true })
+    expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(200)
+    expect((await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })).status).toBe(200)
   })
 
   it('onboarding status reflects config.yaml and the local-origin gate protects setup/complete/probe', async () => {

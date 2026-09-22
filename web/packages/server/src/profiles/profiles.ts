@@ -151,7 +151,6 @@ export class ProfileService {
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
     const created = await this.withLifecycle(opts.name, async () => {
-      this.deleted.delete(opts.name)
       let row: Dict
       try {
         row = (await this.sidecar().call('profiles.create', params)).profile
@@ -163,6 +162,9 @@ export class ProfileService {
       if (opts.base_url) await this.deps.config.update(home, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
       if (opts.api_key) writeEnvFile(join(home, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
       if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
+      // The deletion tombstone lifts only once the recreation fully succeeded: a stale cookie stays refused while the
+      // RPC is pending or after it failed.
+      this.deleted.delete(opts.name)
       return row
     })
     const rows = await this.list('default')
@@ -193,12 +195,13 @@ export class ProfileService {
 
   /**
    * Lease a profile-scoped write for a request's lifetime. `'deleting'` while the profile's deletion RPC runs (409);
-   * `'missing'` for a profile this process deleted whose home is still gone (404) — a stale cookie must never
-   * recreate it. Profiles that merely never existed keep lazy creation (group-mapped trusted identities).
+   * `'missing'` for a profile this process deleted until a recreation fully succeeds (404) — a stale cookie must
+   * never recreate it, not even while `profiles.create` is mid-flight. Profiles that merely never existed keep lazy
+   * creation (group-mapped trusted identities).
    */
   beginWrite(name: string): (() => void) | 'deleting' | 'missing' {
     if (this.deleting.has(name)) return 'deleting'
-    if (this.deleted.has(name) && !isDir(this.deps.profileHome(name))) return 'missing'
+    if (this.deleted.has(name)) return 'missing'
     const lease = this.writeLeases.get(name) ?? { count: 0, drained: [] }
     lease.count += 1
     this.writeLeases.set(name, lease)

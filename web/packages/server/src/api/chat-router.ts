@@ -261,6 +261,8 @@ export const chatRouter = os.router({
     start: os.background.start.handler(({ input, context: { ctx } }) => run(() => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id', 'prompt')
+      // A subagent child's profile/workspace/context must never seed a runnable background session.
+      if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
       const parent = getSession(ctx, str(body.session_id))
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
@@ -277,7 +279,13 @@ export const chatRouter = os.router({
         onDone: (answer) => { ctx.deps.background.complete(parent.session_id, taskId, answer); cleanup() },
         onFailed: () => { ctx.deps.background.complete(parent.session_id, taskId, '(background task failed)'); cleanup() },
       })
-      if (started._status !== undefined && started._status >= 400) throw new HttpError(started._status, started.error ?? 'background start failed')
+      if (started._status !== undefined && started._status >= 400) {
+        // Admission refused (profile deleting, session busy…): nothing runs, so the tracked task and hidden
+        // session must not linger as "running".
+        ctx.deps.background.forget(parent.session_id, taskId)
+        cleanup()
+        throw new HttpError(started._status, started.error ?? 'background start failed')
+      }
       ctx.deps.background.setStream(parent.session_id, taskId, str(started.stream_id))
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
     })),
@@ -328,6 +336,13 @@ export class BackgroundTasks {
     const list = this.tasks.get(parent) ?? []
     list.push({ ...task, stream_id: null, status: 'running', started_at: this.now(), answer: null, completed_at: null })
     this.tasks.set(parent, list)
+  }
+
+  /** Drop a task that never started (admission refused) so status never reports it. */
+  forget(parent: string, taskId: string): void {
+    const rest = (this.tasks.get(parent) ?? []).filter((t) => t.task_id !== taskId)
+    if (rest.length) this.tasks.set(parent, rest)
+    else this.tasks.delete(parent)
   }
 
   setStream(parent: string, taskId: string, streamId: string): void {

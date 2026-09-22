@@ -760,6 +760,9 @@ describe('chat turns through the sidecar', () => {
     res = await post(s, '/api/chat/start', { session_id: sid, message: 'keep going' })
     expect(res.status).toBe(403)
     expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
+    res = await post(s, '/api/background', { session_id: sid, prompt: 'summarize' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Subagent sessions are view-only and cannot run background tasks from WebUI')
     expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
     let auxCalls = 0
     sidecar.respond('aux.complete', () => { auxCalls += 1; return { model: 'aux', text: 'Nope', usage: null } })
@@ -768,6 +771,23 @@ describe('chat turns through the sidecar', () => {
     expect(auxCalls).toBe(0)
     sidecar.respond('aux.complete', () => { throw new SidecarError('no aux model', { condition: 'aux_unconfigured' }) })
     expect(starts).toBe(0)
+  })
+
+  it('a background task whose admission is refused leaves no tracked task or hidden session behind', async () => {
+    const sid = await newSession(s)
+    const turns = s.deps.turns as unknown as { deps: { profileDeleting: ((profile: string | null) => boolean) | undefined } }
+    const original = turns.deps.profileDeleting
+    turns.deps.profileDeleting = () => true
+    try {
+      const res = await post(s, '/api/background', { session_id: sid, prompt: 'doomed by deletion' })
+      expect(res.status).toBe(409)
+      expect(String((await json(res)).error)).toContain('being deleted')
+    } finally {
+      turns.deps.profileDeleting = original
+    }
+    expect(await json(await s.get(`/api/background/status?session_id=${sid}`))).toEqual({ results: [] })
+    const leftover = [...s.deps.sessionStore.persistedIds()].filter((id) => { try { return str(s.deps.sessionStore.get(id, { metadataOnly: true }).title).startsWith('bg: doomed') } catch { return false } })
+    expect(leftover).toEqual([])
   })
 
   it('reports no_cached_agent for a steer against an unknown session', async () => {
