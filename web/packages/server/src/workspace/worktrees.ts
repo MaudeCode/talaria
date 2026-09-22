@@ -2,11 +2,24 @@
 import { spawnSync } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { resolvePathLikePython } from './paths.js'
+import { pyOsError } from '../util.js'
 import type { Session } from '../sessions/session.js'
+
+/** The `OSError`/`TimeoutExpired` text Python interpolated into `Failed to remove worktree: {exc}`. */
+export class GitSpawnFailure extends Error {}
 
 function git(args: string[], cwd: string, timeoutMs = 2_000): { status: number; stdout: string; stderr: string } | null {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: timeoutMs, windowsHide: true })
   if (r.error) return null
+  return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' }
+}
+
+function gitOrThrow(args: string[], cwd: string, timeoutMs: number): { status: number; stdout: string; stderr: string } {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: timeoutMs, windowsHide: true })
+  if (r.error) {
+    const code = (r.error as NodeJS.ErrnoException).code
+    throw new GitSpawnFailure(code === 'ETIMEDOUT' ? `Command '${JSON.stringify(['git', ...args]).replaceAll('"', "'").replaceAll(',', ', ')}' timed out after ${String(timeoutMs / 1000)} seconds` : pyOsError(r.error, 'git'))
+  }
   return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' }
 }
 
@@ -117,8 +130,12 @@ export function removeWorktreeForSession(session: Session, locks: WorktreeLocks,
   const args = ['worktree', 'remove']
   if (force) args.push('--force')
   args.push(worktreePath)
-  const result = git(args, repoRoot, 10_000)
-  if (!result) throw new Error('Failed to remove worktree: git is unavailable')
+  let result: { status: number; stdout: string; stderr: string }
+  try {
+    result = gitOrThrow(args, repoRoot, 10_000)
+  } catch (error) {
+    throw new Error(`Failed to remove worktree: ${error instanceof Error ? error.message : String(error)}`)
+  }
   if (result.status !== 0) {
     const stderr = result.stderr.trim().split('\n').pop() ?? ''
     throw new Error(`git worktree remove failed: ${stderr || result.stdout.trim()}`)

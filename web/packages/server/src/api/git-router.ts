@@ -1,7 +1,7 @@
 /** Git panel, rollback, worktree, and upload-receipt procedures. */
 import { implement } from '@orpc/server'
 import { gitContract } from '@maudecode/talaria-web-contracts'
-import { HttpError, type ApiContext } from './router.js'
+import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { cleanGeneratedCommitMessage, GitWorkspaceError, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
@@ -18,7 +18,7 @@ const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGua
 function gitBad(error: unknown, status = 400): never {
   if (error instanceof HttpError) throw error
   if (error instanceof GitWorkspaceError) throw new HttpError(status, sanitizeError(error), { code: error.code || 'git_failed' })
-  if (error instanceof Error) throw new HttpError(400, sanitizeError(error))
+  // Python let anything that was not a `GitWorkspaceError` escape to the dispatcher's 500.
   throw error
 }
 
@@ -141,12 +141,15 @@ export const gitRouter = os.router({
       return ctx.deps.git.push(workspace) as Promise<{ ok: true; message: string; status: GitStatus }>
     })),
     checkout: os.git.checkout.handler(({ input, context: { ctx } }) => guard(async () => {
+      requireFields(input, 'session_id', 'ref', 'mode')
       const { session, workspace } = gitSession(ctx, input.session_id)
       rejectDestructiveIfUnsafe(ctx, session)
+      // Python: `str(body.get("mode"))` / `str(body.get("dirty_mode", "block"))` verbatim (no trimming) and `bool(track)`.
       const result = await ctx.deps.git.checkout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track), dirtyMode: input.dirty_mode ?? 'block' })
       return { ok: true as const, git: result.status, branches: result.branches, current_branch: result.current_branch, message: result.message } as never
     })),
     stashCheckout: os.git.stashCheckout.handler(({ input, context: { ctx } }) => guard(async () => {
+      requireFields(input, 'session_id', 'ref', 'mode')
       const { session, workspace } = gitSession(ctx, input.session_id)
       rejectDestructiveIfUnsafe(ctx, session)
       const r = await ctx.deps.git.stashAndCheckout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track) })
@@ -198,7 +201,8 @@ export const gitRouter = os.router({
       try {
         return { status: worktreeStatusForSession(session, ctx.deps.worktreeLocks) }
       } catch (error) {
-        throw new HttpError(400, (error as Error).message)
+        // Python: `ValueError` (every message `worktrees.ts` raises on purpose) → 400; anything else → 500 sanitised.
+        throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }
     }),
     remove: os.worktree.remove.handler(({ input, context: { ctx } }) => {
@@ -216,7 +220,7 @@ export const gitRouter = os.router({
       try {
         return removeWorktreeForSession(session, ctx.deps.worktreeLocks, { force: Boolean(input.force) }) as { ok: true; removed_path: string; warnings: string[] | null }
       } catch (error) {
-        throw new HttpError(400, (error as Error).message)
+        throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }
     }),
   },

@@ -499,7 +499,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
-      const result = await sidecar.call('aux.complete', { profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] })
+      // Python `_llm_git_commit_message`: the session's main model is the auxiliary client's `main_runtime`, and the
+      // main model itself answers (through AIAgent) when no auxiliary client is configured or the call fails.
+      const result = await sidecar.call('aux.complete', {
+        profile_home: profileHome(session.profile ?? activeProfile()), task: 'compression',
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        main_runtime: { model: session.model ?? '', provider: session.model_provider ?? null }, main_fallback: true,
+      })
       return result.text
     },
   }

@@ -7,7 +7,7 @@
  * against repo-local config, and bounded by a timeout.
  */
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
-import { closeSync, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -109,7 +109,8 @@ export function classifyGitError(message: string, args: string[] = []): string {
 /** Unified diff of `[]` → `lines` (Python `difflib.unified_diff` for an empty left side). */
 function unifiedDiffFromEmpty(lines: string[], toFile: string): string[] {
   if (!lines.length) return []
-  return [`--- /dev/null`, `+++ ${toFile}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)]
+  // `difflib` writes `+1` for a single-line range and `+1,N` otherwise.
+  return [`--- /dev/null`, `+++ ${toFile}`, `@@ -0,0 +${lines.length === 1 ? '1' : `1,${String(lines.length)}`} @@`, ...lines.map((l) => `+${l}`)]
 }
 
 function diffStats(diff: string): [number, number] {
@@ -279,12 +280,14 @@ export class GitRunner {
 
   resolveContext(workspace: string): GitContext | null {
     const ws = resolvePathLikePython(workspace)
-    if (!existsSync(ws)) return null
+    // Python ran `git rev-parse` with `cwd=<workspace>`; a vanished directory raised `FileNotFoundError`, which `_run_git`
+    // reported as `missing_git` — every route answered 400 rather than "not a repo".
+    if (!existsSync(ws)) throw new GitWorkspaceError('Git is not installed or not available on PATH', 'missing_git')
     let result: GitResult
     try {
       result = this.run(ws, ['rev-parse', '--show-toplevel'])
     } catch (error) {
-      if (error instanceof GitWorkspaceError && error.code === 'missing_git') throw error
+      if (error instanceof GitWorkspaceError && (error.code === 'missing_git' || error.code === 'timeout')) throw error
       return null
     }
     if (result.status !== 0) return null
@@ -450,7 +453,18 @@ export class GitRunner {
   /** An untracked file's bytes through the anchored walk (no symlinked component), or null when unreadable/too large. */
   private static readUntracked(workspace: string, path: string): { data: Buffer } | { tooLarge: true } | null {
     let fd: number
-    try { fd = openAnchoredFd(workspace, path, { wantDir: false }) } catch { return null }
+    // Python read an untracked symlink through its target; that is kept for links that stay inside the workspace, so
+    // a link pointing outside can never pull foreign bytes into a diff.
+    let source = path
+    try {
+      if (lstatSync(path).isSymbolicLink()) {
+        const real = realpathSync(path)
+        const root = realpathSync(workspace)
+        if (real !== root && !isWithin(real, root)) return null
+        source = real
+      }
+    } catch { return null }
+    try { fd = openAnchoredFd(workspace, source, { wantDir: false }) } catch { return null }
     try {
       const st = fstatSync(fd)
       if (!st.isFile()) return null
@@ -796,7 +810,7 @@ export class GitRunner {
     const ctx = this.resolveContext(workspace)
     if (!ctx) throw new GitWorkspaceError('Workspace is not a Git repository', 'not_a_repo')
     const m = (mode || 'local').trim().toLowerCase()
-    const dirtyMode = (opts.dirtyMode ?? 'block').trim().toLowerCase() || 'block'
+    const dirtyMode = (opts.dirtyMode || 'block').trim().toLowerCase()
     if (dirtyMode !== 'block') throw new GitWorkspaceError('Only dirty_mode=block is supported for branch checkout', 'dirty_worktree')
     const result = await this.withMutationLock(ctx, () => {
       this.validateCheckoutRequestLocked(ctx, ref, m, opts.newBranch ?? null)

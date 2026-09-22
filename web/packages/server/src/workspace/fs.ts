@@ -207,8 +207,9 @@ export function unlinkAnchored(root: string, target: string): void {
   const { dir, leaf } = openAnchoredParent(root, targetResolved)
   try {
     dir.anchored(() => { unlinkSync(dir.child(leaf)) })
-  } catch {
-    throw new NotFoundError(`Not found: ${target}`)
+  } catch (error) {
+    // The errno survives on the wrapped error so a caller can tell a benign race (`ENOENT`) from a refusal.
+    throw Object.assign(new NotFoundError(`Not found: ${target}`), { code: (error as NodeJS.ErrnoException).code })
   } finally {
     dir.close()
   }

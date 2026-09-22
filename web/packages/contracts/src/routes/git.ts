@@ -29,7 +29,7 @@ const SessionBody = z.object({ session_id: z.string() })
 const PathsBody = SessionBody.extend({ paths: z.union([z.array(Json), z.string()]).optional(), path: z.string().optional() })
 const GitOk = z.object({ ok: z.literal(true), git: GitStatusSchema })
 const RemoteResult = z.object({ ok: z.literal(true), message: z.string(), status: GitStatusSchema })
-const CheckoutBody = SessionBody.extend({ ref: z.string(), mode: z.string(), new_branch: z.string().nullable().optional(), track: z.boolean().optional(), dirty_mode: z.string().optional() })
+const CheckoutBody = SessionBody.extend({ ref: z.string(), mode: z.string(), new_branch: z.string().nullable().optional(), track: Json.optional(), dirty_mode: z.string().optional() })
 const CheckoutResult = z.object({ ok: z.literal(true), git: GitStatusSchema, branches: GitBranchesSchema, current_branch: z.string(), message: z.string() })
 
 export const gitContract = {
