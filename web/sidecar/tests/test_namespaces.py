@@ -109,7 +109,11 @@ def test_error_conditions_are_typed(handshaken: SidecarProcess, hermes_home: pat
     assert message["error"]["data"]["condition"] == "credential_missing"
     message, _ = handshaken.call("kanban.task", {"profile_home": home, "task_id": "t_missing"})
     assert message["error"]["data"]["condition"] == "not_found"
+    # Delete resolves the id through the store like the predecessor (a traversal-shaped id is simply not found);
+    # the output-file methods keep the strict id shape.
     message, _ = handshaken.call("cron.delete", {"profile_home": home, "job_id": "../etc"})
+    assert message["error"]["data"]["condition"] == "not_found"
+    message, _ = handshaken.call("cron.history", {"profile_home": home, "job_id": "../etc"})
     assert message["error"]["code"] == -32602
     message, _ = handshaken.call("commands.exec", {"profile_home": home, "command": "/definitely-not-a-command"})
     assert message["error"]["data"]["condition"] == "command_not_found"

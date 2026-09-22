@@ -150,6 +150,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const drafts = new DraftStore(config.sessionDir)
   const registry = new StreamRegistry()
   const activeStreamIds = registry.liveIds
+  const runningCronJobs = new Map<string, number>()
   const workspaces = new WorkspaceRegistry({
     stateDir: config.stateDir,
     defaultWorkspace: () => config.defaultWorkspace,
@@ -227,7 +228,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     // Chat runtime (checkpoint 6) replaces these with live stream and cron state.
     runtime: {
       activeStreamIds,
-      runningCronJobs: new Map<string, number>(),
+      runningCronJobs,
       live: (sid): Session | undefined => (registry.activeRunStreamForSession(sid) ? store.sessions.get(sid) : undefined),
       // Python `_session_attention_summary`: approvals outrank clarify prompts.
       attention: (sid) => {
@@ -493,6 +494,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       profilesMatch,
       isolatedProfileMode,
       log,
+      publishSessionsChanged: (reason, profile) => { events.publish(reason, { profile }) },
+      runningJobs: runningCronJobs,
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),

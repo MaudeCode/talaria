@@ -9,6 +9,7 @@ stream progress frames to the server.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import logging
 import multiprocessing
@@ -24,9 +25,9 @@ from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.cron")
 _JOB_ID_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}")
-_OUTPUT_CONTENT_LIMIT = 20_000
-_OUTPUT_HEADER_CONTEXT = 2_000
-_PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort")
+_OUTPUT_CONTENT_LIMIT = 8000
+_OUTPUT_HEADER_CONTEXT = 200
+_PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort", "monitor_script", "monitor_url")
 _RUNNING: dict[str, float] = {}
 _RUNNING_LOCK = threading.Lock()
 _SNAPSHOT_LOCK = threading.Lock()
@@ -52,10 +53,19 @@ def _store(home: Path):
 
 
 def _job_id(params: dict, key: str = "job_id") -> str:
+    """A job id that names files under ``cron/output/<id>``: strict shape."""
     job_id = str(params.get(key) or "").strip()
     if not job_id or not _JOB_ID_RE.fullmatch(job_id) or job_id in (".", ".."):
         raise InvalidParams("invalid job_id")
     return job_id
+
+
+def _job_ref(params: dict, key: str = "job_id") -> str:
+    """A job reference resolved by the Agent's store (``pause_job`` etc. also accept names): predecessor passed it verbatim."""
+    ref = str(params.get(key) or "").strip()
+    if not ref or any(ch in ref for ch in "\x00\r\n"):
+        raise InvalidParams("invalid job_id")
+    return ref
 
 
 # ── job payload shaping ───────────────────────────────────────────────────
@@ -266,6 +276,28 @@ def _run_in_child(job, execution_home, ctx: CallContext):
     raise RuntimeError(payload[0])
 
 
+_SCHEDULER_HOME_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _delivery_home(scheduler, home: Path):
+    """Predecessor ``cron_profile_context_for_home``: delivery and run metadata resolve config from the job's owning
+    store home (``cron.scheduler._hermes_home`` and ``get_hermes_home()``), not the sidecar's process home."""
+    with _SCHEDULER_HOME_LOCK, scoped_home(home):
+        previous = getattr(scheduler, "_hermes_home", None)
+        try:
+            scheduler._hermes_home = Path(home)
+        except Exception:  # noqa: BLE001 - read-only stand-ins in tests
+            pass
+        try:
+            yield
+        finally:
+            try:
+                scheduler._hermes_home = previous
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: CallContext) -> dict:
     jobs = _jobs()
     scheduler = importlib.import_module("cron.scheduler")
@@ -276,7 +308,7 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
     outcome: dict = {"job_id": job_id, "status": "completed"}
     try:
         success, output, final_response, error = _run_in_child(job, execution_home, ctx)
-        with _store(store_home):
+        with _store(store_home), _delivery_home(scheduler, store_home):
             jobs.save_job_output(job_id, output)
             content = final_response if success else f"⚠️ Cron job '{job.get('name', job_id)}' failed:\n{error}"
             should_deliver = bool(content) and not (success and silent_marker in content.strip().upper())
@@ -348,24 +380,26 @@ def register(registry) -> None:
         if body.get("toast_notifications") is False:
             post["toast_notifications"] = False
         snapshot_home = params.get("execution_home")
+        # The selected profile's provider/model snapshot is resolved before the job exists (predecessor
+        # ``_selected_profile_snapshot_updates`` ran before ``create_job``), so a failure leaves nothing behind.
+        if post.get("profile") and snapshot_home and not (body.get("model") and body.get("provider")) and not body.get("no_agent"):
+            try:
+                from cron.jobs import _compute_provider_model_snapshots
+
+                with _SNAPSHOT_LOCK, scoped_home(Path(snapshot_home)):
+                    provider_snapshot, model_snapshot = _compute_provider_model_snapshots(provider=body.get("provider") or None, model=body.get("model") or None, base_url=None, no_agent=False)
+                if body.get("provider") is None:
+                    post["provider_snapshot"] = provider_snapshot
+                if body.get("model") is None:
+                    post["model_snapshot"] = model_snapshot
+            except Exception as exc:  # noqa: BLE001
+                raise RpcError(f"Cannot safely resolve cron snapshots for profile {post['profile']!r}", condition="cron_snapshot_failed") from exc
         with _store(home), scoped_home(home):
             try:
                 job = jobs.create_job(prompt=body.get("prompt") or "", schedule=body["schedule"], name=body.get("name") or None, deliver=body.get("deliver") or "local",
                                       skills=body.get("skills") or [], model=body.get("model") or None, provider=body.get("provider") or None, **kwargs)
             except Exception as exc:  # noqa: BLE001
                 raise InvalidParams(str(exc)) from exc
-            if post.get("profile") and snapshot_home and not (body.get("model") and body.get("provider")) and not body.get("no_agent"):
-                try:
-                    from cron.jobs import _compute_provider_model_snapshots
-
-                    with _SNAPSHOT_LOCK, scoped_home(Path(snapshot_home)):
-                        provider_snapshot, model_snapshot = _compute_provider_model_snapshots(provider=body.get("provider") or None, model=body.get("model") or None, base_url=None, no_agent=False)
-                    if body.get("provider") is None:
-                        post["provider_snapshot"] = provider_snapshot
-                    if body.get("model") is None:
-                        post["model_snapshot"] = model_snapshot
-                except Exception as exc:  # noqa: BLE001
-                    raise RpcError(f"Cannot safely resolve cron snapshots for profile {post['profile']!r}: {exc}", condition="cron_snapshot_failed") from exc
             if post:
                 job = jobs.update_job(job["id"], post) or job
         return {"job": job_for_api(job)}
@@ -373,7 +407,7 @@ def register(registry) -> None:
     @registry.method("cron.update")
     def update(ctx: CallContext, params: dict) -> dict:
         jobs = _jobs()
-        job_id = _job_id(params)
+        job_id = _job_ref(params)
         body = params.get("updates") or {}
         with _store(profile_home_param(params)):
             updates = {}
@@ -382,6 +416,8 @@ def register(registry) -> None:
                     continue
                 if key in ("model", "provider"):
                     updates[key] = value if value else None
+                elif key == "profile":
+                    updates[key] = value  # ``None`` clears the profile back to the server default
                 elif value is not None:
                     updates[key] = value
             current_refs = None
@@ -398,7 +434,7 @@ def register(registry) -> None:
 
     @registry.method("cron.delete")
     def delete(ctx: CallContext, params: dict) -> dict:
-        job_id = _job_id(params)
+        job_id = _job_ref(params)
         with _store(profile_home_param(params)):
             ok = _jobs().remove_job(job_id)
         if not ok:
@@ -408,18 +444,21 @@ def register(registry) -> None:
     @registry.method("cron.pause")
     def pause(ctx: CallContext, params: dict) -> dict:
         with _store(profile_home_param(params)):
-            job = _jobs().pause_job(_job_id(params), reason=params.get("reason"))
+            job = _jobs().pause_job(_job_ref(params), reason=params.get("reason"))
         if not job:
             raise RpcError("Job not found", condition="not_found")
-        return {"job": job_for_api(job)}
+        return {"job": dict(job)}
 
     @registry.method("cron.resume")
     def resume(ctx: CallContext, params: dict) -> dict:
         with _store(profile_home_param(params)):
-            job = _jobs().resume_job(_job_id(params))
+            try:
+                job = _jobs().resume_job(_job_ref(params))
+            except ValueError as exc:
+                raise RpcError(str(exc), condition="cron_resume_failed") from exc
         if not job:
             raise RpcError("Job not found", condition="not_found")
-        return {"job": job_for_api(job)}
+        return {"job": dict(job)}
 
     @registry.method("cron.run")
     def run(ctx: CallContext, params: dict) -> dict:

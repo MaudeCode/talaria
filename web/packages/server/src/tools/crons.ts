@@ -12,6 +12,10 @@ export interface CronDeps {
   profilesMatch: (row: string, active: string) => boolean
   isolatedProfileMode: () => boolean
   log: (line: string) => void
+  /** Python `_publish_session_list_changed("cron_complete", profile=...)` once a manual run finishes. */
+  publishSessionsChanged?: (reason: string, profile: string | null) => void
+  /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
+  runningJobs?: Map<string, number>
 }
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
@@ -158,12 +162,15 @@ export class CronService {
   }
 
   private async simple(method: 'cron.pause' | 'cron.resume' | 'cron.delete', home: string, jobId: string, extra: Dict = {}): Promise<Dict> {
-    if (!jobId) throw new HttpFailure(400, 'job_id required')
+    if (!jobId) throw new HttpFailure(400, method === 'cron.delete' ? 'Missing required field(s): job_id' : 'job_id required')
     try {
       const result = await this.sidecar().call(method, { profile_home: home, job_id: jobId, ...extra })
-      return 'job' in result ? { ok: true, job: jobForApi(result.job) } : { ok: true, job_id: jobId }
+      // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
+      return 'job' in result ? { ok: true, job: result.job } : { ok: true, job_id: jobId }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
+      // Python had no handler for `resume_job`'s ValueError (expired one-shot): it surfaced as a 500.
+      if (error instanceof SidecarError && error.condition === 'cron_resume_failed') throw new HttpFailure(500, str(error.message))
       throw new HttpFailure(400, str((error as Error).message))
     }
   }
@@ -182,13 +189,24 @@ export class CronService {
     const status = await sidecar.call('cron.status', { job_id: jobId })
     if ('job_id' in status && status.running) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.round(status.elapsed * 10) / 10 }
     const profile = str(job.profile).trim()
-    const executionHome = profile && (await this.availableProfileNames()).has(profile) ? this.deps.profileHome(profile) : null
-    return new Promise((resolve) => {
+    const known = (await this.availableProfileNames()).has(profile)
+    const executionHome = profile && known ? this.deps.profileHome(profile) : null
+    // Python `_event_profile_for_cron_job`: browsers refresh the job's profile when it is a known one.
+    const eventProfile = profile && known ? profile : null
+    const running = this.deps.runningJobs
+    const done = (): void => { running?.delete(jobId); this.deps.publishSessionsChanged?.('cron_complete', eventProfile) }
+    return new Promise((resolve, reject) => {
       let answered = false
       const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
-      sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') answer({ ok: true, job_id: jobId, status: 'running' }) } })
-        .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }) })
-        .catch((error: unknown) => { this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`); answer({ ok: false, job_id: jobId, status: 'error' }) })
+      let started = false
+      sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
+        .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); if (started) done() })
+        .catch((error: unknown) => {
+          this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`)
+          if (started) { done(); return }
+          // Python only ever answered 200 for `running`/`already_running`; a run that never started is the error it was.
+          if (!answered) { answered = true; reject(error instanceof HttpFailure ? error : new HttpFailure(error instanceof SidecarError && error.condition === 'sidecar_unavailable' ? 503 : 500, str((error as Error).message))) }
+        })
     })
   }
 
@@ -201,8 +219,10 @@ export class CronService {
   async history(home: string, jobId: string, offset: string | undefined, limit: string | undefined): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, 'job_id required')
     if (!validJobId(jobId)) throw new HttpFailure(400, 'invalid job_id')
-    const o = Number.parseInt(offset ?? '0', 10)
-    const l = Number.parseInt(limit ?? '50', 10)
+    // Python `int()`: a blank query value is absent (parse_qs drops it); "5abc" / "1.5" are rejected.
+    const pyInt = (raw: string | undefined, fallback: number): number => { const t = (raw ?? '').trim(); if (!t) return fallback; if (!/^[+-]?\d+$/.test(t)) return Number.NaN; return Number.parseInt(t, 10) }
+    const o = pyInt(offset, 0)
+    const l = pyInt(limit, 50)
     if (!Number.isFinite(o) || !Number.isFinite(l)) throw new HttpFailure(400, 'offset and limit must be integers')
     return this.sidecar().call('cron.history', { profile_home: home, job_id: jobId, offset: Math.max(0, o), limit: Math.max(1, Math.min(500, l)) })
   }

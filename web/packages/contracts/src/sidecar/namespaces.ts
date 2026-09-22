@@ -140,8 +140,9 @@ export const CRON_METHODS = {
   'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
   'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },
   'cron.delete': { params: CronJob, result: z.object({ ok: z.literal(true), job_id: z.string() }) },
-  'cron.pause': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: JobEnvelope },
-  'cron.resume': { params: CronJob, result: JobEnvelope },
+  // Python answered pause/resume with the raw `pause_job`/`resume_job` record (no API decoration).
+  'cron.pause': { params: CronJob.extend({ reason: z.string().nullable().optional() }), result: z.object({ job: z.object({ id: z.string() }).catchall(Json) }) },
+  'cron.resume': { params: CronJob, result: z.object({ job: z.object({ id: z.string() }).catchall(Json) }) },
   'cron.run': { params: CronJob.extend({ execution_home: z.string().nullable().optional() }), result: z.union([
     z.object({ job_id: z.string(), status: z.literal('already_running'), elapsed: z.number() }),
     z.object({ job_id: z.string(), status: z.enum(['completed', 'failed']), success: z.boolean(), error: z.string().nullable().optional(), delivery_error: z.string().nullable().optional() }),
