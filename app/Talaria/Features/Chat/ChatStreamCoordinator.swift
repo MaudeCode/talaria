@@ -46,7 +46,7 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
     /// TAL-148: before a cold replay from sequence zero, extend the live timeline
     /// with the streaming turn's already-loaded scene so replayed rows append to
     /// the rendered prefix instead of replacing it.
-    func streamCoordinatorSeedLiveActivityForColdReplay()
+    func streamCoordinatorSeedLiveActivityForColdReplay() async throws
     func streamCoordinatorStartAuxiliaryMonitoring()
     func streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: Bool)
     func streamCoordinatorSaveSnapshotIfNeeded()
@@ -408,7 +408,6 @@ final class ChatStreamCoordinator {
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {
                     delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
                 }
-                isConnectionSuspended = false
                 // Cold relaunch: this process adopted the run without a snapshot,
                 // and no event cursor survived either, so the prefix the server
                 // already streamed would never arrive. Replay it from the start
@@ -418,8 +417,11 @@ final class ChatStreamCoordinator {
                     && lastEventID == nil
                     && response.replayAvailable == true
                 if needsColdReplay {
-                    delegate?.streamCoordinatorSeedLiveActivityForColdReplay()
+                    try await delegate?.streamCoordinatorSeedLiveActivityForColdReplay()
+                    guard !Task.isCancelled, self.activeStreamID == activeStreamID,
+                          isConnectionSuspended, runGeneration == generation else { return }
                 }
+                isConnectionSuspended = false
                 let coldReplayAfterSeq: Int? = needsColdReplay ? 0 : nil
                 start(streamID: streamIDToResume, replayAfterSeq: coldReplayAfterSeq)
             } else if response.replayAvailable == true {

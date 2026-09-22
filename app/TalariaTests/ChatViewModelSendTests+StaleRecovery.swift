@@ -1495,6 +1495,94 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testColdReplayLoadsMissingTurnPrefixWithoutExpandingVisibleWindow() async throws {
+        try await assertPagedColdReplay()
+    }
+
+    @MainActor
+    func testColdReplayWaitsWhenMissingPrefixRequestFails() async throws {
+        try await assertPagedColdReplay(failHistory: true)
+    }
+
+    @MainActor
+    func testColdReplayRejectsHistoryPageThatDoesNotAdvance() async throws {
+        try await assertPagedColdReplay(stallHistory: true)
+    }
+
+    @MainActor
+    private func assertPagedColdReplay(failHistory: Bool = false, stallHistory: Bool = false) async throws {
+        let streamClient = SpySSEStreamingClient()
+        var allMessages: [[String: Any]] = [
+            ["role": "user", "content": "Previous prompt", "message_id": "previous-user"],
+            ["role": "assistant", "content": "Previous answer", "message_id": "previous-assistant"],
+            ["role": "user", "content": "Long active turn", "message_id": "current-user"]
+        ]
+        allMessages += (1...101).map { index in
+            ["role": "assistant", "content": "Part \(index).", "message_id": "part-\(index)"]
+        }
+        var historyRequests: [Int] = []
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/session":
+                let query = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+                XCTAssertEqual(query.first { $0.name == "msg_limit" }?.value, "50")
+                let before = query.first { $0.name == "msg_before" }?.value.flatMap(Int.init)
+                if let before {
+                    historyRequests.append(before)
+                    if failHistory { throw URLError(.timedOut) }
+                }
+                let end = before ?? allMessages.count
+                let offset = max(0, end - 50)
+                let payload: [String: Any] = ["session": [
+                    "session_id": "session-abc", "active_stream_id": "stream-123",
+                    "messages": Array(allMessages[offset..<end]),
+                    "message_count": allMessages.count,
+                    "_messages_offset": stallHistory && before != nil ? end : offset,
+                    "_messages_truncated": offset > 0
+                ]]
+                let data = try JSONSerialization.data(withJSONObject: payload)
+                return apiTestJSONResponse(try XCTUnwrap(String(data: data, encoding: .utf8)), for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(
+                    #"{"active":true,"stream_id":"stream-123","replay_available":true}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let visible = viewModel.messages.compactMap(\.content)
+        XCTAssertEqual(viewModel.messagesOffset, 54)
+        await viewModel.reconnectStreamIfNeeded()
+
+        if failHistory || stallHistory {
+            XCTAssertEqual(historyRequests, [54])
+            XCTAssertTrue(streamClient.startedURLs.isEmpty)
+            XCTAssertTrue(viewModel.isActiveStreamConnectionSuspended)
+            XCTAssertNotNil(viewModel.lastError)
+            XCTAssertEqual(viewModel.messages.compactMap(\.content), visible)
+            return
+        }
+
+        XCTAssertEqual(historyRequests, [54, 4])
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        for index in 1...101 {
+            streamClient.emit(.token("Part "))
+            streamClient.emit(.token("\(index)."))
+        }
+        XCTAssertEqual(viewModel.messagesOffset, 54)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), visible)
+        XCTAssertEqual(liveProse(viewModel).joined(), visible.joined())
+
+        streamClient.emit(.token("New suffix."))
+        XCTAssertEqual(viewModel.messages.last?.content, "Part 101.New suffix.")
+        XCTAssertEqual(liveProse(viewModel).joined(), visible.joined() + "New suffix.")
+    }
+
+    @MainActor
     private func liveProse(_ viewModel: ChatViewModel) -> [String] {
         viewModel.liveActivityRows.compactMap { row in
             guard case .prose(let text) = row.content else { return nil }

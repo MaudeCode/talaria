@@ -1123,6 +1123,35 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testColdReplayPreparationCannotRestartAReplacedRun() async throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        delegate.restoredSnapshotEventID = nil
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
+            return apiTestJSONResponse(
+                #"{"active":true,"stream_id":"stream-cold","replay_available":true}"#,
+                for: request
+            )
+        }
+        let preparation = coordinator.prepareForSessionLoad()
+        coordinator.reconcileSessionLoad(
+            loadedActiveStreamID: "stream-cold", preparation: preparation, usedCacheFallback: false
+        )
+        delegate.onSeedLiveActivity = {
+            coordinator.start(streamID: "replacement-run")
+        }
+
+        await coordinator.reconnectIfNeeded()
+
+        XCTAssertEqual(coordinator.activeStreamID, "replacement-run")
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        let url = try XCTUnwrap(streamClient.startedURLs.first)
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(query.first { $0.name == "stream_id" }?.value, "replacement-run")
+        XCTAssertNil(query.first { $0.name == "after_seq" })
+    }
+
+    @MainActor
     func testTransportErrorReconnectAfterSameStreamReloadDoesNotReplayFromZero() async throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
@@ -1440,8 +1469,11 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         await onLoadMessages?()
     }
 
-    func streamCoordinatorSeedLiveActivityForColdReplay() {
+    var onSeedLiveActivity: (() async throws -> Void)?
+
+    func streamCoordinatorSeedLiveActivityForColdReplay() async throws {
         seedLiveActivityCount += 1
+        try await onSeedLiveActivity?()
     }
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {

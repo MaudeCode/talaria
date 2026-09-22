@@ -5772,7 +5772,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         Self.latestAssistantMessageIDAfterLatestSteeringHint(in: messages)
     }
 
-    func streamCoordinatorSeedLiveActivityForColdReplay() {
+    func streamCoordinatorSeedLiveActivityForColdReplay() async throws {
         // `loadMessages` emptied the live timeline, and live rows win over the
         // persisted scene of every segment in the rendered turn, so the first
         // replayed reasoning or tool event would hide the answer prefix (and any
@@ -5784,9 +5784,43 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
               })
         else { return }
 
-        // A replay from sequence zero includes prose before tool calls, not just
-        // the final message. Capture once, without transcript display separators.
-        pendingColdReplayProsePrefix = turn.assistantSegments.compactMap(\.message.content).joined()
+        // A paginated window can start inside the active turn. Fetch only the
+        // missing prefix, without expanding the visible transcript or its seed.
+        let loadedMessages = messages
+        let loadedOffset = messagesOffset
+        let loadGeneration = sessionLoadRequestGeneration
+        let expectedStreamID = activeStreamID
+        var olderPages: [[ChatMessage]] = []
+        var before = loadedOffset
+        var hasTurnStart = loadedMessages.contains(where: TranscriptTurnClassifier.isUserTurnBoundary)
+        while before > 0 && !hasTurnStart {
+            guard let sessionID else { throw URLError(.badServerResponse) }
+            let response = try await client.session(
+                id: sessionID,
+                includeMessages: true,
+                messageLimit: Self.messagePageLimit,
+                messageBefore: before
+            )
+            try Task.checkCancellation()
+            guard activeStreamID == expectedStreamID,
+                  sessionLoadRequestGeneration == loadGeneration,
+                  messagesOffset == loadedOffset
+            else { throw CancellationError() }
+            guard let page = response.session,
+                  page.sessionId == nil || page.sessionId == sessionID,
+                  let older = page.messages, !older.isEmpty
+            else { throw URLError(.badServerResponse) }
+            let offset = Self.resolvedMessagesOffset(from: page, loadedMessageCount: older.count)
+            guard offset < before else { throw URLError(.badServerResponse) }
+            olderPages.append(older)
+            before = offset
+            hasTurnStart = older.contains(where: TranscriptTurnClassifier.isUserTurnBoundary)
+        }
+        let replayMessages = Self.prependingOlderMessages(olderPages.reversed().flatMap { $0 }, to: loadedMessages)
+        guard let replayTurn = Self.transcriptMessages(from: replayMessages, messageOffset: before).last(where: {
+            $0.assistantSegments.contains { $0.message.messageId == streamingAssistantMessageID }
+        }) else { throw URLError(.badServerResponse) }
+        pendingColdReplayProsePrefix = replayTurn.assistantSegments.compactMap(\.message.content).joined()
 
         let timeline = AssistantActivityTimeline.persisted(
             assistantSegments: turn.assistantSegments,
