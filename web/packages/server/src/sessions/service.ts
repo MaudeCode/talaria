@@ -52,6 +52,8 @@ export interface SessionServiceDeps {
     activeRunStream: (sid: string) => string | null
     evictAgent: (sid: string) => void
     closeTerminal: (sid: string) => void
+    /** Python `delete_cli_session`: remove the session's rows from the profile's state.db; resolves false on failure. */
+    deleteCliSession: (profile: string | null, sid: string) => Promise<boolean>
   }
   attachmentDir: (sid: string) => string
   /** Run journals are removed with their session (Python `delete_run_journal`). */
@@ -790,6 +792,8 @@ export class SessionService {
     const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
     let eventProfile: string | null = null
     try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null }
+    // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
+    const isMessaging = (() => { try { if (isMessagingSessionRecord(this.store.get(sid, { metadataOnly: true }).compact())) return true } catch { /* absent */ } const meta = this.lookupCliMeta(sid); return meta !== null && isMessagingSessionRecord(meta) })()
     const blocking = (): string | null => {
       const live = this.deps.runtime.activeRunStream(sid)
       if (live) return live
@@ -815,8 +819,14 @@ export class SessionService {
     // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
     try { this.deps.journal?.deleteSession(sid) } catch { /* ignore */ }
     this.deps.runtime.closeTerminal(sid)
+    // Python: the Agent/CLI transcript in state.db goes too (else a claimable CLI row resurfaces in the sidebar), but a
+    // messaging channel's memory is never erased from the WebUI; the actual outcome is reported.
+    let stateDbCleanupFailed = false
+    if (!isMessaging) {
+      try { stateDbCleanupFailed = !(await this.deps.runtime.deleteCliSession(eventProfile, sid)) } catch { stateDbCleanupFailed = true }
+    }
     this.publish('session_delete', eventProfile)
-    return { ok: true, state_db_cleanup_failed: false, ...retained }
+    return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
   }
 
   cleanup(zeroOnly: boolean): Record<string, unknown> {

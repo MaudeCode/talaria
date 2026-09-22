@@ -722,6 +722,26 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('deleting a session removes its state.db rows through the sidecar and reports the real outcome, except for messaging sessions', async () => {
+    const sid = await newSession(s)
+    const deletes: string[] = []
+    sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true } })
+    expect(await json(await post(s, '/api/session/delete', { session_id: sid }))).toEqual({ ok: true, state_db_cleanup_failed: false })
+    expect(deletes).toEqual([sid])
+    // A failed state.db cleanup is reported, not hidden behind a hardcoded false.
+    const sid2 = await newSession(s)
+    sidecar.respond('state_db.delete_cli_session', () => ({ ok: false }))
+    expect(await json(await post(s, '/api/session/delete', { session_id: sid2 }))).toEqual({ ok: true, state_db_cleanup_failed: true })
+    // A messaging channel's memory is never erased from the WebUI: no sidecar call, nothing reported as failed.
+    const sid3 = await newSession(s)
+    const tg = s.deps.sessionStore.get(sid3)
+    tg.source_tag = 'telegram'
+    s.deps.sessionStore.save(tg)
+    sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true } })
+    expect(await json(await post(s, '/api/session/delete', { session_id: sid3 }))).toEqual({ ok: true, state_db_cleanup_failed: false })
+    expect(deletes).toEqual([sid])
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

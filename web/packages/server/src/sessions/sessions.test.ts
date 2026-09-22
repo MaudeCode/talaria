@@ -237,7 +237,9 @@ describe('session lifecycle over HTTP', () => {
     writeMessages(s, sid, [{ role: 'user', content: 'bye' }])
     const res = await post(s, '/api/session/delete', { session_id: sid })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: false })
+    // No sidecar in this harness: the state.db cleanup cannot run, and the response says so (Python reported the
+    // same when the store was unreachable) instead of claiming a cleanup that never happened.
+    expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: true })
     expect(existsSync(join(s.state, 'sessions', `${sid}.json`))).toBe(false)
     expect((await s.get(`/api/session?session_id=${sid}`)).status).toBe(404)
     expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).not.toContain(sid)
