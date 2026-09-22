@@ -790,6 +790,26 @@ describe('chat turns through the sidecar', () => {
     expect(leftover).toEqual([])
   })
 
+  it('the next model history includes the Agent state.db turns appended after the WebUI transcript', async () => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
+    session.context_messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
+    s.deps.sessionStore.save(session)
+    // A CLI continuation of the same session landed in the profile's state.db.
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, title TEXT, model TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT, model_config TEXT, user_id TEXT, chat_id TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT, reasoning TEXT)")
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 5000)
+    for (const [role, content, ts] of [['user', 'from web', 5000], ['assistant', 'web reply', 5001], ['user', 'asked in the CLI', 5100], ['assistant', 'answered in the CLI', 5101]] as [string, string, number][]) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    let history: { role: string; content: string }[] = []
+    sidecar.respond('chat.start', (params) => { history = params.conversation_history as { role: string; content: string }[]; return completed([...history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }]) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'and now?' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect(history.map((m) => m.content)).toEqual(['from web', 'web reply', 'asked in the CLI', 'answered in the CLI'])
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

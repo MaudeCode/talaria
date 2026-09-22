@@ -775,6 +775,29 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
+  it('recreating a deleted profile fails closed when the tombstone removal cannot be persisted', async () => {
+    mkdirSync(join(s.state, 'profiles', 'phoenix'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'phoenix', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    expect(await json(await post(s, '/api/profile/delete', { name: 'phoenix' }, asWork()))).toEqual({ ok: true, name: 'phoenix' })
+    const file = join(s.deps.config.stateDir, 'deleted-profiles.json')
+    const previous = readFileSync(file, 'utf8')
+    rmSync(file, { force: true })
+    mkdirSync(file)
+    sidecar.respond('profiles.create', (params) => { mkdirSync(join(s.state, 'profiles', params.name), { recursive: true }); return { profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never } })
+    try {
+      const res = await post(s, '/api/profile/create', { name: 'phoenix' })
+      expect(res.status).toBe(503)
+      expect(String((await json(res)).error)).toContain('deletion record could not be cleared')
+      // The in-memory mark and the durable record agree: writes stay refused.
+      expect(s.deps.profiles.beginWrite('phoenix')).toBe('missing')
+    } finally {
+      rmSync(file, { recursive: true, force: true })
+      writeFileSync(file, previous)
+    }
+  })
+
   it('[py:test_issue5420_profile_switch_session_new.py::test_session_new_succeeds_with_cross_profile_prev_session_id] a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

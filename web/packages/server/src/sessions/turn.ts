@@ -26,7 +26,7 @@ import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessage
 import { attachTodoState } from './todo.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { buildPartialMessage, extractToolCallsFromMessages, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { buildPartialMessage, extractToolCallsFromMessages, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -319,7 +319,11 @@ export class TurnRunner {
     }
     const msgText = opts.msg
     const previousMessages = structuredClone(s.messages)
-    const previousContext = structuredClone(s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial))
+    // Python `reconciled_state_db_messages_for_session(prefer_context=True)`: the model history is the owner context
+    // extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
+    // for a compressed context whose anchor cannot be verified — that stays context-only.
+    const localContext: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
+    const previousContext = structuredClone(localContext.some((m) => isContextCompressionMarker(m)) ? localContext : deps.service().mergedTranscript(s, localContext))
     // Python `_sanitize_messages_for_api`: the model never sees display-only rows or a replayed cancelled prompt.
     const apiHistory = sanitizeMessagesForApi(previousContext)
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)

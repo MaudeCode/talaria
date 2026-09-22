@@ -238,5 +238,9 @@ describe('state.db projection', () => {
     body = (await (await s.get(`/api/session?session_id=${webSid}`)).json()) as { session: Record<string, unknown> }
     expect((body.session.messages as { content: string; timestamp: number }[]).map((m) => m.content)).toEqual(['from web', 'web reply', 'user says', 'assistant says'])
     expect(body.session.message_count).toBe(4)
+    // Branching indexes that same merged transcript (Python `_merged_session_messages_for_display`): a keep_count past
+    // the sidecar tail keeps the CLI turns instead of silently dropping them.
+    const branched = (await (await post('/api/session/branch', { session_id: webSid, keep_count: 3 })).json()) as { session_id: string }
+    expect(s.deps.sessionStore.get(branched.session_id).messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
   })
 })

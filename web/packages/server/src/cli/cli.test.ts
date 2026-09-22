@@ -101,6 +101,17 @@ describe('launcher', () => {
     expect(logs.some((l) => l.includes(`http://:::${String(port)}`))).toBe(false)
   }, 20_000)
 
+  it('the foreground start line brackets an IPv6 host too', async () => {
+    const home = scratch()
+    mkdirSync(join(home, 'web'), { recursive: true })
+    const logs: string[] = []
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), HERMES_WEBUI_SIDECAR_COMMAND: 'x', HERMES_WEBUI_STATE_DIR: join(home, 'state') }
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', '', '--'], log: (l) => logs.push(l) }, { port: 8787, host: '::', noBrowser: true, skipAgentInstall: true, foreground: true }, () => Promise.resolve())
+    expect(code).toBe(0)
+    expect(logs.some((l) => l.includes('http://[::]:8787') && l.includes('foreground'))).toBe(true)
+    expect(logs.some((l) => l.includes('http://:::8787'))).toBe(false)
+  })
+
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {
     expect(parseBootstrapArgs(['9000', '--host', '0.0.0.0', '--no-browser', '--foreground'], {})).toEqual({ port: 9000, host: '0.0.0.0', noBrowser: true, skipAgentInstall: false, foreground: true })
     expect(parseBootstrapArgs([], { HERMES_WEBUI_PORT: '8790', HERMES_WEBUI_HOST: '::' })).toMatchObject({ port: 8790, host: '::' })

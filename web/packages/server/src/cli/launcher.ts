@@ -169,7 +169,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const scheme = tls ? 'https' : 'http'
   const foregroundReason = args.foreground ? '--foreground' : detectSupervisor(env)
   if (foregroundReason) {
-    log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${args.host}:${String(args.port)} (foreground mode: ${foregroundReason})`)
+    log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${hostAuthority(args.host, args.port)} (foreground mode: ${foregroundReason})`)
     await serveInProcess()
     return 0
   }

@@ -144,6 +144,23 @@ export class SessionService {
     }
   }
 
+  /** The Agent's state.db rows for this session (empty for subagent views, which never merge). */
+  stateDbRows(s: Session): Message[] {
+    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return []
+    return stateDbSessionMessages(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
+  }
+
+  /**
+   * Python `_merged_session_messages_for_display`: the sidecar transcript merged append-only with the Agent's state.db
+   * rows (a WebUI conversation continued from the CLI shows the CLI turns). This is the coordinate space `GET
+   * /api/session` exposes, so branching and the next model history slice/extend the same list.
+   */
+  mergedTranscript(s: Session, local: Message[] = s.messages): Message[] {
+    const stateRows = this.stateDbRows(s)
+    if (!stateRows.length) return local
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark })
+  }
+
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
   private lookupCliMeta(sid: string): Row | null {
     try {
@@ -268,13 +285,7 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     this.clearStaleStreamState(s)
-    // Python: the sidecar transcript is merged append-only with the Agent's state.db rows for this session (a WebUI
-    // conversation continued from the CLI shows the CLI turns); a subagent view never merges.
-    let all: unknown[] = loadMessages ? s.messages : []
-    if (loadMessages && str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() !== 'subagent') {
-      const stateRows = stateDbSessionMessages(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), sid, { stitch: false })
-      if (stateRows.length) all = mergeSessionMessagesAppendOnly(s.messages, stateRows, { truncationWatermark: s.truncation_watermark })
-    }
+    const all: unknown[] = loadMessages ? this.mergedTranscript(s) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -780,7 +791,8 @@ export class SessionService {
     }
     const customTitle = body.title ? str(body.title).trim().slice(0, 80) || null : null
     if (!source.branchSourceReadonly) { try { this.store.save(source) } catch { /* ignore */ } }
-    const sourceMessages = source.messages
+    // Python: `keep_count` indexes the merged display transcript, never the raw sidecar array.
+    const sourceMessages = this.mergedTranscript(source)
     const forked = keepCount !== null ? sourceMessages.slice(0, keepCount) : [...sourceMessages]
     const title = customTitle ?? `${source.title || 'Untitled'} (fork)`
     const forkKeep = keepCount ?? sourceMessages.length

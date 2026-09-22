@@ -176,10 +176,17 @@ export class ProfileService {
       if (opts.base_url) await this.deps.config.update(home, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
       if (opts.api_key) writeEnvFile(join(home, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
       if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
-      // The deletion tombstone lifts only once the recreation fully succeeded: a stale cookie stays refused while the
-      // RPC is pending or after it failed.
-      if (this.deleted.delete(opts.name)) {
-        try { this.saveTombstones() } catch (error) { this.deps.log(`[webui] WARNING: could not persist profile tombstones: ${(error as Error).message}`) }
+      // The deletion tombstone lifts only once the recreation fully succeeded, and only durably: if the removal cannot
+      // be persisted the in-memory mark is kept too, so the response and a restart agree (the profile stays refused
+      // until the record can be written), instead of a working profile turning unusable on the next start.
+      if (this.deleted.has(opts.name)) {
+        this.deleted.delete(opts.name)
+        try {
+          this.saveTombstones()
+        } catch (error) {
+          this.deleted.add(opts.name)
+          throw new ProfileError(`Profile '${opts.name}' was created but its deletion record could not be cleared (${str((error as Error).message)}); writes stay refused until it can be`, 503)
+        }
       }
       return row
     }).finally(() => { releaseSource?.() })
