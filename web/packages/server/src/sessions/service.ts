@@ -109,13 +109,14 @@ export class SessionService {
     return this.visibleToActiveProfile(session.profile)
   }
 
-  private isSubagentViewOnly(sid: string): boolean {
+  /** Python `_session_is_subagent_view_only`: a delegated child by any signal — the persisted sidecar or the state.db row. */
+  isSubagentViewOnly(sid: string): boolean {
     try {
       const s = this.store.get(sid)
-      return str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent'
-    } catch {
-      return false
-    }
+      if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return true
+    } catch { /* no sidecar */ }
+    const meta = this.lookupCliMeta(sid)
+    return meta !== null && str(meta.source_tag || meta.raw_source || meta.source).trim().toLowerCase() === 'subagent'
   }
 
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */

@@ -222,6 +222,8 @@ export const chatRouter = os.router({
     const args = str(body.args || body.text)
     if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
     const sid = str(body.session_id)
+    // Python: a delegated subagent child is view-only; its goal state is never mutated and no turn starts on it.
+    if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
     const s = getSession(ctx, sid)
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
@@ -297,6 +299,8 @@ export const chatRouter = os.router({
     requireField(body, 'session_id', 'question')
     const sid = str(body.session_id)
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
+    // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
+    if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
     const s = getSession(ctx, sid)
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')

@@ -742,6 +742,23 @@ describe('chat turns through the sidecar', () => {
     expect(deletes).toEqual([sid])
   })
 
+  it('a delegated subagent child is view-only: no goal, side question, or turn can run on it', async () => {
+    const sid = await newSession(s)
+    const child = s.deps.sessionStore.get(sid)
+    child.source_tag = 'subagent'
+    child.messages = [{ role: 'user', content: 'delegated work' }, { role: 'assistant', content: 'done by the child' }]
+    s.deps.sessionStore.save(child)
+    let starts = 0
+    sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'nope' }]) })
+    let res = await post(s, '/api/goal', { session_id: sid, args: 'set finish the migration' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Subagent sessions are view-only and cannot run /goal from WebUI')
+    res = await post(s, '/api/btw', { session_id: sid, question: 'what did you do?' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Subagent sessions are view-only and cannot be used for /btw from WebUI')
+    expect(starts).toBe(0)
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })
