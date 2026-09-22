@@ -572,7 +572,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         finally:
             run.finished.set()
             watcher.join(timeout=2)
-            if unregister_gateway_notify is not None:
+            # A successor turn for the same session (admitted past the cancel-unwind ceiling) may have registered
+            # its own callback meanwhile: only the run that still owns the session registration unregisters.
+            with _RUNS_LOCK:
+                owns_registration = _RUNS_BY_SESSION.get(session_id) == stream_id
+            if unregister_gateway_notify is not None and owns_registration:
                 try:
                     unregister_gateway_notify(session_id)
                 except Exception:  # noqa: BLE001

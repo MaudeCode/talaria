@@ -204,18 +204,51 @@ def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> No
             started.set()
 
     monkeypatch.setattr(FakeAgent, "__init__", init)
+    # A stand-in for the Agent's gateway approval registry: the successor's callback must survive the old run's unwind.
+    import sys, types
+    registry: dict[str, object] = {}
+    approval_mod = types.ModuleType("tools.approval")
+    approval_mod.register_gateway_notify = lambda key, cb: registry.__setitem__(key, cb)
+    approval_mod.unregister_gateway_notify = lambda key: registry.pop(key, None)
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.approval = approval_mod
+    monkeypatch.setitem(sys.modules, "tools", tools_pkg)
+    monkeypatch.setitem(sys.modules, "tools.approval", approval_mod)
     first: dict = {}
     worker = threading.Thread(target=lambda: first.update(chat.start(Ctx(), _params("st-10", "s-busy"))))
     worker.start()
     assert started.wait(5)
+    first_cb = registry.get("s-busy")
+    assert first_cb is not None
     # The first turn is still inside run_conversation; the second gets its own agent and does not clear its interrupt.
-    second = chat.start(Ctx(), _params("st-11", "s-busy"))
-    assert second["status"] == "completed"
-    assert len(FakeAgent.instances) == 2
-    assert FakeAgent.instances[0].cleared == 1  # only its own start cleared it
+    second_ctx = Ctx()
+    blocker = threading.Event()
+    second_started = threading.Event()
+
+    class SuccessorAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            second_started.set()
+            blocker.wait(5)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: SuccessorAgent)
+    second: dict = {}
+    successor = threading.Thread(target=lambda: second.update(chat.start(second_ctx, _params("st-11", "s-busy"))))
+    successor.start()
+    assert second_started.wait(5)
+    assert registry.get("s-busy") is not first_cb
+    successor_cb = registry.get("s-busy")
+    # The stale first run unwinds now: it no longer owns the session registration, so it leaves it alone.
     gate.set()
     worker.join(5)
     assert first["status"] == "completed"
+    assert registry.get("s-busy") is successor_cb
+    blocker.set()
+    successor.join(5)
+    assert second["status"] == "completed"
+    assert "s-busy" not in registry
+    assert len(FakeAgent.instances) == 2
+    assert FakeAgent.instances[0].cleared == 1  # only its own start cleared it
 
 
 def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:

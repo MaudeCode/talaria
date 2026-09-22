@@ -761,6 +761,12 @@ describe('chat turns through the sidecar', () => {
     expect(res.status).toBe(403)
     expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
     expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    let auxCalls = 0
+    sidecar.respond('aux.complete', () => { auxCalls += 1; return { model: 'aux', text: 'Nope', usage: null } })
+    res = await post(s, '/api/session/title/regenerate', { session_id: sid })
+    expect(res.status).toBe(403)
+    expect(auxCalls).toBe(0)
+    sidecar.respond('aux.complete', () => { throw new SidecarError('no aux model', { condition: 'aux_unconfigured' }) })
     expect(starts).toBe(0)
   })
 
