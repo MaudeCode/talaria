@@ -26,10 +26,9 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
         {turn.steerConsumed.map((s) => <div key={s.id} className="anchor-steering-message mt-1 text-[12px] text-muted">{m.live_steer_consumed({ text: s.text })}</div>)}
         {turn.compression && <div className="compression-card mt-2 rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted" role="status">{turn.compression.state === 'compressing' ? m.live_compressing() : m.live_compressed()}{turn.compression.newSessionId && turn.compression.state === 'compressed' && <> <Link to="/session/$sessionId" params={{ sessionId: turn.compression.newSessionId }} className="text-accent-text underline">{m.live_continuation()}</Link></>}</div>}
-        {turn.status === 'cancelled' && <div className="status-card mt-2 text-[13px] text-muted" role="status">{turn.cancelledMessage || m.live_cancelled()}</div>}
+        {turn.status === 'cancelled' && turn.cancelledMessage && <div className="status-card mt-2 text-[13px] text-muted">{turn.cancelledMessage}</div>}
         {turn.status === 'error' && turn.error && (
           <div className="status-card mt-2 rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px]" role="alert">
-            <div className="font-medium text-error">{m.live_error()}</div>
             {turn.error.message && <div className="mt-0.5 break-words text-muted">{turn.error.message}</div>}
             {turn.error.hint && <div className="mt-0.5 text-muted">{turn.error.hint}</div>}
             {turn.error.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: turn.error.continuationSessionId }} className="mt-1 inline-block text-accent-text underline">{m.live_continuation()}</Link>}

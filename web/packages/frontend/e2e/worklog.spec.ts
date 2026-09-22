@@ -128,3 +128,20 @@ test('recovered worklog can fetch its omitted history', async ({ page }) => {
   await expect(page.getByRole('button', { name: /earlier steps/ })).toHaveCount(0)
   await expect(page.getByText('Recovered answer', { exact: true })).toBeVisible()
 })
+
+for (const mode of ['transparent_stream', 'hide_all_activity']) {
+  test(`terminal outcome stays visible in ${mode}`, async ({ page }) => {
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { chat_activity_display_mode: mode } }))
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+      session_id: 'limited-turn', title: 'Limited turn', messages: [
+        { role: 'user', id: 1, content: 'Inspect' },
+        { role: 'assistant', id: 2, terminal_state: 'tool_limit_reached', tool_calls: [{ id: 'limited-tool', name: 'read_file', args: { path: 'a.txt' } }] },
+      ],
+    } } }))
+    await page.goto('/session/limited-turn')
+    await expect(page.getByText('Tool limit reached', { exact: true })).toBeVisible()
+    await expect(page.locator('.tool-worklog-summary')).toHaveCount(0)
+    if (mode === 'hide_all_activity') await expect(page.locator('[data-tool-id]')).toHaveCount(0)
+    else await expect(page.locator('[data-tool-id="limited-tool"] > button')).toBeVisible()
+  })
+}

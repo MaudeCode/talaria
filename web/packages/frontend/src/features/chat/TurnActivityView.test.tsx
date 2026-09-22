@@ -116,6 +116,19 @@ describe('turn worklog presentation', () => {
     expect(liveActivity(interrupted.turn).status).toBe('interrupted')
   })
 
+  it.each(['compact_worklog', 'transparent_stream', 'hide_all_activity'] as const)('keeps terminal outcomes visible in %s with and without work', (mode) => {
+    const run = liveRun()
+    run.emit(tool('a'))
+    const base = liveActivity(run.turn)
+    const view = render(<View activity={base} mode={mode} />)
+    for (const [status, label] of [['no_response', 'No final answer'], ['tool_limit_reached', 'Tool limit reached'], ['compression_exhausted', 'Context limit reached'], ['error', 'The response failed'], ['cancelled', 'Task cancelled'], ['interrupted', 'Task interrupted']]) {
+      for (const items of [base.items, []]) {
+        view.rerender(<View activity={{ ...base, status: status!, items }} mode={mode} />)
+        expect(screen.getByRole('status')).toHaveTextContent(label!)
+      }
+    }
+  })
+
   it('copies a partial reply when there is no final answer', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })

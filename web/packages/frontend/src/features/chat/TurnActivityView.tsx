@@ -7,7 +7,7 @@ import { sceneItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard } from './blocks/ToolCard'
-import { DisclosureTurnContext, Worklog, type ActivityMode } from './blocks/Worklog'
+import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
 import type { ActivityItem, TurnActivity } from './turnActivity'
 
 /** Live events and persisted history share ordering, nesting and final-answer boundaries. */
@@ -34,6 +34,7 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
 function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode }) {
   const { items, finalAnswer, status } = activity
   const running = status === 'running'
+  const outcome = terminalOutcomeLabel(status)
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.text} streaming={running && last} /></div>
@@ -59,7 +60,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork
         ? <Worklog calls={calls} status={status}>{earlier}{blocks}</Worklog>
         : <>{earlier}{blocks}</>)}
-      {status === 'no_response' && !hasWork && <div role="status" className="text-muted">{m.worklog_no_answer()}</div>}
+      {outcome && <div role="status" className="text-muted">{outcome}</div>}
       {finalAnswer.trim() && <div className="msg-body" data-final-answer="1"><Markdown text={finalAnswer} /></div>}
     </DisclosureTurnContext>
   )
