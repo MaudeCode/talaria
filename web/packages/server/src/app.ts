@@ -3,7 +3,8 @@
  * sandboxed-origin rejection, the auth gate, the startup gate, SPA/static,
  * then the oRPC router; JSON 404 for anything else and JSON 500 on faults.
  */
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingHttpHeaders, IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
+import { gzipSync } from 'node:zlib'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ORPCError, type Router } from '@orpc/server'
@@ -168,12 +169,73 @@ export interface CreateAppOptions {
   router?: Router<AnyContractRouter, ApiContext>
 }
 
+const ORPC_MAX_BODY_BYTES = 20 * 1024 * 1024
+const GZIP_MIN_BYTES = 1024
+
+/** Buffer a JSON response written by oRPC and gzip it when the client accepts gzip and the body exceeds 1 KiB. */
+function gzipJsonResponse(req: { headers: IncomingHttpHeaders }, res: ServerResponse): void {
+  const accept = req.headers['accept-encoding']
+  if (!(Array.isArray(accept) ? accept.join(',') : accept ?? '').includes('gzip')) return
+  const writeHead = res.writeHead.bind(res)
+  const end = res.end.bind(res)
+  let pending: [number, OutgoingHttpHeaders | undefined] | null = null
+  let armed = true
+  const flush = (): void => { if (pending) { writeHead(pending[0], pending[1]); pending = null } }
+  res.writeHead = ((status: number, headers?: OutgoingHttpHeaders) => {
+    if (!armed) return writeHead(status, headers)
+    pending = [status, headers]
+    return res
+  }) as typeof res.writeHead
+  const originalWrite = res.write.bind(res)
+  res.write = ((chunk: unknown, ...rest: unknown[]) => { armed = false; flush(); return (originalWrite as (...a: unknown[]) => boolean)(chunk, ...rest) }) as typeof res.write
+  res.end = ((chunk?: unknown, ...rest: unknown[]) => {
+    if (armed && pending && typeof chunk === 'string') {
+      const headers = pending[1] ?? {}
+      const ct = headers['content-type']
+      const type = typeof ct === 'string' ? ct : ''
+      const body = Buffer.from(chunk, 'utf8')
+      if (type.startsWith('application/json') && body.length > GZIP_MIN_BYTES && !headers['content-encoding']) {
+        const gz = gzipSync(body, { level: 4 })
+        pending = [pending[0], { ...headers, 'content-encoding': 'gzip', 'content-length': String(gz.length), vary: 'Accept-Encoding' }]
+        armed = false
+        flush()
+        return end(gz)
+      }
+    }
+    armed = false
+    flush()
+    return (end as (...a: unknown[]) => ServerResponse)(chunk, ...rest)
+  }) as typeof res.end
+}
+
 export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
   const orpc = new OpenAPIHandler(opts.router ?? appRouter, {
     customErrorResponseBodyEncoder: (error: ORPCError<string, unknown>) => errorResponseBody(error),
+    // Python `j()` gzipped any JSON body over 1 KiB for clients that accept it; oRPC serialises below the standard
+    // handler, so the node response is wrapped here.
+    adapterInterceptors: [
+      async (options) => {
+        gzipJsonResponse(options.request, options.response as ServerResponse)
+        return options.next()
+      },
+    ],
     // Root level: oRPC converts thrown errors into responses below `interceptors`, so only here do error responses get the shared headers.
     rootInterceptors: [
       async (options) => {
+        // Python handlers read `?board=` / `?dry_run=` on POST/PATCH/DELETE as well as the JSON body (the iOS app sends
+        // kanban arguments only as query items); oRPC's compact decode reads the body alone for non-GET, so the query
+        // is merged in as the fallback for keys the body does not carry.
+        const request = options.request
+        if (request.method !== 'GET' && request.url.searchParams.size > 0) {
+          const query = Object.fromEntries(request.url.searchParams)
+          const original = request.body
+          request.body = async () => {
+            const data = await original()
+            if (data === undefined) return query
+            if (data && typeof data === 'object' && !Array.isArray(data)) return { ...query, ...(data as Record<string, unknown>) }
+            return data
+          }
+        }
         const result = await options.next()
         if (!result.matched) return result
         const { ctx } = options.context
@@ -285,6 +347,12 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       const sidecarProxy = matchSidecarProxy(path)
       if (sidecarProxy) {
         await handleExtensionSidecarProxy(ctx, sidecarProxy[0], sidecarProxy[1])
+        return
+      }
+      // Python `read_body` refused any declared body over 20 MiB before reading it (`handle_post` → 413).
+      const declared = Number(ctx.header('content-length') ?? '0')
+      if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && Number.isFinite(declared) && declared > ORPC_MAX_BODY_BYTES) {
+        ctx.json({ error: `Request body too large (${String(declared)} bytes, max ${String(ORPC_MAX_BODY_BYTES)})` }, { status: 413 })
         return
       }
       const { matched } = await orpc.handle(req, res, { context: { ctx } })

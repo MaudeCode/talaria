@@ -45,9 +45,13 @@ export function errorResponseBody(error: ORPCError<string, unknown>): Record<str
   if (error.code === 'BAD_REQUEST' && Object.keys(extra).length === 0 && error.message.startsWith('Malformed request')) return { error: 'Invalid JSON body' }
   if (error.code === 'BAD_REQUEST' && error.message === 'Input validation failed') {
     const issues = Array.isArray(extra.issues) ? (extra.issues as { path?: (string | number)[]; message?: string }[]) : []
+    const mapped = issues.map((i) => ({ path: i.path ?? [], message: i.message ?? '' }))
+    // Python `require()` named every absent top-level field at once; only a malformed value is reported as invalid.
+    const missing = issues.filter((i) => i.path?.length === 1 && (i.message ?? '').includes('received undefined')).map((i) => String(i.path?.[0]))
+    if (missing.length && missing.length === issues.length) return { error: `Missing required field(s): ${missing.join(', ')}`, issues: mapped }
     const first = issues[0]
     const field = first?.path?.map(String).join('.') ?? ''
-    return { error: field ? `Invalid ${field}` : 'Invalid request', issues: issues.map((i) => ({ path: i.path ?? [], message: i.message ?? '' })) }
+    return { error: field ? `Invalid ${field}` : 'Invalid request', issues: mapped }
   }
   return { error: error.message, ...extra }
 }

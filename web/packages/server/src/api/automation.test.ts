@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { request } from 'node:http'
 import { deflateRawSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -446,6 +447,71 @@ describe('automation helpers', () => {
     off()
     reg.closeAll()
     expect(pty.spawned[1]?.killed).toEqual(['SIGHUP'])
+  })
+})
+
+describe('query parameters on non-GET routes (parity)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(async () => { await s.close() })
+
+  it('the iOS kanban client passes board/dry_run/max only as query items on POST, PATCH and DELETE', async () => {
+    sidecar.respond('kanban.dispatch', (params) => ({ dispatched: [], board: params.board, dry_run: params.dry_run, max: params.max }))
+    // Body-less POST with no content-type, exactly as the iOS client sends dispatch.
+    let res = await s.get('/api/kanban/dispatch?board=exp&dry_run=true&max=8', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'kanban.dispatch').at(-1)?.params).toMatchObject({ board: 'exp', dry_run: true, max: 8 })
+    sidecar.respond('kanban.create_task', (params) => ({ task: { id: 't_9', title: String((params.task as Json).title), status: 'ready', priority: 1 }, board: params.board, read_only: false }))
+    res = await post(s, '/api/kanban/tasks?board=exp', { title: 'scoped' })
+    expect(res.status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'kanban.create_task').at(-1)?.params).toMatchObject({ board: 'exp', task: { title: 'scoped' } })
+    // The JSON body still wins for a key present in both.
+    res = await post(s, '/api/kanban/tasks?board=exp', { title: 'body-wins', board: 'other' })
+    expect(sidecar.calls.filter((c) => c.method === 'kanban.create_task').at(-1)?.params).toMatchObject({ board: 'other' })
+    sidecar.respond('kanban.delete_board', (params) => ({ result: { deleted: params.delete }, current: 'default', read_only: false }))
+    res = await s.get('/api/kanban/boards/exp?delete=1', { method: 'DELETE' })
+    expect(res.status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'kanban.delete_board').at(-1)?.params).toMatchObject({ slug: 'exp', delete: true })
+  })
+
+  it('a declared body over 20 MiB is refused before it is read, with the Python message', async () => {
+    const declared = 21 * 1024 * 1024
+    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port: s.running.port, path: '/api/session/rename', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': String(declared) } }, (res) => {
+        let text = ''
+        res.on('data', (c: Buffer) => { text += c.toString('utf8') })
+        res.on('end', () => { resolve({ status: res.statusCode ?? 0, text }); req.destroy() })
+      })
+      req.on('error', reject)
+      req.flushHeaders()
+    })
+    expect(body.status).toBe(413)
+    expect(JSON.parse(body.text)).toEqual({ error: `Request body too large (${String(declared)} bytes, max 20971520)` })
+  })
+
+  it('JSON responses over 1 KiB are gzipped for clients that accept gzip', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'x'.repeat(4096) }]
+    s.deps.sessionStore.save(session)
+    const res = await s.get(`/api/session?session_id=${sid}`, { headers: { 'accept-encoding': 'gzip' } })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-encoding')).toBe('gzip')
+    const plain = await s.get(`/api/session?session_id=${sid}`, { headers: { 'accept-encoding': 'identity' } })
+    expect(plain.headers.get('content-encoding')).toBeNull()
+    expect(await res.json()).toEqual(await plain.json())
+    // Small bodies stay uncompressed, like Python's 1 KiB threshold.
+    expect((await s.get('/api/kanban/boards', { headers: { 'accept-encoding': 'gzip' } })).headers.get('content-encoding')).toBeNull()
+  })
+
+  it('missing required fields are named the way Python require() named them', async () => {
+    const res = await post(s, '/api/session/rename', {})
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toBe('Missing required field(s): session_id, title')
   })
 })
 
