@@ -11,8 +11,8 @@ import { basename, dirname, join } from 'node:path'
 let counter = 0
 
 /** Write every byte: `writeSync` may return a short count (disk pressure, signals), and a rename must never publish a prefix. */
-export function writeFully(fd: number, text: string, write: (fd: number, buffer: Buffer, offset: number, length: number) => number = writeSync): void {
-  const buffer = Buffer.from(text, 'utf8')
+export function writeFully(fd: number, data: string | Uint8Array, write: (fd: number, buffer: Buffer, offset: number, length: number) => number = writeSync): void {
+  const buffer = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data.buffer, data.byteOffset, data.byteLength)
   let offset = 0
   while (offset < buffer.length) {
     const written = write(fd, buffer, offset, buffer.length - offset)

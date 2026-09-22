@@ -3,7 +3,8 @@ import { implement } from '@orpc/server'
 import { stateDbHasSession } from '../sessions/state-db.js'
 import { sessionsContract, workspacesContract } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
-import { closeSync, existsSync, lstatSync, statSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { basename, dirname, extname, join, relative } from 'node:path'
 import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
@@ -473,7 +474,7 @@ export const sessionsRouter = os.router({
         if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
         const data = Buffer.from(input.content ?? '', 'utf8')
         const fd = openAnchoredWriteFd(root, target)
-        try { writeSync(fd, data) } finally { closeSync(fd) }
+        try { writeFully(fd, data) } finally { closeSync(fd) }
         return { ok: true as const, path: input.path, size: data.length }
       } catch (error) {
         throw fileError(error)
@@ -488,7 +489,7 @@ export const sessionsRouter = os.router({
         if (existsSync(target)) throw new HttpError(400, 'File already exists')
         const data = Buffer.from(input.content ?? '', 'utf8')
         const fd = openAnchoredCreateFd(root, target)
-        try { writeSync(fd, data) } finally { closeSync(fd) }
+        try { writeFully(fd, data) } finally { closeSync(fd) }
         return { ok: true as const, path: relative(resolvePathLikePython(root), target).split('\\').join('/') }
       } catch (error) {
         if (error instanceof FileExistsError) throw new HttpError(400, 'File already exists')

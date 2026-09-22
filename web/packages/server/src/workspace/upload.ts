@@ -1,5 +1,6 @@
 /** Chat attachment uploads: multipart parsing, the per-session inbox, and rollback receipts (Python `api/upload.py`). */
-import { closeSync, existsSync, lstatSync, mkdirSync, realpathSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { basename, extname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -139,7 +140,7 @@ export class UploadInbox {
       throw new UploadRejected('Upload destination rejected')
     }
     try {
-      writeSync(fd, bytes)
+      writeFully(fd, bytes)
     } finally {
       closeSync(fd)
     }

@@ -4,7 +4,8 @@
  * `seq` from 1, `event_id = <stream_id>:<seq>`, fsync on terminal rows.
  */
 import { rmSync } from 'node:fs'
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync, constants as fsConstants } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, constants as fsConstants } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
 import { str } from '../util.js'
 
@@ -444,7 +445,7 @@ export class RunJournalWriter {
     }
     mkdirSync(join(this.path, '..'), { recursive: true })
     this.fd ??= openSync(this.path, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600)
-    writeSync(this.fd, `${JSON.stringify(event)}\n`)
+    writeFully(this.fd, `${JSON.stringify(event)}\n`)
     if (this.fsyncMode === 'eager' || terminalState) { try { fsyncSync(this.fd) } catch { /* best effort */ } }
     if (SSE_RELAY_CLOSE_EVENTS.has(name)) this.closeHandle()
     return event

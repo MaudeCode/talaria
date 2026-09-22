@@ -4,7 +4,8 @@
  * tick, run-journal retention on a long interval. Node closes session
  * channels on the last unsubscribe, so the channel reaper has nothing to do.
  */
-import { closeSync, existsSync, fstatSync, ftruncateSync, openSync, readSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, ftruncateSync, openSync, readSync } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
 import type { RunJournal } from '../sessions/journal.js'
 
@@ -41,7 +42,7 @@ export function rotateOne(target: string, limit: number, log: (line: string) => 
       for (;;) {
         const n = readSync(fd, buf, 0, buf.length, offset)
         if (n <= 0) break
-        writeSync(out, buf, 0, n)
+        writeFully(out, buf.subarray(0, n))
         offset += n
       }
     } finally { closeSync(out) }

@@ -136,19 +136,34 @@ export class ProfileService {
       }
     }
     const params = { base_home: this.deps.baseHome, name: opts.name, ...(opts.clone_from ? { clone_from: opts.clone_from } : {}), clone_config: Boolean(opts.clone_config) }
-    let created: Dict
-    try {
-      created = (await this.sidecar().call('profiles.create', params)).profile
-    } catch (error) {
-      throw new ProfileError(str((error as Error).message), 400)
-    }
-    this.invalidate()
-    const home = str(created.path) || this.deps.profileHome(opts.name)
-    if (opts.base_url) await this.deps.config.update(home, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
-    if (opts.api_key) writeEnvFile(join(home, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
-    if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
+    // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
+    // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
+    const created = await this.withLifecycle(opts.name, async () => {
+      let row: Dict
+      try {
+        row = (await this.sidecar().call('profiles.create', params)).profile
+      } catch (error) {
+        throw new ProfileError(str((error as Error).message), 400)
+      }
+      this.invalidate()
+      const home = str(row.path) || this.deps.profileHome(opts.name)
+      if (opts.base_url) await this.deps.config.update(home, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
+      if (opts.api_key) writeEnvFile(join(home, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
+      if (model || provider) await this.deps.config.update(home, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
+      return row
+    })
     const rows = await this.list('default')
     return rows.find((r) => str(r.name) === opts.name) ?? { ...created, is_active: false }
+  }
+
+  /** Per-profile lifecycle chain: creation (+ its configuration) and deletion of one name never overlap. */
+  private readonly lifecycles = new Map<string, Promise<unknown>>()
+
+  private withLifecycle<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.lifecycles.get(name) ?? Promise.resolve()).then(fn)
+    const settled = run.catch(() => undefined).then(() => { if (this.lifecycles.get(name) === settled) this.lifecycles.delete(name) })
+    this.lifecycles.set(name, settled)
+    return run
   }
 
   /** Profiles whose deletion RPC is in flight: turn admission refuses them so no run enters the check-to-use window. */
@@ -169,13 +184,16 @@ export class ProfileService {
     if (this.deleting.has(name)) throw new ProfileError(`Profile '${name}' is already being deleted.`, 409)
     this.deleting.add(name)
     try {
-      if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
-      try {
-        await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
-      } catch (error) {
-        const message = str((error as Error).message)
-        throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
-      }
+      // Behind any in-flight creation of the same name, so its configuration writes finish before the home goes.
+      await this.withLifecycle(name, async () => {
+        if ((active === name && this.deps.streamsActive()) || this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
+        try {
+          await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
+        } catch (error) {
+          const message = str((error as Error).message)
+          throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
+        }
+      })
     } finally {
       this.deleting.delete(name)
     }

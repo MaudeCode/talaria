@@ -5,7 +5,8 @@
  * repositories created by the Agent's CheckpointManager.
  */
 import { spawnSync } from 'node:child_process'
-import { closeSync, existsSync, fchmodSync, fstatSync, lstatSync, readdirSync, readSync, realpathSync, statSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fchmodSync, fstatSync, lstatSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, safeResolveWs } from './fs.js'
@@ -231,7 +232,7 @@ export class RollbackStore {
         const target = safeResolveWs(resolved, relPath)
         const fd = existsSync(target) ? openAnchoredWriteFd(resolved, target) : openAnchoredCreateFd(resolved, target)
         try {
-          writeSync(fd, content)
+          writeFully(fd, content)
           try { fchmodSync(fd, mode & 0o777) } catch { /* best effort */ }
         } finally {
           closeSync(fd)

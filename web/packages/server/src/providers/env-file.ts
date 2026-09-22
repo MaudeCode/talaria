@@ -1,5 +1,6 @@
 /** `~/.hermes/.env` reader and order-preserving writer (Python `api/providers.py` `_load_env_file` / `_write_env_file`). */
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
+import { writeFully } from '../fs/atomic.js'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
@@ -66,7 +67,7 @@ export function writeEnvFile(path: string, updates: Record<string, string | null
   const tmp = join(dirname(path), `.env_${randomBytes(6).toString('hex')}.tmp`)
   const fd = openSync(tmp, 'w', 0o600)
   try {
-    writeSync(fd, content)
+    writeFully(fd, content)
     fsyncSync(fd)
     closeSync(fd)
     chmodSync(tmp, 0o600)
