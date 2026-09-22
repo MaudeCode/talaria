@@ -20,9 +20,10 @@ export interface SuperviseOptions {
 export async function supervise(opts: SuperviseOptions): Promise<number> {
   const [cmd, ...args] = opts.command
   if (!cmd) throw new Error('supervise: empty command')
+  const cwd = process.cwd()
   let stopping = false
   for (;;) {
-    const child = spawn(cmd, args, { stdio: 'inherit', env: { ...opts.env, [WORKER_ENV]: '1' } })
+    const child = spawn(cmd, args, { cwd, stdio: 'inherit', env: { ...opts.env, [WORKER_ENV]: '1' } })
     const forward = (signal: NodeJS.Signals) => (): void => { stopping = true; child.kill(signal) }
     const handlers: [NodeJS.Signals, () => void][] = [['SIGTERM', forward('SIGTERM')], ['SIGINT', forward('SIGINT')], ['SIGHUP', forward('SIGHUP')]]
     for (const [signal, handler] of handlers) process.on(signal, handler)

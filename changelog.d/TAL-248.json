@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Opt into automatic Web updates: Git source installations can follow every relevant Experimental main commit, while global npm installations can follow completed Stable releases.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

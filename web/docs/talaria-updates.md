@@ -1,7 +1,12 @@
 # Talaria Web updates
 
 Talaria Web keeps the **Stable** and **Experimental** update-channel choices
-and the existing Update button. For Git source installations, Experimental follows `origin/main` through a clean Git fast-forward and needs only Git
+and the existing Update button. **Check for updates** polls at startup and every
+five minutes while the server is running. **Automatically apply Web updates** is
+opt-in and requires update checks to be enabled. It applies only Web updates and
+retries blocked or failed attempts on the next check. Existing chats finish first;
+new chats receive a retry response while files are changing or restart is pending.
+For Git source installations, Experimental follows `origin/main` through a clean Git fast-forward and needs only Git
 read access. It does not query release manifests or require a release API token.
 It offers updates only when the net changes under `web/` or `contracts/` differ.
 Counts and change summaries include only commits touching those paths. App-only,
@@ -55,7 +60,7 @@ that is ahead of the published release.
 
 Source updates advance the monorepo checkout; deployment remains component-specific.
 The operation updates Web provenance and schedules a Web restart: once active chat
-work drains (bounded at 300 s) the server worker exits with code 75 and the
+work drains the server worker exits with code 75 and the
 `talaria-web serve` supervisor respawns it, so the PID tracked by `ctl`, launchd,
 or systemd never changes. Existing
 active-run guards still apply. The compatibility `force` and `clear_lock` endpoints
@@ -70,11 +75,20 @@ while keeping the real commit distance at zero. Settings offers **Finish applyin
 until the stamp is verified and Web restarts with that identity. Modified local
 stamps require manual inspection and are not overwritten.
 
-Containers and npm installs use manual artifact replacement: the image digest from
-the completed manifest, or `npm install -g @maudecode/talaria-web@<version>`. Settings distinguishes a
-failed check, an unknown status, local changes, and an available automatic update.
-Manual installations link to the Talaria releases page. Keep persistent state and
-the previous immutable artifact when replacing an installation.
+Direct global npm installations on Stable can update automatically. The updater
+requires the package root to match the global root reported by the npm executable
+beside the running Node process. It installs the exact
+`@maudecode/talaria-web@<version>` recorded by the completed release manifest into
+a temporary global prefix beside the running package. It verifies the version,
+CLI files and baked release metadata, then renames the replacement into place.
+Dependencies move with the package and the existing global CLI links keep working.
+Failed installation or verification preserves the previous package. The service
+user needs write access to the installation directory and room for both versions;
+the updater never invokes sudo. It never follows `latest` independently.
+Linked, local, npx-cache, container, mismatched-prefix, and Experimental packaged
+installs remain manual. Containers use the immutable image digest from the completed
+manifest. Settings distinguishes a failed check, an unknown status, local changes,
+and an available automatic update; manual installations link to the releases page.
 
 Legacy standalone checkouts require an explicit migration to an authenticated
 monorepo checkout with the service working directory and launch path under `web/`.

@@ -161,8 +161,10 @@ Agent gateway and the dashboard. Details, GPU images, and failure modes: [docs/d
 Settings → System checks for updates on the **Stable** (completed release sets) or **Experimental**
 (`origin/main`) channel. A recognized clean git checkout of this repository fast-forwards in place, runs the
 `npm ci` / `npm run build` steps above, and restarts once active chat work drains; a failed build leaves the old
-release stamp and server in place and reports the npm error. npm and container installs report a manual update
-(`npm install -g @maudecode/talaria-web@latest`, or pull the new image). Details:
+release stamp and server in place and reports the npm error. Update checks run at startup and every five minutes.
+Enable **Automatically apply Web updates** to apply them: source installations can follow Experimental `origin/main`, and direct global
+npm installations can install the exact package in a completed Stable release. Containers remain manual image
+replacements. Details:
 [docs/talaria-updates.md](docs/talaria-updates.md).
 
 ## MCP server

@@ -21,7 +21,7 @@ export function SystemSection() {
   const { settings, save, str, bool, set } = useSettingField()
   const health = useQuery({ queryKey: keys.health.system, queryFn: api.fetchSystemHealth, staleTime: 30_000 })
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })
-  const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 60_000 })
+  const updates = useQuery({ queryKey: keys.updates.check, queryFn: () => api.fetchUpdatesCheck(), staleTime: 30_000, refetchInterval: 30_000 })
   const passkeys = useQuery({ queryKey: ['auth', 'passkeys'], queryFn: api.passkeysList, staleTime: 30_000, enabled: bootstrap.auth.passkey_feature_flag })
   const logout = useLogout()
   const [pw, setPw] = useState('')
@@ -64,7 +64,7 @@ export function SystemSection() {
   const canManage = bootstrap.auth.can_manage_server
   const passwordLocked = bool('password_env_var')
   const webUpdate = updates.data?.webui
-  const canApplyWeb = ((webUpdate?.behind ?? 0) > 0 || webUpdate?.metadata_repair === true) && !webUpdate?.error && !webUpdate?.manual_update && !webUpdate?.no_git
+  const canApplyWeb = ((webUpdate?.behind ?? 0) > 0 || webUpdate?.metadata_repair === true) && !webUpdate?.error && !webUpdate?.manual_update && (!webUpdate?.no_git || webUpdate?.install_kind === 'npm')
   const agentUpdate = updates.data?.agent
   const canApplyAgent = (agentUpdate?.behind ?? 0) > 0 && !agentUpdate?.error && !agentUpdate?.manual_update && !agentUpdate?.no_git && !bool('ignore_agent_updates') && !updates.data?.disabled
   return (
@@ -78,9 +78,10 @@ export function SystemSection() {
       </section>
       <section>
         <h2 className="mb-1 text-sm font-semibold text-text">{m.system_updates()}</h2>
-        <FieldRow label={m.settings_label_check_updates()} htmlFor="settingsCheckUpdates" inline><Switch id="settingsCheckUpdates" checked={bool('check_for_updates', true)} onCheckedChange={(checked) => set({ check_for_updates: checked })} /></FieldRow>
+        <FieldRow label={m.settings_label_check_updates()} htmlFor="settingsCheckUpdates" inline><Switch id="settingsCheckUpdates" disabled={!canManage} checked={bool('check_for_updates', true)} onCheckedChange={(checked) => set({ check_for_updates: checked })} /></FieldRow>
+        <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.settings_desc_auto_apply_updates()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
         <FieldRow label={m.settings_label_update_channel()} htmlFor="settingsUpdateChannel" inline>
-          <Select id="settingsUpdateChannel" value={channel} onValueChange={setChannel}>
+          <Select id="settingsUpdateChannel" disabled={!canManage} value={channel} onValueChange={setChannel}>
             <option value="stable">{m.settings_update_channel_stable()}</option>
             <option value="experimental">{m.settings_update_channel_experimental()}</option>
           </Select>

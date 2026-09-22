@@ -100,6 +100,9 @@ describe('OIDC browser login', () => {
     const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
     expect(status).toMatchObject({ logged_in: true, auth_type: 'oidc', user: 'kim@example.com', bound_profile: null, can_manage_server: false })
     expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
+    for (const patch of [{ auto_apply_updates: true }, { update_channel: 'experimental' }, { check_for_updates: false }]) {
+      expect((await s.get('/api/settings', { method: 'POST', body: JSON.stringify(patch), headers: { 'content-type': 'application/json', cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(403)
+    }
   })
 
   it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes [py:test_issue3825_oidc_auth.py::test_oidc_session_is_revoked_when_profile_mapping_changes]', async () => {

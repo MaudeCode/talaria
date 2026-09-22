@@ -3,18 +3,20 @@
  *
  * Web: a recognized clean Talaria checkout fast-forwards to the newest completed
  * release set (stable) or `origin/main` (experimental) and stamps `web/_release.json`
- * from immutable git blobs. npm builds and unrecognized checkouts report
- * `manual_update`. Agent: the external checkout follows its own `v*` tags with a
+ * from immutable git blobs. Direct global npm installs can replace themselves
+ * with an exact completed Stable package; other packaged installs stay manual.
+ * Agent: the external checkout follows its own `v*` tags with a
  * stash/pull or force reset, then the gateway restarts through the sidecar.
  * Nothing here deletes git locks; `clearLock` only inventories them.
  */
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
+import { validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
@@ -26,6 +28,7 @@ export const WEB_UPDATE_PATHS = [':(top)web/', ':(top)contracts/']
 export const RELEASE_STAMP = 'web/_release.json'
 const RELEASE_BLOBS = ['sidecar/agent_dependency.json', 'contract_versions.json']
 export const CACHE_TTL_S = 1800
+export const AUTO_UPDATE_INTERVAL_MS = 5 * 60_000
 export const RESTART_MAX_WAIT_S = 300
 export const DEFAULT_CHANNEL = 'stable'
 export type Channel = 'stable' | 'experimental'
@@ -33,6 +36,7 @@ export type Channel = 'stable' | 'experimental'
 const SHA = /^[a-f0-9]{40}$/
 const VERSION = '(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)'
 const AGENT_TAG_GLOB = 'v*'
+const WEB_NPM_PACKAGE = '@maudecode/talaria-web'
 const GIT_LOCK_SIGNATURES = ["index.lock': file exists", ".lock': file exists", 'another git process seems to be running', 'unable to create .git/index.lock']
 const NETWORK_FAILURES = ['could not resolve host', 'failed to connect', 'network is unreachable', 'no route to host', 'connection timed out', 'timed out after', 'connection reset by peer', 'remote end hung up unexpectedly', 'tls connection was non-properly terminated', 'ssl certificate problem']
 
@@ -70,11 +74,12 @@ export const WEB_BUILD_TIMEOUT_MS = 10 * 60_000
 /** The artifact the supervisor re-executes; a build that does not leave it behind did not succeed. */
 export const WEB_SERVER_ENTRY = 'packages/server/dist/bin/talaria-web.js'
 
-export const runNpm: BuildRun = (args, cwd, timeoutMs) =>
+const runNpmCommand = (args: string[], cwd: string, timeoutMs: number, env: NodeJS.ProcessEnv): Promise<GitOutcome> =>
   new Promise((done) => {
     // Prefer the npm beside the running node so a supervisor started with an absolute node path still finds it.
     const beside = join(dirname(process.execPath), 'npm')
-    execFile(existsSync(beside) ? beside : 'npm', args, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, NODE_ENV: 'development' } }, (error, stdout, stderr) => {
+    const cli = resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js')
+    execFile(existsSync(cli) ? process.execPath : beside, existsSync(cli) ? [cli, ...args] : args, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: { ...env, PATH: `${dirname(process.execPath)}${delimiter}${env.PATH ?? ''}` } }, (error, stdout, stderr) => {
       if (!error) { done({ out: stdout.trim(), ok: true }); return }
       const e = error as NodeJS.ErrnoException & { killed?: boolean; code?: number | string }
       if (e.code === 'ENOENT') { done({ out: 'npm executable not found', ok: false }); return }
@@ -82,6 +87,9 @@ export const runNpm: BuildRun = (args, cwd, timeoutMs) =>
       done({ out: (stderr.trim() || stdout.trim() || `npm exited with status ${String(e.code)}`).slice(-4000), ok: false })
     })
   })
+
+export const runNpm: BuildRun = (args, cwd, timeoutMs) => runNpmCommand(args, cwd, timeoutMs, { ...process.env, NODE_ENV: 'development' })
+export const runPackageNpm: BuildRun = (args, cwd, timeoutMs) => runNpmCommand(args, cwd, timeoutMs, process.env)
 
 /** Install and build the checkout's Web packages; null on success, else the message for the caller. */
 async function buildWeb(root: string, build: BuildRun): Promise<string | null> {
@@ -166,7 +174,7 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
   }
 }
 
-export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; manifestReleaseSet: string; runtime: Dict; release_url: string }
+export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string }
 
 /** Python `published_web_release`: the newest completed `release-set-<sha>` whose Web component matches the channel's tag family. */
 export async function publishedWebRelease(channel: Channel, getJson: GetJson, now: () => number = () => performance.now()): Promise<PublishedRelease> {
@@ -206,6 +214,8 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
     if (typeof source !== 'string' || !SHA.test(source) || component.releaseSet !== source || component.version !== componentTag.split('-v').pop() || typeof component.image !== 'string' || !/^ghcr\.io\/maudecode\/talaria-web@sha256:[a-f0-9]{64}$/.test(component.image)) {
       throw new ReleaseUnavailable('Web release references are mutable or inconsistent')
     }
+    const npm = component.npm
+    if (npm !== undefined && npm !== `${WEB_NPM_PACKAGE}@${String(component.version)}`) throw new ReleaseUnavailable('Web npm release identity is inconsistent')
     const contracts = dict(m.contracts)
     const supported: Dict = {}
     for (const name of ['appWeb', 'webRelay']) {
@@ -222,6 +232,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
       sourceRevision: source,
       releaseSet: source,
       image: component.image,
+      npm: typeof npm === 'string' ? npm : null,
       manifestReleaseSet: str(m.releaseSet),
       runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
       release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
@@ -253,6 +264,34 @@ export async function checkoutRoot(webRoot: string | null, git: GitRun): Promise
   } catch {
     return null
   }
+}
+
+export interface NpmInstallInfo { packageRoot: string; version: string }
+
+/** A real global npm install of this package; local, npx, linked and container trees fail closed. */
+export async function npmInstallInfo(webRoot: string | null, npm: BuildRun = runPackageNpm, container = existsSync('/.within_container') || existsSync('/.dockerenv') || existsSync('/run/.containerenv')): Promise<NpmInstallInfo | null> {
+  if (container || !webRoot || !existsSync(webRoot)) return null
+  let metadata: Dict
+  try { metadata = dict(JSON.parse(readFileSync(join(webRoot, 'package.json'), 'utf8'))) } catch { return null }
+  if (metadata.name !== WEB_NPM_PACKAGE || typeof metadata.version !== 'string' || !new RegExp(`^${VERSION}$`).test(metadata.version)) return null
+  const global = await npm(['root', '--global'], webRoot, 10_000)
+  if (!global.ok || !isAbsolute(global.out)) return null
+  const expected = join(resolve(global.out), '@maudecode', 'talaria-web')
+  try {
+    if (lstatSync(expected).isSymbolicLink() || realpathSync(expected) !== realpathSync(webRoot)) return null
+  } catch { return null }
+  return { packageRoot: realpathSync(webRoot), version: metadata.version }
+}
+
+function compareVersions(installed: string, latest: string): number {
+  const a = installed.split('.').map(Number)
+  const b = latest.split('.').map(Number)
+  for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return Math.sign((a[i] ?? 0) - (b[i] ?? 0))
+  return 0
+}
+
+function diskRelease(webRoot: string): Dict | null {
+  try { return validateReleaseInfo(JSON.parse(readFileSync(join(webRoot, '_release.json'), 'utf8')), webRoot) } catch { return null }
 }
 
 /** Python `verify_release_source`: the stamp Web expects for `release`, computed from immutable blobs at its source revision. */
@@ -362,8 +401,9 @@ async function checkMainUpdate(root: string | null, result: Dict, git: GitRun, i
 }
 
 /** Python `check_web_update`. */
-export async function checkWebUpdate(webRoot: string | null, currentVersion: string, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity): Promise<Dict> {
+export async function checkWebUpdate(webRoot: string | null, currentVersion: string, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun = runPackageNpm): Promise<Dict> {
   const root = await checkoutRoot(webRoot, git)
+  const npmInstall = root === null ? await npmInstallInfo(webRoot, npmRun) : null
   const result: Dict = { name: 'webui', channel, repo_url: REPOSITORY_URL, current_version: currentVersion, behind: null, no_git: root === null }
   if (channel === 'experimental' && root !== null) return checkMainUpdate(root, result, git, id)
   let release: PublishedRelease
@@ -375,6 +415,15 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   }
   Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: release.tag, release_based: true, release_url: release.release_url, image: release.image })
   if (root === null) {
+    if (npmInstall && channel === 'stable' && release.npm && !str(id.release().tag).startsWith('web-exp-v')) {
+      const comparison = compareVersions(npmInstall.version, release.version)
+      if (comparison > 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 0, no_git: true, install_kind: 'npm', manual_update: true, message: 'This npm installation is ahead of the selected Stable release.' }
+      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 1, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, message: `Stable npm update ${release.version} is available.` }
+      const installed = diskRelease(npmInstall.packageRoot)
+      if (!same(installed, release.runtime)) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: null, no_git: true, install_kind: 'npm', manual_update: true, error: 'Installed npm release metadata does not match the completed release.' }
+      const metadataRepair = !same(id.release(), release.runtime)
+      return { ...result, current_sha: release.sourceRevision, behind: 0, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, metadata_repair: metadataRepair, ...(metadataRepair ? { message: 'The npm package is current; finish the update to restart with that version.' } : {}) }
+    }
     const current = id.release().sourceRevision ?? null
     const version = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(currentVersion)
     let behind: number | null = version && current === release.sourceRevision ? 0 : null
@@ -420,10 +469,60 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   return result
 }
 
+async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun, canApply: () => boolean): Promise<Dict> {
+  if (channel !== 'stable') return { ok: false, manual_update: true, message: 'Packaged Experimental updates require manual artifact replacement.' }
+  if (str(id.release().tag).startsWith('web-exp-v')) return { ok: false, manual_update: true, message: 'Switch packaged update channels manually before enabling Stable updates.' }
+  const installed = await npmInstallInfo(webRoot, npmRun)
+  if (!installed) return { ok: false, manual_update: true, message: 'Automatic npm updates require a direct global @maudecode/talaria-web installation.' }
+  let release: PublishedRelease
+  try { release = await publishedWebRelease('stable', getJson) } catch { return { ok: false, message: 'Cannot resolve a completed Talaria release. Check private-repository read access.' } }
+  if (!release.npm) return { ok: false, manual_update: true, message: 'The completed Stable release does not include an npm package identity.' }
+  if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
+  const comparison = compareVersions(installed.version, release.version)
+  if (comparison > 0) return { ok: false, manual_update: true, message: 'This npm installation is ahead of the selected Stable release.' }
+  if (comparison === 0) {
+    if (!same(diskRelease(installed.packageRoot), release.runtime)) return { ok: false, manual_update: true, message: 'Installed npm release metadata does not match the completed release.' }
+    if (same(id.release(), release.runtime)) return { ok: true, up_to_date: true, target: 'webui', channel, message: 'Talaria Web already contains the selected npm release.' }
+    return { ok: true, target: 'webui', channel, sourceRevision: release.sourceRevision, npm: release.npm, message: `Restarting Talaria Web with npm release ${release.version}.` }
+  }
+  if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
+  // Global npm installs keep dependencies inside the package. Build the replacement beside the old package so
+  // install/verification failures cannot damage the running installation and the final rename stays on one volume.
+  const staging = mkdtempSync(join(dirname(installed.packageRoot), '.talaria-update-'))
+  const candidate = join(staging, 'lib/node_modules/@maudecode/talaria-web')
+  const backup = join(staging, 'previous')
+  let keepBackup = false
+  try {
+    const update = await npmRun(['install', '--global', '--prefix', staging, '--no-audit', '--no-fund', release.npm], staging, WEB_BUILD_TIMEOUT_MS)
+    if (!update.ok) return { ok: false, install_failed: true, target: 'webui', channel, message: `npm update failed: ${sanitizeGitDiagnostic(update.out, 1000) || 'unknown error'}` }
+    const metadata = dict(JSON.parse(readFileSync(join(candidate, 'package.json'), 'utf8')))
+    const bins = dict(metadata.bin)
+    if (metadata.name !== WEB_NPM_PACKAGE || metadata.version !== release.version || !same(diskRelease(candidate), release.runtime)
+      || !['talaria-web', 'talaria-web-mcp'].every((name) => str(bins[name]).replace(/^\.\//, '') === `dist/bin/${name}.js` && existsSync(join(candidate, `dist/bin/${name}.js`)))) {
+      return { ok: false, verification_failed: true, target: 'webui', channel, message: 'The downloaded npm package does not match the completed release. The installed package was preserved.' }
+    }
+    const current = await npmInstallInfo(webRoot, npmRun)
+    if (!canApply() || current?.packageRoot !== installed.packageRoot || current.version !== installed.version) return { ok: false, message: 'The npm installation or update settings changed; retry the update.' }
+    renameSync(installed.packageRoot, backup)
+    try { renameSync(candidate, installed.packageRoot) } catch (error) {
+      // Never delete the only surviving copy if a filesystem error also prevents restoration.
+      keepBackup = true
+      renameSync(backup, installed.packageRoot)
+      keepBackup = false
+      throw error
+    }
+  } catch (error) {
+    return { ok: false, install_failed: true, message: `npm update failed: ${sanitizeGitDiagnostic((error as Error).message, 1000)}${keepBackup ? `; previous package retained at ${backup}` : ''}` }
+  } finally {
+    if (!keepBackup) { try { rmSync(staging, { recursive: true, force: true }) } catch { /* a leftover staging directory must not prevent restart after a verified switch */ } }
+  }
+  return { ok: true, target: 'webui', channel, sourceRevision: release.sourceRevision, npm: release.npm, message: `Updated Talaria Web to npm release ${release.version}.` }
+}
+
 /** Python `apply_web_update`: fast-forward a recognized clean checkout to main or a published Stable tag. */
-export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, build: BuildRun = runNpm): Promise<Dict> {
+export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, build: BuildRun = runNpm, npmRun: BuildRun = runPackageNpm, canApply: () => boolean = () => true): Promise<Dict> {
   const root = await checkoutRoot(webRoot, git)
-  if (root === null) return { ok: false, manual_update: true, message: 'Automatic updates require a Talaria monorepo checkout with Web under web/. Migrate this installation manually.' }
+  if (root === null) return applyNpmWebUpdate(webRoot, channel, getJson, id, npmRun, canApply)
   const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
   if (!status.ok || status.out) return { ok: false, dirty: true, message: 'Web update refused: the checkout must be clean, including untracked files.' }
   for (const marker of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'BISECT_LOG']) {
@@ -485,6 +584,7 @@ export async function applyWebUpdate(webRoot: string | null, channel: Channel, g
   const again = await git(['rev-parse', 'HEAD'], root)
   const clean = await git(['status', '--porcelain', '--untracked-files=all'], root)
   if (!again.ok || again.out !== head || !clean.ok || clean.out) return { ok: false, message: 'The checkout changed during the update; retry after it is clean.' }
+  if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
   if (head !== source) {
     const merged = await git(['merge', '--ff-only', '--no-stat', '--no-overwrite-ignore', source], root, 30_000)
     const actual = await git(['rev-parse', 'HEAD'], root)
@@ -789,12 +889,16 @@ export interface UpdateServiceDeps {
   git?: GitRun
   /** Runs the checkout's npm install/build steps after a source update (default: the npm beside this node). */
   build?: BuildRun
+  /** Runs global npm discovery/install for packaged Stable updates. */
+  npm?: BuildRun
   getJson: GetJson
   identity: ReleaseIdentity
   webuiVersion: string
   agentDir: () => string | null
   channel: () => Channel
   includeAgent: () => boolean
+  autoApply?: () => boolean
+  checkEnabled?: () => boolean
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
   scheduleRestart: () => void
@@ -810,7 +914,13 @@ export interface UpdateServiceDeps {
 export class UpdateService {
   private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
+  private checkingKey: string | null = null
   private applying = false
+  private autoTimer: NodeJS.Timeout | null = null
+  private autoStarted = false
+  private lifecycle = 0
+  private autoRunning = false
+  private autoRestartScheduled = false
   private readonly summaries = new Map<string, Dict>()
   private readonly git: GitRun
   private readonly now: () => number
@@ -836,21 +946,75 @@ export class UpdateService {
 
   /** Python `check_for_updates`: 30 min cache keyed on channel + include_agent; one in-flight check per key. */
   async check(force = false, includeAgent = this.deps.includeAgent(), channel = this.deps.channel()): Promise<Dict> {
+    const key = `${channel}:${String(includeAgent)}`
+    if (this.checking) {
+      if (this.checkingKey === key) return this.checking
+      await this.checking
+      return this.check(force, includeAgent, channel)
+    }
+    if (this.applying) return this.cachedStatus(includeAgent, channel)
     const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel
     if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) return { ...this.cache }
-    if (this.checking && matches) return this.checking
+    this.checkingKey = key
     this.checking = (async () => {
       try {
-        const webui = await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity)
+        const webui = await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm)
         // The channel is a Web concept; the Agent always follows its own stable tags.
         const agent = includeAgent ? await checkAgentUpdate(this.deps.agentDir(), this.git) : ignoredAgent()
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel })
         return { ...this.cache }
       } finally {
         this.checking = null
+        this.checkingKey = null
       }
     })()
     return this.checking
+  }
+
+  startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {
+    if (this.autoStarted || this.autoRestartScheduled) return
+    this.autoStarted = true
+    const lifecycle = this.lifecycle
+    const schedule = (delay: number): void => {
+      this.autoTimer = setTimeout(() => {
+        this.autoTimer = null
+        void this.autoApplyOnce().finally(() => { if (this.autoStarted && lifecycle === this.lifecycle && !this.autoRestartScheduled) schedule(intervalMs) })
+      }, delay)
+      this.autoTimer.unref()
+    }
+    schedule(0)
+  }
+
+  stopAutoApply(): void {
+    this.autoStarted = false
+    this.lifecycle += 1
+    if (this.autoTimer) clearTimeout(this.autoTimer)
+    this.autoTimer = null
+  }
+
+  /** Shared turn admission stays closed from update start through the supervisor restart. */
+  blocksNewWork(): boolean { return this.applying || this.autoRestartScheduled }
+
+  async autoApplyOnce(): Promise<Dict | null> {
+    if (this.autoRunning || this.applying || this.autoRestartScheduled || !(this.deps.checkEnabled?.() ?? this.deps.autoApply?.())) return null
+    this.autoRunning = true
+    const lifecycle = this.lifecycle
+    try {
+      const channel = this.deps.channel()
+      const stillEnabled = (): boolean => lifecycle === this.lifecycle && Boolean(this.deps.autoApply?.()) && (this.deps.checkEnabled?.() ?? true) && channel === this.deps.channel()
+      const checked = await this.check(true, this.deps.includeAgent(), channel)
+      const web = dict(checked.webui)
+      if (!stillEnabled()) return web
+      if (web.error || web.manual_update) { this.deps.log(`[updates] automatic Web update unavailable: ${str(web.error || web.message)}`); return web }
+      if (!(Number(web.behind) > 0 || web.metadata_repair === true)) return web
+      const result = await this.apply('webui', channel, stillEnabled)
+      this.deps.log(`[updates] automatic Web update: ${str(result.message || (result.ok ? 'applied' : 'failed'))}`)
+      if (!result.ok) this.cache.webui = { ...web, message: result.message, error: result.restart_blocked ? undefined : result.message }
+      return result
+    } catch (error) {
+      this.deps.log(`[updates] automatic Web update failed: ${(error as Error).message}`)
+      return { ok: false, error: (error as Error).message }
+    } finally { this.autoRunning = false }
   }
 
   blockedResponse(target: string): Dict | null {
@@ -869,16 +1033,20 @@ export class UpdateService {
   }
 
   /** Python `apply_update`. */
-  apply(target: string, channel?: Channel | null): Promise<Dict> {
+  async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true): Promise<Dict> {
+    if (this.checking) await this.checking
+    if (this.autoRestartScheduled) return { ok: true, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
+    if (!canApply()) return { ok: false, message: 'Web update settings changed; update deferred.' }
     const blocked = this.blockedResponse(target)
-    if (blocked) return Promise.resolve(blocked)
-    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel()))
+    if (blocked) return blocked
+    const lifecycle = this.lifecycle
+    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel(), () => lifecycle === this.lifecycle && canApply()))
   }
 
-  private async applyInner(target: string, channel: Channel): Promise<Dict> {
+  private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true): Promise<Dict> {
     if (target === 'webui') {
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.build ?? runNpm)
-      if (result.ok && !result.up_to_date) { this.cache.checked_at = 0; this.deps.scheduleRestart(); result.restart_scheduled = true }
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.build ?? runNpm, this.deps.npm ?? runPackageNpm, canApply)
+      if (result.ok && !result.up_to_date && canApply()) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }

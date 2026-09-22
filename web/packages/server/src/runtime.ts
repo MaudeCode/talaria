@@ -331,6 +331,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     profileDeleting: (profile) => profiles.isDeleting(profile),
+    updateInProgress: () => deps.updates.blocksNewWork(),
     syncTitle: (session) => sessions.deps.syncTitle(session),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,
@@ -580,8 +581,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
     channel: () => normalizeChannel(settings.load().update_channel),
     includeAgent: () => !pyBool(settings.load().ignore_agent_updates),
+    autoApply: () => settings.load().check_for_updates !== false && settings.load().auto_apply_updates === true,
+    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.load().check_for_updates !== false,
     blockers: restartBlockers,
-    scheduleRestart: () => { setTimeout(() => { deps.requestRestart() }, 2000).unref() },
+    scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
     gatewayRestart: async () => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })
