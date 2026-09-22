@@ -823,6 +823,13 @@ describe('chat turns through the sidecar', () => {
     expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
     expect(starts).toBe(0)
     expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    // ...nor run through the auxiliary entry points.
+    for (const [path, body] of [['/api/goal', { session_id: sid, args: 'set finish it' }], ['/api/background', { session_id: sid, prompt: 'summarize' }], ['/api/btw', { session_id: sid, question: 'what?' }]] as [string, Json][]) {
+      const refused = await post(s, path, body)
+      expect(refused.status, path).toBe(403)
+      expect((await json(refused)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
+    }
+    expect(starts).toBe(0)
     // ...nor deleted: its owner's transcript is not the WebUI's to erase.
     const deleted = await post(s, '/api/session/delete', { session_id: sid })
     expect(deleted.status).toBe(400)
