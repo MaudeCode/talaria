@@ -16,6 +16,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SettingsStore } from '../settings.js'
 import { AuthStore, SESSION_TTL } from './store.js'
+import { canonicalJson } from './oidc.js'
+import { spawnSync } from 'node:child_process'
 import { formatSetCookie, parseCookieHeader } from './cookies.js'
 
 // Reference values produced by the Python backend (api/auth.py at db3f02679)
@@ -239,5 +241,14 @@ describe('password hash and login rate', () => {
     } finally {
       chmodSync(dir, 0o700)
     }
+  })
+})
+
+describe('OIDC mapping fingerprint canonical JSON', () => {
+  it('serialises exactly like json.dumps(sort_keys=True, separators=(",", ":")) with ensure_ascii, so Python-written fingerprints verify', () => {
+    const payload = { allow_values: ['Équipe', '日本'], a: '\u007f', z: [1, null, true], nested: { b: 2, a: 'x' } }
+    const py = spawnSync('python3', ['-c', 'import json,sys;print(json.dumps(json.loads(sys.stdin.read()),sort_keys=True,separators=(",",":")))'], { encoding: 'utf8', input: JSON.stringify(payload) })
+    expect(py.status).toBe(0)
+    expect(canonicalJson(payload)).toBe(py.stdout.trim())
   })
 })

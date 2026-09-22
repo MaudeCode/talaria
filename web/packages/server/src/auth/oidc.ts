@@ -604,10 +604,20 @@ export class OidcService {
   }
 }
 
+/**
+ * Python `json.dumps(value, sort_keys=True, separators=(",", ":"))` — including its default `ensure_ascii=True`, which
+ * escapes every non-ASCII character as `\uXXXX`; the mapping fingerprint persisted by the Python server must verify here.
+ */
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
-  if (isDict(value)) return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`
+  if (isDict(value)) return `{${Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((k) => `${pyJsonString(k)}:${canonicalJson(value[k])}`).join(',')}}`
+  if (typeof value === 'string') return pyJsonString(value)
   return JSON.stringify(value)
+}
+
+/** `json.dumps` of one string with `ensure_ascii=True` (UTF-16 code units above 0x7f become `\uXXXX`). */
+function pyJsonString(text: string): string {
+  return JSON.stringify(text).replaceAll(/[\u007f-\uffff]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`)
 }
 
 const EC_CURVES: Record<string, string> = { ES256: 'P-256', ES384: 'P-384', ES512: 'P-521' }

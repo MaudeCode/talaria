@@ -47,9 +47,10 @@ function redirectNoStore(ctx: RequestContext, location: string): void {
   ctx.redirect(location, { headers: { 'Cache-Control': 'no-store', 'Content-Length': '0' } })
 }
 
+/** Python answered OIDC failures through `j()`: security headers, `application/json; charset=utf-8`, `no-store`. */
 function oidcFailure(ctx: RequestContext, error: unknown): void {
-  if (error instanceof OidcConfigError) ctx.rawJson(404, { error: error.message })
-  else if (error instanceof OidcAuthError) ctx.rawJson(error.status, { error: error.message })
+  if (error instanceof OidcConfigError) ctx.json({ error: error.message }, { status: 404 })
+  else if (error instanceof OidcAuthError) ctx.json({ error: error.message }, { status: error.status })
   else throw error
 }
 

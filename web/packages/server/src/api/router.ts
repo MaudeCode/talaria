@@ -102,7 +102,8 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
   }
 }
 
-const SHELL_LANG_RE = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/
+/** Python `_SHELL_LANG_RE`. */
+const SHELL_LANG_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/
 
 /** The `language` setting as a BCP 47 tag for the shell `lang` attribute, or ``. */
 export function shellLanguage(ctx: RequestContext): string {
@@ -307,6 +308,8 @@ async function requirePasskeyManagementAuth(ctx: RequestContext): Promise<void> 
 
 export type CoreRouter = typeof coreRouter
 
+/** Python `_send_still_starting`: the phase is in the text, and the connection closes after the 503. */
 export function startupUnavailable(ctx: RequestContext): void {
-  ctx.json({ error: 'Server is still starting', condition: STARTUP_RECOVERY_CONDITION, phase: ctx.deps.startup.phase }, { status: 503, headers: { 'Retry-After': '5' } })
+  const phase = ctx.deps.startup.phase
+  ctx.json({ error: `Server is still starting: ${phase}`, phase, condition: STARTUP_RECOVERY_CONDITION }, { status: 503, headers: { 'Retry-After': '5', Connection: 'close' } })
 }

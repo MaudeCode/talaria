@@ -213,6 +213,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     store,
     cliSessions: (profile, o) => cliSessions.load(profile, o),
     profileHome,
+    commitSessionMemory: (sid) => { if (sidecar) void sidecar.call('chat.commit_memory', { session_id: sid }).catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) }) },
     drafts,
     events,
     workspaces,

@@ -11,11 +11,13 @@ import { copyJson, redactSessionData, stripPublicInternalFields } from '../redac
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, lineageRootId, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, isMessagingSessionRecord, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
+import { stateDbSessionMessages, stateDbSessionRow } from './state-db.js'
+import { mergeSessionMessagesAppendOnly } from './merge.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -68,6 +70,8 @@ export interface SessionServiceDeps {
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Row[]
   profileHome: (profile: string) => string
+  /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
+  commitSessionMemory?: (sid: string) => void
 }
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -114,7 +118,7 @@ export class SessionService {
 
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */
   getForMutation(sid: string): Session {
-    let s = this.store.get(sid)
+    let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
     if (s.read_only) throw new HttpFailure(403, 'Read-only imported sessions cannot be modified from WebUI')
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
@@ -125,9 +129,89 @@ export class SessionService {
     try {
       return this.store.get(sid, opts)
     } catch (error) {
-      if (error instanceof SessionNotFound) throw new HttpFailure(404, 'Session not found')
+      if (error instanceof SessionNotFound) {
+        // Python `_get_or_materialize_session`: a claimable foreign (CLI/TUI/Desktop) session gains a WebUI sidecar
+        // on its first mutation; a read-only foreign source answers 403 from `getForMutation`, a missing one 404.
+        const synth = this.claimOrSynthesizeCliSession(sid)
+        if (synth.session && synth.reason === 'materialized') { this.store.save(synth.session); return synth.session }
+        if (synth.session) return synth.session
+        throw new HttpFailure(404, 'Session not found')
+      }
       throw error
     }
+  }
+
+  /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
+  private lookupCliMeta(sid: string): Row | null {
+    try {
+      return this.deps.cliSessions(this.deps.activeProfile(), { sourceFilter: null }).find((r) => str(r.session_id) === sid) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /** Python `_is_claimable_cli_source`: a denylist of foreign families that own their sessions. */
+  private claimableCliSource(meta: Row, stateDbSource: string): boolean {
+    if (meta.read_only) return false
+    const sessionSource = str(meta.session_source).trim().toLowerCase()
+    if (['messaging', 'external_agent'].includes(sessionSource)) return false
+    const tag = str(meta.source_tag || meta.raw_source).trim().toLowerCase()
+    const refused = new Set(['claude_code', 'cron', 'external_agent', 'gateway', 'messaging', 'subagent', 'unknown'])
+    if (tag && refused.has(tag)) return false
+    if (isMessagingSessionRecord(meta)) return false
+    if (!tag && stateDbSource && refused.has(stateDbSource.trim().toLowerCase())) return false
+    return true
+  }
+
+  /** Python `_session_index_marks_was_webui`: an index row that once owned a WebUI sidecar (self-heal 404). */
+  private indexMarksWasWebui(sid: string): boolean {
+    let entries: Record<string, unknown>[]
+    try { entries = this.store.readIndexEntries() } catch { return false }
+    for (const entry of entries) {
+      if (str(entry.session_id) !== sid) continue
+      const explicit = [entry.source_tag, entry.raw_source, entry.session_source].map((v) => str(v).trim().toLowerCase()).filter(Boolean)
+      if (explicit.some((v) => v === 'webui' || v === 'fork')) return true
+      if (explicit.length) return false
+      return !(entry.is_cli_session === true || Boolean(entry.read_only || entry.is_read_only))
+    }
+    return false
+  }
+
+  /**
+   * Python `_claim_or_synthesize_cli_session`: build a `Session` from the active profile's state.db for an id without
+   * a WebUI sidecar. `materialized` sessions are writeable (the caller persists the sidecar), `not_claimable` ones are
+   * read-only stubs, `was_webui`/`no_foreign_state`/`invalid_sid` answer 404.
+   */
+  claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null): { session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid' } {
+    if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
+    const profile = this.deps.activeProfile()
+    const dbPath = join(this.deps.profileHome(profile), 'state.db')
+    const row = stateDbSessionRow(dbPath, sid)
+    const stateDbSource = str(row?.source).trim().toLowerCase()
+    const subagentChild = stateDbSource === 'subagent'
+    if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild) return { session: null, reason: 'was_webui' }
+    const msgs = stateDbSessionMessages(dbPath, sid, { stitch: true })
+    if (!msgs.length) return { session: null, reason: 'no_foreign_state' }
+    const meta: Row = { ...(metaIn ?? this.lookupCliMeta(sid) ?? {}) }
+    if (row) {
+      if (!meta.source_tag && stateDbSource) meta.source_tag = stateDbSource
+      if (!meta.raw_source && stateDbSource) meta.raw_source = stateDbSource
+      if (!meta.title && row.title) meta.title = row.title
+      if (!meta.model && row.model) meta.model = row.model
+      if (!meta.workspace && row.cwd) meta.workspace = row.cwd
+      if (!meta.created_at && row.started_at) meta.created_at = row.started_at
+      if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
+    }
+    const claimable = this.claimableCliSource(meta, stateDbSource)
+    const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
+    const defaults = this.store.deps.defaults(profile)
+    const session = new Session({
+      session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
+      messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
+      is_cli_session: claimable ? true : !subagentChild, source_tag: str(meta.source_tag) || null, raw_source: str(meta.raw_source) || null,
+      session_source: str(meta.session_source) || null, source_label: str(meta.source_label) || null, read_only: !claimable,
+    }, defaults)
+    return { session, reason: claimable ? 'materialized' : 'not_claimable' }
   }
 
   private mutationTarget(sid: string, verb: string): Session {
@@ -151,6 +235,11 @@ export class SessionService {
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
+  /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
+  publicSessionDocument(s: Session): Record<string, unknown> {
+    return redactSessionData(s.toDocument(), this.deps.redactEnabled())
+  }
+
   // ── detail ──────────────────────────────────────────────────────────────
 
   private loadRevision(s: Session): string | null {
@@ -168,7 +257,7 @@ export class SessionService {
     try {
       s = this.store.get(sid, { metadataOnly: !loadMessages })
     } catch {
-      throw new HttpFailure(404, 'Session not found')
+      return this.foreignSessionDetail(sid)
     }
     const revisionBefore = this.loadRevision(s)
     if (!this.visibleToActiveProfile(s.profile)) {
@@ -176,7 +265,13 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     this.clearStaleStreamState(s)
-    const all: unknown[] = loadMessages ? s.messages : []
+    // Python: the sidecar transcript is merged append-only with the Agent's state.db rows for this session (a WebUI
+    // conversation continued from the CLI shows the CLI turns); a subagent view never merges.
+    let all: unknown[] = loadMessages ? s.messages : []
+    if (loadMessages && str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() !== 'subagent') {
+      const stateRows = stateDbSessionMessages(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), sid, { stitch: false })
+      if (stateRows.length) all = mergeSessionMessagesAppendOnly(s.messages, stateRows, { truncationWatermark: s.truncation_watermark })
+    }
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -228,6 +323,31 @@ export class SessionService {
       raw.read_only = true
     }
     return redactSessionData(raw, this.deps.redactEnabled())
+  }
+
+  /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
+  private foreignSessionDetail(sid: string): Record<string, unknown> {
+    const meta = this.lookupCliMeta(sid)
+    const profile = str(meta?.profile) || null
+    const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
+    if (!profileAgnostic && !this.visibleToActiveProfile(profile)) {
+      if (profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile })
+      throw new HttpFailure(404, 'Session not found')
+    }
+    const { session: synth, reason } = this.claimOrSynthesizeCliSession(sid, meta)
+    if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
+    const msgs = synth.messages
+    const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
+    const sess: Record<string, unknown> = {
+      session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
+      created_at: synth.created_at, updated_at: synth.updated_at, last_message_at: meta?.last_message_at || meta?.updated_at || lastTs,
+      pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
+      is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
+      source_label: synth.source_label, read_only: synth.read_only, messages: msgs, tool_calls: [],
+    }
+    attachTodoState(sess, msgs)
+    const merged = meta ? mergeCliSidebarMetadata(sess, meta) : sess
+    return redactSessionData(merged, this.deps.redactEnabled())
   }
 
   /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`, no journal recovery). */
@@ -374,6 +494,8 @@ export class SessionService {
     const profile = (typeof body.profile === 'string' && body.profile) || null
     let prevSessionId = typeof body.prev_session_id === 'string' && body.prev_session_id ? body.prev_session_id : null
     if (prevSessionId && !this.sessionIdVisible(prevSessionId)) prevSessionId = null
+    // Python: leaving a session for a new one flushes the previous session's memory in the background (W6).
+    if (prevSessionId) this.deps.commitSessionMemory?.(prevSessionId)
     let workspace: string | null
     try {
       workspace = this.resolveNewSessionWorkspace(body, prevSessionId, profile)
@@ -514,7 +636,11 @@ export class SessionService {
     this.rejectSubagent(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
     const s = this.get404(sid)
-    const keep = Number(keepRaw)
+    // Python `int(body["keep_count"])`: a float truncates, a non-integer string is rejected.
+    let keep: number
+    if (typeof keepRaw === 'number') keep = Number.isFinite(keepRaw) ? Math.trunc(keepRaw) : Number.NaN
+    else if (typeof keepRaw === 'boolean') keep = keepRaw ? 1 : 0
+    else keep = /^[+-]?\d+$/.test(str(keepRaw).trim()) ? Number.parseInt(str(keepRaw).trim(), 10) : Number.NaN
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     await this.store.withLock(sid, () => {
@@ -612,8 +738,7 @@ export class SessionService {
 
   branch(sid: string, body: Record<string, unknown>): Record<string, unknown> {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be branched from WebUI')
-    let source: Session
-    try { source = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
+    const source = this.get404(sid)
     if (source.read_only) {
       if (str(source.source_tag || source.raw_source).trim().toLowerCase() !== 'cron') throw new HttpFailure(403, 'Read-only sessions cannot be branched from WebUI')
       source.branchSourceReadonly = true

@@ -17,7 +17,8 @@ export function parseCookieHeader(header: string | undefined): Map<string, strin
     let value = part.slice(at + 1).trim()
     if (!name || !COOKIE_NAME_RE.test(name)) continue
     if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-    if (!out.has(name)) out.set(name, value)
+    // Python `SimpleCookie.load`: a repeated name keeps the last morsel.
+    out.set(name, value)
   }
   return out
 }

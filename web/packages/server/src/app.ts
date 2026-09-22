@@ -20,7 +20,7 @@ import { automationRouter } from './api/automation-router.js'
 import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { RequestContext, type AppDeps, type HeaderMap } from './http/context.js'
-import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath } from './auth/gate.js'
+import { checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
 import { coreRouter, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
@@ -300,8 +300,16 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       }
       const isCspReport = path === '/api/csp-report' && ctx.method === 'POST'
       if (!isCspReport && !(await checkAuth(ctx))) return
-      if (!deps.startup.ready && path.startsWith('/api/') && !STARTUP_IMMEDIATE_PATHS.has(path) && !(await deps.startup.wait())) {
+      // Python `_startup_exempt`: the public surface (login, auth status, OIDC, passkeys, share reads) answers during recovery.
+      if (!deps.startup.ready && path.startsWith('/api/') && !STARTUP_IMMEDIATE_PATHS.has(path) && !isPublicPath(path) && !(await deps.startup.wait())) {
         startupUnavailable(ctx)
+        return
+      }
+      // Python ran `_check_csrf` before `_guard_request_session_visibility`: a cross-origin unsafe request answers 403
+      // even when it names a foreign session id.
+      const unsafe = ctx.method !== 'GET' && ctx.method !== 'HEAD'
+      if (unsafe && path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {
+        ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
         return
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
@@ -337,9 +345,6 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           ctx.json({ error: `POST required for ${path}` }, { status: 405 })
           return
         }
-      } else if (path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {
-        ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
-        return
       } else if (ctx.method === 'POST') {
         const raw = RAW_POST_ROUTES[path]
         if (raw) {

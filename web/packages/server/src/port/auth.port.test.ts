@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
+import { bootTestServer, type TestServer } from '../test/harness.js'
 import { safeLoginRedirectPath } from '../auth/gate.js'
 import { AuthStore } from '../auth/store.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -73,16 +73,15 @@ describe('password login: CSRF exemption and attempt persistence', () => {
 
 describe('authenticated stream budget', () => {
   let s: TestServer
-  const PASSWORD = 'correct horse battery'
-  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD, HERMES_WEBUI_MAX_SSE_CLIENTS: '2' } }) })
+  // Python keyed the per-client SSE budget by the reconciled trusted-auth username, else the peer address.
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Test-Identity', HERMES_WEBUI_MAX_SSE_CLIENTS: '2' } }) })
   afterAll(() => s.close())
 
   it('[py:test_issue5210_http_worker_bound.py::test_sse_per_client_cap_does_not_affect_another_authenticated_identity] a third stream for one identity answers 503 while another identity still opens one', async () => {
-    const login = async (): Promise<string> => { const res = await post(s, '/api/auth/login', { password: PASSWORD }); expect(res.status, await res.clone().text()).toBe(200); return cookieHeader(res.headers.getSetCookie(), 'hermes_session') ?? '' }
-    const alice = await login()
-    const bob = await login()
+    const alice = 'alice'
+    const bob = 'bob'
     const controllers: AbortController[] = []
-    const open = async (cookie: string): Promise<Response> => { const c = new AbortController(); controllers.push(c); return fetch(`${s.base}/api/sessions/events`, { headers: { cookie }, signal: c.signal }) }
+    const open = async (identity: string): Promise<Response> => { const c = new AbortController(); controllers.push(c); return fetch(`${s.base}/api/sessions/events`, { headers: { 'x-test-identity': identity }, signal: c.signal }) }
     try {
       const a1 = await open(alice)
       const a2 = await open(alice)

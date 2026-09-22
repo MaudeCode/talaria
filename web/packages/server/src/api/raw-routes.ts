@@ -300,7 +300,8 @@ function handleSessionExport(ctx: RequestContext): void {
     throw new HttpError(404, 'Session not found')
   }
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
-  const safe = ctx.deps.sessions.publicSession(session)
+  // Python `public_session_projection(s.__dict__)`: the whole session document (tool_calls, context_messages, ...) redacted.
+  const safe = ctx.deps.sessions.publicSessionDocument(session)
   const fmt = (ctx.query.get('format') ?? 'json').toLowerCase()
   let payload: string
   let contentType: string

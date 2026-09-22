@@ -200,4 +200,43 @@ describe('state.db projection', () => {
     expect(stateDbHasSession(dbPath, 'no-such-session')).toBe(false)
     expect((await s.get('/api/list?session_id=no-such-session&path=.')).status).toBe(404)
   })
+
+  it('GET /api/session synthesizes a state.db-only transcript, mutations materialize a claimable CLI session, and foreign owners stay read-only', async () => {
+    const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    // A TUI conversation continued across a compression rotation: the tip stitches its parent segment.
+    insertSession(db, { id: 'tui-root', source: 'tui', started_at: 1000, title: 'Root', model: 'm1', ended_at: 1100, end_reason: 'compression', messages: [['user', 1001], ['assistant', 1002]] })
+    insertSession(db, { id: 'tui-tip', source: 'tui', started_at: 1100.5, title: 'Tip', model: 'm1', parent: 'tui-root', messages: [['user', 1101], ['assistant', 1102]] })
+    let res = await s.get('/api/session?session_id=tui-tip')
+    expect(res.status).toBe(200)
+    let body = (await res.json()) as { session: Record<string, unknown> }
+    expect(body.session).toMatchObject({ session_id: 'tui-tip', is_cli_session: true, read_only: false, message_count: 4, tool_calls: [] })
+    expect((body.session.messages as { content: string }[]).map((m) => m.content)).toEqual(['user says', 'assistant says', 'user says', 'assistant says'])
+    // Archiving materializes a WebUI sidecar for the claimable CLI session (Python `_get_or_materialize_session`).
+    res = await post('/api/session/archive', { session_id: 'tui-tip', archived: true })
+    expect(res.status).toBe(200)
+    expect(s.deps.sessionStore.loadMetadataOnly('tui-tip')?.archived).toBe(true)
+    expect(s.deps.sessionStore.get('tui-tip').messages).toHaveLength(4)
+    // A messaging-owned session renders read-only and refuses mutation with 403 rather than 404.
+    insertSession(db, { id: 'tg-owned', source: 'telegram', started_at: 2000, title: 'From TG', chat_id: '77', messages: [['user', 2001], ['assistant', 2002]] })
+    res = await s.get('/api/session?session_id=tg-owned')
+    expect(res.status).toBe(200)
+    body = (await res.json()) as { session: Record<string, unknown> }
+    // Python `_merge_cli_sidebar_metadata` re-derives `is_cli_session` from the row: a messaging row is not CLI.
+    expect(body.session).toMatchObject({ read_only: true, is_cli_session: false, source_tag: 'telegram' })
+    res = await post('/api/session/rename', { session_id: 'tg-owned', title: 'nope' })
+    expect(res.status).toBe(403)
+    expect(s.deps.sessionStore.loadMetadataOnly('tg-owned')).toBeNull()
+    // An id with no sidecar and no state.db rows stays a 404.
+    expect((await s.get('/api/session?session_id=ghost-no-rows')).status).toBe(404)
+    // A WebUI session continued from the CLI: state.db rows past the sidecar tail are appended to the transcript.
+    const created = (await (await post('/api/session/new', {})).json()) as { session: { session_id: string } }
+    const webSid = created.session.session_id
+    const web = s.deps.sessionStore.get(webSid)
+    web.messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
+    s.deps.sessionStore.save(web)
+    insertSession(db, { id: webSid, source: 'webui', started_at: 5000, messages: [['user', 5000], ['assistant', 5001], ['user', 5100], ['assistant', 5101]] })
+    body = (await (await s.get(`/api/session?session_id=${webSid}`)).json()) as { session: Record<string, unknown> }
+    expect((body.session.messages as { content: string; timestamp: number }[]).map((m) => m.content)).toEqual(['from web', 'web reply', 'user says', 'assistant says'])
+    expect(body.session.message_count).toBe(4)
+  })
 })

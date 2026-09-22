@@ -3701,6 +3701,19 @@
     ],
     "additionalProperties": false
   },
+  "chat.commit_memory": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "committed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "committed"
+    ],
+    "additionalProperties": false
+  },
   "approval.respond": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

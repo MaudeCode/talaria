@@ -236,6 +236,7 @@ export const CHAT_METHODS = {
   'chat.interrupt': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }), result: z.object({ ok: z.boolean(), reason: z.string().optional() }) },
   'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional() }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ evicted: z.boolean() }) },
+  'chat.commit_memory': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
   'approval.respond': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), choice: z.enum(['once', 'session', 'always', 'deny']), request_id: z.string().nullable().optional() }), result: z.object({ ok: z.boolean(), resolved: z.number().int(), choice: z.string() }) },
   'approval.pending': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ pending: z.array(Loose) }) },
   'approval.set_yolo': { params: z.object({ session_id: z.string().min(1), enabled: z.boolean() }), result: z.object({ yolo_enabled: z.boolean(), released: z.number().int() }) },

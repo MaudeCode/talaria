@@ -41,11 +41,11 @@ export class StreamSlots {
   get active(): number { let total = 0; for (const n of this.held.values()) total += n; return total }
 }
 
-/** Python `_client_stream_key`: the authenticated session identity when present, else the peer address. */
+/** Python `_stream_client_key`: the reconciled trusted-auth username (case-folded) when present, else the peer address. */
 export function clientStreamKey(ctx: RequestContext): string {
-  const cookie = ctx.authCookie() ?? ctx.trusted.cookieValue ?? null
-  if (cookie) return `session:${cookie.split('.', 1)[0] ?? cookie}`
-  return `peer:${ctx.peer || 'unknown'}`
+  const username = str(ctx.trusted.reconciled?.username ?? ctx.trusted.info?.username).trim()
+  if (username) return `identity:${username.toLowerCase()}`
+  return `address:${ctx.peer || 'unknown'}`
 }
 
 /** Python served SSE on blocking sockets, so a slow reader stalled its own producer; Node buffers instead, and this bounds that buffer. */
@@ -104,7 +104,7 @@ export class SseWriter {
 export function claimOrReject(ctx: RequestContext, connectionClose: boolean): SseWriter | null {
   const release = ctx.deps.streamSlots.claim(clientStreamKey(ctx))
   if (!release) {
-    ctx.json({ error: 'Too many concurrent event streams', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
+    ctx.json({ error: 'Client SSE stream limit reached', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
     return null
   }
   return new SseWriter(ctx, release, connectionClose)

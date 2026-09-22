@@ -7,7 +7,8 @@ import { closeSync, existsSync, lstatSync, statSync, writeSync } from 'node:fs'
 import { basename, dirname, extname, join, relative } from 'node:path'
 import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
-import type { RequestContext } from '../http/context.js'
+import { ifNoneMatchMatches, type RequestContext } from '../http/context.js'
+import { SidecarError } from '../sidecar/client.js'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -89,14 +90,15 @@ export const sessionsRouter = os.router({
         archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
         archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
       })
-      const inm = (ctx.header('if-none-match') ?? '').trim()
       ctx.extraResponseHeaders = { etag }
-      if (inm && inm === etag) ctx.notModified = true
+      if (ifNoneMatchMatches(ctx.header('if-none-match') ?? '', etag)) ctx.notModified = true
       return body
     })),
     search: os.sessions.search.handler(({ input, context: { ctx } }) => run(() => {
-      const depth = Math.max(0, Number.parseInt(input.depth ?? '5', 10) || 0)
-      return ctx.deps.sessions.search(input.q ?? '', { content: (input.content ?? '1') === '1', depth: Number.isFinite(depth) ? depth : 5, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+      // Python: `int(depth)` falls back to 5 when malformed.
+      const depthRaw = (input.depth ?? '5').trim()
+      const depth = /^[+-]?\d+$/.test(depthRaw) ? Math.max(0, Number.parseInt(depthRaw, 10)) : 5
+      return ctx.deps.sessions.search(input.q ?? '', { content: (input.content ?? '1') === '1', depth, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
     cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
   },
@@ -133,6 +135,10 @@ export const sessionsRouter = os.router({
           base ??= ctx.deps.workspaces.resolveTrusted(ctx.deps.workspaces.lastWorkspace(profile), profile)
           worktree = await ctx.deps.worktrees.create(base)
         } catch (error) {
+          // Python: `ValueError`/`TypeError` (not a repo, not a directory) → 400 or a degraded plain session; the Agent
+          // helper failing (`RuntimeError`) → 500 `Failed to create worktree: ...`.
+          const valueError = error instanceof SidecarError ? (error.condition === 'not_a_repo' || error.condition === 'invalid_params' || error.code === -32602) : !(error instanceof Error && 'code' in error)
+          if (!valueError) throw new HttpError(500, `Failed to create worktree: ${(error as Error).message}`)
           if (explicit) throw new HttpError(400, (error as Error).message)
           worktree = null
           worktreeSkipped = (error as Error).message
@@ -198,7 +204,15 @@ export const sessionsRouter = os.router({
       return ctx.deps.sessions.setToolsets(input.session_id, input.toolsets) as Promise<{ ok: true; enabled_toolsets: string[] | null }>
     })),
     yoloGet: os.session.yoloGet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.yolo(input.session_id) as { yolo_enabled: boolean })),
-    yoloSet: os.session.yoloSet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.setYolo(input.session_id.trim(), input.enabled ?? true) as { ok: true; yolo_enabled: boolean })),
+    yoloSet: os.session.yoloSet.handler(({ input, context: { ctx } }) => run(async () => {
+      const sid = input.session_id.trim()
+      // Python `_enable_session_yolo_and_release_pending`: turning YOLO on releases every parked approval (`once`)
+      // before the flag is committed, so a turn blocked on an approval card resumes; turning it off only flips the flag.
+      if (input.enabled !== undefined && !input.enabled) return ctx.deps.sessions.setYolo(sid, false) as { ok: true; yolo_enabled: boolean }
+      if (!sid) throw new HttpError(400, 'Missing required field(s): session_id')
+      const released = await ctx.deps.turns.respondApproval(sid, 'once', '', true)
+      return { ok: true as const, yolo_enabled: Boolean(released.yolo_enabled ?? ctx.deps.sessions.yolo(sid).yolo_enabled), ...(released.stale_cleared ? { stale_cleared: true } : {}) }
+    })),
     import: os.session.import.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.import(input) as { ok: true; session: { session_id: string; title: string } })),
     regenerateTitle: os.session.regenerateTitle.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id
@@ -271,6 +285,7 @@ export const sessionsRouter = os.router({
       const proj = projects.find((p) => p.project_id === input.project_id)
       const activeProfile = ctx.deps.activeProfile()
       if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
+      requireFields(input, 'project_id', 'name')
       proj.name = input.name.trim().slice(0, 128)
       if ('color' in input) {
         const color = input.color ?? null

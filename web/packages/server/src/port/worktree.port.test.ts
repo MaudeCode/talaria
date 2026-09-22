@@ -49,7 +49,7 @@ describe('worktree-backed sessions', () => {
     configs = new Map()
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
     sidecar.respond('worktree.create', (params) => {
-      if (!existsSync(join(params.repo_root, '.git'))) throw new SidecarError(`${params.repo_root} is not inside a git repository`, { condition: 'worktree_error' })
+      if (!existsSync(join(params.repo_root, '.git'))) throw new SidecarError(`${params.repo_root} is not inside a git repository`, { condition: 'not_a_repo' })
       const path = join(params.repo_root, '.worktrees', 'hermes-wt')
       mkdirSync(path, { recursive: true })
       return { path, branch: 'hermes/wt', repo_root: params.repo_root, base: null }

@@ -426,3 +426,101 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
     return null
   }
 }
+
+// ── message reader ────────────────────────────────────────────────────────
+
+const STATE_DB_CONTENT_JSON_PREFIX = '\0json:'
+const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content'] as const
+const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items'])
+
+/** Python `_decode_state_db_content`: the Agent's sentinel-prefixed structured content, left untouched otherwise. */
+function decodeStateDbContent(value: unknown): unknown {
+  const text = Buffer.isBuffer(value) ? value.toString('utf8') : value
+  if (typeof text !== 'string' || !text.startsWith(STATE_DB_CONTENT_JSON_PREFIX)) return text
+  try {
+    const decoded: unknown = JSON.parse(text.slice(STATE_DB_CONTENT_JSON_PREFIX.length))
+    return Array.isArray(decoded) ? decoded : text
+  } catch {
+    return text
+  }
+}
+
+function jsonLoadsIfString(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  try { return JSON.parse(value) } catch { return value }
+}
+
+/** Python `_project_state_db_message`: one row → WebUI message (`tool_name → name`, empty optionals omitted). */
+function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
+  const msg: Dict = { role: row.role, content: decodeStateDbContent(row.content), timestamp: row.timestamp }
+  for (const col of OPTIONAL_MESSAGE_COLUMNS) {
+    if (!(col in row)) continue
+    const value = row[col]
+    if (value === null || value === undefined || value === '') continue
+    msg[col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
+  }
+  if (hasId && row.id !== null && row.id !== undefined && typeof msg.api_content === 'string' && msg.api_content) msg._state_db_row_id = row.id
+  if (msg.role === 'tool' && msg.tool_name && !msg.name) msg.name = msg.tool_name
+  return msg
+}
+
+/**
+ * Python `get_state_db_session_messages(sid, stitch_continuations=True)`: the session's active rows in durable order,
+ * walking compatible compression/close parents so a continued CLI conversation reads as one transcript.
+ */
+export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
+  const id = sid.trim()
+  if (!id || !existsSync(dbPath)) return []
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return [] }
+  try {
+    const available = tableColumns(db, 'messages')
+    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return []
+    const hasId = available.has('id')
+    const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
+    const chain = [id]
+    if (opts.stitch ?? true) {
+      const sessionCols = tableColumns(db, 'sessions')
+      if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
+        const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
+        let current = select.get(id) as Dict | undefined
+        const seen = new Set([id])
+        for (let hop = 0; hop < 20 && current; hop += 1) {
+          const parentId = str(current.parent_session_id)
+          if (!parentId || seen.has(parentId)) break
+          const parent = select.get(parentId) as Dict | undefined
+          if (!parent || !isContinuationSession(parent, current)) break
+          chain.unshift(parentId)
+          seen.add(parentId)
+          current = parent
+        }
+      }
+    }
+    const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
+    const order = hasId ? 'id' : 'timestamp'
+    const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
+    return rows.map((row) => projectStateDbMessage(row, hasId))
+  } catch {
+    return []
+  } finally {
+    db.close()
+  }
+}
+
+/** The `sessions` row for `sid` (source and lifecycle columns), or null. */
+export function stateDbSessionRow(dbPath: string, sid: string): Dict | null {
+  const id = sid.trim()
+  if (!id || !existsSync(dbPath)) return null
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return null }
+  try {
+    const cols = tableColumns(db, 'sessions')
+    const wanted = ['id', 'source', 'title', 'model', 'cwd', 'started_at', 'ended_at', 'parent_session_id', 'end_reason'].filter((c) => cols.has(c))
+    if (!wanted.includes('id')) return null
+    return (db.prepare(`SELECT ${wanted.join(', ')} FROM sessions WHERE id = ?`).get(id) as Dict | undefined) ?? null
+  } catch {
+    return null
+  } finally {
+    db.close()
+  }
+}

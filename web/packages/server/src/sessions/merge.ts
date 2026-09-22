@@ -288,3 +288,38 @@ export function splitThinkingFromContent(content: string, existingReasoning = ''
   const reasoning = [existingReasoning.trim(), ...parts].filter(Boolean).join('\n\n')
   return [cleaned.replace(/^\s+/, '').trimEnd(), reasoning]
 }
+
+/**
+ * Python `merge_session_messages_append_only`, bounded to its load-bearing rules: state.db rows never delete a local
+ * row; rows that replay the sidecar (same role, timestamp, and content) are skipped; rows at or before the sidecar's
+ * newest timestamp are already represented locally; a truncation watermark hides rows the user cut (0 blocks every
+ * replay). Rows past the sidecar tail (a conversation continued from the CLI) are appended in state.db order.
+ * ponytail: the Python identity memo (api_content sidecars, message ids, workspace-prefix normalisation) is not ported;
+ * add it if a mixed WebUI/CLI transcript shows duplicated turns.
+ */
+export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown } = {}): Message[] {
+  const watermark = Number(opts.truncationWatermark)
+  const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
+  if (!state.length) return sidecar
+  const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
+  const key = (m: Message): string => `${String(m.role)}\0${String(ts(m) ?? '')}\0${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)}`
+  if (!sidecar.length) {
+    if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
+    if (watermark === 0) return []
+    return state.filter((m) => { const t = ts(m); return t !== null && t > watermark })
+  }
+  const seen = new Set(sidecar.map(key))
+  let maxSidecar: number | null = null
+  for (const m of sidecar) { const t = ts(m); if (t !== null && (maxSidecar === null || t > maxSidecar)) maxSidecar = t }
+  const merged = [...sidecar]
+  for (const m of state) {
+    const k = key(m)
+    if (seen.has(k)) continue
+    const t = ts(m)
+    if (maxSidecar !== null && t !== null && t <= maxSidecar) continue
+    if (hasWatermark && t !== null && t <= watermark) continue
+    seen.add(k)
+    merged.push(m)
+  }
+  return merged
+}

@@ -109,7 +109,18 @@ export const chatRouter = os.router({
       if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
       if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
       const sid = str(body.session_id)
-      const s = getSession(ctx, sid)
+      let s: Session
+      try {
+        s = ctx.deps.sessionStore.get(sid)
+      } catch {
+        // Python `_claim_or_synthesize_cli_session` on the POST path: a claimable foreign (CLI/TUI/Desktop) session is
+        // materialised as a WebUI sidecar before its first turn; an owned foreign store answers 403, nothing → 404.
+        const synth = ctx.deps.sessions.claimOrSynthesizeCliSession(sid)
+        if (!synth.session) throw new HttpError(404, 'Session not found')
+        if (synth.reason === 'not_claimable') throw new HttpError(403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI')
+        ctx.deps.sessionStore.save(synth.session)
+        s = ctx.deps.sessionStore.get(sid)
+      }
       if (s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const requestedProfile = str(body.profile).trim()
       if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')

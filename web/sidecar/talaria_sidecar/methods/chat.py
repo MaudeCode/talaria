@@ -562,6 +562,25 @@ def register(registry) -> None:
             pass
         return {"evicted": evicted}
 
+    @registry.method("chat.commit_memory", requires_agent=False)
+    def commit_memory_(ctx: CallContext, params: dict) -> dict:
+        """Predecessor ``commit_session_memory``: flush the cached Agent's memory for a session the user just left."""
+        session_id = str(params.get("session_id") or "").strip()
+        with _AGENT_CACHE_LOCK:
+            cached = _AGENT_CACHE.get(session_id)
+        with _RUNS_LOCK:
+            busy = (_RUNS_BY_SESSION.get(session_id) or "") in _RUNS
+        agent = cached[0] if cached else None
+        commit = getattr(agent, "commit_memory_session", None) if agent is not None else None
+        if commit is None or busy:
+            return {"committed": False}
+        try:
+            commit()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("commit_memory_session() failed for session %s: %s", session_id, exc)
+            return {"committed": False}
+        return {"committed": True}
+
     @registry.method("approval.respond", requires_agent=True)
     def approval_respond_(ctx: CallContext, params: dict) -> dict:
         session_id = str(params.get("session_id") or "").strip()
