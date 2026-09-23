@@ -343,6 +343,24 @@ class PublicationTests(unittest.TestCase):
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)
 
+    def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
+        # The pool image has no Ruby; the Mac did. Tag validation (cli.py prepare) and TestFlight upload
+        # (publish.py app) shell out to Ruby, so every Linux job that runs them must install it first.
+        root = Path(__file__).resolve().parents[1]
+        needs_ruby = ("cli.py prepare", "publish.py app", "validate_release_tag", ".rb")
+        for path in sorted((root / ".github/workflows").glob("*.yml")):
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
+            ], text=True))
+            for name, job in document["jobs"].items():
+                if "steps" not in job or job["runs-on"] == "maude-mac":
+                    continue
+                runs = "\n".join(step.get("run", "") for step in job["steps"])
+                if any(marker in runs for marker in needs_ruby):
+                    with self.subTest(workflow=path.name, job=name):
+                        uses = {step.get("uses") for step in job["steps"]}
+                        self.assertTrue(uses & {"./.github/actions/release-ruby", "ruby/setup-ruby@v1"}, uses)
+
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):
             for stage in ("build", "publication"):

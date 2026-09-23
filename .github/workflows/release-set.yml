@@ -63,6 +63,8 @@ jobs:
       with:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
+    # app/ci/validate_release_tag parses GitHub tag metadata with Ruby, which the pool image lacks.
+    - uses: ./.github/actions/release-ruby
     - name: Resolve and validate immutable release plan
       id: plan
       env:
