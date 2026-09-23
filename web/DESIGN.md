@@ -140,7 +140,7 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 
 ### Tool/thinking activity group
 
-Compact Worklog opens live work by default and folds normal completed work above the final answer. Explicit disclosure choices persist per profile, chat, and turn. Consecutive tool/reasoning rows share a nested activity summary; a single supporting row needs no extra group. Prose separates those groups and stays in order. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
+Compact Worklog shows live work inline, without a turn-level disclosure, and keeps one spinner below the newest streamed content. Once the turn settles, normal completed work folds above the final answer. Explicit choices on settled disclosures persist per profile, chat, and turn. Consecutive tool/reasoning rows share a nested activity summary; a single supporting row needs no extra group. Prose separates those groups and stays in order. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
 
 ### Tool card
 
