@@ -313,6 +313,14 @@ describe('SystemSection update paths', () => {
     expect(screen.queryByRole('button', { name: /check web and agent now/i })).not.toBeInTheDocument()
   })
 
+  it('shows each path as checking, not unavailable, while the first update check is pending', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockImplementation(() => new Promise(() => undefined))
+    renderSystem()
+    expect(await screen.findByText('Checking Talaria Web for updates…')).toBeInTheDocument()
+    expect(screen.getByText('Checking Hermes Agent for updates…')).toBeInTheDocument()
+    expect(screen.queryByText(/update status is unavailable/i)).not.toBeInTheDocument()
+  })
+
   it('opens a setting explanation from its help button', async () => {
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: 'About Automatically apply Web updates' }))

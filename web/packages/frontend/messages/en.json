@@ -2210,5 +2210,6 @@
 	"system_shutdown_hint": "Stops Talaria Web. You will need to start it again from the terminal.",
 	"field_help": "More info",
 	"field_help_about": "About {label}",
-	"system_check_web": "Check Web now"
+	"system_check_web": "Check Web now",
+	"system_checking_named": "Checking {name} for updates…"
 }

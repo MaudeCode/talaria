@@ -90,8 +90,8 @@ export function SystemSection() {
   const agentUpdate = updates.data?.agent
   const canApplyAgent = (agentUpdate?.behind ?? 0) > 0 && !agentUpdate?.error && !agentUpdate?.manual_update && !agentUpdate?.no_git && !bool('ignore_agent_updates') && !updates.data?.disabled
   const updatesOff = updates.data?.disabled === true
-  const webStatus = pathStatus(webUpdate, WEB, { off: updatesOff, failed: updates.isError, dirtyBlocks: true })
-  const agentStatus = pathStatus(agentUpdate, AGENT, { off: updatesOff || bool('ignore_agent_updates'), failed: updates.isError, dirtyBlocks: false })
+  const webStatus = pathStatus(webUpdate, WEB, { off: updatesOff, failed: updates.isError, pending: updates.isPending, dirtyBlocks: true })
+  const agentStatus = pathStatus(agentUpdate, AGENT, { off: updatesOff || bool('ignore_agent_updates'), failed: updates.isError, pending: updates.isPending, dirtyBlocks: false })
   const heading = 'text-[15px] font-semibold text-text'
   return (
     <div className="flex flex-col gap-9" data-section="system">
@@ -191,11 +191,12 @@ interface PathStatus { tone: Tone; text: string; target?: string | undefined; de
 
 /** One component's update state in the words its channel uses: Stable names releases, Experimental counts commits. */
 // Web refuses dirty checkouts; Agent updates stash local changes and restore them, so only Web reports dirty as blocking.
-function pathStatus(t: Target | null | undefined, name: string, { off, failed, dirtyBlocks }: { off: boolean; failed: boolean; dirtyBlocks: boolean }): PathStatus {
+function pathStatus(t: Target | null | undefined, name: string, { off, failed, pending, dirtyBlocks }: { off: boolean; failed: boolean; pending: boolean; dirtyBlocks: boolean }): PathStatus {
   const latest = typeof t?.latest_version === 'string' ? t.latest_version : undefined
   const release = t?.release_based === true
   const message = typeof t?.message === 'string' ? t.message : undefined
   if (off) return { tone: 'quiet', text: m.system_checks_off({ name }) }
+  if (pending && !t) return { tone: 'quiet', text: m.system_checking_named({ name }) }
   if (failed || t?.error) return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t?.error }
   if (!t) return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
   if (t.dirty && dirtyBlocks) return { tone: 'warn', text: m.system_local_changes_named({ name }), detail: message }
