@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings, System now shows Talaria Web and Hermes Agent updates as two separate paths, each with its own version, channel, status, and update button.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Stable updates name the release you would install instead of counting commits, and every update status names the component it belongs to.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Setting explanations now open from a help button next to each setting instead of filling the page.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

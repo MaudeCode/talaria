@@ -104,7 +104,7 @@ describe('TasksPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(/monitor cannot be combined/i)
     expect(api.cronAction).not.toHaveBeenCalled()
-    const monitor = within(dialog).getByLabelText(/monitor/i)
+    const monitor = within(dialog).getByRole('textbox', { name: /monitor/i })
     expect(monitor).toBeEnabled()
     await userEvent.clear(monitor)
     await userEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
