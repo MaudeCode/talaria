@@ -1316,7 +1316,6 @@
 	"settings_desc_previous_messaging_sessions": "Show older Discord, Telegram, Slack, and Weixin sessions that were replaced by reset or compression.",
 	"settings_desc_sync_insights": "Mirrors WebUI token usage to state.db so hermes /insights includes browser session data. Off by default.",
 	"settings_desc_check_updates": "Check periodically for newer WebUI or Agent versions and show their status.",
-	"settings_desc_auto_apply_updates": "Automatically apply Web updates from the selected channel when no chat is active. Git source deployments can follow Experimental main; global npm deployments can follow completed Stable releases.",
 	"settings_desc_ignore_agent_updates": "Keep WebUI update checks on, but hide Agent update notices and skip Agent update fetches.",
 	"settings_desc_whats_new_summary": "Changes the What's New action from opening the raw diff first to generating a short, human-readable summary. The regular diff comparison stays available after the summary.",
 	"settings_desc_bot_name": "Used for the default profile only. Other profiles use their own profile names.",
@@ -2049,11 +2048,7 @@
 	"extensions_open": "Open",
 	"extensions_unavailable": "The extension gallery is unavailable right now.",
 	"extensions_disabled_hint": "The extension platform is not enabled on this server.",
-	"system_versions": "Versions",
-	"system_webui_version": "WebUI version",
-	"system_agent_version": "Agent version",
 	"system_health": "System health",
-	"system_agent_health": "Agent health",
 	"system_restart_agent": "Restart agent",
 	"system_shutdown": "Stop server",
 	"system_shutdown_confirm": "Stop the Hermes WebUI server? You will need to restart it from the terminal.",
@@ -2064,14 +2059,7 @@
 	"system_passkey_register": "Register a passkey",
 	"system_passkey_registered": "Passkey registered",
 	"system_updates": "Updates",
-	"system_check_updates": "Check now",
-	"system_update_available": "{name}: {n} commits behind",
-	"system_up_to_date": "Up to date",
-	"system_update_status_unknown": "Update status is unavailable",
 	"system_manual_updates": "Install updates manually",
-	"system_update_local_changes": "Local changes prevent automatic updates",
-	"system_apply_update": "Update now",
-	"system_update_incomplete": "Finish applying this release",
 	"system_finish_update": "Finish update",
 	"system_logout": "Sign out",
 	"help_docs": "Documentation",
@@ -2186,6 +2174,42 @@
 	"system_agent_unsupported_warning": "This Agent version is not officially supported by Talaria and may cause issues.",
 	"system_agent_unsupported_identity": "Officially supported: {version} ({supported}). Selected revision: {candidate}.",
 	"system_agent_update_anyway": "Update anyway",
-	"system_agent_update_unknown": "Agent update status unavailable",
-	"system_release_available": "{name}: release available"
+	"system_updates_intro": "Talaria Web and Hermes Agent update separately. Each follows its own channel.",
+	"system_check_both": "Check Web and Agent now",
+	"system_check_updates_hint": "Checks Talaria Web and Hermes Agent in the background.",
+	"system_auto_apply_hint": "Applies Talaria Web updates when no chat is active. Hermes Agent is never updated automatically.",
+	"system_agent_manual_hint": "Stops checking Hermes Agent. Agent updates always wait for you to apply them here.",
+	"system_path_installed": "Installed",
+	"system_checks_off": "{name} is not being checked for updates",
+	"system_check_failed_named": "{name} update check failed",
+	"system_status_unknown_named": "{name} update status is unavailable",
+	"system_local_changes_named": "Local changes block {name} updates",
+	"system_finish_named": "Finish applying this {name} release",
+	"system_manual_named": "{name} is updated manually",
+	"system_release_ready": "{name} {version} is available",
+	"system_installed_unverified": "The installed release could not be verified.",
+	"system_commits_behind": [
+		{
+			"declarations": [
+				"input n",
+				"input name"
+			],
+			"selectors": [
+				"n"
+			],
+			"match": {
+				"n=1": "{name} is 1 commit behind",
+				"n=*": "{name} is {n} commits behind"
+			}
+		}
+	],
+	"system_up_to_date_named": "{name} is up to date",
+	"system_apply_web_update": "Update Web",
+	"system_disk_used": "disk {n}% used",
+	"system_access": "Access",
+	"system_shutdown_hint": "Stops Talaria Web. You will need to start it again from the terminal.",
+	"field_help": "More info",
+	"field_help_about": "About {label}",
+	"system_check_web": "Check Web now",
+	"system_checking_named": "Checking {name} for updates…"
 }

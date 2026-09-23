@@ -98,13 +98,19 @@ async function settingsPayload(ctx: RequestContext): Promise<Dict> {
   Reflect.deleteProperty(settings, 'password_hash')
   Object.assign(settings, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })
   try { Object.assign(settings, maxTokensStatus(await deps.agentConfig.read(home(ctx)))) } catch { /* unavailable: nulls stand */ }
-  settings.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
   await authFields(ctx, settings)
-  settings.webui_version = deps.version
-  settings.agent_version = deps.agentVersion()
-  settings.update_channel = str(settings.update_channel) || 'stable'
-  settings.update_channel_version = deps.version
+  derivedFields(ctx, settings)
   return settings
+}
+
+/** Fields computed from the environment, not stored: load and save both return them so a save never blanks them in the client cache. */
+function derivedFields(ctx: RequestContext, into: Dict): void {
+  const deps = ctx.deps
+  into.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
+  into.webui_version = deps.version
+  into.agent_version = deps.agentVersion()
+  into.update_channel = str(into.update_channel) || 'stable'
+  into.update_channel_version = deps.version
 }
 
 async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
@@ -169,6 +175,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   saved.auth_just_enabled = authJustEnabled
   await authFields(ctx, saved)
   saved.auth_enabled = authEnabledAfter
+  derivedFields(ctx, saved)
   return saved
 }
 

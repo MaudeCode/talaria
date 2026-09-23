@@ -30,9 +30,9 @@ test('automatic updates retain the selected channel and can apply a Stable npm u
   await expect(page.getByRole('combobox', { name: 'Agent update channel', exact: true })).toContainText('Stable')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('automatic-updates.png'), fullPage: true })
-  await page.getByRole('button', { name: 'Update now', exact: true }).click()
+  await page.getByRole('button', { name: 'Update Web', exact: true }).click()
   await expect.poll(() => applied).toBe(true)
-  await expect(page.getByText('Up to date', { exact: true })).toBeVisible()
+  await expect(page.getByText('Talaria Web is up to date', { exact: true })).toBeVisible()
 })
 
 for (const initialWebBehind of [0, 1]) {
@@ -56,8 +56,8 @@ for (const initialWebBehind of [0, 1]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath('agent-updates.png'), fullPage: true })
     if (initialWebBehind) {
-      await page.getByRole('button', { name: 'Update now', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Update now', exact: true })).toHaveCount(0)
+      await page.getByRole('button', { name: 'Update Web', exact: true }).click()
+      await expect(page.getByRole('button', { name: 'Update Web', exact: true })).toHaveCount(0)
     }
     await expect(page.getByRole('button', { name: 'Update Agent', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
@@ -81,12 +81,12 @@ test('Web updates: finish an incomplete release at the current source', async ({
   })
   await page.goto('/settings/system')
   await settle(page)
-  await expect(page.getByText('Finish applying this release', { exact: true })).toBeVisible()
-  await expect(page.getByText('Up to date', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Finish applying this Talaria Web release', { exact: true })).toBeVisible()
+  await expect(page.getByText('Talaria Web is up to date', { exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('update-repair.png'), fullPage: true })
   await page.getByRole('button', { name: 'Finish update', exact: true }).click()
-  await expect(page.getByText('Up to date', { exact: true })).toBeVisible()
+  await expect(page.getByText('Talaria Web is up to date', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Finish update', exact: true })).toHaveCount(0)
   expect(applied).toBe(1)
 })
@@ -117,26 +117,26 @@ test('Experimental uses the existing check and update buttons', async ({ page },
   await page.getByRole('combobox', { name: 'Web update channel', exact: true }).click()
   await page.getByRole('option', { name: 'Experimental', exact: true }).click()
   await expect.poll(() => channel).toBe('experimental')
-  await page.getByRole('button', { name: 'Check now', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Update now', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Check Web now', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Update Web', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('main-updates.png'), fullPage: true })
-  await page.getByRole('button', { name: 'Update now', exact: true }).click()
-  await expect(page.getByText('Up to date', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Update Web', exact: true }).click()
+  await expect(page.getByText('Talaria Web is up to date', { exact: true })).toBeVisible()
   expect(applied).toBe(1)
 })
 
 for (const scenario of [
-  { name: 'private-access', update: { behind: null, manual_update: true, error: 'Synthetic release access unavailable' }, status: 'Update check failed' },
-  { name: 'local-changes', update: { behind: 1, manual_update: true, dirty: true }, status: 'Local changes prevent automatic updates' },
+  { name: 'private-access', update: { behind: null, manual_update: true, error: 'Synthetic release access unavailable' }, status: 'Talaria Web update check failed' },
+  { name: 'local-changes', update: { behind: 1, manual_update: true, dirty: true }, status: 'Local changes block Talaria Web updates' },
 ]) {
   test(`Web updates: ${scenario.name}`, async ({ page }, testInfo) => {
     await page.route('**/api/updates/check', (route) => route.fulfill({ json: { cached: false, webui: scenario.update, agent: { behind: 0 } } }))
     await page.goto('/settings/system')
     await settle(page)
     await expect(page.getByText(scenario.status, { exact: true })).toBeVisible()
-    await expect(page.getByText('Up to date', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: /update now/i })).toHaveCount(0)
+    await expect(page.getByText('Talaria Web is up to date', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^update web$/i })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Install updates manually' })).toHaveAttribute('href', 'https://github.com/MaudeCode/talaria/releases')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`${scenario.name}.png`), fullPage: true })

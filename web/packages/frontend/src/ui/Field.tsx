@@ -1,5 +1,8 @@
 import type { ReactNode, InputHTMLAttributes } from 'react'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
+import { Popover } from '@base-ui/react/popover'
+import { CircleHelp } from 'lucide-react'
+import { m } from '../paraglide/messages.js'
 import { cn } from './cn'
 
 export function FieldRow({ label, hint, htmlFor, children, inline }: { label: ReactNode; hint?: ReactNode; htmlFor?: string; children: ReactNode; inline?: boolean }) {
@@ -7,13 +10,28 @@ export function FieldRow({ label, hint, htmlFor, children, inline }: { label: Re
     <div className={cn('flex gap-3 py-2', inline ? 'items-center justify-between' : 'flex-col')}>
       <div className="min-w-0">
         <label htmlFor={htmlFor} className="text-sm text-text">{label}</label>
-        {hint && <div className="mt-0.5 text-[11px] text-muted">{hint}</div>}
+        {hint && <HelpTip label={typeof label === 'string' ? m.field_help_about({ label }) : m.field_help()}>{hint}</HelpTip>}
       </div>
       <div className={cn(inline ? 'shrink-0' : '')}>{children}</div>
     </div>
   )
 }
 
+/** A "?" beside a label: the explanation opens on click or tap instead of sitting under every setting. The 20px icon keeps a 44px touch target. */
+export function HelpTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger aria-label={label} className="relative ml-1.5 inline-flex size-5 before:absolute before:-inset-3 before:content-[''] translate-y-[3px] cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 align-top text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-2 focus-visible:outline-accent data-popup-open:text-text">
+        <CircleHelp size={14} strokeWidth={1.75} aria-hidden="true" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="top" sideOffset={6} className="z-[1500]">
+          <Popover.Popup className="max-w-[min(18rem,calc(100vw-2rem))] rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">{children}</Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
 
 export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn('h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-text placeholder:text-muted focus:border-accent', className)} />

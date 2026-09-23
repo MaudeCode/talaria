@@ -885,6 +885,14 @@ describe('Agent checkout updates', () => {
     expect(existsSync(join(a.agent, 'untracked.txt'))).toBe(false)
   })
 
+  it('reports an installed release only when HEAD is exactly that tag', async () => {
+    const a = agentInstall()
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ current_version: 'v1.0.0' })
+    git(a.agent, 'commit', '--allow-empty', '-m', 'local work after v1.0.0')
+    const head = git(a.agent, 'rev-parse', 'HEAD')
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ current_version: head.slice(0, 12) })
+  })
+
   it('an unavailable commit count stays unknown and Stable never falls back to a branch', async () => {
     const a = agentInstall()
     const unreadable: GitRun = (args, cwd, timeout) => args[0] === 'rev-list' ? Promise.resolve({ ok: false, out: 'unreadable' }) : runGit(args, cwd, timeout)

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -38,9 +38,9 @@ describe('SystemSection "Check now"', () => {
   })
 
   it('does not label a Web release count as commits', async () => {
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 1, release_based: true }, agent: { behind: 0 } }))
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 1, release_based: true, current_version: 'web-v1.2.3', latest_version: 'web-v1.3.0' }, agent: { behind: 0 } }))
     renderSystem()
-    expect(await screen.findByText('webui: release available')).toBeInTheDocument()
+    expect(await screen.findByText('Talaria Web web-v1.3.0 is available')).toBeInTheDocument()
     expect(screen.queryByText(/1 commits behind/)).not.toBeInTheDocument()
   })
 
@@ -65,7 +65,7 @@ describe('SystemSection "Check now"', () => {
     await userEvent.click(await screen.findByRole('option', { name: /^experimental$/i }))
     await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ agent_update_channel: 'experimental' }))
     expect(screen.getByRole('combobox', { name: /^web update channel$/i })).toHaveTextContent(/stable/i)
-    expect(screen.getByText('agent: 4914 commits behind')).toBeInTheDocument()
+    expect(screen.getByText('Hermes Agent is 4914 commits behind')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('This Agent version is not officially supported by Talaria and may cause issues.')
     await userEvent.click(screen.getByRole('button', { name: /update anyway/i }))
@@ -79,7 +79,7 @@ describe('SystemSection "Check now"', () => {
     renderSystem()
     expect(await screen.findByText(/update check failed/i)).toBeInTheDocument()
     expect(screen.queryByText(/up to date/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^update web$/i })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /install updates manually/i })).toHaveAttribute('href', 'https://github.com/MaudeCode/talaria/releases')
   })
 
@@ -89,7 +89,7 @@ describe('SystemSection "Check now"', () => {
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent', { agent_channel: 'stable' }))
-    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^update web$/i })).not.toBeInTheDocument()
   })
 
   it('keeps the Agent action after applying only the Web update', async () => {
@@ -99,9 +99,9 @@ describe('SystemSection "Check now"', () => {
       return Promise.resolve({ ok: true })
     })
     renderSystem()
-    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^update web$/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
-    await screen.findByText(/up to date/i)
+    await screen.findByText('Talaria Web is up to date')
     await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'stable' }))
   })
@@ -118,23 +118,23 @@ describe('SystemSection "Check now"', () => {
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /finish update/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
-    await screen.findByText(/up to date/i)
+    await screen.findByText('Talaria Web is up to date')
     expect(screen.queryByRole('button', { name: /finish update/i })).not.toBeInTheDocument()
   })
 
   it('explains why a dirty checkout cannot update automatically', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1, dirty: true, manual_update: true }, agent: { behind: 0 } })
     renderSystem()
-    expect(await screen.findByText(/local changes prevent automatic updates/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+    expect(await screen.findByText('Local changes block Talaria Web updates')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^update web$/i })).not.toBeInTheDocument()
   })
 
   it('runs one forced POST check, shows Checking… while pending, and renders the fresh result', async () => {
     let resolve!: (v: unknown) => void
     vi.mocked(api.checkUpdatesNow).mockImplementation(() => new Promise((r) => { resolve = r as typeof resolve }))
     const qc = renderSystem()
-    expect(await screen.findByText(/up to date/i)).toBeInTheDocument()
-    const button = screen.getByRole('button', { name: /check now/i })
+    expect(await screen.findByText('Talaria Web is up to date')).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: /^check web and agent now$/i })
     await userEvent.click(button)
     expect(await screen.findByRole('button', { name: /checking/i })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: /checking/i }))
@@ -143,11 +143,11 @@ describe('SystemSection "Check now"', () => {
     expect(api.fetchUpdatesCheck).toHaveBeenCalledTimes(1)
     const fresh = { cached: false, webui: { behind: 3 }, agent: { behind: 1 } }
     resolve(fresh)
-    expect(await screen.findByRole('button', { name: /check now/i })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: /^check web and agent now$/i })).toBeEnabled()
     expect(qc.getQueryData(keys.updates.check)).toEqual(fresh)
-    expect(screen.getByText(/webui/i, { selector: '.text-accent-text' })).toBeInTheDocument()
-    expect(screen.getByText(/agent/i, { selector: '.text-accent-text' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /update now/i })).toBeInTheDocument()
+    expect(screen.getByText('Talaria Web is 3 commits behind')).toBeInTheDocument()
+    expect(screen.getByText('Hermes Agent is 1 commit behind')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^update web$/i })).toBeInTheDocument()
   })
 
   it('waits for in-flight settings saves, then checks with the channel that actually persisted', async () => {
@@ -156,7 +156,7 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.saveSettings).mockImplementation((patch) => new Promise((r) => { saves.push(() => { settingsState = { ...settingsState, ...patch }; r(settingsState) }) }))
     vi.mocked(api.checkUpdatesNow).mockResolvedValue({ cached: false })
     renderSystem()
-    await screen.findByText(/up to date/i)
+    await screen.findByText('Talaria Web is up to date')
     const trigger = screen.getByRole('combobox', { name: /^web update channel$/i })
     expect(trigger).toHaveTextContent(/experimental/i)
     await userEvent.click(trigger)
@@ -164,7 +164,7 @@ describe('SystemSection "Check now"', () => {
     expect(trigger).toHaveTextContent(/stable/i)
     await userEvent.click(screen.getByRole('switch', { name: /ignore agent updates/i }))
     expect(trigger).toHaveTextContent(/stable/i)
-    await userEvent.click(screen.getByRole('button', { name: /check now/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^check web (and agent )?now$/i }))
     expect(screen.getByRole('button', { name: /checking/i })).toBeDisabled()
     await new Promise((r) => setTimeout(r, 120))
     expect(api.checkUpdatesNow).not.toHaveBeenCalled()
@@ -173,7 +173,7 @@ describe('SystemSection "Check now"', () => {
     saves[1]!()
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('stable', 'stable'))
     expect(api.checkUpdatesNow).toHaveBeenCalledTimes(1)
-    expect(await screen.findByRole('button', { name: /check now/i })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: /^check web (and agent )?now$/i })).toBeEnabled()
     expect(trigger).toHaveTextContent(/stable/i)
   })
 
@@ -186,15 +186,15 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.checkUpdatesNow).mockResolvedValue({ cached: false, webui: { behind: 1, branch: 'origin/main' } })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true, restart_scheduled: true })
     renderSystem()
-    await screen.findByText(/up to date/i)
+    await screen.findByText('Talaria Web is up to date')
     await userEvent.click(screen.getByRole('combobox', { name: /^web update channel$/i }))
     const experimental = await screen.findByRole('option', { name: /experimental/i })
     expect(screen.getAllByRole('option')).toHaveLength(2)
     expect(screen.getByRole('option', { name: /^stable$/i })).toBeInTheDocument()
     await userEvent.click(experimental)
-    await userEvent.click(screen.getByRole('button', { name: /check now/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^check web and agent now$/i }))
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental', 'stable'))
-    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^update web$/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
   })
 
@@ -213,7 +213,7 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 1, no_git: true, install_kind: 'npm', manual_update: false }, agent: { behind: 0 } })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true, restart_scheduled: true })
     renderSystem()
-    await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^update web$/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'stable', 'webui'))
   })
 
@@ -224,18 +224,106 @@ describe('SystemSection "Check now"', () => {
       current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40),
     } }))
     renderSystem()
-    expect(await screen.findByText(/up to date/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
+    expect(await screen.findByText('Talaria Web is up to date')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^update web$/i })).not.toBeInTheDocument()
   })
 
   it('restores the control and toasts the error when the forced check fails', async () => {
     vi.mocked(api.checkUpdatesNow).mockRejectedValue(new Error('git fetch failed'))
     const qc = renderSystem()
-    await screen.findByText(/up to date/i)
+    await screen.findByText('Talaria Web is up to date')
     const before = qc.getQueryData(keys.updates.check)
-    await userEvent.click(screen.getByRole('button', { name: /check now/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^check web and agent now$/i }))
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('git fetch failed', 4000, 'error'))
-    expect(screen.getByRole('button', { name: /check now/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^check web and agent now$/i })).toBeEnabled()
     expect(qc.getQueryData(keys.updates.check)).toEqual(before)
+  })
+})
+
+describe('SystemSection update paths', () => {
+  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset() })
+  const path = (name: string) => screen.getByRole('region', { name })
+
+  it('names the Stable Agent release instead of a Git commit distance', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0 }, agent: { behind: 4914, release_based: true, current_version: 'v2026.9.21', latest_version: 'v2026.10.1' } }))
+    renderSystem()
+    await screen.findByRole('button', { name: /update agent/i })
+    expect(screen.queryByText(/commits? behind/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Hermes Agent v2026.10.1 is available')).toBeInTheDocument()
+  })
+
+  it('says when the installed Stable release cannot be verified', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0 }, agent: { behind: 12, release_based: true, current_version: 'abcdef012345', latest_version: 'v2026.10.1' } }))
+    renderSystem()
+    const agent = await screen.findByRole('region', { name: 'Hermes Agent' })
+    expect(await within(agent).findByText('Hermes Agent v2026.10.1 is available')).toBeInTheDocument()
+    expect(within(agent).getByText('The installed release could not be verified.')).toBeInTheDocument()
+  })
+
+  it('keeps each status, link, and action inside its own path', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: null, manual_update: true, error: 'GitHub answered 404' }, agent: { behind: 3 } }))
+    renderSystem()
+    const agentButton = await screen.findByRole('button', { name: /update agent/i })
+    expect(path('Hermes Agent')).toContainElement(agentButton)
+    expect(within(path('Hermes Agent')).getByText('Hermes Agent is 3 commits behind')).toBeInTheDocument()
+    expect(within(path('Talaria Web')).getByText('Talaria Web update check failed')).toBeInTheDocument()
+    expect(within(path('Talaria Web')).getByRole('link', { name: /install updates manually/i })).toBeInTheDocument()
+    expect(within(path('Talaria Web')).getByRole('switch', { name: /automatically apply web updates/i })).toBeInTheDocument()
+    expect(within(path('Hermes Agent')).queryByText(/Talaria Web/)).not.toBeInTheDocument()
+    expect(within(path('Talaria Web')).queryByText(/Hermes Agent/)).not.toBeInTheDocument()
+  })
+
+  it.each([{ behind: 0, status: 'Hermes Agent is up to date' }, { behind: 2, status: 'Hermes Agent is 2 commits behind' }])('does not block a dirty Agent checkout, which updates through a stash (behind $behind)', async ({ behind, status }) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0 }, agent: { behind, dirty: true } }))
+    renderSystem()
+    const agent = await screen.findByRole('region', { name: 'Hermes Agent' })
+    expect(within(agent).queryByText(/local changes/i)).not.toBeInTheDocument()
+    expect(within(agent).getByText(status)).toBeInTheDocument()
+  })
+
+  it('shows a manual install that is ahead of its channel without calling it up to date', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0, manual_update: true, install_kind: 'npm', message: 'This npm installation is ahead of the selected Stable release.' }, agent: { behind: 0 } }))
+    renderSystem()
+    const web = await screen.findByRole('region', { name: 'Talaria Web' })
+    expect(await within(web).findByText('Talaria Web is updated manually')).toBeInTheDocument()
+    expect(within(web).getByText('This npm installation is ahead of the selected Stable release.')).toBeInTheDocument()
+    expect(within(path('Hermes Agent')).getByText('Hermes Agent is up to date')).toBeInTheDocument()
+  })
+
+  it('reports disabled checks for both components', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ disabled: true })
+    renderSystem()
+    expect(await screen.findByText('Talaria Web is not being checked for updates')).toBeInTheDocument()
+    expect(screen.getByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
+  })
+
+  it('reports ignored Agent checks only in the Agent path', async () => {
+    settingsState.ignore_agent_updates = true
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: null })
+    renderSystem()
+    expect(await within(await screen.findByRole('region', { name: 'Hermes Agent' })).findByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
+    expect(within(path('Talaria Web')).getByText('Talaria Web is up to date')).toBeInTheDocument()
+  })
+
+  it('names only Web on the manual check while Agent updates are ignored', async () => {
+    settingsState.ignore_agent_updates = true
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: null })
+    renderSystem()
+    expect(await screen.findByRole('button', { name: 'Check Web now' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /check web and agent now/i })).not.toBeInTheDocument()
+  })
+
+  it('shows each path as checking, not unavailable, while the first update check is pending', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockImplementation(() => new Promise(() => undefined))
+    renderSystem()
+    expect(await screen.findByText('Checking Talaria Web for updates…')).toBeInTheDocument()
+    expect(screen.getByText('Checking Hermes Agent for updates…')).toBeInTheDocument()
+    expect(screen.queryByText(/update status is unavailable/i)).not.toBeInTheDocument()
+  })
+
+  it('opens a setting explanation from its help button', async () => {
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: 'About Automatically apply Web updates' }))
+    expect(await screen.findByText(/Hermes Agent is never updated automatically/)).toBeVisible()
   })
 })
