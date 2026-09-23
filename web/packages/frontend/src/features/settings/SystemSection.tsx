@@ -98,7 +98,7 @@ export function SystemSection() {
       <section aria-labelledby="systemUpdatesHeading" className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="systemUpdatesHeading" className={heading}>{m.system_updates()}<HelpTip label={m.field_help_about({ label: m.system_updates() })}>{m.system_updates_intro()}</HelpTip></h2>
-          <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : m.system_check_both()}</Button>
+          <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()}</Button>
         </div>
         <div className="grid gap-x-10 gap-y-8 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
           <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} status={webStatus}

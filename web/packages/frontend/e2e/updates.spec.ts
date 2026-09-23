@@ -117,7 +117,7 @@ test('Experimental uses the existing check and update buttons', async ({ page },
   await page.getByRole('combobox', { name: 'Web update channel', exact: true }).click()
   await page.getByRole('option', { name: 'Experimental', exact: true }).click()
   await expect.poll(() => channel).toBe('experimental')
-  await page.getByRole('button', { name: 'Check Web and Agent now', exact: true }).click()
+  await page.getByRole('button', { name: 'Check Web now', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Update Web', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('main-updates.png'), fullPage: true })

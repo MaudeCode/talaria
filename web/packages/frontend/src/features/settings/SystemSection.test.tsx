@@ -164,7 +164,7 @@ describe('SystemSection "Check now"', () => {
     expect(trigger).toHaveTextContent(/stable/i)
     await userEvent.click(screen.getByRole('switch', { name: /ignore agent updates/i }))
     expect(trigger).toHaveTextContent(/stable/i)
-    await userEvent.click(screen.getByRole('button', { name: /^check web and agent now$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^check web (and agent )?now$/i }))
     expect(screen.getByRole('button', { name: /checking/i })).toBeDisabled()
     await new Promise((r) => setTimeout(r, 120))
     expect(api.checkUpdatesNow).not.toHaveBeenCalled()
@@ -173,7 +173,7 @@ describe('SystemSection "Check now"', () => {
     saves[1]!()
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('stable', 'stable'))
     expect(api.checkUpdatesNow).toHaveBeenCalledTimes(1)
-    expect(await screen.findByRole('button', { name: /^check web and agent now$/i })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: /^check web (and agent )?now$/i })).toBeEnabled()
     expect(trigger).toHaveTextContent(/stable/i)
   })
 
@@ -303,6 +303,14 @@ describe('SystemSection update paths', () => {
     renderSystem()
     expect(await within(await screen.findByRole('region', { name: 'Hermes Agent' })).findByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
     expect(within(path('Talaria Web')).getByText('Talaria Web is up to date')).toBeInTheDocument()
+  })
+
+  it('names only Web on the manual check while Agent updates are ignored', async () => {
+    settingsState.ignore_agent_updates = true
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: null })
+    renderSystem()
+    expect(await screen.findByRole('button', { name: 'Check Web now' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /check web and agent now/i })).not.toBeInTheDocument()
   })
 
   it('opens a setting explanation from its help button', async () => {
