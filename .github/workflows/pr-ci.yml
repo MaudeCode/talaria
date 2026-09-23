@@ -378,7 +378,7 @@ jobs:
           for file in performance-metrics.json performance-metrics.txt; do
             [[ -f "$file" ]] || continue
             ../scripts/s3-artifact put "$prefix/$file" "$file"
-            echo "- Performance metrics: talaria-ci/$prefix/$file (expires after 90 days)" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- Performance metrics: talaria-ci/$prefix/$file (expires after 30 days)" >> "${GITHUB_STEP_SUMMARY}"
           done
 
       - name: Store test results on the NAS on failure
@@ -396,7 +396,7 @@ jobs:
           key="test-results/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
           tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
           ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
-          echo "- Result bundle: talaria-ci/$key (expires after 3 days)" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Result bundle: talaria-ci/$key (expires after 14 days)" >> "${GITHUB_STEP_SUMMARY}"
 
   tooling:
     needs: changes

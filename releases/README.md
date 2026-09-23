@@ -94,8 +94,8 @@ Fork pull requests have no secrets and fail at their first transfer.
 Object keys are `<class>/<workflow>/<run>/<attempt>/<file>`; the class prefix
 selects the expiration the helper applies idempotently before each upload
 (Garage expires by prefix and whole days only): `talaria-release`
-`handoffs/` 30 days (the recovery window); `talaria-ci` `fixtures/` 1 day, `test-results/` 3 days,
-`fuzz/` and `performance-metrics/` 90 days. Jobs print their object keys in
+`handoffs/` 30 days (the recovery window); `talaria-ci` `fixtures/` 7 days, `test-results/` 14 days,
+`buildcache/` 14 days, `fuzz/` and `performance-metrics/` 30 days. Jobs print their object keys in
 the step summary so retained results can be fetched from the NAS.
 
 `artifacts.py put` archives a directory as
