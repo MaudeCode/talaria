@@ -1,8 +1,7 @@
 import { delimiter } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
@@ -61,6 +60,21 @@ describe('SidecarClient version mismatch', () => {
     await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_rpc_version_mismatch' })
     expect(client.status).toBe('incompatible')
     await expect(client.call('config.get', { profile_home: dir, config_path: resolve(dir, 'config.yaml') })).rejects.toMatchObject({ condition: 'agent_incompatible' })
+  })
+
+  it('recovers config access when an import-failed sidecar exits', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-config-restart-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const starts = resolve(dir, 'starts')
+    const script = `const fs=require('fs');const [fixture,starts]=process.argv.slice(1);const value=JSON.parse(fs.readFileSync(fixture,'utf8'))['runtime.handshake'][0].result;fs.appendFileSync(starts,'x');require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);if(req.method==='runtime.handshake')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:{...value,compatible:false,import_error:'synthetic Agent import failure'}})+'\\n');if(req.method==='config.get')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:{path:req.params.config_path,exists:false,config:{}}})+'\\n',()=>process.exit(1))})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture, starts], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined, backoffMs: [20] })
+    await client.start()
+    const config_path = resolve(dir, 'config.yaml')
+    expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
+    const deadline = Date.now() + 3000
+    while ((!existsSync(starts) || readFileSync(starts, 'utf8').length < 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
+    expect(readFileSync(starts, 'utf8')).toBe('xx')
+    expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
   })
 
   it('an already-aborted signal is refused before anything is written to the sidecar', async () => {

@@ -195,6 +195,7 @@ export class SidecarClient implements SidecarLike {
 
   private onExit(child: ChildProcess, code: number | null, signal: NodeJS.Signals | null): void {
     if (this.child !== child) return
+    const importFailed = this.status === 'incompatible' && this.describe?.compatible === false && this.describe.import_error !== null && !this.describe.stale
     this.child = null
     this.describe = null
     this.log(`[sidecar] exited code=${code} signal=${signal ?? ''}`)
@@ -205,8 +206,8 @@ export class SidecarClient implements SidecarLike {
       pending.reject(error)
     }
     if (this.closed) { this.status = 'stopped'; return }
-    if (code === 3 || this.status === 'incompatible') {
-      // Version mismatch: restarting cannot help.
+    if (code === 3 || (this.status === 'incompatible' && !importFailed)) {
+      // Protocol mismatch or changed loaded runtime: restarting cannot help safely.
       this.status = 'incompatible'
       return
     }
