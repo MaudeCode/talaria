@@ -290,6 +290,7 @@ class PublicationTests(unittest.TestCase):
             "pr-ci.yml": {"contracts": "CI", "test": "CI", "web-docker": "CI"},
             "web-docker-smoke.yml": {"smoke": "CI"},
             "fuzz-soak.yml": {"soak": "CI"},
+            "ui-performance.yml": {"measure": "CI"},
             "ios-release-build.yml": {"build": "RELEASE"},
             "release-set.yml": {name: "RELEASE" for name in (
                 "prepare", "contracts", "component-contracts", "agent", "relay-build", "web-build", "app-dry-build",
@@ -324,6 +325,7 @@ class PublicationTests(unittest.TestCase):
             ("pr-ci.yml", "app-tooling"): "test-ios-simulator-pool",
             ("pr-ci.yml", "test"): "xcodebuild",
             ("fuzz-soak.yml", "soak"): "xcodebuild",
+            ("ui-performance.yml", "measure"): "xcodebuild",
             ("ios-release-build.yml", "build"): "xcodebuild archive",
             ("release-set.yml", "contracts"): "check-previous-app.py",
             ("release-set.yml", "app-dry-build"): "build.py app",
@@ -401,6 +403,34 @@ class PublicationTests(unittest.TestCase):
                 if "buildx create" in line:
                     with self.subTest(path=path.name):
                         self.assertNotIn("--name", line)
+
+    def test_ui_performance_runs_on_its_own_schedule(self):
+        # Measurement-only UI classes stay out of every PR and main-push suite and run serially on a schedule.
+        root = Path(__file__).resolve().parents[1]
+        def workflow(name):
+            return json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+                str(root / ".github/workflows" / name),
+            ], text=True))
+        test = workflow("pr-ci.yml")["jobs"]["test"]
+        classes = test["env"]["PERFORMANCE_UI_TEST_CLASSES"].split()
+        self.assertEqual(len(classes), 4)
+        suite = next(step["run"] for step in test["steps"] if step.get("name") == "Test without building")
+        self.assertIn('test_options+=("-skip-testing:${performance_class}")', suite)
+        # Not gated on pull requests: main pushes skip them too.
+        self.assertNotRegex(suite, r'GITHUB_EVENT_NAME\}" == "pull_request" \]\]; then\s+for performance_class')
+        # The behavioural halves of those classes stay in every CI suite (resume, dense open/dismiss).
+        functional = (root / "app/TalariaUITests/PerformanceUITests.swift").read_text()
+        self.assertIn("final class PerformancePathUITests: PerformanceUITestCase", functional)
+        self.assertNotIn("TalariaUITests/PerformancePathUITests", classes)
+        scheduled = workflow("ui-performance.yml")
+        self.assertIn("schedule", scheduled["on"])
+        self.assertIn("workflow_dispatch", scheduled["on"])
+        measure = json.dumps(scheduled["jobs"]["measure"])
+        for name in classes:
+            self.assertIn(f"-only-testing:{name}", measure)
+        self.assertIn("-parallel-testing-enabled NO", measure)
+        self.assertIn("scripts/report-performance-metrics", measure)
 
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
         # The pool image has no Ruby; the Mac did. Tag validation (cli.py prepare) and TestFlight upload

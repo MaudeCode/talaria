@@ -2,10 +2,11 @@ import XCTest
 
 /// Performance budgets for the launched app (TAL-75).
 ///
-/// Every class here is measurement-only: it asserts nothing about layout or
-/// behaviour, so it carries no correctness signal and can be skipped when a run
-/// needs to stay fast. Pull-request CI skips them and `main` CI runs them and
-/// retains the result bundle for comparison; the full local suite runs them too.
+/// The measuring classes repeat each path several times under `measure`, so CI
+/// skips them and the scheduled UI Performance workflow runs them serially and
+/// keeps their metrics (TAL-287); the full local suite runs them too. Their
+/// behavioural halves (warm resume, dense open and dismiss) run once without
+/// measuring in `PerformancePathUITests`, which stays in every CI suite.
 ///
 /// The deterministic fixture serves the dense transcript and session list
 /// (`--ui-test-dense`), so every run measures the same content.
@@ -199,5 +200,29 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
                 )
             }
         }
+    }
+}
+
+/// The functional paths the measuring classes above exercise, run once so pull
+/// request and main CI keep them while the measurements run on a schedule.
+final class PerformancePathUITests: PerformanceUITestCase {
+    /// Suspension succeeds and resume restores the dense session list. The
+    /// wall-clock budget stays in `LaunchPerformanceUITests` on the scheduled lane.
+    func testWarmResumeReturnsToTheSessionList() {
+        launchDenseFixture()
+        waitForSessionList()
+        background()
+        app.activate()
+        waitForSessionList()
+    }
+
+    func testDenseSessionOpensAndDismisses() {
+        launchDenseFixture()
+        openDenseSession()
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        XCTAssertTrue(
+            app.navigationBars["Chats"].waitForExistence(timeout: 15),
+            "The transcript never dismissed back to the session list"
+        )
     }
 }

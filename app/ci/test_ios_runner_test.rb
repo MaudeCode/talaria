@@ -42,8 +42,8 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(workflow, "TEST_WORKER_COUNT: 2")
     assert_includes(ui_testable, 'parallelizable = "YES"')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
-    # Pull requests skip the measurement-only UI classes and main pushes run them
-    # (TAL-75); the list is one env var so a new budget is added in one place.
+    # CI skips the measurement-only UI classes and the scheduled UI Performance
+    # workflow runs them (TAL-75, TAL-287); the list is one env var in pr-ci.
     %w[
       SidebarPerformanceUITests
       LaunchPerformanceUITests
@@ -53,6 +53,8 @@ class TestIOSRunnerTest < Minitest::Test
       assert_includes(workflow, "TalariaUITests/#{performance_class}")
     end
     assert_includes(workflow, '-skip-testing:${performance_class}')
-    assert_includes(workflow, "xcresulttool get test-results metrics")
+    assert_includes(workflow, "scripts/report-performance-metrics")
+    reporter = File.read(File.expand_path("../scripts/report-performance-metrics", __dir__), encoding: "UTF-8")
+    assert_includes(reporter, '"xcresulttool", "get", "test-results", "metrics"')
   end
 end

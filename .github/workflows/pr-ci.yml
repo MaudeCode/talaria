@@ -112,11 +112,11 @@ jobs:
         TalariaTests/APIClientSessionMutationTests
         TalariaTests/SSEClientTests
         TalariaTests/StreamReconnectContractTests
-      # Measurement-only UI classes (TAL-75). They assert no behaviour, and
-      # together they add several minutes of scrolling and relaunching, so pull
-      # requests skip them; affected App pushes to main run and record them. The
-      # unit-level budgets (replay catch-up, dense Kanban, image preview) are
-      # fast and deterministic, so they stay in the pull-request suite.
+      # Measurement-only UI classes (TAL-75). They assert no behaviour and add
+      # several minutes of scrolling and relaunching, so CI skips them and the
+      # scheduled ui-performance.yml runs them serially (TAL-287). The unit-level
+      # budgets (replay catch-up, dense Kanban, image preview) are fast and
+      # deterministic, so they stay in the suite.
       PERFORMANCE_UI_TEST_CLASSES: >-
         TalariaUITests/SidebarPerformanceUITests
         TalariaUITests/LaunchPerformanceUITests
@@ -200,11 +200,10 @@ jobs:
           elif [[ "${APP_UI_REQUIRED}" == "false" ]]; then
             test_options+=("-only-testing:TalariaTests" "-only-testing:TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList")
           fi
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            for performance_class in ${PERFORMANCE_UI_TEST_CLASSES}; do
-              test_options+=("-skip-testing:${performance_class}")
-            done
-          fi
+          # The scheduled UI Performance workflow owns the measurement-only classes (TAL-287).
+          for performance_class in ${PERFORMANCE_UI_TEST_CLASSES}; do
+            test_options+=("-skip-testing:${performance_class}")
+          done
           xcodebuild test-without-building \
             -project "${PROJECT_PATH}" \
             -scheme "${SCHEME}" \
@@ -236,9 +235,7 @@ jobs:
           fi
           echo "Test-without-building duration: ${duration_seconds}s"
           echo "- Test without building (${TEST_WORKER_COUNT} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            echo "- Performance UI budgets: main-push CI" >> "${GITHUB_STEP_SUMMARY}"
-          fi
+          echo "- Performance UI budgets: scheduled UI Performance workflow" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Run the live Web contract test against the probe fixture
         if: env.CONTRACTS_SELECTED == 'true'
@@ -364,50 +361,7 @@ jobs:
       - name: Record performance metrics
         if: always()
         continue-on-error: true
-        run: |
-          set -euo pipefail
-          if [[ ! -d "${RESULT_BUNDLE_PATH}" ]]; then
-            echo "No result bundle is available; skipping performance reporting."
-            exit 0
-          fi
-
-          xcrun xcresulttool get test-results metrics \
-            --path "${RESULT_BUNDLE_PATH}" \
-            --compact > performance-metrics.json
-
-          python3 - <<'PY' | tee performance-metrics.txt
-          import json
-
-          with open("performance-metrics.json", encoding="utf-8") as metrics_file:
-              tests = json.load(metrics_file)
-
-          if not tests:
-              print("No performance metrics were recorded.")
-
-          for test in sorted(tests, key=lambda test: test["testIdentifier"]):
-              print(test["testIdentifier"])
-              for run in test.get("testRuns", []):
-                  for metric in run.get("metrics", []):
-                      measurements = metric.get("measurements") or []
-                      if not measurements:
-                          continue
-                      ordered = sorted(measurements)
-                      median = ordered[len(ordered) // 2]
-                      spread = ordered[-1] - ordered[0]
-                      print(
-                          f"    {metric['displayName']:<40}"
-                          f" median {median:>16.3f} {metric['unitOfMeasurement']}"
-                          f"  (n={len(measurements)}, spread {spread:.3f})"
-                      )
-          PY
-
-          {
-            echo ""
-            echo "#### Performance metrics"
-            echo '```text'
-            cat performance-metrics.txt
-            echo '```'
-          } >> "${GITHUB_STEP_SUMMARY}"
+        run: scripts/report-performance-metrics "${RESULT_BUNDLE_PATH}"
 
       - name: Store performance metrics on the NAS
         if: always()
