@@ -41,3 +41,15 @@ for (const width of [1280, 760, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`system-${width}-help.png`) })
   })
 }
+
+test('help buttons keep a 44px touch target around the small icon', async ({ page }) => {
+  await page.goto('/settings/system')
+  await settle(page)
+  const help = page.getByRole('button', { name: 'About Automatically apply Web updates', exact: true })
+  const box = await help.boundingBox()
+  if (!box) throw new Error('help button not rendered')
+  // Points 10px beyond each visible edge still land on the button.
+  const hits = await page.evaluate(({ x, y, w, h }) => [[x - 10, y + h / 2], [x + w + 10, y + h / 2], [x + w / 2, y - 10], [x + w / 2, y + h + 10]]
+    .map(([px, py]) => document.elementFromPoint(px!, py!)?.closest('button')?.getAttribute('aria-label') ?? null), { x: box.x, y: box.y, w: box.width, h: box.height })
+  expect(hits).toEqual(Array(4).fill('About Automatically apply Web updates'))
+})
