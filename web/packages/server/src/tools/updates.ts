@@ -630,8 +630,9 @@ const canFastForwardTo = async (path: string, ref: string, git: GitRun): Promise
 
 async function detectDefaultBranch(path: string, git: GitRun): Promise<string> {
   const out = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], path)
-  if (out.ok && out.out) return out.out.replace(/^refs\/remotes\/origin\//, '')
-  for (const branch of ['main', 'master']) if ((await git(['rev-parse', '--verify', `origin/${branch}`], path)).ok) return branch
+  const prefix = 'refs/remotes/origin/'
+  if (out.ok && out.out.startsWith(prefix) && (await git(['rev-parse', '--verify', `${out.out}^{commit}`], path)).ok) return out.out.slice(prefix.length)
+  for (const branch of ['main', 'master']) if ((await git(['rev-parse', '--verify', `origin/${branch}^{commit}`], path)).ok) return branch
   throw new Error('Agent default branch is unavailable')
 }
 

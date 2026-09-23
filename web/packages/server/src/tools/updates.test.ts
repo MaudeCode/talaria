@@ -913,6 +913,32 @@ describe('Agent checkout updates', () => {
     expect(await svc.check()).toMatchObject({ channel: 'experimental', agent_channel: 'experimental', agent: { latest_sha: latest, behind: 2 } })
   })
 
+  it.each(['main', 'master'])('recovers a dangling default-branch reference using %s', async (branch) => {
+    const a = agentInstall()
+    if (branch === 'main') git(a.origin, 'branch', '-m', 'master', 'main')
+    else {
+      git(a.origin, 'branch', '-m', 'master', 'old-default')
+      git(a.agent, 'fetch', '--prune', 'origin')
+      git(a.agent, 'remote', 'set-head', 'origin', '--auto')
+      git(a.origin, 'branch', '-m', 'old-default', 'master')
+    }
+    git(a.agent, 'fetch', '--prune', 'origin')
+    const staleHead = git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')
+    expect(staleHead).not.toBe(`refs/remotes/origin/${branch}`)
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ channel: 'experimental', branch: `origin/${branch}`, behind: 1, latest_sha: a.v2 })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: a.v2, supportedVersion: '2.0.0' })).toMatchObject({ ok: true })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+  })
+
+  it('preserves a resolvable custom default branch instead of preferring main', async () => {
+    const a = agentInstall()
+    git(a.origin, 'branch', 'main', a.v1)
+    git(a.origin, 'branch', '-m', 'master', 'trunk')
+    git(a.agent, 'fetch', '--prune', 'origin')
+    git(a.agent, 'remote', 'set-head', 'origin', '--auto')
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: 'origin/trunk', behind: 1, latest_sha: a.v2 })
+  })
+
   function agentInstall(): { agent: string; origin: string; v1: string; v2: string } {
     const root = tmp()
     const origin = join(root, 'origin')
