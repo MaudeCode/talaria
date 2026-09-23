@@ -250,24 +250,29 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          # Wait for this run's newest probe at or before this attempt: "Re-run failed jobs"
-          # keeps an earlier successful probe. Its annotation (written only by that job)
-          # carries the fixture key and digest.
+          # Wait for this run's newest probe at or before this attempt. "Re-run failed jobs"
+          # keeps an earlier successful probe and copies its record, without annotations,
+          # into the new attempt, so the annotation (written only by the probe job that ran)
+          # is searched newest-first across the successful probe records.
           deadline=$((SECONDS + 1500))
           while :; do
             # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
-            probe=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" \
+            probes=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" \
               --jq '.jobs[] | select(.name == "Web contract probe" and .run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)) | "\(.run_attempt) \(.id) \(.status) \(.conclusion)"' \
-              | sort -n | tail -n 1 | cut -d' ' -f2-)
-            probe=${probe:-missing}
-            read -r probe_id probe_status probe_conclusion _ <<< "${probe} - -"
-            [[ "${probe_status}" == "completed" ]] && break
-            (( SECONDS < deadline )) || { echo "Timed out waiting for the Web contract probe (${probe})" >&2; exit 1; }
+              | sort -rn)
+            read -r _ _ newest_status newest_conclusion _ <<< "$(head -n 1 <<< "${probes}") - - - -"
+            [[ "${newest_status}" == "completed" ]] && break
+            (( SECONDS < deadline )) || { echo "Timed out waiting for the Web contract probe (${probes:-missing})" >&2; exit 1; }
             sleep 15
           done
-          [[ "${probe_conclusion}" == "success" ]] || { echo "Web contract probe finished ${probe_conclusion}" >&2; exit 1; }
-          notice=$(gh api "repos/${GITHUB_REPOSITORY}/check-runs/${probe_id}/annotations" \
-            --jq '[.[] | select(.title == "contract-fixture") | .message] | if length == 1 then .[0] else "" end')
+          [[ "${newest_conclusion}" == "success" ]] || { echo "Web contract probe finished ${newest_conclusion}" >&2; exit 1; }
+          notice=""
+          while read -r _ id status conclusion; do
+            [[ "${status}" == "completed" && "${conclusion}" == "success" ]] || continue
+            notice=$(gh api "repos/${GITHUB_REPOSITORY}/check-runs/${id}/annotations" \
+              --jq '[.[] | select(.title == "contract-fixture") | .message] | if length == 1 then .[0] else "" end')
+            [[ -n "${notice}" ]] && break
+          done <<< "${probes}"
           [[ "${notice}" =~ ^key=(fixtures/pr-ci/${GITHUB_RUN_ID}/[0-9]+/live-responses\.json)\ sha256=([a-f0-9]{64})$ ]] \
             || { echo "The probe did not publish exactly one valid fixture annotation" >&2; exit 1; }
           fixture_key=${BASH_REMATCH[1]}
