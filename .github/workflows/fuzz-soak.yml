@@ -107,4 +107,4 @@ jobs:
           key="fuzz/fuzz-soak/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
           tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
           ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
-          echo "- Result bundle: talaria-ci/$key (expires after 90 days)" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Result bundle: talaria-ci/$key (expires after 30 days)" >> "${GITHUB_STEP_SUMMARY}"

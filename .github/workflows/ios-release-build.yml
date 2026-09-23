@@ -303,7 +303,7 @@ jobs:
           "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build" ios-ipa "$EXPORT_PATH" ios-dsyms "$ARCHIVE_PATH/dSYMs"
           workflow="${GITHUB_WORKFLOW_REF#*/.github/workflows/}"
           {
-            echo "### Signed build objects (bucket talaria-release, expire after one day)"
+            echo "### Signed build objects (bucket talaria-release, expire after 30 days)"
             for name in ios-ipa ios-dsyms; do
               echo "- handoffs/${workflow%%.*}/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${name}.tar"
             done
