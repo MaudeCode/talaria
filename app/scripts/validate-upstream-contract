@@ -93,6 +93,7 @@ if [[ -n "$candidate_ref" || ! -f "$upstream_dir/packages/server/dist/bin/talari
     npm run build --workspace packages/server
   ) >"$run_dir/setup.log" 2>&1 || {
     echo "Server fixture: Node workspace setup failed; see $run_dir/setup.log" >&2
+    tail -n 60 "$run_dir/setup.log" >&2
     exit 1
   }
 fi

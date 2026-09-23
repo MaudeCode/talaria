@@ -1,0 +1,41 @@
+name: Docker plugins
+description: Make the Compose and Buildx CLI plugins available on the Linux pool's Docker daemon.
+inputs:
+  multi-platform:
+    description: Also register QEMU binfmt handlers and a docker-container builder for linux/amd64,linux/arm64 images.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        MULTI_PLATFORM: ${{ inputs.multi-platform }}
+      run: |
+        set -euo pipefail
+        docker version
+        packages=()
+        # The docker-ce repository names the plugins *-plugin; Ubuntu's own archive ships docker-compose-v2 and docker-buildx.
+        candidate() { apt-cache policy "$1" 2>/dev/null | grep -Eq '^  Candidate: [^(]'; }
+        if ! docker compose version >/dev/null 2>&1; then
+          sudo apt-get update
+          if candidate docker-compose-plugin; then packages+=(docker-compose-plugin); else packages+=(docker-compose-v2); fi
+        fi
+        if ! docker buildx version >/dev/null 2>&1; then
+          [[ ${#packages[@]} -gt 0 ]] || sudo apt-get update
+          if candidate docker-buildx-plugin; then packages+=(docker-buildx-plugin); else packages+=(docker-buildx); fi
+        fi
+        if [[ "$MULTI_PLATFORM" == "true" ]]; then
+          [[ ${#packages[@]} -gt 0 ]] || sudo apt-get update
+          packages+=(qemu-user-static binfmt-support)
+        fi
+        if [[ ${#packages[@]} -gt 0 ]]; then
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+        fi
+        docker compose version
+        docker buildx version
+        if [[ "$MULTI_PLATFORM" == "true" ]]; then
+          # OCI output for two platforms needs a docker-container builder and registered arm64 emulation.
+          docker buildx create --name talaria-release --driver docker-container --use --bootstrap
+          docker buildx inspect --bootstrap | tee /dev/stderr | grep -E '^Platforms:.*linux/arm64' >/dev/null
+        fi

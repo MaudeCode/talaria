@@ -160,6 +160,8 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
+    - name: Native module toolchain (node-pty)
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
     - name: Download release handoffs
       uses: actions/download-artifact@v7
       with:
@@ -190,6 +192,8 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
     - uses: ./.github/actions/release-python
+    - name: Install uv (the Agent's locked dependency resolver)
+      run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
     - name: Download release handoffs
       uses: actions/download-artifact@v7
       with:
@@ -272,6 +276,11 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version-file: web/.nvmrc
+    - uses: ./.github/actions/docker-plugins
+      with:
+        multi-platform: "true"
+    - name: Native module toolchain (node-pty)
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
     - name: Download release handoffs
       uses: actions/download-artifact@v7
       with:
