@@ -32,7 +32,8 @@
           "properties": {
             "tag": {"pattern": "^web-(exp-)?v"},
             "image": {"type": "string", "pattern": "^ghcr\\.io/maudecode/talaria-web@sha256:[a-f0-9]{64}(?![\\s\\S])"},
-            "npm": {"type": "string", "pattern": "^@maudecode/talaria-web@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"}
+            "npm": {"type": "string", "pattern": "^@maudecode/talaria-web@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"},
+            "upstreamBase": {"$ref": "#/$defs/sha", "description": "Legacy: recorded by sets published before TAL-245; new manifests omit it."}
           }
         },
         "relay": {

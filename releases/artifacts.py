@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Integrity-checked handoffs on the single self-hosted release runner."""
+"""Digest-checked release handoffs carried between runners through the NAS object store.
+
+``put`` archives a directory as ``$RUNNER_TEMP/release-handoffs/<run>/<attempt>/<name>.tar``, uploads it as
+``handoffs/<workflow>/<run>/<attempt>/<name>.tar`` through ``scripts/s3-artifact`` and records its digest in
+the job outputs. ``get`` downloads only archives named by forwarded producer outputs whose run, source and
+digest match; the calling workflow's file name namespaces every key, so a job addresses only its own run.
+"""
 
 import argparse
 import hashlib
@@ -7,30 +13,61 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import stat
+import subprocess
+import tarfile
 
-from cli import run_url
+from cli import ROOT, run_url
+
+HELPER = ROOT / "scripts/s3-artifact"
 
 
 def context():
     run_url()
-    runner, source = os.environ.get("RUNNER_NAME", ""), os.environ.get("GITHUB_SHA", "")
-    if not runner or not re.fullmatch(r"[a-f0-9]{40}", source):
-        raise ValueError("runner and workflow source identity are required")
-    return {"run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-            "runner": runner, "source": source}
+    source = os.environ.get("GITHUB_SHA", "")
+    if not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise ValueError("workflow source identity is required")
+    return {"run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"], "source": source}
 
 
-def location(identity, name):
-    if not re.fullmatch(r"[a-z0-9-]+", name):
+def staged():
+    return Path(os.environ["RUNNER_TEMP"]) / "release-handoffs"
+
+
+def downloaded():
+    return Path(os.environ["RUNNER_TEMP"]) / "release-handoffs-in"
+
+
+def namespace():
+    """The calling workflow's file name; reusable workflows share their caller's run and namespace."""
+    match = re.fullmatch(r"[^@]+/\.github/workflows/([a-z0-9-]+)\.ya?ml@.+", os.environ.get("GITHUB_WORKFLOW_REF", ""))
+    if not match:
+        raise ValueError("workflow identity is required for the handoff namespace")
+    return match.group(1)
+
+
+def key(reference, workflow):
+    archive(Path("."), reference)  # validates name, run and attempt
+    return f"handoffs/{workflow}/{reference['run']}/{reference['attempt']}/{reference['name']}.tar"
+
+
+def transfer(operation, object_key, path):
+    try:
+        subprocess.run([str(HELPER), operation, object_key, str(path)], check=True)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"NAS {operation} of {object_key} failed with status {error.returncode}") from error
+
+
+def archive(root, reference):
+    if not re.fullmatch(r"[a-z0-9-]+", str(reference.get("name", ""))):
         raise ValueError("invalid artifact name")
-    if not all(re.fullmatch(r"[1-9][0-9]*", identity[key]) for key in ("run", "attempt")):
+    if not all(re.fullmatch(r"[1-9][0-9]*", str(reference.get(key, ""))) for key in ("run", "attempt")):
         raise ValueError("invalid artifact run identity")
-    return Path.home() / ".local/share/talaria-release-runs" / identity["run"] / identity["attempt"] / name
+    return root / reference["run"] / reference["attempt"] / (reference["name"] + ".tar")
 
 
 def digest(directory):
+    """Tree digest that also rejects empty, escaping or special-file handoff sources."""
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("artifact must be a real directory")
     result = hashlib.sha256()
@@ -54,30 +91,59 @@ def digest(directory):
     return result.hexdigest()
 
 
+def file_digest(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 def put(name, source):
-    identity = context()
-    expected = digest(source)
-    destination = location(identity, name)
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    destination.parent.chmod(0o700)
-    shutil.copytree(source, destination, symlinks=True)
-    if digest(destination) != expected:
-        raise ValueError("artifact changed while being stored")
-    return {**identity, "name": name, "sha256": expected}
+    reference = {**context(), "name": name}
+    digest(source)
+    destination = archive(staged(), reference)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(destination, "x") as stream:
+        stream.add(source, arcname=".")
+    transfer("put", key(reference, namespace()), destination)
+    return {**reference, "sha256": file_digest(destination)}
+
+
+def stored(reference, workflow=None):
+    """Download a producer reference's archive and verify it against the digest that job recorded."""
+    if not re.fullmatch(r"[a-f0-9]{64}", str(reference.get("sha256", ""))):
+        raise ValueError("invalid artifact digest")
+    path = archive(downloaded(), reference)
+    path.unlink(missing_ok=True)  # every restore fetches the object again; nothing on a runner is trusted
+    transfer("get", key(reference, workflow or namespace()), path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("handoff artifact was not downloaded for this reference")
+    if file_digest(path) != reference["sha256"]:
+        raise ValueError("downloaded artifact digest differs from the producer job output")
+    return path
+
+
+def restore(reference, destination, workflow=None):
+    extract(stored(reference, workflow), destination)
+
+
+def extract(path, destination):
+    """Unpack an archive that stored() has just downloaded and verified."""
+    destination = Path(destination)
+    if destination.exists():
+        raise FileExistsError(destination)
+    try:
+        with tarfile.open(path) as stream:
+            stream.extractall(destination, filter="data")
+    except tarfile.TarError as error:
+        raise ValueError(f"handoff archive is not a plain directory tree: {error}") from error
 
 
 def get(reference, destination):
     current = context()
-    if any(reference.get(key) != current[key] for key in ("run", "runner", "source")):
-        raise ValueError("artifact belongs to a different run, runner or workflow source")
-    if int(reference["attempt"]) > int(current["attempt"]):
-        raise ValueError("artifact belongs to a future attempt")
-    source = location(reference, reference["name"])
-    if digest(source) != reference["sha256"]:
-        raise ValueError("stored artifact digest differs from the producer job output")
-    shutil.copytree(source, destination, symlinks=True)
-    if digest(destination) != reference["sha256"]:
-        raise ValueError("artifact changed while being restored")
+    if any(reference.get(key) != current[key] for key in ("run", "source")):
+        raise ValueError("artifact belongs to a different run or workflow source")
+    if not re.fullmatch(r"[1-9][0-9]*", str(reference.get("attempt", ""))) or int(reference["attempt"]) > int(current["attempt"]):
+        raise ValueError("artifact belongs to a future or invalid attempt")
+    restore(reference, destination)
 
 
 def references():
@@ -92,8 +158,10 @@ def references():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("put", "get", "forward", "clean"))
+    parser.add_argument("operation", choices=("put", "get", "forward"))
     parser.add_argument("paths", nargs="*")
+    parser.add_argument("--receipts", action="store_true",
+                        help="get only the forwarded handoffs release assembly reads, never the image or iOS payloads")
     args = parser.parse_args()
     if args.operation == "put":
         if not args.paths or len(args.paths) % 2:
@@ -103,23 +171,15 @@ def main():
         if not args.paths:
             parser.error("get requires DESTINATION and optional artifact names")
         available = references()
-        names = args.paths[1:] or list(available)
+        if args.receipts:
+            from collect import HANDOFFS
+            names = [name for name in HANDOFFS if name in available]
+        else:
+            names = args.paths[1:] or list(available)
         if not names:
             raise ValueError("no producer outputs supplied")
         for name in names:
             get(available[name], Path(args.paths[0]) / name)
-        return
-    elif args.operation == "clean":
-        # Successful final jobs retain their manifest and small diagnostics;
-        # failed runs retain all handoffs for inspection or same-run retries.
-        identity = context()
-        directory = location(identity, "unused").parent.parent
-        for attempt in directory.iterdir():
-            if attempt.is_symlink() or not re.fullmatch(r"[1-9][0-9]*", attempt.name):
-                raise ValueError("invalid stored attempt directory")
-            for path in attempt.iterdir():
-                if path.name not in args.paths:
-                    shutil.rmtree(path)
         return
     else:
         result = references()

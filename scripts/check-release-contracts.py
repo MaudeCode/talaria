@@ -26,12 +26,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--only", choices=("app", "fixtures"),
+                        help="app: the native App runs on Mac; fixtures: the portable Web/Relay fixture suites.")
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text())
     refs = {name: component["sourceRevision"] for name, component in plan["components"].items()}
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    web_refs = verify_app_web(plan, output)
+    web_refs = list(dict.fromkeys([refs["web"], *plan["supportedWebSources"]]))
+    if args.only != "fixtures":
+        web_refs = verify_app_web(plan, output)
+    if args.only == "app":
+        (output / "verification.json").write_text(json.dumps({"sourceRefs": refs, "supportedWebSources": web_refs, "result": "success"}, indent=2) + "\n")
+        return
     with tempfile.TemporaryDirectory(prefix="talaria-release-contracts-") as temporary:
         state = Path(temporary)
         for name in ("web", "relay"):

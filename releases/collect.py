@@ -7,11 +7,17 @@ from pathlib import Path
 from cli import load, write
 
 
+RECEIPT_DIRECTORIES = ("contract-receipts", "agent-receipts")
+BUILD_RECEIPTS = ("app-build", "web-build", "relay-build", "app-publish", "web-publish", "relay-publish")
+# The handoffs assembly reads: the plan (with its receipts and notes), receipts, and web-build's npm tarballs.
+HANDOFFS = ("release-plan", *RECEIPT_DIRECTORIES, *BUILD_RECEIPTS)
+
+
 def collect(source, destination):
     paths = []
-    for bucket in ("release-plan/receipts", "contract-receipts", "agent-receipts"):
+    for bucket in ("release-plan/receipts", *RECEIPT_DIRECTORIES):
         paths.extend(sorted((source / bucket).glob("*.json")))
-    for bucket in ("app-build", "web-build", "relay-build", "app-publish", "web-publish", "relay-publish"):
+    for bucket in BUILD_RECEIPTS:
         path = source / bucket / "receipt.json"
         if path.is_file():
             paths.append(path)

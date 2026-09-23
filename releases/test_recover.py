@@ -9,8 +9,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+import artifacts
 import recover
-from artifacts import digest
 
 
 class RecoveryTests(unittest.TestCase):
@@ -36,62 +36,93 @@ class RecoveryTests(unittest.TestCase):
                  "run_id": 123, "run_attempt": 4}
                 for name, conclusion in (("prepare", "success"), ("build-gate", "success"), ("relay-publish", "success"),
                                          ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure"))]
-        refs = {name: {"run": "123", "attempt": "1", "runner": "synthetic-runner", "source": "a" * 40,
-                       "name": name, "sha256": "b" * 64}
+        refs = {name: {"run": "123", "attempt": "1", "source": "a" * 40, "name": name, "sha256": "b" * 64}
                 for name in ("release-plan", "contract-receipts", "agent-receipts", "relay-build", "web-build", "app-build",
                              "ios-ipa", "ios-dsyms", "relay-publish", "web-publish")}
         needs = {name: {"result": "failure" if name == "app-publish" else "success", "outputs": {}}
                  for name in ("prepare", "build-gate", "relay-publish", "web-publish", "app-publish")}
         needs["prepare"]["outputs"] = {"source": "c" * 40, "app_changed": "true", "web_changed": "true", "relay_changed": "true"}
-        needs["build-gate"]["outputs"]["artifacts"] = json.dumps(refs)
+        # build-gate also forwards the Web OCI image; recovery authenticates it but never restores it.
+        forwarded = {**refs, "web-image": {**refs["web-build"], "name": "web-image"}}
+        needs["build-gate"]["outputs"]["artifacts"] = json.dumps(forwarded)
         return metadata, jobs, needs, refs
 
     def verify(self, metadata, jobs, needs):
-        return recover.authenticate("123", "4", metadata, jobs, "timestamp RELEASE_NEEDS: " + json.dumps(needs), "synthetic-runner")
+        return recover.authenticate("123", "4", metadata, jobs, "timestamp RELEASE_NEEDS: " + json.dumps(needs))
 
     def test_original_jobs_and_references_are_authenticated(self):
         metadata, jobs, needs, refs = self.example()
         self.assertEqual(self.verify(metadata, jobs, needs), ("c" * 40, refs))
         # Job-level env is logged again for each executed step.
         repeated = ("timestamp RELEASE_NEEDS: " + json.dumps(needs) + "\n") * 2
-        self.assertEqual(recover.authenticate("123", "4", metadata, jobs, repeated, "synthetic-runner"), ("c" * 40, refs))
+        self.assertEqual(recover.authenticate("123", "4", metadata, jobs, repeated), ("c" * 40, refs))
         with self.assertRaisesRegex(ValueError, "conflicting"):
-            recover.authenticate("123", "4", metadata, jobs, repeated + "RELEASE_NEEDS: {}", "synthetic-runner")
+            recover.authenticate("123", "4", metadata, jobs, repeated + "RELEASE_NEEDS: {}")
         for field, value in (("head_branch", "feature"), ("event", "pull_request"), ("conclusion", "success"),
                              ("path", ".github/workflows/release-set.yml"), ("run_attempt", 3), ("head_sha", "bad"),
                              ("head_repository", {"full_name": "untrusted/fork"})):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 self.verify({**metadata, field: value}, jobs, needs)
         for index in range(len(jobs)):
-            for key, value in (("conclusion", "skipped"), ("runner_name", "other"), ("run_id", 456), ("run_attempt", 5)):
+            for key, value in (("conclusion", "skipped"), ("run_id", 456), ("run_attempt", 5)):
                 broken = deepcopy(jobs)
                 broken[index][key] = value
                 with self.subTest(index=index, key=key), self.assertRaises(ValueError):
                     self.verify(metadata, broken, needs)
-        for key, value in (("run", "456"), ("attempt", "5"), ("attempt", "../4"), ("source", "d" * 40),
-                           ("runner", "other"), ("name", "../escape"), ("sha256", "bad")):
-            broken = deepcopy(needs)
-            changed = deepcopy(refs)
-            changed["ios-ipa"][key] = value
-            broken["build-gate"]["outputs"]["artifacts"] = json.dumps(changed)
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                self.verify(metadata, jobs, broken)
+        for name in ("ios-ipa", "web-image"):
+            for key, value in (("run", "456"), ("attempt", "5"), ("attempt", "../4"), ("source", "d" * 40),
+                               ("name", "../escape"), ("sha256", "bad")):
+                broken = deepcopy(needs)
+                changed = json.loads(broken["build-gate"]["outputs"]["artifacts"])
+                changed[name][key] = value
+                broken["build-gate"]["outputs"]["artifacts"] = json.dumps(changed)
+                with self.subTest(name=name, key=key), self.assertRaises(ValueError):
+                    self.verify(metadata, jobs, broken)
         for text in ("", "RELEASE_NEEDS: {} RELEASE_NEEDS: {}"):
             with self.assertRaises(ValueError):
-                recover.authenticate("123", "4", metadata, jobs, text, "synthetic-runner")
+                recover.authenticate("123", "4", metadata, jobs, text)
 
     def test_restored_files_preserve_original_receipts_and_reject_tampering(self):
+        # The original run's archives are downloaded, never copied from a runner's disk; only their producer
+        # digests authorize them, and every archive is checked before any is extracted.
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "original"
             source.mkdir()
             receipt = b'{"runUrl":"https://github.com/MaudeCode/talaria/actions/runs/123/attempts/1"}\n'
             (source / "receipt.json").write_bytes(receipt)
-            refs = {"app-build": {"sha256": digest(source)}}
-            with patch.object(recover, "location", return_value=source):
+            store = {}
+
+            def transfer(operation, key, path):
+                if operation == "put":
+                    store[key] = Path(path).read_bytes()
+                elif key in store:
+                    Path(path).parent.mkdir(parents=True, exist_ok=True)
+                    Path(path).write_bytes(store[key])
+                else:
+                    raise ValueError("missing object")
+
+            env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
+                   "GITHUB_SHA": "a" * 40, "RUNNER_TEMP": str(root),
+                   "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main"}
+            with patch.dict(os.environ, env, clear=True), patch.object(artifacts, "transfer", transfer):
+                refs = {name: artifacts.put(name, source) for name in ("app-build", "ios-ipa")}
+            self.assertEqual(set(store), {"handoffs/production-cutover/123/1/app-build.tar", "handoffs/production-cutover/123/1/ios-ipa.tar"})
+            recovery = {**env, "GITHUB_RUN_ID": "456", "RUNNER_TEMP": str(root / "recovery"),
+                        "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main"}
+            downloads = []
+
+            def counted(operation, key, path):
+                downloads.append(key)
+                transfer(operation, key, path)
+
+            with patch.dict(os.environ, recovery, clear=True), patch.object(artifacts, "transfer", counted):
                 recover.restore(refs, root / "recovered")
+                # Each verified archive is extracted as downloaded; the IPA and dSYMs never cross the NAS twice.
+                self.assertEqual(sorted(downloads), sorted(set(downloads)))
                 self.assertEqual((root / "recovered/app-build/receipt.json").read_bytes(), receipt)
-                (source / "receipt.json").write_text("tampered")
+                self.assertEqual((root / "recovered/ios-ipa/receipt.json").read_bytes(), receipt)
+                store["handoffs/production-cutover/123/1/ios-ipa.tar"] = b"tampered"
                 with self.assertRaisesRegex(ValueError, "original producer"):
                     recover.restore(refs, root / "rejected")
                 self.assertFalse((root / "rejected").exists())
@@ -108,7 +139,7 @@ class RecoveryTests(unittest.TestCase):
             output = root / "outputs"
             env = {"GITHUB_RUN_ID": "456", "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
                    "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main",
-                   "RUNNER_NAME": "synthetic-runner", "GITHUB_SHA": "d" * 40, "GITHUB_OUTPUT": str(output)}
+                   "GITHUB_SHA": "d" * 40, "GITHUB_OUTPUT": str(output)}
             with patch.dict(os.environ, env), patch("sys.argv", ["recover.py", "123", "4", str(root)]), \
                     patch.object(recover, "api", side_effect=[json.dumps(metadata), json.dumps({"total_count": len(jobs), "jobs": jobs}),
                                                             "RELEASE_NEEDS: " + json.dumps(needs)]), \

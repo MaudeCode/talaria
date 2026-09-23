@@ -49,6 +49,12 @@ jobs:
 
       - name: Restore verified release plan
         working-directory: .
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-release
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
 
       - name: Verify production build authority
@@ -283,11 +289,25 @@ jobs:
           "$RELEASE_PYTHON" releases/publish.py build-app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
             --directory "$EXPORT_PATH" --build-number "$BUILD_NUMBER" --output "$RUNNER_TEMP/app-build/receipt.json"
 
-      - name: Store verified signed artifacts locally
+      - name: Stage the verified signed artifacts for the publication runner
         id: store
         working-directory: .
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-release
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
         run: |
+          set -euo pipefail
           "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build" ios-ipa "$EXPORT_PATH" ios-dsyms "$ARCHIVE_PATH/dSYMs"
+          workflow="${GITHUB_WORKFLOW_REF#*/.github/workflows/}"
+          {
+            echo "### Signed build objects (bucket talaria-release, expire after one day)"
+            for name in ios-ipa ios-dsyms; do
+              echo "- handoffs/${workflow%%.*}/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${name}.tar"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove App Store Connect key
         if: always()

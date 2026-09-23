@@ -5,6 +5,7 @@ import hashlib
 import io
 from itertools import product
 import json
+import re
 import os
 from pathlib import Path
 import plistlib
@@ -221,26 +222,25 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(ios["jobs"]["build"]["environment"], "testflight")
         for release_workflow in (document, ios):
             for name, job in release_workflow["jobs"].items():
-                if "steps" in job:
-                    self.assertEqual(job["runs-on"], "ubuntu-latest" if name == "web-publication" else "maude-mac")
-                    for step in job["steps"]:
-                        transfer = "artifact" in step.get("uses", "")
-                        self.assertEqual(transfer, (name, step.get("name")) in {
-                            ("web-build", "Upload the public Web publication artifact"),
-                            ("web-publication", "Download the verified Web publication artifact"),
-                            ("web-publication", "Upload the Web publication receipt"),
-                            ("web-publish", "Download the Web publication receipt"),
-                        })
+                if "steps" not in job:
+                    continue
+                # Handoffs cross runners through the NAS store; producer digests travel in job outputs and the
+                # release bucket credentials reach only the steps that move handoffs.
+                for step in job["steps"]:
+                    if "artifacts.py put" in step.get("run", "") or "artifacts.py get" in step.get("run", ""):
+                        self.assertEqual(step.get("env", {}).get("TALARIA_S3_SECRET_ACCESS_KEY"),
+                                         "${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}", (name, step.get("name")))
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
         environments = {"relay-publish": "relay-production", "web-publication": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}
         secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "app-publish": {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY"}}
+        store = {"TALARIA_RELEASE_S3_ACCESS_KEY_ID", "TALARIA_RELEASE_S3_SECRET_ACCESS_KEY"}
         import re
         for name, job in document["jobs"].items():
             self.assertEqual(job.get("environment"), environments.get(name))
             self.assertEqual(job.get("secrets"), "inherit" if name == "app-signed-build" else None)
-            self.assertEqual(set(re.findall(r"secrets\.([A-Z_]+)", json.dumps(job))), secrets.get(name, set()))
+            self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(job))) - store, secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
             self.assertEqual(permissions.get("packages"), "write" if name == "web-publication" else None)
@@ -275,7 +275,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(recovery["jobs"]["app"]["environment"], "testflight")
         self.assertEqual(recovery["jobs"]["publish-set"]["environment"], "release-set-publication")
         self.assertEqual(recovery["jobs"]["publish-set"]["needs"], "app")
-        self.assertNotIn("secrets.", json.dumps(recovery["jobs"]["publish-set"]))
+        self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(recovery["jobs"]["publish-set"]))), store)
         self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})
         app_steps = recovery["jobs"]["app"]["steps"]
         upload_index = next(index for index, step in enumerate(app_steps) if "require Apple VALID" in step.get("name", ""))
@@ -283,10 +283,147 @@ class PublicationTests(unittest.TestCase):
         self.assertFalse(any("cli.py assemble" in step.get("run", "") for step in app_steps[:upload_index]),
                          "Partial publication receipts must not be assembled as a dry-run candidate")
 
+    def test_artifacts_use_the_nas_store_with_bucket_scoped_credentials(self):
+        # GitHub artifact storage is not used. CI workflows may only reference the talaria-ci key, release
+        # workflows only the talaria-release key, and no other workflow references either.
+        allowed = {
+            "pr-ci.yml": {"contracts": "CI", "test": "CI", "web-docker": "CI"},
+            "web-docker-smoke.yml": {"smoke": "CI"},
+            "fuzz-soak.yml": {"soak": "CI"},
+            "ios-release-build.yml": {"build": "RELEASE"},
+            "release-set.yml": {name: "RELEASE" for name in (
+                "prepare", "contracts", "component-contracts", "agent", "relay-build", "web-build", "app-dry-build",
+                "candidate", "relay-publish", "web-publication", "app-publish", "publish-set")},
+            "recover-cutover.yml": {"app": "RELEASE", "publish-set": "RELEASE"},
+        }
+        root = Path(__file__).resolve().parents[1]
+        for path in sorted((root / ".github/workflows").glob("*.yml")):
+            text = path.read_text()
+            self.assertNotIn("upload-artifact", text, path.name)
+            self.assertNotIn("download-artifact", text, path.name)
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
+            ], text=True))
+            for name, job in document["jobs"].items():
+                buckets = set(re.findall(r"secrets\.TALARIA_(CI|RELEASE)_S3_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)", json.dumps(job)))
+                expected = allowed.get(path.name, {}).get(name)
+                self.assertEqual(buckets, {expected} if expected else set(), (path.name, name))
+                if expected and "uses" in job:
+                    # A caller may only forward the CI key into the Docker smoke's NAS layer cache.
+                    self.assertEqual(job["uses"], "./.github/workflows/web-docker-smoke.yml", (path.name, name))
+                elif expected:
+                    self.assertRegex(json.dumps(job), r"scripts/s3-artifact|artifacts\.py (put|get)|releases/recover\.py", (path.name, name))
+        for path in (root / ".github/actions").glob("*/action.yml"):
+            self.assertNotIn("artifact@", path.read_text(), path.name)
+
+    def test_only_native_jobs_use_the_mac_runner(self):
+        # The single Mac runner is reserved for Xcode, simulator and Apple signing work; every other job runs on
+        # the Linux pool, or on GitHub-hosted Linux where npm trusted publishing requires it. Each allowed Mac job
+        # names the native dependency its steps must still show; moving a portable job back fails here.
+        native = {
+            ("pr-ci.yml", "app-tooling"): "test-ios-simulator-pool",
+            ("pr-ci.yml", "test"): "xcodebuild",
+            ("fuzz-soak.yml", "soak"): "xcodebuild",
+            ("ios-release-build.yml", "build"): "xcodebuild archive",
+            ("release-set.yml", "contracts"): "check-previous-app.py",
+            ("release-set.yml", "app-dry-build"): "build.py app",
+        }
+        root = Path(__file__).resolve().parents[1]
+        found = {}
+        for path in sorted((root / ".github/workflows").glob("*.yml")):
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
+            ], text=True))
+            for name, job in document["jobs"].items():
+                if "steps" not in job:
+                    continue
+                runner = job["runs-on"]
+                if runner == "maude-mac":
+                    found[(path.name, name)] = json.dumps(job["steps"])
+                else:
+                    self.assertIn(runner, (["ghar-set-maudecode"], "ubuntu-latest"), (path.name, name))
+                    self.assertEqual(runner == "ubuntu-latest", (path.name, name) == ("release-set.yml", "web-publication"))
+        self.assertEqual(set(found), set(native))
+        for job, dependency in native.items():
+            self.assertIn(dependency, found[job], job)
+
+    def test_mac_suite_does_not_wait_for_the_linux_probe(self):
+        # Only the live-fixture test needs the probe; it runs last against the digest from the probe's annotation.
+        root = Path(__file__).resolve().parents[1]
+        document = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/pr-ci.yml"),
+        ], text=True))
+        test, probe = document["jobs"]["test"], document["jobs"]["contracts"]
+        self.assertEqual(test["needs"], "changes")
+        runs = {step.get("name"): step.get("run", "") for step in test["steps"]}
+        self.assertIn('"-skip-testing:${LIVE_CONTRACT_TEST}"', runs["Test without building"])
+        live = runs["Run the live Web contract test against the probe fixture"]
+        # A "Re-run failed jobs" attempt reruns only the Mac job, so the probe is found across attempts.
+        for required in ("filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)",
+                         'select(.title == "contract-fixture")', "shasum -a 256 --check",
+                         'TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
+                         # The scheme is parallelizable; one test must not clone the simulator while the
+                         # main run's clones are still being torn down.
+                         "-parallel-testing-enabled NO",
+                         '.[0].result == "Passed"'):
+            self.assertIn(required, live)
+        self.assertIn("::notice title=contract-fixture::key=$key sha256=$sha256",
+                      "\n".join(step.get("run", "") for step in probe["steps"]))
+
+    def test_assembly_restores_only_receipt_handoffs(self):
+        # Candidate and publication assembly must not pull the Web image or iOS payloads off the NAS.
+        root = Path(__file__).resolve().parents[1]
+        document = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/release-set.yml"),
+        ], text=True))
+        recovery = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/recover-cutover.yml"),
+        ], text=True))
+        for workflow, name in ((document, "candidate"), (document, "publish-set"), (recovery, "publish-set")):
+            runs = [step.get("run", "") for step in workflow["jobs"][name]["steps"]]
+            restores = [run for run in runs if "artifacts.py get" in run]
+            with self.subTest(job=name):
+                self.assertTrue(restores)
+                self.assertTrue(all("--receipts" in run for run in restores), restores)
+        # Recovery consumes the IPA itself; finalization cannot use it, so it is never restaged.
+        restage = "\n".join(step.get("run", "") for step in recovery["jobs"]["app"]["steps"] if "artifacts.py put" in step.get("run", ""))
+        self.assertNotIn("ios-ipa", restage)
+        self.assertNotIn("ios-dsyms", restage)
+
+    def test_buildx_builders_are_never_fixed_names(self):
+        # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
+        root = Path(__file__).resolve().parents[1]
+        for path in sorted([*(root / ".github/workflows").glob("*.yml"), *(root / ".github/actions").glob("*/action.yml")]):
+            for line in path.read_text().splitlines():
+                if "buildx create" in line:
+                    with self.subTest(path=path.name):
+                        self.assertNotIn("--name", line)
+
+    def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
+        # The pool image has no Ruby; the Mac did. Tag validation (cli.py prepare) and TestFlight upload
+        # (publish.py app) shell out to Ruby, so every Linux job that runs them must install it first.
+        root = Path(__file__).resolve().parents[1]
+        needs_ruby = ("cli.py prepare", "publish.py app", "validate_release_tag", ".rb")
+        for path in sorted((root / ".github/workflows").glob("*.yml")):
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
+            ], text=True))
+            for name, job in document["jobs"].items():
+                if "steps" not in job or job["runs-on"] == "maude-mac":
+                    continue
+                runs = "\n".join(step.get("run", "") for step in job["steps"])
+                if any(marker in runs for marker in needs_ruby):
+                    with self.subTest(workflow=path.name, job=name):
+                        uses = {step.get("uses") for step in job["steps"]}
+                        self.assertTrue(uses & {"./.github/actions/release-ruby", "ruby/setup-ruby@v1"}, uses)
+
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):
             for stage in ("build", "publication"):
-                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "agent", "build-gate")}
+                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent", "build-gate")}
                 needs["prepare"]["outputs"] = {
                     name + "_changed": str(changed).lower()
                     for name, changed in zip(("app", "web", "relay"), (app, web, relay_changed))
@@ -304,7 +441,7 @@ class PublicationTests(unittest.TestCase):
                         check(needs, stage, dry)
                     continue
                 check(needs, stage, dry)
-                for job in jobs + (["prepare", "contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
+                for job in jobs + (["prepare", "contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
                     for result in ("failure", "cancelled", "skipped", "success"):
                         if result == needs[job]["result"]:
                             continue

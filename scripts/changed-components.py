@@ -14,7 +14,7 @@ import sys
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
-JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
+JOBS = {"test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     "pr-ci.yml": {"tooling"},
@@ -44,9 +44,17 @@ SCRIPTS = {
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
     "check-previous-app.py": {"contracts", "tooling"},
+    "check-release-contracts.py": {"contracts", "tooling"},
+    "check": {"tooling"},
+    "check-regression-port.py": {"tooling"},
+    "test-check-regression-port.py": {"tooling"},
+    "generate-brand-icons.py": {"web_frontend", "tooling"},
+    "repair-workspace-user-turns.py": {"web_server", "tooling"},
     "check-selected-contracts.py": CONSUMERS | {"tooling"},
     "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
+    "s3-artifact": {"tooling"},
+    "test-s3-artifact.py": {"tooling"},
     "rehearse-monorepo.py": {"tooling"},
 }
 
@@ -95,7 +103,9 @@ def path_suites(path):
     # Runtime resources and test fixtures can be Markdown too; never classify
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
-        return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/")) else {"app"}
+        # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too.
+        return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
+                                                          "TalariaTests/APIClientSessionListTests.swift")) else {"app"}
     if path.startswith("web/sidecar/tests/"):
         return {"web_server"}
     if path.startswith("relay/tests/"):
@@ -108,6 +118,8 @@ def path_suites(path):
         return CONSUMERS
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
+    if path == ".github/actions/docker-plugins/action.yml":
+        return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
     if path.startswith((".github/actions/", ".github/release-templates/", "releases/")) or path in (
             ".github/actionlint.yaml", ".github/dependabot.yml", ".github/CODEOWNERS", "docs/monorepo-sources.json"):
         return {"tooling"}

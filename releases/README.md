@@ -52,24 +52,66 @@ manifest. Component notes and signed tags keep their own App/Web/Relay namespace
 See [Web update behavior](../web/docs/talaria-updates.md) for authentication and
 source-install safety boundaries.
 
-Release builds run on the existing `maude-mac` self-hosted runner. Private and
-large handoffs stay under its
-`~/.local/share/talaria-release-runs/<run>/<attempt>/` directory. The public Web
-OCI archive and npm tarballs cross once through a one-day Actions artifact to a
-GitHub-hosted publication job, which npm trusted publishing requires. Its small
-publication receipt crosses back and joins the locally retained release set.
-Producer jobs record content digests in GitHub job outputs; local consumers
-verify those digests, the workflow source, run and runner identity before
-restoring files. Keep the `maude-mac` label assigned to this single runner; a
-different self-hosted runner cannot consume its handoffs.
+## Runners and handoffs
 
-Successful final jobs retain the manifest and sanitized contract diagnostics,
-then remove large build handoffs from all attempts of that run. The manifest is
-also printed in the final job log and summary. Failed runs retain their local
-files for inspection and same-run retries. After preserving required failure
-evidence, the runner owner may remove that specific run directory. Each
-component still has a separate environment and job token. No spending-budget
-change is required.
+The single `maude-mac` runner is reserved for work that needs Xcode, an iOS
+simulator or Apple signing. Every other job runs on the `ghar-set-maudecode`
+Linux pool, except npm trusted publishing, which requires a GitHub-hosted
+`ubuntu-latest` job. `releases/test_publication.py` fails when any other job
+uses the Mac label. Current Mac jobs and their native dependency:
+
+| Workflow | Job | Native dependency |
+|---|---|---|
+| `pr-ci.yml` | `test` | `xcodebuild` build/test in the iOS simulator, including the fixture-backed contract classes |
+| `pr-ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
+| `fuzz-soak.yml` | `soak` | `xcodebuild test` in the simulator |
+| `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
+| `release-set.yml` | `contracts` | compiles and tests the selected and previously released App in the simulator |
+| `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
+
+TAL-268 moved the Web contract probe, Docker smoke, release-plan preparation,
+Web/Relay fixture suites, Agent verification, Relay/Web builds, publication
+receipt jobs, manifest assembly, TestFlight inspection and cutover recovery
+off the Mac. PR Web/contract changes run the disposable Web probe on Linux;
+its exact live responses reach the Mac `test` job as a same-run artifact whose
+SHA-256 travels in the probe job's outputs, and the App's real request,
+decoding and SSE contract classes run against them from one build-for-testing.
+
+Release handoffs cross runners through the self-hosted NAS S3 endpoint; GitHub
+artifact storage is not used (`test_publication.py` rejects any
+`upload-artifact`/`download-artifact` step). `scripts/s3-artifact` is the
+only transport: curl with `--aws-sigv4`, path-style URLs and credentials in a
+private config file, never on the command line or in logs. Repository
+variables `TALARIA_S3_ENDPOINT` and `TALARIA_S3_REGION` name the endpoint.
+Two buckets each have one owner key, because Garage has no prefix-scoped
+policies: `talaria-release` (secrets `TALARIA_RELEASE_S3_ACCESS_KEY_ID` /
+`TALARIA_RELEASE_S3_SECRET_ACCESS_KEY`) for release-set, iOS build and
+recovery handoffs, and `talaria-ci` (`TALARIA_CI_S3_ACCESS_KEY_ID` /
+`TALARIA_CI_S3_SECRET_ACCESS_KEY`) for the PR contract fixture, test results,
+fuzz and performance objects. Keys reach only the steps that move objects.
+Fork pull requests have no secrets and fail at their first transfer.
+
+Object keys are `<class>/<workflow>/<run>/<attempt>/<file>`; the class prefix
+selects the expiration the helper applies idempotently before each upload
+(Garage expires by prefix and whole days only): `talaria-release`
+`handoffs/` 30 days (the recovery window); `talaria-ci` `fixtures/` 1 day, `test-results/` 3 days,
+`fuzz/` and `performance-metrics/` 90 days. Jobs print their object keys in
+the step summary so retained results can be fetched from the NAS.
+
+`artifacts.py put` archives a directory as
+`$RUNNER_TEMP/release-handoffs/<run>/<attempt>/<name>.tar`, uploads it as
+`handoffs/<workflow>/<run>/<attempt>/<name>.tar` and records the SHA-256 with
+the run, attempt and workflow source in the job outputs. `get` fetches only
+archives named by forwarded producer outputs whose run, source and digest
+match and whose attempt is not in the future; the calling workflow's file
+name namespaces every key, so a job addresses only its own run, and recovery
+addresses only the authenticated original `production-cutover` run. Archives
+are extracted with the stdlib `data` filter, so no member can escape. A
+failed transfer fails the job; there is no fallback to GitHub storage. The
+signed IPA and dSYMs are handoffs to the Linux publication job; the dry-run
+App archive stays in the Mac job's temporary directory. Each component still
+has a separate environment and job token. No spending-budget change is
+required.
 
 ## Workflow commands
 
@@ -181,8 +223,10 @@ If a reviewed publishing-tool fix is needed after all three component builds
 and Relay/Web publication succeeded, use the **Recover failed cutover App
 publication** workflow on main. Supply the original production-cutover run and
 attempt, and explicitly confirm publication. It authenticates the original
-GitHub job results and retained artifact hashes, checks that the release is
-still current, and resumes the same IPA/upload using reviewed publishing tools.
+GitHub job results, fetches that run's handoff objects from the NAS and checks
+each against its recorded hash, checks that the release is still current, and
+resumes the same IPA/upload using reviewed publishing tools. Release handoffs expire
+after 30 days, so recovery must start within that window.
 Original receipts keep their original run URLs; resumed upload evidence names
 the actual recovery run. It neither rebuilds the App nor republishes Relay/Web.
 Missing, changed, or incompatible original evidence fails closed. After a

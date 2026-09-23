@@ -18,11 +18,12 @@ permissions:
 jobs:
   inspect:
     if: github.ref == 'refs/heads/main'
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     environment: testflight
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/release-ruby
       - name: Read sanitized existing upload metadata
         env:
           VERSION: ${{ inputs.version }}

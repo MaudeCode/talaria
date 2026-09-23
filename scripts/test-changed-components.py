@@ -41,6 +41,15 @@ class RoutingTests(unittest.TestCase):
     def test_path_classes(self):
         cases = [
             (["changelog.d/TAL-123.json"], set()),
+            # The live-fixture test runs only in the contracts step, so editing it must select contracts.
+            (["app/TalariaTests/APIClientSessionListTests.swift"], {"app", "contracts"}),
+            # The Docker plugin action sets up Compose/Buildx for the smoke, so it runs the smoke too.
+            ([".github/actions/docker-plugins/action.yml"], {"docker", "tooling"}),
+            # Every script is mapped; an unmapped one would select the full suite.
+            (["scripts/check-release-contracts.py"], {"contracts", "tooling"}),
+            (["scripts/check", "scripts/check-regression-port.py", "scripts/test-check-regression-port.py"], {"tooling"}),
+            (["scripts/generate-brand-icons.py"], {"web_frontend", "tooling"}),
+            (["scripts/repair-workspace-user-turns.py"], {"web_server", "tooling"}),
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
             (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
@@ -175,7 +184,7 @@ class RoutingTests(unittest.TestCase):
             self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
-        job_suites = {"test": {"app"}, "app-tooling": {"app_tooling"},
+        job_suites = {"test": {"app", "contracts"}, "app-tooling": {"app_tooling"},
                       "web": {"web_server", "web_frontend"}, "web-docker": {"docker"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
         for selected in (set(), {"web_frontend"}, {"web_server"}, {"app"}, {"tooling"}, ALL):
