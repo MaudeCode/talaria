@@ -7,7 +7,7 @@ run_swift_tests=1
 responses_output=""
 
 usage() {
-  echo "usage: scripts/validate-upstream-contract [--ref MONOREPO_COMMIT_OR_TAG] [--server-only] [--responses-output FILE]"
+  echo "usage: scripts/validate-upstream-contract [--ref MONOREPO_COMMIT_OR_TAG] [--server-only] [--responses-output FILE] [--print-interpreters]"
 }
 
 while (( $# )); do
@@ -26,6 +26,10 @@ while (( $# )); do
       responses_output="$2"
       shift 2
       ;;
+    --print-interpreters)
+      print_interpreters=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -36,6 +40,16 @@ while (( $# )); do
       ;;
   esac
 done
+
+# Interpreters for the disposable server, which runs under `env -i` with a throwaway HOME.
+# Ask each interpreter for its own path: version-manager shims (e.g. mise) on PATH only
+# work under the caller's HOME, so the server must get the real binaries.
+node_bin="$(node -p process.execPath)"
+python_bin="$(python3 -c 'import sys; print(sys.executable)')"
+if (( ${print_interpreters:-0} )); then
+  print -r -- "$node_bin" "$python_bin"
+  exit 0
+fi
 
 read_config() {
   local value
@@ -105,7 +119,6 @@ fi
 
 port="$(node -e 'const s=require("node:net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
 password="talaria-contract-password"
-python_bin="$(command -v python3)"
 typeset -a loader_environment
 loader_environment=()
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
@@ -115,7 +128,7 @@ if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then loader_environment=("LD_LIBRARY_PATH=$L
 (
   cd "$upstream_dir"
   env -i "${loader_environment[@]}" \
-    PATH="$(dirname "$(command -v node)"):$(dirname "$python_bin"):/usr/bin:/bin" \
+    PATH="$(dirname "$node_bin"):$(dirname "$python_bin"):/usr/bin:/bin" \
     HOME="$run_dir/home" \
     HERMES_HOME="$hermes_home" \
     HERMES_WEBUI_STATE_DIR="$state_dir" \

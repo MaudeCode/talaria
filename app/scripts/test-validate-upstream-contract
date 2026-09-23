@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""validate-upstream-contract runs its disposable server under `env -i` with a throwaway HOME, so it must resolve
+node and python3 to real interpreters first: version-manager shims (e.g. mise) only work with the caller's HOME."""
+
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).resolve().parent / "validate-upstream-contract"
+
+
+class InterpreterResolutionTests(unittest.TestCase):
+    def test_shims_resolve_to_real_interpreters(self):
+        real = {name: shutil.which(name) for name in ("node", "python3")}
+        self.assertTrue(all(real.values()), real)
+        with tempfile.TemporaryDirectory() as temporary:
+            shims = Path(temporary) / "shims"
+            shims.mkdir()
+            for name, target in real.items():
+                shim = shims / name
+                # Like a mise shim: it only works under the HOME that trusts its configuration.
+                shim.write_text(f'#!/bin/sh\n[ "$HOME" = "{Path.home()}" ] || {{ echo "shim needs its HOME" >&2; exit 1; }}\nexec "{target}" "$@"\n')
+                shim.chmod(0o755)
+            env = {**os.environ, "PATH": f"{shims}:{os.environ['PATH']}"}
+            output = subprocess.run(["zsh", str(SCRIPT), "--print-interpreters"], env=env, text=True,
+                                    capture_output=True, check=True).stdout.split()
+        self.assertEqual(len(output), 2, output)
+        for path in output:
+            self.assertFalse(path.startswith(str(shims)), path)
+            # The resolved interpreter runs with a throwaway HOME, as the disposable server does.
+            subprocess.run([path, "--version"], env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+                           capture_output=True, check=True)
+
+
+if __name__ == "__main__":
+    unittest.main()
