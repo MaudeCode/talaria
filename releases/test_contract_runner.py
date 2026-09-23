@@ -91,6 +91,30 @@ class AgentRunnerTests(unittest.TestCase):
                 self.assertEqual(len(checkouts), 1)
                 self.assertFalse(checkouts[0].parent.exists())
 
+    def test_each_web_source_is_probed_by_its_own_harness(self):
+        # A retained pre-TAL-245 Web is the Python server; only its own revision's harness can start it.
+        spec = importlib.util.spec_from_file_location("previous_app", Path(__file__).resolve().parents[1] / "scripts/check-previous-app.py")
+        previous = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(previous)
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "repo"
+            harness = repo / "app/scripts/validate-upstream-contract"
+            harness.parent.mkdir(parents=True)
+            git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            shas = {}
+            for name in ("old-web", "new-web"):
+                harness.write_text("#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = --responses-output ] && out=$2; shift; done\n"
+                                   f"printf '%s' '{name}' > \"$out\"\n")
+                harness.chmod(0o755)
+                subprocess.run([*git, "add", "-A"], check=True)
+                subprocess.run([*git, "commit", "-qm", name], check=True)
+                shas[name] = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+            responses = Path(temporary) / "responses.json"
+            with patch.object(previous, "ROOT", repo), (Path(temporary) / "probe.log").open("w") as log:
+                previous.probe_web(shas["old-web"], responses, log)
+            self.assertEqual(responses.read_text(), "old-web")
+
 
 if __name__ == "__main__":
     unittest.main()

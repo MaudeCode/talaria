@@ -21,6 +21,20 @@ def commit(ref):
     return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], text=True).strip()
 
 
+def probe_web(web_sha, responses, log):
+    """Probe a Web source with the harness from its own revision.
+
+    Each revision's harness starts the Web beside it: the Python server before TAL-245, the Node server after,
+    so a retained older Web cannot be started by the current harness."""
+    with tempfile.TemporaryDirectory(prefix="talaria-web-source-") as temporary:
+        source = Path(temporary) / "source"
+        subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(source)], check=True)
+        subprocess.run(["git", "-C", str(source), "checkout", "--quiet", "--detach", web_sha], check=True)
+        subprocess.run([
+            str(source / "app/scripts/validate-upstream-contract"), "--server-only", "--responses-output", str(responses),
+        ], cwd=source / "app", stdout=log, stderr=subprocess.STDOUT, check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-ref", required=True)
@@ -34,10 +48,7 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     responses = output / "responses.json"
     with (output / "web-probe.log").open("w") as log:
-        subprocess.run([
-            str(ROOT / "app/scripts/validate-upstream-contract"), "--server-only", "--ref", web_sha,
-            "--responses-output", str(responses),
-        ], cwd=ROOT / "app", stdout=log, stderr=subprocess.STDOUT, check=True)
+        probe_web(web_sha, responses, log)
     with tempfile.TemporaryDirectory(prefix="talaria-previous-app-") as temporary:
         checkout = Path(temporary) / "source"
         subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
