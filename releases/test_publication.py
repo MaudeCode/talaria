@@ -5,6 +5,7 @@ import hashlib
 import io
 from itertools import product
 import json
+import re
 import os
 from pathlib import Path
 import plistlib
@@ -223,27 +224,23 @@ class PublicationTests(unittest.TestCase):
             for name, job in release_workflow["jobs"].items():
                 if "steps" not in job:
                     continue
-                # Handoffs cross runners as same-run Actions artifacts whose producer digests travel in job outputs.
-                text = json.dumps(job["steps"])
-                uploads = [step["with"] for step in job["steps"] if "upload-artifact" in step.get("uses", "")]
-                downloads = [step["with"] for step in job["steps"] if "download-artifact" in step.get("uses", "")]
-                if "artifacts.py put" in text:
-                    self.assertTrue(any(upload["path"].endswith("/release-handoffs") for upload in uploads), name)
-                if "artifacts.py get" in text:
-                    self.assertTrue(any(download.get("pattern") == "release-handoffs-*" and download.get("merge-multiple") is True
-                                        and download["path"].endswith("/release-handoffs-in") for download in downloads), name)
-                for download in downloads:
-                    self.assertNotIn("run-id", download, name)
+                # Handoffs cross runners through the NAS store; producer digests travel in job outputs and the
+                # release bucket credentials reach only the steps that move handoffs.
+                for step in job["steps"]:
+                    if "artifacts.py put" in step.get("run", "") or "artifacts.py get" in step.get("run", ""):
+                        self.assertEqual(step.get("env", {}).get("TALARIA_S3_SECRET_ACCESS_KEY"),
+                                         "${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}", (name, step.get("name")))
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
         environments = {"relay-publish": "relay-production", "web-publication": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}
         secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "app-publish": {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY"}}
+        store = {"TALARIA_RELEASE_S3_ACCESS_KEY_ID", "TALARIA_RELEASE_S3_SECRET_ACCESS_KEY"}
         import re
         for name, job in document["jobs"].items():
             self.assertEqual(job.get("environment"), environments.get(name))
             self.assertEqual(job.get("secrets"), "inherit" if name == "app-signed-build" else None)
-            self.assertEqual(set(re.findall(r"secrets\.([A-Z_]+)", json.dumps(job))), secrets.get(name, set()))
+            self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(job))) - store, secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
             self.assertEqual(permissions.get("packages"), "write" if name == "web-publication" else None)
@@ -278,17 +275,42 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(recovery["jobs"]["app"]["environment"], "testflight")
         self.assertEqual(recovery["jobs"]["publish-set"]["environment"], "release-set-publication")
         self.assertEqual(recovery["jobs"]["publish-set"]["needs"], "app")
-        self.assertNotIn("secrets.", json.dumps(recovery["jobs"]["publish-set"]))
+        self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(recovery["jobs"]["publish-set"]))), store)
         self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})
         app_steps = recovery["jobs"]["app"]["steps"]
-        # Recovery is the only cross-run consumer: it downloads the authenticated original run's handoffs.
-        original = [step["with"] for step in app_steps if "download-artifact" in step.get("uses", "")]
-        self.assertEqual([download.get("run-id") for download in original], ["${{ inputs.original_run }}"])
-        self.assertEqual(original[0]["pattern"], "release-handoffs-*")
         upload_index = next(index for index, step in enumerate(app_steps) if "require Apple VALID" in step.get("name", ""))
         self.assertTrue(any("releases/recover.py" in step.get("run", "") for step in app_steps[:upload_index]))
         self.assertFalse(any("cli.py assemble" in step.get("run", "") for step in app_steps[:upload_index]),
                          "Partial publication receipts must not be assembled as a dry-run candidate")
+
+    def test_artifacts_use_the_nas_store_with_bucket_scoped_credentials(self):
+        # GitHub artifact storage is not used. CI workflows may only reference the talaria-ci key, release
+        # workflows only the talaria-release key, and no other workflow references either.
+        allowed = {
+            "pr-ci.yml": {"contracts": "CI", "test": "CI"},
+            "fuzz-soak.yml": {"soak": "CI"},
+            "ios-release-build.yml": {"build": "RELEASE"},
+            "release-set.yml": {name: "RELEASE" for name in (
+                "prepare", "contracts", "component-contracts", "agent", "relay-build", "web-build", "app-dry-build",
+                "candidate", "relay-publish", "web-publication", "app-publish", "publish-set")},
+            "recover-cutover.yml": {"app": "RELEASE", "publish-set": "RELEASE"},
+        }
+        root = Path(__file__).resolve().parents[1]
+        for path in sorted((root / ".github/workflows").glob("*.yml")):
+            text = path.read_text()
+            self.assertNotIn("upload-artifact", text, path.name)
+            self.assertNotIn("download-artifact", text, path.name)
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
+            ], text=True))
+            for name, job in document["jobs"].items():
+                buckets = set(re.findall(r"secrets\.TALARIA_(CI|RELEASE)_S3_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)", json.dumps(job)))
+                expected = allowed.get(path.name, {}).get(name)
+                self.assertEqual(buckets, {expected} if expected else set(), (path.name, name))
+                if expected:
+                    self.assertRegex(json.dumps(job), r"scripts/s3-artifact|artifacts\.py (put|get)|releases/recover\.py", (path.name, name))
+        for path in (root / ".github/actions").glob("*/action.yml"):
+            self.assertNotIn("artifact@", path.read_text(), path.name)
 
     def test_only_native_jobs_use_the_mac_runner(self):
         # The single Mac runner is reserved for Xcode, simulator and Apple signing work; every other job runs on

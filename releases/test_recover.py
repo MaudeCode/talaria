@@ -88,16 +88,30 @@ class RecoveryTests(unittest.TestCase):
             source.mkdir()
             receipt = b'{"runUrl":"https://github.com/MaudeCode/talaria/actions/runs/123/attempts/1"}\n'
             (source / "receipt.json").write_bytes(receipt)
+            store = {}
+
+            def transfer(operation, key, path):
+                if operation == "put":
+                    store[key] = Path(path).read_bytes()
+                elif key in store:
+                    Path(path).parent.mkdir(parents=True, exist_ok=True)
+                    Path(path).write_bytes(store[key])
+                else:
+                    raise ValueError("missing object")
+
             env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
-                   "GITHUB_SHA": "a" * 40, "RUNNER_TEMP": str(root)}
-            with patch.dict(os.environ, env, clear=True):
+                   "GITHUB_SHA": "a" * 40, "RUNNER_TEMP": str(root),
+                   "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main"}
+            with patch.dict(os.environ, env, clear=True), patch.object(artifacts, "transfer", transfer):
                 refs = {name: artifacts.put(name, source) for name in ("app-build", "ios-ipa")}
-            (root / "release-handoffs").rename(root / "release-handoffs-in")
-            with patch.dict(os.environ, {**env, "GITHUB_RUN_ID": "456"}, clear=True):
+            self.assertEqual(set(store), {"handoffs/production-cutover/123/1/app-build.tar", "handoffs/production-cutover/123/1/ios-ipa.tar"})
+            recovery = {**env, "GITHUB_RUN_ID": "456", "RUNNER_TEMP": str(root / "recovery"),
+                        "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main"}
+            with patch.dict(os.environ, recovery, clear=True), patch.object(artifacts, "transfer", transfer):
                 recover.restore(refs, root / "recovered")
                 self.assertEqual((root / "recovered/app-build/receipt.json").read_bytes(), receipt)
                 self.assertEqual((root / "recovered/ios-ipa/receipt.json").read_bytes(), receipt)
-                (root / "release-handoffs-in/123/1/ios-ipa.tar").write_bytes(b"tampered")
+                store["handoffs/production-cutover/123/1/ios-ipa.tar"] = b"tampered"
                 with self.assertRaisesRegex(ValueError, "original producer"):
                     recover.restore(refs, root / "rejected")
                 self.assertFalse((root / "rejected").exists())

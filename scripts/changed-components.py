@@ -47,6 +47,8 @@ SCRIPTS = {
     "check-selected-contracts.py": CONSUMERS | {"tooling"},
     "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
+    "s3-artifact": {"tooling"},
+    "test-s3-artifact.py": {"tooling"},
     "rehearse-monorepo.py": {"tooling"},
 }
 

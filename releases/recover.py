@@ -66,15 +66,18 @@ def authenticate(run, attempt, metadata, jobs, log):
     return outputs["source"], references
 
 
+ORIGINAL_WORKFLOW = "production-cutover"
+
+
 def restore(references, destination):
-    # The original run's downloaded archives are checked against every producer digest before any is extracted.
+    # The authenticated original run's objects are checked against every producer digest before any is extracted.
     for reference in references.values():
         try:
-            artifacts.stored(reference)
+            artifacts.stored(reference, ORIGINAL_WORKFLOW)
         except ValueError as error:
             raise ValueError("retained handoff differs from its original producer") from error
     for name, reference in references.items():
-        artifacts.restore(reference, destination / name)
+        artifacts.restore(reference, destination / name, ORIGINAL_WORKFLOW)
 
 
 def main():

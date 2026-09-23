@@ -93,10 +93,18 @@ jobs:
           echo "### Fuzz soak" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Duration: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Upload results on failure
+      - name: Store results on the NAS on failure
         if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: fuzz-soak-results
-          path: app/${{ env.RESULT_BUNDLE_PATH }}
-          if-no-files-found: ignore
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-ci
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -d "${RESULT_BUNDLE_PATH}" ]] || exit 0
+          key="fuzz/fuzz-soak/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
+          tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
+          ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
+          echo "- Result bundle: talaria-ci/$key (expires after 90 days)" >> "${GITHUB_STEP_SUMMARY}"

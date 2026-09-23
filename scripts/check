@@ -29,6 +29,7 @@ case "$component" in
     python3 scripts/changed-components.py --self-test
     python3 scripts/test-critical-markdown-check.py
     python3 scripts/test-check-regression-port.py
+    python3 scripts/test-s3-artifact.py
     python3 scripts/check-regression-port.py
     scripts/check-releases
     python3 app/ci/release_notes_test.py

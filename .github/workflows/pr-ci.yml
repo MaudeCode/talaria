@@ -2,7 +2,9 @@
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
-# Uses no repository secrets, so PRs from forks get green CI too.
+# The only repository secrets used are the talaria-ci NAS bucket key for the
+# contract fixture and result objects; PRs from forks have no secrets and fail
+# clearly at the first NAS transfer instead of silently passing.
 #
 # Builds are signed ad hoc (CODE_SIGN_IDENTITY=-), which needs no certificate,
 # no profile and no secrets, but does embed entitlements. Without them the app
@@ -127,18 +129,20 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Download the live Web contract fixture
+      - name: Fetch and verify the live Web contract fixture from the NAS
         if: needs.contracts.result == 'success'
-        uses: actions/download-artifact@v7
-        with:
-          name: ${{ needs.contracts.outputs.fixture }}
-          path: ${{ runner.temp }}/contract-fixture
-
-      - name: Verify the fixture and stage it for the App test bundle
-        if: needs.contracts.result == 'success'
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-ci
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
+          # Only this run's probe object is acceptable; the digest comes from that job's outputs.
+          [[ "${CONTRACT_FIXTURE}" == "fixtures/pr-ci/${GITHUB_RUN_ID}/"* ]]
           fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
+          ../scripts/s3-artifact get "${CONTRACT_FIXTURE}" "${fixture}"
           echo "${CONTRACT_FIXTURE_SHA256}  ${fixture}" | shasum -a 256 --check
           # scripts/test-ios transports the same manifest through the test-only
           # display name and the TALARIA_LIVE_CONTRACT compilation condition.
@@ -367,26 +371,40 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Upload performance metrics
+      - name: Store performance metrics on the NAS
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: performance-metrics
-          path: |
-            app/performance-metrics.json
-            app/performance-metrics.txt
-          retention-days: 90
-          if-no-files-found: ignore
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-ci
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          prefix="performance-metrics/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          for file in performance-metrics.json performance-metrics.txt; do
+            [[ -f "$file" ]] || continue
+            ../scripts/s3-artifact put "$prefix/$file" "$file"
+            echo "- Performance metrics: talaria-ci/$prefix/$file (expires after 90 days)" >> "${GITHUB_STEP_SUMMARY}"
+          done
 
-      - name: Upload test results on failure
+      - name: Store test results on the NAS on failure
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results
-          path: app/${{ env.RESULT_BUNDLE_PATH }}
-          if-no-files-found: ignore
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-ci
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -d "${RESULT_BUNDLE_PATH}" ]] || exit 0
+          key="test-results/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
+          tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
+          ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
+          echo "- Result bundle: talaria-ci/$key (expires after 3 days)" >> "${GITHUB_STEP_SUMMARY}"
 
   tooling:
     needs: changes
@@ -437,19 +455,21 @@ jobs:
       # The Build and Test job on the Mac runner embeds this exact fixture in
       # the App test bundle and runs the native request/decoding/SSE contract
       # tests against it, so Web changes need no separate Mac job.
-      - name: Record the fixture digest
+      - name: Store the live response fixture on the NAS
         id: fixture
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-ci
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          echo "name=contract-fixture-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(sha256sum "$RUNNER_TEMP/contract-fixture/live-responses.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - name: Upload the live response fixture
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.fixture.outputs.name }}
-          path: ${{ runner.temp }}/contract-fixture
-          retention-days: 1
-          if-no-files-found: error
+          fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
+          key="fixtures/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/live-responses.json"
+          ../scripts/s3-artifact put "$key" "$fixture"
+          echo "name=$key" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "$fixture" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
   gate:
     name: CI Gate

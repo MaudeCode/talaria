@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Digest-checked release handoffs carried between runners as same-run Actions artifacts.
+"""Digest-checked release handoffs carried between runners through the NAS object store.
 
-``put`` stages a directory as ``$RUNNER_TEMP/release-handoffs/<run>/<attempt>/<name>.tar`` and records its
-digest in the job outputs; the job uploads that directory as a ``release-handoffs-*`` artifact. Consumers
-download every ``release-handoffs-*`` artifact of the run into ``$RUNNER_TEMP/release-handoffs-in`` and
-``get`` restores only archives named by forwarded producer outputs whose run, source and digest match.
+``put`` archives a directory as ``$RUNNER_TEMP/release-handoffs/<run>/<attempt>/<name>.tar``, uploads it as
+``handoffs/<workflow>/<run>/<attempt>/<name>.tar`` through ``scripts/s3-artifact`` and records its digest in
+the job outputs. ``get`` downloads only archives named by forwarded producer outputs whose run, source and
+digest match; the calling workflow's file name namespaces every key, so a job addresses only its own run.
 """
 
 import argparse
@@ -14,9 +14,12 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import tarfile
 
-from cli import run_url
+from cli import ROOT, run_url
+
+HELPER = ROOT / "scripts/s3-artifact"
 
 
 def context():
@@ -33,6 +36,26 @@ def staged():
 
 def downloaded():
     return Path(os.environ["RUNNER_TEMP"]) / "release-handoffs-in"
+
+
+def namespace():
+    """The calling workflow's file name; reusable workflows share their caller's run and namespace."""
+    match = re.fullmatch(r"[^@]+/\.github/workflows/([a-z0-9-]+)\.ya?ml@.+", os.environ.get("GITHUB_WORKFLOW_REF", ""))
+    if not match:
+        raise ValueError("workflow identity is required for the handoff namespace")
+    return match.group(1)
+
+
+def key(reference, workflow):
+    archive(Path("."), reference)  # validates name, run and attempt
+    return f"handoffs/{workflow}/{reference['run']}/{reference['attempt']}/{reference['name']}.tar"
+
+
+def transfer(operation, object_key, path):
+    try:
+        subprocess.run([str(HELPER), operation, object_key, str(path)], check=True)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"NAS {operation} of {object_key} failed with status {error.returncode}") from error
 
 
 def archive(root, reference):
@@ -80,21 +103,26 @@ def put(name, source):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(destination, "x") as stream:
         stream.add(source, arcname=".")
+    transfer("put", key(reference, namespace()), destination)
     return {**reference, "sha256": file_digest(destination)}
 
 
-def stored(reference):
-    """The downloaded archive for a producer reference, verified against the digest that job recorded."""
+def stored(reference, workflow=None):
+    """Download a producer reference's archive and verify it against the digest that job recorded."""
+    if not re.fullmatch(r"[a-f0-9]{64}", str(reference.get("sha256", ""))):
+        raise ValueError("invalid artifact digest")
     path = archive(downloaded(), reference)
+    path.unlink(missing_ok=True)  # every restore fetches the object again; nothing on a runner is trusted
+    transfer("get", key(reference, workflow or namespace()), path)
     if path.is_symlink() or not path.is_file():
         raise ValueError("handoff artifact was not downloaded for this reference")
-    if file_digest(path) != reference.get("sha256"):
+    if file_digest(path) != reference["sha256"]:
         raise ValueError("downloaded artifact digest differs from the producer job output")
     return path
 
 
-def restore(reference, destination):
-    path = stored(reference)
+def restore(reference, destination, workflow=None):
+    path = stored(reference, workflow)
     destination = Path(destination)
     if destination.exists():
         raise FileExistsError(destination)

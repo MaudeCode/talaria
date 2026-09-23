@@ -43,19 +43,16 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/release-python
       - uses: ./.github/actions/release-ruby
-      # Only the authenticated original run's job outputs name which of these
-      # downloaded archives may be restored, and each must match its digest.
-      - name: Download the original run's release handoffs
-        uses: actions/download-artifact@v7
-        with:
-          pattern: release-handoffs-*
-          path: ${{ runner.temp }}/release-handoffs-in
-          merge-multiple: true
-          run-id: ${{ inputs.original_run }}
-          github-token: ${{ github.token }}
+      # Only the authenticated original run's job outputs name which NAS objects
+      # of that run may be fetched, and each must match its recorded digest.
       - name: Authenticate original run and restore immutable handoffs
         id: restore
         env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-release
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ github.token }}
           ORIGINAL_RUN: ${{ inputs.original_run }}
           ORIGINAL_ATTEMPT: ${{ inputs.original_attempt }}
@@ -84,6 +81,12 @@ jobs:
             --output "$RUNNER_TEMP/recovered/app-publish/receipt.json"
       - name: Stage verified handoffs with actual recovery-run identity
         id: store
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-release
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           paths=()
@@ -91,11 +94,6 @@ jobs:
             paths+=("$name" "$RUNNER_TEMP/recovered/$name")
           done
           "$RELEASE_PYTHON" releases/artifacts.py put "${paths[@]}"
-      - name: Upload release handoffs
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/release-handoffs
   publish-set:
     needs: app
     runs-on: ["ghar-set-maudecode"]
@@ -112,13 +110,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.app.outputs.source }}
       - uses: ./.github/actions/release-python
-      - name: Download release handoffs
-        uses: actions/download-artifact@v7
-        with:
-          pattern: release-handoffs-*
-          path: ${{ runner.temp }}/release-handoffs-in
-          merge-multiple: true
       - name: Restore verified recovery handoffs
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-release
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered"'
       - name: Assemble and publish the completed original release set
         env:
@@ -137,12 +135,13 @@ jobs:
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --manifest "$RUNNER_TEMP/completed/release-set.json" \
             --directory "$RUNNER_TEMP/recovered" "${options[@]}"
       - name: Retain the completed manifest
+        env:
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-release
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           cat "$RUNNER_TEMP/completed/release-set.json"
           "$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"
-      - name: Upload release handoffs
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/release-handoffs

@@ -83,12 +83,13 @@ jobs:
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
     - name: Stage release-plan for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-plan "$RUNNER_TEMP/release-plan"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   contracts:
@@ -103,13 +104,13 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Prepare simulator pool
       env:
@@ -128,22 +129,29 @@ jobs:
           "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
     - name: Stage contract-receipts for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put contract-receipts "$RUNNER_TEMP/contract-receipts"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     - name: Retain sanitized App contract diagnostics
       if: always()
       continue-on-error: true
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-        path: |
-          ${{ runner.temp }}/current-contracts
-          ${{ runner.temp }}/previous-app
-        if-no-files-found: ignore
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/release-contract-diagnostics"
+        for part in current-contracts previous-app; do
+          if [[ -d "$RUNNER_TEMP/$part" ]]; then mv "$RUNNER_TEMP/$part" "$RUNNER_TEMP/release-contract-diagnostics/"; fi
+        done
+        "$RELEASE_PYTHON" releases/artifacts.py put release-contract-diagnostics "$RUNNER_TEMP/release-contract-diagnostics"
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -162,24 +170,26 @@ jobs:
     - uses: ./.github/actions/release-node
     - name: Native module toolchain (node-pty)
       run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Verify selected Web and Relay fixture contracts
       run: '"$RELEASE_PYTHON" scripts/check-release-contracts.py --only fixtures --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/component-contracts"'
     - name: Retain component contract diagnostics
       if: always()
       continue-on-error: true
-      uses: actions/upload-artifact@v7
-      with:
-        name: component-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/component-contracts
-        if-no-files-found: ignore
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put component-contract-diagnostics "$RUNNER_TEMP/component-contracts"'
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   agent:
@@ -194,13 +204,13 @@ jobs:
     - uses: ./.github/actions/release-python
     - name: Install uv (the Agent's locked dependency resolver)
       run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Verify recorded Web and Agent identity
       run: |
@@ -208,12 +218,13 @@ jobs:
           "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json"
     - name: Stage agent-receipts for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put agent-receipts "$RUNNER_TEMP/agent-receipts"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -234,23 +245,24 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py relay --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-build"'
     - name: Stage relay-build for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-build "$RUNNER_TEMP/relay-build"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -281,43 +293,33 @@ jobs:
         multi-platform: "true"
     - name: Native module toolchain (node-pty)
       run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"'
     - name: Separate the large OCI archive from the receipt and npm handoff
-      id: publication
       run: |
         set -euo pipefail
         mkdir "$RUNNER_TEMP/web-image"
         mv "$RUNNER_TEMP/web-build/web.oci.tar" "$RUNNER_TEMP/web-image/"
-        echo "artifact=web-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-    - name: Stage web-build for other runners
+    - name: Stage web-build and web-image for other runners
       id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
-    - name: Upload the public Web image archive for the publication job
-      if: ${{ !inputs.dry_run }}
-      uses: actions/upload-artifact@v7
-      with:
-        name: ${{ steps.publication.outputs.artifact }}
-        path: ${{ runner.temp }}/web-image
-        retention-days: 1
-        compression-level: 0
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build" web-image "$RUNNER_TEMP/web-image"'
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
-      publication: ${{ steps.publication.outputs.artifact }}
   app-dry-build:
     needs:
     - prepare
@@ -337,27 +339,28 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
     - uses: ./.github/actions/release-python
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/app-build"'
     - name: Stage app-build receipt for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: |
         set -euo pipefail
         mkdir "$RUNNER_TEMP/app-build-receipt"
         cp "$RUNNER_TEMP"/app-build/*.json "$RUNNER_TEMP/app-build-receipt/"
         "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build-receipt"
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -374,13 +377,13 @@ jobs:
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore verified release handoffs
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results"'
     - name: Assemble candidate from successful job outputs
       run: |
@@ -403,12 +406,13 @@ jobs:
         cat "$RUNNER_TEMP/candidate/release-set.json"
     - name: Retain release-set-candidate
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-candidate "$RUNNER_TEMP/candidate"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -448,13 +452,13 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Deploy the existing Relay and verify readiness/provenance
       env:
@@ -468,12 +472,13 @@ jobs:
           --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-publish/receipt.json"
     - name: Stage relay-publish for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-publish "$RUNNER_TEMP/relay-publish"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -502,19 +507,17 @@ jobs:
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan and web-build
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan web-build'
-    - name: Download the built Web image archive
-      uses: actions/download-artifact@v7
-      with:
-        name: ${{ needs.web-build.outputs.publication }}
-        path: ${{ runner.temp }}/web-build
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+      run: |
+        set -euo pipefail
+        "$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan web-build web-image
+        mv "$RUNNER_TEMP/web-image/web.oci.tar" "$RUNNER_TEMP/web-build/"
     - name: Install OCI transfer tool
       run: |
         sudo apt-get update
@@ -533,19 +536,19 @@ jobs:
         "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \
           --output "$RUNNER_TEMP/web-publish/receipt.json"
-    - name: Name the Web publication receipt
-      id: receipt
-      run: echo "artifact=web-publication-receipt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-    - name: Upload the Web publication receipt
-      uses: actions/upload-artifact@v7
-      with:
-        name: ${{ steps.receipt.outputs.artifact }}
-        path: ${{ runner.temp }}/web-publish
-        retention-days: 1
+    - name: Stage web-publish for other runners
+      id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
-      receipt: ${{ steps.receipt.outputs.artifact }}
+      artifacts: ${{ steps.store.outputs.artifacts }}
   web-publish:
     needs:
     - prepare
@@ -560,19 +563,9 @@ jobs:
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
-    - name: Download the Web publication receipt
-      uses: actions/download-artifact@v7
-      with:
-        name: ${{ needs.web-publication.outputs.receipt }}
-        path: ${{ runner.temp }}/web-publish
-    - name: Stage web-publish for other runners
+    - name: Forward the verified Web publication receipt
       id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
+      run: '"$RELEASE_PYTHON" releases/artifacts.py forward'
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -599,13 +592,13 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-ruby
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore release-plan, app-build and ios-ipa
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan app-build ios-ipa'
     - name: Upload or recover the verified TestFlight build
       env:
@@ -618,12 +611,13 @@ jobs:
           --output "$RUNNER_TEMP/app-publish/receipt.json"
     - name: Stage app-publish for other runners
       id: store
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put app-publish "$RUNNER_TEMP/app-publish"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -651,13 +645,13 @@ jobs:
       env:
         RELEASE_NEEDS: ${{ toJSON(needs) }}
       run: python3 releases/check_results.py publication
-    - name: Download release handoffs
-      uses: actions/download-artifact@v7
-      with:
-        pattern: release-handoffs-*
-        path: ${{ runner.temp }}/release-handoffs-in
-        merge-multiple: true
     - name: Restore verified release handoffs
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results"'
     - name: Assemble and publish only the completed set
       env:
@@ -684,12 +678,13 @@ jobs:
         } >> "$GITHUB_STEP_SUMMARY"
         cat "$RUNNER_TEMP/completed/release-set.json"
     - name: Retain release-set-complete
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"'
-    - name: Upload release handoffs
-      uses: actions/upload-artifact@v7
-      with:
-        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   build-gate:
