@@ -259,7 +259,7 @@ jobs:
           while :; do
             probe=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" \
               --jq '[.jobs[] | select(.name == "Web contract probe")] | if length == 1 then .[0] | "\(.id) \(.status) \(.conclusion)" else "missing" end')
-            read -r probe_id probe_status probe_conclusion <<< "${probe} - -"
+            read -r probe_id probe_status probe_conclusion _ <<< "${probe} - -"
             [[ "${probe_status}" == "completed" ]] && break
             (( SECONDS < deadline )) || { echo "Timed out waiting for the Web contract probe (${probe})" >&2; exit 1; }
             sleep 15
