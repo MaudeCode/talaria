@@ -273,6 +273,14 @@ describe('SystemSection update paths', () => {
     expect(within(path('Talaria Web')).queryByText(/Hermes Agent/)).not.toBeInTheDocument()
   })
 
+  it.each([{ behind: 0, status: 'Hermes Agent is up to date' }, { behind: 2, status: 'Hermes Agent is 2 commits behind' }])('does not block a dirty Agent checkout, which updates through a stash (behind $behind)', async ({ behind, status }) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0 }, agent: { behind, dirty: true } }))
+    renderSystem()
+    const agent = await screen.findByRole('region', { name: 'Hermes Agent' })
+    expect(within(agent).queryByText(/local changes/i)).not.toBeInTheDocument()
+    expect(within(agent).getByText(status)).toBeInTheDocument()
+  })
+
   it('shows a manual install that is ahead of its channel without calling it up to date', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 0, manual_update: true, install_kind: 'npm', message: 'This npm installation is ahead of the selected Stable release.' }, agent: { behind: 0 } }))
     renderSystem()
