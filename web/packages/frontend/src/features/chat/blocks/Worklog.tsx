@@ -53,8 +53,11 @@ export function Worklog({ calls, status, children, sequenceKey }: { calls: ToolC
   const locale = useLocale()
   const nested = sequenceKey !== undefined
   const running = status === 'running'
-  const defaultOpen = !nested && (running || ['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'].includes(status))
-  const [open, toggle] = useDisclosure(sequenceKey ?? 'turn', defaultOpen)
+  // A live turn shows its work inline; the turn-level disclosure appears only once it settles.
+  const live = !nested && running
+  const defaultOpen = !nested && ['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'].includes(status)
+  const [chosen, toggle] = useDisclosure(sequenceKey ?? 'turn', defaultOpen)
+  const open = live || chosen
   const bodyId = useId()
   const text = toolText(locale)
   const byKind = new Map<string, number>()
@@ -62,15 +65,17 @@ export function Worklog({ calls, status, children, sequenceKey }: { calls: ToolC
   const failed = calls.filter((call) => call.isError).length
   const summary = nested || (!running && status !== 'completed')
     ? text.summaryJoin([...byKind.entries()].map(([kind, n]) => text.worklogSummary(kind, calls.some((c) => !c.done) ? 'running' : 'done', n))) || m.thinking_label()
-    : status === 'completed' ? text.processedElapsed() : m.live_streaming()
+    : text.processedElapsed()
   return (
     <div className={cn('tool-group tool-worklog-group agent-activity-group activity', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-open={open ? '1' : '0'}>
-      <button type="button" className="tool-call-group-summary tool-worklog-summary activity-summary" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
-        <span className="as-dot" aria-hidden="true" />
-        <span className="tool-call-group-label tool-worklog-label as-text">{summary}</span>
-        {failed > 0 && <span className="tool-call-group-duration text-error">{failed}✕</span>}
-        <span className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
-      </button>
+      {!live && (
+        <button type="button" className="tool-call-group-summary tool-worklog-summary activity-summary" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+          <span className="as-dot" aria-hidden="true" />
+          <span className="tool-call-group-label tool-worklog-label as-text">{summary}</span>
+          {failed > 0 && <span className="tool-call-group-duration text-error">{failed}✕</span>}
+          <span className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
+        </button>
+      )}
       <div id={bodyId} className="tool-call-group-body tool-worklog-body activity-body" hidden={!open}><div className="worklog"><div className="tool-worklog-list">{children}</div></div></div>
     </div>
   )

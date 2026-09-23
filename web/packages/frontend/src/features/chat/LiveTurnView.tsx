@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
+import { LoaderCircle } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
+import { cn } from '../../ui/cn'
 import type { LiveTurn } from '../../stream/reducer'
 import { TurnActivityView } from './TurnActivityView'
 import { liveActivity } from './turnActivity'
@@ -15,14 +17,13 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} />
-        {streaming && !hasContent && (
+        {streaming && (
           <div className="live-run-status flex items-center gap-2 text-[13px] text-muted" role="status" aria-live="polite">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
-            {turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}
+            <LoaderCircle size={14} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <span className={cn(hasContent && 'sr-only')}>{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
           </div>
         )}
         {streaming && turn.tps !== null && <div className="mt-1 font-mono text-[11px] tabular-nums text-muted opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</div>}
-        {turn.status === 'reconnecting' && hasContent && <div className="mt-1 text-[12px] text-muted" role="status">{m.live_reconnecting()}</div>}
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
         {turn.steerConsumed.map((s) => <div key={s.id} className="anchor-steering-message mt-1 text-[12px] text-muted">{m.live_steer_consumed({ text: s.text })}</div>)}
         {turn.compression && <div className="compression-card mt-2 rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted" role="status">{turn.compression.state === 'compressing' ? m.live_compressing() : m.live_compressed()}{turn.compression.newSessionId && turn.compression.state === 'compressed' && <> <Link to="/session/$sessionId" params={{ sessionId: turn.compression.newSessionId }} className="text-accent-text underline">{m.live_continuation()}</Link></>}</div>}

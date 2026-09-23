@@ -30,24 +30,27 @@ function tool(id: string) { return { event: 'tool', data: { id, name: 'read_file
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
-  it('keeps live work open after the current tools finish and preserves explicit choices through settlement and remount', () => {
+  it('shows live work inline without a turn-level disclosure and preserves settled choices through remount', () => {
+    // A stored collapse for this turn must not hide live work.
+    localStorage.setItem('hermes-worklog:v1:profile/s', JSON.stringify({ [JSON.stringify(['user:u', 'turn'])]: false }))
     const run = liveRun()
+    run.emit({ event: 'reasoning', data: { text: 'Planning' } })
+    run.emit({ event: 'token', data: { text: 'Reading a.' } })
     run.emit(tool('a'))
     run.emit(completed('a'))
-    const view = render(<View activity={liveActivity(run.turn)} />)
-    const summary = view.container.querySelector('.tool-worklog-summary')!
-    expect(summary).toHaveAttribute('aria-expanded', 'true')
-    expect(summary.textContent).not.toContain('Worked')
-    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
-    fireEvent.click(summary)
     run.emit({ event: 'token', data: { text: 'Final answer' } })
-    view.rerender(<View activity={liveActivity(run.turn)} />)
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(summary)
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelector('.tool-worklog-summary')).toBeNull()
+    expect(view.container.textContent).not.toContain('Responding…')
+    expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
     run.emit({ event: 'done', data: {} })
     view.rerender(<View activity={liveActivity(run.turn)} />)
-    expect(summary).toHaveAttribute('aria-expanded', 'true')
+    const summary = view.container.querySelector('.tool-worklog-summary')!
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
     expect(summary.textContent).toContain('Worked')
+    fireEvent.click(summary)
+    expect(summary).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.querySelector('[data-final-answer]')?.closest('.activity-body')).toBeNull()
     view.unmount()
     const remount = render(<View activity={liveActivity(run.turn)} />)
@@ -70,7 +73,7 @@ describe('turn worklog presentation', () => {
     expect(nested.textContent).not.toContain('Worked')
     fireEvent.click(nested)
     fireEvent.click(view.container.querySelector('[data-tool-id="a"] button')!)
-    expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
+    expect(view.container.querySelectorAll('.tool-worklog-summary')).toHaveLength(1)
     expect(nested).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.querySelector('[data-tool-id="b"] button')).toHaveAttribute('aria-expanded', 'false')
   })
