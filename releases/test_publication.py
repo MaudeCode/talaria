@@ -359,12 +359,23 @@ class PublicationTests(unittest.TestCase):
         runs = {step.get("name"): step.get("run", "") for step in test["steps"]}
         self.assertIn('"-skip-testing:${LIVE_CONTRACT_TEST}"', runs["Test without building"])
         live = runs["Run the live Web contract test against the probe fixture"]
-        for required in ('select(.title == "contract-fixture")', "shasum -a 256 --check",
+        # A "Re-run failed jobs" attempt reruns only the Mac job, so the probe is found across attempts.
+        for required in ("filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)",
+                         'select(.title == "contract-fixture")', "shasum -a 256 --check",
                          'TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
                          '.[0].result == "Passed"'):
             self.assertIn(required, live)
         self.assertIn("::notice title=contract-fixture::key=$key sha256=$sha256",
                       "\n".join(step.get("run", "") for step in probe["steps"]))
+
+    def test_buildx_builders_are_never_fixed_names(self):
+        # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
+        root = Path(__file__).resolve().parents[1]
+        for path in sorted([*(root / ".github/workflows").glob("*.yml"), *(root / ".github/actions").glob("*/action.yml")]):
+            for line in path.read_text().splitlines():
+                if "buildx create" in line:
+                    with self.subTest(path=path.name):
+                        self.assertNotIn("--name", line)
 
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
         # The pool image has no Ruby; the Mac did. Tag validation (cli.py prepare) and TestFlight upload

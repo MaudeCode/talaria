@@ -36,6 +36,6 @@ runs:
         docker buildx version
         if [[ "$MULTI_PLATFORM" == "true" ]]; then
           # OCI output for two platforms needs a docker-container builder and registered arm64 emulation.
-          docker buildx create --name talaria-release --driver docker-container --use --bootstrap
+          docker buildx create --driver docker-container --use --bootstrap
           docker buildx inspect --bootstrap | tee /dev/stderr | grep -E '^Platforms:.*linux/arm64' >/dev/null
         fi

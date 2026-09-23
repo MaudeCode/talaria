@@ -103,7 +103,9 @@ def path_suites(path):
     # Runtime resources and test fixtures can be Markdown too; never classify
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
-        return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/")) else {"app"}
+        # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too.
+        return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
+                                                          "TalariaTests/APIClientSessionListTests.swift")) else {"app"}
     if path.startswith("web/sidecar/tests/"):
         return {"web_server"}
     if path.startswith("relay/tests/"):
