@@ -9,11 +9,11 @@
         "python": "<agent>/venv/bin/python",
         "python_version": "3.11.15",
         "agent_dir": "<agent>",
-        "agent_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6",
-        "agent_version": "0.21.3",
-        "pinned_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6",
-        "pinned_version": "0.21.3",
-        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:72029c3a45c0ae88084598c7a113acc0a7d5a7d94e3225255d6356fcb6623db3",
+        "agent_revision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
+        "agent_version": "0.21.4",
+        "pinned_revision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
+        "pinned_version": "0.21.4",
+        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3",
         "compatible": true,
         "stale": false,
         "update_state": "unverified",
@@ -29,11 +29,11 @@
         "python": "<agent>/venv/bin/python",
         "python_version": "3.11.15",
         "agent_dir": "<agent>",
-        "agent_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6",
-        "agent_version": "0.21.3",
-        "pinned_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6",
-        "pinned_version": "0.21.3",
-        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:72029c3a45c0ae88084598c7a113acc0a7d5a7d94e3225255d6356fcb6623db3",
+        "agent_revision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
+        "agent_version": "0.21.4",
+        "pinned_revision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
+        "pinned_version": "0.21.4",
+        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3",
         "compatible": true,
         "stale": false,
         "update_state": "unverified",
@@ -46,7 +46,7 @@
       "params": {},
       "result": {
         "current": true,
-        "agent_revision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6"
+        "agent_revision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3"
       }
     }
   ],

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the pinned external Agent in disposable source and container state.
+"""Check the pinned stable Agent release in disposable source and container state.
 
 Provisions the pinned Hermes Agent checkout and its venv in a temporary directory,
 runs the sidecar pytest suite on that interpreter (``--sidecar-tests``), runs an
@@ -29,11 +29,14 @@ def main():
     parser.add_argument("--skip-sidecar-tests", action="store_true")
     args = parser.parse_args()
     pin = json.loads((ROOT / "web/sidecar/agent_dependency.json").read_text())
+    release_tag = pin["x-talaria"]["releaseTag"]
     sha = pin["x-talaria"]["sourceRevision"]
     version = pin["x-talaria"]["version"]
     image = pin["services"]["hermes-agent"]["image"]
-    if not re.fullmatch(r"[a-f0-9]{40}", sha) or not re.fullmatch(r"docker.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}", image):
-        raise ValueError("Agent source and image must be immutable")
+    if (not re.fullmatch(r"v[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]+)?", release_tag)
+            or not re.fullmatch(r"[a-f0-9]{40}", sha)
+            or not re.fullmatch(r"docker.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}", image)):
+        raise ValueError("Agent release tag, source, and image must be immutable")
     python = shutil.which(os.environ.get("HERMES_WEBUI_TEST_PYTHON", "python3.13"))
     if not python:
         raise RuntimeError("Python 3.13 is required (or set HERMES_WEBUI_TEST_PYTHON)")
@@ -51,12 +54,12 @@ def main():
                 env[key] = os.environ[key]
         agent = state / "agent"
         for command in (["git", "init", "--quiet", str(agent)],
-                        ["git", "-C", str(agent), "fetch", "--depth=1", "--no-tags", "https://github.com/NousResearch/hermes-agent.git", sha],
+                        ["git", "-C", str(agent), "fetch", "--depth=1", "--no-tags", "https://github.com/NousResearch/hermes-agent.git", f"refs/tags/{release_tag}"],
                         ["git", "-C", str(agent), "checkout", "--quiet", "--detach", "FETCH_HEAD"]):
             subprocess.run(command, env=env, check=True)
         actual = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], env=env, text=True).strip()
         if actual != sha:
-            raise RuntimeError("Agent checkout does not match the compatibility pin")
+            raise RuntimeError("Agent release tag does not match the compatibility pin")
         subprocess.run(["uv", "sync", "--frozen", "--no-dev", "--python", python], cwd=agent, env=env, check=True)
         agent_python = agent / ".venv/bin/python"
         env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=python)
@@ -71,6 +74,11 @@ def main():
         # Docker needs the caller's daemon context, but the container receives only
         # these synthetic environment values, read-only code and temporary state.
         subprocess.run(["docker", "pull", image], check=True)
+        release_image = f"docker.io/nousresearch/hermes-agent:{release_tag}"
+        subprocess.run(["docker", "pull", release_image], check=True)
+        release_digests = json.loads(subprocess.check_output(["docker", "image", "inspect", release_image]))[0].get("RepoDigests", [])
+        if not any(ref.endswith("@" + image.rsplit("@", 1)[1]) for ref in release_digests):
+            raise RuntimeError("Agent release tag image does not match the compatibility pin")
         config = json.loads(subprocess.check_output(["docker", "image", "inspect", image]))[0]["Config"]
         if config.get("Labels", {}).get("org.opencontainers.image.revision") != sha:
             raise RuntimeError("Agent image source label does not match its tested source")

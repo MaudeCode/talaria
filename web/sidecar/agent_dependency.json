@@ -1,11 +1,12 @@
 {
   "x-talaria": {
-    "version": "0.21.3",
-    "sourceRevision": "fef0bc56b2f622ffe124835fbf57adfd10aa17e6"
+    "releaseTag": "v2026.9.21",
+    "version": "0.21.4",
+    "sourceRevision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3"
   },
   "services": {
     "hermes-agent": {
-      "image": "docker.io/nousresearch/hermes-agent@sha256:72029c3a45c0ae88084598c7a113acc0a7d5a7d94e3225255d6356fcb6623db3"
+      "image": "docker.io/nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3"
     }
   }
 }
